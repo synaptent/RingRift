@@ -967,7 +967,7 @@ class EloToCurriculumWatcher:
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.ELO_UPDATED, self._on_elo_updated)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             pass
 
     def _on_elo_updated(self, event: Any) -> None:
@@ -1240,7 +1240,7 @@ class PlateauToCurriculumWatcher:
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             pass
 
     def _on_plateau_detected(self, event: Any) -> None:
@@ -1521,7 +1521,7 @@ class TournamentToCurriculumWatcher:
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             pass
 
     def _on_evaluation_completed(self, event: Any) -> None:
@@ -1848,7 +1848,7 @@ class PromotionToCurriculumWatcher:
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             pass
 
     def _on_model_promoted(self, event: Any) -> None:
@@ -2435,7 +2435,7 @@ class QualityFeedbackWatcher:
             router.unsubscribe("QUALITY_SCORE_UPDATED", self._on_quality_score_updated)
             router.unsubscribe("quality_score_updated", self._on_quality_score_updated)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             pass
 
     def _on_quality_score_updated(self, event: Any) -> None:
@@ -2734,7 +2734,7 @@ class EpochToCurriculumWatcher:
             if bus:
                 bus.unsubscribe(TrainingTopics.EPOCH_COMPLETED, self._on_epoch_completed)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError):
             pass
 
     def _on_epoch_completed(self, event: Any) -> None:

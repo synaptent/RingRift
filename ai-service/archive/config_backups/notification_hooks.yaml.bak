@@ -1,0 +1,86 @@
+# RingRift Notification Hooks Configuration
+# Configure webhooks and notification settings for the rollback monitoring system.
+#
+# Usage:
+#   from app.training.notification_config import load_notification_hooks
+#   hooks = load_notification_hooks()
+#   monitor = RollbackMonitor(notification_hooks=hooks)
+
+version: '1.0'
+
+# Enable/disable the notification system
+enabled: true
+
+# Logging hook (always enabled by default)
+logging:
+  enabled: true
+  logger_name: 'ringrift.rollback' # Logger name to use
+
+# Slack webhook integration
+slack:
+  enabled: false
+  webhook_url: '' # Set your Slack webhook URL
+  # webhook_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+  timeout_seconds: 10
+  # Events to notify on (default: all)
+  events:
+    at_risk: true
+    rollback_triggered: true
+    rollback_completed: true
+
+# Discord webhook integration
+discord:
+  enabled: false
+  webhook_url: '' # Set your Discord webhook URL
+  # webhook_url: 'https://discord.com/api/webhooks/YOUR/WEBHOOK'
+  timeout_seconds: 10
+  events:
+    at_risk: true
+    rollback_triggered: true
+    rollback_completed: true
+
+# PagerDuty integration (for critical alerts)
+pagerduty:
+  enabled: false
+  routing_key: '' # Your PagerDuty Events API v2 routing key
+  # routing_key: 'your-pagerduty-routing-key'
+  severity_mapping:
+    at_risk: 'warning'
+    rollback_triggered: 'critical'
+    rollback_completed: 'info'
+
+# OpsGenie integration (for critical alerts)
+opsgenie:
+  enabled: false
+  api_key: '' # Your OpsGenie API key
+  # api_key: 'your-opsgenie-api-key'
+  region: 'us' # 'us' or 'eu'
+  priority_mapping:
+    at_risk: 'P3'
+    rollback_triggered: 'P1'
+    rollback_completed: 'P5'
+
+# Generic webhook (for custom integrations)
+generic:
+  enabled: false
+  webhook_url: '' # Your custom webhook URL
+  timeout_seconds: 10
+  # Optional headers to include
+  headers: {}
+  # headers:
+  #   Authorization: 'Bearer your-token'
+  #   X-Custom-Header: 'value'
+  events:
+    at_risk: true
+    rollback_triggered: true
+    rollback_completed: true
+
+# Rollback criteria overrides (optional - uses defaults if not specified)
+# These values override the defaults in RollbackCriteria
+criteria_overrides:
+  # elo_regression_threshold: -30.0
+  # min_games_for_regression: 20
+  # consecutive_checks_required: 3
+  # min_win_rate: 0.40
+  # cooldown_seconds: 3600
+  # max_rollbacks_per_day: 3

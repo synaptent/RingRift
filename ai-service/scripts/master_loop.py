@@ -25,6 +25,9 @@ Usage:
     # Full automation mode
     python scripts/master_loop.py
 
+    # Minimal profile (sync + health)
+    python scripts/master_loop.py --profile minimal
+
     # Watch mode (show status, don't run loop)
     python scripts/master_loop.py --watch
 
@@ -186,10 +189,12 @@ class MasterLoopController:
         configs: list[str] | None = None,
         dry_run: bool = False,
         skip_daemons: bool = False,
+        daemon_profile: str = "standard",
     ):
         self.active_configs = configs or ALL_CONFIGS
         self.dry_run = dry_run
         self.skip_daemons = skip_daemons
+        self.daemon_profile = daemon_profile
 
         # State tracking
         self._states: dict[str, ConfigState] = {
@@ -422,7 +427,10 @@ class MasterLoopController:
 
         self._running = True
         logger.info(f"[MasterLoop] Starting with {len(self.active_configs)} configs")
-        logger.info(f"[MasterLoop] Dry run: {self.dry_run}, Skip daemons: {self.skip_daemons}")
+        logger.info(
+            f"[MasterLoop] Dry run: {self.dry_run}, Skip daemons: {self.skip_daemons}, "
+            f"Profile: {self.daemon_profile}"
+        )
 
         # Bootstrap coordination system - wires event subscriptions for feedback loops
         # (December 2025: Critical for REGRESSION_DETECTED → rollback, PLATEAU_DETECTED → curriculum, etc.)
@@ -534,38 +542,78 @@ class MasterLoopController:
     # Daemon management
     # =========================================================================
 
-    async def _start_daemons(self) -> None:
-        """Start essential daemons.
-
-        December 2025 - Phase 3A.1: Expanded from 5 to 12 essential daemons
-        to fully operationalize the automation infrastructure.
-        """
+    def _get_daemons_for_profile(self) -> list["DaemonType"]:
+        """Resolve daemon list for the selected profile."""
         from app.coordination.daemon_manager import DaemonType
 
-        essential_daemons = [
-            # Core infrastructure (already started previously)
+        minimal = [
+            # Sync + health baseline
             DaemonType.EVENT_ROUTER,
-            DaemonType.FEEDBACK_LOOP,
-            DaemonType.DATA_PIPELINE,
+            DaemonType.NODE_HEALTH_MONITOR,
+            DaemonType.CLUSTER_MONITOR,
+            DaemonType.SYSTEM_HEALTH_MONITOR,
+            DaemonType.HEALTH_SERVER,
             DaemonType.AUTO_SYNC,
-            DaemonType.MODEL_DISTRIBUTION,
-            # Critical automation (Phase 3A.1 additions)
-            DaemonType.IDLE_RESOURCE,        # Spawn selfplay on idle GPUs
-            DaemonType.UTILIZATION_OPTIMIZER,  # Optimize workloads by provider/GPU type
-            DaemonType.QUEUE_POPULATOR,      # Maintain work queue depth
-            DaemonType.AUTO_EXPORT,          # Trigger NPZ export after sync
-            DaemonType.EVALUATION,           # Auto-gauntlet after training
-            DaemonType.AUTO_PROMOTION,       # Auto-promote models passing evaluation
-            DaemonType.CLUSTER_MONITOR,      # Track cluster utilization
-            DaemonType.NODE_RECOVERY,        # Auto-recover failed nodes
-            DaemonType.CURRICULUM_INTEGRATION,  # Feedback-driven curriculum
-            # Data sync daemons (December 2025 - close data silos)
-            DaemonType.ELO_SYNC,             # Sync Elo ratings across cluster
+            DaemonType.CLUSTER_DATA_SYNC,
+            DaemonType.ELO_SYNC,
         ]
 
-        logger.info(f"[MasterLoop] Starting {len(essential_daemons)} essential daemons")
+        standard = minimal + [
+            # Core automation (current default stack)
+            DaemonType.FEEDBACK_LOOP,
+            DaemonType.DATA_PIPELINE,
+            DaemonType.MODEL_DISTRIBUTION,
+            DaemonType.IDLE_RESOURCE,
+            DaemonType.UTILIZATION_OPTIMIZER,
+            DaemonType.QUEUE_POPULATOR,
+            DaemonType.AUTO_EXPORT,
+            DaemonType.EVALUATION,
+            DaemonType.AUTO_PROMOTION,
+            DaemonType.TOURNAMENT_DAEMON,
+            DaemonType.CURRICULUM_INTEGRATION,
+            DaemonType.NODE_RECOVERY,
+            DaemonType.TRAINING_NODE_WATCHER,
+            DaemonType.QUALITY_MONITOR,
+        ]
 
-        for daemon_type in essential_daemons:
+        deprecated = {
+            DaemonType.SYNC_COORDINATOR,
+            DaemonType.HEALTH_CHECK,
+        }
+        full = [daemon for daemon in DaemonType if daemon not in deprecated]
+
+        profiles = {
+            "minimal": minimal,
+            "standard": standard,
+            "full": full,
+        }
+
+        daemons = profiles.get(self.daemon_profile, standard)
+
+        # Ensure event router starts first when present
+        if DaemonType.EVENT_ROUTER in daemons:
+            daemons = [DaemonType.EVENT_ROUTER] + [d for d in daemons if d != DaemonType.EVENT_ROUTER]
+
+        # De-dupe while preserving order
+        seen: set[DaemonType] = set()
+        ordered: list[DaemonType] = []
+        for daemon in daemons:
+            if daemon not in seen:
+                ordered.append(daemon)
+                seen.add(daemon)
+        return ordered
+
+    async def _start_daemons(self) -> None:
+        """Start daemons for the selected profile."""
+        from app.coordination.daemon_manager import DaemonType
+
+        profile_daemons = self._get_daemons_for_profile()
+        logger.info(
+            f"[MasterLoop] Starting {len(profile_daemons)} daemons "
+            f"(profile={self.daemon_profile})"
+        )
+
+        for daemon_type in profile_daemons:
             try:
                 if self.dry_run:
                     logger.info(f"[MasterLoop] [DRY RUN] Would start {daemon_type.value}")
@@ -579,7 +627,7 @@ class MasterLoopController:
         # The daemon manager starts FEEDBACK_LOOP daemon, but we also need to
         # ensure the controller itself is started with proper event subscriptions
         try:
-            if not self.dry_run:
+            if not self.dry_run and DaemonType.FEEDBACK_LOOP in profile_daemons:
                 await self.feedback_controller.start()
                 logger.info("[MasterLoop] Started FeedbackLoopController")
         except Exception as e:
@@ -597,11 +645,13 @@ class MasterLoopController:
             bus = get_event_bus()
             bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
             bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
+            bus.subscribe(DataEventType.EVALUATION_PROGRESS, self._on_evaluation_progress)
             bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
             bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
             bus.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_assessed)
+            bus.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY, self._on_training_blocked_by_quality)
 
-            logger.info("[MasterLoop] Subscribed to pipeline events (including quality)")
+            logger.info("[MasterLoop] Subscribed to pipeline events (including quality + evaluation progress)")
         except Exception as e:
             logger.warning(f"[MasterLoop] Failed to subscribe to events: {e}")
 
@@ -652,6 +702,34 @@ class MasterLoopController:
         except Exception as e:
             logger.debug(f"[MasterLoop] Error handling evaluation event: {e}")
 
+    def _on_evaluation_progress(self, event: Any) -> None:
+        """Handle evaluation progress updates."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", payload.get("config", ""))
+            baseline = payload.get("baseline", "unknown")
+            games_completed = payload.get("games_completed", payload.get("games", 0))
+            games_total = payload.get("games_total", 0)
+            current_win_rate = payload.get("current_win_rate", 0.0)
+
+            if config_key in self._states:
+                state = self._states[config_key]
+                state.last_evaluation_win_rate = current_win_rate
+
+            if config_key:
+                logger.debug(
+                    f"[MasterLoop] {config_key}: Evaluation progress "
+                    f"{games_completed}/{games_total} vs {baseline} "
+                    f"({current_win_rate:.2%})"
+                )
+            else:
+                logger.debug(
+                    f"[MasterLoop] Evaluation progress {games_completed}/{games_total} "
+                    f"vs {baseline} ({current_win_rate:.2%})"
+                )
+        except Exception as e:
+            logger.debug(f"[MasterLoop] Error handling evaluation progress: {e}")
+
     def _on_promotion_complete(self, event: Any) -> None:
         """Handle promotion completion."""
         try:
@@ -674,6 +752,32 @@ class MasterLoopController:
                     logger.info(f"[MasterLoop] {config_key}: Promotion failed, exploration boost: {state.exploration_boost:.2f}")
         except Exception as e:
             logger.debug(f"[MasterLoop] Error handling promotion event: {e}")
+
+    def _on_training_blocked_by_quality(self, event: Any) -> None:
+        """Handle training blocked by quality or freshness gates."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", payload.get("config", ""))
+            reason = payload.get("reason", "unknown")
+            data_age_hours = payload.get("data_age_hours")
+            threshold_hours = payload.get("threshold_hours")
+            games_available = payload.get("games_available")
+
+            if config_key in self._states:
+                state = self._states[config_key]
+                state.training_node = None
+                state.training_intensity = "paused"
+
+            details = (
+                f"reason={reason}, data_age_hours={data_age_hours}, "
+                f"threshold_hours={threshold_hours}, games_available={games_available}"
+            )
+            if config_key:
+                logger.info(f"[MasterLoop] {config_key}: Training blocked ({details})")
+            else:
+                logger.info(f"[MasterLoop] Training blocked ({details})")
+        except Exception as e:
+            logger.debug(f"[MasterLoop] Error handling training blocked event: {e}")
 
     def _on_quality_assessed(self, event: Any) -> None:
         """Handle data quality assessment event.
@@ -1138,6 +1242,12 @@ def parse_args() -> argparse.Namespace:
         help="Don't start/stop daemons (for testing)",
     )
     parser.add_argument(
+        "--profile",
+        choices=["minimal", "standard", "full"],
+        default="standard",
+        help="Daemon profile (minimal=sync+health, standard=automation, full=all)",
+    )
+    parser.add_argument(
         "--watch",
         action="store_true",
         help="Watch mode - display live status",
@@ -1171,6 +1281,7 @@ async def main() -> None:
         configs=configs,
         dry_run=args.dry_run,
         skip_daemons=args.skip_daemons,
+        daemon_profile=args.profile,
     )
 
     # Handle signals

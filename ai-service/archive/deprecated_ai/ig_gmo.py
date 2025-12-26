@@ -41,7 +41,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..models import AIConfig, GameState, Move
+from app.models import AIConfig, GameState, Move
 from .base import BaseAI
 from .gmo_ai import GMOValueNetWithUncertainty, MoveEncoder, NoveltyTracker
 

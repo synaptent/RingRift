@@ -648,8 +648,8 @@ class MaintenanceDaemon:
                             },
                             source="maintenance_daemon",
                         )
-                    except Exception:
-                        pass  # Event emission is optional
+                    except Exception as emit_err:
+                        logger.debug(f"[Maintenance] Event emission failed: {emit_err}")
 
             except Exception as e:
                 logger.warning(f"[Maintenance] Failed to recover orphan DB {db_path}: {e}")

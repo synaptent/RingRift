@@ -41,6 +41,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -54,6 +55,9 @@ from typing import Any, Union
 from app.core.async_context import fire_and_forget
 
 logger = logging.getLogger(__name__)
+
+# Import event normalization (December 2025)
+from app.coordination.event_normalization import normalize_event_type
 
 # Import the 3 event systems
 try:
@@ -214,6 +218,15 @@ class UnifiedEventRouter:
         self._enable_cp_polling = enable_cross_process_polling
         self._poll_interval = poll_interval
 
+        # Thread pool for async callbacks in sync contexts (Dec 2025 - resource leak fix)
+        # Initialize with proper size based on CPU count, max 4 workers
+        cpu_count = os.cpu_count() or 4
+        max_workers = min(cpu_count, 4)
+        self._thread_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="event_router",
+        )
+
         # Connect to existing buses
         self._setup_bus_bridges()
 
@@ -282,6 +295,12 @@ class UnifiedEventRouter:
     ) -> RouterEvent:
         """Publish an event to all appropriate buses.
 
+        December 2025: Now normalizes event types to canonical form.
+        This ensures consistent event names across the system:
+        - SYNC_COMPLETE → DATA_SYNC_COMPLETED
+        - TRAINING_COMPLETE → TRAINING_COMPLETED
+        - etc.
+
         Args:
             event_type: Event type (string, DataEventType, or StageEvent)
             payload: Event data
@@ -293,11 +312,22 @@ class UnifiedEventRouter:
         Returns:
             The RouterEvent that was published
         """
-        # Normalize event type to string
+        # Normalize event type to string (extract from enum if needed)
         if hasattr(event_type, 'value'):
             event_type_str = event_type.value
         else:
             event_type_str = str(event_type)
+
+        # Normalize to canonical form (December 2025)
+        # This standardizes SYNC_COMPLETE → DATA_SYNC_COMPLETED, etc.
+        original_event_type = event_type_str
+        event_type_str = normalize_event_type(event_type_str)
+
+        # Log normalization for debugging (only if changed)
+        if original_event_type != event_type_str:
+            logger.debug(
+                f"[EventRouter] Normalized '{original_event_type}' → '{event_type_str}'"
+            )
 
         payload = payload or {}
 
@@ -575,11 +605,7 @@ class UnifiedEventRouter:
                         except Exception as e:
                             logger.error(f"[EventRouter] Async callback failed: {e}")
 
-                    # Use module-level thread pool (created lazily, max 4 workers)
-                    if not hasattr(self, "_thread_pool"):
-                        self._thread_pool = concurrent.futures.ThreadPoolExecutor(
-                            max_workers=4, thread_name_prefix="event_router"
-                        )
+                    # Use thread pool (initialized in __init__)
                     self._thread_pool.submit(run_async_in_thread, result)
                     logger.debug(
                         f"[EventRouter] Dispatched async callback {callback.__name__} "
@@ -772,10 +798,19 @@ class UnifiedEventRouter:
         }
 
     def stop(self) -> None:
-        """Stop the router (cleanup cross-process poller)."""
+        """Stop the router (cleanup cross-process poller and thread pool)."""
         if self._cp_poller:
             self._cp_poller.stop()
             self._cp_poller = None
+
+        # Shutdown thread pool gracefully
+        if self._thread_pool:
+            self._thread_pool.shutdown(wait=True, cancel_futures=False)
+            self._thread_pool = None
+
+    def close(self) -> None:
+        """Close the router (alias for stop)."""
+        self.stop()
 
 
 # Global singleton
@@ -798,7 +833,7 @@ def reset_router() -> None:
     with _router_lock:
         if _router is not None:
             _router.stop()
-        _router = None
+            _router = None
 
 
 # Convenience functions

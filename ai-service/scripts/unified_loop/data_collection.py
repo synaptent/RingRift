@@ -607,7 +607,7 @@ class StreamingDataCollector:
                 count = int(stdout.decode().strip() or "0")
                 return (host.name, count)
 
-            except Exception:
+            except (asyncio.TimeoutError, ValueError, OSError, UnicodeDecodeError):
                 return (host.name, 0)
 
         # Run all queries in parallel
@@ -656,7 +656,7 @@ class StreamingDataCollector:
                 try:
                     duration = time.time() - sync_start
                     self._manifest.log_sync(host.name, new_games, duration, success=True, sync_method=self.config.sync_method)
-                except Exception:
+                except (sqlite3.Error, OSError):
                     pass  # Non-fatal
 
             # Publish event
@@ -685,7 +685,7 @@ class StreamingDataCollector:
                 try:
                     duration = time.time() - sync_start
                     self._manifest.log_sync(host.name, 0, duration, success=False, error_message=str(e))
-                except Exception:
+                except (sqlite3.Error, OSError):
                     pass  # Non-fatal
             print(f"[DataCollector] Failed to sync {host.name}: {e}")
             return 0
@@ -723,7 +723,7 @@ class StreamingDataCollector:
                         conn.close()
                         config_counts[config_key] = config_counts.get(config_key, 0) + count
                         total_counted += count
-                except Exception:
+                except (sqlite3.Error, OSError, ValueError, TypeError):
                     pass
 
         # Source 2: GPU selfplay JSONL files (primary source for GPU-generated games)
@@ -742,7 +742,7 @@ class StreamingDataCollector:
                                     count = sum(1 for _ in f)
                                 config_counts[config_key] = config_counts.get(config_key, 0) + count
                                 total_counted += count
-                            except Exception:
+                            except (OSError, IOError):
                                 pass
 
         # Source 3: Tournament JSONL files (tier/Elo tournaments with training data)
@@ -765,7 +765,7 @@ class StreamingDataCollector:
                             count = sum(1 for _ in f)
                         config_counts[config_key] = config_counts.get(config_key, 0) + count
                         total_counted += count
-                except Exception:
+                except (OSError, IOError):
                     pass
 
         # Source 4: Synced tournament data from remote hosts
@@ -786,7 +786,7 @@ class StreamingDataCollector:
                             count = sum(1 for _ in f)
                         config_counts[config_key] = config_counts.get(config_key, 0) + count
                         total_counted += count
-                except Exception:
+                except (OSError, IOError):
                     pass
 
         # Distribute new games proportionally based on existing counts
@@ -805,7 +805,7 @@ class StreamingDataCollector:
                     if HAS_PROMETHEUS:
                         for ck, weight in new_weights.items():
                             CONFIG_WEIGHT.labels(config_key=ck).set(weight)
-                except Exception:
+                except (AttributeError, KeyError, ValueError):
                     pass  # Non-critical
         else:
             # Fallback: distribute to square8_2p

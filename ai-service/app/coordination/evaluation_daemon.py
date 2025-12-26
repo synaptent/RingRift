@@ -175,12 +175,17 @@ class EvaluationDaemon:
             else:
                 metadata = event if isinstance(event, dict) else {}
 
-            model_path = metadata.get("model_path") or metadata.get("model_id")
+            # train.py emits "checkpoint_path", but also support "model_path" for backwards compatibility
+            model_path = (
+                metadata.get("checkpoint_path")
+                or metadata.get("model_path")
+                or metadata.get("model_id")
+            )
             board_type = metadata.get("board_type")
             num_players = metadata.get("num_players", 2)
 
             if not model_path:
-                logger.warning("[EvaluationDaemon] No model_path in TRAINING_COMPLETE event")
+                logger.warning("[EvaluationDaemon] No checkpoint_path/model_path in TRAINING_COMPLETE event")
                 return
 
             # Queue the evaluation

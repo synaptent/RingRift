@@ -9,6 +9,7 @@ Extracted from unified_ai_loop.py for better modularity (Phase 2 refactoring).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sqlite3
 import sys
@@ -750,7 +751,7 @@ class TrainingScheduler:
                     final_threshold = max(min_threshold, final_threshold * 8 // 10)
                 elif avg_util > 85:
                     final_threshold = min(max_threshold, final_threshold * 12 // 10)
-            except Exception:
+            except (AttributeError, KeyError, TypeError, ValueError):
                 pass
 
         # Underrepresented config priority
@@ -1188,7 +1189,7 @@ class TrainingScheduler:
                         other_host = parts[-1] if len(parts) > 1 else parts[0]
                         print(f"[Training] Config {other_config} locked by {other_host}")
                         return True
-            except Exception:
+            except (OSError, FileNotFoundError, PermissionError):
                 continue
         return False
 
@@ -1205,7 +1206,7 @@ class TrainingScheduler:
                     age = time.time() - lock_file.stat().st_mtime
                     if age < 3600:
                         count += 1
-            except Exception:
+            except (OSError, FileNotFoundError, PermissionError):
                 continue
         return count
 
@@ -1248,7 +1249,7 @@ class TrainingScheduler:
                 gpu_util = util_status.get('gpu_util', 70)
                 if gpu_util > 85:
                     return None
-            except Exception:
+            except (AttributeError, KeyError, TypeError, ValueError):
                 pass
 
         # Cluster health gate
@@ -1261,7 +1262,7 @@ class TrainingScheduler:
                     if self.config.verbose:
                         print(f"[Training] Deferred: {health_msg}")
                     return None
-            except Exception:
+            except (AttributeError, TypeError, ValueError, ConnectionError):
                 pass
 
         now = time.time()
@@ -1294,7 +1295,7 @@ class TrainingScheduler:
                         print(f"[Training] Trigger: momentum-based acceleration for {config_key} "
                               f"(intensity={intensity_str}, momentum={momentum_str})")
                         return config_key
-                except Exception:
+                except (AttributeError, KeyError, TypeError, ValueError):
                     pass
 
             # Dynamic game count threshold
@@ -1478,10 +1479,9 @@ class TrainingScheduler:
                 last_state = {}
                 if consolidation_state_file.exists():
                     try:
-                        import json
                         with open(consolidation_state_file) as f:
                             last_state = json.load(f)
-                    except Exception:
+                    except (OSError, json.JSONDecodeError, PermissionError):
                         pass
 
                 # Find DBs that need merging
@@ -1512,7 +1512,7 @@ class TrainingScheduler:
                                 # Check if this DB has new data
                                 if current_mtime > last_mtime + 60 or current_size > last_size:
                                     changed_dbs.append(db_path.name)
-                        except Exception:
+                        except (sqlite3.Error, OSError, IndexError, TypeError):
                             pass
 
                 # Only re-consolidate if there are changed DBs
@@ -1539,7 +1539,7 @@ class TrainingScheduler:
                                 conn.close()
                                 if count > 0 and has_moves:
                                     merge_dbs.append(db_path)
-                            except Exception:
+                            except (sqlite3.Error, OSError, IndexError, TypeError):
                                 pass
 
                 if len(merge_dbs) > 1:
@@ -2104,7 +2104,7 @@ class TrainingScheduler:
                         val_loss=0.0,
                         calibration_ece=calibration_ece,
                     )
-                except Exception:
+                except (AttributeError, KeyError, TypeError, ValueError):
                     pass
 
             # PFSP Integration: Add successfully trained model to opponent pool
@@ -2237,7 +2237,7 @@ class TrainingScheduler:
             if models:
                 return max(models, key=lambda p: p.stat().st_mtime)
             return None
-        except Exception:
+        except (OSError, ValueError, AttributeError):
             return None
 
     async def _trigger_cmaes_auto_tuning(self, config_key: str) -> None:

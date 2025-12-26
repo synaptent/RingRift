@@ -178,3 +178,91 @@ class SerializableProtocol(Protocol):
 # Type aliases for common patterns
 HashValue = int
 PolicyIndex = int
+
+
+# =============================================================================
+# Event System Protocols (Dec 2025)
+# =============================================================================
+
+
+@runtime_checkable
+class EventEmitter(Protocol):
+    """Protocol for event emission.
+
+    Implementations:
+        - app.distributed.data_events.EventBus
+        - app.core.event_bus.EventBus
+
+    Used by: All modules that need to emit events without importing
+    concrete implementations.
+    """
+
+    @abstractmethod
+    def emit(self, event_type: Any, data: dict[str, Any] | None = None) -> None:
+        """Emit an event with optional data."""
+        ...
+
+
+@runtime_checkable
+class EventSubscriber(Protocol):
+    """Protocol for event subscription.
+
+    Implementations:
+        - app.distributed.data_events.EventBus
+        - app.core.event_bus.EventBus
+
+    Used by: Modules that need to subscribe to events.
+    """
+
+    @abstractmethod
+    def subscribe(
+        self,
+        event_type: Any,
+        handler: "EventHandler",
+    ) -> None:
+        """Subscribe a handler to an event type."""
+        ...
+
+    @abstractmethod
+    def unsubscribe(
+        self,
+        event_type: Any,
+        handler: "EventHandler",
+    ) -> None:
+        """Unsubscribe a handler from an event type."""
+        ...
+
+
+# Callable type for event handlers
+EventHandler = Any  # Callable[[dict[str, Any]], None] | Callable[[dict[str, Any]], Awaitable[None]]
+
+
+# =============================================================================
+# Daemon Protocols (Dec 2025)
+# =============================================================================
+
+
+@runtime_checkable
+class DaemonLifecycle(Protocol):
+    """Protocol for daemon lifecycle management.
+
+    Implementations: app.coordination.daemon_manager.DaemonManager
+
+    Used by: Modules that need to interact with daemons without
+    importing the full coordination module.
+    """
+
+    @abstractmethod
+    async def start(self, daemon_type: Any) -> bool:
+        """Start a daemon."""
+        ...
+
+    @abstractmethod
+    async def stop(self, daemon_type: Any) -> bool:
+        """Stop a daemon."""
+        ...
+
+    @abstractmethod
+    def is_running(self, daemon_type: Any) -> bool:
+        """Check if a daemon is running."""
+        ...

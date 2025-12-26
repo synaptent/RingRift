@@ -260,7 +260,10 @@ class EventBus:
         self._subscriptions: dict[str, list[Subscription]] = defaultdict(list)
         self._pattern_subscriptions: list[Subscription] = []
         self._all_subscriptions: list[Subscription] = []
-        self._lock = threading.RLock()
+        # Use asyncio.Lock for async methods
+        self._async_lock = asyncio.Lock()
+        # Keep threading.Lock for sync methods (publish_sync, get_stats, etc.)
+        self._sync_lock = threading.RLock()
         self._history: list[Event] = []
         self._max_history = max_history
         self._enable_history = enable_history
@@ -347,7 +350,7 @@ class EventBus:
             weak=weak,
         )
 
-        with self._lock:
+        with self._sync_lock:
             if event_filter.topic:
                 # Exact topic subscription
                 self._subscriptions[event_filter.topic].append(sub)
@@ -382,7 +385,7 @@ class EventBus:
         """
         removed = 0
 
-        with self._lock:
+        with self._sync_lock:
             if topic:
                 # Remove all for topic
                 if topic in self._subscriptions:
@@ -433,13 +436,13 @@ class EventBus:
 
         # Record in history
         if self._enable_history:
-            with self._lock:
+            async with self._async_lock:
                 self._history.append(event)
                 if len(self._history) > self._max_history:
                     self._history = self._history[-self._max_history:]
 
         # Get matching subscriptions
-        subscriptions = self._get_matching_subscriptions(event)
+        subscriptions = await self._get_matching_subscriptions_async(event)
         delivered = 0
         to_remove: list[Subscription] = []
 
@@ -467,7 +470,7 @@ class EventBus:
 
         # Clean up one-time and dead subscriptions
         for sub in to_remove:
-            self._remove_subscription(sub)
+            await self._remove_subscription_async(sub)
 
         return delivered
 
@@ -505,11 +508,11 @@ class EventBus:
 
         return delivered
 
-    def _get_matching_subscriptions(self, event: Event) -> list[Subscription]:
-        """Get all subscriptions matching an event."""
+    async def _get_matching_subscriptions_async(self, event: Event) -> list[Subscription]:
+        """Get all subscriptions matching an event (async version)."""
         matching: list[Subscription] = []
 
-        with self._lock:
+        async with self._async_lock:
             # Exact topic matches
             if event.topic in self._subscriptions:
                 for sub in self._subscriptions[event.topic]:
@@ -530,9 +533,48 @@ class EventBus:
         matching.sort(key=lambda s: -s.priority)
         return matching
 
+    def _get_matching_subscriptions(self, event: Event) -> list[Subscription]:
+        """Get all subscriptions matching an event (sync version)."""
+        matching: list[Subscription] = []
+
+        with self._sync_lock:
+            # Exact topic matches
+            if event.topic in self._subscriptions:
+                for sub in self._subscriptions[event.topic]:
+                    if sub.filter.matches(event):
+                        matching.append(sub)
+
+            # Pattern matches
+            for sub in self._pattern_subscriptions:
+                if sub.filter.matches(event):
+                    matching.append(sub)
+
+            # All events
+            for sub in self._all_subscriptions:
+                if sub.filter.matches(event):
+                    matching.append(sub)
+
+        # Sort by priority
+        matching.sort(key=lambda s: -s.priority)
+        return matching
+
+    async def _remove_subscription_async(self, sub: Subscription) -> None:
+        """Remove a subscription (async version)."""
+        async with self._async_lock:
+            if sub.filter.topic:
+                subs = self._subscriptions.get(sub.filter.topic, [])
+                if sub in subs:
+                    subs.remove(sub)
+            elif sub.filter.topic_pattern:
+                if sub in self._pattern_subscriptions:
+                    self._pattern_subscriptions.remove(sub)
+            else:
+                if sub in self._all_subscriptions:
+                    self._all_subscriptions.remove(sub)
+
     def _remove_subscription(self, sub: Subscription) -> None:
-        """Remove a subscription."""
-        with self._lock:
+        """Remove a subscription (sync version)."""
+        with self._sync_lock:
             if sub.filter.topic:
                 subs = self._subscriptions.get(sub.filter.topic, [])
                 if sub in subs:
@@ -558,7 +600,7 @@ class EventBus:
         Returns:
             List of events (most recent first)
         """
-        with self._lock:
+        with self._sync_lock:
             events = list(self._history)
 
         if topic:
@@ -604,12 +646,12 @@ class EventBus:
 
     def clear_history(self) -> None:
         """Clear event history."""
-        with self._lock:
+        with self._sync_lock:
             self._history.clear()
 
     def get_stats(self) -> dict[str, Any]:
         """Get event bus statistics."""
-        with self._lock:
+        with self._sync_lock:
             return {
                 **self._stats,
                 "subscriptions": {

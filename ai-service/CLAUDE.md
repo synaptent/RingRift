@@ -159,9 +159,9 @@ python scripts/run_canonical_selfplay_parity_gate.py --board-type hex8
 
 ```bash
 # Gauntlet evaluation (model vs baselines)
-python -m app.gauntlet.runner \
-  --board-type hex8 --num-players 2 \
-  --model-path models/my_model.pth
+python scripts/quick_gauntlet.py \
+  --model models/my_model.pth \
+  --board-type hex8 --num-players 2
 ```
 
 ## Key Utilities

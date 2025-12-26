@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.ai.factory import AIFactory
-from app.ai.gmo_ai import GMOAI, GMOConfig
+from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
 from app.game_engine import GameEngine
 from app.models import AIConfig, AIType, BoardType, GameStatus
 from app.training.initial_state import create_initial_state

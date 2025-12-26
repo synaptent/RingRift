@@ -361,15 +361,18 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     # Made mandatory by default to prevent stale data training (Phase 1.5)
     parser.add_argument(
         '--skip-freshness-check', action='store_true',
-        help='Skip training data freshness check (not recommended - may train on stale data)'
+        help='Skip training data freshness check entirely (DANGEROUS - only for debugging). '
+             'By default, training will fail if data is older than max-data-age-hours.'
     )
     parser.add_argument(
         '--max-data-age-hours', type=float, default=1.0,
-        help='Maximum age in hours for "fresh" training data (default: 1.0)'
+        help='Maximum age in hours for "fresh" training data (default: 1.0). '
+             'Training fails if data is older unless --allow-stale-data is specified.'
     )
     parser.add_argument(
         '--allow-stale-data', action='store_true',
-        help='Allow training on stale data with warning (default: fail on stale)'
+        help='Allow training on stale data with warning instead of failing. '
+             'Not recommended - may degrade model quality. Use only when fresh data is unavailable.'
     )
 
     # Adaptive training intensity (2025-12)

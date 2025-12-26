@@ -301,10 +301,10 @@ except Exception as e:
 "
 
 # Quick gauntlet test
-python -m app.gauntlet.runner \
+python scripts/quick_gauntlet.py \
+  --model models/canonical_hex8_2p.pth \
   --board-type hex8 --num-players 2 \
-  --model-path models/canonical_hex8_2p.pth \
-  --games 10 --quick
+  --games 10
 ```
 
 ### Recovery

@@ -601,6 +601,10 @@ class IdleResourceDaemon:
             # Update SelfplayScheduler priorities before spawning
             await self._update_scheduler_priorities()
 
+            # December 2025: Enforce process limits before spawning
+            # This actively kills excess processes on nodes with runaway counts
+            await self._enforce_process_limits()
+
             # Get cluster status
             nodes = await self._get_cluster_nodes()
 
@@ -1009,6 +1013,89 @@ class IdleResourceDaemon:
             logger.debug(f"[IdleResourceDaemon] Failed to get pending training hours: {e}")
 
         return 0.0  # Default to no backlog
+
+    async def _enforce_process_limits(self) -> None:
+        """Kill excess selfplay processes on nodes exceeding limits.
+
+        December 2025: Actively kills runaway selfplay processes to prevent
+        resource exhaustion. Uses SSH fallback when P2P job tracking isn't accurate.
+
+        Called before spawn decisions to maintain healthy process counts.
+        """
+        if not HAS_SSH_FALLBACK or SSHExecutor is None or get_configured_hosts is None:
+            return
+
+        max_per_node = self.config.max_selfplay_processes_per_node
+
+        try:
+            hosts = get_configured_hosts()
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] Failed to get cluster hosts: {e}")
+            return
+
+        for name, host in hosts.items():
+            if host.best_ip is None:
+                continue
+
+            try:
+                executor = SSHExecutor(
+                    host=host.best_ip,
+                    user=host.ssh_user,
+                    port=host.ssh_port,
+                    key_path=host.ssh_key,
+                    connect_timeout=5,
+                    max_retries=1,
+                )
+
+                # Count selfplay/gpu_parallel processes
+                count_result = await executor.run(
+                    "pgrep -c -f 'selfplay|gpu_parallel' 2>/dev/null || echo 0",
+                    timeout=10,
+                )
+
+                if not count_result.success:
+                    continue
+
+                try:
+                    process_count = int(count_result.stdout.strip())
+                except ValueError:
+                    continue
+
+                if process_count <= max_per_node:
+                    continue
+
+                excess = process_count - max_per_node
+                logger.warning(
+                    f"[IdleResourceDaemon] Node {name} has {process_count} processes "
+                    f"(max {max_per_node}), killing {excess} oldest"
+                )
+
+                # Kill oldest processes first (sorted by elapsed time)
+                # ps -eo pid,etime,cmd sorts by start time, oldest first
+                kill_cmd = (
+                    f"ps -eo pid,etime,cmd --sort=etime 2>/dev/null | "
+                    f"grep -E 'selfplay|gpu_parallel' | "
+                    f"grep -v grep | "
+                    f"head -n {excess} | "
+                    f"awk '{{print $1}}' | "
+                    f"xargs -r kill -9 2>/dev/null || true"
+                )
+
+                kill_result = await executor.run(kill_cmd, timeout=30)
+
+                if kill_result.success:
+                    logger.info(
+                        f"[IdleResourceDaemon] Killed {excess} excess processes on {name}"
+                    )
+                    self._stats.failed_spawns += 0  # Track cleanup (no stat for this yet)
+                else:
+                    logger.warning(
+                        f"[IdleResourceDaemon] Failed to kill processes on {name}: "
+                        f"{kill_result.stderr}"
+                    )
+
+            except Exception as e:
+                logger.debug(f"[IdleResourceDaemon] Process check failed for {name}: {e}")
 
     def _should_spawn(self, node: NodeStatus, queue_depth: int) -> bool:
         """Decide whether to spawn selfplay on a node."""

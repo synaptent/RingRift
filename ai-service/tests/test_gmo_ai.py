@@ -16,7 +16,7 @@ from datetime import datetime
 import pytest
 import torch
 
-from app.ai.gmo_ai import (
+from archive.deprecated_ai.gmo_ai import (
     GMOAI,
     GMOConfig,
     GMOValueNetWithUncertainty,

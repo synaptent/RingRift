@@ -184,7 +184,7 @@ def get_board_priority_overrides() -> dict[str, int]:
             _board_priority_cache = {k: int(v) for k, v in overrides.items()}
             _board_priority_cache_time = now
             return _board_priority_cache
-    except Exception:
+    except (OSError, ValueError, AttributeError, ImportError):
         pass
 
     # Default: empty (no overrides)
@@ -239,6 +239,12 @@ from app.utils.ramdrive import (
 from scripts.p2p.cluster_config import (
     get_cluster_config,
     get_webhook_urls,
+)
+from scripts.p2p.handlers import (
+    ElectionHandlersMixin,
+    GauntletHandlersMixin,
+    RelayHandlersMixin,
+    WorkQueueHandlersMixin,
 )
 
 # Import constants from the refactored module (Phase 2 refactoring - consolidated)
@@ -758,7 +764,7 @@ class WebhookNotifier:
                     self.slack_webhook = yaml_webhooks["slack"]
                 if not self.discord_webhook and "discord" in yaml_webhooks:
                     self.discord_webhook = yaml_webhooks["discord"]
-            except Exception:
+            except (KeyError, IndexError, AttributeError):
                 pass  # Ignore config loading errors
 
         self.min_level = self.LEVELS.get(
@@ -872,8 +878,20 @@ class WebhookNotifier:
             await self._session.close()
 
 
-class P2POrchestrator:
-    """Main P2P orchestrator class that runs on each node."""
+class P2POrchestrator(
+    WorkQueueHandlersMixin,
+    ElectionHandlersMixin,
+    RelayHandlersMixin,
+    GauntletHandlersMixin,
+):
+    """Main P2P orchestrator class that runs on each node.
+
+    Inherits from:
+    - WorkQueueHandlersMixin: Work queue HTTP handlers (handle_work_*)
+    - ElectionHandlersMixin: Leader election handlers (handle_election*, handle_lease*, handle_voter*)
+    - RelayHandlersMixin: NAT relay handlers (handle_relay_*)
+    - GauntletHandlersMixin: Gauntlet evaluation handlers (handle_gauntlet_*)
+    """
 
     def __init__(
         self,
@@ -1018,7 +1036,7 @@ class P2POrchestrator:
         try:
             raw = (os.environ.get("RINGRIFT_P2P_MAX_CONCURRENT_CMAES_EVALS", "") or "").strip()
             self.max_concurrent_cmaes_evals = max(1, int(raw)) if raw else 2
-        except Exception:
+        except (ValueError, AttributeError):
             self.max_concurrent_cmaes_evals = 2
         self._cmaes_eval_semaphore = asyncio.Semaphore(int(self.max_concurrent_cmaes_evals))
 
@@ -1422,7 +1440,7 @@ class P2POrchestrator:
                     if self.coordinator_available:
                         logger.info(f"Coordinator available at {self.coordinator_url}")
                     return self.coordinator_available
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
             self.coordinator_available = False
             return False
 
@@ -1504,7 +1522,7 @@ class P2POrchestrator:
             )
             if result.returncode == 0:
                 commit = result.stdout.strip()
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, AttributeError):
             commit = ""
 
         try:
@@ -1517,7 +1535,7 @@ class P2POrchestrator:
             )
             if result.returncode == 0:
                 branch = result.stdout.strip()
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, AttributeError):
             branch = ""
 
         if commit and branch:
@@ -1627,12 +1645,12 @@ class P2POrchestrator:
 
         try:
             import yaml  # type: ignore
-        except Exception:
+        except (ImportError):
             return []
 
         try:
             data = yaml.safe_load(cfg_path.read_text()) or {}
-        except Exception:
+        except (OSError, ValueError, AttributeError):
             return []
 
         hosts = data.get("hosts", {}) or {}
@@ -2039,7 +2057,7 @@ class P2POrchestrator:
                             if ttl_raw is not None:
                                 try:
                                     ttl_val = float(ttl_raw)
-                                except Exception:
+                                except (ValueError):
                                     ttl_val = None
                             if ttl_val is not None and ttl_val > 0:
                                 lease_ttls.append(ttl_val)
@@ -2047,7 +2065,7 @@ class P2POrchestrator:
                                 lease_ttls.append(float(duration))
                             acks += 1
                             break
-                    except Exception:
+                    except (ValueError, AttributeError):
                         continue
 
         if acks < quorum:
@@ -2114,7 +2132,7 @@ class P2POrchestrator:
                         if ttl_raw is not None:
                             try:
                                 ttl_val = float(ttl_raw)
-                            except Exception:
+                            except (ValueError):
                                 ttl_val = None
 
                         if ttl_val is not None:
@@ -2130,7 +2148,7 @@ class P2POrchestrator:
                                 break
                         counts[leader_id] = counts.get(leader_id, 0) + 1
                         break
-                    except Exception:
+                    except (ValueError, AttributeError):
                         continue
 
         winners = [leader_id for leader_id, count in counts.items() if count >= quorum]
@@ -2178,10 +2196,10 @@ class P2POrchestrator:
                                 if leader_id:
                                     logger.info(f"Arbiter {base_url} reports leader: {leader_id}")
                                     return leader_id
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                         # Try next arbiter
                         continue
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
             pass
 
         return None
@@ -2222,13 +2240,13 @@ class P2POrchestrator:
         host = str(getattr(peer, "host", "") or "").strip()
         try:
             port = int(getattr(peer, "port", DEFAULT_PORT) or DEFAULT_PORT)
-        except Exception:
+        except (ValueError):
             port = DEFAULT_PORT
 
         rh = (getattr(peer, "reported_host", "") or "").strip()
         try:
             rp = int(getattr(peer, "reported_port", 0) or 0)
-        except Exception:
+        except (ValueError):
             rp = 0
 
         if rh and rp:
@@ -2254,7 +2272,7 @@ class P2POrchestrator:
             try:
                 h = str(host or "").strip()
                 p = int(port)
-            except Exception:
+            except (ValueError, AttributeError):
                 return
             if not h or p <= 0:
                 return
@@ -2265,13 +2283,13 @@ class P2POrchestrator:
         rh = (getattr(peer, "reported_host", "") or "").strip()
         try:
             rp = int(getattr(peer, "reported_port", 0) or 0)
-        except Exception:
+        except (ValueError):
             rp = 0
 
         host = str(getattr(peer, "host", "") or "").strip()
         try:
             port = int(getattr(peer, "port", 0) or 0)
-        except Exception:
+        except (ValueError):
             port = 0
 
         # Prefer Tailscale endpoints first when available locally; otherwise try
@@ -2603,7 +2621,7 @@ class P2POrchestrator:
                     parsed = json.loads(raw_voters)
                     if isinstance(parsed, list):
                         voters = [str(v).strip() for v in parsed if str(v).strip()]
-                except Exception:
+                except (json.JSONDecodeError, KeyError, IndexError, AttributeError):
                     voters = [t.strip() for t in str(raw_voters).split(",") if t.strip()]
                 if voters:
                     self._maybe_adopt_voter_node_ids(voters, source="state")
@@ -3106,7 +3124,7 @@ class P2POrchestrator:
             )
             if result.returncode == 0 and result.stdout.strip():
                 return True, result.stdout.strip().split('\n')[0]
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
             pass
 
         try:
@@ -3117,7 +3135,7 @@ class P2POrchestrator:
             )
             if "True" in result.stdout:
                 return True, "Apple MPS"
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError, KeyError, IndexError, AttributeError, ImportError):
             pass
 
         return False, ""
@@ -3167,7 +3185,7 @@ class P2POrchestrator:
             return ip
         except FileNotFoundError:
             return ""
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
             return ""
 
     def _is_tailscale_host(self, host: str) -> bool:
@@ -3194,7 +3212,7 @@ class P2POrchestrator:
             host = str(getattr(info, "host", "") or "").strip()
             reported_host = str(getattr(info, "reported_host", "") or "").strip()
             return self._is_tailscale_host(host) or self._is_tailscale_host(reported_host)
-        except Exception:
+        except (AttributeError):
             return False
 
     def _get_tailscale_ip_for_peer(self, node_id: str) -> str:
@@ -3218,7 +3236,7 @@ class P2POrchestrator:
                         ts_ip = registry._nodes[node_id].tailscale_ip or ""
                         if ts_ip:
                             return ts_ip
-            except Exception:
+            except (KeyError, IndexError, AttributeError):
                 pass
 
         # Fall back to static cluster.yaml config
@@ -3227,7 +3245,7 @@ class P2POrchestrator:
             ts_ip = cluster_config.get_tailscale_ip(node_id)
             if ts_ip:
                 return ts_ip
-        except Exception:
+        except (AttributeError):
             pass
 
         return ""
@@ -3296,7 +3314,7 @@ class P2POrchestrator:
         if port <= 0:
             try:
                 port = int(getattr(voter, "reported_port", DEFAULT_PORT) or DEFAULT_PORT)
-            except Exception:
+            except (ValueError):
                 port = DEFAULT_PORT
 
         # Priority 1: Dynamic registry Tailscale IP lookup
@@ -3309,7 +3327,7 @@ class P2POrchestrator:
         if rh and self._is_tailscale_host(rh):
             try:
                 rp = int(getattr(voter, "reported_port", 0) or 0)
-            except Exception:
+            except (ValueError):
                 rp = 0
             if rp > 0:
                 url = f"{scheme}://{rh}:{rp}{path}"
@@ -3423,7 +3441,7 @@ class P2POrchestrator:
                         result["gpu_percent"] = max(gpu_utils)
                     if mem_percents:
                         result["gpu_memory_percent"] = max(mem_percents)
-            except Exception:
+            except (ValueError, KeyError, IndexError, AttributeError):
                 # Silently ignore nvidia-smi errors (not all nodes have GPUs)
                 pass
 
@@ -3450,7 +3468,7 @@ class P2POrchestrator:
                     # Try to list directory (actual access check)
                     list(nfs_path.iterdir())[:1]
                     return True
-            except Exception:
+            except (OSError, KeyError, IndexError, AttributeError):
                 continue
 
         # NFS not found or not accessible
@@ -3491,7 +3509,7 @@ class P2POrchestrator:
                     )
                     # pgrep returns 0 if matches found
                     result[key] = proc.returncode == 0 and proc.stdout.strip() != ""
-                except Exception:
+                except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
                     pass
 
         except Exception as e:
@@ -3567,7 +3585,7 @@ class P2POrchestrator:
                 return False
             except PermissionError:
                 return True
-            except Exception:
+            except (AttributeError):
                 return False
 
         # Primary source of truth: jobs we started and are tracking.
@@ -3596,7 +3614,7 @@ class P2POrchestrator:
                 with self.jobs_lock:
                     for job_id in stale_job_ids:
                         self.local_jobs.pop(job_id, None)
-        except Exception:
+        except (ValueError, AttributeError):
             pass
 
         # Secondary check: best-effort process scan for untracked jobs (e.g. manual runs).
@@ -3625,7 +3643,7 @@ class P2POrchestrator:
                     )
                     if out.returncode == 0 and out.stdout.strip():
                         training_pids.update([p for p in out.stdout.strip().split() if p])
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError, ImportError):
             pass
 
         return len(selfplay_pids), len(training_pids)
@@ -3790,7 +3808,7 @@ class P2POrchestrator:
                     line_count += 1
 
                 return int(line_count)
-            except Exception:
+            except (OSError, ValueError):
                 return 0
 
         # Scan for data files
@@ -3851,7 +3869,7 @@ class P2POrchestrator:
                                     line_count = _count_jsonl_games(file_path, stat.st_size)
                                     file_info.game_count = line_count
                                     manifest.selfplay_games += line_count
-                                except Exception:
+                                except (AttributeError):
                                     pass
                             # Count games in SQLite databases
                             elif rel_path.endswith(".db"):
@@ -3862,7 +3880,7 @@ class P2POrchestrator:
                                     game_count = cursor.fetchone()[0]
                                     file_info.game_count = game_count
                                     manifest.selfplay_games += game_count
-                                except Exception:
+                                except (KeyError, IndexError, AttributeError):
                                     pass
                                 finally:
                                     if db_conn:
@@ -3911,7 +3929,7 @@ class P2POrchestrator:
                                 continue
                             data = await resp.json()
                         return NodeDataManifest.from_dict((data or {}).get("manifest", {}))
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                         continue
         except Exception as e:
             logger.error(f"requesting manifest from {peer_info.node_id}: {e}")
@@ -4326,7 +4344,7 @@ class P2POrchestrator:
                 return
             try:
                 p = int(port or 0)
-            except Exception:
+            except (ValueError):
                 return
             if p <= 0:
                 return
@@ -4354,7 +4372,7 @@ class P2POrchestrator:
                     data_root = data_dir.resolve()
                     dest_resolved = dest_path.resolve()
                     dest_resolved.relative_to(data_root)
-                except Exception:
+                except (AttributeError):
                     errors.append(f"invalid_path:{rel_path}")
                     continue
 
@@ -4369,7 +4387,7 @@ class P2POrchestrator:
                     ports_to_try: list[int] = []
                     try:
                         ports_to_try.append(int(base_port))
-                    except Exception:
+                    except (ValueError, AttributeError):
                         ports_to_try.append(DEFAULT_PORT)
                     if DEFAULT_PORT not in ports_to_try:
                         ports_to_try.append(DEFAULT_PORT)
@@ -4386,7 +4404,7 @@ class P2POrchestrator:
                                     text = ""
                                     try:
                                         text = (await resp.text())[:200]
-                                    except Exception:
+                                    except (KeyError, IndexError, AttributeError):
                                         text = ""
                                     last_err = f"{resp.status} {text}".strip()
                                     continue
@@ -4412,7 +4430,7 @@ class P2POrchestrator:
                     try:
                         if tmp_path.exists():
                             tmp_path.unlink()
-                    except Exception:
+                    except (OSError, AttributeError):
                         pass
 
         if errors:
@@ -4677,7 +4695,7 @@ class P2POrchestrator:
                                 logger.info(f"Gauntlet dispatched to {cpu_node.node_id} "
                                       f"(cpu_power={cpu_node.cpu_power_score()})")
                                 return result
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                         continue
 
             logger.error(f"Failed to dispatch gauntlet to {cpu_node.node_id}")
@@ -5244,7 +5262,7 @@ class P2POrchestrator:
                                     logger.info(f"Discovered peer {node_id} via Tailscale at {ip}")
                                     await self._send_heartbeat_to_peer(ip, DEFAULT_PORT)
                                     discovered += 1
-                except Exception:
+                except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                     pass  # Silently skip unreachable nodes
 
             if discovered > 0:
@@ -5308,7 +5326,7 @@ class P2POrchestrator:
                 file_key = str(jsonl_file.relative_to(data_dir))
                 if file_key not in converted_files:
                     unconverted_files.append((jsonl_file, file_size, file_key))
-            except Exception:
+            except (AttributeError):
                 continue
 
         if not unconverted_files:
@@ -5467,7 +5485,7 @@ class P2POrchestrator:
             try:
                 all_converted = converted_files | set(newly_converted)
                 converted_marker_file.write_text("\n".join(sorted(all_converted)))
-            except Exception:
+            except (AttributeError):
                 pass
 
         if total_converted > 0:
@@ -5563,7 +5581,7 @@ class P2POrchestrator:
                                         valid_files.append(jsonl_file)
                             except json_module.JSONDecodeError:
                                 continue
-                except Exception:
+                except (AttributeError):
                     continue
 
             if game_count < JSONL_THRESHOLD_GAMES:
@@ -5616,7 +5634,7 @@ class P2POrchestrator:
             try:
                 all_converted = converted_files | set(newly_converted)
                 npz_marker_file.write_text("\n".join(sorted(all_converted)))
-            except Exception:
+            except (AttributeError):
                 pass
 
         return conversions_done
@@ -5931,7 +5949,7 @@ class P2POrchestrator:
                 try:
                     if jf.stat().st_size > 1024:
                         recent_jsonl.append(jf)
-                except Exception:
+                except (AttributeError):
                     pass
 
             if recent_jsonl:
@@ -5940,7 +5958,7 @@ class P2POrchestrator:
                     try:
                         with open(jf) as f:
                             total_lines += sum(1 for _ in f)
-                    except Exception:
+                    except (OSError):
                         pass
 
                 if total_lines > 100:  # Only run if there's meaningful data
@@ -6057,7 +6075,7 @@ class P2POrchestrator:
                     conn.close()
                     if count > 0:
                         dbs_to_merge.append((db_path, count))
-                except Exception:
+                except (KeyError, IndexError, AttributeError):
                     pass
 
             if dbs_to_merge:
@@ -6771,580 +6789,12 @@ class P2POrchestrator:
             'total_misrouted': len(misrouted_nodes),
         })
 
-    # ========== Work Queue Handlers (Centralized Work Distribution) ==========
-
-    async def handle_work_add(self, request: web.Request) -> web.Response:
-        """Add work to the centralized queue (leader only)."""
-        try:
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            data = await request.json()
-            work_type = data.get('work_type', 'selfplay')
-            priority = data.get('priority', 50)
-            config = data.get('config', {})
-            timeout = data.get('timeout_seconds', 3600.0)
-            depends_on = data.get('depends_on', [])
-
-            from app.coordination.work_queue import WorkItem, WorkType
-            item = WorkItem(
-                work_type=WorkType(work_type),
-                priority=priority,
-                config=config,
-                timeout_seconds=timeout,
-                depends_on=depends_on,
-            )
-            work_id = wq.add_work(item)
-
-            return web.json_response({
-                'status': 'added',
-                'work_id': work_id,
-                'work_type': work_type,
-                'priority': priority,
-            })
-        except Exception as e:
-            logger.error(f"Error adding work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_add_batch(self, request: web.Request) -> web.Response:
-        """Add multiple work items to the queue in a single request (leader only).
-
-        Request body:
-        {
-            "items": [
-                {"work_type": "selfplay", "priority": 50, "config": {...}},
-                {"work_type": "training", "priority": 80, "config": {...}},
-                ...
-            ]
-        }
-
-        Response:
-        {
-            "status": "added",
-            "count": 2,
-            "work_ids": ["abc123", "def456"]
-        }
-        """
-        try:
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            data = await request.json()
-            items = data.get('items', [])
-
-            if not items:
-                return web.json_response({'error': 'no_items_provided'}, status=400)
-
-            if len(items) > 100:
-                return web.json_response({'error': 'too_many_items', 'max': 100}, status=400)
-
-            from app.coordination.work_queue import WorkItem, WorkType
-
-            work_ids = []
-            errors = []
-
-            for i, item_data in enumerate(items):
-                try:
-                    work_type = item_data.get('work_type', 'selfplay')
-                    priority = item_data.get('priority', 50)
-                    config = item_data.get('config', {})
-                    timeout = item_data.get('timeout_seconds', 3600.0)
-                    depends_on = item_data.get('depends_on', [])
-
-                    item = WorkItem(
-                        work_type=WorkType(work_type),
-                        priority=priority,
-                        config=config,
-                        timeout_seconds=timeout,
-                        depends_on=depends_on,
-                    )
-                    work_id = wq.add_work(item)
-                    work_ids.append(work_id)
-                except Exception as e:
-                    errors.append({'index': i, 'error': str(e)})
-
-            return web.json_response({
-                'status': 'added',
-                'count': len(work_ids),
-                'work_ids': work_ids,
-                'errors': errors if errors else None,
-            })
-        except Exception as e:
-            logger.error(f"Error adding batch work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_claim(self, request: web.Request) -> web.Response:
-        """Claim available work from the queue."""
-        try:
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            node_id = request.query.get('node_id', '')
-            capabilities_str = request.query.get('capabilities', '')
-            capabilities = [c.strip() for c in capabilities_str.split(',') if c.strip()] or None
-
-            if not node_id:
-                return web.json_response({'error': 'node_id_required'}, status=400)
-
-            item = wq.claim_work(node_id, capabilities)
-            if item is None:
-                return web.json_response({'status': 'no_work_available'})
-
-            return web.json_response({
-                'status': 'claimed',
-                'work': item.to_dict(),
-            })
-        except Exception as e:
-            logger.error(f"Error claiming work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_start(self, request: web.Request) -> web.Response:
-        """Mark work as started (running)."""
-        try:
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            data = await request.json()
-            work_id = data.get('work_id', '')
-            if not work_id:
-                return web.json_response({'error': 'work_id_required'}, status=400)
-
-            success = wq.start_work(work_id)
-            return web.json_response({'status': 'started' if success else 'failed', 'work_id': work_id})
-        except Exception as e:
-            logger.error(f"Error starting work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_complete(self, request: web.Request) -> web.Response:
-        """Mark work as completed successfully."""
-        try:
-            from app.coordination.work_queue import WorkType
-
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            data = await request.json()
-            work_id = data.get('work_id', '')
-            result = data.get('result', {})
-            if not work_id:
-                return web.json_response({'error': 'work_id_required'}, status=400)
-
-            # Get work item before completing to track type
-            work_item = wq.items.get(work_id)
-            work_type = work_item.work_type if work_item else None
-            config = work_item.config if work_item else {}
-
-            success = wq.complete_work(work_id, result)
-
-            # Update queue populator with Elo data if applicable
-            if success and self._queue_populator is not None:
-                board_type = config.get('board_type', '')
-                num_players = config.get('num_players', 0)
-
-                if work_type == WorkType.TOURNAMENT:
-                    # Tournament results include Elo updates
-                    elo = result.get('best_elo') or result.get('elo') or result.get('winner_elo')
-                    model_id = result.get('best_model') or result.get('winner_model')
-                    if elo and board_type and num_players:
-                        self._queue_populator.update_target_elo(board_type, num_players, elo, model_id)
-                        logger.info(f"Updated populator Elo: {board_type}_{num_players}p = {elo}")
-
-                elif work_type == WorkType.SELFPLAY:
-                    # Selfplay increments games count
-                    games = result.get('games_generated', config.get('games', 0))
-                    if games and board_type and num_players:
-                        self._queue_populator.increment_games(board_type, num_players, games)
-
-                elif work_type == WorkType.TRAINING:
-                    # Training increments training runs
-                    if board_type and num_players:
-                        self._queue_populator.increment_training(board_type, num_players)
-
-            return web.json_response({'status': 'completed' if success else 'failed', 'work_id': work_id})
-        except Exception as e:
-            logger.error(f"Error completing work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_fail(self, request: web.Request) -> web.Response:
-        """Mark work as failed (may retry based on attempts)."""
-        try:
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            data = await request.json()
-            work_id = data.get('work_id', '')
-            error = data.get('error', 'unknown')
-            if not work_id:
-                return web.json_response({'error': 'work_id_required'}, status=400)
-
-            success = wq.fail_work(work_id, error)
-            return web.json_response({'status': 'failed' if success else 'not_found', 'work_id': work_id})
-        except Exception as e:
-            logger.error(f"Error failing work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_status(self, request: web.Request) -> web.Response:
-        """Get work queue status."""
-        try:
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            # Check for timeouts
-            timed_out = wq.check_timeouts()
-
-            status = wq.get_queue_status()
-            status['is_leader'] = self.is_leader
-            status['leader_id'] = self.leader_id
-            status['timed_out_this_check'] = timed_out
-
-            return web.json_response(status)
-        except Exception as e:
-            logger.error(f"Error getting work status: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_populator_status(self, request: web.Request) -> web.Response:
-        """Get queue populator status for monitoring."""
-        try:
-            if self._queue_populator is None:
-                return web.json_response({
-                    'enabled': False,
-                    'message': 'Queue populator not initialized',
-                })
-
-            status = self._queue_populator.get_status()
-            status['is_leader'] = self.is_leader
-            return web.json_response(status)
-        except Exception as e:
-            logger.error(f"Error getting populator status: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_for_node(self, request: web.Request) -> web.Response:
-        """Get all work assigned to a specific node."""
-        try:
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            node_id = request.match_info.get('node_id', '')
-            if not node_id:
-                return web.json_response({'error': 'node_id_required'}, status=400)
-
-            work_items = wq.get_work_for_node(node_id)
-            return web.json_response({
-                'node_id': node_id,
-                'work_items': work_items,
-                'count': len(work_items),
-            })
-        except Exception as e:
-            logger.error(f"Error getting work for node: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_cancel(self, request: web.Request) -> web.Response:
-        """Cancel a pending or claimed work item."""
-        try:
-            if not self.is_leader:
-                return web.json_response({'error': 'not_leader', 'leader_id': self.leader_id}, status=403)
-
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            data = await request.json()
-            work_id = data.get('work_id', '')
-            if not work_id:
-                return web.json_response({'error': 'work_id_required'}, status=400)
-
-            success = wq.cancel_work(work_id)
-            return web.json_response({
-                'status': 'cancelled' if success else 'failed',
-                'work_id': work_id,
-            })
-        except Exception as e:
-            logger.error(f"Error cancelling work: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_work_history(self, request: web.Request) -> web.Response:
-        """Get work history from the database."""
-        try:
-            wq = get_work_queue()
-            if wq is None:
-                return web.json_response({'error': 'work_queue_not_available'}, status=503)
-
-            limit = int(request.query.get('limit', '50'))
-            status_filter = request.query.get('status', None)
-
-            history = wq.get_history(limit=limit, status_filter=status_filter)
-            return web.json_response({
-                'history': history,
-                'count': len(history),
-                'limit': limit,
-                'status_filter': status_filter,
-            })
-        except Exception as e:
-            logger.error(f"Error getting work history: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-
-    async def handle_election(self, request: web.Request) -> web.Response:
-        """Handle election message from another node."""
-        try:
-            # Only "bully" lower-priority candidates when we're actually eligible
-            # to act as a leader. Otherwise (e.g. NAT-blocked / ambiguous endpoint),
-            # responding ALIVE can stall elections and leave the cluster leaderless.
-            self._update_self_info()
-            data = await request.json()
-            candidate_id = str(data.get("candidate_id") or "")
-            if not candidate_id:
-                return web.json_response({"error": "missing_candidate_id"}, status=400)
-
-            with self.peers_lock:
-                peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
-            conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
-            eligible = self._is_leader_eligible(self.self_info, conflict_keys, require_alive=False)
-            voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
-            if eligible and voter_node_ids:
-                # When quorum gating is enabled, only configured voters can participate
-                # in bully elections. Non-voters responding "ALIVE" would stall the
-                # election because their own `_start_election()` returns early.
-                eligible = (self.node_id in voter_node_ids) and self._has_voter_quorum()
-
-            # If our ID is higher, we respond with "ALIVE" (Bully algorithm)
-            if self.node_id > candidate_id and eligible:
-                # Start our own election
-                asyncio.create_task(self._start_election())
-                return web.json_response({"response": "ALIVE", "node_id": self.node_id, "eligible": True})
-            else:
-                return web.json_response({"response": "OK", "node_id": self.node_id, "eligible": bool(eligible)})
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=400)
-
-    async def handle_lease_request(self, request: web.Request) -> web.Response:
-        """Voter endpoint: grant/renew an exclusive leader lease.
-
-        A leader candidate must obtain grants from a quorum of voters before it
-        may act as leader. Voters only grant to one leader at a time until the
-        lease expires (or is explicitly released by stepping down).
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-            data = await request.json()
-            leader_id = str(data.get("leader_id") or data.get("candidate_id") or "").strip()
-            lease_id = str(data.get("lease_id") or "").strip()
-            duration_raw = data.get("lease_duration", LEADER_LEASE_DURATION)
-            try:
-                duration = int(duration_raw)
-            except Exception:
-                duration = int(LEADER_LEASE_DURATION)
-            duration = max(10, min(duration, int(LEADER_LEASE_DURATION * 2)))
-
-            if not leader_id or not lease_id:
-                return web.json_response({"granted": False, "reason": "missing_fields"}, status=400)
-
-            voters = list(getattr(self, "voter_node_ids", []) or [])
-            if voters:
-                if self.node_id not in voters:
-                    return web.json_response({"granted": False, "reason": "not_a_voter"}, status=403)
-                if leader_id not in voters:
-                    return web.json_response({"granted": False, "reason": "leader_not_voter"}, status=403)
-
-            now = time.time()
-            current_leader = str(getattr(self, "voter_grant_leader_id", "") or "")
-            current_expires = float(getattr(self, "voter_grant_expires", 0.0) or 0.0)
-
-            if current_leader and current_expires > now and current_leader != leader_id:
-                return web.json_response(
-                    {
-                        "granted": False,
-                        "reason": "lease_already_granted",
-                        "current_leader_id": current_leader,
-                        "current_lease_id": str(getattr(self, "voter_grant_lease_id", "") or ""),
-                        "lease_expires": current_expires,
-                    },
-                    status=409,
-                )
-
-            self.voter_grant_leader_id = leader_id
-            self.voter_grant_lease_id = lease_id
-            self.voter_grant_expires = now + float(duration)
-            self._save_state()
-
-            lease_ttl_seconds = max(0.0, float(self.voter_grant_expires) - time.time())
-            return web.json_response(
-                {
-                    "granted": True,
-                    "leader_id": leader_id,
-                    "lease_id": lease_id,
-                    "lease_expires": self.voter_grant_expires,
-                    # Use a relative TTL for robustness under clock skew (absolute
-                    # timestamps from different machines are not directly comparable).
-                    "lease_ttl_seconds": lease_ttl_seconds,
-                    "voter_id": self.node_id,
-                }
-            )
-        except Exception as e:
-            return web.json_response({"granted": False, "error": str(e)}, status=400)
-
-    async def handle_voter_grant_status(self, request: web.Request) -> web.Response:
-        """Read-only voter endpoint: return our currently granted leader lease.
-
-        This lets nodes resolve split-brain by consulting a quorum of voters for
-        the active lease holder, without mutating lease state.
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-            now = time.time()
-            expires = float(getattr(self, "voter_grant_expires", 0.0) or 0.0)
-            return web.json_response(
-                {
-                    "voter_id": self.node_id,
-                    "now": now,
-                    "leader_id": str(getattr(self, "voter_grant_leader_id", "") or ""),
-                    "lease_id": str(getattr(self, "voter_grant_lease_id", "") or ""),
-                    "lease_expires": expires,
-                    "lease_ttl_seconds": max(0.0, expires - now),
-                }
-            )
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=400)
-
-    async def handle_election_reset(self, request: web.Request) -> web.Response:
-        """Reset stuck election state to allow fresh leader election.
-
-        This endpoint clears election-in-progress flags and cached leader state,
-        allowing a new election to proceed. Use when elections are deadlocked.
-
-        POST /election/reset
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-
-            old_state = {
-                "election_in_progress": self.election_in_progress,
-                "role": str(self.role),
-                "leader_id": self.leader_id,
-                "leader_lease_id": getattr(self, "leader_lease_id", ""),
-                "leader_lease_expires": getattr(self, "leader_lease_expires", 0.0),
-            }
-
-            # Reset election state
-            self.election_in_progress = False
-            self.leader_id = None
-            self.leader_lease_id = ""
-            self.leader_lease_expires = 0.0
-            self.last_lease_renewal = 0.0
-            self.last_election_attempt = 0.0
-            if self.role == NodeRole.LEADER:
-                self.role = NodeRole.FOLLOWER
-
-            # Clear voter grants if we were granting to ourselves
-            if str(getattr(self, "voter_grant_leader_id", "") or "") == self.node_id:
-                self.voter_grant_leader_id = ""
-                self.voter_grant_lease_id = ""
-                self.voter_grant_expires = 0.0
-
-            self._save_state()
-
-            logger.info(f"Election state reset on {self.node_id}: {old_state}")
-
-            return web.json_response({
-                "status": "reset",
-                "node_id": self.node_id,
-                "previous_state": old_state,
-                "message": "Election state cleared. New election will start on next heartbeat cycle.",
-            })
-        except Exception as e:
-            logger.error(f"Error resetting election: {e}")
-            return web.json_response({"error": str(e)}, status=500)
-
-    async def handle_election_force_leader(self, request: web.Request) -> web.Response:
-        """Force a specific node to become leader (emergency override).
-
-        This bypasses normal election and directly sets leadership. Use only
-        when normal elections are persistently failing.
-
-        POST /election/force_leader
-        Body: {"leader_id": "node-id-to-become-leader"}
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-
-            data = await request.json()
-            target_leader_id = str(data.get("leader_id", "")).strip()
-
-            if not target_leader_id:
-                return web.json_response({"error": "leader_id required"}, status=400)
-
-            # If we're the target, become leader
-            if target_leader_id == self.node_id:
-                import uuid
-                lease_id = f"{self.node_id}_{int(time.time())}_forced_{uuid.uuid4().hex[:8]}"
-
-                self.role = NodeRole.LEADER
-                self.leader_id = self.node_id
-                self.leader_lease_id = lease_id
-                self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
-                self.last_leader_seen = time.time()
-                self.election_in_progress = False
-
-                self._increment_cluster_epoch()
-                self._save_state()
-
-                logger.warning(f"FORCED LEADERSHIP: {self.node_id} is now leader via override")
-
-                return web.json_response({
-                    "status": "leader_forced",
-                    "node_id": self.node_id,
-                    "role": "leader",
-                    "lease_id": lease_id,
-                    "lease_expires": self.leader_lease_expires,
-                    "warning": "Leadership was forced without normal election. Use with caution.",
-                })
-            else:
-                # Store the forced leader hint so we adopt it
-                self.leader_id = target_leader_id
-                self.role = NodeRole.FOLLOWER
-                self.election_in_progress = False
-                self._save_state()
-
-                logger.info(f"Accepting forced leader {target_leader_id} on node {self.node_id}")
-
-                return web.json_response({
-                    "status": "leader_accepted",
-                    "node_id": self.node_id,
-                    "forced_leader": target_leader_id,
-                    "role": "follower",
-                })
-        except Exception as e:
-            logger.error(f"Error forcing leader: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+    # Work Queue Handlers moved to scripts/p2p/handlers/work_queue.py
+    # Inherited from WorkQueueHandlersMixin: handle_work_*, handle_populator_status
+
+    # Election Handlers moved to scripts/p2p/handlers/election.py
+    # Inherited from ElectionHandlersMixin: handle_election, handle_lease_request,
+    # handle_voter_grant_status, handle_election_reset, handle_election_force_leader
 
     # ============================================================
     # SERF INTEGRATION - Battle-tested membership/failure detection
@@ -7823,7 +7273,7 @@ class P2POrchestrator:
             reason = str(data.get("reason") or "remote_request")
             try:
                 target = int(target_raw)
-            except Exception:
+            except (ValueError):
                 target = 0
 
             result = await self._reduce_local_selfplay_jobs(target, reason=reason)
@@ -8015,7 +7465,7 @@ class P2POrchestrator:
                     data_root = data_dir.resolve()
                     resolved = full_path.resolve()
                     resolved.relative_to(data_root)
-                except Exception:
+                except (AttributeError):
                     logger.info(f"Cleanup: skipping path outside data dir: {file_path}")
                     continue
 
@@ -8268,7 +7718,7 @@ class P2POrchestrator:
                         "target_range": "60-80%",
                         "status": util_status.get("status", "unknown"),
                     }
-                except Exception:
+                except (AttributeError):
                     pass
 
             return web.json_response(response)
@@ -8365,251 +7815,9 @@ class P2POrchestrator:
             logger.error(f"Cluster health check error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
-    # ============================================
-    # Relay/Hub Handlers for NAT-blocked nodes
-    # ============================================
-
-    async def handle_relay_heartbeat(self, request: web.Request) -> web.Response:
-        """POST /relay/heartbeat - Accept heartbeat from NAT-blocked node.
-
-        NAT-blocked nodes (e.g., Vast.ai behind carrier NAT) can't receive
-        incoming connections. They use this endpoint to:
-        1. Send their status to the leader
-        2. Get back the full cluster peer list
-        3. Mark themselves as nat_blocked so leader doesn't try to reach them
-
-        Request body: Same as regular heartbeat (NodeInfo dict)
-        Response: {
-            "self": NodeInfo,  # Leader's info
-            "peers": {node_id: NodeInfo},  # All known peers including NAT-blocked
-            "leader_id": str
-        }
-        """
-        try:
-            data = await request.json()
-            relay_ack = data.get("relay_ack") or []
-            relay_results = data.get("relay_results") or []
-            peer_info = NodeInfo.from_dict(data)
-            if not peer_info.reported_host:
-                peer_info.reported_host = peer_info.host
-            if not peer_info.reported_port:
-                peer_info.reported_port = peer_info.port
-            peer_info.last_heartbeat = time.time()
-            peer_info.nat_blocked = True  # Mark as NAT-blocked
-            peer_info.nat_blocked_since = peer_info.nat_blocked_since or time.time()  # Track when blocked
-            peer_info.relay_via = self.node_id  # This node is their relay
-
-            # Get their real IP from the request (for logging/debugging)
-            forwarded_for = (
-                request.headers.get("X-Forwarded-For")
-                or request.headers.get("X-Real-IP")
-                or request.headers.get("CF-Connecting-IP")
-            )
-            real_ip = forwarded_for.split(",")[0].strip() if forwarded_for else request.remote
-            if real_ip:
-                peer_info.host = real_ip
-
-            # STABILITY FIX: Correct stale leader role claims
-            if peer_info.role == NodeRole.LEADER and peer_info.node_id != self.node_id:
-                actual_leader = self.leader_id
-                if actual_leader and actual_leader != peer_info.node_id:
-                    peer_info.role = NodeRole.FOLLOWER
-
-            # Store in peers list (they're part of the cluster even if not directly reachable)
-            async with AsyncLockWrapper(self.peers_lock):
-                self.peers[peer_info.node_id] = peer_info
-
-            logger.info(f"Relay heartbeat from {peer_info.node_id} (real IP: {real_ip})")
-
-            # Apply relay ACKs/results and return any queued commands.
-            commands_to_send: list[dict[str, Any]] = []
-            async with AsyncLockWrapper(self.relay_lock):
-                queue = list(self.relay_command_queue.get(peer_info.node_id, []))
-                now = time.time()
-                queue = [
-                    cmd for cmd in queue
-                    if float(cmd.get("expires_at", 0.0) or 0.0) > now
-                ]
-
-                if relay_ack:
-                    ack_set = {str(c) for c in relay_ack if c}
-                    queue = [cmd for cmd in queue if str(cmd.get("id", "")) not in ack_set]
-
-                if relay_results:
-                    for item in relay_results:
-                        try:
-                            cmd_id = str(item.get("id") or "")
-                            ok = bool(item.get("ok", False))
-                            err = str(item.get("error") or "")
-                            if not cmd_id:
-                                continue
-                            if ok:
-                                logger.info(f"Relay command {cmd_id} on {peer_info.node_id}: ok")
-                            else:
-                                logger.info(f"Relay command {cmd_id} on {peer_info.node_id}: failed {err[:200]}")
-                        except Exception:
-                            continue
-
-                self.relay_command_queue[peer_info.node_id] = queue
-                commands_to_send = queue[:RELAY_COMMAND_MAX_BATCH]
-
-            # Return cluster state so they can see all peers
-            self._update_self_info()
-            async with AsyncLockWrapper(self.peers_lock):
-                peers = {k: v.to_dict() for k, v in self.peers.items()}
-
-            effective_leader = self._get_leader_peer()
-            effective_leader_id = effective_leader.node_id if effective_leader else None
-            return web.json_response({
-                "success": True,
-                "self": self.self_info.to_dict(),
-                "peers": peers,
-                # IMPORTANT: only advertise a leader_id when it is actually reachable
-                # and currently reporting itself as leader. Persisted/stale leader_id
-                # values are surfaced separately so bootstrapping nodes don't get
-                # stuck pointing at a non-leader.
-                "leader_id": effective_leader_id,
-                "effective_leader_id": effective_leader_id,
-                "last_known_leader_id": self.leader_id,
-                "relay_node": self.node_id,
-                # Propagate the stable voter set so nodes that boot without local
-                # config still enable quorum gating and avoid split-brain.
-                "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
-                "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
-                "voter_quorum_ok": self._has_voter_quorum(),
-                "voter_config_source": str(getattr(self, "voter_config_source", "") or ""),
-                "commands": commands_to_send,
-            })
-
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=400)
-
-    async def handle_relay_enqueue(self, request: web.Request) -> web.Response:
-        """POST /relay/enqueue - Enqueue a command for a NAT-blocked node on this relay.
-
-        This enables multi-hop operation when NAT-blocked nodes can reach a
-        public relay hub (e.g., AWS) but cannot reach the cluster leader
-        directly (e.g., TUN-less Tailscale inside some containers).
-
-        Request body:
-          {
-            "target_node_id": "node-id",
-            "type": "start_job" | "cleanup" | ...,
-            "payload": { ... }
-          }
-
-        Response:
-          { "success": true, "id": "<cmd_id>" }
-        """
-        try:
-            data = await request.json()
-        except Exception:
-            data = {}
-
-        try:
-            target_node_id = str(data.get("target_node_id") or data.get("node_id") or "").strip()
-            cmd_type = str(data.get("type") or data.get("cmd_type") or "").strip()
-            payload = data.get("payload") or {}
-            if not isinstance(payload, dict):
-                payload = {}
-        except Exception:
-            target_node_id = ""
-            cmd_type = ""
-            payload = {}
-
-        if not target_node_id or not cmd_type:
-            return web.json_response(
-                {"success": False, "error": "invalid_request", "message": "target_node_id and type are required"},
-                status=400,
-            )
-
-        cmd_id = self._enqueue_relay_command(target_node_id, cmd_type, payload)
-        if not cmd_id:
-            return web.json_response({"success": False, "error": "queue_full"}, status=429)
-
-        return web.json_response({"success": True, "id": cmd_id})
-
-    async def handle_relay_peers(self, request: web.Request) -> web.Response:
-        """GET /relay/peers - Get list of all peers including NAT-blocked ones.
-
-        Used by nodes to discover the full cluster including NAT-blocked members.
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-            self._update_self_info()
-            effective_leader = self._get_leader_peer()
-            async with AsyncLockWrapper(self.peers_lock):
-                all_peers = {k: v.to_dict() for k, v in self.peers.items()}
-
-            # Separate NAT-blocked and directly reachable
-            nat_blocked = {k: v for k, v in all_peers.items() if v.get('nat_blocked')}
-            direct = {k: v for k, v in all_peers.items() if not v.get('nat_blocked')}
-
-            return web.json_response({
-                "success": True,
-                "leader_id": (effective_leader.node_id if effective_leader else self.leader_id),
-                "effective_leader_id": (effective_leader.node_id if effective_leader else None),
-                "total_peers": len(all_peers),
-                "direct_peers": len(direct),
-                "nat_blocked_peers": len(nat_blocked),
-                "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
-                "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
-                "voter_quorum_ok": self._has_voter_quorum(),
-                "voter_config_source": str(getattr(self, "voter_config_source", "") or ""),
-                "peers": all_peers,
-            })
-
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
-
-    async def handle_relay_status(self, request: web.Request) -> web.Response:
-        """GET /relay/status - Get relay queue status for debugging.
-
-        Shows pending commands per NAT-blocked node including command ages.
-        Useful for diagnosing relay delivery issues.
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-
-            now = time.time()
-            queue_status = {}
-            total_pending = 0
-
-            for node_id, commands in self.relay_command_queue.items():
-                if not commands:
-                    continue
-                cmd_info = []
-                for cmd in commands:
-                    age_secs = now - cmd.get("ts", now)
-                    cmd_info.append({
-                        "id": cmd.get("id", ""),
-                        "type": cmd.get("cmd", ""),
-                        "age_secs": round(age_secs, 1),
-                        "stale": age_secs > 300,  # >5 min is stale
-                    })
-                queue_status[node_id] = {
-                    "pending_count": len(commands),
-                    "commands": cmd_info,
-                    "oldest_age_secs": round(max((now - c.get("ts", now)) for c in commands), 1) if commands else 0,
-                }
-                total_pending += len(commands)
-
-            # Get NAT-blocked nodes for context
-            with self.peers_lock:
-                nat_blocked_nodes = [nid for nid, p in self.peers.items() if getattr(p, 'nat_blocked', False)]
-
-            return web.json_response({
-                "success": True,
-                "total_pending_commands": total_pending,
-                "nat_blocked_nodes": nat_blocked_nodes,
-                "nodes_with_pending": list(queue_status.keys()),
-                "queues": queue_status,
-            })
-
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+    # Relay Handlers moved to scripts/p2p/handlers/relay.py
+    # Inherited from RelayHandlersMixin: handle_relay_heartbeat, handle_relay_enqueue,
+    # handle_relay_peers, handle_relay_status
 
     async def handle_gossip(self, request: web.Request) -> web.Response:
         """POST /gossip - Receive gossip from peer and respond with our state.
@@ -8647,7 +7855,7 @@ class P2POrchestrator:
                 data = json.loads(decompressed.decode("utf-8"))
             else:
                 data = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, AttributeError):
             data = {}
 
         try:
@@ -8736,7 +7944,7 @@ class P2POrchestrator:
                 return web.json_response({"error": "unauthorized"}, status=401)
 
             data = await request.json()
-        except Exception:
+        except (AttributeError):
             data = {}
 
         try:
@@ -9048,399 +8256,10 @@ class P2POrchestrator:
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
-    # ============================================
-    # Gauntlet Evaluation Handlers
-    # ============================================
-
-    async def handle_gauntlet_execute(self, request: web.Request) -> web.Response:
-        """POST /gauntlet/execute - Execute a batch of gauntlet games.
-
-        Workers receive batches of games to play and return results.
-        This endpoint allows distributed gauntlet evaluation across the cluster.
-
-        Request body:
-            {
-                "run_id": "abc123",
-                "config_key": "square8_2p",
-                "tasks": [
-                    {"task_id": "...", "model_id": "...", "baseline_id": "...", "game_num": 0},
-                    ...
-                ]
-            }
-
-        Response:
-            {
-                "success": true,
-                "results": [
-                    {"task_id": "...", "model_id": "...", "model_won": true, ...},
-                    ...
-                ]
-            }
-        """
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response({"error": "Invalid JSON"}, status=400)
-
-        run_id = data.get("run_id", "unknown")
-        config_key = data.get("config_key", "")
-        tasks = data.get("tasks", [])
-
-        if not config_key or not tasks:
-            return web.json_response({
-                "error": "config_key and tasks required"
-            }, status=400)
-
-        logger.info(f"Gauntlet: Executing {len(tasks)} games for {config_key} (run {run_id})")
-
-        try:
-            results = await self._execute_gauntlet_batch(config_key, tasks)
-
-            return web.json_response({
-                "success": True,
-                "node_id": self.node_id,
-                "run_id": run_id,
-                "games_completed": len(results),
-                "results": results,
-            })
-
-        except Exception as e:
-            logger.info(f"Gauntlet execution error: {e}")
-            return web.json_response({
-                "success": False,
-                "error": str(e),
-            }, status=500)
-
-    async def _execute_gauntlet_batch(
-        self,
-        config_key: str,
-        tasks: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Execute a batch of gauntlet games.
-
-        Args:
-            config_key: Config like "square8_2p"
-            tasks: List of task dicts
-
-        Returns:
-            List of result dicts
-        """
-        results = []
-
-        # Parse config
-        parts = config_key.split("_")
-        board_type = parts[0]
-        num_players = int(parts[1].replace("p", ""))
-
-        # Import game execution modules
-        try:
-            pass
-        except ImportError as e:
-            logger.info(f"Gauntlet: Import error: {e}")
-            # Return simulated results if modules not available
-            for task in tasks:
-                results.append({
-                    "task_id": task["task_id"],
-                    "model_id": task["model_id"],
-                    "baseline_id": task["baseline_id"],
-                    "model_won": False,
-                    "baseline_won": True,
-                    "draw": False,
-                    "game_length": 0,
-                    "duration_sec": 0.0,
-                    "error": "Game modules not available",
-                })
-            return results
-
-        # Load model paths
-        model_dir = Path(self.ringrift_path) / "ai-service" / "data" / "models"
-
-        # Execute games concurrently in small batches
-        batch_size = 4  # Run 4 games at a time
-        for batch_start in range(0, len(tasks), batch_size):
-            batch = tasks[batch_start:batch_start + batch_size]
-
-            batch_coros = [
-                self._execute_single_gauntlet_game(
-                    task, board_type, num_players, model_dir
-                )
-                for task in batch
-            ]
-
-            batch_results = await asyncio.gather(*batch_coros, return_exceptions=True)
-
-            for task, result in zip(batch, batch_results, strict=False):
-                if isinstance(result, Exception):
-                    results.append({
-                        "task_id": task["task_id"],
-                        "model_id": task["model_id"],
-                        "baseline_id": task["baseline_id"],
-                        "model_won": False,
-                        "baseline_won": False,
-                        "draw": True,
-                        "game_length": 0,
-                        "duration_sec": 0.0,
-                        "error": str(result),
-                    })
-                else:
-                    results.append(result)
-
-            # Progress update
-            logger.info(f"Gauntlet: Completed {len(results)}/{len(tasks)} games")
-
-        return results
-
-    async def _execute_single_gauntlet_game(
-        self,
-        task: dict[str, Any],
-        board_type: str,
-        num_players: int,
-        model_dir: Path,
-    ) -> dict[str, Any]:
-        """Execute a single gauntlet game.
-
-        Args:
-            task: Task dict with model_id, baseline_id, etc.
-            board_type: Board type (square8, etc.)
-            num_players: Number of players
-            model_dir: Path to model files
-
-        Returns:
-            Result dict
-        """
-        start_time = time.time()
-        task_id = task["task_id"]
-        model_id = task["model_id"]
-        baseline_id = task["baseline_id"]
-
-        try:
-            # Run game in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                self._run_gauntlet_game_sync,
-                task_id, model_id, baseline_id,
-                board_type, num_players, model_dir,
-            )
-            result["duration_sec"] = time.time() - start_time
-            return result
-
-        except Exception as e:
-            return {
-                "task_id": task_id,
-                "model_id": model_id,
-                "baseline_id": baseline_id,
-                "model_won": False,
-                "baseline_won": False,
-                "draw": True,
-                "game_length": 0,
-                "duration_sec": time.time() - start_time,
-                "error": str(e),
-            }
-
-    def _run_gauntlet_game_sync(
-        self,
-        task_id: str,
-        model_id: str,
-        baseline_id: str,
-        board_type: str,
-        num_players: int,
-        model_dir: Path,
-    ) -> dict[str, Any]:
-        """Synchronously run a single gauntlet game.
-
-        This runs in a thread pool executor. Uses GameExecutor for consistent
-        game execution across all gauntlet modes.
-        """
-        try:
-            from app.execution.game_executor import GameExecutor
-
-            # Map model IDs to player configs
-            player_configs = []
-
-            # Model agent (player 0)
-            # Use mcts_25 for fast gauntlet evaluation (25 simulations = ~0.15s/move)
-            if model_id == "random_ai":
-                player_configs.append({"ai_type": "random", "difficulty": 1})
-            else:
-                model_path = model_dir / f"{model_id}.pth"
-                if model_path.exists():
-                    # Use MCTS with neural guidance - 25 sims for speed
-                    player_configs.append({
-                        "ai_type": "mcts_25",
-                        "difficulty": 5,
-                        "nn_model_id": model_id,
-                    })
-                else:
-                    # Model file not found, use MCTS fallback
-                    player_configs.append({"ai_type": "mcts_25", "difficulty": 4})
-
-            # Baseline agent (player 1)
-            if baseline_id == "random_ai":
-                player_configs.append({"ai_type": "random", "difficulty": 1})
-            else:
-                baseline_path = model_dir / f"{baseline_id}.pth"
-                if baseline_path.exists():
-                    player_configs.append({
-                        "ai_type": "mcts_25",
-                        "difficulty": 5,
-                        "nn_model_id": baseline_id,
-                    })
-                else:
-                    player_configs.append({"ai_type": "mcts_25", "difficulty": 4})
-
-            # Add random players for 3p/4p games
-            while len(player_configs) < num_players:
-                player_configs.append({"ai_type": "random", "difficulty": 1})
-
-            # Run game using GameExecutor
-            max_moves = 2000 if "19" in board_type else 500
-            executor = GameExecutor(board_type=board_type, num_players=num_players)
-            result = executor.run_game(
-                player_configs=player_configs,
-                max_moves=max_moves,
-            )
-
-            game_length = result.move_count
-
-            # Convert executor result to gauntlet result format
-            # GameExecutor uses 1-indexed winner (1 = player 1 = model)
-            if result.winner is None or result.outcome.value == "draw":
-                return {
-                    "task_id": task_id,
-                    "model_id": model_id,
-                    "baseline_id": baseline_id,
-                    "model_won": False,
-                    "baseline_won": False,
-                    "draw": True,
-                    "game_length": game_length,
-                    "duration_sec": 0.0,
-                }
-            elif result.winner == 1:  # Player 1 (model) won
-                return {
-                    "task_id": task_id,
-                    "model_id": model_id,
-                    "baseline_id": baseline_id,
-                    "model_won": True,
-                    "baseline_won": False,
-                    "draw": False,
-                    "game_length": game_length,
-                    "duration_sec": 0.0,
-                }
-            else:  # Player 2+ (baseline or other) won
-                return {
-                    "task_id": task_id,
-                    "model_id": model_id,
-                    "baseline_id": baseline_id,
-                    "model_won": False,
-                    "baseline_won": True,
-                    "draw": False,
-                    "game_length": game_length,
-                    "duration_sec": 0.0,
-                }
-
-        except Exception as e:
-            return {
-                "task_id": task_id,
-                "model_id": model_id,
-                "baseline_id": baseline_id,
-                "model_won": False,
-                "baseline_won": False,
-                "draw": True,
-                "game_length": 0,
-                "duration_sec": 0.0,
-                "error": str(e),
-            }
-
-    async def handle_gauntlet_status(self, request: web.Request) -> web.Response:
-        """GET /gauntlet/status - Get current gauntlet execution status.
-
-        Returns information about this node's gauntlet capabilities.
-        """
-        return web.json_response({
-            "node_id": self.node_id,
-            "available": True,
-            "has_gpu": self.self_info.has_gpu if hasattr(self.self_info, "has_gpu") else False,
-            "gpu_name": self.self_info.gpu_name if hasattr(self.self_info, "gpu_name") else "",
-            "cpu_count": self.self_info.cpu_count if hasattr(self.self_info, "cpu_count") else 0,
-        })
-
-    async def handle_gauntlet_quick_eval(self, request: web.Request) -> web.Response:
-        """POST /gauntlet/quick-eval - Run quick gauntlet evaluation.
-
-        This endpoint is called by GPU nodes to offload gauntlet work to
-        CPU-rich nodes (like Vast instances). Returns win rate and pass status.
-        """
-        try:
-            data = await request.json()
-            config_key = data.get("config_key")
-            model_id = data.get("model_id")
-            baseline_id = data.get("baseline_id")
-            games_per_side = data.get("games_per_side", 4)
-
-            if not all([config_key, model_id, baseline_id]):
-                return web.json_response(
-                    {"error": "Missing required fields"},
-                    status=400
-                )
-
-            # Parse config
-            parts = config_key.rsplit("_", 1)
-            if len(parts) != 2:
-                return web.json_response({"error": "Invalid config_key"}, status=400)
-            board_type = parts[0]
-            num_players = int(parts[1].rstrip("p"))
-
-            model_dir = Path(self.ringrift_path) / "ai-service" / "models"
-
-            # Run games: model vs baseline from both sides
-            wins = 0
-            total_games = 0
-            loop = asyncio.get_event_loop()
-
-            for game_num in range(games_per_side * 2):
-                try:
-                    if game_num < games_per_side:
-                        # Model plays first
-                        result = await loop.run_in_executor(
-                            None,
-                            self._run_gauntlet_game_sync,
-                            f"quick_eval_{game_num}", model_id, baseline_id,
-                            board_type, num_players, model_dir
-                        )
-                        if result.get("model_won"):
-                            wins += 1
-                    else:
-                        # Baseline plays first
-                        result = await loop.run_in_executor(
-                            None,
-                            self._run_gauntlet_game_sync,
-                            f"quick_eval_{game_num}", baseline_id, model_id,
-                            board_type, num_players, model_dir
-                        )
-                        if result.get("baseline_won"):
-                            wins += 1
-                    total_games += 1
-                except Exception as e:
-                    logger.info(f"Quick eval game {game_num} error: {e}")
-                    total_games += 1
-
-            win_rate = wins / total_games if total_games > 0 else 0
-            passed = win_rate >= 0.50
-
-            return web.json_response({
-                "success": True,
-                "node_id": self.node_id,
-                "model_id": model_id,
-                "baseline_id": baseline_id,
-                "wins": wins,
-                "total_games": total_games,
-                "win_rate": win_rate,
-                "passed": passed,
-            })
-
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+    # Gauntlet Handlers moved to scripts/p2p/handlers/gauntlet.py
+    # Inherited from GauntletHandlersMixin: handle_gauntlet_execute, handle_gauntlet_status,
+    # handle_gauntlet_quick_eval, _execute_gauntlet_batch, _execute_single_gauntlet_game,
+    # _run_gauntlet_game_sync
 
     async def handle_git_status(self, request: web.Request) -> web.Response:
         """Get git status for this node.
@@ -10624,7 +9443,7 @@ print(wins / total)
                                         if hasattr(mv, 'from_pos') and mv.from_pos is not None:
                                             move_key = f"{mv.from_pos.x},{mv.from_pos.y}->{move_key}"
                                         move_probs[move_key] = float(prob)
-                        except Exception:
+                        except (ValueError, KeyError, IndexError, AttributeError):
                             pass  # Silently ignore if visit distribution fails
 
                     # Record actual Move object for training
@@ -11711,7 +10530,7 @@ print(json.dumps(result))
             try:
                 resolved = full_path.resolve()
                 resolved.relative_to(data_root)
-            except Exception:
+            except (AttributeError):
                 return web.json_response({"error": "Invalid path"}, status=400)
 
             if not resolved.exists() or not resolved.is_file():
@@ -12561,7 +11380,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 local_manifest = self._collect_local_data_manifest_cached(max_cache_age=600)
                 with self.manifest_lock:
                     self.local_data_manifest = local_manifest
-            except Exception:
+            except (AttributeError):
                 return
 
         # Check for sufficient local data (lower threshold for faster training)
@@ -14258,7 +13077,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             row
                         )
                         imported += 1
-                    except Exception:
+                    except (AttributeError):
                         continue
 
                 # Copy moves for new games
@@ -14277,7 +13096,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                     f"INSERT OR IGNORE INTO moves ({move_col_str}) VALUES ({move_placeholders})",
                                     row
                                 )
-                            except Exception:
+                            except (AttributeError):
                                 continue
 
                 dst_conn.commit()
@@ -14569,7 +13388,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         config = f"{bt}_{np}p"
                         lines.append(f'ringrift_best_elo{{config="{config}",board_type="{bt}",num_players="{np}"}} {elo}')
                     db.close()
-            except Exception:
+            except (OSError, AttributeError, ImportError):
                 pass
 
             # Diversity metrics
@@ -14609,7 +13428,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         lines.append(f"# HELP ringrift_{safe_name} Latest {metric_name} value")
                         lines.append(f"# TYPE ringrift_{safe_name} gauge")
                         lines.append(f"ringrift_{safe_name} {metric_info['latest']}")
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Data manifest totals
@@ -14667,7 +13486,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                 config_name = config_dir.name
                                 lines.append(f'ringrift_data_freshness_hours{{config="{config_name}"}} {freshness_hours:.2f}')
                                 lines.append(f'ringrift_data_staleness_hours{{config="{config_name}"}} {staleness_hours:.2f}')
-            except Exception:
+            except (OSError, AttributeError, ImportError):
                 pass
 
             # Selfplay Throughput Metrics
@@ -14738,7 +13557,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         lines.append(f'ringrift_eval_confidence{{config="{config}"}} {confidence:.3f}')
                         lines.append(f'ringrift_elo_uncertainty{{config="{config}"}} {avg_rd:.1f}')
                     db.close()
-            except Exception:
+            except (OSError, AttributeError, ImportError):
                 pass
 
             # Improvement Loop Health Metrics
@@ -14763,7 +13582,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     lines.append(
                         f'ringrift_victory_type_total{{board_type="{board_type}",num_players="{num_players}",victory_type="{victory_type}"}} {count}'
                     )
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Game Analytics Metrics
@@ -14784,7 +13603,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         lines.append(f'ringrift_game_length_avg{{board_type="{board_type}",num_players="{num_players}"}} {stats.get("avg_length", 0)}')
                         lines.append(f'ringrift_games_per_hour{{board_type="{board_type}",num_players="{num_players}"}} {stats.get("throughput_per_hour", 0)}')
                         lines.append(f'ringrift_opening_diversity{{board_type="{board_type}",num_players="{num_players}"}} {stats.get("opening_diversity", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Best Elo by Config
@@ -14816,7 +13635,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         lines.append(f'ringrift_best_elo{{board_type="{bt}",num_players="{np}",model="{model}"}} {rating:.1f}')
                         lines.append(f'ringrift_elo_games_played{{board_type="{bt}",num_players="{np}",model="{model}"}} {games}')
                     conn.close()
-            except Exception:
+            except (OSError, KeyError, IndexError, AttributeError, ImportError):
                 pass
 
             # Training Loss Metrics (from latest training)
@@ -14833,7 +13652,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         num_players = parts[1].replace("p", "")
                         lines.append(f'ringrift_training_loss{{board_type="{board_type}",num_players="{num_players}"}} {data["latest_loss"]}')
                         lines.append(f'ringrift_training_epoch{{board_type="{board_type}",num_players="{num_players}"}} {data.get("latest_epoch", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === HOLDOUT VALIDATION METRICS ===
@@ -14862,7 +13681,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             lines.append(f'ringrift_holdout_accuracy{{board_type="{board_type}",num_players="{num_players}"}} {data["holdout_accuracy"]}')
                         if data.get("overfit_gap") is not None:
                             lines.append(f'ringrift_overfit_gap{{board_type="{board_type}",num_players="{num_players}"}} {data["overfit_gap"]}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === MCTS SEARCH STATISTICS ===
@@ -14899,7 +13718,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             lines.append(f'ringrift_mcts_avg_nodes{{board_type="{board_type}",num_players="{num_players}"}} {data["avg_nodes"]:.0f}')
                         if data.get("avg_depth"):
                             lines.append(f'ringrift_mcts_avg_depth{{board_type="{board_type}",num_players="{num_players}"}} {data["avg_depth"]:.1f}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === DATA QUALITY METRICS ===
@@ -14919,7 +13738,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         lines.append(f'ringrift_data_quality_games{{board_type="{board_type}",num_players="{num_players}"}} {data.get("total_games", 0)}')
                         lines.append(f'ringrift_data_quality_short_rate{{board_type="{board_type}",num_players="{num_players}"}} {data.get("short_game_rate", 0)}')
                 lines.append(f'ringrift_data_quality_issues {len(quality.get("issues", []))}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === TRAINING EFFICIENCY METRICS ===
@@ -14943,7 +13762,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 if summary:
                     lines.append(f'ringrift_gpu_hours_total {summary.get("total_gpu_hours", 0)}')
                     lines.append(f'ringrift_training_cost_usd {summary.get("total_estimated_cost_usd", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === MODEL LINEAGE METRICS ===
@@ -14960,7 +13779,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         board_type = parts[0]
                         num_players = parts[1].replace("p", "")
                         lines.append(f'ringrift_model_generation{{board_type="{board_type}",num_players="{num_players}"}} {data.get("latest_generation", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === ROLLBACK STATUS METRICS ===
@@ -14969,7 +13788,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             try:
                 rollback = await self._check_rollback_conditions()
                 lines.append(f'ringrift_rollback_candidates {len(rollback.get("candidates", []))}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === AUTOSCALING METRICS ===
@@ -14986,7 +13805,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     lines.append(f'ringrift_autoscale_suggested_workers {recs[0].get("suggested_workers", state.get("total_nodes", 1))}')
                 else:
                     lines.append(f'ringrift_autoscale_suggested_workers {state.get("total_nodes", 1)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # === P2P ENHANCEMENT METRICS ===
@@ -15003,7 +13822,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 lines.append(f'ringrift_sync_interval_data {sync_summary.get("data_interval", 300)}')
                 lines.append(f'ringrift_sync_interval_model {sync_summary.get("model_interval", 180)}')
                 lines.append(f'ringrift_sync_activity_factor {sync_summary.get("activity_factor", 1.0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Gossip Protocol Metrics
@@ -15024,7 +13843,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 lines.append(f'ringrift_gossip_state_updates {gossip.get("state_updates", 0)}')
                 lines.append(f'ringrift_gossip_compression_ratio {gossip.get("compression_ratio", 0)}')
                 lines.append(f'ringrift_gossip_bytes_saved_kb {gossip.get("bytes_saved_kb", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Leader Consensus Metrics
@@ -15033,7 +13852,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             try:
                 consensus = self._get_cluster_leader_consensus()
                 lines.append(f'ringrift_leader_agreement {consensus.get("leader_agreement", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Data Deduplication Metrics
@@ -15048,7 +13867,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 lines.append(f'ringrift_dedup_files_skipped {dedup.get("files_skipped", 0)}')
                 lines.append(f'ringrift_dedup_bytes_saved_mb {dedup.get("bytes_saved_mb", 0)}')
                 lines.append(f'ringrift_dedup_known_hashes {dedup.get("known_file_hashes", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Tournament Scheduling Metrics
@@ -15060,7 +13879,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 tourney = self._get_distributed_tournament_summary()
                 lines.append(f'ringrift_tournament_proposals_pending {tourney.get("pending_proposals", 0)}')
                 lines.append(f'ringrift_tournament_active {tourney.get("active_tournaments", 0)}')
-            except Exception:
+            except (AttributeError):
                 pass
 
             # Work Queue Metrics (leader only)
@@ -15134,7 +13953,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     lines.append(f"ringrift_work_queue_avg_wait_seconds {avg_wait:.2f}")
                     lines.append(f"ringrift_work_queue_avg_run_seconds {avg_run:.2f}")
 
-                except Exception:
+                except (AttributeError, KeyError, ValueError, TypeError):
                     # If work queue metrics fail, just skip them
                     pass
 
@@ -15523,7 +14342,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                         if resp.status == 200:
                                             dispatched += 1
                                             break
-                                except Exception:
+                                except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                                     continue
                 except Exception as e:
                     logger.error(f"Failed to dispatch selfplay to {node_id}: {e}")
@@ -15877,7 +14696,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             payload: dict[str, Any] = {}
             try:
                 payload = await request.json()
-            except Exception:
+            except (AttributeError):
                 payload = {}
 
             node_ids_raw = payload.get("node_ids") or payload.get("nodes") or []
@@ -15937,7 +14756,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                 peer_payload["http_status"] = resp.status
                                 try:
                                     data = await resp.json()
-                                except Exception:
+                                except (AttributeError):
                                     data = {"raw": await resp.text()}
                                 peer_payload["response"] = data
                                 if resp.status == 200:
@@ -16424,7 +15243,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                     stats[(board_type, num_players, victory_type)] += 1
                             except json.JSONDecodeError:
                                 continue
-                except Exception:
+                except (json.JSONDecodeError, AttributeError):
                     continue
 
         # Update cache
@@ -16492,7 +15311,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                         opening_moves[config][first_move] += 1
                             except json.JSONDecodeError:
                                 continue
-                except Exception:
+                except (json.JSONDecodeError, ValueError, AttributeError):
                     continue
 
         analytics = {"configs": {}}
@@ -16553,7 +15372,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             "latest_loss": epochs[-1]["loss"],
                             "latest_epoch": epochs[-1]["epoch"],
                         }
-                except Exception:
+                except (OSError, ValueError, KeyError, IndexError, AttributeError):
                     continue
 
         setattr(self, cache_key, metrics)
@@ -16639,7 +15458,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             metrics["summary"]["total_evaluations"] = cursor.fetchone()[0]
 
             conn.close()
-        except Exception:
+        except (sqlite3.Error, OSError, KeyError, IndexError, TypeError):
             pass
 
         setattr(self, cache_key, metrics)
@@ -16688,7 +15507,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     # Pattern: "time: 0.123s" or "move_time: 123ms"
                     for match in re.finditer(r'(?:move_)?time[:\s]*([\d.]+)\s*(?:s|ms)?', content, re.I):
                         time_per_move.append(float(match.group(1)))
-                except Exception:
+                except (ValueError, KeyError, IndexError, AttributeError):
                     continue
 
             if nodes_per_move:
@@ -16736,7 +15555,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                         stats["configs"][config]["depth_samples"].append(mcts_data["avg_depth"])
                             except json.JSONDecodeError:
                                 continue
-                except Exception:
+                except (json.JSONDecodeError, AttributeError):
                     continue
 
         # Compute per-config averages
@@ -16860,7 +15679,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             matrix["total_matches"] = sum(c["total_matches"] for c in config_stats.values())
 
             conn.close()
-        except Exception:
+        except (sqlite3.Error, OSError, KeyError, ValueError, TypeError):
             pass
 
         setattr(self, cache_key, matrix)
@@ -16959,7 +15778,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             lineage["total_models"] = len(lineage["models"])
 
-        except Exception:
+        except (sqlite3.Error, OSError, KeyError, ValueError, TypeError):
             pass
 
         setattr(self, cache_key, lineage)
@@ -17051,7 +15870,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
                                 except json.JSONDecodeError:
                                     config_stats["unknown"]["parse_errors"] += 1
-                    except Exception:
+                    except (OSError, ValueError, KeyError):
                         continue
 
             # Convert to quality metrics
@@ -17104,7 +15923,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 "warning_issues": len([i for i in issues if i["severity"] == "warning"]),
             }
 
-        except Exception:
+        except (OSError, ValueError, KeyError, TypeError):
             pass
 
         setattr(self, cache_key, quality)
@@ -17179,7 +15998,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             if config not in gpu_hours_per_config:
                                 gpu_hours_per_config[config] = 0
                             gpu_hours_per_config[config] += duration
-                    except Exception:
+                    except (ValueError, KeyError, IndexError, AttributeError):
                         continue
 
             # Calculate efficiency metrics per config
@@ -17223,7 +16042,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 "overall_elo_per_gpu_hour": round(total_elo_gain / max(total_gpu_hours, 1), 2),
             }
 
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
             pass
 
         setattr(self, cache_key, efficiency)
@@ -17296,10 +16115,10 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             rollback_log = ai_root / "logs" / "rollbacks.json"
             if rollback_log.exists():
                 import json
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(json.JSONDecodeError, OSError, KeyError, IndexError):
                     rollback_status["recent_rollbacks"] = json.loads(rollback_log.read_text())[-10:]
 
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
             pass
 
         return rollback_status
@@ -17371,7 +16190,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                             "mtime": stat.st_mtime,
                             "name": ckpt.name,
                         })
-                    except Exception:
+                    except (AttributeError):
                         continue
 
             # Also check archive for previous best models
@@ -17383,7 +16202,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         "mtime": stat.st_mtime,
                         "name": archived.name,
                     })
-                except Exception:
+                except (AttributeError):
                     continue
 
             # Sort by modification time descending
@@ -17434,7 +16253,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             try:
                 existing = json.loads(rollback_log.read_text()) if rollback_log.exists() else []
-            except Exception:
+            except (json.JSONDecodeError, OSError, KeyError, IndexError, AttributeError):
                 existing = []
 
             existing.append(rollback_entry)
@@ -17554,7 +16373,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         mtime = jsonl.stat().st_mtime
                         if mtime > freshest_data:
                             freshest_data = mtime
-                    except Exception:
+                    except (AttributeError):
                         continue
 
             data_age_hours = (now - freshest_data) / 3600 if freshest_data > 0 else 999
@@ -17594,7 +16413,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     "suggested_workers": max(total_nodes - 1, thresholds["min_workers"]),
                 })
 
-        except Exception:
+        except (AttributeError, KeyError, ValueError, TypeError):
             pass
 
         return autoscale
@@ -19144,7 +17963,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                     total_games += 1
                                 except json.JSONDecodeError:
                                     continue
-                    except Exception:
+                    except (OSError, ValueError, KeyError):
                         continue
 
             # Build response
@@ -19246,7 +18065,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                 "mtime": log_file.stat().st_mtime,
                             }
 
-                except Exception:
+                except (OSError, ValueError, KeyError, json.JSONDecodeError):
                     continue
 
             return web.json_response(metrics)
@@ -19636,7 +18455,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             optimizer = get_resource_optimizer()
             history = optimizer.get_utilization_history(node_id=node_id, hours=hours)
             return web.json_response(history)
-        except Exception:
+        except (ValueError, AttributeError):
             return web.json_response([])
 
     async def handle_webhook_test(self, request: web.Request) -> web.Response:
@@ -20466,7 +19285,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 mtime = 0.0
                 try:
                     mtime = float(path.stat().st_mtime)
-                except Exception:
+                except (ValueError, AttributeError):
                     mtime = 0.0
 
                 db_path_str = str(payload.get("db_path") or "")
@@ -20477,7 +19296,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                         if not db_path.is_absolute():
                             db_path = (games_dir / db_path).resolve()
                         db_size_bytes = int(db_path.stat().st_size)
-                    except Exception:
+                    except (OSError, ValueError, AttributeError):
                         db_size_bytes = None
 
                 summaries.append(
@@ -20590,7 +19409,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                                 "modified_time": float(st.st_mtime),
                             }
                         )
-                    except Exception:
+                    except (ValueError, AttributeError):
                         continue
 
             return web.json_response(
@@ -20646,7 +19465,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         """Background task: wait for canonical gate to finish and record summary."""
         try:
             returncode = await proc.wait()
-        except Exception:
+        except (AttributeError):
             returncode = -1
 
         finished_at = time.time()
@@ -20654,7 +19473,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         try:
             if summary_path.exists():
                 gate_summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, AttributeError):
             gate_summary = None
 
         with self.canonical_gate_jobs_lock:
@@ -21441,7 +20260,7 @@ print(json.dumps({{
                     orchestrator="p2p_orchestrator",
                 )
                 optimizer.report_node_resources(node_resources)
-            except Exception:
+            except (ValueError, KeyError, IndexError, AttributeError):
                 pass  # Don't fail heartbeat if optimizer unavailable
 
     async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http", timeout: int = 10) -> NodeInfo | None:
@@ -21522,7 +20341,7 @@ print(json.dumps({{
                         # Non-200 response is a failure
                         breaker.record_failure(target)
                         http_failed = True
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError, KeyError):
             # Record failure with circuit breaker
             breaker.record_failure(target)
             http_failed = True
@@ -21619,7 +20438,7 @@ print(json.dumps({{
             for name, cfg in configured_hosts.items():
                 if cfg.tailscale_ip == host or cfg.ssh_host == host or cfg.best_ip == host:
                     return name
-        except Exception:
+        except (AttributeError, ImportError):
             pass
 
         return None
@@ -21655,7 +20474,7 @@ print(json.dumps({{
             host = str(getattr(peer, "host", "") or "").strip()
             try:
                 port = int(getattr(peer, "port", DEFAULT_PORT) or DEFAULT_PORT)
-            except Exception:
+            except (ValueError):
                 port = DEFAULT_PORT
             if host:
                 discovered_seed_peers.append(f"{scheme}://{host}:{port}")
@@ -21663,7 +20482,7 @@ print(json.dumps({{
             rh = str(getattr(peer, "reported_host", "") or "").strip()
             try:
                 rp = int(getattr(peer, "reported_port", 0) or 0)
-            except Exception:
+            except (ValueError):
                 rp = 0
             if rh and rp:
                 discovered_seed_peers.append(f"{scheme}://{rh}:{rp}")
@@ -21738,7 +20557,7 @@ print(json.dumps({{
                                 continue
                             try:
                                 info = NodeInfo.from_dict(peer_dict)
-                            except Exception:
+                            except (AttributeError):
                                 continue
                             existing = self.peers.get(info.node_id)
                             if existing:
@@ -21772,7 +20591,7 @@ print(json.dumps({{
                             logger.info(f"Bootstrap: stepping down for leader {leader_id}")
                             self.role = NodeRole.FOLLOWER
                         self.leader_id = leader_id
-                except Exception:
+                except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, KeyError, ValueError):
                     continue
 
         self.last_peer_bootstrap = now
@@ -21928,7 +20747,7 @@ print(json.dumps({{
                                             int(getattr(info, "port", DEFAULT_PORT) or DEFAULT_PORT),
                                             str(getattr(info, "tailscale_ip", "") or "")
                                         )
-                                    except Exception:
+                                    except (ValueError, KeyError, IndexError, AttributeError):
                                         continue
 
                     # Adopt leader if provided
@@ -22030,7 +20849,7 @@ print(json.dumps({{
                                 with self.peers_lock:
                                     self.peers[info.node_id] = info
                                 logger.info(f"Follower discovery: connected to {info.node_id}")
-                        except Exception:
+                        except (KeyError, IndexError, AttributeError):
                             pass
 
                 # 2. Bootstrap from any reachable cached peer
@@ -22192,7 +21011,7 @@ print(json.dumps({{
                     reason = str(payload.get("reason") or "relay")
                     try:
                         target_jobs = int(target)
-                    except Exception:
+                    except (ValueError):
                         target_jobs = 0
                     await self._reduce_local_selfplay_jobs(target_jobs, reason=reason)
                     ok = True
@@ -22212,7 +21031,7 @@ print(json.dumps({{
                             try:
                                 resolved = full_path.resolve()
                                 resolved.relative_to(data_root)
-                            except Exception:
+                            except (AttributeError):
                                 continue
                             if not resolved.exists():
                                 continue
@@ -22221,7 +21040,7 @@ print(json.dumps({{
                                 resolved.unlink()
                                 freed_bytes += size
                                 deleted_count += 1
-                            except Exception:
+                            except (AttributeError):
                                 continue
                         print(
                             f"[P2P] Relay cleanup_files: {deleted_count} files deleted, "
@@ -22266,7 +21085,7 @@ print(json.dumps({{
                             self.pending_relay_acks.add(cmd_id)
                             self.pending_relay_results.append({"id": cmd_id, "ok": False, "error": str(exc)})
                             self.relay_command_attempts.pop(cmd_id, None)
-                except Exception:
+                except (ValueError, AttributeError):
                     continue
 
     async def _heartbeat_loop(self):
@@ -22277,7 +21096,7 @@ print(json.dumps({{
                 for peer_addr in self.known_peers:
                     try:
                         scheme, host, port = self._parse_peer_address(peer_addr)
-                    except Exception:
+                    except (AttributeError):
                         continue
 
                     # Use relay heartbeat for HTTPS endpoints (they're proxies/relays)
@@ -22350,7 +21169,7 @@ print(json.dumps({{
                             try:
                                 rh = str(getattr(peer, "reported_host", "") or "").strip()
                                 rp = int(getattr(peer, "reported_port", 0) or 0)
-                            except Exception:
+                            except (ValueError, AttributeError):
                                 rh, rp = "", 0
                             if rh and rp and (rh != peer.host or rp != peer.port):
                                 info = await self._send_heartbeat_to_peer(rh, rp, scheme=peer_scheme)
@@ -22408,7 +21227,7 @@ print(json.dumps({{
                         for peer_addr in self.known_peers:
                             try:
                                 scheme, host, port = self._parse_peer_address(peer_addr)
-                            except Exception:
+                            except (AttributeError):
                                 continue
                             relay_urls.append(f"{scheme}://{host}:{port}")
                         seen: set[str] = set()
@@ -22492,7 +21311,7 @@ print(json.dumps({{
                             gpu_name=self.self_info.gpu_type or "",
                         )
                         optimizer.report_node_resources(node_resources)
-                    except Exception:
+                    except (AttributeError):
                         pass  # Non-critical, don't disrupt heartbeat
 
                 # Save state periodically
@@ -22605,7 +21424,7 @@ print(json.dumps({{
                     self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
 
                 return True
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, KeyError, AttributeError):
             pass
         return False
 
@@ -22660,7 +21479,7 @@ print(json.dumps({{
                                 self.peers[voter_id] = peer_info
                             logger.info(f"Discovered voter {voter_id} from {host}")
                             return
-            except Exception:
+            except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError, ImportError):
                 continue
 
     async def _refresh_voter_mesh(self):
@@ -22742,7 +21561,7 @@ print(json.dumps({{
                         # For now, just track connectivity
                         await resp.json()
                         external_ips.add(peer.host)  # Track which peers we can reach
-            except Exception:
+            except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                 continue
 
         # If we see ourselves with different IPs from different vantage points,
@@ -22803,7 +21622,7 @@ print(json.dumps({{
                                     self.peers[peer.node_id].host = host  # Update to working endpoint
                                     self.peers[peer.node_id].consecutive_failures = 0
                             break
-                except Exception:
+                except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                     continue
 
     async def _update_relay_preferences(self):
@@ -22904,7 +21723,7 @@ print(json.dumps({{
             max_samples = int(getattr(self, "selfplay_stats_history_max_samples", 288) or 288)
             if max_samples > 0 and len(self.selfplay_stats_history) > max_samples:
                 self.selfplay_stats_history = self.selfplay_stats_history[-max_samples:]
-        except Exception:
+        except (ValueError, KeyError, IndexError, AttributeError):
             # Never let dashboard bookkeeping break manifest collection.
             return
 
@@ -22916,12 +21735,12 @@ print(json.dumps({{
         scheme = str(getattr(info, "scheme", "http") or "http").lower()
         try:
             port = int(getattr(info, "port", DEFAULT_PORT) or DEFAULT_PORT)
-        except Exception:
+        except (ValueError):
             port = DEFAULT_PORT
         reported_host = str(getattr(info, "reported_host", "") or "").strip()
         try:
             reported_port = int(getattr(info, "reported_port", 0) or 0)
-        except Exception:
+        except (ValueError):
             reported_port = 0
 
         if reported_host and reported_port > 0:
@@ -22988,7 +21807,7 @@ print(json.dumps({{
                                 existing.relay_via = ""
                                 logger.info(f"NAT recovery: {peer.node_id} is now directly reachable")
                                 return True
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
             # Probe failed - peer still not reachable
             pass
 
@@ -23092,7 +21911,7 @@ print(json.dumps({{
                     # Retire long-dead peers so they don't pollute active scheduling.
                     try:
                         dead_for = now - float(getattr(info, "last_heartbeat", 0.0) or 0.0)
-                    except Exception:
+                    except (ValueError, AttributeError):
                         dead_for = float("inf")
                     if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
                         info.retired = True
@@ -23167,7 +21986,7 @@ print(json.dumps({{
                     # Retire long-dead peers so they don't pollute active scheduling.
                     try:
                         dead_for = now - float(getattr(info, "last_heartbeat", 0.0) or 0.0)
-                    except Exception:
+                    except (ValueError, AttributeError):
                         dead_for = float("inf")
                     if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
                         info.retired = True
@@ -23316,7 +22135,7 @@ print(json.dumps({{
                                 if data.get("response") == "ALIVE":
                                     got_response = True
                                     logger.info(f"Higher node {peer.node_id} responded")
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                         pass  # Network errors expected during elections
 
             # If no higher node responded, we become leader
@@ -23388,7 +22207,7 @@ print(json.dumps({{
                             "lease_expires": self.leader_lease_expires,
                             "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                         }, headers=self._auth_headers())
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError):
                         pass  # Network errors expected during leader announcements
 
         self._save_state()
@@ -23506,7 +22325,7 @@ print(json.dumps({{
                             "lease_expires": self.leader_lease_expires,
                             "emergency": True,
                         }, headers=self._auth_headers())
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                         pass  # Network errors expected during emergency coordination
 
         self._save_state()
@@ -23625,7 +22444,7 @@ print(json.dumps({{
                 local_manifest = self._collect_local_data_manifest_cached(max_cache_age=600)
                 with self.manifest_lock:
                     self.local_data_manifest = local_manifest
-            except Exception:
+            except (AttributeError):
                 return
 
         # Get local file set with timestamps for delta sync
@@ -24125,9 +22944,9 @@ print(json.dumps({{
                                     self._record_gossip_metrics("sent", peer.node_id)
                                     self._record_gossip_metrics("latency", peer.node_id, latency_ms)
                                     break
-                        except Exception:
+                        except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, AttributeError):
                             continue
-                except Exception:
+                except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, AttributeError):
                     pass
 
     def _get_gossip_known_states(self) -> dict[str, dict]:
@@ -24524,9 +23343,9 @@ print(json.dumps({{
                                     logger.debug(f"[GOSSIP] Anti-entropy repair: {updates} state updates from {peer.node_id}")
 
                                 return
-                    except Exception:
+                    except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, KeyError, ValueError):
                         continue
-        except Exception:
+        except (AttributeError, KeyError, ValueError, TypeError):
             pass  # Silent failure, will retry next cycle
 
     # =========================================================================
@@ -24818,7 +23637,7 @@ print(json.dumps({{
                         "games": row[2],
                     })
 
-        except Exception:
+        except (KeyError, IndexError, AttributeError, ImportError):
             # Silently fail - ELO summary is optional
             pass
 
@@ -25398,7 +24217,7 @@ print(json.dumps({{
                         if getattr(job, "status", None) == "running":
                             training_active = True
                             break
-            except Exception:
+            except (AttributeError):
                 pass
 
         # Check selfplay activity (count active jobs)
@@ -25411,7 +24230,7 @@ print(json.dumps({{
                     for job in selfplay_jobs.values():
                         if getattr(job, "status", None) == "running":
                             selfplay_count += 1
-            except Exception:
+            except (AttributeError):
                 pass
 
         # Check recent data generation from gossip
@@ -26139,7 +24958,7 @@ print(json.dumps({{
                                 "lease_renewal": True,
                                 "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
                             }, headers=self._auth_headers())
-                        except Exception:
+                        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError):
                             pass  # Network errors expected during lease renewal
         except Exception as e:
             logger.info(f"Lease renewal error: {e}")
@@ -26274,7 +25093,7 @@ print(json.dumps({{
                         },
                         headers=self._auth_headers(),
                     )
-                except Exception:
+                except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError):
                     pass  # Network errors expected during step-down notifications
 
         return False  # We remain leader
@@ -26388,7 +25207,7 @@ print(json.dumps({{
                     try:
                         import subprocess
                         subprocess.run(["pkill", "-9", "-f", f"train.*{job.job_id}"], timeout=5, capture_output=True)
-                    except Exception:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError, ImportError):
                         pass
                 job.status = "failed"
                 job.error_message = "Killed: no progress detected"
@@ -26515,7 +25334,7 @@ print(json.dumps({{
                     # Don't auto-kill orphans yet, just warn
                     # Could add aggressive cleanup here if needed
                     self._last_orphan_kill = now
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError, KeyError, IndexError, AttributeError, ImportError):
             pass
 
         if killed > 0:
@@ -26781,7 +25600,7 @@ print(json.dumps({{
             if num_players > 2:
                 boost += 1
 
-        except Exception:
+        except (AttributeError):
             pass
 
         return min(5, boost)  # Cap at +5
@@ -26838,7 +25657,7 @@ print(json.dumps({{
         if HAS_CURRICULUM_WEIGHTS and load_curriculum_weights is not None:
             try:
                 curriculum_weights = load_curriculum_weights()
-            except Exception:
+            except (OSError, ValueError, KeyError, ImportError):
                 pass  # Use empty weights on error
 
         # Load board priority overrides from config (0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW)
@@ -27713,7 +26532,7 @@ print(json.dumps({{
                 )
                 if int(getattr(node, "selfplay_jobs", 0) or 0) < runaway_threshold:
                     continue
-            except Exception:
+            except (ValueError, AttributeError):
                 continue
 
             print(
@@ -28091,14 +26910,14 @@ print(json.dumps({{
         """
         try:
             target = max(0, int(target_selfplay_jobs))
-        except Exception:
+        except (ValueError):
             target = 0
 
         # First, get an overall count using the same mechanism used for cluster
         # reporting (includes untracked processes).
         try:
             selfplay_before, _training_before = self._count_local_jobs()
-        except Exception:
+        except (AttributeError):
             selfplay_before = 0
 
         # Hard shedding (target=0): reuse the existing restart sweep, which
@@ -28107,7 +26926,7 @@ print(json.dumps({{
             await self._restart_local_stuck_jobs()
             try:
                 selfplay_after, _training_after = self._count_local_jobs()
-            except Exception:
+            except (AttributeError):
                 selfplay_after = 0
             return {
                 "running_before": int(selfplay_before),
@@ -28146,14 +26965,14 @@ print(json.dumps({{
                         os.kill(int(job.pid), signal.SIGTERM)
                     job.status = "stopped"
                     stopped += 1
-                except Exception:
+                except (ValueError, AttributeError):
                     continue
 
         # If job tracking was lost, we may still have a large number of
         # untracked selfplay processes. Best-effort kill enough to hit target.
         try:
             selfplay_mid, _training_mid = self._count_local_jobs()
-        except Exception:
+        except (AttributeError):
             selfplay_mid = max(0, int(selfplay_before) - stopped)
 
         if selfplay_mid > target:
@@ -28178,7 +26997,7 @@ print(json.dumps({{
                             for token in out.stdout.strip().split():
                                 try:
                                     pids.append(int(token))
-                                except Exception:
+                                except (ValueError, AttributeError):
                                     continue
 
                     # Kill newest-ish (highest PID) first.
@@ -28191,10 +27010,10 @@ print(json.dumps({{
                         try:
                             os.kill(pid, signal.SIGTERM)
                             killed += 1
-                        except Exception:
+                        except (AttributeError):
                             continue
                     stopped += killed
-            except Exception:
+            except (AttributeError):
                 pass
 
         if stopped:
@@ -28202,7 +27021,7 @@ print(json.dumps({{
 
         try:
             selfplay_after, _training_after = self._count_local_jobs()
-        except Exception:
+        except (AttributeError):
             selfplay_after = max(0, int(selfplay_before) - stopped)
 
         return {
@@ -28217,7 +27036,7 @@ print(json.dumps({{
         """Ask a node to shed excess selfplay (used for memory/disk pressure)."""
         try:
             target = max(0, int(target_selfplay_jobs))
-        except Exception:
+        except (ValueError):
             target = 0
 
         if getattr(node, "nat_blocked", False):
@@ -28264,7 +27083,7 @@ print(json.dumps({{
                     if job.pid:
                         try:
                             pids_to_kill.add(int(job.pid))
-                        except Exception:
+                        except (ValueError, AttributeError):
                             continue
 
             # Sweep for untracked selfplay processes (e.g. lost local_jobs state) and kill them too.
@@ -28288,9 +27107,9 @@ print(json.dumps({{
                             for token in out.stdout.strip().split():
                                 try:
                                     pids_to_kill.add(int(token))
-                                except Exception:
+                                except (ValueError, AttributeError):
                                     continue
-            except Exception:
+            except (ValueError, AttributeError):
                 pass
 
             pids_to_kill.discard(int(os.getpid()))
@@ -28300,7 +27119,7 @@ print(json.dumps({{
                 try:
                     os.kill(pid, signal.SIGKILL)
                     killed += 1
-                except Exception:
+                except (AttributeError):
                     continue
 
             # Clear our job tracking - they'll be restarted next cycle.
@@ -28656,7 +27475,7 @@ print(json.dumps({{
                         )
                         if out.returncode == 0 and out.stdout.strip():
                             gpu_count = len([line for line in out.stdout.splitlines() if line.strip()])
-                    except Exception:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
                         gpu_count = 0
 
                     if gpu_count > 0:
@@ -28798,7 +27617,7 @@ print(json.dumps({{
                         )
                         if out.returncode == 0 and out.stdout.strip():
                             gpu_count = len([line for line in out.stdout.splitlines() if line.strip()])
-                    except Exception:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
                         gpu_count = 0
 
                     if gpu_count > 0:
@@ -28920,7 +27739,7 @@ print(json.dumps({{
                         )
                         if out.returncode == 0 and out.stdout.strip():
                             gpu_count = len([line for line in out.stdout.splitlines() if line.strip()])
-                    except Exception:
+                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
                         gpu_count = 0
 
                     if gpu_count > 0:
@@ -29342,7 +28161,7 @@ print(json.dumps({{
 
                 sock.close()
 
-            except Exception:
+            except (json.JSONDecodeError, AttributeError):
                 pass
 
             await asyncio.sleep(DISCOVERY_INTERVAL)

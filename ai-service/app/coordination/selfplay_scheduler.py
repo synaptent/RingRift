@@ -494,7 +494,7 @@ class SelfplayScheduler:
                         result[config_key] = MAX_STALENESS_HOURS
 
         except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting freshness: {e}")
+            logger.warning(f"[SelfplayScheduler] Error getting freshness (using defaults): {e}")
 
         return result
 
@@ -517,7 +517,7 @@ class SelfplayScheduler:
         except ImportError:
             pass
         except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting ELO velocities: {e}")
+            logger.warning(f"[SelfplayScheduler] Error getting ELO velocities (using defaults): {e}")
 
         return result
 
@@ -543,7 +543,7 @@ class SelfplayScheduler:
         except ImportError:
             pass
         except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting feedback signals: {e}")
+            logger.warning(f"[SelfplayScheduler] Error getting feedback signals (using defaults): {e}")
 
         return result
 
@@ -690,7 +690,7 @@ class SelfplayScheduler:
         except ImportError:
             logger.debug("[SelfplayScheduler] game_discovery not available")
         except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting game counts: {e}")
+            logger.warning(f"[SelfplayScheduler] Error getting game counts (using defaults): {e}")
 
         # Ensure all configs have a count (0 if not found)
         for config_key in ALL_CONFIGS:
@@ -952,7 +952,7 @@ class SelfplayScheduler:
                 logger.info("[SelfplayScheduler] Subscribed to pipeline events (including EXPLORATION_BOOST)")
 
         except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Failed to subscribe: {e}")
+            logger.warning(f"[SelfplayScheduler] Failed to subscribe to events (reactive scheduling disabled): {e}")
 
     def _on_selfplay_complete(self, event: Any) -> None:
         """Handle selfplay completion event."""

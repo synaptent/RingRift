@@ -166,7 +166,7 @@ def get_cpu_count() -> int:
     """Get number of CPU cores."""
     try:
         return os.cpu_count() or 1
-    except Exception:
+    except OSError:
         return 1
 
 
@@ -725,7 +725,7 @@ def run_selfplay(
             return 0
         try:
             conn = sqlite3.connect(str(db_path), timeout=1.0)
-        except Exception:
+        except sqlite3.Error:
             return None
         try:
             row = conn.execute(
@@ -734,7 +734,7 @@ def run_selfplay(
             if row is None:
                 return 0
             return int(row[0] or 0)
-        except Exception:
+        except sqlite3.Error:
             return None
         finally:
             conn.close()
@@ -834,7 +834,7 @@ def run_selfplay(
                 for line in f:
                     if '"status": "completed"' in line or '"status":"completed"' in line:
                         games_completed += 1
-        except Exception:
+        except (OSError, IOError):
             games_completed = games  # Assume success if can't count
 
     return True, games_completed if not dry_run else games, staging_db_path
@@ -877,7 +877,7 @@ def ingest_training_pool(
     for raw in (config.get("ingest_scan_dirs") or []):
         try:
             scan_dirs.append(_resolve_ai_service_path(str(raw)).resolve())
-        except Exception:
+        except (OSError, RuntimeError):
             continue
 
     candidates: list[Path] = []
@@ -956,7 +956,7 @@ def ingest_training_pool(
     if not dry_run:
         try:
             report = json.loads(report_json.read_text())
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             report = {}
         totals = report.get("totals") or {}
         print(f"[ingest] totals: {json.dumps(totals, sort_keys=True)}")
@@ -1409,7 +1409,7 @@ def evaluate_model(
                     draws += int(res_ext.get("draws", 0))
                     total_games = wins + losses + draws
                     print(f"  Extended evaluation: {wins}W-{losses}L-{draws}D ({total_games} games)")
-                except Exception:
+                except (json.JSONDecodeError, OSError, ValueError):
                     pass
         else:
             print(f"  Win rate {win_rate:.1%} is decisive, skipping extended evaluation")
@@ -1678,7 +1678,7 @@ def _select_promotion_pool_opponents(
     if backup.exists():
         try:
             resolved = backup.resolve()
-        except Exception:
+        except (OSError, RuntimeError):
             resolved = backup
         if resolved not in exclude and backup.stat().st_size > 0:
             pool.append(backup)
@@ -1694,7 +1694,7 @@ def _select_promotion_pool_opponents(
         if v5_path.exists() and len(pool) < pool_size:
             try:
                 resolved = v5_path.resolve()
-            except Exception:
+            except (OSError, RuntimeError):
                 resolved = v5_path
             if resolved not in exclude and v5_path.stat().st_size > 0 and not any(v5_path.samefile(p) for p in pool):
                 pool.append(v5_path)
@@ -1709,7 +1709,7 @@ def _select_promotion_pool_opponents(
     for path in candidates:
         try:
             resolved = path.resolve()
-        except Exception:
+        except (OSError, RuntimeError):
             resolved = path
         if resolved in exclude:
             continue

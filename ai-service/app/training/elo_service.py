@@ -324,14 +324,21 @@ class EloService:
             # Participants table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS participants (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    ai_type TEXT NOT NULL,
+                    participant_id TEXT PRIMARY KEY,
+                    participant_type TEXT NOT NULL DEFAULT 'model',
+                    ai_type TEXT,
                     difficulty INTEGER,
                     use_neural_net INTEGER DEFAULT 0,
                     model_path TEXT,
+                    model_version TEXT,
+                    metadata TEXT,
                     created_at REAL,
-                    metadata TEXT
+                    last_seen REAL,
+                    nn_model_id TEXT,
+                    nn_model_path TEXT,
+                    ai_algorithm TEXT,
+                    algorithm_config TEXT,
+                    is_composite INTEGER DEFAULT 0
                 )
             """)
 
@@ -427,22 +434,25 @@ class EloService:
     def register_participant(
         self,
         participant_id: str,
-        name: str,
-        ai_type: str,
+        name: str | None = None,  # Deprecated: not stored in DB, use participant_id
+        ai_type: str = "unknown",
         difficulty: int | None = None,
         use_neural_net: bool = False,
         model_path: str | None = None,
         metadata: dict | None = None
     ) -> None:
-        """Register a new participant (model or AI baseline)."""
+        """Register a new participant (model or AI baseline).
+
+        Note: The `name` parameter is deprecated and ignored. The participant_id
+        serves as the display name.
+        """
         with self._transaction() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO participants
-                (id, name, ai_type, difficulty, use_neural_net, model_path, created_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (participant_id, ai_type, difficulty, use_neural_net, model_path, created_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 participant_id,
-                name,
                 ai_type,
                 difficulty,
                 int(use_neural_net),
@@ -505,6 +515,13 @@ class EloService:
                     last_update=row["last_update"] or 0.0,
                     confidence=1.0  # Random is always reliable as anchor
                 )
+            # Create entry for random participant at anchored rating
+            with self._transaction() as txn_conn:
+                txn_conn.execute("""
+                    INSERT OR IGNORE INTO elo_ratings
+                    (participant_id, board_type, num_players, rating, last_update)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (participant_id, board_type, num_players, float(BASELINE_ELO_RANDOM), time.time()))
             return EloRating(
                 participant_id=participant_id,
                 rating=float(BASELINE_ELO_RANDOM),  # ANCHORED
@@ -732,7 +749,7 @@ class EloService:
         cursor = conn.execute("""
             SELECT
                 e.participant_id,
-                p.name,
+                p.participant_id AS name,
                 p.ai_type,
                 e.rating,
                 e.games_played,
@@ -741,7 +758,7 @@ class EloService:
                 e.draws,
                 e.last_update
             FROM elo_ratings e
-            JOIN participants p ON e.participant_id = p.id
+            JOIN participants p ON e.participant_id = p.participant_id
             WHERE e.board_type = ? AND e.num_players = ? AND e.games_played >= ?
             ORDER BY e.rating DESC
             LIMIT ?

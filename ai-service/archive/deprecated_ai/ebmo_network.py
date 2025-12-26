@@ -53,7 +53,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..models import (
+from app.models import (
     BoardType,
     GamePhase,
     GameState,

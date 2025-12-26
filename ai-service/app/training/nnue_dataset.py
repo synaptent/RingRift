@@ -447,7 +447,7 @@ def validate_database_integrity(db_path: str) -> tuple[bool, dict[str, Any]]:
 
         return len(stats["errors"]) == 0, stats
 
-    except Exception as e:
+    except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
         stats["errors"].append(f"Database error: {e!s}")
         return False, stats
 
@@ -532,7 +532,7 @@ class NNUESQLiteDataset(Dataset):
                 samples = self._extract_from_db(db_path)
                 self.samples.extend(samples)
                 logger.info(f"Extracted {len(samples)} samples from {db_path}")
-            except Exception as e:
+            except (sqlite3.DatabaseError, ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Failed to extract from {db_path}: {e}")
 
         if self.max_samples and len(self.samples) > self.max_samples:
@@ -637,7 +637,7 @@ class NNUESQLiteDataset(Dataset):
                     move_number=row['move_number'],
                 ))
                 count += 1
-            except Exception:
+            except (OSError, ValueError, KeyError, TypeError):
                 continue
 
         conn.close()
@@ -752,7 +752,7 @@ class NNUESQLiteDataset(Dataset):
                         if len(players) > 0:
                             has_useful_snapshots = True
                             break
-                    except Exception:
+                    except (OSError, json.JSONDecodeError, TypeError, KeyError):
                         continue
 
             if not has_useful_snapshots:
@@ -779,7 +779,7 @@ class NNUESQLiteDataset(Dataset):
                 try:
                     state_dict = json.loads(state_json)
                     game_state = GameState(**state_dict)
-                except Exception as e:
+                except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
                     logger.debug(f"Failed to parse state for {game_id}:{move_num}: {e}")
                     continue
 
@@ -812,7 +812,7 @@ class NNUESQLiteDataset(Dataset):
                         features = extract_features_from_gamestate(
                             game_state, player_perspective
                         )
-                    except Exception as e:
+                    except (ValueError, RuntimeError, IndexError, KeyError) as e:
                         logger.debug(f"Feature extraction failed for {game_id}:{move_num}:P{player_perspective}: {e}")
                         continue
 
@@ -889,7 +889,7 @@ class NNUESQLiteDataset(Dataset):
                         if stacks:
                             has_useful_snapshots = True
                             break
-                    except Exception:
+                    except (OSError, json.JSONDecodeError, TypeError, KeyError):
                         continue
 
             if not has_useful_snapshots:
@@ -915,7 +915,7 @@ class NNUESQLiteDataset(Dataset):
                 try:
                     state_dict = json.loads(state_json)
                     game_state = GameState(**state_dict)
-                except Exception:
+                except (json.JSONDecodeError, ValueError, TypeError, KeyError):
                     continue
 
                 # Determine which perspectives to extract from
@@ -1003,7 +1003,7 @@ class NNUESQLiteDataset(Dataset):
                 samples.append(sample)
             return samples
 
-        except Exception as e:
+        except (RuntimeError, ValueError, torch.cuda.CudaError) as e:
             # Fall back to CPU extraction on error
             logger.warning(f"GPU batch extraction failed, falling back to CPU: {e}")
             samples = []
@@ -1018,7 +1018,7 @@ class NNUESQLiteDataset(Dataset):
                         move_number=move_nums[i],
                     )
                     samples.append(sample)
-                except Exception:
+                except (ValueError, RuntimeError, IndexError, KeyError):
                     continue
             return samples
 
@@ -1054,7 +1054,7 @@ class NNUESQLiteDataset(Dataset):
         try:
             state_dict = json.loads(initial_json)
             state = GameState(**state_dict)
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
             logger.debug(f"Failed to parse initial state for {game_id}: {e}")
             return []
 
@@ -1121,7 +1121,7 @@ class NNUESQLiteDataset(Dataset):
                             move_number=move_number,
                         )
                         samples.append(sample)
-                    except Exception as e:
+                    except (ValueError, RuntimeError, IndexError, KeyError) as e:
                         logger.debug(f"Feature extraction failed for {game_id}:{move_number}:P{player_perspective}: {e}")
 
             # Apply move to advance state
@@ -1129,7 +1129,7 @@ class NNUESQLiteDataset(Dataset):
                 move_dict = json.loads(move_json_str)
                 move = Move(**move_dict)
                 state = engine.apply_move(state, move)
-            except Exception as e:
+            except (json.JSONDecodeError, ValueError, TypeError, KeyError, RuntimeError) as e:
                 logger.debug(f"Failed to apply move {move_number} for {game_id}: {e}")
                 break  # Stop replay on error
 
@@ -1409,7 +1409,7 @@ class NNUEStreamingDataset(IterableDataset):
                         yield from buffer[:self.buffer_size // 2]
                         # Keep second half
                         buffer = buffer[self.buffer_size // 2:]
-            except Exception as e:
+            except (sqlite3.DatabaseError, ValueError, KeyError, RuntimeError) as e:
                 logger.error(f"Error streaming from {db_path}: {e}")
 
         # Yield remaining samples in buffer
@@ -1467,7 +1467,7 @@ class NNUEStreamingDataset(IterableDataset):
             try:
                 state_dict = json.loads(state_json)
                 game_state = GameState(**state_dict)
-            except Exception:
+            except (json.JSONDecodeError, ValueError, TypeError, KeyError):
                 continue
 
             # Determine which perspectives to extract from
@@ -1492,7 +1492,7 @@ class NNUEStreamingDataset(IterableDataset):
                 # Extract features from this player's perspective
                 try:
                     features = extract_features_from_gamestate(game_state, player_perspective)
-                except Exception:
+                except (ValueError, RuntimeError, IndexError, KeyError):
                     continue
 
                 features_tensor = torch.from_numpy(features).float()
@@ -1713,7 +1713,7 @@ def count_available_samples(
             counts[db_path] = count
             total += count
             conn.close()
-        except Exception as e:
+        except (sqlite3.DatabaseError, sqlite3.OperationalError, TypeError) as e:
             logger.error(f"Error counting samples in {db_path}: {e}")
             counts[db_path] = 0
 
@@ -1808,6 +1808,6 @@ def extract_features_from_state(
 
         return features
 
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning(f"Failed to extract features from state dict: {e}")
         return np.zeros(feature_dim, dtype=np.float32)

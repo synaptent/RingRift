@@ -552,7 +552,7 @@ def create_ai_from_model(
 
     elif ai_type == "gmo" or model_path == "__BASELINE_GMO__":
         # GMO (Gradient Move Optimization) model
-        from app.ai.gmo_ai import GMOAI, GMOConfig
+        from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
         gmo_config = GMOConfig(device="cpu")
         config = AIConfig(ai_type=AIType.GMO, board_type=board_type, difficulty=5)
         gmo_ai = GMOAI(player_number, config, gmo_config)
@@ -563,8 +563,8 @@ def create_ai_from_model(
 
     elif ai_type == "ebmo" or model_path == "__BASELINE_EBMO__":
         # EBMO (Energy-Based Move Optimization) model
-        from app.ai.ebmo_ai import EBMO_AI
-        from app.ai.ebmo_network import EBMOConfig
+        from archive.deprecated_ai.ebmo_ai import EBMO_AI
+        from archive.deprecated_ai.ebmo_network import EBMOConfig
         # Use fast config for tournament (direct eval instead of gradient descent)
         ebmo_config = EBMOConfig(
             use_direct_eval=True,  # Skip gradient descent for speed
@@ -590,7 +590,7 @@ def create_ai_from_model(
 
     elif ai_type == "ig_gmo" or model_path == "__BASELINE_IG_GMO__":
         # Information-Gain GMO with MI-based exploration and GNN encoder
-        from app.ai.ig_gmo import IGGMO, IGGMOConfig
+        from archive.deprecated_ai.ig_gmo import IGGMO, IGGMOConfig
         ig_config = IGGMOConfig(
             device="cuda" if torch.cuda.is_available() else "cpu",
             use_gnn=True,

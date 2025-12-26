@@ -158,6 +158,15 @@ sync = UnifiedDataSyncService.get_instance()
 3. **Update tests** to use new unified modules
 4. **Update documentation** to reflect current architecture
 
+## Follow-up Items from Runtime Deprecation Warnings (Jan 2026)
+
+1. Update `app/training/checkpoint_unified.py` to stop importing deprecated
+   `app.training.checkpointing` (use unified checkpoint helpers only).
+2. Remove `app.training.distributed` import from `app/training/__init__.py`
+   in favor of `app.training.distributed_unified`.
+3. Migrate `app/ai/ebmo_online_learner.py` off `app.ai.ebmo_network` to
+   `GNNPolicyNet` or `HybridPolicyNet` in `app.ai.neural_net`.
+
 ## Legacy Module Migration Plan (11,366 LOC)
 
 ### Assessment (December 2025)

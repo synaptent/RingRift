@@ -185,7 +185,7 @@ class DynamicHostRegistry:
                         self._nodes[name].static_port = host_config.ssh_port
 
             logger.info(f"Loaded {len(self._nodes)} hosts into dynamic registry")
-        except Exception as e:
+        except (ImportError, FileNotFoundError, OSError) as e:
             logger.warning(f"Failed to load static config: {e}")
 
     def _load_state(self) -> None:
@@ -211,7 +211,7 @@ class DynamicHostRegistry:
                             node.consecutive_successes = 0
 
                 logger.info(f"Loaded dynamic registry state from {self._state_file}")
-        except Exception as e:
+        except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError) as e:
             logger.warning(f"Failed to load registry state: {e}")
 
     def _save_state(self) -> None:
@@ -237,7 +237,7 @@ class DynamicHostRegistry:
 
             with open(self._state_file, "w") as f:
                 json.dump(data, f, indent=2)
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, TypeError) as e:
             logger.warning(f"Failed to save registry state: {e}")
 
     def register_node(
@@ -422,7 +422,7 @@ class DynamicHostRegistry:
         except ImportError:
             logger.warning("aiohttp not installed, can't query Vast API")
             return 0
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to query Vast API: {e}")
             return 0
 
@@ -481,7 +481,7 @@ class DynamicHostRegistry:
 
             try:
                 instances = json.loads(result.stdout or "[]")
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 return 0
 
             updated = 0
@@ -514,7 +514,7 @@ class DynamicHostRegistry:
             return updated
         except FileNotFoundError:
             return 0
-        except Exception:
+        except (TimeoutError, OSError, json.JSONDecodeError):
             return 0
 
     async def update_aws_ips(self) -> int:
@@ -602,7 +602,7 @@ class DynamicHostRegistry:
 
                 try:
                     return json.loads(result.stdout or "{}")
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     return None
 
             updated = 0
@@ -681,7 +681,7 @@ class DynamicHostRegistry:
             return updated
         except FileNotFoundError:
             return 0
-        except Exception:
+        except (TimeoutError, OSError, json.JSONDecodeError):
             return 0
 
     async def update_tailscale_ips(self) -> int:
@@ -715,7 +715,7 @@ class DynamicHostRegistry:
             payload = json.loads(result.stdout or "{}")
         except FileNotFoundError:
             return 0
-        except Exception:
+        except (TimeoutError, OSError, json.JSONDecodeError):
             return 0
 
         def _normalize_name(name: str) -> str:
@@ -742,7 +742,7 @@ class DynamicHostRegistry:
             self_name = _normalize_name(self_entry.get("HostName") or self_entry.get("DNSName") or "")
             if self_ip and self_name:
                 name_to_ip[self_name] = self_ip
-        except Exception:
+        except (KeyError, AttributeError, TypeError):
             pass
 
         peers = payload.get("Peer") or {}
@@ -829,7 +829,7 @@ class DynamicHostRegistry:
 
             return False
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, TypeError) as e:
             logger.error(f"Failed to update YAML config: {e}")
             return False
 

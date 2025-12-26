@@ -658,8 +658,8 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
                         origin=EventSource.ROUTER,
                     )
                     await bus.publish(low_quality_event)
-                except Exception:
-                    pass
+                except Exception as emit_err:
+                    logger.warning(f"[Bootstrap] Failed to emit low-quality event: {emit_err}")
                 return
 
             if games_count > 0 and games_count < MIN_GAMES_FOR_SYNC:

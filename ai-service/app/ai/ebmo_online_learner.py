@@ -39,7 +39,7 @@ from typing import Any
 import torch
 
 from app.models import GameState, Move
-from app.ai.ebmo_network import ActionFeatureExtractor, EBMONetwork
+from archive.deprecated_ai.ebmo_network import ActionFeatureExtractor, EBMONetwork
 
 logger = logging.getLogger(__name__)
 

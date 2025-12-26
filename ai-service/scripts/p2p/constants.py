@@ -177,9 +177,10 @@ PEER_BOOTSTRAP_MIN_PEERS = 3
 
 GPU_IDLE_RESTART_TIMEOUT = 300
 GPU_IDLE_THRESHOLD = 2
-# Increased default from 0 to 500 (Dec 2025) to prevent false positives
+# Dec 2025: Lowered from 500 to 100 to intervene earlier on runaway processes
+# Aligns with app/config/constants.py and scripts/node_resilience.py
 _runaway_threshold_env = (os.environ.get("RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD") or "").strip()
-RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 500
+RUNAWAY_SELFPLAY_PROCESS_THRESHOLD = int(_runaway_threshold_env) if _runaway_threshold_env else 100
 
 LOAD_AVERAGE_MAX_MULTIPLIER = float(os.environ.get("RINGRIFT_P2P_LOAD_AVG_MAX_MULT", "2.0") or 2.0)
 SPAWN_RATE_LIMIT_PER_MINUTE = int(os.environ.get("RINGRIFT_P2P_SPAWN_RATE_LIMIT", "5") or 5)

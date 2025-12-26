@@ -32,7 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 
-from app.ai.gmo_ai import GMOAI, GMOConfig
+from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.random_ai import RandomAI
 from app.game_engine import GameEngine

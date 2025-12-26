@@ -803,6 +803,10 @@ class AutoRollbackHandler:
                 )
                 # Clear any pending rollback for this model
                 self._pending_rollbacks.pop(model_id, None)
+
+                # Emit PROMOTION_ROLLED_BACK event to pause training (December 2025)
+                self._emit_rollback_completed_event(model_id, result, reason, triggered_by)
+
                 return True
             else:
                 logger.error(
@@ -813,6 +817,87 @@ class AutoRollbackHandler:
         except Exception as e:
             logger.error(f"[AutoRollbackHandler] Rollback exception for {model_id}: {e}")
             return False
+
+    def _emit_rollback_completed_event(
+        self, model_id: str, result: dict[str, Any], reason: str, triggered_by: str
+    ) -> None:
+        """Emit PROMOTION_ROLLED_BACK event after successful rollback (December 2025).
+
+        This event triggers:
+        1. TrainingCoordinator to pause training for this config
+        2. SelfplayOrchestrator to pause selfplay for this config
+        3. Metrics/alerting systems to notify of rollback
+
+        Args:
+            model_id: Model that was rolled back (e.g., "hex8_2p")
+            result: Rollback result dict with from_version, to_version, metrics
+            reason: Reason for rollback
+            triggered_by: What triggered the rollback (auto/manual)
+        """
+        try:
+            from app.coordination.event_router import get_event_bus
+            from app.distributed.data_events import DataEventType
+
+            bus = get_event_bus()
+            if not bus:
+                logger.debug("[AutoRollbackHandler] No event bus available for rollback event")
+                return
+
+            # Extract config_key from model_id (e.g., "hex8_2p_v15" -> "hex8_2p")
+            config_key = model_id
+            if "_v" in model_id:
+                config_key = model_id.rsplit("_v", 1)[0]
+
+            payload = {
+                "model_id": model_id,
+                "config_key": config_key,
+                "from_version": result.get("from_version"),
+                "to_version": result.get("to_version"),
+                "from_metrics": result.get("from_metrics", {}),
+                "to_metrics": result.get("to_metrics", {}),
+                "reason": reason,
+                "triggered_by": triggered_by,
+                "timestamp": datetime.now().isoformat(),
+                "action_required": "pause_training",  # Signal to pause training
+            }
+
+            # Use async publish if event loop is running
+            try:
+                import asyncio
+                from app.utils.async_utils import fire_and_forget
+
+                asyncio.get_running_loop()
+                fire_and_forget(
+                    bus.publish(
+                        event_type=DataEventType.PROMOTION_ROLLED_BACK,
+                        payload=payload,
+                        source="auto_rollback_handler",
+                    ),
+                    name="rollback_completed",
+                )
+                logger.info(
+                    f"[AutoRollbackHandler] Emitted PROMOTION_ROLLED_BACK for {config_key} "
+                    f"(v{result.get('from_version')} → v{result.get('to_version')})"
+                )
+            except RuntimeError:
+                # No running event loop - use sync if available
+                if hasattr(bus, 'publish_sync'):
+                    from app.distributed.data_events import DataEvent
+
+                    sync_event = DataEvent(
+                        event_type=DataEventType.PROMOTION_ROLLED_BACK,
+                        payload=payload,
+                        source="auto_rollback_handler",
+                    )
+                    bus.publish_sync(sync_event)
+                    logger.info(
+                        f"[AutoRollbackHandler] Emitted PROMOTION_ROLLED_BACK (sync) for {config_key}"
+                    )
+
+        except ImportError as e:
+            logger.debug(f"[AutoRollbackHandler] Event bus not available: {e}")
+        except Exception as e:
+            logger.warning(f"[AutoRollbackHandler] Failed to emit rollback event: {e}")
 
     def approve_pending_rollback(self, model_id: str) -> dict[str, Any]:
         """Approve and execute a pending rollback.

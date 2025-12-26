@@ -35,7 +35,7 @@ def _move_type_str(move: object) -> str:
     if hasattr(raw, "value"):
         try:
             return str(raw.value)
-        except Exception:
+        except (AttributeError, TypeError):
             pass
     return str(raw)
 
@@ -48,7 +48,7 @@ def _move_player_int(move: object) -> int | None:
         return None
     try:
         return int(raw)
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
@@ -58,7 +58,7 @@ def _pos_key(pos: object) -> str:
     if hasattr(pos, "to_key"):
         try:
             return str(pos.to_key())
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return ""
     if isinstance(pos, dict):
         try:
@@ -68,11 +68,11 @@ def _pos_key(pos: object) -> str:
             if z is None:
                 return f"{int(x)},{int(y)}"
             return f"{int(x)},{int(y)},{int(z)}"
-        except Exception:
+        except (KeyError, ValueError, TypeError):
             return ""
     try:
         return str(pos)
-    except Exception:
+    except (TypeError, ValueError):
         return ""
 
 
@@ -235,7 +235,7 @@ class MoveCache:
         last_move_sig = ""
         try:
             last_move = (state.move_history or [])[-1]
-        except Exception:
+        except (IndexError, TypeError, AttributeError):
             last_move = None
         if last_move is not None:
             last_type = _move_type_str(last_move)
@@ -271,7 +271,7 @@ class MoveCache:
         swap_sig = ""
         try:
             swap_enabled = bool(rules_options.get("swapRuleEnabled", False))
-        except Exception:
+        except (AttributeError, TypeError):
             swap_enabled = False
 
         if swap_enabled and player == 2 and max_players == 2:

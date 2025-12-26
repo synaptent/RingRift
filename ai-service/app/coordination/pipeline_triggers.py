@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
@@ -261,10 +262,12 @@ class PipelineTrigger:
             config_key = f"{board_type}_{num_players}p"
 
             # Check for running training processes
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["pgrep", "-f", f"train.*{board_type}.*{num_players}"],
                 capture_output=True,
                 text=True,
+                timeout=5,
             )
 
             if result.returncode == 0 and result.stdout.strip():

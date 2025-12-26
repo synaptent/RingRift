@@ -36,4 +36,4 @@ Used by:
 
 - `daemon_manager.py` for multi-provider orchestration
 - `node_recovery.py` for auto-recovery
-- `lambda_idle.py` for cost optimization
+- ~~`lambda_idle.py` for cost optimization~~ (DEPRECATED: Lambda account terminated Dec 2025)

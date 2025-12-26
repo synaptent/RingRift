@@ -284,10 +284,10 @@ def main():
     print("=" * 50)
     print("""
 1. IMMEDIATE (square19_2p is only 16 Elo from 2000!):
-   python -m app.gauntlet.runner \\
+   python scripts/quick_gauntlet.py \\
+     --model models/canonical_square19_2p.pth \\
      --board-type square19 --num-players 2 \\
-     --model-path models/canonical_square19_2p.pth \\
-     --games 100 --write-elo
+     --games 100
 
 2. LAUNCH MASTER LOOP (orchestrates all daemons):
    python scripts/master_loop.py

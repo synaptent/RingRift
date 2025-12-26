@@ -200,6 +200,7 @@ class SelfplayOrchestrator:
             router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
             router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, self._on_resource_constraint)
             router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
+            router.subscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
 
             # Subscribe to curriculum events (December 2025 - Phase 1 feedback loop)
             router.subscribe(DataEventType.CURRICULUM_REBALANCED.value, self._on_curriculum_rebalanced)
@@ -572,6 +573,47 @@ class SelfplayOrchestrator:
             logger.info(
                 f"[SelfplayOrchestrator] Minor regression detected in {metric_name}"
             )
+
+    async def _on_promotion_rolled_back(self, event) -> None:
+        """Handle PROMOTION_ROLLED_BACK - pause selfplay after rollback (December 2025).
+
+        This closes the automatic regression→rollback→pause loop for selfplay:
+        1. REGRESSION_DETECTED emitted (regression_detector.py)
+        2. AutoRollbackHandler triggers rollback (rollback_manager.py)
+        3. PROMOTION_ROLLED_BACK emitted (rollback_manager.py)
+        4. SelfplayOrchestrator pauses selfplay (this handler)
+
+        Args:
+            event: PROMOTION_ROLLED_BACK event with payload:
+                - model_id: Model that was rolled back
+                - config_key: Config identifier (e.g., "hex8_2p")
+                - from_version: Version rolled back from
+                - to_version: Version rolled back to
+                - reason: Reason for rollback
+        """
+        payload = event.payload
+        model_id = payload.get("model_id", "")
+        config_key = payload.get("config_key", "")
+        from_version = payload.get("from_version", "")
+        to_version = payload.get("to_version", "")
+        reason = payload.get("reason", "unknown")
+
+        if not config_key:
+            # Try to extract from model_id
+            if model_id and "_v" in model_id:
+                config_key = model_id.rsplit("_v", 1)[0]
+
+        logger.warning(
+            f"[SelfplayOrchestrator] Model rollback completed for {config_key}: "
+            f"v{from_version} → v{to_version} (reason: {reason})"
+        )
+
+        # Pause selfplay until the model is validated
+        self._paused_for_regression = True
+        logger.warning(
+            f"[SelfplayOrchestrator] Selfplay paused for {config_key} after rollback - "
+            f"resume after model validation"
+        )
 
     async def _on_curriculum_rebalanced(self, event) -> None:
         """Handle CURRICULUM_REBALANCED - update selfplay allocation weights.

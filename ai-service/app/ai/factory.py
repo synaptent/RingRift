@@ -712,13 +712,34 @@ class AIFactory:
             from app.ai.gumbel_mcts_ai import GumbelMCTSAI
             ai_class = GumbelMCTSAI
         elif ai_type == AIType.EBMO:
-            from app.ai.ebmo_ai import EBMO_AI
+            import warnings
+            warnings.warn(
+                "EBMO is deprecated (archived Dec 2025). Use GNNPolicyNet or HybridPolicyNet instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            from archive.deprecated_ai.ebmo_ai import EBMO_AI
             ai_class = EBMO_AI
         elif ai_type == AIType.GMO:
-            from app.ai.gmo_ai import GMOAI
+            import warnings
+            warnings.warn(
+                "GMO is deprecated (archived Dec 2025). Use GNNPolicyNet or HybridPolicyNet instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            from archive.deprecated_ai.gmo_ai import GMOAI
             ai_class = GMOAI
         elif ai_type == AIType.GMO_V2:
-            from app.ai.gmo_v2 import GMOv2AI
+            import warnings
+            warnings.warn(
+                "GMO v2 is deprecated (archived Dec 2025). Use GNNPolicyNet or HybridPolicyNet instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            from archive.deprecated_ai.gmo_v2 import GMOv2AI
             ai_class = GMOv2AI
         elif ai_type == AIType.GMO_MCTS:
             from app.ai.gmo_mcts_hybrid import GMOMCTSHybrid
@@ -727,7 +748,14 @@ class AIFactory:
             from app.ai.gmo_gumbel_hybrid import GumbelMCTSGMOAI
             ai_class = GumbelMCTSGMOAI
         elif ai_type == AIType.IG_GMO:
-            from app.ai.ig_gmo import IGGMO
+            import warnings
+            warnings.warn(
+                "IG-GMO is deprecated (archived Dec 2025). Use GNNPolicyNet or HybridPolicyNet instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            from archive.deprecated_ai.ig_gmo import IGGMO
             ai_class = IGGMO
         elif ai_type == AIType.CAGE:
             from app.ai.archive.cage_ai import CAGE_AI
@@ -999,6 +1027,13 @@ class AIFactory:
 
         # EBMO AI (Energy-Based Move Optimization)
         if agent_key == "ebmo" or agent_key.startswith("ebmo_"):
+            import warnings
+            warnings.warn(
+                "EBMO is deprecated (archived Dec 2025). Use GNN or Hybrid AI instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             # Parse optional model path: ebmo_modelpath
             model_path = None
             if "_" in agent_lower:
@@ -1014,7 +1049,7 @@ class AIFactory:
                 rng_seed=rng_seed,
                 nn_model_id=nn_model_id,
             )
-            from app.ai.ebmo_ai import EBMO_AI
+            from archive.deprecated_ai.ebmo_ai import EBMO_AI
             return EBMO_AI(player_number, config, model_path=model_path)
 
         # GMO-MCTS Hybrid (uses GMO for move priors in MCTS tree search)
@@ -1065,21 +1100,35 @@ class AIFactory:
 
         # GMO AI (Gradient Move Optimization - entropy-guided gradient ascent)
         if agent_key == "gmo" or agent_key.startswith("gmo_"):
+            import warnings
+            warnings.warn(
+                "GMO is deprecated (archived Dec 2025). Use GNN or Hybrid AI instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             config = AIConfig(
                 difficulty=6,
                 rng_seed=rng_seed,
                 nn_model_id=nn_model_id,
             )
-            from app.ai.gmo_ai import GMOAI
+            from archive.deprecated_ai.gmo_ai import GMOAI
             return GMOAI(player_number, config)
 
         if agent_key == "ig_gmo" or agent_key.startswith("ig_gmo_"):
+            import warnings
+            warnings.warn(
+                "IG-GMO is deprecated (archived Dec 2025). Use GNN or Hybrid AI instead. "
+                "Will be removed in Q2 2026.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             config = AIConfig(
                 difficulty=6,
                 rng_seed=rng_seed,
                 nn_model_id=nn_model_id,
             )
-            from app.ai.ig_gmo import IGGMO
+            from archive.deprecated_ai.ig_gmo import IGGMO
             return IGGMO(player_number, config)
 
         # CAGE AI (Constraint-Aware Graph Energy-based optimization)

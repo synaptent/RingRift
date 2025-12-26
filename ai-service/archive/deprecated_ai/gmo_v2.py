@@ -50,8 +50,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..models import AIConfig, GameState, Move, MoveType
-from ..utils.torch_utils import safe_load_checkpoint
+from app.models import AIConfig, GameState, Move, MoveType
+from app.utils.torch_utils import safe_load_checkpoint
 from .base import BaseAI
 from .gmo_ai import NoveltyTracker
 

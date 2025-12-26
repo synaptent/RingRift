@@ -541,8 +541,8 @@ class TrainingNodeWatcher:
                     ),
                     error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
                 )
-            except Exception:
-                pass  # Best effort
+            except Exception as emit_err:
+                logger.debug(f"[DataSync] Event emission failed: {emit_err}")
 
     def detect_local_training(self) -> bool:
         """Check if training is running locally.
@@ -595,8 +595,8 @@ class TrainingNodeWatcher:
                     ),
                     error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
                 )
-            except Exception:
-                pass  # Best effort
+            except Exception as emit_err:
+                logger.debug(f"[DataSync] Priority sync event emission failed: {emit_err}")
             return False
 
     def get_training_nodes(self) -> set[str]:

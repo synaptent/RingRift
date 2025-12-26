@@ -380,9 +380,10 @@ describe('SpectatorHUD', () => {
       render(<SpectatorHUD {...defaultProps} phase="movement" />);
 
       // The phase info should include spectator hints
+      // Phase label should be visible
+      expect(screen.getByText(/Movement Phase/)).toBeInTheDocument();
       // Spectator hint text should be visible
-      const phaseSection = screen.getByText(/Your Move/).closest('div');
-      expect(phaseSection).toBeInTheDocument();
+      expect(screen.getByText(/Player is choosing a move/)).toBeInTheDocument();
     });
 
     it('surfaces spectator hint text for terminal game_over phase', () => {

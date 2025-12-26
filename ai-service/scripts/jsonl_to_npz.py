@@ -197,7 +197,7 @@ def _complete_remaining_phases(
             )
             try:
                 state = GameEngine.apply_move(state, no_place_move)
-            except Exception:
+            except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
                 # Can't apply - must place a ring
                 return state
             iterations += 1
@@ -220,7 +220,7 @@ def _complete_remaining_phases(
                 state = GameEngine.apply_move(state, no_place_move)
                 iterations += 1
                 continue  # Try again after skipping placement
-            except Exception:
+            except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
                 # Can't skip placement - must place a ring first
                 # Return as-is and let caller handle
                 return state
@@ -264,7 +264,7 @@ def _complete_remaining_phases(
             )
             try:
                 state = GameEngine.apply_move(state, no_action_move)
-            except Exception:
+            except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
                 # Can't apply - might have mandatory moves
                 return state
         else:
@@ -422,7 +422,7 @@ def _process_gpu_selfplay_record(
                 # GPU selfplay JSONL has complete bookkeeping moves - apply directly
                 # trace_mode=True handles any phase coercion needed
                 current_state = GameEngine.apply_move(current_state, move, trace_mode=True)
-            except Exception:
+            except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
                 break  # Stop on error
             continue
 
@@ -479,7 +479,7 @@ def _process_gpu_selfplay_record(
                                     if soft_idx != INVALID_MOVE_INDEX:
                                         soft_indices.append(soft_idx)
                                         soft_values.append(float(prob))
-                        except Exception:
+                        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
                             pass
 
                 if soft_indices:
@@ -882,7 +882,7 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
                 ) if isinstance(line, dict) else line
                 for line in formed_lines_raw
             )
-        except Exception:
+        except (TypeError, ValueError, KeyError, AttributeError):
             formed_lines = None
 
     collapsed_markers_raw = move_dict.get("collapsed_markers") or move_dict.get("collapsedMarkers")
@@ -890,7 +890,7 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
     if collapsed_markers_raw:
         try:
             collapsed_markers = tuple(parse_position(p) for p in collapsed_markers_raw if p)
-        except Exception:
+        except (TypeError, ValueError, KeyError, AttributeError):
             collapsed_markers = None
 
     disconnected_regions_raw = move_dict.get("disconnected_regions") or move_dict.get("disconnectedRegions")
@@ -905,7 +905,7 @@ def parse_move(move_dict: dict[str, Any]) -> Move:
                 ) if isinstance(region, dict) else region
                 for region in disconnected_regions_raw
             )
-        except Exception:
+        except (TypeError, ValueError, KeyError, AttributeError):
             disconnected_regions = None
 
     return Move(
@@ -1366,7 +1366,7 @@ def process_jsonl_file(
                     try:
                         final_state = GameEngine.apply_move(final_state, move, trace_mode=gpu_selfplay_mode)
                         moves_succeeded += 1
-                    except Exception:
+                    except (ValueError, RuntimeError, KeyError, IndexError, AttributeError):
                         # Stop at first error - state is now desynced
                         break
 
@@ -1449,7 +1449,7 @@ def process_jsonl_file(
                                             if soft_idx != INVALID_MOVE_INDEX:
                                                 soft_indices.append(soft_idx)
                                                 soft_values.append(float(prob))
-                                except Exception:
+                                except (ValueError, TypeError, KeyError, IndexError, AttributeError):
                                     pass
 
                         if soft_indices:

@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from app.ai.factory import AIFactory
-from app.ai.gmo_ai import GMOAI, GMOConfig
+from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
 from app.game_engine import GameEngine
 from app.models import AIConfig, AIType, BoardType
 from app.training.train_gmo_selfplay import create_initial_state

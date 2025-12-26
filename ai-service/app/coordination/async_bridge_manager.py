@@ -130,7 +130,10 @@ class AsyncBridgeManager:
         self._stats = BridgeStats()
         self._initialized = False
         self._shutting_down = False
-        self._lock = threading.Lock()
+        # Use asyncio.Lock for async methods
+        self._async_lock = asyncio.Lock()
+        # Keep threading.Lock for sync methods (initialize, register_bridge, etc.)
+        self._sync_lock = threading.Lock()
 
         # Track active futures for graceful shutdown
         self._active_futures: WeakSet[Future] = WeakSet()
@@ -140,7 +143,7 @@ class AsyncBridgeManager:
 
         Can be called synchronously from any context.
         """
-        with self._lock:
+        with self._sync_lock:
             if self._initialized:
                 return
 
@@ -213,7 +216,7 @@ class AsyncBridgeManager:
             asyncio.set_event_loop(loop)
 
         # Track statistics
-        with self._lock:
+        async with self._async_lock:
             self._stats.total_tasks_submitted += 1
             self._stats.active_tasks += 1
             self._stats.peak_active_tasks = max(
@@ -232,7 +235,7 @@ class AsyncBridgeManager:
 
             # Update success stats
             duration_ms = (time.time() - start_time) * 1000
-            with self._lock:
+            async with self._async_lock:
                 self._stats.total_tasks_completed += 1
                 self._stats.last_task_time = time.time()
                 # Update rolling average
@@ -245,12 +248,12 @@ class AsyncBridgeManager:
             return result
 
         except (RuntimeError, ValueError, OSError, TypeError, AttributeError):
-            with self._lock:
+            async with self._async_lock:
                 self._stats.total_tasks_failed += 1
             raise
 
         finally:
-            with self._lock:
+            async with self._async_lock:
                 self._stats.active_tasks -= 1
 
     def register_bridge(
@@ -266,7 +269,7 @@ class AsyncBridgeManager:
             bridge: Bridge instance
             shutdown_callback: Optional callback for shutdown coordination
         """
-        with self._lock:
+        with self._sync_lock:
             self._bridges[name] = RegisteredBridge(
                 name=name,
                 bridge=bridge,
@@ -283,7 +286,7 @@ class AsyncBridgeManager:
         Args:
             name: Bridge name to unregister
         """
-        with self._lock:
+        with self._sync_lock:
             if name in self._bridges:
                 del self._bridges[name]
                 self._stats.bridges_registered = len(self._bridges)
@@ -297,7 +300,7 @@ class AsyncBridgeManager:
         Returns:
             Bridge instance or None
         """
-        with self._lock:
+        with self._sync_lock:
             reg = self._bridges.get(name)
             return reg.bridge if reg else None
 
@@ -358,7 +361,7 @@ class AsyncBridgeManager:
         Returns:
             Dict with statistics
         """
-        with self._lock:
+        with self._sync_lock:
             return {
                 "initialized": self._initialized,
                 "shutting_down": self._shutting_down,
@@ -452,9 +455,10 @@ def reset_bridge_manager() -> None:
     with _manager_lock:
         if _manager is not None:
             try:
-                # Synchronous cleanup
-                if _manager._executor:
-                    _manager._executor.shutdown(wait=False)
+                # Synchronous cleanup - use sync_lock if available
+                with _manager._sync_lock if hasattr(_manager, '_sync_lock') else contextlib.suppress():
+                    if _manager._executor:
+                        _manager._executor.shutdown(wait=False)
             except (RuntimeError, OSError):
                 pass
         _manager = None

@@ -56,6 +56,7 @@ __all__ = [
     "SSHClient",
     "SSHConfig",
     "SSHResult",
+    "SSHHealth",
     "get_ssh_client",
     "run_ssh_command",
     "run_ssh_command_async",
@@ -86,6 +87,16 @@ class SSHConfig:
     work_dir: str | None = None
     venv_activate: str | None = None
 
+    # Cloudflare Zero Trust support
+    cloudflare_tunnel: str | None = None
+    cloudflare_service_token_id: str | None = None
+    cloudflare_service_token_secret: str | None = None
+
+    @property
+    def use_cloudflare(self) -> bool:
+        """Check if Cloudflare Zero Trust tunnel is configured."""
+        return bool(self.cloudflare_tunnel)
+
     @classmethod
     def from_cluster_node(cls, node_id: str) -> SSHConfig | None:
         """Load SSH configuration from cluster_hosts.yaml."""
@@ -103,10 +114,35 @@ class SSHConfig:
                 key_path=node.get("ssh_key"),
                 tailscale_ip=node.get("tailscale_ip"),
                 work_dir=node.get("ringrift_path", "~/ringrift/ai-service"),
+                cloudflare_tunnel=node.get("cloudflare_tunnel"),
+                cloudflare_service_token_id=node.get("cloudflare_service_token_id"),
+                cloudflare_service_token_secret=node.get("cloudflare_service_token_secret"),
             )
         except Exception as e:
             logger.debug(f"Failed to load SSH config for {node_id}: {e}")
             return None
+
+    @classmethod
+    def from_host_config(cls, host_config: Any) -> SSHConfig:
+        """Create SSHConfig from a HostConfig object.
+
+        Args:
+            host_config: HostConfig instance from distributed_hosts.yaml
+
+        Returns:
+            SSHConfig instance
+        """
+        return cls(
+            host=getattr(host_config, "ssh_host", getattr(host_config, "tailscale_ip", "")),
+            port=getattr(host_config, "ssh_port", 22),
+            user=getattr(host_config, "ssh_user", "ubuntu"),
+            key_path=getattr(host_config, "ssh_key", None),
+            tailscale_ip=getattr(host_config, "tailscale_ip", None),
+            work_dir=getattr(host_config, "ringrift_path", "~/ringrift/ai-service"),
+            cloudflare_tunnel=getattr(host_config, "cloudflare_tunnel", None),
+            cloudflare_service_token_id=getattr(host_config, "cloudflare_service_token_id", None),
+            cloudflare_service_token_secret=getattr(host_config, "cloudflare_service_token_secret", None),
+        )
 
 
 @dataclass
@@ -131,6 +167,31 @@ class SSHResult:
         return self.success
 
 
+@dataclass
+class SSHHealth:
+    """SSH connection health tracking."""
+    last_success: float | None = None
+    last_failure: float | None = None
+    consecutive_failures: int = 0
+    consecutive_successes: int = 0
+    total_successes: int = 0
+    total_failures: int = 0
+
+    @property
+    def is_healthy(self) -> bool:
+        """Check if connection is considered healthy."""
+        # Healthy if we have recent success and < 3 consecutive failures
+        return self.consecutive_failures < 3
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate overall success rate."""
+        total = self.total_successes + self.total_failures
+        if total == 0:
+            return 0.0
+        return self.total_successes / total
+
+
 # =============================================================================
 # SSH Client
 # =============================================================================
@@ -149,20 +210,61 @@ class SSHClient:
         self._config = config
         self._control_path_dir = control_path_dir or Path.home() / ".ssh" / "ringrift_control"
         self._control_path_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._health = SSHHealth()
 
     @property
     def config(self) -> SSHConfig:
         return self._config
+
+    @property
+    def health(self) -> SSHHealth:
+        """Get connection health status."""
+        return self._health
+
+    def _record_success(self) -> None:
+        """Record successful command execution."""
+        self._health.last_success = time.time()
+        self._health.consecutive_successes += 1
+        self._health.consecutive_failures = 0
+        self._health.total_successes += 1
+
+    def _record_failure(self) -> None:
+        """Record failed command execution."""
+        self._health.last_failure = time.time()
+        self._health.consecutive_failures += 1
+        self._health.consecutive_successes = 0
+        self._health.total_failures += 1
 
     def _get_control_path(self) -> str:
         """Get ControlMaster socket path for this host."""
         safe_host = self._config.host.replace(".", "_").replace(":", "_")
         return str(self._control_path_dir / f"{safe_host}_{self._config.port}")
 
+    def _build_cloudflare_proxy_command(self) -> str:
+        """Build cloudflared ProxyCommand for Cloudflare Zero Trust tunnel.
+
+        Returns:
+            ProxyCommand string for SSH config (-o ProxyCommand=...)
+        """
+        if not self._config.cloudflare_tunnel:
+            raise ValueError("Cloudflare tunnel not configured")
+
+        cmd_parts = ["cloudflared", "access", "ssh", "--hostname", self._config.cloudflare_tunnel]
+
+        # Add service token authentication if configured
+        if self._config.cloudflare_service_token_id and self._config.cloudflare_service_token_secret:
+            cmd_parts.extend([
+                "--service-token-id", self._config.cloudflare_service_token_id,
+                "--service-token-secret", self._config.cloudflare_service_token_secret,
+            ])
+
+        return " ".join(cmd_parts)
+
     def _build_ssh_command(
         self,
         remote_command: str,
         use_tailscale: bool = False,
+        use_cloudflare: bool = False,
     ) -> list[str]:
         """Build SSH command with proper options."""
         cmd = [
@@ -175,6 +277,11 @@ class SSHClient:
             "-o", f"ServerAliveCountMax={self._config.server_alive_count_max}",
             "-o", "TCPKeepAlive=yes",
         ]
+
+        # Cloudflare Zero Trust tunnel via ProxyCommand
+        if use_cloudflare:
+            proxy_cmd = self._build_cloudflare_proxy_command()
+            cmd.extend(["-o", f"ProxyCommand={proxy_cmd}"])
 
         # Connection pooling via ControlMaster
         if self._config.use_control_master:
@@ -229,16 +336,18 @@ class SSHClient:
         if self._config.venv_activate:
             remote_cmd = f"source {self._config.venv_activate} && {remote_cmd}"
 
-        # Try Tailscale first, then direct
+        # Transport fallback chain: Tailscale -> Direct -> Cloudflare
         transports = []
         if self._config.tailscale_ip:
-            transports.append(("tailscale", True))
-        transports.append(("direct", False))
+            transports.append(("tailscale", True, False))
+        transports.append(("direct", False, False))
+        if self._config.use_cloudflare:
+            transports.append(("cloudflare", False, True))
 
         last_error = None
-        for transport_name, use_tailscale in transports:
+        for transport_name, use_tailscale, use_cloudflare in transports:
             try:
-                ssh_cmd = self._build_ssh_command(remote_cmd, use_tailscale)
+                ssh_cmd = self._build_ssh_command(remote_cmd, use_tailscale, use_cloudflare)
 
                 proc = await asyncio.create_subprocess_exec(
                     *ssh_cmd,
@@ -253,7 +362,7 @@ class SSHClient:
                     )
                     elapsed_ms = (time.time() - start_time) * 1000
 
-                    return SSHResult(
+                    result = SSHResult(
                         success=proc.returncode == 0,
                         returncode=proc.returncode or 0,
                         stdout=stdout.decode("utf-8", errors="replace"),
@@ -264,10 +373,19 @@ class SSHClient:
                         transport_used=transport_name,
                     )
 
+                    # Record health status
+                    if result.success:
+                        self._record_success()
+                    else:
+                        self._record_failure()
+
+                    return result
+
                 except asyncio.TimeoutError:
                     proc.kill()
                     await proc.wait()
                     elapsed_ms = (time.time() - start_time) * 1000
+                    self._record_failure()
                     return SSHResult(
                         success=False,
                         returncode=-1,
@@ -286,6 +404,7 @@ class SSHClient:
                 continue
 
         elapsed_ms = (time.time() - start_time) * 1000
+        self._record_failure()
         return SSHResult(
             success=False,
             returncode=-1,
@@ -337,15 +456,18 @@ class SSHClient:
             env_str = " ".join(f"{k}={v}" for k, v in env.items())
             remote_cmd = f"{env_str} {remote_cmd}"
 
+        # Transport fallback chain: Tailscale -> Direct -> Cloudflare
         transports = []
         if self._config.tailscale_ip:
-            transports.append(("tailscale", True))
-        transports.append(("direct", False))
+            transports.append(("tailscale", True, False))
+        transports.append(("direct", False, False))
+        if self._config.use_cloudflare:
+            transports.append(("cloudflare", False, True))
 
         last_error = None
-        for transport_name, use_tailscale in transports:
+        for transport_name, use_tailscale, use_cloudflare in transports:
             try:
-                ssh_cmd = self._build_ssh_command(remote_cmd, use_tailscale)
+                ssh_cmd = self._build_ssh_command(remote_cmd, use_tailscale, use_cloudflare)
 
                 result = subprocess.run(
                     ssh_cmd,
@@ -355,7 +477,7 @@ class SSHClient:
                 )
                 elapsed_ms = (time.time() - start_time) * 1000
 
-                return SSHResult(
+                ssh_result = SSHResult(
                     success=result.returncode == 0,
                     returncode=result.returncode,
                     stdout=result.stdout,
@@ -366,8 +488,17 @@ class SSHClient:
                     transport_used=transport_name,
                 )
 
+                # Record health status
+                if ssh_result.success:
+                    self._record_success()
+                else:
+                    self._record_failure()
+
+                return ssh_result
+
             except subprocess.TimeoutExpired:
                 elapsed_ms = (time.time() - start_time) * 1000
+                self._record_failure()
                 return SSHResult(
                     success=False,
                     returncode=-1,
@@ -386,6 +517,7 @@ class SSHClient:
                 continue
 
         elapsed_ms = (time.time() - start_time) * 1000
+        self._record_failure()
         return SSHResult(
             success=False,
             returncode=-1,
@@ -492,6 +624,66 @@ class SSHClient:
                 success=False, returncode=-1, stdout="", stderr=f"SCP timed out after {timeout}s",
                 elapsed_ms=elapsed_ms, command=f"scp {local_path}", host=self._config.host, timed_out=True,
             )
+
+    async def run_background(
+        self,
+        command: str,
+        log_file: str | None = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> SSHResult:
+        """Execute command in background using nohup.
+
+        Args:
+            command: Command to execute
+            log_file: Optional log file path (defaults to nohup.out)
+            cwd: Working directory
+            env: Environment variables
+
+        Returns:
+            SSHResult with PID in stdout if successful
+        """
+        # Build nohup command
+        log_redirect = f"> {log_file} 2>&1" if log_file else "> /dev/null 2>&1"
+        bg_command = f"nohup {command} {log_redirect} & echo $!"
+
+        result = await self.run_async(bg_command, cwd=cwd, env=env)
+
+        if result.success:
+            # Extract PID from output
+            pid = result.stdout.strip()
+            logger.debug(f"Started background process on {self._config.host}: PID={pid}")
+
+        return result
+
+    async def get_process_memory(self, pid: int) -> tuple[int, str] | None:
+        """Get memory usage of a process in MB.
+
+        Args:
+            pid: Process ID to check
+
+        Returns:
+            Tuple of (memory_mb, command_name) or None if process not found
+        """
+        # Use ps to get RSS (resident set size) in KB and command name
+        cmd = f"ps -p {pid} -o rss=,comm= 2>/dev/null || echo ''"
+        result = await self.run_async(cmd)
+
+        if not result.success or not result.stdout.strip():
+            return None
+
+        try:
+            parts = result.stdout.strip().split(None, 1)
+            if len(parts) < 2:
+                return None
+
+            rss_kb = int(parts[0])
+            cmd_name = parts[1]
+            memory_mb = rss_kb // 1024
+
+            return memory_mb, cmd_name
+        except (ValueError, IndexError):
+            return None
 
     async def close(self) -> None:
         """Close ControlMaster connection."""

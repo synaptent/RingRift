@@ -48,8 +48,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..models import AIConfig, GameState, Move, MoveType, Position
-from ..utils.torch_utils import safe_load_checkpoint
+from app.models import AIConfig, GameState, Move, MoveType, Position
+from app.utils.torch_utils import safe_load_checkpoint
 from .base import BaseAI
 
 logger = logging.getLogger(__name__)

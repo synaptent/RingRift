@@ -371,17 +371,31 @@ class MaterialEvaluator:
                 (my_rings - max_opp_rings) * self.weights.rings_in_hand
             )
             
-            # Eliminated rings (not symmetric - absolute progress)
+            # Eliminated rings (symmetric: my progress vs avg opponent progress)
+            opp_eliminated = 0
+            opp_count = 0
+            for p in state.players:
+                if p.player_number != player_idx:
+                    opp_eliminated += p.eliminated_rings
+                    opp_count += 1
+            opp_eliminated_avg = opp_eliminated / max(1, opp_count)
             result.eliminated_rings = (
-                my_player.eliminated_rings * self.weights.eliminated_rings
+                (my_player.eliminated_rings - opp_eliminated_avg) *
+                self.weights.eliminated_rings
             )
-        
-        # Marker count (not symmetric - absolute count)
-        my_markers = sum(
-            1 for m in state.board.markers.values()
-            if m.player == player_idx
+
+        # Marker count (symmetric: my markers vs opponent markers)
+        my_markers = 0
+        opp_markers = 0
+        for m in state.board.markers.values():
+            if m.player == player_idx:
+                my_markers += 1
+            else:
+                opp_markers += 1
+        opp_markers_avg = opp_markers / max(1, num_opponents)
+        result.marker_count = (
+            (my_markers - opp_markers_avg) * self.weights.marker_count
         )
-        result.marker_count = my_markers * self.weights.marker_count
         
         # Compute total
         result.total = (

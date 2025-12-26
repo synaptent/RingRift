@@ -278,7 +278,18 @@ class RingRiftEnv:
 
     @cached_property
     def lambda_idle_enabled(self) -> bool:
-        """Whether Lambda idle daemon is enabled."""
+        """Whether Lambda idle daemon is enabled.
+
+        DEPRECATED: Lambda account terminated December 2025.
+        This setting will be removed in Q2 2026.
+        """
+        import warnings
+        warnings.warn(
+            "RINGRIFT_LAMBDA_IDLE_ENABLED is deprecated (Lambda account terminated Dec 2025). "
+            "This setting will be removed in Q2 2026.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return os.environ.get("RINGRIFT_LAMBDA_IDLE_ENABLED", "1") == "1"
 
     @cached_property
@@ -297,26 +308,64 @@ class RingRiftEnv:
 
     # ==========================================================================
     # Lambda/Provider Specific
+    # DEPRECATED: Lambda account terminated December 2025
+    # These settings will be removed in Q2 2026
     # ==========================================================================
 
     @cached_property
     def lambda_idle_interval(self) -> int:
-        """Lambda idle check interval."""
+        """Lambda idle check interval.
+
+        DEPRECATED: Lambda account terminated December 2025.
+        """
+        import warnings
+        warnings.warn(
+            "RINGRIFT_LAMBDA_IDLE_INTERVAL is deprecated (Lambda account terminated Dec 2025).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return int(os.environ.get("RINGRIFT_LAMBDA_IDLE_INTERVAL", "300"))
 
     @cached_property
     def lambda_idle_threshold(self) -> float:
-        """Lambda GPU idle threshold."""
+        """Lambda GPU idle threshold.
+
+        DEPRECATED: Lambda account terminated December 2025.
+        """
+        import warnings
+        warnings.warn(
+            "RINGRIFT_LAMBDA_IDLE_THRESHOLD is deprecated (Lambda account terminated Dec 2025).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return float(os.environ.get("RINGRIFT_LAMBDA_IDLE_THRESHOLD", "5.0"))
 
     @cached_property
     def lambda_idle_duration(self) -> int:
-        """Lambda idle duration threshold."""
+        """Lambda idle duration threshold.
+
+        DEPRECATED: Lambda account terminated December 2025.
+        """
+        import warnings
+        warnings.warn(
+            "RINGRIFT_LAMBDA_IDLE_DURATION is deprecated (Lambda account terminated Dec 2025).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return int(os.environ.get("RINGRIFT_LAMBDA_IDLE_DURATION", "1800"))
 
     @cached_property
     def lambda_min_nodes(self) -> int:
-        """Minimum Lambda nodes to keep."""
+        """Minimum Lambda nodes to keep.
+
+        DEPRECATED: Lambda account terminated December 2025.
+        """
+        import warnings
+        warnings.warn(
+            "RINGRIFT_LAMBDA_MIN_NODES is deprecated (Lambda account terminated Dec 2025).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return int(os.environ.get("RINGRIFT_LAMBDA_MIN_NODES", "1"))
 
     # ==========================================================================

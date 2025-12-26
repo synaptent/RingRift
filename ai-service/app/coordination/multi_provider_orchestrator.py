@@ -123,6 +123,22 @@ class MultiProviderOrchestrator:
         self._last_discovery = 0
         self._discovery_interval = 60  # seconds
 
+    async def _run_subprocess(
+        self,
+        args: list[str],
+        timeout: int,
+        capture_output: bool = True,
+        text: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run subprocess without blocking the event loop."""
+        return await asyncio.to_thread(
+            subprocess.run,
+            args,
+            capture_output=capture_output,
+            text=text,
+            timeout=timeout,
+        )
+
     async def discover_all(self) -> dict[str, ClusterNode]:
         """Discover nodes from all providers."""
         async with self._discovery_lock:
@@ -158,9 +174,9 @@ class MultiProviderOrchestrator:
         """Discover nodes from Tailscale network."""
         nodes = []
         try:
-            result = subprocess.run(
+            result = await self._run_subprocess(
                 ["tailscale", "status", "--json"],
-                capture_output=True, text=True, timeout=10
+                timeout=10,
             )
             if result.returncode != 0:
                 return nodes
@@ -209,9 +225,9 @@ class MultiProviderOrchestrator:
         """Discover nodes from Vast.ai."""
         nodes = []
         try:
-            result = subprocess.run(
+            result = await self._run_subprocess(
                 ["vastai", "show", "instances", "--raw"],
-                capture_output=True, text=True, timeout=30
+                timeout=30,
             )
             if result.returncode != 0:
                 return nodes
@@ -266,12 +282,12 @@ class MultiProviderOrchestrator:
         """Discover nodes from AWS EC2."""
         nodes = []
         try:
-            result = subprocess.run(
+            result = await self._run_subprocess(
                 ["aws", "ec2", "describe-instances",
                  "--region", "us-east-1",
                  "--query", "Reservations[*].Instances[*]",
                  "--output", "json"],
-                capture_output=True, text=True, timeout=30
+                timeout=30,
             )
             if result.returncode != 0:
                 return nodes
@@ -321,9 +337,9 @@ class MultiProviderOrchestrator:
         """Discover nodes from Hetzner Cloud."""
         nodes = []
         try:
-            result = subprocess.run(
+            result = await self._run_subprocess(
                 ["hcloud", "server", "list", "-o", "json"],
-                capture_output=True, text=True, timeout=30
+                timeout=30,
             )
             if result.returncode != 0:
                 return nodes
@@ -447,7 +463,7 @@ class MultiProviderOrchestrator:
             # Check if Tailscale is installed
             check_cmd = "which tailscale || echo 'not_found'"
             ssh_args = node.ssh_command_list(check_cmd)
-            result = subprocess.run(ssh_args, capture_output=True, text=True, timeout=30)
+            result = await self._run_subprocess(ssh_args, timeout=30)
 
             if "not_found" in result.stdout:
                 # Install Tailscale
@@ -456,7 +472,7 @@ class MultiProviderOrchestrator:
                     "sudo tailscale up --authkey=$TAILSCALE_AUTHKEY --hostname=" + node.name
                 )
                 ssh_args = node.ssh_command_list(install_cmd)
-                result = subprocess.run(ssh_args, capture_output=True, text=True, timeout=120)
+                result = await self._run_subprocess(ssh_args, timeout=120)
 
                 if result.returncode != 0:
                     logger.error(f"[Orchestrator] Tailscale install failed on {node.name}: {result.stderr}")
@@ -465,7 +481,7 @@ class MultiProviderOrchestrator:
                 # Tailscale installed, just bring it up
                 up_cmd = "sudo tailscale up --authkey=$TAILSCALE_AUTHKEY --hostname=" + node.name
                 ssh_args = node.ssh_command_list(up_cmd)
-                result = subprocess.run(ssh_args, capture_output=True, text=True, timeout=60)
+                result = await self._run_subprocess(ssh_args, timeout=60)
 
             logger.info(f"[Orchestrator] Tailscale connected on {node.name}")
             node.is_tailscale_connected = True
@@ -495,7 +511,7 @@ class MultiProviderOrchestrator:
             )
 
             ssh_args = node.ssh_command_list(deploy_cmd)
-            result = subprocess.run(ssh_args, capture_output=True, text=True, timeout=30)
+            result = await self._run_subprocess(ssh_args, timeout=30)
 
             if result.returncode == 0:
                 node.selfplay_running = True

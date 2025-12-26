@@ -21,7 +21,7 @@ import torch
 
 from app.models import AIConfig, GameState, Move
 from app.ai.base import BaseAI
-from app.ai.gmo_ai import GMOAI, GMOConfig, estimate_uncertainty
+from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig, estimate_uncertainty
 
 logger = logging.getLogger(__name__)
 

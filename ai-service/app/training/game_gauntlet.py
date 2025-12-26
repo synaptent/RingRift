@@ -69,7 +69,7 @@ def _ensure_game_modules():
     from app.ai.universal_ai import UniversalAI
     from app.models import AIConfig, AIType, BoardType, GameStatus
     from app.rules.default_engine import DefaultRulesEngine
-    from app.training.generate_data import create_initial_state
+    from app.training.initial_state import create_initial_state
 
     _game_modules_loaded = True
 
@@ -701,10 +701,13 @@ def _evaluate_single_opponent(
 
                 bus = get_event_bus()
                 if bus:
+                    config_key = f"{board_type}_{num_players}p"
                     current_win_rate = result["wins"] / result["games"] if result["games"] > 0 else 0.0
                     bus.publish_sync(DataEvent(
                         event_type=DataEventType.EVALUATION_PROGRESS,
                         payload={
+                            "config_key": config_key,
+                            "board_type": board_type,
                             "baseline": baseline_name,
                             "games_completed": result["games"],
                             "games_total": games_per_opponent,

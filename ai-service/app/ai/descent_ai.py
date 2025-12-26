@@ -125,7 +125,7 @@ class DescentAI(BaseAI):
             try:
                 from .neural_net import NeuralNetAI  # Lazy import
                 self.neural_net = NeuralNetAI(player_number, config)
-            except Exception:
+            except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError):
                 if self.require_neural_net:
                     raise
                 # On any failure, degrade gracefully to heuristic-only search.
@@ -174,7 +174,7 @@ class DescentAI(BaseAI):
                 from .gpu_batch import get_device
                 self.gpu_heuristic = GPUHeuristicEvaluator(device=get_device())
                 logger.info("DescentAI initialized with GPU heuristic evaluator")
-            except Exception:
+            except (ImportError, RuntimeError):
                 logger.warning("Failed to initialize GPU heuristic evaluator", exc_info=True)
                 self.gpu_heuristic = None
 
@@ -197,7 +197,7 @@ class DescentAI(BaseAI):
                     config=eval_config,
                 )
                 logger.info("DescentAI initialized with FastGeometry heuristic evaluator")
-            except Exception:
+            except (ImportError, RuntimeError, ValueError):
                 logger.warning(
                     "Failed to initialize heuristic evaluator; "
                     "falling back to simple material difference",
@@ -337,7 +337,7 @@ class DescentAI(BaseAI):
             if isinstance(data, tuple) and len(data) > 2:
                 try:
                     return float(data[2])
-                except Exception:
+                except (ValueError, TypeError, IndexError):
                     return 0.0
             return 0.0
 
@@ -345,7 +345,7 @@ class DescentAI(BaseAI):
             if isinstance(data, tuple) and len(data) > 3:
                 try:
                     return int(data[3])
-                except Exception:
+                except (ValueError, TypeError, IndexError):
                     return 0
             return 0
 
@@ -367,7 +367,7 @@ class DescentAI(BaseAI):
             _key, data = item
             try:
                 mean = float(data[1])
-            except Exception:
+            except (ValueError, TypeError, IndexError):
                 mean = 0.0
             bonus = c * math.sqrt(log_term / float(_visits(data) + 1))
             if maximizing:
@@ -732,12 +732,12 @@ class DescentAI(BaseAI):
                 if len(old_data) > 2:
                     try:
                         prob = float(old_data[2])
-                    except Exception:
+                    except (ValueError, TypeError, IndexError):
                         prob = 0.0
                 if len(old_data) > 3:
                     try:
                         child_visits = int(old_data[3])
-                    except Exception:
+                    except (ValueError, TypeError, IndexError):
                         child_visits = 0
             children_values[best_move_key] = (best_move, val, prob, child_visits + 1)
 
@@ -1046,12 +1046,12 @@ class DescentAI(BaseAI):
                 if len(old_data) > 2:
                     try:
                         prob = float(old_data[2])
-                    except Exception:
+                    except (ValueError, TypeError, IndexError):
                         prob = 0.0
                 if len(old_data) > 3:
                     try:
                         child_visits = int(old_data[3])
-                    except Exception:
+                    except (ValueError, TypeError, IndexError):
                         child_visits = 0
             children_values[best_move_key] = (best_move, val, prob, child_visits + 1)
 
@@ -1370,7 +1370,7 @@ class DescentAI(BaseAI):
             try:
                 immutable = state.to_immutable()
                 val = self._heuristic_fallback_eval(immutable)
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError):
                 # Fall through to simple heuristic
                 val = self._simple_mutable_eval(state, num_players)
         else:
@@ -1428,7 +1428,7 @@ class DescentAI(BaseAI):
             if self.gpu_heuristic is not None and len(game_states) >= 4:
                 try:
                     return self._gpu_batch_heuristic_eval(game_states)
-                except Exception:
+                except (RuntimeError, ValueError, AttributeError):
                     logger.warning("GPU heuristic batch eval failed, falling back to CPU", exc_info=True)
             return [self.evaluate_position(s) for s in game_states]
 
@@ -1495,7 +1495,7 @@ class DescentAI(BaseAI):
                     v = -v
                 adjusted.append(max(-0.99, min(0.99, v)))
             return adjusted
-        except Exception:
+        except (RuntimeError, ValueError, TypeError, AttributeError, KeyError):
             if self.require_neural_net:
                 logger.error(
                     "DescentAI neural batch evaluation failed with RINGRIFT_REQUIRE_NEURAL_NET=1; "
@@ -1657,7 +1657,7 @@ class DescentAI(BaseAI):
                     game_state.current_player != self.player_number
                 ):
                     val = -val
-            except Exception:
+            except (RuntimeError, ValueError, TypeError, AttributeError, KeyError):
                 if self.require_neural_net:
                     logger.error(
                         "DescentAI neural evaluation failed with RINGRIFT_REQUIRE_NEURAL_NET=1; "

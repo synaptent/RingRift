@@ -532,8 +532,8 @@ class OrchestratorRegistry:
                         f"{elapsed:.0f}s since last heartbeat "
                         f"(warning at {HEARTBEAT_WARNING_THRESHOLD:.0f}s)"
                     )
-                except Exception:
-                    pass
+                except Exception as warn_err:
+                    logger.debug(f"Failed to log heartbeat warning: {warn_err}")
 
             # Find fully stale entries (100% of timeout)
             cursor = conn.execute('''

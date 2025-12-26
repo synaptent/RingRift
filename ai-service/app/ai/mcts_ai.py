@@ -832,7 +832,7 @@ class MCTSAI(HeuristicAI):
                         in_channels=14,
                         global_features=20,
                     )
-            except Exception:
+            except (ImportError, ModuleNotFoundError):
                 self.hex_encoder = None
                 self.hex_model = None
 
@@ -1596,7 +1596,7 @@ class MCTSAI(HeuristicAI):
 
                 return
 
-            except Exception:
+            except RuntimeError:
                 # Common causes: missing/incompatible NN checkpoints. Degrade
                 # to heuristic rollouts instead of failing the whole request.
                 if self.require_neural_net:
@@ -1789,7 +1789,7 @@ class MCTSAI(HeuristicAI):
                         current_val = -current_val
                     curr_node = parent
                     depth_idx = parent_depth
-        except Exception:
+        except RuntimeError:
             if self.require_neural_net:
                 logger.error(
                     "Async MCTS neural evaluation failed with RINGRIFT_REQUIRE_NEURAL_NET=1; "
@@ -1983,7 +1983,7 @@ class MCTSAI(HeuristicAI):
                         current_val = -current_val
                     curr_node = parent
                     depth_idx = parent_depth
-        except Exception:
+        except RuntimeError:
             if self.require_neural_net:
                 logger.error(
                     "Async MCTS neural evaluation failed with RINGRIFT_REQUIRE_NEURAL_NET=1; "
@@ -2646,7 +2646,7 @@ class MCTSAI(HeuristicAI):
 
                 return
 
-            except Exception:
+            except RuntimeError:
                 logger.warning(
                     "MCTS neural evaluation failed; falling back to heuristic rollouts",
                     exc_info=True,
@@ -3169,7 +3169,7 @@ class MCTSAI(HeuristicAI):
                             f"{len(nnue_policy)} moves, temp={self.policy_temperature:.1f}, "
                             f"max_prior={max_p:.3f}, min_prior={min_p:.4f}"
                         )
-                except Exception:
+                except (ValueError, TypeError, KeyError, AttributeError):
                     logger.debug("Failed to seed NNUE root priors", exc_info=True)
             return
 
@@ -3230,7 +3230,7 @@ class MCTSAI(HeuristicAI):
             state_hash = game_state.zobrist_hash or 0
             if self.transposition_table.get(state_hash) is None:
                 self.transposition_table.put(state_hash, (value, policy_vec))
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
             logger.debug("Failed to seed root priors", exc_info=True)
 
     def _sample_child_by_temperature(

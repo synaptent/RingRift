@@ -324,6 +324,13 @@ from app.training.tier_eval_config import (
     HeuristicTierSpec,
 )
 
+# Heuristic tuning utilities (extracted Dec 2025)
+from app.training.heuristic_tuning import (
+    evaluate_heuristic_candidate,
+    run_cmaes_heuristic_optimization,
+    temporary_heuristic_profile,
+)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -337,272 +344,6 @@ logger = logging.getLogger(__name__)
 # module continue to work.
 def seed_all_legacy(seed: int = 42) -> None:
     seed_all(seed)
-
-
-def _flatten_heuristic_weights(
-    profile: Mapping[str, float],
-) -> tuple[list[str], list[float]]:
-    """
-    Deterministically flatten a heuristic weight profile into (keys, values).
-
-    Keys are ordered according to HEURISTIC_WEIGHT_KEYS so that both CMA-ES
-    and reconstruction remain stable across runs and consistent with other
-    heuristic-training tooling.
-    """
-    keys: list[str] = list(HEURISTIC_WEIGHT_KEYS)
-    values: list[float] = []
-    for k in keys:
-        try:
-            values.append(float(profile[k]))
-        except KeyError as exc:
-            raise KeyError(
-                f"Missing heuristic weight {k!r} in profile; all profiles "
-                "used for optimisation must define the full "
-                "HEURISTIC_WEIGHT_KEYS set."
-            ) from exc
-    return keys, values
-
-
-def _reconstruct_heuristic_profile(
-    keys: Sequence[str],
-    values: Sequence[float],
-) -> dict[str, float]:
-    """Reconstruct a heuristic weight mapping from (keys, values)."""
-    if len(keys) != len(values):
-        raise ValueError(
-            "Length mismatch reconstructing heuristic profile: "
-            f"{len(keys)} keys vs {len(values)} values."
-        )
-    return {k: float(v) for k, v in zip(keys, values, strict=False)}
-
-
-@contextlib.contextmanager
-def temporary_heuristic_profile(
-    profile_id: str,
-    weights: Mapping[str, float],
-):
-    """
-    Temporarily register a heuristic weight profile in the
-    HEURISTIC_WEIGHT_PROFILES registry.
-
-    This helper is intended for offline training/evaluation only (e.g.
-    CMA-ES or search jobs) and must not be used on production code paths.
-    """
-    had_existing = profile_id in HEURISTIC_WEIGHT_PROFILES
-    old_value = HEURISTIC_WEIGHT_PROFILES.get(profile_id)
-    HEURISTIC_WEIGHT_PROFILES[profile_id] = dict(weights)
-    try:
-        yield
-    finally:
-        if had_existing:
-            assert old_value is not None
-            HEURISTIC_WEIGHT_PROFILES[profile_id] = old_value
-        else:
-            HEURISTIC_WEIGHT_PROFILES.pop(profile_id, None)
-
-
-def _get_heuristic_tier_by_id(tier_id: str) -> HeuristicTierSpec:
-    """Return the HeuristicTierSpec with the given id or raise ValueError."""
-    for spec in HEURISTIC_TIER_SPECS:
-        if spec.id == tier_id:
-            return spec
-    available = ", ".join(sorted(s.id for s in HEURISTIC_TIER_SPECS))
-    raise ValueError(
-        f"Unknown heuristic tier_id {tier_id!r}. "
-        f"Available heuristic tiers: {available}"
-    )
-
-
-def evaluate_heuristic_candidate(
-    tier_spec: HeuristicTierSpec,
-    base_profile_id: str,
-    keys: Sequence[str],
-    candidate_vector: Sequence[float],
-    rng_seed: int,
-    games_per_candidate: int | None = None,
-) -> tuple[float, dict[str, Any]]:
-    """
-    Evaluate a heuristic weight candidate via run_heuristic_tier_eval.
-
-    Returns (fitness, raw_result_dict) where fitness is a scalar with
-    higher values representing better performance.
-    """
-    # Rebuild mapping and register under a temporary candidate profile id.
-    candidate_weights = _reconstruct_heuristic_profile(keys, candidate_vector)
-    candidate_profile_id = f"cmaes_candidate_{tier_spec.id}"
-
-    # Derive the concrete tier spec used for this evaluation. We keep all
-    # structural fields but swap in the candidate/baseline profile ids so
-    # that the tier harness routes AIs via the appropriate weight profiles.
-    eval_tier = HeuristicTierSpec(
-        id=tier_spec.id,
-        name=tier_spec.name,
-        board_type=tier_spec.board_type,
-        num_players=tier_spec.num_players,
-        eval_pool_id=tier_spec.eval_pool_id,
-        num_games=tier_spec.num_games,
-        candidate_profile_id=candidate_profile_id,
-        baseline_profile_id=base_profile_id,
-        description=tier_spec.description,
-    )
-
-    max_games = games_per_candidate or tier_spec.num_games
-
-    with temporary_heuristic_profile(candidate_profile_id, candidate_weights):
-        result = run_heuristic_tier_eval(
-            tier_spec=eval_tier,
-            rng_seed=rng_seed,
-            max_games=max_games,
-        )
-
-    # Compute a simple scalar fitness from win/draw/loss and margins.
-    games_played_raw = result.get("games_played") or 0
-    games_played = max(1, int(games_played_raw))
-    results = result.get("results") or {}
-    wins = float(results.get("wins", 0.0))
-    draws = float(results.get("draws", 0.0))
-    win_rate = (wins + 0.5 * draws) / games_played
-
-    margins = result.get("margins") or {}
-    ring_margin = float(margins.get("ring_margin_mean") or 0.0)
-    territory_margin = float(margins.get("territory_margin_mean") or 0.0)
-    # Ring margin is primary; territory margin is down-weighted to avoid
-    # over-optimising purely for space leads.
-    margin_score = ring_margin + 0.25 * territory_margin
-
-    fitness = float(win_rate + 0.01 * margin_score)
-    return fitness, result
-
-
-def run_cmaes_heuristic_optimization(
-    tier_id: str,
-    base_profile_id: str,
-    generations: int = 5,
-    population_size: int = 8,
-    rng_seed: int = 1,
-    games_per_candidate: int | None = None,
-) -> dict[str, Any]:
-    """
-    Run a small CMA-ES-style optimisation loop over heuristic weights.
-
-    The optimisation is offline-only and uses the heuristic eval-pool
-    harness as its fitness function. It adapts the mean of a Gaussian
-    search distribution over the heuristic weight vector while keeping a
-    simple isotropic covariance (no full CMA matrix) for robustness.
-    """
-    if generations <= 0:
-        raise ValueError("generations must be positive")
-    if population_size <= 0:
-        raise ValueError("population_size must be positive")
-
-    seed_all(rng_seed)
-    py_rng = random.Random(rng_seed)
-    np_rng = np.random.default_rng(rng_seed + 1)
-
-    tier_spec = _get_heuristic_tier_by_id(tier_id)
-
-    if base_profile_id not in HEURISTIC_WEIGHT_PROFILES:
-        available = ", ".join(sorted(HEURISTIC_WEIGHT_PROFILES.keys()))
-        raise ValueError(
-            f"Unknown heuristic base_profile_id {base_profile_id!r}. "
-            f"Available: {available}"
-        )
-
-    base_profile = HEURISTIC_WEIGHT_PROFILES[base_profile_id]
-    keys, base_vector = _flatten_heuristic_weights(base_profile)
-
-    dim = len(base_vector)
-    mean = np.asarray(base_vector, dtype=float)
-    # Initial step size chosen as a small fraction of the typical weight
-    # magnitude so early generations explore but do not explode.
-    sigma = 0.5
-
-    history: list[dict[str, Any]] = []
-    best_overall: dict[str, Any] | None = None
-    best_overall_fitness = -float("inf")
-
-    for gen in range(generations):
-        candidates: list[dict[str, Any]] = []
-
-        for _ in range(population_size):
-            # Sample from an isotropic Gaussian around the current mean.
-            perturbation = np_rng.standard_normal(dim)
-            arr = mean + sigma * perturbation
-            # Force a plain Python list[float] for downstream type-checkers.
-            tmp = cast(Sequence[float], arr.tolist())
-            vector: list[float] = [float(x) for x in tmp]
-
-            eval_seed = py_rng.randint(1, 2**31 - 1)
-            fitness, raw = evaluate_heuristic_candidate(
-                tier_spec=tier_spec,
-                base_profile_id=base_profile_id,
-                keys=keys,
-                candidate_vector=vector,
-                rng_seed=eval_seed,
-                games_per_candidate=games_per_candidate,
-            )
-            fitness = float(fitness)
-            candidate_entry = {
-                "vector": vector,
-                "fitness": fitness,
-                "raw": raw,
-            }
-            candidates.append(candidate_entry)
-
-            if fitness > best_overall_fitness:
-                best_overall_fitness = fitness
-                best_overall = {
-                    "generation": gen,
-                    "vector": vector,
-                    "fitness": fitness,
-                    "raw": raw,
-                }
-
-        # Sort population and update mean via weighted recombination of top μ.
-        candidates.sort(key=lambda c: c["fitness"], reverse=True)
-        mu = max(1, population_size // 2)
-        top = candidates[:mu]
-
-        weights_arr = np.array(
-            [math.log(mu + 0.5) - math.log(i + 1) for i in range(mu)],
-            dtype=float,
-        )
-        weights_arr /= weights_arr.sum()
-
-        new_mean = np.zeros(dim, dtype=float)
-        for w, cand in zip(weights_arr, top, strict=False):
-            new_mean += w * np.asarray(cand["vector"], dtype=float)
-        mean = new_mean
-
-        mean_fitness = float(
-            sum(c["fitness"] for c in candidates) / len(candidates)
-        )
-        history.append(
-            {
-                "generation": gen,
-                "best_fitness": float(top[0]["fitness"]),
-                "mean_fitness": mean_fitness,
-            }
-        )
-
-        # Simple geometric decay of sigma to encourage convergence while
-        # still leaving some exploration in later generations.
-        sigma *= 0.9
-
-    report: dict[str, Any] = {
-        "run_type": "heuristic_cmaes_square8",
-        "tier_id": tier_id,
-        "base_profile_id": base_profile_id,
-        "generations": generations,
-        "population_size": population_size,
-        "rng_seed": rng_seed,
-        "games_per_candidate": games_per_candidate,
-        "dimension": dim,
-        "keys": list(keys),
-        "history": history,
-        "best": best_overall,
-    }
-    return report
 
 
 # EarlyStopping is now imported from training_enhancements for consolidation
@@ -920,8 +661,9 @@ def train_model(
     # Use --skip-freshness-check to bypass (not recommended)
     if not skip_freshness_check and HAS_FRESHNESS_CHECK:
         if not distributed or is_main_process():
+            config_key = f"{config.board_type.value}_{num_players}p"
             logger.info(
-                f"Checking training data freshness "
+                f"[DataFreshness] Checking training data freshness for {config_key} "
                 f"(max_age={max_data_age_hours}h)..."
             )
             try:
@@ -932,31 +674,40 @@ def train_model(
                 )
                 if freshness_result.is_fresh:
                     logger.info(
-                        f"Training data is fresh: {freshness_result.games_available} games, "
+                        f"[DataFreshness] ✓ Training data is fresh: "
+                        f"{freshness_result.games_available} games, "
                         f"age={freshness_result.data_age_hours:.1f}h"
                     )
                 else:
-                    msg = (
-                        f"Training data is stale: age={freshness_result.data_age_hours:.1f}h "
-                        f"(threshold={max_data_age_hours}h), "
-                        f"games={freshness_result.games_available}"
+                    # Data is stale - determine if we should fail or warn
+                    stale_msg = (
+                        f"Training data is STALE for {config_key}:\n"
+                        f"  - Data age: {freshness_result.data_age_hours:.1f} hours\n"
+                        f"  - Threshold: {max_data_age_hours} hours\n"
+                        f"  - Games available: {freshness_result.games_available}"
                     )
+
                     if allow_stale_data:
                         # User explicitly allowed stale data with --allow-stale-data
-                        logger.warning(msg)
+                        logger.warning(f"[DataFreshness] {stale_msg}")
                         logger.warning(
-                            "Proceeding with stale data (--allow-stale-data specified). "
-                            "Consider running data sync: python scripts/run_training_loop.py --sync-only"
+                            "[DataFreshness] Proceeding with stale data (--allow-stale-data specified). "
+                            "This may result in suboptimal training."
+                        )
+                        logger.info(
+                            f"To get fresh data, run:\n"
+                            f"  python scripts/run_training_loop.py --sync-only "
+                            f"--board-type {config.board_type.value} --num-players {num_players}"
                         )
                     else:
                         # P1.1 (Dec 2025): Emit TRAINING_BLOCKED_BY_QUALITY to trigger selfplay acceleration
                         # This closes the critical feedback loop: stale data → more selfplay → fresh data
                         try:
-                            from app.coordination.event_router import DataEventType, get_event_bus
+                            # Use globally imported DataEventType - local import would shadow it and cause UnboundLocalError
+                            from app.coordination.event_router import get_event_bus
 
-                            config_key = f"{config.board_type.value}_{num_players}p"
                             bus = get_event_bus()
-                            if bus:
+                            if bus and DataEventType is not None:
                                 bus.emit(DataEventType.TRAINING_BLOCKED_BY_QUALITY, {
                                     "config_key": config_key,
                                     "reason": "stale_data",
@@ -965,31 +716,57 @@ def train_model(
                                     "games_available": freshness_result.games_available,
                                 })
                                 logger.info(
-                                    f"Emitted TRAINING_BLOCKED_BY_QUALITY for {config_key} "
+                                    f"[DataFreshness] Emitted TRAINING_BLOCKED_BY_QUALITY for {config_key} "
                                     f"(age={freshness_result.data_age_hours:.1f}h)"
                                 )
                         except Exception as emit_err:
-                            logger.debug(f"Failed to emit training blocked event: {emit_err}")
+                            logger.debug(f"[DataFreshness] Failed to emit training blocked event: {emit_err}")
 
                         # Default: fail on stale data to prevent training on outdated samples
-                        raise ValueError(
-                            f"{msg}. Use --allow-stale-data to proceed anyway, or "
-                            "run data sync: python scripts/run_training_loop.py --sync-only"
+                        error_msg = (
+                            f"\n{'='*70}\n"
+                            f"TRAINING BLOCKED: {stale_msg}\n"
+                            f"{'='*70}\n\n"
+                            f"Training blocked to prevent learning from stale data.\n\n"
+                            f"OPTIONS TO PROCEED:\n\n"
+                            f"  1. Get fresh data (RECOMMENDED):\n"
+                            f"     python scripts/run_training_loop.py --sync-only \\\n"
+                            f"       --board-type {config.board_type.value} --num-players {num_players}\n\n"
+                            f"  2. Allow stale data (NOT RECOMMENDED - may degrade model quality):\n"
+                            f"     Add --allow-stale-data flag to your training command\n\n"
+                            f"  3. Skip freshness check (DANGEROUS - only for debugging):\n"
+                            f"     Add --skip-freshness-check flag to your training command\n\n"
+                            f"  4. Adjust freshness threshold:\n"
+                            f"     Add --max-data-age-hours <hours> to allow older data\n"
+                            f"{'='*70}\n"
                         )
+                        raise ValueError(error_msg)
             except ValueError:
                 raise  # Re-raise stale data errors
             except Exception as e:
-                logger.warning(f"Data freshness check failed: {e}")
+                logger.warning(f"[DataFreshness] Check failed with error: {e}")
+                # If freshness check crashes, we allow training to proceed
+                # This prevents transient issues from blocking training entirely
+                logger.warning(
+                    "[DataFreshness] Proceeding with training despite check failure. "
+                    "Consider investigating the error."
+                )
     elif not skip_freshness_check and not HAS_FRESHNESS_CHECK:
         if not distributed or is_main_process():
             logger.warning(
-                "Data freshness check enabled but module not available - skipping"
+                "[DataFreshness] Freshness check module not available - check skipped. "
+                "Install app.coordination.training_freshness to enable."
             )
     elif skip_freshness_check:
         if not distributed or is_main_process():
             logger.warning(
-                "Skipping data freshness check (--skip-freshness-check). "
-                "Training may use stale data!"
+                f"\n{'='*70}\n"
+                f"⚠️  FRESHNESS CHECK SKIPPED (--skip-freshness-check)\n"
+                f"{'='*70}\n"
+                f"  Training may use stale or outdated data.\n"
+                f"  This can lead to poor model quality and wasted compute.\n"
+                f"  Only use this flag for debugging or special scenarios.\n"
+                f"{'='*70}\n"
             )
 
     # ==========================================================================
@@ -3153,6 +2930,7 @@ def train_model(
     _training_completed_normally = False
     _training_exception: Exception | None = None
     _training_start_time = time.time()
+    _final_checkpoint_path: str | None = None  # Track for event emission
 
     # Report batch size metric at start of training
     if HAS_PROMETHEUS and (not distributed or is_main_process()):
@@ -3249,21 +3027,23 @@ def train_model(
     _max_circuit_breaker_rollbacks = training_state.max_circuit_breaker_rollbacks
 
     # Publish training started event (2025-12)
-    if HAS_EVENT_BUS and get_router is not None and (not distributed or is_main_process()):
+    if HAS_EVENT_BUS and get_router is not None and DataEventType is not None and (not distributed or is_main_process()):
         try:
             router = get_router()
+            # config.model_dir may be a str or Path, so use Path() for safety
+            model_path = Path(config.model_dir) / f"model_{num_players}p.pth"
             router.publish_sync(DataEvent(
                 event_type=DataEventType.TRAINING_STARTED,
                 payload={
                     "total_epochs": config.epochs_per_iter,
                     "start_epoch": start_epoch,
                     "config": f"{config.board_type.value}_{num_players}p",
-                    "model_path": str(config.model_dir / f"model_{num_players}p.pth"),
+                    "model_path": str(model_path),
                 },
                 source="train",
             ))
-        except (RuntimeError, ConnectionError, TimeoutError) as e:
-            # Event emission can fail due to async runtime or network issues
+        except (RuntimeError, ConnectionError, TimeoutError, TypeError) as e:
+            # Event emission can fail due to async runtime, network issues, or type mismatches
             logger.debug(f"Failed to publish training started event: {e}")
 
     # Learning rate finder (2025-12)
@@ -3372,7 +3152,7 @@ def train_model(
             if epoch % 5 == 0:  # Check every 5 epochs to minimize overhead
                 try:
                     from app.utils.resource_guard import can_proceed, get_resource_status, wait_for_resources
-                    if not can_proceed(check_disk=True, check_mem=True, check_cpu_load=True):
+                    if not can_proceed(check_disk=True, check_mem=True, check_cpu_load=False):
                         status = get_resource_status()
                         logger.warning(
                             f"Resource pressure detected at epoch {epoch}: "
@@ -4703,6 +4483,7 @@ def train_model(
                             checkpoint_dir,
                             f"checkpoint_early_stop_epoch_{epoch+1}.pth",
                         )
+                        _final_checkpoint_path = final_checkpoint_path  # Track for event emission
                         if async_checkpointer is not None:
                             async_checkpointer.save_async(
                                 model_to_save,
@@ -4862,6 +4643,7 @@ def train_model(
                     checkpoint_dir,
                     f"checkpoint_final_epoch_{config.epochs_per_iter}.pth",
                 )
+                _final_checkpoint_path = final_checkpoint_path  # Track for event emission
                 if async_checkpointer is not None:
                     async_checkpointer.save_async(
                         model_to_save_final,
@@ -4999,17 +4781,23 @@ def train_model(
                 if _training_completed_normally:
                     # Training succeeded - emit TRAINING_COMPLETED (may be duplicate, but guaranteed)
                     router = get_router()
+                    payload = {
+                        "epochs_completed": epochs_completed,
+                        "best_val_loss": float(best_val_loss),
+                        "final_train_loss": float(avg_train_loss),
+                        "final_val_loss": float(avg_val_loss),
+                        "config": _config_key,
+                        "board_type": config.board_type.value,
+                        "num_players": num_players,
+                        "duration_seconds": _training_duration,
+                        "hardened_emit": True,  # Flag indicating this came from finally block
+                    }
+                    # Include checkpoint_path if available (for auto-evaluation)
+                    if _final_checkpoint_path:
+                        payload["checkpoint_path"] = str(_final_checkpoint_path)
                     router.publish_sync(DataEvent(
                         event_type=DataEventType.TRAINING_COMPLETED,
-                        payload={
-                            "epochs_completed": epochs_completed,
-                            "best_val_loss": float(best_val_loss),
-                            "final_train_loss": float(avg_train_loss),
-                            "final_val_loss": float(avg_val_loss),
-                            "config": _config_key,
-                            "duration_seconds": _training_duration,
-                            "hardened_emit": True,  # Flag indicating this came from finally block
-                        },
+                        payload=payload,
                         source="train_finally",
                     ))
                     logger.info(f"[train] Hardened TRAINING_COMPLETED emitted for {_config_key}")

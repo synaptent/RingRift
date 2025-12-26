@@ -2,7 +2,7 @@ import pytest
 
 from app.ai.descent_ai import DescentAI
 from app.ai.heuristic_ai import HeuristicAI
-from app.ai.ig_gmo import IGGMO
+from archive.deprecated_ai.ig_gmo import IGGMO
 from app.ai.mcts_ai import MCTSAI
 from app.ai.minimax_ai import MinimaxAI
 from app.ai.random_ai import RandomAI

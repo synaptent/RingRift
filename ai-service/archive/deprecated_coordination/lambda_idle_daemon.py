@@ -1,5 +1,27 @@
 """Lambda Idle Shutdown Daemon (December 2025).
 
+*** DEPRECATED - ARCHIVED DECEMBER 2025 ***
+
+This module has been archived because the Lambda Labs GPU account was
+terminated in December 2025. The daemon is no longer needed as there are
+no Lambda nodes to manage.
+
+This code is preserved for historical reference only.
+
+REASON FOR ARCHIVAL:
+- Lambda Labs account terminated December 2025
+- No Lambda GPU nodes remain in the cluster
+- Functionality specific to Lambda infrastructure
+
+If you need similar idle node shutdown functionality for other providers,
+refer to:
+- app/coordination/idle_resource_daemon.py (generic idle resource management)
+- app/coordination/utilization_optimizer.py (multi-provider optimization)
+
+---
+
+ORIGINAL DOCUMENTATION:
+
 Automatically terminates idle Lambda Labs GPU nodes to reduce costs.
 Monitors cluster for nodes that have been idle beyond the threshold and
 safely terminates them after confirming no pending work.
@@ -11,7 +33,7 @@ Key features:
 - Cost tracking and savings reporting
 - Event emission for observability
 
-Usage:
+Usage (DEPRECATED):
     from app.coordination.lambda_idle_daemon import LambdaIdleDaemon
 
     daemon = LambdaIdleDaemon()

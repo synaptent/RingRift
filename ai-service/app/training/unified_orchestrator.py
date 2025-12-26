@@ -1579,12 +1579,12 @@ class UnifiedTrainingOrchestrator:
         if self._elo_watcher is not None:
             try:
                 self._elo_watcher.unsubscribe()
-            except Exception:
+            except (AttributeError, RuntimeError, OSError):
                 pass
         if self._plateau_watcher is not None:
             try:
                 self._plateau_watcher.unsubscribe()
-            except Exception:
+            except (AttributeError, RuntimeError, OSError):
                 pass
 
         logger.info("[Orchestrator] Cleanup complete")
@@ -1692,7 +1692,7 @@ class UnifiedTrainingOrchestrator:
                     "promotions_24h": imp_metrics.get("promotions_24h", 0),
                     "avg_elo_gain": imp_metrics.get("avg_elo_gain", 0.0),
                 }
-            except Exception:
+            except (AttributeError, KeyError, ValueError, TypeError):
                 pass  # Metrics are optional
 
         # Add curriculum feedback metrics
@@ -1708,7 +1708,7 @@ class UnifiedTrainingOrchestrator:
                     if "curriculum_feedback" not in metrics:
                         metrics["curriculum_feedback"] = {}
                     metrics["curriculum_feedback"]["weight"] = weights[config_key]
-            except Exception:
+            except (AttributeError, KeyError, ValueError, TypeError):
                 pass  # Metrics are optional
 
         # Add quality bridge metrics
@@ -1717,7 +1717,7 @@ class UnifiedTrainingOrchestrator:
                 quality_stats = self._quality_bridge.get_stats()
                 if quality_stats:
                     metrics["quality_bridge"] = quality_stats
-            except Exception:
+            except (AttributeError, KeyError, ValueError, TypeError):
                 pass  # Metrics are optional
 
         return metrics

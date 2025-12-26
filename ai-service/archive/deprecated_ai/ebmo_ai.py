@@ -49,7 +49,7 @@ import torch.nn.functional as F
 
 from app.utils.torch_utils import get_device
 
-from ..models import AIConfig, GameState, Move
+from app.models import AIConfig, GameState, Move
 from .base import BaseAI
 from .ebmo_network import (
     ActionFeatureExtractor,

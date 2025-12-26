@@ -1511,7 +1511,7 @@ class GameReplayDB:
                     missing,
                 ).fetchall()
 
-                from app.training.generate_data import create_initial_state
+                from app.training.initial_state import create_initial_state
 
                 for row in meta_rows:
                     board_type_str = row["board_type"]

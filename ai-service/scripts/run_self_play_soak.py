@@ -481,7 +481,7 @@ def _record_invariant_violation(
                 invariant_id=invariant_id,
                 type=violation_type,
             ).inc()
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             # Metrics emission is best-effort only.
             pass
 
@@ -1870,7 +1870,7 @@ def run_self_play_soak(
                                         move = game_rng.choice(top_moves)
                                     else:
                                         move = game_rng.choice(legal_moves)
-                                except Exception:
+                                except (AttributeError, TypeError, ValueError, IndexError, RuntimeError):
                                     move = game_rng.choice(legal_moves)
                             else:
                                 # Fallback: random from legal moves
@@ -1970,7 +1970,7 @@ def run_self_play_soak(
                                     },
                                     f,
                                 )
-                        except Exception:
+                        except (OSError, IOError, PermissionError):
                             pass
                         break
 
@@ -2044,7 +2044,7 @@ def run_self_play_soak(
                                 },
                                 f,
                             )
-                    except Exception:
+                    except (OSError, IOError, PermissionError):
                         # Never let snapshotting crash the soak loop
                         pass
                     break
@@ -2084,7 +2084,7 @@ def run_self_play_soak(
                         if hasattr(move, "model_copy"):
                             try:
                                 move = move.model_copy(update={"move_number": record_idx})  # type: ignore[attr-defined]
-                            except Exception:
+                            except (AttributeError, TypeError, ValueError):
                                 pass
                         game_moves_for_recording.append(move)
                         auto_moves = step_info.get("auto_generated_moves", [])
@@ -2101,7 +2101,7 @@ def run_self_play_soak(
                                         auto_move = auto_move.model_copy(  # type: ignore[attr-defined]
                                             update={"move_number": record_idx}
                                         )
-                                    except Exception:
+                                    except (AttributeError, TypeError, ValueError):
                                         pass
                                 game_moves_for_recording.append(auto_move)
                     if done:
@@ -2155,9 +2155,9 @@ def run_self_play_soak(
                                     "move_type": getattr(exc, "move_type", None),
                                     "player": getattr(exc, "player", None),
                                 }
-                        except Exception:
+                        except (ImportError, AttributeError):
                             pass
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError):
                         # Never let debug capture crash the soak loop.
                         failure_debug = None
                     termination_reason = f"step_exception:{type(exc).__name__}"
@@ -2350,7 +2350,7 @@ def run_self_play_soak(
                         state_payload = state.model_dump(
                             mode="json",
                         )  # type: ignore[attr-defined]
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError):
                         state_payload = None
 
                     try:
@@ -2361,7 +2361,7 @@ def run_self_play_soak(
                             if last_move is not None
                             else None
                         )
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError):
                         last_move_payload = None
 
                     # Include phase requirement and legal moves for the active player
@@ -2389,7 +2389,7 @@ def run_self_play_soak(
                                 getattr(state, "current_player", None),
                             )
                         ]
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError, RuntimeError):
                         pass
 
                     failure_path = os.path.join(
@@ -2412,7 +2412,7 @@ def run_self_play_soak(
                             },
                             failure_f,
                         )
-                except Exception:
+                except (OSError, IOError, PermissionError):
                     # Snapshotting must never break the soak loop.
                     pass
 
@@ -2520,7 +2520,7 @@ def run_self_play_soak(
                                         },
                                         f,
                                     )
-                            except Exception:
+                            except (OSError, IOError, PermissionError):
                                 # Best-effort only.
                                 pass
                     else:

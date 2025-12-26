@@ -96,7 +96,7 @@ def _acquire_singleton_lock(node_id: str):
         fh.truncate()
         fh.write(str(os.getpid()))
         fh.flush()
-    except Exception:
+    except (OSError, IOError):
         pass
     return fh
 
@@ -109,7 +109,7 @@ def _load_cluster_auth_token() -> str:
     if token_file:
         try:
             return Path(token_file).read_text().strip()
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError):
             return ""
     return ""
 
@@ -169,7 +169,7 @@ class NodeResilience:
                 return {}
             data = json.loads(raw)
             return data if isinstance(data, dict) else {}
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError, ValueError):
             return {}
 
     def _save_state(self) -> None:
@@ -183,7 +183,7 @@ class NodeResilience:
             tmp = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
             tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
             tmp.replace(self.state_path)
-        except Exception:
+        except (OSError, PermissionError, ValueError, TypeError):
             pass
 
     def _coordinator_urls(self) -> list[str]:
@@ -204,7 +204,7 @@ class NodeResilience:
                     ip = response.read().decode().strip()
                     if ip:
                         return ip
-            except Exception:
+            except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
                 continue
         return None
 
@@ -223,7 +223,7 @@ class NodeResilience:
             return ip or None
         except FileNotFoundError:
             return None
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
             return None
 
     def check_p2p_health(self) -> bool:
@@ -245,7 +245,7 @@ class NodeResilience:
                         return bool(data.get("healthy"))
                     # Back-compat for older health payloads
                     return data.get("status") == "ok"
-            except Exception:
+            except (urllib.error.URLError, ConnectionError, TimeoutError, json.JSONDecodeError, OSError):
                 if attempt < 2:
                     time.sleep(2)  # Longer pause before retry
         return False
@@ -259,7 +259,7 @@ class NodeResilience:
                 timeout=5,
             )
             return result.returncode == 0
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
     def start_autossh_tunnel(self, relay_host: str | None = None) -> bool:
@@ -287,7 +287,7 @@ class NodeResilience:
                         hosts = config.get("hosts", {})
                         if coord in hosts:
                             relay_host = hosts[coord].get("tailscale_ip")
-                    except Exception:
+                    except (ImportError, ModuleNotFoundError, OSError, AttributeError, KeyError):
                         pass
             if not relay_host:
                 logger.warning("No relay host configured for autossh tunnel")
@@ -351,7 +351,7 @@ class NodeResilience:
             return state in {"running", "degraded"}
         except FileNotFoundError:
             return False
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
             return False
 
     def _systemd_unit_exists(self, unit: str) -> bool:
@@ -366,7 +366,7 @@ class NodeResilience:
                 return False
             load_state = (result.stdout or "").strip().lower()
             return bool(load_state) and load_state != "not-found"
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
     def _local_orchestrator_url(self, path: str) -> str:
@@ -388,7 +388,7 @@ class NodeResilience:
             with urllib.request.urlopen(url, timeout=timeout) as response:
                 data = json.loads(response.read().decode())
             return data if isinstance(data, dict) else None
-        except Exception:
+        except (urllib.error.URLError, ConnectionError, TimeoutError, json.JSONDecodeError, OSError):
             return None
 
     def _local_orchestrator_post_json(
@@ -406,7 +406,7 @@ class NodeResilience:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 decoded = json.loads(response.read().decode())
             return decoded if isinstance(decoded, dict) else None
-        except Exception:
+        except (urllib.error.URLError, ConnectionError, TimeoutError, json.JSONDecodeError, OSError):
             return None
 
     def _list_local_jobs(self, *, status: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
@@ -418,7 +418,7 @@ class NodeResilience:
             data = self._local_orchestrator_get_json(f"/api/jobs?{query}", timeout=10) or {}
             jobs = data.get("jobs") or []
             return jobs if isinstance(jobs, list) else []
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             return []
 
     def check_p2p_managing_jobs(self) -> bool:
@@ -447,7 +447,7 @@ class NodeResilience:
                     if ok:
                         self._last_good_coordinator = base
                         return True
-            except Exception:
+            except (urllib.error.URLError, ConnectionError, TimeoutError, json.JSONDecodeError, OSError):
                 continue
         return False
 
@@ -463,7 +463,7 @@ class NodeResilience:
         status = self._local_orchestrator_get_json("/status", timeout=15) or {}
         try:
             alive_peers = int(status.get("alive_peers", 0) or 0)
-        except Exception:
+        except (ValueError, TypeError):
             alive_peers = 0
         effective_leader_id = str(status.get("effective_leader_id") or "").strip()
         if alive_peers > 0:
@@ -523,7 +523,7 @@ class NodeResilience:
         if env_port:
             try:
                 return int(env_port)
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
         try:
@@ -532,14 +532,14 @@ class NodeResilience:
                 return 22
             try:
                 import yaml  # type: ignore
-            except Exception:
+            except (ImportError, ModuleNotFoundError):
                 return 22
             data = yaml.safe_load(cfg_path.read_text()) or {}
             hosts = data.get("hosts", {}) or {}
             node_cfg = hosts.get(self.config.node_id, {}) or {}
             port = node_cfg.get("ssh_port", 22) or 22
             return int(port)
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, ValueError, TypeError, AttributeError, KeyError):
             return 22
 
     def _discover_fallback_pids(self, *, state: dict[str, Any] | None = None) -> list[int]:
@@ -550,7 +550,7 @@ class NodeResilience:
         for token in raw_pids:
             try:
                 pids.append(int(token))
-            except Exception:
+            except (ValueError, TypeError):
                 continue
         return sorted(set(pids))
 
@@ -567,7 +567,7 @@ class NodeResilience:
                 timeout=5,
             )
             return result.returncode == 0
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
     def _python_for_orchestrator(self) -> str:
@@ -614,7 +614,7 @@ class NodeResilience:
                 if data.get("healthy") or data.get("status") == "ok":
                     logger.info(f"Port {port} holder responded to health check - not killing")
                     return False  # Don't kill, it's actually healthy
-        except Exception:
+        except (urllib.error.URLError, ConnectionError, TimeoutError, json.JSONDecodeError, OSError):
             pass  # Continue to kill if health check failed
 
         try:
@@ -636,7 +636,7 @@ class NodeResilience:
                         pass
                 time.sleep(1)
                 return self._check_port_available(port)
-        except Exception as e:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, ValueError, OSError) as e:
             logger.debug(f"fuser check failed: {e}")
 
         # Fallback: kill any p2p_orchestrator processes
@@ -648,7 +648,7 @@ class NodeResilience:
             )
             time.sleep(2)
             return self._check_port_available(port)
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
             pass
         return False
 
@@ -1068,7 +1068,7 @@ class NodeResilience:
             )
             if result.returncode == 0:
                 return len(result.stdout.strip().split("\n"))
-        except Exception:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
             pass
         return 0
 
@@ -1134,7 +1134,7 @@ class NodeResilience:
                     for pid in self.local_selfplay_pids:
                         try:
                             os.kill(pid, signal.SIGTERM)
-                        except Exception:
+                        except (ProcessLookupError, OSError):
                             continue
 
                     # Wait briefly for graceful shutdown before SIGKILL
@@ -1142,7 +1142,7 @@ class NodeResilience:
                     for pid in self.local_selfplay_pids:
                         try:
                             os.kill(pid, signal.SIGKILL)
-                        except Exception:
+                        except (ProcessLookupError, OSError):
                             continue
 
                     # Reset tracking
@@ -1182,9 +1182,9 @@ class NodeResilience:
                 for tok in (out.stdout or "").strip().split():
                     try:
                         pids.add(int(tok))
-                    except Exception:
+                    except (ValueError, TypeError):
                         continue
-            except Exception:
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 continue
         # Never count ourselves.
         pids.discard(int(os.getpid()))
@@ -1208,7 +1208,7 @@ class NodeResilience:
                     text=True,
                     timeout=10,
                 )
-            except Exception:
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 pass
         time.sleep(2)
         for pattern in patterns:
@@ -1220,7 +1220,7 @@ class NodeResilience:
                     text=True,
                     timeout=10,
                 )
-            except Exception:
+            except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 pass
 
         after = self._count_selfplay_processes()

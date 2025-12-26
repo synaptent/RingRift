@@ -171,8 +171,8 @@ describe('BoardView', () => {
         <BoardView boardType="square8" board={board} validTargets={validTargets} />
       );
 
-      // Check that valid targets have outline styling
-      const highlightedCells = container.querySelectorAll('.outline-emerald-300\\/90');
+      // Check that valid targets have outline styling (emerald-400/95) or valid-move-cell class
+      const highlightedCells = container.querySelectorAll('.valid-move-cell');
       expect(highlightedCells.length).toBeGreaterThanOrEqual(2);
     });
   });
@@ -1116,13 +1116,18 @@ describe('BoardView', () => {
       const board = createEmptyBoardState('square8');
       const { container } = render(<BoardView boardType="square8" board={board} />);
 
+      // Outer wrapper is a region with aria-label
       const boardView = screen.getByTestId('board-view');
-      expect(boardView).toHaveAttribute('role', 'grid');
+      expect(boardView).toHaveAttribute('role', 'region');
       expect(boardView).toHaveAttribute('aria-label');
 
-      // Check that cells have proper roles and labels
+      // Inner grid has role="grid"
+      const grid = container.querySelector('[role="grid"]');
+      expect(grid).toBeInTheDocument();
+
+      // Check that cells are buttons with aria-labels
       const cell = container.querySelector('button[data-x="0"][data-y="0"]');
-      expect(cell).toHaveAttribute('role', 'gridcell');
+      expect(cell).toBeInTheDocument();
       expect(cell).toHaveAttribute('aria-label');
     });
 

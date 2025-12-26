@@ -24,6 +24,25 @@ Complete reference of all event types in the RingRift AI training infrastructure
 | Stage        | 20    | Pipeline stages           |
 | System       | 40+   | Health, daemons, recovery |
 
+## Status Notes (Reserved / Partial Wiring)
+
+These events are defined in `app/events/types.py` (and aliased in
+`app/distributed/data_events.py`) but are not fully wired into the runtime
+event bus as of December 2025. They are reserved for future integration unless
+noted otherwise.
+
+| Event | Status | Notes |
+| ----- | ------ | ----- |
+| `CALIBRATION_COMPLETED` | Reserved | Helper exists in `app/distributed/data_events.py`; no active emit/subscribe yet. |
+| `ENCODING_BATCH_COMPLETED` | Reserved | Placeholder for encoder batch progress; not emitted. |
+| `CROSSBOARD_PROMOTION` | Reserved | Helper exists (`app/distributed/event_helpers.py`), but no active wiring. |
+| `DEADLOCK_DETECTED` | Reserved | No emit/subscribe references in runtime code. |
+| `LOCK_ACQUIRED` | Reserved | Lock event helpers exist; not emitted. |
+| `LOCK_RELEASED` | Reserved | Lock event helpers exist; not emitted. |
+| `LOCK_TIMEOUT` | Partial | Emitted via `publish_sync("LOCK_TIMEOUT")` in `app/coordination/sync_mutex.py` (string-based); no typed subscribers yet. |
+| `PARITY_VALIDATION_STARTED` | Reserved | Parity pipeline reports via stage events (`parity_validation_complete`); DataEventType variant unused. |
+| `PARITY_VALIDATION_COMPLETED` | Reserved | Parity pipeline reports via stage events (`parity_validation_complete`); DataEventType variant unused. |
+
 ## Usage
 
 ```python

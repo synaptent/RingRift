@@ -119,7 +119,7 @@ try:
             "Loaded trained heuristic profiles",
             extra={"profile_count": len(_trained_profiles)},
         )
-except Exception:  # pragma: no cover - defensive startup path
+except (ImportError, FileNotFoundError, ValueError, KeyError):  # pragma: no cover - defensive startup path
     logger.warning("Failed to load trained heuristic profiles", exc_info=True)
 
 # Import CoordinatorRegistry for graceful shutdown
@@ -1127,7 +1127,7 @@ async def get_ai_move(request: MoveRequest):
                 board_type,
                 num_players,
             )
-    except Exception:
+    except (ValueError, KeyError, AttributeError, TypeError):
         ladder_config = None
 
     base_ai_type = (
@@ -1286,7 +1286,7 @@ async def get_ai_move(request: MoveRequest):
             path = getattr(neural_net, "loaded_checkpoint_path", None) if neural_net is not None else None
             if path:
                 nn_checkpoint = os.path.basename(str(path))
-        except Exception:
+        except (AttributeError, TypeError, OSError):
             nn_checkpoint = None
 
         nnue_checkpoint: str | None = None
@@ -1296,7 +1296,7 @@ async def get_ai_move(request: MoveRequest):
             path = getattr(nnue_model, "loaded_checkpoint_path", None) if nnue_model is not None else None
             if path:
                 nnue_checkpoint = os.path.basename(str(path))
-        except Exception:
+        except (AttributeError, TypeError, OSError):
             nnue_checkpoint = None
 
         # Reflect the effective (not merely requested) neural backend usage in
@@ -1312,7 +1312,7 @@ async def get_ai_move(request: MoveRequest):
                 effective_use_neural_net = getattr(ai, "neural_net", None) is not None
             else:
                 effective_use_neural_net = False
-        except Exception:
+        except (AttributeError, TypeError):
             # Preserve backward compatible behaviour on unexpected AI types.
             effective_use_neural_net = bool(use_neural_net)
 
@@ -2073,7 +2073,7 @@ async def get_model_versions():
                     "size_mb": round(stat.st_size / 1024 / 1024, 2),
                     "modified": stat.st_mtime,
                 }
-            except Exception:
+            except (FileNotFoundError, OSError, PermissionError):
                 pass
 
     # Check neural net models
@@ -2091,7 +2091,7 @@ async def get_model_versions():
                     "size_mb": round(stat.st_size / 1024 / 1024, 2),
                     "modified": stat.st_mtime,
                 }
-            except Exception:
+            except (FileNotFoundError, OSError, PermissionError):
                 pass
 
     return {
@@ -2140,7 +2140,7 @@ def _resolve_latest_checkpoint(models_dir: "Path", model_id: str) -> dict[str, A
     def _mtime(path: "Path") -> float:
         try:
             return float(path.stat().st_mtime)
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError):
             return 0.0
 
     unique.sort(key=_mtime)

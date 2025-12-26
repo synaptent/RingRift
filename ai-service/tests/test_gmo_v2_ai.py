@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skip(
     reason="GMO v2 is deprecated. See tests/unit/ai/test_gnn_ai.py for GNN AI tests."
 )
 
-from app.ai.gmo_v2 import (
+from archive.deprecated_ai.gmo_v2 import (
     AttentionStateEncoder,
     GMOv2AI,
     GMOv2Config,

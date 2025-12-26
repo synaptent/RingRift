@@ -70,6 +70,36 @@ For dedicated selfplay generation:
 
 ---
 
+## Master Loop Profiles (scripts/master_loop.py)
+
+The unified controller supports `--profile` to choose a daemon set. These
+profiles are separate from the node role profiles above and control which
+daemons the master loop starts.
+
+### minimal
+
+Baseline sync + health:
+
+- EVENT_ROUTER, NODE_HEALTH_MONITOR, CLUSTER_MONITOR
+- SYSTEM_HEALTH_MONITOR, HEALTH_SERVER
+- AUTO_SYNC, CLUSTER_DATA_SYNC, ELO_SYNC
+
+### standard (default)
+
+Core automation on top of `minimal`:
+
+- FEEDBACK_LOOP, DATA_PIPELINE, MODEL_DISTRIBUTION
+- IDLE_RESOURCE, UTILIZATION_OPTIMIZER, QUEUE_POPULATOR
+- AUTO_EXPORT, EVALUATION, AUTO_PROMOTION, TOURNAMENT_DAEMON
+- CURRICULUM_INTEGRATION, NODE_RECOVERY, TRAINING_NODE_WATCHER
+- QUALITY_MONITOR
+
+### full
+
+All `DaemonType` entries except deprecated `SYNC_COORDINATOR` and `HEALTH_CHECK`.
+
+---
+
 ## Daemon Details
 
 ### Sync Daemons

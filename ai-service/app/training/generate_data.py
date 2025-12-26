@@ -20,8 +20,14 @@ from pathlib import Path
 import numpy as np
 
 from app.ai.descent_ai import DescentAI
-from app.ai.gmo_ai import GMOAI, GMOConfig
 from app.ai.gumbel_mcts_ai import GumbelMCTSAI
+
+# GMO AI is optional - used for experimental training modes
+try:
+    from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
+except ImportError:
+    GMOAI = None
+    GMOConfig = None
 from app.ai.mcts_ai import MCTSAI
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.db import GameReplayDB, get_or_create_db, record_completed_game

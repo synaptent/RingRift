@@ -678,7 +678,8 @@ class EphemeralSyncDaemon:
         ]
 
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 rsync_cmd,
                 capture_output=True,
                 text=True,

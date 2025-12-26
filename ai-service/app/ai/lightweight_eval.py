@@ -55,16 +55,33 @@ def evaluate_stack_control_light(
     my_count = len(my_stacks)
     opp_count = len(opponent_stacks)
 
-    # Base score: difference in stack counts
-    score = (my_count - opp_count) * weight_stack_control
+    # For multi-player games, average opponent count
+    num_opponents = max(1, len(state.players) - 1) if hasattr(state, 'players') else 1
+    opp_count_avg = opp_count / num_opponents
 
-    # Penalties for having too few stacks
+    # Base score: difference in stack counts (symmetric)
+    score = (my_count - opp_count_avg) * weight_stack_control
+
+    # Penalties for having too few stacks - SYMMETRIC
+    # Compute my penalty
+    my_penalty = 0.0
     if my_count == 0:
-        score += weight_no_stacks_penalty
+        my_penalty = weight_no_stacks_penalty
     elif my_count == 1:
-        score += weight_single_stack_penalty
+        my_penalty = weight_single_stack_penalty
 
-    # Bonus for stack diversity (having stacks in different areas)
+    # Compute opponent penalty (averaged)
+    opp_penalty = 0.0
+    if opp_count_avg < 0.5:  # Effectively 0 stacks
+        opp_penalty = weight_no_stacks_penalty
+    elif opp_count_avg < 1.5:  # Effectively 1 stack
+        opp_penalty = weight_single_stack_penalty
+
+    # Symmetric penalty: my_penalty - opp_penalty
+    score += my_penalty - opp_penalty
+
+    # Bonus for stack diversity - SYMMETRIC
+    my_diversity = 0.0
     if my_count >= 2:
         # Simple diversity metric: count unique row/column pairs
         unique_positions = set()
@@ -75,8 +92,21 @@ def evaluate_stack_control_light(
                 row = int(parts[1]) // 2  # Group into regions
                 col = int(parts[0]) // 2
                 unique_positions.add((row, col))
-        diversity_ratio = len(unique_positions) / my_count
-        score += diversity_ratio * weight_stack_diversity_bonus
+        my_diversity = (len(unique_positions) / my_count) * weight_stack_diversity_bonus
+
+    opp_diversity = 0.0
+    if len(opponent_stacks) >= 2:
+        unique_positions = set()
+        for stack in opponent_stacks:
+            parts = stack.position_key.split(",")
+            if len(parts) >= 2:
+                row = int(parts[1]) // 2
+                col = int(parts[0]) // 2
+                unique_positions.add((row, col))
+        opp_diversity = (len(unique_positions) / len(opponent_stacks)) * weight_stack_diversity_bonus
+
+    # Symmetric diversity advantage
+    score += my_diversity - opp_diversity
 
     return score
 
@@ -153,11 +183,23 @@ def evaluate_eliminated_rings_light(
     player_number: int,
     weight_eliminated_rings: float,
 ) -> float:
-    """Evaluate eliminated rings for lightweight state."""
+    """Evaluate eliminated rings for lightweight state (symmetric)."""
     player = state.players.get(player_number)
     if not player:
         return 0.0
-    return player.eliminated_rings * weight_eliminated_rings
+
+    # Compute opponent average for symmetric evaluation
+    opp_eliminated = 0
+    opp_count = 0
+    for pnum, p in state.players.items():
+        if pnum != player_number:
+            opp_eliminated += p.eliminated_rings
+            opp_count += 1
+
+    opp_eliminated_avg = opp_eliminated / max(1, opp_count)
+
+    # Symmetric: positive means we've eliminated more than opponents
+    return (player.eliminated_rings - opp_eliminated_avg) * weight_eliminated_rings
 
 
 def evaluate_victory_proximity_light(
@@ -168,26 +210,37 @@ def evaluate_victory_proximity_light(
     weight_rings_proximity_factor: float,
     weight_territory_proximity_factor: float,
 ) -> float:
-    """Evaluate how close player is to winning."""
+    """Evaluate how close player is to winning (symmetric vs opponents)."""
     player = state.players.get(player_number)
     if not player:
         return 0.0
 
-    rings_needed = max(0, state.victory_rings - player.eliminated_rings)
-    territory_needed = max(0, state.victory_territory - player.territory_spaces)
+    def compute_proximity(p) -> float:
+        """Compute victory proximity for a player."""
+        rings_needed = max(1, state.victory_rings - p.eliminated_rings)
+        territory_needed = max(1, state.victory_territory - p.territory_spaces)
 
-    # Check if at threshold
-    score = 0.0
-    if rings_needed <= 3 or territory_needed <= 5:
-        score += weight_victory_threshold_bonus
+        score = 0.0
+        # Near-victory bonus
+        if rings_needed <= 3 or territory_needed <= 5:
+            score += weight_victory_threshold_bonus
 
-    # Proximity scoring
-    if rings_needed > 0:
+        # Proximity scoring (inverse of distance to victory)
         score += (1.0 / rings_needed) * weight_rings_proximity_factor
-    if territory_needed > 0:
         score += (1.0 / territory_needed) * weight_territory_proximity_factor
+        return score
 
-    return score * weight_victory_proximity
+    my_proximity = compute_proximity(player)
+
+    # Compute max opponent proximity for symmetric evaluation
+    max_opp_proximity = 0.0
+    for pnum, p in state.players.items():
+        if pnum != player_number:
+            opp_prox = compute_proximity(p)
+            max_opp_proximity = max(max_opp_proximity, opp_prox)
+
+    # Symmetric: positive means we're closer to winning than opponents
+    return (my_proximity - max_opp_proximity) * weight_victory_proximity
 
 
 def evaluate_marker_count_light(
@@ -214,36 +267,41 @@ def evaluate_mobility_light(
     weight_mobility: float,
     board_size: int,
 ) -> float:
-    """Simplified mobility evaluation for lightweight state.
+    """Simplified mobility evaluation for lightweight state (symmetric).
 
     Full mobility calculation requires valid move generation which is expensive.
     This provides a fast approximation based on stack positions and board occupancy.
     """
     my_stacks = [s for s in state.stacks.values() if s.controlling_player == player_number]
+    opp_stacks = [s for s in state.stacks.values() if s.controlling_player != player_number]
 
-    if not my_stacks:
-        return 0.0
-
-    # Approximate mobility: count empty adjacent cells around our stacks
+    # Approximate mobility: count empty adjacent cells around stacks
     occupied = set(state.stacks.keys()) | set(state.markers.keys())
 
-    total_mobility = 0
-    for stack in my_stacks:
-        parts = stack.position_key.split(",")
-        if len(parts) < 2:
-            continue
-        x, y = int(parts[0]), int(parts[1])
+    def compute_stack_mobility(stacks):
+        if not stacks:
+            return 0.0
+        total = 0
+        for stack in stacks:
+            parts = stack.position_key.split(",")
+            if len(parts) < 2:
+                continue
+            x, y = int(parts[0]), int(parts[1])
 
-        # Check 8 directions for square boards
-        for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < board_size and 0 <= ny < board_size:
-                neighbor_key = f"{nx},{ny}"
-                if neighbor_key not in occupied:
-                    total_mobility += 1
+            # Check 8 directions for square boards
+            for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < board_size and 0 <= ny < board_size:
+                    neighbor_key = f"{nx},{ny}"
+                    if neighbor_key not in occupied:
+                        total += 1
+        return total / max(1, len(stacks))
 
-    # Normalize by number of stacks
-    return (total_mobility / max(1, len(my_stacks))) * weight_mobility
+    my_mobility = compute_stack_mobility(my_stacks)
+    opp_mobility = compute_stack_mobility(opp_stacks)
+
+    # Symmetric: positive means we have more mobility than opponents
+    return (my_mobility - opp_mobility) * weight_mobility
 
 
 def evaluate_position_light(

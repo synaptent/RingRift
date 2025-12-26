@@ -68,6 +68,7 @@ import argparse
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -780,7 +781,7 @@ def run_ts_replay(
             k_raw = payload.get("k", 0)
             try:
                 k = int(k_raw)
-            except Exception:
+            except (ValueError, TypeError):
                 continue
             summary = payload.get("summary") or {}
             is_anm_ts = summary.get("is_anm") if isinstance(summary, dict) else None
@@ -796,7 +797,7 @@ def run_ts_replay(
             db_move_index_raw = payload.get("db_move_index")
             try:
                 db_move_index = int(db_move_index_raw) if db_move_index_raw is not None else None
-            except Exception:
+            except (ValueError, TypeError):
                 db_move_index = None
 
             view = summary.get("view") if isinstance(summary, dict) else None
@@ -833,7 +834,7 @@ def run_ts_replay(
             db_move_index_raw = payload.get("db_move_index")
             try:
                 db_move_index_int = int(db_move_index_raw)
-            except Exception:
+            except (ValueError, TypeError):
                 continue
 
             # For db_move_index == n this corresponds to TS step k = n + 1,
@@ -1003,7 +1004,7 @@ def dump_state_bundle(
         if state is not None:
             try:
                 py_states[ts_k] = serialize_game_state(state)  # type: ignore[arg-type]
-            except Exception:
+            except (ValueError, TypeError, AttributeError, KeyError):
                 continue
 
     with contextlib.suppress(Exception):
@@ -1017,7 +1018,7 @@ def dump_state_bundle(
         try:
             with ts_path.open("r", encoding="utf-8") as f:
                 ts_states[ts_k] = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             continue
 
     if ts_event_metadata is not None:
@@ -1066,7 +1067,7 @@ def dump_state_bundle(
         state_bundles_dir.mkdir(parents=True, exist_ok=True)
         with bundle_path.open("w", encoding="utf-8") as f:
             json.dump(bundle, f, indent=2, sort_keys=True)
-    except Exception:
+    except (OSError, PermissionError):
         return
 
 
@@ -1306,7 +1307,7 @@ def check_game_parity(
                 view_mode=view,
                 ts_event_metadata=ts_event_meta,
             )
-        except Exception:
+        except (OSError, PermissionError, ValueError, TypeError):
             # Bundle emission is best-effort; parity classification should not fail.
             pass
 
@@ -1653,7 +1654,7 @@ def main() -> None:
             db = GameReplayDB(str(db_path), enforce_canonical_history=enforce_canonical_history)
             try:
                 meta = db.get_game_metadata(args.trace_game)
-            except Exception:
+            except (sqlite3.Error, KeyError, ValueError):
                 meta = None
             if meta:
                 max_k = args.trace_max_k if args.trace_max_k and args.trace_max_k > 0 else None
@@ -1779,7 +1780,7 @@ def main() -> None:
                 if fixtures_dir is not None:
                     try:
                         moves = db.get_moves(game_id)
-                    except Exception:
+                    except (sqlite3.Error, ValueError, KeyError):
                         moves = []
 
                     canonical_move_index: int | None = None
@@ -1796,7 +1797,7 @@ def main() -> None:
                             canonical_move_dict = json.loads(
                                 move_obj.model_dump_json(by_alias=True)  # type: ignore[attr-defined]
                             )
-                        except Exception:
+                        except (json.JSONDecodeError, AttributeError, IndexError):
                             canonical_move_dict = None
 
                     fixture = {

@@ -242,11 +242,12 @@ export RINGRIFT_GPU_MCTS_DISABLE=1  # Avoid GPU overhead for single games
 ### Gauntlet Evaluation
 
 ```bash
-# Use batched MCTS for parallel games
-PYTHONPATH=. python -m app.gauntlet.runner \
-    --batch-mode \
-    --batch-size 16 \
-    --model models/latest.pth
+# Quick baseline gauntlet
+python scripts/quick_gauntlet.py \
+    --model models/latest.pth \
+    --board-type hex8 \
+    --num-players 2 \
+    --games 30
 ```
 
 ## Success Metrics
@@ -433,13 +434,12 @@ export RINGRIFT_HYBRID_TOP_K=8
 For parallel model evaluation:
 
 ```bash
-python -m app.gauntlet.runner \
-    --batch-mode \
-    --batch-size 16 \
+python scripts/quick_gauntlet.py \
+    --model models/latest.pth \
     --board-type hex8 \
     --num-players 2 \
-    --model models/latest.pth \
-    --games 100
+    --games 100 \
+    --parallel
 ```
 
 Expected throughput: ~10 games/min with batched evaluation.

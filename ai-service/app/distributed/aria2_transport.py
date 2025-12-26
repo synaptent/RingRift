@@ -199,7 +199,11 @@ class Aria2Transport:
             else:
                 # Fallback to requests
                 import requests
-                resp = requests.get(inventory_url, timeout=timeout)
+                resp = await asyncio.to_thread(
+                    requests.get,
+                    inventory_url,
+                    timeout=timeout,
+                )
                 if resp.status_code == 200:
                     # Record success
                     if HAS_CIRCUIT_BREAKER:

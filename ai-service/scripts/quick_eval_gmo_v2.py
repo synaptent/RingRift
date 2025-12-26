@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.ai.gmo_v2 import create_gmo_v2, GMOv2AI
+from archive.deprecated_ai.gmo_v2 import create_gmo_v2, GMOv2AI
 from app.game_engine import GameEngine
 from app.models import BoardType, GameStatus
 from app.training.train_gmo_selfplay import create_initial_state

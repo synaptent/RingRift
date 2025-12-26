@@ -12,7 +12,7 @@ Tests cover:
 import pytest
 import torch
 
-from app.ai.ebmo_ai import EBMO_AI
+from archive.deprecated_ai.ebmo_ai import EBMO_AI
 from app.ai.ebmo_network import (
     ActionFeatureExtractor,
     EBMOConfig,

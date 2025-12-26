@@ -291,7 +291,7 @@ class TestFactoryRouting:
 
     def test_ebmo_creates_ebmo(self):
         """AIType.EBMO should create EBMO_AI instance."""
-        from app.ai.ebmo_ai import EBMO_AI
+        from archive.deprecated_ai.ebmo_ai import EBMO_AI
 
         config = AIConfig(difficulty=6)
         ai = AIFactory.create(AIType.EBMO, player_number=1, config=config)

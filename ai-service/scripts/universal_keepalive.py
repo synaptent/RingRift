@@ -40,6 +40,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -168,7 +169,7 @@ class EscalationManager:
                     data = json.load(f)
                     for issue_type, state_data in data.items():
                         self.states[issue_type] = EscalationState.from_dict(state_data)
-            except Exception as e:
+            except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Failed to load escalation state: {e}")
 
     def _save_state(self):
@@ -177,7 +178,7 @@ class EscalationManager:
             data = {k: v.to_dict() for k, v in self.states.items()}
             with open(self.state_file, "w") as f:
                 json.dump(data, f)
-        except Exception as e:
+        except (OSError, TypeError) as e:
             logger.warning(f"Failed to save escalation state: {e}")
 
     def get_state(self, issue_type: str) -> EscalationState:
@@ -313,7 +314,7 @@ def send_notification(event_type: str, message: str, node_id: str, severity: str
                 _last_notification_time[cache_key] = now
                 logger.info(f"Sent notification: {event_type}")
                 return True
-    except Exception as e:
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
         logger.error(f"Failed to send notification: {e}")
 
     return False
@@ -370,7 +371,7 @@ def detect_node_type() -> str:
             for prefix in HETZNER_IP_PREFIXES:
                 if ts_ip.startswith(prefix):
                     return NodeType.HETZNER
-    except Exception:
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
     if system == "linux":
@@ -432,7 +433,7 @@ class UniversalKeepalive:
             with urllib.request.urlopen(url, timeout=10) as response:
                 data = json.loads(response.read().decode())
                 return True, data
-        except Exception as e:
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as e:
             logger.debug(f"P2P health check failed: {e}")
             return False, None
 
@@ -444,7 +445,7 @@ class UniversalKeepalive:
                 capture_output=True, timeout=5
             )
             return result.returncode == 0
-        except Exception:
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
     def start_p2p(self) -> bool:
@@ -489,7 +490,7 @@ class UniversalKeepalive:
             logger.info(f"Started P2P orchestrator with node-id: {self.node_id}")
             return True
 
-        except Exception as e:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             logger.error(f"Failed to start P2P: {e}")
             return False
 
@@ -505,7 +506,7 @@ class UniversalKeepalive:
 
             data = json.loads(result.stdout)
             return data.get("BackendState") == "Running"
-        except Exception as e:
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError, OSError) as e:
             logger.debug(f"Tailscale check failed: {e}")
             return False
 
@@ -521,7 +522,7 @@ class UniversalKeepalive:
             else:
                 subprocess.run(["sudo", "systemctl", "restart", "tailscaled"], timeout=30)
             return True
-        except Exception as e:
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             logger.error(f"Failed to restart Tailscale: {e}")
             return False
 
@@ -534,7 +535,7 @@ class UniversalKeepalive:
                 timeout=30
             )
             return True
-        except Exception as e:
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             logger.error(f"Failed to restart P2P service: {e}")
             return False
 
@@ -551,7 +552,7 @@ class UniversalKeepalive:
 
             usage = shutil.disk_usage(data_dir)
             return (usage.used / usage.total) * 100
-        except Exception as e:
+        except (OSError, FileNotFoundError) as e:
             logger.debug(f"Failed to get disk usage: {e}")
             return 0.0
 
@@ -599,7 +600,7 @@ class UniversalKeepalive:
                 available = mem_info.get('MemAvailable', mem_info.get('MemFree', 0))
                 used = total - available
                 return (used / total) * 100
-        except Exception as e:
+        except (OSError, FileNotFoundError, ValueError, subprocess.SubprocessError) as e:
             logger.debug(f"Failed to get memory usage: {e}")
         return 0.0
 
@@ -631,7 +632,7 @@ class UniversalKeepalive:
                                         pass
         except FileNotFoundError:
             pass  # nvidia-smi not available
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             logger.debug(f"Failed to check GPU: {e}")
         return errors
 
@@ -705,7 +706,7 @@ class UniversalKeepalive:
                             size = log_file.stat().st_size
                             log_file.unlink()
                             freed_bytes += size
-                    except Exception:
+                    except (OSError, FileNotFoundError):
                         pass
 
             # Clean up /tmp keepalive files (>1 day)
@@ -715,7 +716,7 @@ class UniversalKeepalive:
                         size = f.stat().st_size
                         f.unlink()
                         freed_bytes += size
-                except Exception:
+                except (OSError, FileNotFoundError):
                     pass
 
             # Clean up fallback selfplay data (always safe)
@@ -726,13 +727,13 @@ class UniversalKeepalive:
                         size = db_file.stat().st_size
                         db_file.unlink()
                         freed_bytes += size
-                    except Exception:
+                    except (OSError, FileNotFoundError):
                         pass
 
             logger.info(f"Disk cleanup freed {freed_bytes / (1024*1024):.1f} MB")
             return freed_bytes > 0
 
-        except Exception as e:
+        except (OSError, FileNotFoundError) as e:
             logger.error(f"Disk cleanup failed: {e}")
             return False
 
@@ -757,7 +758,7 @@ class UniversalKeepalive:
             try:
                 subprocess.run(["pkill", "-f", "p2p_orchestrator"], timeout=5)
                 time.sleep(2)
-            except Exception:
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 pass
             return self.start_p2p()
 
@@ -795,7 +796,7 @@ class UniversalKeepalive:
                 )
                 if result.returncode == 0:
                     return True
-            except Exception:
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 continue
         return False
 
@@ -821,7 +822,7 @@ class UniversalKeepalive:
             )
             self.caffeinate_pid = proc.pid
             logger.info(f"Started caffeinate (PID: {self.caffeinate_pid})")
-        except Exception as e:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
             logger.error(f"Failed to start caffeinate: {e}")
 
     def mac_cleanup(self):
@@ -830,7 +831,7 @@ class UniversalKeepalive:
             try:
                 os.kill(self.caffeinate_pid, signal.SIGTERM)
                 logger.info("Stopped caffeinate")
-            except Exception:
+            except OSError:
                 pass
 
     # Vast-specific methods
@@ -849,9 +850,9 @@ class UniversalKeepalive:
                 try:
                     if f != keepalive_file and time.time() - f.stat().st_mtime > 300:
                         f.unlink()
-                except Exception:
+                except (OSError, FileNotFoundError):
                     pass
-        except Exception as e:
+        except (OSError, FileNotFoundError) as e:
             logger.debug(f"Vast keepalive write failed: {e}")
 
     def run_health_check(self) -> dict[str, bool]:
@@ -974,7 +975,7 @@ class UniversalKeepalive:
                 if summary:
                     logger.info(f"Active escalations: {summary}")
 
-            except Exception as e:
+            except (OSError, FileNotFoundError, subprocess.SubprocessError, urllib.error.URLError) as e:
                 logger.error(f"Health check error: {e}")
                 send_notification(
                     "keepalive_error",

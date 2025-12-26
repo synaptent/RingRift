@@ -228,7 +228,9 @@ class GameBalanceAnalyzer:
 
         # Statistical significance test (binomial test)
         # H0: win_rate = expected_rate
-        p_value = stats.binom_test(wins, total, expected_rate, alternative='two-sided')
+        # Use binomtest (binom_test was deprecated in scipy 1.7.0)
+        result = stats.binomtest(wins, total, expected_rate, alternative='two-sided')
+        p_value = result.pvalue
         is_significant = p_value < self.SIGNIFICANCE_LEVEL
 
         return WinRateStats(

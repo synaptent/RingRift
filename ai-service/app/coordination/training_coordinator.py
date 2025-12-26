@@ -381,6 +381,7 @@ class TrainingCoordinator:
 
             # P0.4 Dec 2025: Subscribe to rollback events (closes rollback feedback loop)
             bus.subscribe(DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
+            bus.subscribe(DataEventType.PROMOTION_ROLLED_BACK, self._on_promotion_rolled_back)
 
             # Subscribe to quality events (December 2025 - real-time quality feedback)
             bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._on_low_quality_warning)
@@ -659,6 +660,67 @@ class TrainingCoordinator:
         except Exception as e:
             logger.error(f"[TrainingCoordinator] Error executing rollback: {e}")
             self._errors_count += 1
+
+    def _on_promotion_rolled_back(self, event: Any) -> None:
+        """Handle PROMOTION_ROLLED_BACK event - pause training after rollback (December 2025).
+
+        This closes the automatic regression→rollback→pause loop:
+        1. REGRESSION_DETECTED emitted (regression_detector.py)
+        2. AutoRollbackHandler triggers rollback (rollback_manager.py)
+        3. PROMOTION_ROLLED_BACK emitted (rollback_manager.py)
+        4. TrainingCoordinator pauses training (this handler)
+
+        Args:
+            event: PROMOTION_ROLLED_BACK event with payload:
+                - model_id: Model that was rolled back
+                - config_key: Config identifier (e.g., "hex8_2p")
+                - from_version: Version rolled back from
+                - to_version: Version rolled back to
+                - reason: Reason for rollback
+                - triggered_by: What triggered the rollback
+        """
+        if not hasattr(event, 'payload') or not event.payload:
+            logger.warning("[TrainingCoordinator] PROMOTION_ROLLED_BACK without payload")
+            return
+
+        payload = event.payload
+        model_id = payload.get("model_id", "")
+        config_key = payload.get("config_key", "")
+        from_version = payload.get("from_version", "")
+        to_version = payload.get("to_version", "")
+        reason = payload.get("reason", "unknown")
+        triggered_by = payload.get("triggered_by", "unknown")
+
+        if not config_key:
+            # Try to extract from model_id
+            if model_id and "_v" in model_id:
+                config_key = model_id.rsplit("_v", 1)[0]
+
+        if not config_key:
+            logger.warning("[TrainingCoordinator] PROMOTION_ROLLED_BACK without config_key")
+            return
+
+        self._events_processed += 1
+
+        logger.warning(
+            f"[TrainingCoordinator] Model rollback completed for {config_key}: "
+            f"v{from_version} → v{to_version} (reason: {reason}, triggered_by: {triggered_by})"
+        )
+
+        # Pause training for this config to prevent training on the rolled-back model
+        paused = self._pause_training_for_config(
+            config_key,
+            reason=f"auto_rollback_{triggered_by}_{reason}"
+        )
+
+        if paused:
+            logger.info(
+                f"[TrainingCoordinator] Training paused for {config_key} after rollback"
+            )
+        else:
+            logger.debug(
+                f"[TrainingCoordinator] No active training to pause for {config_key}"
+            )
 
     def _pause_training_for_config(self, config_key: str, reason: str) -> bool:
         """Pause training for a specific config.

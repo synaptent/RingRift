@@ -518,7 +518,7 @@ class TournamentDaemon:
         model_path: str,
         board_type: str,
         num_players: int,
-        gauntlet_results: dict[str, Any],
+        gauntlet_results: Any,
     ) -> None:
         """Update ELO ratings based on gauntlet results."""
         try:
@@ -536,6 +536,45 @@ class TournamentDaemon:
             )
 
             # Record matches from gauntlet
+            if hasattr(gauntlet_results, "opponent_results"):
+                recorded = 0
+                for opponent_id, stats in gauntlet_results.opponent_results.items():
+                    wins = int(stats.get("wins", 0))
+                    games = int(stats.get("games", 0))
+                    draws = int(stats.get("draws", 0))
+                    losses = max(0, games - wins - draws)
+
+                    for _ in range(wins):
+                        elo_service.record_match(
+                            participant_a=model_id,
+                            participant_b=opponent_id,
+                            winner=model_id,
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+                        recorded += 1
+                    for _ in range(losses):
+                        elo_service.record_match(
+                            participant_a=model_id,
+                            participant_b=opponent_id,
+                            winner=opponent_id,
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+                        recorded += 1
+                    for _ in range(draws):
+                        elo_service.record_match(
+                            participant_a=model_id,
+                            participant_b=opponent_id,
+                            winner=None,
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+                        recorded += 1
+
+                logger.info(f"Updated ELO for {model_id} with {recorded} baseline matches")
+                return
+
             match_results = gauntlet_results.get("matches", [])
             for match in match_results:
                 opponent_id = match.get("opponent")

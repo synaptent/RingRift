@@ -324,6 +324,15 @@ class HeuristicAI(BaseAI):
     # Controls stochastic exploration during training to create diverse swap decisions
     WEIGHT_SWAP_EXPLORATION_TEMPERATURE = 0.0  # Temperature for swap decision noise (0 = deterministic)
 
+    # v1.7: Move selection temperature for balanced play
+    # Higher temperature = more randomness in move selection (softmax-like)
+    # This prevents P2 from exploiting information advantage with greedy selection
+    # Set to 0.0 for deterministic (greedy) selection
+    # NOTE: Temperature-based selection alone doesn't fix P2 bias - the issue is
+    # that P2 has information advantage (sees P1's moves). GPU heuristic is balanced
+    # because it evaluates ALL players simultaneously with the same symmetric formula.
+    MOVE_SELECTION_TEMPERATURE = 0.0  # Disabled - use greedy selection
+
     # v1.6: Recovery action evaluation weights (RR-CANON-R110–R115)
     # Recovery allows temporarily eliminated players to slide markers to form lines
     WEIGHT_RECOVERY_POTENTIAL = 6.0         # Value of having recovery available (threat potential)
@@ -629,98 +638,45 @@ class HeuristicAI(BaseAI):
                 num_moves >= BATCH_EVAL_THRESHOLD
             )
 
+            # Collect all (move, score) pairs from the appropriate evaluation path
+            all_move_scores: list[tuple[Move, float]] = []
+
             if use_batch:
                 # Batch path: NumPy vectorized evaluation (fastest for many moves)
-                move_scores = self._evaluate_moves_batch(game_state, moves_to_evaluate)
-
-                for move, score in move_scores:
-                    # Add stochastic exploration for SWAP_SIDES
-                    if move.type == MoveType.SWAP_SIDES and self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                        noise = self.rng.gauss(0, self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE)
-                        score += noise
-
-                    if score > best_score:
-                        best_score = score
-                        best_moves = [move]
-                    elif score == best_score:
-                        best_moves.append(move)
-
+                all_move_scores = self._evaluate_moves_batch(game_state, moves_to_evaluate)
             elif USE_MAKE_UNMAKE:
                 # Make/unmake path: lightweight state with sequential evaluation
-                move_scores = self._evaluate_moves_fast(game_state, moves_to_evaluate)
-
-                for move, score in move_scores:
-                    # Add stochastic exploration for SWAP_SIDES
-                    if move.type == MoveType.SWAP_SIDES and self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                        noise = self.rng.gauss(0, self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE)
-                        score += noise
-
-                    if score > best_score:
-                        best_score = score
-                        best_moves = [move]
-                    elif score == best_score:
-                        best_moves.append(move)
+                all_move_scores = self._evaluate_moves_fast(game_state, moves_to_evaluate)
             elif self._should_use_parallel(game_state, len(moves_to_evaluate)):
                 # Parallel path: distribute apply_move + evaluate across CPU cores
-                # Uses full heuristics - no change in play strength
-                move_scores = self._evaluate_moves_parallel(
+                all_move_scores = self._evaluate_moves_parallel(
                     game_state, moves_to_evaluate
                 )
-
-                for move, score in move_scores:
-                    # Add stochastic exploration for SWAP_SIDES
-                    if move.type == MoveType.SWAP_SIDES and self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                        noise = self.rng.gauss(0, self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE)
-                        score += noise
-
-                    if score > best_score:
-                        best_score = score
-                        best_moves = [move]
-                    elif score == best_score:
-                        best_moves.append(move)
             else:
                 # Original path: full state copy per move (sequential)
                 for move in moves_to_evaluate:
-                    # Simulate the move to get the resulting state
                     next_state = self.rules_engine.apply_move(game_state, move)
 
-                    # For SWAP_SIDES, evaluate from the NEW player's perspective
-                    # After swap, the AI that was P2 becomes P1 and vice versa
                     if move.type == MoveType.SWAP_SIDES:
-                        # Temporarily change perspective to evaluate as new player
                         original_player = self.player_number
-                        # After swap, P2 becomes P1 (swap toggles 1<->2)
                         self.player_number = 1 if original_player == 2 else 2
                         score = self.evaluate_position(next_state)
-                        # NOTE: Swap bonus removed - it was asymmetric (only P2 got it)
-                        # and double-counted opening strength already in position eval
-
-                        # Add stochastic exploration for training diversity
-                        if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                            noise = self.rng.gauss(
-                                0,
-                                self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE
-                            )
-                            score += noise
-
-                        # Restore original perspective
                         self.player_number = original_player
                     else:
                         score = self.evaluate_position(next_state)
 
-                    if score > best_score:
-                        # New best score - clear previous candidates
-                        best_score = score
-                        best_moves = [move]
-                    elif score == best_score:
-                        # Tie - add to candidates for random selection
-                        best_moves.append(move)
+                    all_move_scores.append((move, score))
 
-            selected = (
-                self.get_random_element(best_moves)
-                if best_moves
-                else self.get_random_element(valid_moves)
-            )
+            # Add stochastic exploration noise for SWAP_SIDES moves
+            if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
+                all_move_scores = [
+                    (m, s + self.rng.gauss(0, self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE))
+                    if m.type == MoveType.SWAP_SIDES else (m, s)
+                    for m, s in all_move_scores
+                ]
+
+            # Select move using temperature-based sampling or greedy selection
+            selected = self._select_move_with_temperature(all_move_scores, valid_moves)
 
         self.move_count += 1
         return selected
@@ -750,6 +706,73 @@ class HeuristicAI(BaseAI):
         # Use self.rng (seeded in BaseAI) for deterministic sampling.
         # This ensures reproducibility when config.rng_seed is provided.
         return self.rng.sample(moves, limit)
+
+    def _select_move_with_temperature(
+        self,
+        move_scores: list[tuple[Move, float]],
+        fallback_moves: list[Move],
+    ) -> Move | None:
+        """Select a move using temperature-based softmax sampling.
+
+        When MOVE_SELECTION_TEMPERATURE > 0, uses softmax sampling with the
+        configured temperature. Higher temperature = more random selection.
+        When temperature is 0, falls back to greedy selection (best move).
+
+        This prevents P2 from exploiting information advantage with greedy
+        selection, matching the GPU heuristic's balanced behavior.
+
+        Args:
+            move_scores: List of (move, score) tuples from evaluation
+            fallback_moves: Moves to use if move_scores is empty
+
+        Returns:
+            Selected move, or None if no moves available
+        """
+        import math
+
+        if not move_scores:
+            return self.get_random_element(fallback_moves) if fallback_moves else None
+
+        temp = self.MOVE_SELECTION_TEMPERATURE
+
+        if temp <= 0:
+            # Greedy selection: pick best move(s) with random tie-breaking
+            best_score = max(s for _, s in move_scores)
+            best_moves = [m for m, s in move_scores if s == best_score]
+            return self.get_random_element(best_moves)
+
+        # Softmax sampling with temperature
+        # scores are often in range [-1000, 1000], so we normalize
+        scores = [s for _, s in move_scores]
+        max_score = max(scores)
+
+        # Compute softmax probabilities with numerical stability
+        # exp((score - max_score) / temperature)
+        exp_scores = []
+        for s in scores:
+            try:
+                exp_s = math.exp((s - max_score) / temp)
+            except OverflowError:
+                exp_s = float('inf')
+            exp_scores.append(exp_s)
+
+        total = sum(exp_scores)
+        if total == 0 or not math.isfinite(total):
+            # Fallback to uniform if overflow
+            return self.get_random_element([m for m, _ in move_scores])
+
+        probs = [e / total for e in exp_scores]
+
+        # Sample using cumulative distribution
+        r = self.rng.random()
+        cumsum = 0.0
+        for i, p in enumerate(probs):
+            cumsum += p
+            if r <= cumsum:
+                return move_scores[i][0]
+
+        # Fallback (shouldn't reach here)
+        return move_scores[-1][0]
 
     def _should_use_parallel(
         self,

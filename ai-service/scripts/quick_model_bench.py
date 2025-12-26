@@ -50,7 +50,7 @@ def run_game(ai1, ai2, board_type, num_players, game_idx: int = 0):
 
 def benchmark_gmo(model_path: Path, num_games: int = 20):
     """Benchmark GMO model against baselines."""
-    from app.ai.gmo_ai import GMOAI, GMOConfig
+    from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
 
     print(f"\n=== GMO Benchmark: {model_path.name} ===")
 
@@ -87,8 +87,8 @@ def benchmark_gmo(model_path: Path, num_games: int = 20):
 
 def benchmark_ebmo(model_path: Path, num_games: int = 20):
     """Benchmark EBMO model against baselines."""
-    from app.ai.ebmo_ai import EBMO_AI
-    from app.ai.ebmo_network import EBMOConfig
+    from archive.deprecated_ai.ebmo_ai import EBMO_AI
+    from archive.deprecated_ai.ebmo_network import EBMOConfig
 
     print(f"\n=== EBMO Benchmark: {model_path.name} ===")
 

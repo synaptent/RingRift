@@ -78,7 +78,7 @@ else:
 try:
     from app.utils.resource_guard import can_proceed, wait_for_resources
     HAS_RESOURCE_GUARD = True
-except Exception:  # pragma: no cover - optional guard for minimal envs
+except ImportError:  # pragma: no cover - optional guard for minimal envs
     HAS_RESOURCE_GUARD = False
 
     def can_proceed(*_args, **_kwargs) -> bool:  # type: ignore[override]
@@ -201,7 +201,7 @@ def _count_games_in_db_ro(db_path: Path) -> int | None:
             uri=True,
             timeout=1.0,
         )
-    except Exception:
+    except sqlite3.Error:
         return None
 
     try:
@@ -210,7 +210,7 @@ def _count_games_in_db_ro(db_path: Path) -> int | None:
             return 0
         # sqlite3 row may be a tuple; prefer index access.
         return int(row[0])
-    except Exception:
+    except (sqlite3.Error, ValueError, TypeError, IndexError):
         return None
     finally:
         conn.close()
@@ -228,7 +228,7 @@ def collect_db_stats(db_path: Path) -> dict[str, Any]:
             return default
         try:
             return int(row[0])  # type: ignore[index]
-        except Exception:
+        except (ValueError, TypeError, IndexError, KeyError):
             return default
 
     if not db_path.exists():
@@ -410,7 +410,7 @@ def run_selfplay_and_parity(
         try:
             with summary_path.open("r", encoding="utf-8") as f:
                 parity_summary = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             parity_summary = {
                 "error": "failed_to_load_parity_summary_file",
                 "summary_path": str(summary_path),
@@ -428,7 +428,7 @@ def run_selfplay_and_parity(
         else:
             try:
                 parity_summary = json.loads(proc.stdout)
-            except Exception:
+            except json.JSONDecodeError:
                 parity_summary = {
                     "error": "failed_to_parse_parity_summary_stdout",
                     "stdout": proc.stdout,

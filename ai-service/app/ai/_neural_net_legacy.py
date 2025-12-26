@@ -244,7 +244,7 @@ def encode_move_for_board(
         idx = canonical_encode_move_for_board(move, board)
         if idx != INVALID_MOVE_INDEX:
             return idx
-    except Exception:
+    except (ImportError, ModuleNotFoundError, AttributeError, ValueError, TypeError):
         # Fall back to legacy encoding path below.
         pass
 
@@ -274,7 +274,7 @@ def _line_anchor_position(move: Move) -> Position | None:
             line = move.formed_lines[0]
             if hasattr(line, "positions") and line.positions:
                 return line.positions[0]
-        except Exception:
+        except (IndexError, AttributeError, TypeError):
             return None
     return None
 
@@ -3282,7 +3282,7 @@ class NeuralNetAI(BaseAI):
 
                         if list(Path(models_dir).glob(f"{candidate}_*.pth")):
                             return candidate
-                    except Exception:
+                    except (ImportError, OSError, ValueError):
                         pass
                 return candidates[0]
 
@@ -3474,7 +3474,7 @@ class NeuralNetAI(BaseAI):
                     checkpoint_obj = safe_load_checkpoint(
                         path, map_location="cpu", warn_on_unsafe=False
                     )
-                except Exception:
+                except (FileNotFoundError, OSError, RuntimeError, ValueError, TypeError):
                     return False
 
                 if not isinstance(checkpoint_obj, dict):
@@ -3910,7 +3910,7 @@ class NeuralNetAI(BaseAI):
                                     indices.add(int(m.group(1)))
                             if indices:
                                 inferred_blocks = max(indices) + 1
-                        except Exception:
+                        except (AttributeError, ValueError, TypeError):
                             inferred_blocks = None
 
                         if inferred_blocks and inferred_blocks != num_res_blocks:
@@ -4427,7 +4427,7 @@ class NeuralNetAI(BaseAI):
         if inferred_policy_size is None and cfg.get("policy_size") is not None:
             try:
                 inferred_policy_size = int(cfg["policy_size"])
-            except Exception:
+            except (ValueError, TypeError, KeyError):
                 inferred_policy_size = None
 
         current_filters = getattr(self.model, "num_filters", None)
@@ -4459,12 +4459,12 @@ class NeuralNetAI(BaseAI):
         if cfg.get("num_res_blocks") is not None:
             try:
                 num_res_blocks = int(cfg["num_res_blocks"])
-            except Exception:
+            except (ValueError, TypeError, KeyError):
                 num_res_blocks = None
         if num_res_blocks is None and hasattr(self.model, "res_blocks"):
             try:
                 num_res_blocks = len(self.model.res_blocks)  # type: ignore[arg-type]
-            except Exception:
+            except (AttributeError, TypeError):
                 num_res_blocks = None
         if num_res_blocks is None:
             # Infer from state_dict keys.
@@ -4480,7 +4480,7 @@ class NeuralNetAI(BaseAI):
                         indices.add(int(m.group(1)))
                 if indices:
                     num_res_blocks = max(indices) + 1
-            except Exception:
+            except (AttributeError, ValueError, TypeError):
                 num_res_blocks = None
         if num_res_blocks is None:
             num_res_blocks = 12
@@ -4506,7 +4506,7 @@ class NeuralNetAI(BaseAI):
         board_size = getattr(self.model, "board_size", self.board_size)
         try:
             board_size = int(board_size)
-        except Exception:
+        except (ValueError, TypeError):
             board_size = self.board_size
 
         logger.warning(
@@ -4994,7 +4994,7 @@ class NeuralNetAI(BaseAI):
             if value_head is not None:
                 try:
                     head = int(value_head)
-                except Exception:
+                except (ValueError, TypeError):
                     head = 0
             if head < 0 or head >= values_np.shape[1]:
                 head = 0
@@ -5077,7 +5077,7 @@ class NeuralNetAI(BaseAI):
         if board is not None and self.model is not None:
             try:
                 model_policy_size = int(self.model.policy_size)
-            except Exception:
+            except (AttributeError, ValueError, TypeError):
                 model_policy_size = 0
 
             board_policy_size = int(get_policy_size_for_board(board.type))
