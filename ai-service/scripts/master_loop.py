@@ -454,6 +454,7 @@ class MasterLoopController:
             DaemonType.MODEL_DISTRIBUTION,
             # Critical automation (Phase 3A.1 additions)
             DaemonType.IDLE_RESOURCE,        # Spawn selfplay on idle GPUs
+            DaemonType.UTILIZATION_OPTIMIZER,  # Optimize workloads by provider/GPU type
             DaemonType.QUEUE_POPULATOR,      # Maintain work queue depth
             DaemonType.AUTO_EXPORT,          # Trigger NPZ export after sync
             DaemonType.EVALUATION,           # Auto-gauntlet after training

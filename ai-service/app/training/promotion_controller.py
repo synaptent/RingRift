@@ -125,8 +125,10 @@ class PromotionCriteria:
     tier_games_required: int = 100
 
     # Absolute Elo targets (December 2025)
-    # If enabled, models must meet both relative AND absolute Elo criteria
-    require_absolute_elo_target: bool = True
+    # If enabled, models must meet both relative AND absolute Elo criteria.
+    # Default is False: most promotion decisions are relative (vs a baseline) and
+    # should not be blocked by global target attainment.
+    require_absolute_elo_target: bool = False
     absolute_elo_target: float = ELO_TARGET_ALL_CONFIGS  # Default: 2000.0
 
 
@@ -467,10 +469,16 @@ class PromotionController:
             )
         else:
             should_promote = True
-            reason = (
-                f"Meets all criteria: Elo +{elo_improvement or 0:.1f}, {games_played} games, "
-                f"absolute Elo {current_elo or 0:.0f} >= {elo_target:.0f}"
-            )
+            if self.criteria.require_absolute_elo_target:
+                reason = (
+                    f"Meets all criteria: Elo +{elo_improvement or 0:.1f}, {games_played} games, "
+                    f"absolute Elo {current_elo or 0:.0f} >= {elo_target:.0f}"
+                )
+            else:
+                # Relative-only promotion: baseline improvement + enough games + win rate.
+                reason = (
+                    f"Meets all criteria: Elo +{elo_improvement or 0:.1f}, {games_played} games"
+                )
 
         decision = PromotionDecision(
             model_id=model_id,

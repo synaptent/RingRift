@@ -3788,6 +3788,26 @@ class EvaluationFeedbackHandler:
                     except (ValueError, TypeError) as e:
                         logger.warning(f"[EvaluationFeedbackHandler] Invalid LR value: {new_value} ({e})")
 
+                # P0.2 (Dec 2025): Also handle lr_multiplier for relative LR adjustments
+                elif parameter == "lr_multiplier" and new_value is not None:
+                    try:
+                        multiplier = float(new_value)
+                        old_lr = self.optimizer.param_groups[0]["lr"]
+                        new_lr = old_lr * multiplier
+                        # Clamp to valid range
+                        new_lr = max(self.min_lr, min(self.max_lr, new_lr))
+
+                        # Apply immediately to optimizer
+                        for param_group in self.optimizer.param_groups:
+                            param_group["lr"] = new_lr
+
+                        logger.info(
+                            f"[EvaluationFeedbackHandler] Runtime LR multiplier for {self.config_key}: "
+                            f"{old_lr:.2e} * {multiplier:.2f} = {new_lr:.2e} (reason: {reason})"
+                        )
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"[EvaluationFeedbackHandler] Invalid LR multiplier: {new_value} ({e})")
+
             subscribe(DataEventType.HYPERPARAMETER_UPDATED, on_hyperparameter_updated)
             self._subscribed = True
 

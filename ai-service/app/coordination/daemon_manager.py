@@ -581,6 +581,14 @@ class DaemonManager:
             depends_on=[],  # No dependencies
         )
 
+        # Utilization optimizer (December 2025) - optimizes cluster workloads
+        # Stops CPU selfplay on GPU nodes, spawns appropriate workloads by provider
+        self.register_factory(
+            DaemonType.UTILIZATION_OPTIMIZER,
+            self._create_utilization_optimizer,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE],
+        )
+
     def register_factory(
         self,
         daemon_type: DaemonType,
@@ -2681,6 +2689,47 @@ class DaemonManager:
             logger.warning(f"MaintenanceDaemon not available: {e}")
         except Exception as e:
             logger.error(f"MaintenanceDaemon failed: {e}")
+
+    async def _create_utilization_optimizer(self) -> None:
+        """Create and run utilization optimizer daemon (December 2025).
+
+        Optimizes cluster workloads by:
+        - Stopping CPU selfplay on GPU nodes (use GPU selfplay instead)
+        - Spawning appropriate workloads by provider (Lambda=GPU, Vast/Hetzner=CPU)
+        - Matching GPU capabilities to board sizes
+        - Prioritizing underserved board types
+
+        Runs every 5 minutes to continuously optimize cluster utilization.
+        Works alongside IdleResourceDaemon which handles spawning.
+        """
+        try:
+            from app.coordination.utilization_optimizer import (
+                get_utilization_optimizer,
+                optimize_cluster,
+            )
+
+            optimizer = get_utilization_optimizer()
+            check_interval = 300  # 5 minutes
+
+            logger.info("[UtilizationOptimizer] Daemon started, optimizing every 5 minutes")
+
+            while True:
+                try:
+                    results = await optimize_cluster()
+                    if results:
+                        logger.info(
+                            f"[UtilizationOptimizer] Optimization complete: "
+                            f"{len(results)} actions taken"
+                        )
+                except Exception as e:
+                    logger.warning(f"[UtilizationOptimizer] Optimization cycle failed: {e}")
+
+                await asyncio.sleep(check_interval)
+
+        except ImportError as e:
+            logger.warning(f"UtilizationOptimizer not available: {e}")
+        except Exception as e:
+            logger.error(f"UtilizationOptimizer daemon failed: {e}")
 
     # Note: TRAINING_WATCHER removed in Phase 21.2 (Dec 2025)
     # Use TRAINING_NODE_WATCHER from cluster_data_sync instead, which provides

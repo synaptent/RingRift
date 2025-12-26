@@ -66,23 +66,29 @@ proxy_set_header Authorization $http_authorization;
 - Linux (systemd): `ai-service/config/systemd/ringrift-p2p-orchestrator.service`
 - Env example: `ai-service/config/p2p_orchestrator.env.example`
 
-## Pipeline Orchestrator Integration
+## Job Submission via REST
 
-The P2P orchestrator exposes REST endpoints for the pipeline orchestrator:
+The P2P orchestrator accepts job requests over HTTP (see [P2P_ADMIN_API.md](P2P_ADMIN_API.md)).
 
 ```bash
-# Run pipeline via P2P backend
-python scripts/pipeline_orchestrator.py \
-  --backend p2p \
-  --p2p-leader http://leader-host:8770 \
-  run canonical_selfplay
-
-# Auth token can be passed via CLI or environment
+# Submit a selfplay job to the current leader
 export RINGRIFT_CLUSTER_AUTH_TOKEN="$(cat /etc/ringrift/p2p_orchestrator.token)"
-python scripts/pipeline_orchestrator.py --backend p2p --p2p-leader http://leader:8770 run canonical_selfplay
+
+curl -X POST http://leader-host:8770/start_job \
+  -H "Authorization: Bearer ${RINGRIFT_CLUSTER_AUTH_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_id": "selfplay-sq8-2p-001",
+    "job_type": "selfplay",
+    "config": {
+      "board_type": "square8",
+      "num_players": 2
+    }
+  }'
 ```
 
-See [PIPELINE_ORCHESTRATOR.md](PIPELINE_ORCHESTRATOR.md) for full pipeline documentation.
+Supported `job_type` values include `selfplay`, `gpu_selfplay`, `hybrid_selfplay`, `nnue`, and `cmaes`.
+For a full endpoint list, see [P2P_ADMIN_API.md](P2P_ADMIN_API.md).
 
 ## CLI Arguments Reference
 

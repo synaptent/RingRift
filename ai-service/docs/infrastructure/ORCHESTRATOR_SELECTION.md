@@ -126,14 +126,14 @@ result = await orchestrator.sync_all()
 
 ### ~~pipeline_orchestrator.py~~ (DEPRECATED)
 
-> ⚠️ **Deprecated**: This script has been archived. Use `unified_ai_loop.py` instead.
-> **Archive location**: `scripts/archive/pipeline_orchestrator.py`
+> ⚠️ **Deprecated**: This script has been removed. Use `unified_ai_loop.py` instead.
+> **Archive location**: Removed (see git history)
 
 **Original Purpose**: CI/CD pipeline for automated testing and validation
 
 The functionality has been integrated into `unified_ai_loop.py` with:
 
-- Regression testing via `--regression-gate` flag
+- Regression detection via the unified loop (see `run_strength_regression_gate.py` for a standalone gate)
 - Automated model quality validation
 - Shadow tournament validation every 5 minutes
 
