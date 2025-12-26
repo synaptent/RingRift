@@ -99,8 +99,13 @@ class SyncOrchestratorState:
 
 
 @dataclass
-class SyncResult:
-    """Result of a sync operation."""
+class ComponentSyncResult:
+    """Result of a component-level sync operation (data, model, elo, registry).
+
+    Note: This tracks high-level component results within the SyncOrchestrator.
+    For individual file/transfer-level results, use:
+        from app.coordination.sync_constants import SyncResult
+    """
 
     component: str
     success: bool
@@ -108,6 +113,10 @@ class SyncResult:
     duration_seconds: float = 0.0
     error: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
+
+
+# Backward compatibility alias
+SyncResult = ComponentSyncResult
 
 
 @dataclass

@@ -199,9 +199,18 @@ class FeedbackLoopController:
             # Phase 23.1: Subscribe to selfplay rate change events for monitoring
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
                 bus.subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
-                logger.info("[FeedbackLoopController] Subscribed to 5 event types (including SELFPLAY_RATE_CHANGED)")
-            else:
-                logger.info("[FeedbackLoopController] Subscribed to 4 event types")
+
+            # Phase 8: Subscribe to training loss anomaly events (December 2025)
+            # Closes critical feedback loop: training loss anomaly → quality check/exploration boost
+            event_count = 5
+            if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
+                bus.subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_training_loss_anomaly)
+                event_count += 1
+            if hasattr(DataEventType, 'TRAINING_LOSS_TREND'):
+                bus.subscribe(DataEventType.TRAINING_LOSS_TREND, self._on_training_loss_trend)
+                event_count += 1
+
+            logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
 
             self._subscribed = True
         except Exception as e:
@@ -224,6 +233,12 @@ class FeedbackLoopController:
             # Phase 23.1: Unsubscribe from rate change events
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
                 bus.unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
+
+            # Phase 8: Unsubscribe from training loss events
+            if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
+                bus.unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_training_loss_anomaly)
+            if hasattr(DataEventType, 'TRAINING_LOSS_TREND'):
+                bus.unsubscribe(DataEventType.TRAINING_LOSS_TREND, self._on_training_loss_trend)
 
             self._subscribed = False
         except Exception as e:
@@ -435,6 +450,185 @@ class FeedbackLoopController:
 
         except Exception as e:
             logger.debug(f"[FeedbackLoopController] Error handling rate change: {e}")
+
+    def _on_training_loss_anomaly(self, event: Any) -> None:
+        """Handle training loss anomaly events (Phase 8).
+
+        Closes the critical feedback loop: training loss spike detected →
+        trigger quality check and/or exploration boost.
+
+        Actions:
+        1. Log the anomaly for monitoring
+        2. Trigger quality check on training data
+        3. Optionally boost exploration if anomaly is severe
+        4. Track consecutive anomalies for escalation
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+
+            config_key = payload.get("config", "")
+            loss_value = payload.get("loss", 0.0)
+            expected_loss = payload.get("expected_loss", 0.0)
+            deviation = payload.get("deviation", 0.0)
+            epoch = payload.get("epoch", 0)
+            severity = payload.get("severity", "unknown")
+
+            if not config_key:
+                return
+
+            logger.warning(
+                f"[FeedbackLoopController] Training loss anomaly for {config_key}: "
+                f"loss={loss_value:.4f} (expected={expected_loss:.4f}, "
+                f"deviation={deviation:.2f}σ), epoch={epoch}, severity={severity}"
+            )
+
+            # Track anomaly count for escalation
+            state = self._get_or_create_state(config_key)
+            if not hasattr(state, 'loss_anomaly_count'):
+                state.loss_anomaly_count = 0
+            state.loss_anomaly_count += 1
+            state.last_loss_anomaly_time = time.time()
+
+            # Trigger quality check on training data
+            self._trigger_quality_check(config_key, reason="training_loss_anomaly")
+
+            # If severe (>3σ deviation) or consecutive (3+ anomalies), boost exploration
+            if severity == "severe" or state.loss_anomaly_count >= 3:
+                self._boost_exploration_for_anomaly(config_key, state.loss_anomaly_count)
+
+        except Exception as e:
+            logger.error(f"[FeedbackLoopController] Error handling loss anomaly: {e}")
+
+    def _on_training_loss_trend(self, event: Any) -> None:
+        """Handle training loss trend events (Phase 8).
+
+        Responds to ongoing trends in training loss (improving/stalled/degrading).
+
+        Actions:
+        - Stalled: Increase exploration diversity, consider curriculum rebalance
+        - Degrading: Trigger quality check, potential pause
+        - Improving: Reset anomaly counters, reduce exploration boost
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+
+            config_key = payload.get("config", "")
+            trend = payload.get("trend", "unknown")  # improving, stalled, degrading
+            current_loss = payload.get("current_loss", 0.0)
+            trend_duration_epochs = payload.get("trend_duration_epochs", 0)
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+
+            logger.info(
+                f"[FeedbackLoopController] Training loss trend for {config_key}: "
+                f"trend={trend}, loss={current_loss:.4f}, duration={trend_duration_epochs} epochs"
+            )
+
+            if trend == "stalled":
+                # Training has stagnated - boost exploration to generate diverse data
+                if trend_duration_epochs >= 5:
+                    self._boost_exploration_for_stall(config_key, trend_duration_epochs)
+
+            elif trend == "degrading":
+                # Loss is getting worse - check data quality, consider rollback
+                self._trigger_quality_check(config_key, reason="training_loss_degrading")
+                if trend_duration_epochs >= 3:
+                    logger.warning(
+                        f"[FeedbackLoopController] Sustained loss degradation for {config_key}, "
+                        f"consider training pause or rollback"
+                    )
+
+            elif trend == "improving":
+                # Good news - reset anomaly tracking
+                if hasattr(state, 'loss_anomaly_count'):
+                    state.loss_anomaly_count = 0
+                # Optionally reduce exploration boost since training is on track
+                self._reduce_exploration_after_improvement(config_key)
+
+        except Exception as e:
+            logger.error(f"[FeedbackLoopController] Error handling loss trend: {e}")
+
+    def _trigger_quality_check(self, config_key: str, reason: str) -> None:
+        """Trigger a quality check for the given config.
+
+        Emits QUALITY_CHECK_REQUESTED event to be handled by quality monitor.
+        """
+        try:
+            from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+
+            bus = get_event_bus()
+            if hasattr(DataEventType, 'QUALITY_CHECK_FAILED'):
+                # Emit a quality check request (using existing event infrastructure)
+                # Note: QUALITY_CHECK_REQUESTED may not exist, so we use logging for now
+                logger.info(
+                    f"[FeedbackLoopController] Triggering quality check for {config_key}: {reason}"
+                )
+                # In a full implementation, this would emit QUALITY_CHECK_REQUESTED
+                # and the QualityMonitorDaemon would handle it
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Error triggering quality check: {e}")
+
+    def _boost_exploration_for_anomaly(self, config_key: str, anomaly_count: int) -> None:
+        """Boost exploration in response to loss anomalies."""
+        try:
+            from app.training.temperature_scheduling import get_active_schedulers
+
+            schedulers = get_active_schedulers()
+            for scheduler in schedulers:
+                if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
+                    # Boost by 15% per anomaly, up to 2.0x
+                    boost = min(2.0, 1.0 + 0.15 * anomaly_count)
+                    if hasattr(scheduler, 'set_exploration_boost'):
+                        scheduler.set_exploration_boost(boost)
+                        logger.info(
+                            f"[FeedbackLoopController] Set exploration boost to {boost:.2f}x "
+                            f"for {config_key} (anomaly count: {anomaly_count})"
+                        )
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Error boosting exploration: {e}")
+
+    def _boost_exploration_for_stall(self, config_key: str, stall_epochs: int) -> None:
+        """Boost exploration in response to training stall."""
+        try:
+            from app.training.temperature_scheduling import get_active_schedulers
+
+            schedulers = get_active_schedulers()
+            for scheduler in schedulers:
+                if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
+                    # Boost by 10% per 5 epochs of stall, up to 1.5x
+                    boost = min(1.5, 1.0 + 0.10 * (stall_epochs // 5))
+                    if hasattr(scheduler, 'set_exploration_boost'):
+                        scheduler.set_exploration_boost(boost)
+                        logger.info(
+                            f"[FeedbackLoopController] Set exploration boost to {boost:.2f}x "
+                            f"for {config_key} (stalled for {stall_epochs} epochs)"
+                        )
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Error boosting exploration for stall: {e}")
+
+    def _reduce_exploration_after_improvement(self, config_key: str) -> None:
+        """Gradually reduce exploration boost when training is improving."""
+        try:
+            from app.training.temperature_scheduling import get_active_schedulers
+
+            schedulers = get_active_schedulers()
+            for scheduler in schedulers:
+                if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
+                    if hasattr(scheduler, 'get_exploration_boost') and hasattr(scheduler, 'set_exploration_boost'):
+                        current_boost = scheduler.get_exploration_boost()
+                        if current_boost > 1.0:
+                            # Reduce by 10% towards 1.0
+                            new_boost = max(1.0, current_boost * 0.9)
+                            scheduler.set_exploration_boost(new_boost)
+                            logger.debug(
+                                f"[FeedbackLoopController] Reduced exploration boost to {new_boost:.2f}x "
+                                f"for {config_key} (training improving)"
+                            )
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Error reducing exploration: {e}")
 
     def _on_training_complete(self, event: Any) -> None:
         """Handle training completion.

@@ -58,14 +58,23 @@ class P2PSyncConfig:
 
 
 @dataclass
-class SyncResult:
-    """Result of a sync operation."""
+class P2PSyncResult:
+    """Result of a P2P HTTP sync operation.
+
+    Note: This is specific to P2P HTTP-based transfers with checksum verification.
+    For general sync results, use:
+        from app.coordination.sync_constants import SyncResult
+    """
     success: bool
     files_synced: int = 0
     bytes_transferred: int = 0
     duration_seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
     checksums: dict[str, str] = field(default_factory=dict)
+
+
+# Backward compatibility alias
+SyncResult = P2PSyncResult
 
 
 class P2PSyncClient:
