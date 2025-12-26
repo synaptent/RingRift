@@ -258,9 +258,9 @@ move = ai.select_move(game_state)
 
 ### Training Scripts
 
-| Script                  | Purpose       |
-| ----------------------- | ------------- |
-| `scripts/train_cage.py` | CAGE training |
+| Script | Purpose                              |
+| ------ | ------------------------------------ |
+| (none) | CAGE training not yet wired to a CLI |
 
 ### Environment Variables
 

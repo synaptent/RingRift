@@ -67,8 +67,12 @@ SYNC_STATE_PATH = Path(__file__).parent.parent.parent / "data" / "elo_sync_state
 
 
 @dataclass
-class SyncState:
-    """Tracks sync state for consistency checking."""
+class EloManagerSyncState:
+    """Tracks Elo manager sync state for consistency checking.
+
+    Note: This is Elo manager-specific state tracking.
+    For sync operation states (PENDING, IN_PROGRESS, etc.), use sync_constants.SyncState.
+    """
     last_sync_timestamp: float = 0
     last_sync_hash: str = ""
     local_match_count: int = 0
@@ -153,7 +157,7 @@ class EloSyncManager:
         self.p2p_url = p2p_url or os.environ.get("P2P_URL", "https://p2p.ringrift.ai")
         self.enable_merge = enable_merge
 
-        self.state = SyncState()
+        self.state = EloManagerSyncState()
         self.nodes: dict[str, NodeInfo] = {}
         # Use single canonical circuit breaker for all nodes (tracks targets internally)
         self._circuit_breaker = CanonicalCircuitBreaker(
@@ -194,7 +198,7 @@ class EloSyncManager:
             try:
                 with open(SYNC_STATE_PATH) as f:
                     data = json.load(f)
-                    self.state = SyncState(**data)
+                    self.state = EloManagerSyncState(**data)
             except Exception as e:
                 logger.warning(f"Failed to load sync state: {e}")
 

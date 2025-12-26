@@ -80,7 +80,7 @@ from app.coordination.duration_scheduler import (
 
 # Host health policy exports (renamed from health_check.py for clarity)
 from app.coordination.host_health_policy import (
-    HealthStatus,
+    HostHealthStatus as HealthStatus,  # Alias for backwards compatibility
     check_host_health,
     clear_health_cache,
     get_health_summary,

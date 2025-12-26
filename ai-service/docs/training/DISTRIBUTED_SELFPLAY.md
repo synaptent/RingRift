@@ -164,21 +164,9 @@ LOCAL_ONLY=1 ./scripts/run_distributed_selfplay_matrix.sh
 
 ## HTTP Worker Service (Optional)
 
-For more sophisticated job distribution, workers can run an HTTP service:
-
-```bash
-# Start worker service on a remote host
-./scripts/cluster_setup.sh start <worker-ip>
-
-# Check health
-curl http://<worker-ip>:8765/health
-```
-
-The HTTP service supports:
-
-- Health checks
-- Task submission via REST API
-- Bonjour/mDNS discovery (when network allows)
+For HTTP-based orchestration, use `scripts/p2p_orchestrator.py` and submit jobs
+via the `/jobs/*` endpoints on the leader. The legacy `cluster_worker.py`
+service is not present in the repo.
 
 ## Troubleshooting
 
@@ -195,10 +183,10 @@ The HTTP service supports:
 
 ### Worker Not Starting
 
-Check the worker log:
+Check the selfplay outputs and summaries on the worker:
 
 ```bash
-ssh <host> "cat /tmp/cluster_worker.log"
+ssh <host> "ls -la ~/ringrift/ai-service/logs/selfplay_matrix/"
 ```
 
 ### Python Version Too Old
@@ -217,7 +205,7 @@ brew install python@3.11
 - **Worker config**: `scripts/cluster_workers.txt`
 - **Setup script**: `scripts/cluster_setup.sh`
 - **Distributed runner**: `scripts/run_distributed_selfplay_matrix.sh`
-- **Worker service**: `scripts/cluster_worker.py`
+- **Worker runner**: `scripts/run_distributed_selfplay.py` or SSH matrix runners
 - **Results**: `logs/selfplay_matrix/`, `data/games/`
 
 ## Advanced: Pipeline Orchestrator

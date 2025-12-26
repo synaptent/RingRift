@@ -16,8 +16,8 @@ Usage:
     def check_my_component() -> HealthStatus:
         # Check component health
         if is_healthy():
-            return HealthStatus.ok("Component is running")
-        return HealthStatus.error("Component is down")
+            return ComponentHealthStatus.ok("Component is running")
+        return ComponentHealthStatus.error("Component is down")
 
     # Get overall health
     summary = get_health_summary()
@@ -52,8 +52,12 @@ class HealthLevel(str, Enum):
 
 
 @dataclass
-class HealthStatus:
-    """Health status for a component."""
+class ComponentHealthStatus:
+    """Health status for a component.
+
+    Note: This is component-specific health tracking with HealthLevel.
+    For generic health states (HEALTHY, DEGRADED, etc.), use app.core.health.HealthState.
+    """
     level: HealthLevel
     message: str
     details: dict[str, Any] = field(default_factory=dict)
@@ -64,22 +68,22 @@ class HealthStatus:
             self.timestamp = datetime.now(timezone.utc)
 
     @classmethod
-    def ok(cls, message: str = "Healthy", **details) -> HealthStatus:
+    def ok(cls, message: str = "Healthy", **details) -> ComponentHealthStatus:
         """Create an OK status."""
         return cls(level=HealthLevel.OK, message=message, details=details)
 
     @classmethod
-    def warning(cls, message: str, **details) -> HealthStatus:
+    def warning(cls, message: str, **details) -> ComponentHealthStatus:
         """Create a WARNING status."""
         return cls(level=HealthLevel.WARNING, message=message, details=details)
 
     @classmethod
-    def error(cls, message: str, **details) -> HealthStatus:
+    def error(cls, message: str, **details) -> ComponentHealthStatus:
         """Create an ERROR status."""
         return cls(level=HealthLevel.ERROR, message=message, details=details)
 
     @classmethod
-    def unknown(cls, message: str = "Status unknown", **details) -> HealthStatus:
+    def unknown(cls, message: str = "Status unknown", **details) -> ComponentHealthStatus:
         """Create an UNKNOWN status."""
         return cls(level=HealthLevel.UNKNOWN, message=message, details=details)
 
@@ -102,7 +106,7 @@ class HealthStatus:
 class ComponentHealth:
     """Health information for a registered component."""
     name: str
-    status: HealthStatus
+    status: ComponentHealthStatus
     check_duration_ms: float = 0.0
     last_check: datetime | None = None
     check_count: int = 0
@@ -148,7 +152,7 @@ class HealthSummary:
 
 
 # Type for health check functions
-HealthCheckFunc = Callable[[], HealthStatus]
+HealthCheckFunc = Callable[[], ComponentHealthStatus]
 
 
 class HealthRegistry:
@@ -197,7 +201,7 @@ class HealthRegistry:
 
         Args:
             name: Unique name for this check
-            check_func: Function that returns HealthStatus
+            check_func: Function that returns ComponentHealthStatus
             override: Allow overriding existing check
         """
         with self._registry_lock:
@@ -243,7 +247,7 @@ class HealthRegistry:
             if name not in self._checks:
                 return ComponentHealth(
                     name=name,
-                    status=HealthStatus.unknown(f"Check '{name}' not registered"),
+                    status=ComponentHealthStatus.unknown(f"Check '{name}' not registered"),
                 )
 
             check_func = self._checks[name]
@@ -253,7 +257,7 @@ class HealthRegistry:
             status = check_func()
         except Exception as e:
             logger.warning(f"Health check '{name}' failed: {e}")
-            status = HealthStatus.error(f"Check failed: {e}")
+            status = ComponentHealthStatus.error(f"Check failed: {e}")
 
         duration_ms = (time.monotonic() - start) * 1000
 
@@ -354,14 +358,14 @@ class HealthRegistry:
                 issues.append(f"High disk usage: {disk.percent}%")
 
             if issues and any("High" in i for i in issues):
-                return HealthStatus.warning("; ".join(issues), **details)
+                return ComponentHealthStatus.warning("; ".join(issues), **details)
 
-            return HealthStatus.ok("Resources OK", **details)
+            return ComponentHealthStatus.ok("Resources OK", **details)
 
         except ImportError:
-            return HealthStatus.unknown("psutil not available")
+            return ComponentHealthStatus.unknown("psutil not available")
         except Exception as e:
-            return HealthStatus.error(f"Resource check failed: {e}")
+            return ComponentHealthStatus.error(f"Resource check failed: {e}")
 
     def _check_database(self) -> HealthStatus:
         """Check database connectivity."""
@@ -376,12 +380,12 @@ class HealthRegistry:
                 conn = sqlite3.connect(str(elo_path), timeout=5)
                 conn.execute("SELECT 1")
                 conn.close()
-                return HealthStatus.ok("Database connectivity OK", elo_db=str(elo_path))
+                return ComponentHealthStatus.ok("Database connectivity OK", elo_db=str(elo_path))
             else:
-                return HealthStatus.warning("Elo database not found", elo_db=str(elo_path))
+                return ComponentHealthStatus.warning("Elo database not found", elo_db=str(elo_path))
 
         except Exception as e:
-            return HealthStatus.error(f"Database check failed: {e}")
+            return ComponentHealthStatus.error(f"Database check failed: {e}")
 
 
 # =============================================================================
@@ -405,7 +409,7 @@ def register_health_check(name: str):
     Usage:
         @register_health_check("my_component")
         def check_my_component() -> HealthStatus:
-            return HealthStatus.ok("All good")
+            return ComponentHealthStatus.ok("All good")
     """
     def decorator(func: HealthCheckFunc) -> HealthCheckFunc:
         get_registry().register(name, func)
@@ -491,26 +495,26 @@ def check_memory() -> HealthStatus:
         pct = mem.percent
 
         if pct >= 95:
-            return HealthStatus.error(
+            return ComponentHealthStatus.error(
                 f"Memory critically high: {pct:.1f}%",
                 percent=pct,
                 available_mb=mem.available / (1024 * 1024),
             )
         elif pct >= 85:
-            return HealthStatus.warning(
+            return ComponentHealthStatus.warning(
                 f"Memory high: {pct:.1f}%",
                 percent=pct,
                 available_mb=mem.available / (1024 * 1024),
             )
-        return HealthStatus.ok(
+        return ComponentHealthStatus.ok(
             f"Memory OK: {pct:.1f}%",
             percent=pct,
             available_mb=mem.available / (1024 * 1024),
         )
     except ImportError:
-        return HealthStatus.unknown("psutil not installed")
+        return ComponentHealthStatus.unknown("psutil not installed")
     except Exception as e:
-        return HealthStatus.error(f"Memory check failed: {e}")
+        return ComponentHealthStatus.error(f"Memory check failed: {e}")
 
 
 @register_health_check("disk")
@@ -524,29 +528,29 @@ def check_disk() -> HealthStatus:
         pct = disk.percent
 
         if pct >= 95:
-            return HealthStatus.error(
+            return ComponentHealthStatus.error(
                 f"Disk critically full: {pct:.1f}%",
                 percent=pct,
                 free_gb=disk.free / (1024 ** 3),
                 path=str(DATA_DIR),
             )
         elif pct >= 85:
-            return HealthStatus.warning(
+            return ComponentHealthStatus.warning(
                 f"Disk usage high: {pct:.1f}%",
                 percent=pct,
                 free_gb=disk.free / (1024 ** 3),
                 path=str(DATA_DIR),
             )
-        return HealthStatus.ok(
+        return ComponentHealthStatus.ok(
             f"Disk OK: {pct:.1f}%",
             percent=pct,
             free_gb=disk.free / (1024 ** 3),
             path=str(DATA_DIR),
         )
     except ImportError:
-        return HealthStatus.unknown("psutil not installed")
+        return ComponentHealthStatus.unknown("psutil not installed")
     except Exception as e:
-        return HealthStatus.error(f"Disk check failed: {e}")
+        return ComponentHealthStatus.error(f"Disk check failed: {e}")
 
 
 @register_health_check("database")
@@ -559,11 +563,11 @@ def check_database() -> HealthStatus:
         # Try to connect to the main games database
         games_dir = DATA_DIR / "games"
         if not games_dir.exists():
-            return HealthStatus.warning("No games directory found", path=str(games_dir))
+            return ComponentHealthStatus.warning("No games directory found", path=str(games_dir))
 
         db_files = list(games_dir.glob("*.db"))
         if not db_files:
-            return HealthStatus.ok("No databases to check", db_count=0)
+            return ComponentHealthStatus.ok("No databases to check", db_count=0)
 
         # Quick connectivity test - find first valid SQLite database
         valid_count = 0
@@ -584,24 +588,24 @@ def check_database() -> HealthStatus:
                 invalid_files.append(db_file.name)
 
         if valid_count == 0:
-            return HealthStatus.warning(
+            return ComponentHealthStatus.warning(
                 "No valid SQLite databases found",
                 db_count=len(db_files),
                 invalid_files=invalid_files[:3],
             )
 
         if invalid_files:
-            return HealthStatus.warning(
+            return ComponentHealthStatus.warning(
                 f"Database OK but {len(invalid_files)} invalid files",
                 valid_count=valid_count,
                 total_count=len(db_files),
                 invalid_files=invalid_files[:3],
             )
 
-        return HealthStatus.ok(
+        return ComponentHealthStatus.ok(
             f"Database OK ({len(db_files)} DBs found)",
             db_count=len(db_files),
             test_db=test_db.name if test_db else None,
         )
     except Exception as e:
-        return HealthStatus.error(f"Database check failed: {e}")
+        return ComponentHealthStatus.error(f"Database check failed: {e}")

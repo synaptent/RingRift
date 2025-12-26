@@ -61,8 +61,12 @@ class GossipPeer:
 
 
 @dataclass
-class SyncState:
-    """State of the gossip sync daemon."""
+class GossipSyncState:
+    """State of the gossip sync daemon.
+
+    Note: This is gossip-specific state tracking.
+    For sync operation states (PENDING, IN_PROGRESS, etc.), use sync_constants.SyncState.
+    """
     node_id: str
     peers: dict[str, GossipPeer] = field(default_factory=dict)
     known_game_ids: set[str] = field(default_factory=set)
@@ -124,7 +128,7 @@ class GossipSyncDaemon:
         self.node_id = node_id
         self.data_dir = Path(data_dir)
         self.listen_port = listen_port
-        self.state = SyncState(node_id=node_id)
+        self.state = GossipSyncState(node_id=node_id)
         self._running = False
         self._server: asyncio.Server | None = None
 

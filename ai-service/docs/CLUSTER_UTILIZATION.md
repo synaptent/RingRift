@@ -29,7 +29,7 @@
    */2 * * * * cd ~/ringrift/ai-service && python3 scripts/resource_aware_router.py --rebalance >> /tmp/work_rebalance.log 2>&1
    ```
 
-   Legacy note: `scripts/unified_work_orchestrator.py` has been removed; use `resource_aware_router.py` directly.
+   Legacy note: `unified_work_orchestrator.py` has been removed; use `resource_aware_router.py` directly.
 
 2. **Enable auto-training trigger** (already deployed):
    ```bash

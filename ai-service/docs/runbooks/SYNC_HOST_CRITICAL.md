@@ -104,7 +104,7 @@ rsync -avz --progress user@<host-ip>:/data/selfplay/ \
   /data/recovered/host-id/
 
 # Then import recovered data
-python scripts/import_recovered_games.py /data/recovered/host-id/
+python scripts/import_orphaned_databases.py --data-dir /data/recovered/host-id --trigger-sync
 ```
 
 ### Option 4: Unretire and Re-sync

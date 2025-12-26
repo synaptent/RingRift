@@ -161,12 +161,12 @@ python scripts/train_nnue_policy.py --gradient-checkpointing
 
 - Generate more training data (aim for 10K+ games)
 - Train for more epochs (100-200)
-- Use curriculum learning: `python scripts/curriculum_training.py --auto-progress`
+- Use curriculum learning: stage runs with `train_nnue_policy.py --min-move-number/--max-move-number`
 
 **Model not improving:**
 
 - Check learning rate (try 0.0001 or 0.01)
-- Verify data quality: `python scripts/analyze_training_data.py --db data/games.db`
+- Verify data quality: `python scripts/validate_training_data.py data/selfplay/example_run`
 - Try transfer learning from a stronger model
 
 ## Next Steps

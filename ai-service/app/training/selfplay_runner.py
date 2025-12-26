@@ -305,9 +305,61 @@ class SelfplayRunner(ABC):
             db_path.parent.mkdir(parents=True, exist_ok=True)
             self._db = GameReplayDB(str(db_path))
             logger.info(f"  Database: {self.config.record_db}")
+
+            # Phase 4A.3: Emit DATABASE_CREATED event for immediate registration
+            self._register_database_immediately(db_path)
         except Exception as e:
             logger.warning(f"Failed to open database {self.config.record_db}: {e}")
             self._db = None
+
+    def _register_database_immediately(self, db_path: Path) -> None:
+        """Register database immediately for cluster-wide visibility.
+
+        Phase 4A.3 (December 2025): Reduces data visibility delay from 5 min to <1 sec
+        by emitting DATABASE_CREATED event when selfplay creates/opens a database.
+        """
+        try:
+            import socket
+            from app.coordination.event_router import publish_sync
+            from app.distributed.data_events import DataEventType
+
+            config_key = f"{self.config.board_type}_{self.config.num_players}p"
+            node_id = socket.gethostname()
+
+            # Emit event for immediate registration
+            publish_sync(
+                DataEventType.DATABASE_CREATED,
+                {
+                    "config_key": config_key,
+                    "db_path": str(db_path.absolute()),
+                    "node_id": node_id,
+                    "board_type": self.config.board_type,
+                    "num_players": self.config.num_players,
+                    "engine_mode": self.config.engine_mode.value if self.config.engine_mode else None,
+                },
+                source="selfplay_runner",
+            )
+            logger.debug(f"[SelfplayRunner] Emitted DATABASE_CREATED for {db_path}")
+
+            # Also register directly in ClusterManifest for local visibility
+            try:
+                from app.distributed.cluster_manifest import get_cluster_manifest
+                manifest = get_cluster_manifest()
+                manifest.register_database(
+                    db_path=str(db_path.absolute()),
+                    node_id=node_id,
+                    board_type=self.config.board_type,
+                    num_players=self.config.num_players,
+                    config_key=config_key,
+                    engine_mode=self.config.engine_mode.value if self.config.engine_mode else None,
+                )
+            except Exception as e:
+                logger.debug(f"[SelfplayRunner] Could not register in manifest: {e}")
+
+        except ImportError:
+            pass  # Event system not available
+        except Exception as e:
+            logger.debug(f"[SelfplayRunner] Could not emit DATABASE_CREATED: {e}")
 
     def _close_database(self) -> None:
         """Close database connection."""

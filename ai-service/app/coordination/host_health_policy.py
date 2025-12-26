@@ -58,8 +58,12 @@ except ImportError:
 
 
 @dataclass
-class HealthStatus:
-    """Health status of a host."""
+class HostHealthStatus:
+    """Health status of a host.
+
+    Note: This is host-specific health tracking.
+    For generic health states (HEALTHY, DEGRADED, etc.), use app.core.health.HealthState.
+    """
 
     host: str
     healthy: bool
@@ -92,7 +96,7 @@ class HealthStatus:
 
 
 # Global health cache
-_health_cache: dict[str, HealthStatus] = {}
+_health_cache: dict[str, HostHealthStatus] = {}
 _cache_lock = threading.RLock()
 
 
@@ -124,7 +128,7 @@ def _quick_ssh_check(
     host: str,
     timeout: int = DEFAULT_SSH_TIMEOUT,
     check_load: bool = True,
-) -> HealthStatus:
+) -> HostHealthStatus:
     """Perform a quick SSH health check on a host.
 
     Args:
@@ -184,7 +188,7 @@ def _quick_ssh_check(
                 with contextlib.suppress(ValueError):
                     cpu_count = int(lines[2])
 
-            return HealthStatus(
+            return HostHealthStatus(
                 host=host,
                 healthy=True,
                 checked_at=time.time(),
@@ -194,7 +198,7 @@ def _quick_ssh_check(
             )
         else:
             error_msg = result.stderr.strip() or f"Exit code {result.returncode}"
-            return HealthStatus(
+            return HostHealthStatus(
                 host=host,
                 healthy=False,
                 checked_at=time.time(),
@@ -203,14 +207,14 @@ def _quick_ssh_check(
             )
 
     except subprocess.TimeoutExpired:
-        return HealthStatus(
+        return HostHealthStatus(
             host=host,
             healthy=False,
             checked_at=time.time(),
             error=f"SSH timeout after {timeout}s",
         )
     except Exception as e:
-        return HealthStatus(
+        return HostHealthStatus(
             host=host,
             healthy=False,
             checked_at=time.time(),
@@ -222,7 +226,7 @@ def check_host_health(
     host: str,
     force_refresh: bool = False,
     timeout: int = DEFAULT_SSH_TIMEOUT,
-) -> HealthStatus:
+) -> HostHealthStatus:
     """Check health of a host, using cache when available.
 
     Args:
@@ -235,7 +239,7 @@ def check_host_health(
     """
     # Check for localhost
     if host in ("localhost", "local", socket.gethostname()):
-        return HealthStatus(
+        return HostHealthStatus(
             host=host,
             healthy=True,
             checked_at=time.time(),
@@ -375,7 +379,7 @@ def mark_host_unhealthy(host: str, error: str = "Manually marked unhealthy") -> 
     This is useful when a host appears healthy via SSH but fails to run tasks.
     """
     with _cache_lock:
-        _health_cache[host] = HealthStatus(
+        _health_cache[host] = HostHealthStatus(
             host=host,
             healthy=False,
             checked_at=time.time(),
@@ -665,7 +669,7 @@ if __name__ == "__main__":
 
 __all__ = [
     # Data classes
-    "HealthStatus",
+    "HostHealthStatus",
     "check_cluster_health",
     # Functions
     "check_host_health",

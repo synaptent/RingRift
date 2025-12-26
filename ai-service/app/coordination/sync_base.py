@@ -34,10 +34,12 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SyncState:
-    """Common sync state for all sync managers.
+class BaseSyncProgress:
+    """Common sync progress tracking for all sync managers.
 
     Provides a unified schema for tracking sync progress.
+    Note: This is a dataclass for state tracking, not an enum.
+    For sync operation states (PENDING, IN_PROGRESS, etc.), use sync_constants.SyncState.
     """
     last_sync_timestamp: float = 0.0
     synced_nodes: set[str] = field(default_factory=set)
@@ -58,7 +60,7 @@ class SyncState:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SyncState:
+    def from_dict(cls, data: dict[str, Any]) -> BaseSyncProgress:
         """Deserialize state from dictionary."""
         return cls(
             last_sync_timestamp=data.get("last_sync_timestamp", 0.0),
@@ -125,7 +127,7 @@ class SyncManagerBase(ABC):
         # Core state
         self._sync_lock = asyncio.Lock()
         self._running = False
-        self._state = SyncState()
+        self._state = BaseSyncProgress()
         # Use single canonical circuit breaker (tracks targets internally)
         self._circuit_breaker = CanonicalCircuitBreaker(
             failure_threshold=self.circuit_breaker_config.failure_threshold,
@@ -156,7 +158,7 @@ class SyncManagerBase(ABC):
             if self.state_path and self.state_path.exists():
                 with open(self.state_path) as f:
                     data = json.load(f)
-                    self._state = SyncState.from_dict(data)
+                    self._state = BaseSyncProgress.from_dict(data)
                     logger.debug(f"Loaded sync state from {self.state_path}")
         except Exception as e:
             logger.warning(f"Failed to load sync state: {e}")

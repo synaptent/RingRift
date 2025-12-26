@@ -221,13 +221,15 @@ Train on move subsets by game phase:
 
 ### Staged Curriculum Training
 
-The `train_nnue_policy_curriculum.py` script implements staged training that progresses from simpler (late-game) to complex (opening) decisions:
+Staged curriculum training is done by running `train_nnue_policy.py` multiple times with move-range filters, carrying weights forward via `--pretrained`:
 
 ```bash
-python scripts/train_nnue_policy_curriculum.py \
+python scripts/train_nnue_policy.py \
     --db data/games/*.db \
     --board-type square8 \
-    --num-players 2
+    --num-players 2 \
+    --min-move-number 150 \
+    --save-path models/nnue/policy_stage_endgame.pt
 ```
 
 **Training Stages:**
@@ -245,11 +247,12 @@ Each stage uses transfer learning from the previous stage's weights.
 **Options:**
 
 ```bash
-# Skip specific stages
---skip-stages endgame late-mid
+# Stage boundaries (example: late-mid)
+--min-move-number 80 --max-move-number 150
 
-# Custom epochs per stage
---endgame-epochs 30 --full-epochs 50
+# Chain stages by loading the previous checkpoint
+--pretrained models/nnue/policy_stage_endgame.pt \
+--save-path models/nnue/policy_stage_late_mid.pt
 
 # JSONL data with KL loss
 --jsonl data/selfplay/mcts_*.jsonl --auto-kl-loss
@@ -519,6 +522,6 @@ Policy models typically show greater improvements at shorter think times.
 - [Example Training Run](../training/EXAMPLE_TRAINING_RUN.md) - Step-by-step training example
 - [MCTS Integration](MCTS_INTEGRATION.md) - MCTS system details
 - [Unified AI Loop](../training/UNIFIED_AI_LOOP.md) - Automated training system
-- `scripts/train_nnue_policy_curriculum.py` - Curriculum-based training
+- `train_nnue_policy.py` staged runs (move-range curriculum + `--pretrained`)
 - `scripts/auto_training_pipeline.py` - Automated training workflow
 - `scripts/ab_test_policy_models.py` - A/B testing validation

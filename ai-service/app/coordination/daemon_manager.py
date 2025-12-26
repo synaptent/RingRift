@@ -115,6 +115,9 @@ class DaemonType(Enum):
     # Replication monitor (December 2025) - monitor data replication health
     REPLICATION_MONITOR = "replication_monitor"
 
+    # Replication repair (December 2025) - actively repair under-replicated data
+    REPLICATION_REPAIR = "replication_repair"
+
     # Tournament daemon (December 2025) - automatic tournament scheduling
     TOURNAMENT_DAEMON = "tournament_daemon"
 
@@ -335,6 +338,9 @@ class DaemonManager:
 
         # Replication monitor (December 2025)
         self.register_factory(DaemonType.REPLICATION_MONITOR, self._create_replication_monitor)
+
+        # Replication repair (December 2025)
+        self.register_factory(DaemonType.REPLICATION_REPAIR, self._create_replication_repair)
 
         # Tournament daemon (December 2025) - depends on EVENT_ROUTER for event subscriptions
         self.register_factory(
@@ -1584,6 +1590,26 @@ class DaemonManager:
             logger.error(f"ReplicationMonitorDaemon not available: {e}")
             raise  # Propagate error so DaemonManager marks as FAILED
 
+    async def _create_replication_repair(self) -> None:
+        """Create and run replication repair daemon (December 2025).
+
+        Actively repairs under-replicated data by coordinating targeted
+        sync operations across the cluster.
+        """
+        try:
+            from app.coordination.replication_repair_daemon import get_replication_repair_daemon
+
+            daemon = get_replication_repair_daemon()
+            await daemon.start()
+
+            # Wait for daemon to complete (or be stopped)
+            while daemon.is_running():
+                await asyncio.sleep(10)
+
+        except ImportError as e:
+            logger.error(f"ReplicationRepairDaemon not available: {e}")
+            raise  # Propagate error so DaemonManager marks as FAILED
+
     async def _create_tournament_daemon(self) -> None:
         """Create and run tournament scheduling daemon (December 2025).
 
@@ -2697,6 +2723,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.TOURNAMENT_DAEMON,
         DaemonType.MODEL_DISTRIBUTION,
         DaemonType.REPLICATION_MONITOR,
+        DaemonType.REPLICATION_REPAIR,  # Actively repair under-replicated data
         DaemonType.CLUSTER_MONITOR,
         DaemonType.FEEDBACK_LOOP,
         DaemonType.QUALITY_MONITOR,  # Monitor selfplay data quality
@@ -2732,14 +2759,20 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for local self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
+        DaemonType.FEEDBACK_LOOP,  # Phase 21.2: Orchestrate all feedback signals
+        DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
     ],
 
     # Ephemeral node profile - runs on Vast.ai/spot instances
+    # Phase 21.2: Expanded from 4 to 7 daemons for better data safety
     "ephemeral": [
         DaemonType.EVENT_ROUTER,
         DaemonType.EPHEMERAL_SYNC,
         DaemonType.DATA_PIPELINE,
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
+        DaemonType.QUALITY_MONITOR,  # Phase 21.2: Monitor quality for throttling feedback
+        DaemonType.ORPHAN_DETECTION,  # Phase 21.2: Detect orphaned databases before termination
+        DaemonType.AUTO_SYNC,  # Phase 21.2: Ensure regular sync alongside ephemeral sync
     ],
 
     # Selfplay-only profile - just generates games

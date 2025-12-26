@@ -90,11 +90,15 @@ class OrphanDetectionDaemon:
         self._running = False
         self._last_scan_time: float = 0.0
         self._orphan_history: list[dict[str, Any]] = []
+        self._event_subscription = None
 
     async def start(self) -> None:
         """Start the daemon."""
         logger.info("OrphanDetectionDaemon starting...")
         self._running = True
+
+        # Phase 4A.3: Subscribe to DATABASE_CREATED events for immediate registration
+        await self._subscribe_to_database_events()
 
         while self._running:
             try:
@@ -116,6 +120,73 @@ class OrphanDetectionDaemon:
     async def stop(self) -> None:
         """Stop the daemon gracefully."""
         self._running = False
+
+    async def _subscribe_to_database_events(self) -> None:
+        """Subscribe to DATABASE_CREATED events for immediate registration.
+
+        Phase 4A.3 (December 2025): Enables immediate database visibility
+        instead of waiting for the 5-minute periodic scan.
+        """
+        try:
+            from app.coordination.event_router import subscribe
+            from app.distributed.data_events import DataEventType
+
+            def on_database_created(event):
+                """Handle DATABASE_CREATED event - register immediately."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    db_path = payload.get("db_path")
+                    node_id = payload.get("node_id")
+                    config_key = payload.get("config_key")
+                    board_type = payload.get("board_type")
+                    num_players = payload.get("num_players")
+                    engine_mode = payload.get("engine_mode")
+
+                    if db_path and node_id:
+                        # Register in ClusterManifest
+                        asyncio.create_task(
+                            self._register_database_from_event(
+                                db_path, node_id, config_key, board_type, num_players, engine_mode
+                            )
+                        )
+                        logger.info(f"[OrphanDetection] Immediate registration: {db_path}")
+                except Exception as e:
+                    logger.debug(f"[OrphanDetection] Failed to handle DATABASE_CREATED: {e}")
+
+            subscribe(DataEventType.DATABASE_CREATED, on_database_created)
+            logger.info("[OrphanDetection] Subscribed to DATABASE_CREATED events")
+
+        except ImportError:
+            logger.debug("[OrphanDetection] Event system not available")
+        except Exception as e:
+            logger.warning(f"[OrphanDetection] Failed to subscribe to events: {e}")
+
+    async def _register_database_from_event(
+        self,
+        db_path: str,
+        node_id: str,
+        config_key: str | None,
+        board_type: str | None,
+        num_players: int | None,
+        engine_mode: str | None,
+    ) -> None:
+        """Register database from event in ClusterManifest."""
+        try:
+            from app.distributed.cluster_manifest import get_cluster_manifest
+
+            manifest = get_cluster_manifest()
+            manifest.register_database(
+                db_path=db_path,
+                node_id=node_id,
+                board_type=board_type,
+                num_players=num_players,
+                config_key=config_key,
+                engine_mode=engine_mode,
+            )
+            logger.debug(f"[OrphanDetection] Registered database: {db_path} on {node_id}")
+
+        except Exception as e:
+            logger.debug(f"[OrphanDetection] Could not register database: {e}")
 
     async def _run_scan(self) -> list[OrphanInfo]:
         """Scan for orphaned databases."""

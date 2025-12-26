@@ -566,6 +566,22 @@ class ClusterManifest:
                 PRIMARY KEY (npz_path, node_id)
             );
 
+            -- Database locations table (Phase 4A.3 - December 2025)
+            -- Tracks database files for immediate visibility (no 5-min orphan scan delay)
+            CREATE TABLE IF NOT EXISTS database_locations (
+                db_path TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                board_type TEXT,
+                num_players INTEGER,
+                config_key TEXT,
+                game_count INTEGER DEFAULT 0,
+                file_size INTEGER DEFAULT 0,
+                engine_mode TEXT,
+                registered_at REAL NOT NULL,
+                last_seen REAL NOT NULL,
+                PRIMARY KEY (db_path, node_id)
+            );
+
             -- Node capacity table
             CREATE TABLE IF NOT EXISTS node_capacity (
                 node_id TEXT PRIMARY KEY,
@@ -596,6 +612,12 @@ class ClusterManifest:
                 ON npz_locations(node_id);
             CREATE INDEX IF NOT EXISTS idx_npz_locations_board
                 ON npz_locations(board_type, num_players);
+            CREATE INDEX IF NOT EXISTS idx_database_locations_node
+                ON database_locations(node_id);
+            CREATE INDEX IF NOT EXISTS idx_database_locations_config
+                ON database_locations(config_key);
+            CREATE INDEX IF NOT EXISTS idx_database_locations_board
+                ON database_locations(board_type, num_players);
 
             -- Initialize metadata
             INSERT OR IGNORE INTO manifest_metadata (key, value, updated_at)
@@ -968,6 +990,163 @@ class ClusterManifest:
                 ))
 
             return locations
+
+    # =========================================================================
+    # Database Location Registry (Phase 4A.3 - December 2025)
+    # =========================================================================
+
+    def register_database(
+        self,
+        db_path: str,
+        node_id: str,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        config_key: str | None = None,
+        game_count: int = 0,
+        file_size: int = 0,
+        engine_mode: str | None = None,
+    ) -> None:
+        """Register a database file location in the manifest.
+
+        This enables immediate visibility of new databases without waiting
+        for the 5-minute orphan scan. Called by selfplay when creating DBs.
+
+        Args:
+            db_path: Path to database file (absolute or relative)
+            node_id: Node where the database exists
+            board_type: Board configuration (e.g., "hex8", "square8")
+            num_players: Number of players
+            config_key: Configuration key (e.g., "hex8_2p")
+            game_count: Initial game count (usually 0)
+            file_size: File size in bytes
+            engine_mode: Engine mode used (e.g., "gumbel-mcts")
+        """
+        now = time.time()
+
+        # Derive config_key if not provided
+        if config_key is None and board_type and num_players:
+            config_key = f"{board_type}_{num_players}p"
+
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO database_locations
+                (db_path, node_id, board_type, num_players, config_key,
+                 game_count, file_size, engine_mode, registered_at, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?,
+                    ?,
+                    COALESCE((SELECT registered_at FROM database_locations
+                              WHERE db_path = ? AND node_id = ?), ?),
+                    ?)
+            """, (db_path, node_id, board_type, num_players, config_key,
+                  game_count, file_size, engine_mode, db_path, node_id, now, now))
+            conn.commit()
+
+        logger.debug(f"Registered database: {db_path} on {node_id}")
+
+    def update_database_game_count(
+        self,
+        db_path: str,
+        node_id: str,
+        game_count: int,
+        file_size: int | None = None,
+    ) -> None:
+        """Update game count for a registered database.
+
+        Args:
+            db_path: Path to database file
+            node_id: Node where the database exists
+            game_count: Current game count
+            file_size: Optional updated file size
+        """
+        now = time.time()
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            if file_size is not None:
+                cursor.execute("""
+                    UPDATE database_locations
+                    SET game_count = ?, file_size = ?, last_seen = ?
+                    WHERE db_path = ? AND node_id = ?
+                """, (game_count, file_size, now, db_path, node_id))
+            else:
+                cursor.execute("""
+                    UPDATE database_locations
+                    SET game_count = ?, last_seen = ?
+                    WHERE db_path = ? AND node_id = ?
+                """, (game_count, now, db_path, node_id))
+            conn.commit()
+
+    def find_databases_for_config(
+        self,
+        config_key: str | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Find all database files for a specific configuration.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            board_type: Board configuration (alternative to config_key)
+            num_players: Number of players (alternative to config_key)
+
+        Returns:
+            List of database location dictionaries with:
+            - db_path, node_id, board_type, num_players, config_key
+            - game_count, file_size, engine_mode
+            - registered_at, last_seen
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+
+            if config_key:
+                cursor.execute("""
+                    SELECT db_path, node_id, board_type, num_players, config_key,
+                           game_count, file_size, engine_mode, registered_at, last_seen
+                    FROM database_locations
+                    WHERE config_key = ?
+                    ORDER BY game_count DESC, last_seen DESC
+                """, (config_key,))
+            elif board_type and num_players:
+                cursor.execute("""
+                    SELECT db_path, node_id, board_type, num_players, config_key,
+                           game_count, file_size, engine_mode, registered_at, last_seen
+                    FROM database_locations
+                    WHERE board_type = ? AND num_players = ?
+                    ORDER BY game_count DESC, last_seen DESC
+                """, (board_type, num_players))
+            else:
+                # Return all databases
+                cursor.execute("""
+                    SELECT db_path, node_id, board_type, num_players, config_key,
+                           game_count, file_size, engine_mode, registered_at, last_seen
+                    FROM database_locations
+                    ORDER BY game_count DESC, last_seen DESC
+                """)
+
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    "db_path": row[0],
+                    "node_id": row[1],
+                    "board_type": row[2],
+                    "num_players": row[3],
+                    "config_key": row[4],
+                    "game_count": row[5],
+                    "file_size": row[6],
+                    "engine_mode": row[7],
+                    "registered_at": row[8],
+                    "last_seen": row[9],
+                })
+
+            return results
+
+    def get_all_database_locations(self) -> list[dict[str, Any]]:
+        """Get all registered database locations.
+
+        Returns:
+            List of all database location dictionaries
+        """
+        return self.find_databases_for_config()
 
     # =========================================================================
     # Node Capacity & Inventory

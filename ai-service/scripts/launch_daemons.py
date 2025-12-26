@@ -66,7 +66,7 @@ DAEMON_CATEGORIES = {
     ],
     "training": [
         DaemonType.DATA_PIPELINE,
-        DaemonType.TRAINING_WATCHER,
+        DaemonType.TRAINING_NODE_WATCHER,
         DaemonType.SELFPLAY_COORDINATOR,
         DaemonType.DISTILLATION,
         DaemonType.UNIFIED_PROMOTION,
@@ -79,6 +79,10 @@ DAEMON_CATEGORIES = {
         DaemonType.HEALTH_CHECK,
         DaemonType.CLUSTER_MONITOR,
         DaemonType.QUEUE_MONITOR,
+        DaemonType.REPLICATION_MONITOR,  # Monitor data replication health
+        DaemonType.REPLICATION_REPAIR,   # Actively repair under-replicated data
+        DaemonType.ORPHAN_DETECTION,     # Detect unregistered game databases
+        DaemonType.NODE_HEALTH_MONITOR,  # Unified cluster health
     ],
     "events": [
         DaemonType.EVENT_ROUTER,

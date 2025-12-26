@@ -42,8 +42,12 @@ SYNC_STATE_PATH = AI_SERVICE_ROOT / "data" / "registry_sync_state.json"
 
 
 @dataclass
-class SyncState:
-    """Tracks registry synchronization state."""
+class RegistrySyncState:
+    """Tracks registry synchronization state.
+
+    Note: This is registry-specific state tracking.
+    For sync operation states (PENDING, IN_PROGRESS, etc.), use sync_constants.SyncState.
+    """
     last_sync_timestamp: float = 0.0
     local_model_count: int = 0
     local_version_count: int = 0
@@ -87,7 +91,7 @@ class RegistrySyncManager:
         self.sync_interval = sync_interval
         self.p2p_url = p2p_url or os.environ.get("P2P_URL", "https://p2p.ringrift.ai")
 
-        self.state = SyncState()
+        self.state = RegistrySyncState()
         self.nodes: dict[str, NodeInfo] = {}
         self.circuit_breakers: dict[str, CircuitBreaker] = defaultdict(CircuitBreaker)
         self._sync_lock = asyncio.Lock()
@@ -118,7 +122,7 @@ class RegistrySyncManager:
             try:
                 with open(SYNC_STATE_PATH) as f:
                     data = json.load(f)
-                    self.state = SyncState(**data)
+                    self.state = RegistrySyncState(**data)
             except Exception as e:
                 logger.warning(f"Failed to load registry sync state: {e}")
 

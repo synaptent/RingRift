@@ -179,11 +179,11 @@ configurations:
 
 The unified loop can also be run as separate services if needed:
 
-| Service           | Script                                 | Systemd Unit                |
-| ----------------- | -------------------------------------- | --------------------------- |
-| Data Collector    | `scripts/unified_data_sync.py`         | `unified-data-sync.service` |
-| Shadow Tournament | `scripts/shadow_tournament_service.py` | `shadow-tournament.service` |
-| Model Promoter    | `scripts/model_promotion_manager.py`   | `model-promoter.service`    |
+| Service                      | Script                               | Systemd Unit                |
+| ---------------------------- | ------------------------------------ | --------------------------- |
+| Data Collector               | `scripts/unified_data_sync.py`       | `unified-data-sync.service` |
+| Shadow Tournament (embedded) | `scripts/unified_ai_loop.py`         | `ringrift-ai-loop.service`  |
+| Model Promoter               | `scripts/model_promotion_manager.py` | `model-promoter.service`    |
 
 > **Note:** `scripts/streaming_data_collector.py` is deprecated. Use `scripts/unified_data_sync.py` instead.
 

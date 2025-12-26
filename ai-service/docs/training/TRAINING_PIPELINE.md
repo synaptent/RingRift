@@ -526,7 +526,7 @@ python scripts/unified_ai_loop.py --start &
 
 ```bash
 ssh gpu-node-1 "cd ~/ringrift/ai-service && source venv/bin/activate && \
-  python scripts/multi_config_training_loop.py --board hexagonal --players 3 --iterations 30 &"
+  python scripts/run_training_loop.py --board-type hexagonal --num-players 3 --skip-selfplay --training-epochs 30 &"
 ```
 
 #### 4. Missing MCTS Data for KL Loss
@@ -555,12 +555,12 @@ Install with: `crontab config/crontab_training.txt`
 
 ### Active Daemons
 
-| Daemon                   | Host       | Purpose                     |
-| ------------------------ | ---------- | --------------------------- |
-| `unified_ai_loop.py`     | Local      | Main orchestration          |
-| `unified_data_sync.py`   | Local      | Data collection             |
-| `auto_elo_tournament.py` | Train Node | Model evaluation            |
-| `baseline_gauntlet.py`   | GPU Node   | Continuous baseline testing |
+| Daemon                                    | Host       | Purpose                     |
+| ----------------------------------------- | ---------- | --------------------------- |
+| `unified_ai_loop.py`                      | Local      | Main orchestration          |
+| `unified_data_sync.py`                    | Local      | Data collection             |
+| `run_model_elo_tournament.py` (scheduled) | Train Node | Model evaluation            |
+| `baseline_gauntlet.py`                    | GPU Node   | Continuous baseline testing |
 
 ### Quick Status Check
 
@@ -585,14 +585,16 @@ sqlite3 data/unified_elo.db \
 Progressive training from simple to complex game phases:
 
 ```bash
-# Auto-progress through all stages
-python scripts/curriculum_training.py --auto-progress \
-  --board hexagonal --num-players 3 \
-  --db data/games/jsonl_aggregated.db
+# Stage runs: adjust move ranges per phase
+python scripts/train_nnue_policy.py \
+  --board-type hexagonal --num-players 3 \
+  --db data/games/jsonl_aggregated.db \
+  --min-move-number 200
 
-# Train specific stage only
-python scripts/curriculum_training.py --stage 1 \
-  --board square8 --num-players 2
+# Train a specific stage only
+python scripts/train_nnue_policy.py \
+  --board-type square8 --num-players 2 \
+  --min-move-number 1 --max-move-number 36
 ```
 
 **Stages**:
