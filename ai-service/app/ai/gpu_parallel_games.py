@@ -1680,11 +1680,24 @@ class ParallelGameRunner:
             real_action_players = eligible & self.state.lps_current_round_real_action_mask
 
             true_counts = real_action_players.sum(dim=1).to(torch.int16)
-            exclusive_pid = torch.argmax(real_action_players.to(torch.int8), dim=1).to(torch.int8)
+
+            # FIX 2025-12-26: Use masked multiplication to find exclusive player ID.
+            # argmax on boolean tensor is semantically incorrect - it returns the first
+            # True index, not necessarily the exclusive player. Use masked multiplication
+            # with player indices instead to correctly identify the single True player.
+            device = real_action_players.device
+            player_indices = torch.arange(
+                real_action_players.shape[1], device=device, dtype=torch.int8
+            ).unsqueeze(0)  # Shape: (1, num_players+1)
+            # Multiply boolean mask by indices - only the True player's index survives
+            masked_indices = real_action_players.to(torch.int8) * player_indices
+            # Take max to get the exclusive player ID (works because only one is non-zero)
+            exclusive_pid_candidates = masked_indices.max(dim=1).values.to(torch.int8)
+
             exclusive_pid = torch.where(
                 true_counts == 1,
-                exclusive_pid,
-                torch.zeros_like(exclusive_pid),
+                exclusive_pid_candidates,
+                torch.zeros_like(exclusive_pid_candidates),
             )
 
             self.state.lps_exclusive_player_for_completed_round[idx] = exclusive_pid[idx]
