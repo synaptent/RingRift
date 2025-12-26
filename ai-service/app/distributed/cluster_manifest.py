@@ -68,6 +68,8 @@ __all__ = [
     "NodeCapacity",
     "NodeInventory",
     "SyncCandidateNode",
+    # Backwards compatibility alias (historical name)
+    "SyncTarget",
     "DiskCleanupPolicy",
     "DiskCleanupResult",
     "CleanupCandidate",
@@ -223,6 +225,11 @@ class SyncCandidateNode:
     priority: int = 0  # Higher = sync first
     reason: str = ""
     capacity: NodeCapacity | None = None
+
+
+# Backwards compatibility: older code/tests import SyncTarget from this module.
+# Keep this alias to avoid breaking runtime imports.
+SyncTarget = SyncCandidateNode
 
 
 @dataclass

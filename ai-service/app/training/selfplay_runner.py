@@ -794,10 +794,12 @@ class SelfplayRunner(ABC):
             from app.training.pfsp_opponent_selector import (
                 get_pfsp_selector,
                 wire_pfsp_events,
+                bootstrap_pfsp_opponents,
             )
 
             self._pfsp_selector = get_pfsp_selector()
             wire_pfsp_events()  # Subscribe to MODEL_PROMOTED, EVALUATION_COMPLETED
+            bootstrap_pfsp_opponents()  # Pre-populate with existing canonical models
             self._pfsp_enabled = True
 
             logger.info("[PFSP] Initialized opponent selector (enabled by default)")

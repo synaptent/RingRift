@@ -523,3 +523,52 @@ def wire_pfsp_events() -> bool:
     except Exception as e:
         logger.warning(f"[PFSP] Failed to wire events: {e}")
         return False
+
+
+def bootstrap_pfsp_opponents() -> int:
+    """Bootstrap PFSP with existing canonical models.
+
+    This solves the cold-start problem where no opponents are registered
+    until MODEL_PROMOTED events occur. By discovering existing canonical
+    models, selfplay can immediately use PFSP opponent selection.
+
+    Returns:
+        Number of models registered
+    """
+    try:
+        from pathlib import Path
+
+        selector = get_pfsp_selector()
+        models_dir = Path("models")
+        count = 0
+
+        if not models_dir.exists():
+            logger.debug("[PFSP] No models directory found")
+            return 0
+
+        # Discover canonical models by naming convention
+        for model_path in models_dir.glob("canonical_*.pth"):
+            # Parse: canonical_{board}_{n}p.pth
+            name = model_path.stem  # e.g., "canonical_hex8_2p"
+            parts = name.split("_")
+            if len(parts) >= 3:
+                board_type = parts[1]  # hex8, square8, etc.
+                players_str = parts[2]  # 2p, 3p, 4p
+                if players_str.endswith("p"):
+                    num_players = players_str[:-1]
+                    config_key = f"{board_type}_{num_players}p"
+                    model_id = name
+
+                    # Register with default ELO
+                    selector.register_model(model_id, config_key, elo=1500.0)
+                    count += 1
+                    logger.debug(f"[PFSP] Bootstrapped {model_id} for {config_key}")
+
+        if count > 0:
+            logger.info(f"[PFSP] Bootstrapped {count} canonical models as opponents")
+
+        return count
+
+    except Exception as e:
+        logger.warning(f"[PFSP] Bootstrap failed: {e}")
+        return 0
