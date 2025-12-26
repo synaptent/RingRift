@@ -5175,6 +5175,88 @@ class P2POrchestrator:
                 logger.warning(f"Tailscale peer recovery loop error: {e}")
                 await asyncio.sleep(60)
 
+    async def _discover_tailscale_peers(self):
+        """One-shot Tailscale peer discovery for bootstrap fallback.
+
+        Phase 30: Called when bootstrap from seeds fails. Discovers peers
+        via `tailscale status --json` and attempts to connect.
+        """
+        import json
+        import subprocess
+
+        logger.info("Running one-shot Tailscale peer discovery...")
+
+        try:
+            result = subprocess.run(
+                ["tailscale", "status", "--json"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                logger.warning(f"Tailscale status failed: {result.stderr}")
+                return
+
+            ts_data = json.loads(result.stdout)
+            peers = ts_data.get("Peer", {})
+
+            # Get current peer node_ids
+            current_peers = set()
+            with self.peers_lock:
+                current_peers = {p.node_id for p in self.peers.values()}
+
+            # Patterns for compute nodes
+            COMPUTE_PATTERNS = [
+                "lambda-", "vast-", "gh200", "h100", "a100", "a10",
+                "nebius-", "runpod-", "vultr-", "hetzner-",
+            ]
+
+            discovered = 0
+            for peer_info in peers.values():
+                hostname = peer_info.get("HostName", "").lower()
+                is_compute = any(pat in hostname for pat in COMPUTE_PATTERNS)
+                if not is_compute:
+                    continue
+
+                # Get IP from TailscaleIPs (prefer IPv4)
+                ts_ips = peer_info.get("TailscaleIPs", [])
+                ipv4s = [ip for ip in ts_ips if "." in ip]
+                if not ipv4s:
+                    continue
+                ip = ipv4s[0]
+
+                # Skip if we already know this IP
+                known = False
+                with self.peers_lock:
+                    for p in self.peers.values():
+                        if getattr(p, "tailscale_ip", None) == ip or p.host == ip:
+                            known = True
+                            break
+                if known:
+                    continue
+
+                # Try to connect
+                try:
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                        async with session.get(f"http://{ip}:{DEFAULT_PORT}/status") as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                node_id = data.get("node_id", hostname)
+                                if node_id not in current_peers:
+                                    logger.info(f"Discovered peer {node_id} via Tailscale at {ip}")
+                                    await self._send_heartbeat_to_peer(ip, DEFAULT_PORT)
+                                    discovered += 1
+                except Exception:
+                    pass  # Silently skip unreachable nodes
+
+            if discovered > 0:
+                logger.info(f"Tailscale discovery: connected to {discovered} new peer(s)")
+            else:
+                logger.info("Tailscale discovery: no new peers found")
+
+        except FileNotFoundError:
+            logger.debug("Tailscale not installed on this node")
+        except Exception as e:
+            logger.warning(f"Tailscale discovery error: {e}")
+
     async def _convert_jsonl_to_db(self, data_dir: Path, games_dir: Path) -> int:
         """Convert JSONL selfplay files to SQLite DB format for training.
 
