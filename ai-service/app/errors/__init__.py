@@ -103,6 +103,11 @@ class ErrorCode(Enum):
     CONFIG_INVALID = 701
     CONFIG_TYPE_ERROR = 702
 
+    # System errors (8xx)
+    EMERGENCY_HALT = 800
+    RETRYABLE = 801
+    NON_RETRYABLE = 802
+
     # Unknown
     UNKNOWN = 999
 
@@ -337,6 +342,11 @@ class ConvergenceError(TrainingError):
     code = ErrorCode.CONVERGENCE_FAILED
 
 
+class ModelVersioningError(TrainingError):
+    """Error in model versioning or compatibility."""
+    code = ErrorCode.MODEL_LOAD_FAILED
+
+
 # =============================================================================
 # Daemon Errors
 # =============================================================================
@@ -427,6 +437,47 @@ class ConfigTypeError(ConfigurationError):
 
 
 # =============================================================================
+# System Errors
+# =============================================================================
+
+class EmergencyHaltError(RingRiftError):
+    """Emergency halt triggered to stop all training and selfplay.
+
+    Used when a critical issue is detected that requires immediate
+    cessation of all training and selfplay operations.
+    """
+    code = ErrorCode.EMERGENCY_HALT
+    retryable = False  # Requires manual intervention
+
+
+class RetryableError(RingRiftError):
+    """Error that can be retried (network issues, transient failures).
+
+    Use this for errors where a retry may succeed, such as:
+    - Network timeouts
+    - SSH connection drops
+    - Temporary resource unavailability
+    """
+    code = ErrorCode.RETRYABLE
+    retryable = True
+
+
+class NonRetryableError(RingRiftError):
+    """Error that should not be retried.
+
+    Alias: FatalError
+    Use when retry would be futile.
+    """
+    code = ErrorCode.NON_RETRYABLE
+    retryable = False
+
+
+# Backwards compatibility aliases
+FatalError = NonRetryableError
+RecoverableError = RetryableError
+
+
+# =============================================================================
 # Convenience exports
 # =============================================================================
 
@@ -461,6 +512,7 @@ __all__ = [
     "ModelLoadError",
     "CheckpointCorruptError",
     "ConvergenceError",
+    "ModelVersioningError",
     # Daemon
     "DaemonError",
     "DaemonStartupError",
@@ -475,4 +527,11 @@ __all__ = [
     "ConfigurationError",
     "ConfigMissingError",
     "ConfigTypeError",
+    # System
+    "EmergencyHaltError",
+    "RetryableError",
+    "NonRetryableError",
+    # Aliases
+    "FatalError",
+    "RecoverableError",
 ]
