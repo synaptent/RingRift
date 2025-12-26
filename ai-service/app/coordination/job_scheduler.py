@@ -487,6 +487,115 @@ class PriorityJobScheduler:
             return list(self._queue)
         return [j for j in self._queue if j.priority == priority]
 
+    def find_preemptable_jobs(
+        self,
+        for_priority: JobPriority = JobPriority.CRITICAL,
+    ) -> list[tuple[str, ScheduledJob]]:
+        """Find running jobs that can be preempted for higher priority work.
+
+        December 2025: Enable critical jobs to preempt lower priority work.
+
+        Preemption rules:
+        1. Only preempt jobs with priority > for_priority (higher value = lower priority)
+        2. Job must have preemptable=True
+        3. Job must have run for at least preemption_min_runtime_seconds
+        4. Prefer preempting lowest priority jobs first
+
+        Args:
+            for_priority: Priority level that needs resources
+
+        Returns:
+            List of (host_name, job) tuples that can be preempted, sorted by
+            priority descending (lowest priority first - best preemption targets)
+        """
+        now = time.time()
+        preemptable = []
+
+        for host_name, job in self._running.items():
+            # Only preempt lower priority jobs
+            if job.priority <= for_priority:
+                continue
+
+            # Check if job is preemptable
+            if not job.preemptable:
+                continue
+
+            # Check minimum runtime
+            if job.started_at:
+                runtime = now - job.started_at
+                if runtime < job.preemption_min_runtime_seconds:
+                    continue
+
+            preemptable.append((host_name, job))
+
+        # Sort by priority descending (lowest priority = best preemption target)
+        preemptable.sort(key=lambda x: x[1].priority, reverse=True)
+        return preemptable
+
+    async def preempt_for_critical_job(
+        self,
+        host_name: str,
+        preempting_job: ScheduledJob,
+    ) -> ScheduledJob | None:
+        """Preempt a running job on a host to make room for a critical job.
+
+        December 2025: Enables CRITICAL priority jobs to preempt lower priority work.
+
+        Args:
+            host_name: Host where job is running
+            preempting_job: The higher-priority job that needs the resources
+
+        Returns:
+            The preempted job (requeued with same priority), or None if no job to preempt
+        """
+        if host_name not in self._running:
+            return None
+
+        preempted_job = self._running.pop(host_name)
+        preempted_job.running_on_host = None
+
+        # Re-queue the preempted job (keep same priority - it will run when resources free)
+        requeued_job = ScheduledJob(
+            job_type=preempted_job.job_type,
+            priority=preempted_job.priority,
+            config=preempted_job.config,
+            host_preference=None,  # Clear host preference - needs new host
+            requires_gpu=preempted_job.requires_gpu,
+            estimated_duration_seconds=preempted_job.estimated_duration_seconds,
+            job_id=f"{preempted_job.job_id or 'preempted'}_requeue",
+            preemptable=preempted_job.preemptable,
+            preemption_min_runtime_seconds=preempted_job.preemption_min_runtime_seconds,
+        )
+        self.schedule(requeued_job)
+
+        # Emit JOB_PREEMPTED event
+        try:
+            from app.distributed.data_events import DataEvent, DataEventType, get_event_bus
+
+            await get_event_bus().publish(DataEvent(
+                event_type=DataEventType.JOB_PREEMPTED,
+                payload={
+                    "host": host_name,
+                    "preempted_job_type": preempted_job.job_type,
+                    "preempted_job_id": preempted_job.job_id,
+                    "preempted_priority": preempted_job.priority.name,
+                    "preempting_job_type": preempting_job.job_type,
+                    "preempting_job_id": preempting_job.job_id,
+                    "preempting_priority": preempting_job.priority.name,
+                    "runtime_seconds": time.time() - (preempted_job.started_at or time.time()),
+                },
+                source="JobScheduler",
+            ))
+        except ImportError:
+            pass  # Event system not available
+
+        logger.info(
+            f"[JobScheduler] Preempted {preempted_job.job_type} ({preempted_job.priority.name}) "
+            f"on {host_name} for {preempting_job.job_type} ({preempting_job.priority.name})"
+        )
+
+        return preempted_job
+
     def reserve_capacity_for_training(
         self,
         hosts: list[Any],

@@ -435,6 +435,20 @@ class SelfplayScheduler:
             if config_key not in result:
                 result[config_key] = 1.0
 
+        # December 2025: Normalize weights so average is 1.0
+        # This ensures curriculum weights represent relative priority,
+        # not absolute scaling that could distort priority scores
+        if result:
+            total = sum(result.values())
+            target_sum = len(result)  # Average of 1.0
+            if total > 0 and abs(total - target_sum) > 0.01:
+                scale = target_sum / total
+                result = {k: v * scale for k, v in result.items()}
+                logger.debug(
+                    f"[SelfplayScheduler] Normalized curriculum weights: "
+                    f"scale={scale:.3f}, sum={sum(result.values()):.2f}"
+                )
+
         return result
 
     def _get_improvement_boosts(self) -> dict[str, float]:
