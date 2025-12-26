@@ -690,44 +690,67 @@ class FeedbackLoopController:
             logger.debug(f"[FeedbackLoopController] Could not wire to scheduler: {e}")
 
     def _boost_exploration_for_stall(self, config_key: str, stall_epochs: int) -> None:
-        """Boost exploration in response to training stall."""
+        """Boost exploration in response to training stall.
+
+        December 2025: Now includes fallback to store boost in FeedbackState.
+        """
+        # Boost by 10% per 5 epochs of stall, up to 1.5x
+        boost = min(1.5, 1.0 + 0.10 * (stall_epochs // 5))
+
+        # Always update local state (fallback)
+        state = self._get_or_create_state(config_key)
+        state.current_exploration_boost = max(state.current_exploration_boost, boost)
+        logger.info(
+            f"[FeedbackLoopController] Exploration boost set to {boost:.2f}x "
+            f"for {config_key} (stalled for {stall_epochs} epochs)"
+        )
+
+        # Try to wire to active temperature schedulers
         try:
             from app.training.temperature_scheduling import get_active_schedulers
 
             schedulers = get_active_schedulers()
             for scheduler in schedulers:
                 if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
-                    # Boost by 10% per 5 epochs of stall, up to 1.5x
-                    boost = min(1.5, 1.0 + 0.10 * (stall_epochs // 5))
                     if hasattr(scheduler, 'set_exploration_boost'):
                         scheduler.set_exploration_boost(boost)
-                        logger.info(
-                            f"[FeedbackLoopController] Set exploration boost to {boost:.2f}x "
-                            f"for {config_key} (stalled for {stall_epochs} epochs)"
-                        )
+                        logger.debug(f"[FeedbackLoopController] Wired stall boost to scheduler")
+        except ImportError:
+            logger.debug("[FeedbackLoopController] Temperature scheduling not available (using fallback)")
         except Exception as e:
-            logger.debug(f"[FeedbackLoopController] Error boosting exploration for stall: {e}")
+            logger.debug(f"[FeedbackLoopController] Could not wire stall boost: {e}")
 
     def _reduce_exploration_after_improvement(self, config_key: str) -> None:
-        """Gradually reduce exploration boost when training is improving."""
-        try:
-            from app.training.temperature_scheduling import get_active_schedulers
+        """Gradually reduce exploration boost when training is improving.
 
-            schedulers = get_active_schedulers()
-            for scheduler in schedulers:
-                if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
-                    if hasattr(scheduler, 'get_exploration_boost') and hasattr(scheduler, 'set_exploration_boost'):
-                        current_boost = scheduler.get_exploration_boost()
-                        if current_boost > 1.0:
-                            # Reduce by 10% towards 1.0
-                            new_boost = max(1.0, current_boost * 0.9)
+        December 2025: Now includes fallback to update FeedbackState.
+        """
+        # Get current boost from local state
+        state = self._get_or_create_state(config_key)
+        current_boost = state.current_exploration_boost
+
+        if current_boost > 1.0:
+            # Reduce by 10% towards 1.0
+            new_boost = max(1.0, current_boost * 0.9)
+            state.current_exploration_boost = new_boost
+            logger.debug(
+                f"[FeedbackLoopController] Reduced exploration boost to {new_boost:.2f}x "
+                f"for {config_key} (training improving)"
+            )
+
+            # Try to wire to active temperature schedulers
+            try:
+                from app.training.temperature_scheduling import get_active_schedulers
+
+                schedulers = get_active_schedulers()
+                for scheduler in schedulers:
+                    if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
+                        if hasattr(scheduler, 'set_exploration_boost'):
                             scheduler.set_exploration_boost(new_boost)
-                            logger.debug(
-                                f"[FeedbackLoopController] Reduced exploration boost to {new_boost:.2f}x "
-                                f"for {config_key} (training improving)"
-                            )
-        except Exception as e:
-            logger.debug(f"[FeedbackLoopController] Error reducing exploration: {e}")
+            except ImportError:
+                pass  # Using fallback
+            except Exception as e:
+                logger.debug(f"[FeedbackLoopController] Could not wire reduction: {e}")
 
     def _on_training_complete(self, event: Any) -> None:
         """Handle training completion.
