@@ -105,9 +105,10 @@ class MomentumToCurriculumBridge:
         logger.info("[MomentumToCurriculumBridge] Stopped")
 
     def _subscribe_to_events(self) -> bool:
-        """Subscribe to EVALUATION_COMPLETED events for reactive weight sync.
+        """Subscribe to events for reactive weight sync.
 
         Phase 5 (December 2025): Event-driven replaces polling for sub-second latency.
+        Phase 21.2 (December 2025): Also subscribe to SELFPLAY_RATE_CHANGED for Elo momentum sync.
         """
         if self._event_subscribed:
             return True
@@ -122,8 +123,13 @@ class MomentumToCurriculumBridge:
                 return False
 
             router.subscribe(DataEventType.EVALUATION_COMPLETED.value, self._on_evaluation_completed)
+
+            # Phase 21.2: Subscribe to SELFPLAY_RATE_CHANGED for Elo momentum → curriculum sync
+            if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
+                router.subscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, self._on_selfplay_rate_changed)
+
             self._event_subscribed = True
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED (Phase 5)")
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED")
             return True
 
         except Exception as e:
@@ -142,6 +148,8 @@ class MomentumToCurriculumBridge:
             router = get_router()
             if router:
                 router.unsubscribe(DataEventType.EVALUATION_COMPLETED.value, self._on_evaluation_completed)
+                if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
+                    router.unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, self._on_selfplay_rate_changed)
             self._event_subscribed = False
         except Exception:
             pass
@@ -156,6 +164,85 @@ class MomentumToCurriculumBridge:
             self._sync_weights()
         except Exception as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error syncing on event: {e}")
+
+    def _on_selfplay_rate_changed(self, event) -> None:
+        """Handle SELFPLAY_RATE_CHANGED event - sync curriculum weights on Elo momentum.
+
+        Phase 21.2 (December 2025): Close the Elo → Curriculum feedback loop.
+        When selfplay rate changes significantly (>20%), it indicates momentum
+        shift in training effectiveness. We sync curriculum weights to reallocate
+        resources to configs with momentum.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            config_key = payload.get("config", "")
+            change_percent = payload.get("change_percent", 0)
+            momentum_state = payload.get("momentum_state", "stable")
+
+            if not config_key:
+                return
+
+            # Only sync on significant rate changes (>20%)
+            if abs(change_percent) < 20:
+                return
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] Selfplay rate change for {config_key}: "
+                f"{change_percent:+.1f}%, momentum={momentum_state} - triggering weight sync"
+            )
+
+            # Sync curriculum weights based on momentum state
+            self._sync_weights_for_momentum(config_key, momentum_state, change_percent)
+
+        except Exception as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling rate change: {e}")
+
+    def _sync_weights_for_momentum(
+        self,
+        config_key: str,
+        momentum_state: str,
+        change_percent: float,
+    ) -> None:
+        """Sync curriculum weights based on Elo momentum.
+
+        Phase 21.2: Adjust curriculum weight for specific config based on momentum:
+        - accelerating: Boost weight to capitalize on fast learning
+        - decelerating: Reduce weight slightly, model may need different data
+        - stable: Maintain current weight
+        """
+        try:
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+            current_weight = feedback._current_weights.get(config_key, 1.0)
+
+            if momentum_state == "accelerating":
+                # Model is learning fast - increase resources to capitalize
+                new_weight = min(feedback.weight_max, current_weight * (1 + abs(change_percent) / 200))
+            elif momentum_state == "decelerating":
+                # Model is slowing down - slightly reduce weight
+                new_weight = max(feedback.weight_min, current_weight * (1 - abs(change_percent) / 400))
+            else:
+                # Stable - no change
+                return
+
+            if abs(new_weight - current_weight) > 0.05:
+                feedback._current_weights[config_key] = new_weight
+                self._last_weights[config_key] = new_weight
+
+                logger.info(
+                    f"[MomentumToCurriculumBridge] Curriculum weight adjusted for {config_key}: "
+                    f"{current_weight:.2f} → {new_weight:.2f} (momentum={momentum_state})"
+                )
+
+                # Emit CURRICULUM_REBALANCED event
+                self._emit_rebalance_event([config_key], {config_key: new_weight})
+
+        except ImportError as e:
+            logger.debug(f"[MomentumToCurriculumBridge] curriculum_feedback import error: {e}")
+        except Exception as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error syncing momentum weights: {e}")
 
     def _poll_loop(self) -> None:
         """Fallback poll loop - used only if event subscription fails."""

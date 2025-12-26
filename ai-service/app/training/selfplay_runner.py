@@ -843,6 +843,33 @@ class SelfplayRunner(ABC):
                 draw=draw,
             )
 
+    def _get_pfsp_context(self) -> tuple[str, str | None]:
+        """Get PFSP context for a game: current model ID and selected opponent.
+
+        Returns:
+            Tuple of (current_model_id, selected_opponent_id or None if PFSP disabled)
+        """
+        config_key = f"{self.config.board_type}_{self.config.num_players}p"
+
+        # Current model is identified by config key + weights file hash if available
+        model_version = getattr(self.config, 'model_version', None)
+        if model_version:
+            current_model = f"{config_key}_{model_version}"
+        else:
+            current_model = config_key
+
+        if not self._pfsp_enabled or self._pfsp_selector is None:
+            return current_model, None
+
+        # Get available opponents and select one
+        available = self._pfsp_selector.get_available_opponents(config_key)
+        if not available:
+            # No opponents registered yet - use current model as opponent (self-play)
+            return current_model, current_model
+
+        opponent = self.get_pfsp_opponent(current_model, available)
+        return current_model, opponent
+
     def _apply_quality_throttle(self) -> bool:
         """Apply quality-based throttling. Returns True if game should be skipped."""
         if self._quality_paused:
@@ -1191,6 +1218,9 @@ class HeuristicSelfplayRunner(SelfplayRunner):
         start_time = time.time()
         game_id = str(uuid.uuid4())
 
+        # PFSP opponent selection (Phase 7 - December 2025)
+        current_model, pfsp_opponent = self._get_pfsp_context()
+
         board_type = BoardType(self.config.board_type)
         initial_state = create_initial_state(board_type, self.config.num_players)
         state = initial_state
@@ -1211,10 +1241,18 @@ class HeuristicSelfplayRunner(SelfplayRunner):
             move_objects.append(move)
 
         duration_ms = (time.time() - start_time) * 1000
+        winner = getattr(state, "winner", None)
+
+        # Record PFSP result (Phase 7 - December 2025)
+        if pfsp_opponent is not None:
+            # Player 0 is current model, others are opponent
+            current_model_won = winner == 0
+            is_draw = winner is None or winner < 0
+            self.record_pfsp_result(current_model, pfsp_opponent, current_model_won, is_draw)
 
         return GameResult(
             game_id=game_id,
-            winner=getattr(state, "winner", None),
+            winner=winner,
             num_moves=len(moves),
             duration_ms=duration_ms,
             moves=moves,
@@ -1225,6 +1263,7 @@ class HeuristicSelfplayRunner(SelfplayRunner):
                 "num_players": self.config.num_players,
                 "difficulty": self.config.difficulty,
                 "source": self.config.source,
+                "pfsp_opponent": pfsp_opponent,  # Phase 7: Track PFSP opponent
             },
             initial_state=initial_state,
             final_state=state,

@@ -77,6 +77,7 @@ class GauntletFeedbackConfig:
 
     # Rollback thresholds
     regression_elo_drop: float = 50.0  # ELO drop to consider regression
+    severe_regression_elo_drop: float = 100.0  # December 2025: Immediate CRITICAL for severe drops
     consecutive_regressions_for_rollback: int = 3
 
 
@@ -430,17 +431,31 @@ class GauntletFeedbackController:
         tracker.elo_history.append(record.elo)
 
         # Check for regression
-        if record.elo < tracker.last_elo - cfg.regression_elo_drop:
+        elo_drop = tracker.last_elo - record.elo
+        if elo_drop > cfg.regression_elo_drop:
             tracker.consecutive_regressions += 1
             logger.warning(
                 f"[{self.name}] Regression detected for {record.config_key}: "
-                f"ELO {tracker.last_elo:.0f} -> {record.elo:.0f} "
+                f"ELO {tracker.last_elo:.0f} -> {record.elo:.0f} (drop: {elo_drop:.0f}) "
                 f"(consecutive: {tracker.consecutive_regressions})"
             )
 
-            if tracker.consecutive_regressions >= cfg.consecutive_regressions_for_rollback:
+            # December 2025: Always emit REGRESSION_DETECTED for feedback loop
+            await self._emit_regression_detected(record, elo_drop)
+
+            # December 2025: Emit REGRESSION_CRITICAL immediately for severe regressions
+            # This enables automatic rollback without waiting for consecutive failures
+            if elo_drop > cfg.severe_regression_elo_drop:
+                logger.warning(
+                    f"[{self.name}] SEVERE regression for {record.config_key}: "
+                    f"ELO drop {elo_drop:.0f} > threshold {cfg.severe_regression_elo_drop:.0f}"
+                )
                 actions.append(FeedbackAction.CONSIDER_ROLLBACK)
-                await self._emit_rollback_consideration(record)
+                await self._emit_rollback_consideration(record, severity="severe", elo_drop=elo_drop)
+            # Also emit CRITICAL after consecutive regressions
+            elif tracker.consecutive_regressions >= cfg.consecutive_regressions_for_rollback:
+                actions.append(FeedbackAction.CONSIDER_ROLLBACK)
+                await self._emit_rollback_consideration(record, severity="consecutive", elo_drop=elo_drop)
         else:
             tracker.consecutive_regressions = 0
 
@@ -613,8 +628,64 @@ class GauntletFeedbackController:
         except Exception as e:
             logger.warning(f"[{self.name}] Failed to emit curriculum advancement: {e}")
 
-    async def _emit_rollback_consideration(self, record: EvaluationRecord) -> None:
-        """Emit event to consider model rollback after consecutive regressions."""
+    async def _emit_regression_detected(
+        self, record: EvaluationRecord, elo_drop: float
+    ) -> None:
+        """Emit REGRESSION_DETECTED event for any regression (December 2025).
+
+        This enables the feedback loop to respond to regressions even before
+        they become severe or consecutive.
+
+        Args:
+            record: The evaluation record
+            elo_drop: The ELO drop amount
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                await router.publish(
+                    event_type=DataEventType.REGRESSION_DETECTED,
+                    payload={
+                        "config": record.config_key,
+                        "config_key": record.config_key,  # Alias for compatibility
+                        "board_type": record.board_type,
+                        "num_players": record.num_players,
+                        "current_elo": record.elo,
+                        "elo_drop": elo_drop,
+                        "consecutive_regressions": self._config_trackers[
+                            record.config_key
+                        ].consecutive_regressions,
+                        "win_rate_vs_random": record.win_rate_vs_random,
+                        "win_rate_vs_heuristic": record.win_rate_vs_heuristic,
+                        "source": self.name,
+                    },
+                    source=self.name,
+                )
+                logger.info(
+                    f"[{self.name}] Emitted REGRESSION_DETECTED for {record.config_key} "
+                    f"(ELO drop: {elo_drop:.0f})"
+                )
+        except Exception as e:
+            logger.warning(f"[{self.name}] Failed to emit regression detected: {e}")
+
+    async def _emit_rollback_consideration(
+        self,
+        record: EvaluationRecord,
+        severity: str = "consecutive",
+        elo_drop: float = 0.0,
+    ) -> None:
+        """Emit REGRESSION_CRITICAL event to trigger model rollback.
+
+        December 2025: Now emits immediately for severe regressions, not just
+        after consecutive failures. This closes the critical feedback loop gap.
+
+        Args:
+            record: The evaluation record
+            severity: "severe" for immediate critical, "consecutive" for after N failures
+            elo_drop: The ELO drop amount
+        """
         try:
             from app.coordination.event_router import get_router
 
@@ -624,19 +695,28 @@ class GauntletFeedbackController:
                     event_type=DataEventType.REGRESSION_CRITICAL,
                     payload={
                         "config": record.config_key,
+                        "config_key": record.config_key,  # Alias for compatibility
                         "board_type": record.board_type,
                         "num_players": record.num_players,
                         "current_elo": record.elo,
+                        "elo_drop": elo_drop,
+                        "severity": severity,
                         "consecutive_regressions": self._config_trackers[
                             record.config_key
                         ].consecutive_regressions,
                         "recommendation": "rollback",
+                        "reason": (
+                            f"severe_elo_drop_{elo_drop:.0f}"
+                            if severity == "severe"
+                            else f"consecutive_regressions_{self._config_trackers[record.config_key].consecutive_regressions}"
+                        ),
+                        "source": self.name,
                     },
                     source=self.name,
                 )
                 logger.warning(
                     f"[{self.name}] Emitted REGRESSION_CRITICAL for {record.config_key} "
-                    f"- rollback recommended"
+                    f"(severity: {severity}, ELO drop: {elo_drop:.0f}) - rollback recommended"
                 )
         except Exception as e:
             logger.warning(f"[{self.name}] Failed to emit regression critical: {e}")
