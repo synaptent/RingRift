@@ -727,10 +727,16 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         from app.training.rollback_manager import wire_regression_to_rollback
 
         registry = get_model_registry()
-        handler = wire_regression_to_rollback(registry)
+        # December 2025: Enable full auto-rollback for both CRITICAL and SEVERE regressions
+        # Setting require_approval_for_severe=False closes the feedback loop completely
+        handler = wire_regression_to_rollback(
+            registry,
+            auto_rollback_enabled=True,
+            require_approval_for_severe=False,  # Auto-rollback SEVERE regressions too
+        )
         results["regression_to_rollback"] = handler is not None
         if handler:
-            logger.debug("[Bootstrap] Wired REGRESSION_DETECTED -> RollbackManager (auto-rollback enabled)")
+            logger.debug("[Bootstrap] Wired REGRESSION_DETECTED -> RollbackManager (full auto-rollback enabled)")
 
     except Exception as e:
         results["regression_to_rollback"] = False

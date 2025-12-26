@@ -2399,13 +2399,12 @@ class DaemonManager:
             from app.coordination.curriculum_integration import wire_all_feedback_loops
 
             # Use defaults - configuration is handled internally by the feedback loop components
-            components = wire_all_feedback_loops()
+            status = wire_all_feedback_loops()
 
             logger.info(
                 f"Curriculum integration started: "
-                f"momentum_bridge={components['momentum_bridge'] is not None}, "
-                f"pfsp_watcher={components['pfsp_watcher'] is not None}, "
-                f"quality_watcher={components['quality_watcher'] is not None}"
+                f"watchers={status.get('watchers', [])}, "
+                f"active_count={status.get('active_count', 0)}"
             )
 
             # Keep daemon alive while watchers run

@@ -586,6 +586,39 @@ class SelfplayScheduler:
 
         return result
 
+    async def _get_game_counts(self) -> dict[str, int]:
+        """Get game counts per config from local databases.
+
+        December 2025: Used for data deficit prioritization.
+        Configs with fewer games get higher priority to reach 100K target.
+
+        Returns:
+            Dict mapping config_key to game count
+        """
+        result: dict[str, int] = {}
+
+        try:
+            from app.utils.game_discovery import get_game_counts_summary
+
+            # get_game_counts_summary returns {config_key: count}
+            result = get_game_counts_summary()
+            logger.debug(
+                f"[SelfplayScheduler] Game counts: "
+                f"{sum(result.values()):,} total across {len(result)} configs"
+            )
+
+        except ImportError:
+            logger.debug("[SelfplayScheduler] game_discovery not available")
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error getting game counts: {e}")
+
+        # Ensure all configs have a count (0 if not found)
+        for config_key in ALL_CONFIGS:
+            if config_key not in result:
+                result[config_key] = 0
+
+        return result
+
     # =========================================================================
     # Node Allocation
     # =========================================================================
@@ -832,8 +865,11 @@ class SelfplayScheduler:
                 # P10-LOOP-3 (Dec 2025): Subscribe to ELO_VELOCITY_CHANGED for selfplay rate adjustment
                 if hasattr(DataEventType, 'ELO_VELOCITY_CHANGED'):
                     bus.subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+                # P11-CRITICAL-1 (Dec 2025): Subscribe to EXPLORATION_BOOST for training anomaly feedback
+                if hasattr(DataEventType, 'EXPLORATION_BOOST'):
+                    bus.subscribe(DataEventType.EXPLORATION_BOOST, self._on_exploration_boost)
                 self._subscribed = True
-                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including ELO_VELOCITY_CHANGED)")
+                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including EXPLORATION_BOOST)")
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Failed to subscribe: {e}")
@@ -1282,6 +1318,66 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling elo velocity changed: {e}")
+
+    def _on_exploration_boost(self, event: Any) -> None:
+        """Handle exploration boost event from training feedback.
+
+        P11-CRITICAL-1 (Dec 2025): React to EXPLORATION_BOOST events emitted
+        by FeedbackLoopController when training anomalies (loss spikes, stalls)
+        are detected.
+
+        This closes the feedback loop:
+        Training Anomaly → EXPLORATION_BOOST → Increased selfplay diversity
+
+        Actions:
+        - Update exploration_boost for the config
+        - Increase temperature/noise in selfplay to generate diverse games
+        - Emit SELFPLAY_TARGET_UPDATED for downstream consumers
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            boost_factor = payload.get("boost_factor", 1.0)
+            reason = payload.get("reason", "unknown")
+            anomaly_count = payload.get("anomaly_count", 0)
+
+            if config_key not in self._config_priorities:
+                logger.debug(
+                    f"[SelfplayScheduler] Received exploration boost for unknown config: {config_key}"
+                )
+                return
+
+            priority = self._config_priorities[config_key]
+            old_boost = priority.exploration_boost
+
+            # Apply the boost factor directly from FeedbackLoopController
+            priority.exploration_boost = max(priority.exploration_boost, boost_factor)
+
+            logger.info(
+                f"[SelfplayScheduler] Exploration boost for {config_key}: "
+                f"{old_boost:.2f} → {priority.exploration_boost:.2f} "
+                f"(reason={reason}, anomaly_count={anomaly_count})"
+            )
+
+            # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
+            try:
+                from app.distributed.data_events import DataEventType
+                from app.coordination.event_router import get_event_bus
+
+                bus = get_event_bus()
+                if bus:
+                    bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                        "config_key": config_key,
+                        "priority": "high" if boost_factor > 1.3 else "normal",
+                        "reason": f"exploration_boost:{reason}",
+                        "exploration_boost": priority.exploration_boost,
+                        "anomaly_count": anomaly_count,
+                    })
+            except Exception as emit_err:
+                logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling exploration boost: {e}")
 
     # =========================================================================
     # Status & Metrics

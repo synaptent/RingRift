@@ -90,16 +90,26 @@ def create_initial_state(
         for idx in range(1, num_players + 1)
     ]
 
-    # Training-time pie rule configuration. The pie rule (swap sides) is
-    # opt-in for 2-player games - data shows P2 wins >55% when enabled by default.
-    # Multi-player games ignore this and never expose swap_sides.
+    # Training-time pie rule configuration.
     #
-    # Callers that want to enable the pie rule for experiments may set
-    # RINGRIFT_TRAINING_ENABLE_SWAP_RULE=1 (or "true"/"yes"/"on").
+    # Canonical training defaults now mirror production: in **2-player** games,
+    # the pie rule is enabled by default so `swap_sides` is offered to P2 after
+    # P1's first completed turn. Multi-player games ignore this and never expose
+    # swap_sides.
+    #
+    # Opt-out for experiments/ablations:
+    #   RINGRIFT_TRAINING_DISABLE_SWAP_RULE=1 (or "true"/"yes"/"on")
+    #
+    # Backwards compatibility: we still read the legacy opt-in flag
+    # RINGRIFT_TRAINING_ENABLE_SWAP_RULE, but it no longer needs to be set.
     rules_options = None
-    enable_flag = os.getenv("RINGRIFT_TRAINING_ENABLE_SWAP_RULE", "").lower()
     if num_players == 2:
-        swap_enabled = enable_flag in {"1", "true", "yes", "on"}
+        disable_flag = os.getenv("RINGRIFT_TRAINING_DISABLE_SWAP_RULE", "").lower()
+        swap_enabled = disable_flag not in {"1", "true", "yes", "on"}
+        # Legacy opt-in flag: treat explicit falsy values as an override.
+        legacy_flag = os.getenv("RINGRIFT_TRAINING_ENABLE_SWAP_RULE", "").lower()
+        if legacy_flag in {"0", "false", "no", "off"}:
+            swap_enabled = False
         rules_options = {"swapRuleEnabled": swap_enabled}
 
     return GameState(
