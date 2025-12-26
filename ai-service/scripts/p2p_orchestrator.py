@@ -2083,7 +2083,7 @@ class P2POrchestrator(
                                 lease_ttls.append(float(duration))
                             acks += 1
                             break
-                    except (ValueError, AttributeError):
+                    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, AttributeError, OSError):
                         continue
 
         if acks < quorum:
