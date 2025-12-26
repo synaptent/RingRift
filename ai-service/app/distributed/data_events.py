@@ -156,6 +156,9 @@ class DataEventType(Enum):
     QUALITY_FEEDBACK_ADJUSTED = "quality_feedback_adjusted"  # Quality feedback updated for config
     SCHEDULER_REGISTERED = "scheduler_registered"  # Temperature scheduler registered for config
     QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
+    # P1.4 Dec 2025: Added orphaned event types to enable type-safe subscriptions
+    EXPLORATION_BOOST = "exploration_boost"  # Request to boost exploration temperature
+    OPPONENT_MASTERED = "opponent_mastered"  # Opponent mastered → advance curriculum
 
     # Registry & metrics events
     REGISTRY_UPDATED = "registry_updated"

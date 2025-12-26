@@ -55,7 +55,6 @@ delete_file "cluster_health_check.py"
 delete_file "cluster_health_check.sh"
 delete_file "cluster_ssh_init.py"
 delete_file "cluster_sync_coordinator.py"
-delete_file "cluster_worker.py"
 
 echo ""
 echo "=== Cleaning up deprecated training orchestration scripts ==="

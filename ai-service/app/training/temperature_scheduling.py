@@ -1226,16 +1226,41 @@ def wire_exploration_boost(
                 f"(severity={severity}), boost increased {current_boost:.2f} → {new_boost:.2f}"
             )
 
+        def on_exploration_boost(event):
+            """Handle EXPLORATION_BOOST - directly apply exploration boost.
+
+            P1.4 Dec 2025: This closes the EXPLORATION_BOOST → temperature adjustment
+            feedback loop. When curriculum or quality systems request exploration boost,
+            we apply it directly to the temperature scheduler.
+            """
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config_key", payload.get("config", ""))
+
+            if event_config != config_key:
+                return
+
+            boost_factor = payload.get("boost_factor", 1.3)
+            current_boost = scheduler.get_exploration_boost()
+            new_boost = min(2.0, current_boost * boost_factor)
+            scheduler.set_exploration_boost(new_boost)
+            logger.info(
+                f"[TemperatureScheduler] Exploration boost applied for {config_key}: "
+                f"{current_boost:.2f} → {new_boost:.2f} (factor={boost_factor})"
+            )
+
         # Subscribe to feedback events
         bus.subscribe(DataEventType.PROMOTION_FAILED, on_promotion_failed)
         bus.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
         bus.subscribe(DataEventType.TRAINING_LOSS_TREND, on_training_loss_trend)
         bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, on_elo_significant_change)
         bus.subscribe(DataEventType.REGRESSION_DETECTED, on_regression_detected)
+        # P1.4 Dec 2025: Subscribe to EXPLORATION_BOOST for direct temperature adjustment
+        if hasattr(DataEventType, 'EXPLORATION_BOOST'):
+            bus.subscribe(DataEventType.EXPLORATION_BOOST, on_exploration_boost)
 
         logger.debug(
-            f"[TemperatureScheduler] Wired exploration boost, Elo updates, and regression "
-            f"detection for {config_key}"
+            f"[TemperatureScheduler] Wired exploration boost, Elo updates, regression "
+            f"detection, and EXPLORATION_BOOST for {config_key}"
         )
         return True
 

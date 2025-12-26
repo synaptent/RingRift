@@ -724,8 +724,11 @@ class SelfplayScheduler:
                 bus.subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
                 # P1.1 (Dec 2025): Subscribe to TRAINING_BLOCKED_BY_QUALITY for selfplay acceleration
                 bus.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY, self._on_training_blocked_by_quality)
+                # P1.4 (Dec 2025): Subscribe to OPPONENT_MASTERED for curriculum advancement
+                if hasattr(DataEventType, 'OPPONENT_MASTERED'):
+                    bus.subscribe(DataEventType.OPPONENT_MASTERED, self._on_opponent_mastered)
                 self._subscribed = True
-                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including TRAINING_BLOCKED_BY_QUALITY)")
+                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including OPPONENT_MASTERED)")
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Failed to subscribe: {e}")
@@ -957,6 +960,62 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling training blocked by quality: {e}")
+
+    def _on_opponent_mastered(self, event: Any) -> None:
+        """Handle opponent mastered event.
+
+        P1.4 (Dec 2025): When a model has mastered its current opponent level,
+        advance the curriculum and slightly reduce selfplay allocation for this
+        config (it's now "easier" and should allocate resources elsewhere).
+
+        This closes the feedback loop:
+        OPPONENT_MASTERED → Curriculum advancement → Harder opponents → Better training
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "") or payload.get("config", "")
+            opponent_level = payload.get("opponent_level", "unknown")
+            win_rate = payload.get("win_rate", 0.0)
+
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+
+                # Reduce curriculum weight slightly since opponent was mastered
+                old_weight = priority.curriculum_weight
+                priority.curriculum_weight = max(0.5, old_weight * 0.9)
+
+                # Also slightly reduce exploration (we don't need as much variance)
+                old_boost = priority.exploration_boost
+                priority.exploration_boost = max(0.8, old_boost * 0.95)
+
+                logger.info(
+                    f"[SelfplayScheduler] Opponent mastered for {config_key} "
+                    f"(level={opponent_level}, win_rate={win_rate:.1%}). "
+                    f"curriculum_weight {old_weight:.2f} → {priority.curriculum_weight:.2f}, "
+                    f"exploration {old_boost:.2f} → {priority.exploration_boost:.2f}"
+                )
+
+                # Emit curriculum rebalanced event
+                try:
+                    from app.distributed.data_events import DataEventType
+                    from app.coordination.event_router import get_event_bus
+
+                    bus = get_event_bus()
+                    if bus:
+                        bus.emit(DataEventType.CURRICULUM_REBALANCED, {
+                            "config_key": config_key,
+                            "weight": priority.curriculum_weight,
+                            "reason": f"opponent_mastered:{opponent_level}",
+                        })
+                except Exception as emit_err:
+                    logger.debug(f"[SelfplayScheduler] Failed to emit curriculum rebalanced: {emit_err}")
+            else:
+                logger.debug(
+                    f"[SelfplayScheduler] Received opponent mastered for unknown config: {config_key}"
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling opponent mastered: {e}")
 
     # =========================================================================
     # Status & Metrics

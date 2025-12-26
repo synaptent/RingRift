@@ -74,7 +74,6 @@ All superseded by `p2p_orchestrator.py`:
 | `cluster_auto_recovery.py`    | P2P orchestrator |
 | `cluster_file_sync.py`        | P2P orchestrator |
 | `cluster_sync_coordinator.py` | P2P orchestrator |
-| `cluster_worker.py`           | P2P orchestrator |
 | `cluster_ssh_init.py`         | P2P orchestrator |
 | `cluster_*.sh` (all)          | P2P orchestrator |
 

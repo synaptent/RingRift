@@ -162,11 +162,11 @@ LOCAL_ONLY=1 ./scripts/run_distributed_selfplay_matrix.sh
 ./scripts/cluster_setup.sh status       # Check all worker status
 ```
 
-## HTTP Worker Service (Optional)
+## HTTP Worker Service (CMA-ES Only)
 
-For HTTP-based orchestration, use `scripts/p2p_orchestrator.py` and submit jobs
-via the `/jobs/*` endpoints on the leader. The legacy `cluster_worker.py`
-service is not present in the repo.
+Distributed CMA-ES evaluation uses the HTTP worker in `scripts/cluster_worker.py`
+alongside `scripts/run_cmaes_optimization.py --distributed`. Self-play
+orchestration continues to use `scripts/p2p_orchestrator.py` and `/jobs/*`.
 
 ## Troubleshooting
 

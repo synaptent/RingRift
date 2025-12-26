@@ -99,8 +99,10 @@ class UnifiedDistributedConfig:
     world_size: int = 1
     rank: int = 0
     local_rank: int = 0
-    # Backend: "nccl" for GPU, "gloo" for CPU. Set RINGRIFT_DISTRIBUTED_BACKEND to override.
-    backend: str = ""  # Empty string triggers auto-detection
+    # Backend: defaults to "nccl" (canonical).
+    # Set RINGRIFT_DISTRIBUTED_BACKEND to override.
+    # If you explicitly pass "" (empty), auto-detect based on CUDA availability.
+    backend: str = "nccl"
     master_addr: str = "localhost"
     master_port: int = 29500
     init_method: str = "env://"
@@ -136,8 +138,12 @@ class UnifiedDistributedConfig:
     log_interval: int = 100
 
     def __post_init__(self):
-        """Auto-detect backend if not specified."""
-        if not self.backend:
+        """Normalize/auto-detect backend.
+
+        Default is the canonical "nccl".
+        If backend is explicitly empty, auto-detect based on CUDA availability.
+        """
+        if self.backend == "":
             self.backend = _auto_detect_backend()
 
 
@@ -411,7 +417,9 @@ class UnifiedDistributedTrainer:
         self._checkpoint_dir = Path(self.config.checkpoint_dir)
         self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"[DistributedUnified] Created trainer (world_size={config.world_size})")
+        logger.info(
+            f"[DistributedUnified] Created trainer (world_size={self.config.world_size})"
+        )
 
     def setup(self) -> bool:
         """Initialize distributed training environment.

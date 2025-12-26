@@ -12,12 +12,12 @@ After thorough exploration of 651 Python files across coordination, training, di
 
 ### Overall Health Scores
 
-| Dimension | Score | Key Issues |
-|-----------|-------|------------|
-| **AI Training Loop** | 92% | 3 critical gaps in feedback wiring |
-| **Daemon Orchestration** | 75% | 21 orphaned daemons, 4-way training decisions |
-| **Data Sync** | 85% | Ephemeral timeout, NPZ not tracked |
-| **Code Quality** | 60% | 358 broad exceptions, test gaps |
+| Dimension                | Score | Key Issues                                    |
+| ------------------------ | ----- | --------------------------------------------- |
+| **AI Training Loop**     | 92%   | 3 critical gaps in feedback wiring            |
+| **Daemon Orchestration** | 75%   | 21 orphaned daemons, 4-way training decisions |
+| **Data Sync**            | 85%   | Ephemeral timeout, NPZ not tracked            |
+| **Code Quality**         | 60%   | 358 broad exceptions, test gaps               |
 
 ### Cluster Capacity
 
@@ -35,6 +35,7 @@ After thorough exploration of 651 Python files across coordination, training, di
 **Impact**: Quality gates don't trigger data generation
 
 **Files to Modify**:
+
 1. `app/training/train_cli.py` (~line 200-300)
    - Emit `TRAINING_BLOCKED_BY_QUALITY` when `--check-data-freshness` fails
 
@@ -62,13 +63,13 @@ async def _on_training_blocked_by_quality(self, event: dict) -> None:
 
 5 events published but no subscribers:
 
-| Event | Should Trigger |
-|-------|----------------|
-| `QUALITY_PENALTY_APPLIED` | Curriculum weight reduction |
-| `LOW_QUALITY_DATA_WARNING` | Selfplay throttle |
-| `OPPONENT_MASTERED` | Curriculum advancement |
-| `EXPLORATION_BOOST` | Temperature adjustment |
-| `TRAINING_LOSS_ANOMALY` | Quality check |
+| Event                      | Should Trigger              |
+| -------------------------- | --------------------------- |
+| `QUALITY_PENALTY_APPLIED`  | Curriculum weight reduction |
+| `LOW_QUALITY_DATA_WARNING` | Selfplay throttle           |
+| `OPPONENT_MASTERED`        | Curriculum advancement      |
+| `EXPLORATION_BOOST`        | Temperature adjustment      |
+| `TRAINING_LOSS_ANOMALY`    | Quality check               |
 
 **Action**: Wire each to appropriate handler in feedback_loop_controller.py.
 
@@ -93,18 +94,21 @@ selfplay_coordinator, sync_coordinator, vast_cpu_pipeline
 ### 2.2 Consolidate Training Decision Authority
 
 Currently 4 systems decide when to train:
+
 1. `TRAINING_TRIGGER` daemon
 2. `DataPipelineOrchestrator`
 3. `FeedbackLoopController`
 4. `MasterLoopController`
 
 **Solution**: Make `TRAINING_TRIGGER` the sole authority:
+
 - Other systems feed signals INTO it
 - Only TRAINING_TRIGGER emits TRAINING_STARTED
 
 ### 2.3 Merge AUTO_PROMOTION into UNIFIED_PROMOTION
 
 Two overlapping promotion daemons exist:
+
 - `AUTO_PROMOTION` (orphaned, complex logic)
 - `UNIFIED_PROMOTION` (active in profiles)
 
@@ -128,6 +132,7 @@ Two overlapping promotion daemons exist:
 **Gap**: NPZ training files not replicated systematically
 
 **Solution**: Extend `cluster_manifest.py` with:
+
 ```python
 def register_npz(self, npz_path: str, board_type: str, num_players: int, node_id: str) -> None:
     """Register NPZ file location for replication."""
@@ -157,6 +162,7 @@ def register_npz(self, npz_path: str, board_type: str, num_players: int, node_id
 | `marshalling.py` | 2 | MEDIUM |
 
 **Replacement Strategy**:
+
 ```python
 # Before
 except Exception:
@@ -174,6 +180,7 @@ except SyncError as e:
 ### 4.2 Fix Bare `except:` in Scripts
 
 **5 critical instances** that catch KeyboardInterrupt:
+
 - `scripts/audit_cluster_data.py:312`
 - `scripts/monitor_gpu_mcts_jobs.py:67, 92, 108`
 - `scripts/validate_db_games.py:187`
@@ -181,6 +188,7 @@ except SyncError as e:
 ### 4.3 Complete Deprecated Module Migration
 
 Remove active imports of:
+
 - `app/training/orchestrated_training.py` (386 lines)
 - `app/training/integrated_enhancements.py` (1,350 lines)
 
@@ -192,12 +200,12 @@ Both are superseded by `UnifiedTrainingOrchestrator`.
 
 ### Critical Untested Modules
 
-| Module Path | Files | Impact |
-|-------------|-------|--------|
-| `app/rules/validators/` | 5 | Game rule correctness |
-| `app/rules/mutators/` | 4 | State mutations |
-| `app/game_engine/` | 2 | Core engine |
-| `app/rules/placement.py` | 1 | Ring placement |
+| Module Path              | Files | Impact                |
+| ------------------------ | ----- | --------------------- |
+| `app/rules/validators/`  | 5     | Game rule correctness |
+| `app/rules/mutators/`    | 4     | State mutations       |
+| `app/game_engine/`       | 2     | Core engine           |
+| `app/rules/placement.py` | 1     | Ring placement        |
 
 **Template**: See `tests/unit/rules/test_line_generator.py` for pattern.
 
@@ -234,6 +242,7 @@ def _select_config_for_gpu(self, gpu_memory_gb: int) -> Optional[str]:
 ## Data Flow Optimization
 
 ### Current Flow
+
 ```
 Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
     → NPZ → TRAINING_STARTED → Training
@@ -258,25 +267,30 @@ Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
 
 ## Implementation Phases
 
-### Phase 1: Critical Fixes (This Week)
-- [ ] Wire TRAINING_BLOCKED_BY_QUALITY → selfplay acceleration
-- [ ] Verify REGRESSION_DETECTED emission
-- [ ] Increase ephemeral write-through timeout to 60s
-- [ ] Replace 10 highest-risk broad exception catches
+### Phase 1: Critical Fixes (Completed Dec 25, 2025)
+
+- [x] Wire TRAINING_BLOCKED_BY_QUALITY → selfplay acceleration
+- [x] Verify REGRESSION_DETECTED emission (already implemented)
+- [x] Increase ephemeral write-through timeout to 60s
+- [x] Replace 10 highest-risk broad exception catches
+- [x] Wire orphaned events (EXPLORATION_BOOST, OPPONENT_MASTERED)
 
 ### Phase 2: Consolidation (Next Week)
+
 - [ ] Remove/document 21 orphaned daemons
 - [ ] Merge AUTO_PROMOTION into UNIFIED_PROMOTION
 - [ ] Establish TRAINING_TRIGGER as sole training authority
 - [ ] Add NPZ tracking to ClusterManifest
 
 ### Phase 3: Quality & Testing (Following Week)
+
 - [ ] Complete deprecated module migration
 - [ ] Add SyncRouter capacity refresh
 - [ ] Create test templates for validators/mutators
 - [ ] Wire 5 orphaned events to handlers
 
 ### Phase 4: Optimization (Ongoing)
+
 - [ ] Add model validation to IdleResourceDaemon
 - [ ] Move IDLE_RESOURCE from coordinator profile
 - [ ] Add provider-specific bandwidth config
@@ -286,14 +300,14 @@ Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
 
 ## Success Metrics
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Training loop gaps | 3 critical | 0 |
-| Orphaned daemons | 21 | 0 |
-| Broad exception catches | 358 | <50 |
-| Rules test coverage | 5% | >60% |
-| Ephemeral data loss events | Unknown | 0 |
-| Active deprecated imports | 2 | 0 |
+| Metric                     | Current    | Target |
+| -------------------------- | ---------- | ------ |
+| Training loop gaps         | 3 critical | 0      |
+| Orphaned daemons           | 21         | 0      |
+| Broad exception catches    | 358        | <50    |
+| Rules test coverage        | 5%         | >60%   |
+| Ephemeral data loss events | Unknown    | 0      |
+| Active deprecated imports  | 2          | 0      |
 
 ---
 
@@ -305,14 +319,24 @@ Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
 - [x] Created test template for `rules/test_line_generator.py`
 - [x] Updated 22/26 cluster nodes with latest code
 
+### Phase 1 Fixes Completed (Dec 25, 2025)
+
+- [x] Wired TRAINING_BLOCKED_BY_QUALITY → selfplay acceleration (train.py, selfplay_scheduler.py)
+- [x] Verified REGRESSION_DETECTED emission in gauntlet_feedback_controller.py:444
+- [x] Increased ephemeral write-through timeout from 30s to 60s (ephemeral_sync.py)
+- [x] Fixed 10+ bare `except:` catches in p2p_backend.py, monitor_gpu_mcts_jobs.py, audit_cluster_data.py, validate_db_games.py
+- [x] Added EXPLORATION_BOOST and OPPONENT_MASTERED event types to data_events.py
+- [x] Wired EXPLORATION_BOOST → temperature adjustment (temperature_scheduling.py)
+- [x] Wired OPPONENT_MASTERED → curriculum advancement (selfplay_scheduler.py)
+
 ---
 
 ## Files Reference
 
-| Category | Key Files |
-|----------|-----------|
-| Event Wiring | `feedback_loop_controller.py`, `training_coordinator.py` |
-| Daemon Registry | `daemon_manager.py:58-195` (types), `2906-2985` (profiles) |
-| Sync Architecture | `sync_router.py`, `cluster_manifest.py`, `ephemeral_sync.py` |
-| Exceptions | `app/core/exceptions.py` |
-| Consolidation Plan | `docs/CONSOLIDATION_PLAN_2025_12.md` |
+| Category           | Key Files                                                    |
+| ------------------ | ------------------------------------------------------------ |
+| Event Wiring       | `feedback_loop_controller.py`, `training_coordinator.py`     |
+| Daemon Registry    | `daemon_manager.py:58-195` (types), `2906-2985` (profiles)   |
+| Sync Architecture  | `sync_router.py`, `cluster_manifest.py`, `ephemeral_sync.py` |
+| Exceptions         | `app/core/exceptions.py`                                     |
+| Consolidation Plan | `docs/CONSOLIDATION_PLAN_2025_12.md`                         |

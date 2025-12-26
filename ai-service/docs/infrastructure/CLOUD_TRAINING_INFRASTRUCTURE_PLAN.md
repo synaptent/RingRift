@@ -23,11 +23,12 @@
 ---
 
 > **Note:** This plan includes design sketches for components not currently in the repo
-> (`cluster_worker.py`, `register_worker.py`, `run_full_training_matrix.py`,
-> `generate_data_distributed.py`, `run_training_pipeline.py`). Current equivalents are
-> `cmaes_cloud_worker.py` (queue-based workers), `run_cmaes_optimization.py` (HTTP/queue CMA-ES),
-> `run_multiconfig_nnue_training.py --parallel`, `run_training_loop.py`, and
-> `run_distributed_selfplay_soak.py`.
+> (`register_worker.py`, `run_full_training_matrix.py`, `generate_data_distributed.py`,
+> `run_training_pipeline.py`). For CMA-ES, HTTP workers are implemented as
+> `scripts/cluster_worker.py`; queue-based workers remain in
+> `scripts/cmaes_cloud_worker.py`. Current training equivalents include
+> `run_cmaes_optimization.py`, `run_multiconfig_nnue_training.py --parallel`,
+> `run_training_loop.py`, and `run_distributed_selfplay_soak.py`.
 
 ## Executive Summary
 
@@ -127,227 +128,40 @@ This section covers setting up a local training cluster using underutilized MacB
    - Either assign static IPs in router settings
    - Or use `.local` hostnames (e.g., `my-macbook.local`)
 
-### 0.3 Design Sketch: HTTP-based Worker System (Not Implemented)
+### 0.3 HTTP-based Worker System (Implemented)
 
 **Priority: HIGH** - Simplest approach, no additional infrastructure
 
-> **Note:** The HTTP worker service below is a design sketch. The repo does **not**
-> include `cluster_worker.py`. For current distributed CMA-ES, use queue-based
-> workers via `scripts/cmaes_cloud_worker.py` + `run_cmaes_optimization.py --queue-backend`.
+Workers run `scripts/cluster_worker.py`, which exposes:
 
-#### Worker API Server
+- `GET /health` (status + memory eligibility)
+- `GET /stats` (task counters + cached pools)
+- `POST /preload-pool` (board_type, num_players, pool_id)
+- `POST /evaluate` (CMA-ES evaluation task; optionally returns game replays)
 
-```python
-# Design sketch: cluster_worker.py (not in repo)
-"""
-Lightweight HTTP worker for local Mac cluster.
-Run on each worker Mac to accept evaluation tasks.
-"""
-import argparse
-import json
-import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
-from typing import Dict, Any, Optional
+Start a worker (on each Mac):
 
-# Import game engine and evaluation code
-from app.game_engine import GameEngine
-from app.ai.heuristic_ai import HeuristicAI
-from app.ai.heuristic_weights import HeuristicWeights
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Global state pool cache
-STATE_POOL_CACHE: Dict[str, Any] = {}
-
-
-class WorkerHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        """Health check endpoint."""
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "status": "healthy",
-                "worker_id": WORKER_ID,
-                "tasks_completed": TASKS_COMPLETED
-            }).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        """Handle evaluation task."""
-        if self.path == "/evaluate":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-            task = json.loads(body)
-
-            try:
-                result = evaluate_candidate(task)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps(result).encode())
-            except Exception as e:
-                logger.exception(f"Task failed: {e}")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):
-        logger.info(f"{self.address_string()} - {format % args}")
-
-
-def evaluate_candidate(task: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluate a single CMA-ES candidate."""
-    global TASKS_COMPLETED
-
-    weights_dict = task["weights"]
-    board_type = task["board_type"]
-    num_players = task["num_players"]
-    games_to_play = task["games_per_eval"]
-    state_pool_key = task.get("state_pool_key")
-
-    # Create AI with candidate weights
-    weights = HeuristicWeights(**weights_dict)
-    ai = HeuristicAI(weights)
-
-    # Play games and compute fitness
-    wins = 0
-    total_moves = 0
-
-    for game_idx in range(games_to_play):
-        # Play game (simplified - actual implementation would use full game loop)
-        result = play_evaluation_game(ai, board_type, num_players, state_pool_key)
-        if result["winner"] == 1:  # AI is player 1
-            wins += 1
-        total_moves += result["moves"]
-
-    fitness = wins / games_to_play
-    TASKS_COMPLETED += 1
-
-    return {
-        "task_id": task["task_id"],
-        "candidate_id": task["candidate_id"],
-        "fitness": fitness,
-        "wins": wins,
-        "games_played": games_to_play,
-        "avg_moves": total_moves / games_to_play
-    }
-
-
-def play_evaluation_game(ai, board_type, num_players, state_pool_key):
-    """Play a single evaluation game."""
-    # This would import and use the actual game playing logic
-    # from run_cmaes_optimization.py
-    from scripts.run_cmaes_optimization import play_single_game_from_state
-    # ... implementation
-    pass
-
-
-WORKER_ID = "unknown"
-TASKS_COMPLETED = 0
-
-
-def main():
-    global WORKER_ID
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--worker-id", type=str, default=None)
-    args = parser.parse_args()
-
-    import socket
-    WORKER_ID = args.worker_id or socket.gethostname()
-
-    server = HTTPServer(("0.0.0.0", args.port), WorkerHandler)
-    logger.info(f"Worker {WORKER_ID} listening on port {args.port}")
-    server.serve_forever()
-
-
-if __name__ == "__main__":
-    main()
+```bash
+cd RingRift/ai-service
+python scripts/cluster_worker.py --port 8765 --register-bonjour
 ```
 
-#### Coordinator Distributed Mode
+Coordinator usage (auto-discovery):
 
-```python
-# Add to ai-service/scripts/run_cmaes_optimization.py
+```bash
+python scripts/run_cmaes_optimization.py \
+  --distributed \
+  --discover-workers \
+  --min-workers 3 \
+  --board square8 \
+  --games-per-eval 24
+```
 
-def evaluate_population_distributed(
-    population: List[Dict[str, float]],
-    workers: List[str],  # ["10.0.0.2:8765", "10.0.0.3:8765", ...]
-    config: CMAESConfig,
-    timeout: float = 300
-) -> List[float]:
-    """Distribute population evaluation across worker Macs."""
-    import requests
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+Queue-based workers remain available for cloud deployments:
 
-    results = {}
-    tasks = []
-
-    # Create tasks for each candidate
-    for i, candidate in enumerate(population):
-        task = {
-            "task_id": str(uuid.uuid4()),
-            "candidate_id": i,
-            "weights": candidate,
-            "board_type": config.board_type,
-            "num_players": config.num_players,
-            "games_per_eval": config.games_per_eval,
-            "state_pool_key": config.state_pool_id
-        }
-        tasks.append(task)
-
-    def evaluate_on_worker(task, worker_url):
-        """Send task to worker and get result."""
-        try:
-            response = requests.post(
-                f"http://{worker_url}/evaluate",
-                json=task,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.warning(f"Worker {worker_url} failed: {e}")
-            return None
-
-    # Round-robin distribute tasks across workers
-    with ThreadPoolExecutor(max_workers=len(workers)) as executor:
-        futures = {}
-        for i, task in enumerate(tasks):
-            worker = workers[i % len(workers)]
-            future = executor.submit(evaluate_on_worker, task, worker)
-            futures[future] = task["candidate_id"]
-
-        for future in as_completed(futures, timeout=timeout):
-            candidate_id = futures[future]
-            try:
-                result = future.result()
-                if result:
-                    results[result["candidate_id"]] = result["fitness"]
-            except Exception as e:
-                logger.warning(f"Task for candidate {candidate_id} failed: {e}")
-
-    # Fill in missing results with fallback
-    fitness_scores = []
-    for i in range(len(population)):
-        if i in results:
-            fitness_scores.append(results[i])
-        else:
-            logger.warning(f"Candidate {i} missing, using fallback fitness 0.0")
-            fitness_scores.append(0.0)
-
-    return fitness_scores
+```bash
+python scripts/cmaes_cloud_worker.py
+python scripts/run_cmaes_optimization.py --queue-backend redis
 ```
 
 ### 0.4 Worker Discovery and Management
@@ -489,7 +303,7 @@ ln -s /Volumes/Shared/eval_pools data/eval_pools
 cd RingRift/ai-service
 source .venv/bin/activate
 
-# Start CMA-ES in distributed mode (HTTP workers; design sketch)
+# Start CMA-ES in distributed mode (HTTP workers)
 python scripts/run_cmaes_optimization.py \
     --distributed \
     --workers "10.0.0.2:8765,10.0.0.3:8765" \
@@ -513,8 +327,8 @@ python scripts/run_cmaes_optimization.py \
 cd RingRift/ai-service
 source .venv/bin/activate
 
-# HTTP worker (design sketch; not in repo)
-# cluster_worker.py (not in repo) --port 8765
+# HTTP worker
+python scripts/cluster_worker.py --port 8765 --register-bonjour
 
 # Queue-based worker (current implementation)
 QUEUE_BACKEND=redis REDIS_URL=redis://<coordinator-ip>:6379 \
