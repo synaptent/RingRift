@@ -45,14 +45,39 @@ import logging
 import os
 import signal
 import time
+import warnings
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.config.ports import DATA_SERVER_PORT
 from app.core.async_context import fire_and_forget, safe_create_task
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Deprecated Daemon Type Tracking (December 2025)
+# =============================================================================
+
+# Daemon types scheduled for removal in Q2 2026
+_DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
+    "sync_coordinator": ("AUTO_SYNC", "Q2 2026"),
+    "health_check": ("NODE_HEALTH_MONITOR", "Q2 2026"),
+}
+
+
+def _check_deprecated_daemon(daemon_type: "DaemonType") -> None:
+    """Emit deprecation warning for deprecated daemon types."""
+    if daemon_type.value in _DEPRECATED_DAEMON_TYPES:
+        replacement, removal_date = _DEPRECATED_DAEMON_TYPES[daemon_type.value]
+        warnings.warn(
+            f"DaemonType.{daemon_type.name} is deprecated and will be removed in {removal_date}. "
+            f"Use DaemonType.{replacement} instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
 
 
 class DaemonType(Enum):
@@ -136,6 +161,9 @@ class DaemonType(Enum):
     # Auto-promotion (December 2025) - auto-promote models based on evaluation results
     AUTO_PROMOTION = "auto_promotion"
 
+    # S3 backup (December 2025) - backup models to S3 after promotion
+    S3_BACKUP = "s3_backup"
+
     # Quality monitor (December 2025) - continuous selfplay quality monitoring
     QUALITY_MONITOR = "quality_monitor"
 
@@ -212,9 +240,17 @@ class DaemonState(Enum):
     IMPORT_FAILED = "import_failed"  # Permanent failure due to missing imports
 
 
-# Constants for recovery behavior
-DAEMON_RESTART_RESET_AFTER = 3600  # Reset restart count after 1 hour of stability
-MAX_RESTART_DELAY = 300  # Cap exponential backoff at 5 minutes
+# Constants for recovery behavior (December 2025: imported from centralized thresholds)
+try:
+    from app.config.thresholds import (
+        DAEMON_RESTART_DELAY_MAX,
+        DAEMON_RESTART_RESET_AFTER,
+    )
+    MAX_RESTART_DELAY = DAEMON_RESTART_DELAY_MAX  # Legacy alias
+except ImportError:
+    # Fallback if thresholds not available
+    DAEMON_RESTART_RESET_AFTER = 3600  # Reset restart count after 1 hour of stability
+    MAX_RESTART_DELAY = 300  # Cap exponential backoff at 5 minutes
 
 
 # =============================================================================
@@ -468,6 +504,14 @@ class DaemonManager:
             DaemonType.AUTO_PROMOTION,
             self._create_auto_promotion,
             depends_on=[DaemonType.EVENT_ROUTER, DaemonType.EVALUATION],
+        )
+
+        # S3 backup daemon (December 2025) - backs up models to S3 after promotion
+        # Subscribes to MODEL_PROMOTED, runs after MODEL_DISTRIBUTION completes
+        self.register_factory(
+            DaemonType.S3_BACKUP,
+            self._create_s3_backup,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.MODEL_DISTRIBUTION],
         )
 
         # Quality monitor daemon (December 2025) - continuous quality monitoring
@@ -776,6 +820,9 @@ class DaemonManager:
         Returns:
             True if started successfully
         """
+        # Check for deprecated daemon types and emit warning
+        _check_deprecated_daemon(daemon_type)
+
         async with self._lock:
             info = self._daemons.get(daemon_type)
             if info is None:
@@ -1062,8 +1109,7 @@ class DaemonManager:
         perform rollbacks when REGRESSION_CRITICAL events are received.
         """
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
 
             router = get_router()
             if router is None:
@@ -1124,15 +1170,15 @@ class DaemonManager:
 
             # Emit to P2P for cluster-wide awareness
             try:
-                from app.coordination.event_router import get_router
-                from app.distributed.data_events import DataEventType, DataEvent
+                from app.coordination.event_router import get_router, DataEventType, DataEvent
 
                 router = get_router()
                 if router:
                     # Emit an alert event for monitoring/dashboards
                     alert_event = DataEvent(
-                        event_type=DataEventType.CLUSTER_ALERT,
+                        event_type=DataEventType.HEALTH_ALERT,
                         payload={
+                            "alert": "regression_critical",
                             "alert_type": "regression_critical",
                             "config_key": config_key,
                             "model_id": model_id,
@@ -1141,7 +1187,7 @@ class DaemonManager:
                         },
                         source="DaemonManager",
                     )
-                    await router.publish_async(DataEventType.CLUSTER_ALERT.value, alert_event)
+                    await router.publish_async(DataEventType.HEALTH_ALERT.value, alert_event)
             except Exception as alert_err:
                 logger.debug(f"[DaemonManager] Failed to emit cluster alert: {alert_err}")
 
@@ -1164,8 +1210,7 @@ class DaemonManager:
         Logs warnings for any critical events that have no subscribers.
         """
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
 
             router = get_router()
             if router is None:
@@ -1693,7 +1738,7 @@ class DaemonManager:
             from app.distributed.sync_coordinator import SyncCoordinator
 
             coordinator = SyncCoordinator.get_instance()
-            await coordinator.start_data_server(port=8766)
+            await coordinator.start_data_server(port=DATA_SERVER_PORT)
             # Keep alive
             while coordinator.is_data_server_running():
                 await asyncio.sleep(60)
@@ -2042,6 +2087,31 @@ class DaemonManager:
             logger.error(f"AutoPromotionDaemon not available: {e}")
             raise
 
+    async def _create_s3_backup(self) -> None:
+        """Create and run S3 backup daemon (December 2025).
+
+        Automatically backs up models to S3 after promotion for disaster recovery.
+        Subscribes to MODEL_PROMOTED events and runs after model distribution.
+
+        Subscribes to:
+            - MODEL_PROMOTED: Triggered after model passes evaluation
+
+        Backs up to S3 bucket specified by RINGRIFT_S3_BUCKET env var.
+        Default bucket: ringrift-models-20251214
+        """
+        try:
+            from app.coordination.s3_backup_daemon import S3BackupDaemon
+
+            daemon = S3BackupDaemon()
+            await daemon.start()
+
+            while daemon.is_running():
+                await asyncio.sleep(10)
+
+        except ImportError as e:
+            logger.error(f"S3BackupDaemon not available: {e}")
+            raise
+
     async def _create_quality_monitor(self) -> None:
         """Create and run quality monitor daemon (December 2025).
 
@@ -2224,7 +2294,7 @@ class DaemonManager:
                 wire_host_dead_to_job_migration,
             )
             from app.coordination.resource_optimizer import ResourceOptimizer
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import DataEventType
 
             # Get global scheduler and wire event handlers
             scheduler = get_scheduler()
@@ -2726,10 +2796,7 @@ class DaemonManager:
         - Error burst detected (>10 in 5 minutes)
         """
         try:
-            from app.coordination.system_health_monitor import (
-                SystemHealthMonitorDaemon,
-                get_system_health,
-            )
+            from app.coordination.system_health_monitor import get_system_health
 
             monitor = get_system_health()
 
@@ -3011,8 +3078,7 @@ class DaemonManager:
         and responding to feedback events.
         """
         try:
-            from app.coordination.event_router import get_router, subscribe
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
             from app.coordination.selfplay_orchestrator import SelfplayOrchestrator
 
             router = get_router()
@@ -3044,9 +3110,11 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.P2P_BACKEND,
         DaemonType.TOURNAMENT_DAEMON,
         DaemonType.MODEL_DISTRIBUTION,
+        DaemonType.S3_BACKUP,  # Dec 2025: Backup models to S3 after promotion
         DaemonType.REPLICATION_MONITOR,
         DaemonType.REPLICATION_REPAIR,  # Actively repair under-replicated data
         DaemonType.CLUSTER_MONITOR,
+        DaemonType.QUEUE_MONITOR,  # Monitor queue depths and apply backpressure
         DaemonType.FEEDBACK_LOOP,
         DaemonType.QUALITY_MONITOR,  # Monitor selfplay data quality
         DaemonType.MODEL_PERFORMANCE_WATCHDOG,  # Monitor model win rates

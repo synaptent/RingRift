@@ -1,38 +1,50 @@
-"""Unified Feedback Orchestrator - Single source of truth for all feedback signals.
+"""Unified Feedback Orchestrator - Consolidates all feedback signals into one controller.
 
-This module consolidates 4 previously separate feedback systems:
-1. FeedbackLoopController - intensity, exploration signals
-2. GauntletFeedbackController - evaluation-driven adjustments
-3. CurriculumIntegration - curriculum weight bridges
-4. TrainingFreshness - data staleness signals
+This module replaces 4 separate feedback systems with a single orchestrator:
+1. FeedbackLoopController → training_intensity, exploration_boost
+2. GauntletFeedbackController → exploration, training_intensity (DUPLICATE)
+3. CurriculumIntegration → curriculum_weights
+4. TrainingFreshness → data_freshness (ISOLATED)
 
 The UnifiedFeedbackOrchestrator provides:
-- Single event bus for all feedback signals
-- Centralized state management
-- Observable metrics for dashboards
-- Configurable adjustment strategies
+- Single source of truth for all feedback signals
+- Consolidated event emission to event bus
+- Configurable strategy per signal type
+- Observable metrics for dashboard integration
+- Per-config feedback state tracking
+
+Key Improvements:
+- Eliminates duplicate exploration/intensity logic between FeedbackLoop and GauntletFeedback
+- Integrates isolated data freshness signals into main feedback loop
+- Provides unified curriculum weight calculation from all sources
+- Emits consolidated events for downstream consumption
 
 Usage:
     from app.coordination.unified_feedback import (
         UnifiedFeedbackOrchestrator,
-        get_feedback_orchestrator,
+        get_unified_feedback,
+        FeedbackSignal,
+        FeedbackStrategy,
     )
 
-    # Get singleton
-    orchestrator = get_feedback_orchestrator()
+    # Get singleton instance
+    orchestrator = get_unified_feedback()
 
-    # Start orchestration
+    # Start the orchestrator (subscribes to all relevant events)
     await orchestrator.start()
 
-    # Query current state
-    state = orchestrator.get_state("hex8_2p")
-    print(f"Intensity: {state.intensity}")
-    print(f"Exploration: {state.exploration_multiplier}")
+    # Query current feedback state
+    state = orchestrator.get_config_state("hex8_2p")
+    print(f"Training intensity: {state.training_intensity}")
+    print(f"Exploration boost: {state.exploration_boost}")
+    print(f"Curriculum weight: {state.curriculum_weight}")
+    print(f"Data freshness: {state.data_freshness}")
 
-    # Manual signal (usually automatic via events)
-    orchestrator.signal_evaluation_complete("hex8_2p", win_rate=0.75, elo=1650)
+    # Get dashboard metrics
+    metrics = orchestrator.get_metrics()
 
-December 2025: Created for Phase 2 feedback consolidation.
+Created: December 2025
+Purpose: Consolidate feedback system fragmentation (4 → 1)
 """
 
 from __future__ import annotations
@@ -41,171 +53,147 @@ import asyncio
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
-
-from app.coordination.feedback_signals import (
-    FeedbackSignal,
-    FeedbackState,
-    SignalSource,
-    SignalType,
-    emit_exploration_signal,
-    emit_intensity_signal,
-    emit_promotion_signal,
-    emit_quality_signal,
-    emit_regression_signal,
-    get_all_feedback_states,
-    get_feedback_state,
-    subscribe_to_signal,
-)
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Configuration
+# Configuration & Enums
 # =============================================================================
+
+
+class FeedbackSignal(str, Enum):
+    """Types of feedback signals managed by orchestrator."""
+
+    TRAINING_INTENSITY = "training_intensity"  # paused, reduced, normal, accelerated, hot_path
+    EXPLORATION_BOOST = "exploration_boost"  # 1.0 = normal, >1.0 = more exploration
+    CURRICULUM_WEIGHT = "curriculum_weight"  # Relative priority for selfplay allocation
+    DATA_FRESHNESS = "data_freshness"  # Hours since data was last updated
+
+
+class FeedbackStrategy(str, Enum):
+    """Strategy for computing feedback signals."""
+
+    # Training Intensity strategies
+    QUALITY_GRADIENT = "quality_gradient"  # Based on quality score gradient
+    MOMENTUM_BASED = "momentum_based"  # Based on Elo velocity
+    HYBRID = "hybrid"  # Combines quality and momentum
+
+    # Exploration strategies
+    QUALITY_REACTIVE = "quality_reactive"  # React to low quality
+    LOSS_REACTIVE = "loss_reactive"  # React to training loss anomalies
+    PLATEAU_REACTIVE = "plateau_reactive"  # React to Elo plateaus
+    ADAPTIVE = "adaptive"  # Combines all signals
+
+    # Curriculum weight strategies
+    MOMENTUM_WEIGHTED = "momentum_weighted"  # Weight by Elo velocity
+    QUALITY_WEIGHTED = "quality_weighted"  # Weight by data quality
+    BALANCED = "balanced"  # Balance momentum and quality
 
 
 @dataclass
-class UnifiedFeedbackConfig:
-    """Configuration for the unified feedback orchestrator."""
+class FeedbackConfig:
+    """Configuration for unified feedback orchestrator."""
 
-    # Intensity thresholds
-    hot_path_accuracy_threshold: float = 0.65  # Below this → hot_path
-    cool_down_accuracy_threshold: float = 0.85  # Above this → cool_down
+    # Strategy selection
+    intensity_strategy: FeedbackStrategy = FeedbackStrategy.HYBRID
+    exploration_strategy: FeedbackStrategy = FeedbackStrategy.ADAPTIVE
+    curriculum_strategy: FeedbackStrategy = FeedbackStrategy.BALANCED
 
-    # Exploration thresholds
-    strong_model_win_rate: float = 0.80  # Reduce exploration above this
-    weak_model_win_rate: float = 0.50  # Increase exploration below this
-    exploration_reduction_factor: float = 0.8
-    exploration_boost_factor: float = 1.3
-    max_exploration_multiplier: float = 2.0
-    min_exploration_multiplier: float = 0.5
+    # Training intensity thresholds
+    quality_excellent_threshold: float = 0.90  # → hot_path
+    quality_good_threshold: float = 0.80  # → accelerated
+    quality_adequate_threshold: float = 0.65  # → normal
+    quality_poor_threshold: float = 0.50  # → reduced
+    # Below 0.50 → paused
 
-    # Quality thresholds
-    quality_export_threshold: float = 0.70  # Trigger export above this
-    quality_warning_threshold: float = 0.50  # Emit warning below this
+    # Exploration boost parameters
+    low_quality_threshold: float = 0.6
+    base_exploration_boost: float = 1.3  # For low quality
+    anomaly_exploration_boost: float = 1.15  # Per anomaly, cumulative
+    max_exploration_boost: float = 2.0
 
-    # Freshness thresholds (hours)
-    fresh_data_hours: float = 1.0
-    stale_data_hours: float = 4.0
-    critical_data_hours: float = 24.0
+    # Curriculum weight parameters
+    weight_min: float = 0.5
+    weight_max: float = 2.0
+    momentum_weight_factor: float = 0.3  # Boost for accelerating momentum
+    quality_penalty_factor: float = 0.15  # Reduction per quality penalty
 
-    # Regression thresholds
-    regression_elo_drop: float = 50.0
-    regression_win_rate_drop: float = 0.10
+    # Data freshness parameters
+    max_data_age_hours: float = 1.0
+    freshness_check_interval: float = 300.0  # 5 minutes
 
-    # Cooldowns (seconds)
-    intensity_cooldown: float = 300.0
-    exploration_cooldown: float = 300.0
-    curriculum_cooldown: float = 600.0
+    # Promotion thresholds
+    policy_accuracy_threshold: float = 0.75
+    promotion_win_rate_threshold: float = 0.60
 
-    # Event integration
-    subscribe_to_events: bool = True
-
-
-# =============================================================================
-# Adjustment Strategies
-# =============================================================================
+    # Cooldowns
+    adjustment_cooldown: float = 300.0  # 5 minutes between adjustments
 
 
-class IntensityStrategy:
-    """Strategy for adjusting training intensity based on signals."""
+@dataclass
+class FeedbackState:
+    """Unified feedback state for a single configuration."""
 
-    def __init__(self, config: UnifiedFeedbackConfig):
-        self.config = config
-        self._last_adjustment: dict[str, float] = {}
+    config_key: str
 
-    def compute_intensity(
-        self,
-        config_key: str,
-        policy_accuracy: float | None = None,
-        win_rate: float | None = None,
-        elo_velocity: float | None = None,
-    ) -> str | None:
-        """Compute recommended intensity based on metrics.
+    # Current signal values
+    training_intensity: str = "normal"  # paused, reduced, normal, accelerated, hot_path
+    exploration_boost: float = 1.0
+    curriculum_weight: float = 1.0
+    data_freshness_hours: float = float("inf")
 
-        Returns:
-            "hot_path", "normal", "cool_down", or None if no change needed
-        """
-        # Check cooldown
-        now = time.time()
-        last = self._last_adjustment.get(config_key, 0)
-        if now - last < self.config.intensity_cooldown:
-            return None
+    # Source metrics (inputs to feedback computation)
+    last_selfplay_quality: float = 0.0
+    last_training_accuracy: float = 0.0
+    last_evaluation_elo: float = 1000.0
+    last_evaluation_win_rate: float = 0.0
+    elo_velocity: float = 0.0  # Elo/hour
 
-        # Compute intensity
-        if policy_accuracy is not None:
-            if policy_accuracy < self.config.hot_path_accuracy_threshold:
-                self._last_adjustment[config_key] = now
-                return "hot_path"
-            elif policy_accuracy > self.config.cool_down_accuracy_threshold:
-                self._last_adjustment[config_key] = now
-                return "cool_down"
+    # Status tracking
+    consecutive_successes: int = 0
+    consecutive_failures: int = 0
+    consecutive_anomalies: int = 0
+    quality_penalties_applied: int = 0
 
-        if elo_velocity is not None and elo_velocity < 0:
-            # Negative velocity = regressing, need more training
-            self._last_adjustment[config_key] = now
-            return "hot_path"
+    # Timing
+    last_selfplay_time: float = 0.0
+    last_training_time: float = 0.0
+    last_evaluation_time: float = 0.0
+    last_promotion_time: float = 0.0
+    last_adjustment_time: float = 0.0
 
-        return None
+    # Elo history for velocity tracking
+    elo_history: deque = field(default_factory=lambda: deque(maxlen=10))
 
-
-class ExplorationStrategy:
-    """Strategy for adjusting exploration based on signals."""
-
-    def __init__(self, config: UnifiedFeedbackConfig):
-        self.config = config
-        self._last_adjustment: dict[str, float] = {}
-
-    def compute_exploration(
-        self,
-        config_key: str,
-        win_rate_vs_heuristic: float | None = None,
-        promotion_failed: bool = False,
-    ) -> float | None:
-        """Compute recommended exploration multiplier.
-
-        Returns:
-            Multiplier (0.5-2.0) or None if no change needed
-        """
-        # Check cooldown
-        now = time.time()
-        last = self._last_adjustment.get(config_key, 0)
-        if now - last < self.config.exploration_cooldown:
-            return None
-
-        current_state = get_feedback_state(config_key)
-        current = current_state.exploration_multiplier
-
-        # Promotion failure → boost exploration
-        if promotion_failed:
-            new_value = min(
-                current * self.config.exploration_boost_factor,
-                self.config.max_exploration_multiplier,
-            )
-            self._last_adjustment[config_key] = now
-            return new_value
-
-        # Strong model → reduce exploration
-        if win_rate_vs_heuristic is not None:
-            if win_rate_vs_heuristic > self.config.strong_model_win_rate:
-                new_value = max(
-                    current * self.config.exploration_reduction_factor,
-                    self.config.min_exploration_multiplier,
-                )
-                self._last_adjustment[config_key] = now
-                return new_value
-            elif win_rate_vs_heuristic < self.config.weak_model_win_rate:
-                new_value = min(
-                    current * self.config.exploration_boost_factor,
-                    self.config.max_exploration_multiplier,
-                )
-                self._last_adjustment[config_key] = now
-                return new_value
-
-        return None
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "config_key": self.config_key,
+            "signals": {
+                "training_intensity": self.training_intensity,
+                "exploration_boost": self.exploration_boost,
+                "curriculum_weight": self.curriculum_weight,
+                "data_freshness_hours": self.data_freshness_hours,
+            },
+            "metrics": {
+                "selfplay_quality": self.last_selfplay_quality,
+                "training_accuracy": self.last_training_accuracy,
+                "evaluation_elo": self.last_evaluation_elo,
+                "evaluation_win_rate": self.last_evaluation_win_rate,
+                "elo_velocity": self.elo_velocity,
+            },
+            "status": {
+                "consecutive_successes": self.consecutive_successes,
+                "consecutive_failures": self.consecutive_failures,
+                "consecutive_anomalies": self.consecutive_anomalies,
+                "quality_penalties": self.quality_penalties_applied,
+            },
+        }
 
 
 # =============================================================================
@@ -214,378 +202,841 @@ class ExplorationStrategy:
 
 
 class UnifiedFeedbackOrchestrator:
-    """Central orchestrator for all training feedback signals.
+    """Consolidates all feedback signals into a single controller.
 
-    Consolidates:
-    - FeedbackLoopController (intensity, exploration)
-    - GauntletFeedbackController (evaluation adjustments)
-    - CurriculumIntegration (weight bridges)
-    - TrainingFreshness (data staleness)
+    This orchestrator replaces 4 separate feedback systems:
+    1. FeedbackLoopController - training_intensity, exploration_boost
+    2. GauntletFeedbackController - exploration, training_intensity (duplicate)
+    3. CurriculumIntegration - curriculum_weights
+    4. TrainingFreshness - data_freshness
+
+    Event subscriptions:
+    - SELFPLAY_COMPLETE → update quality, compute intensity/curriculum
+    - TRAINING_COMPLETED → update accuracy, trigger evaluation
+    - EVALUATION_COMPLETED → update elo, compute exploration/curriculum
+    - MODEL_PROMOTED → update success/failure counters
+    - TRAINING_LOSS_ANOMALY → boost exploration
+    - QUALITY_DEGRADED → adjust intensity/curriculum
+    - DATA_FRESH/DATA_STALE → update freshness signal
+    - PLATEAU_DETECTED → adjust exploration
+    - REGRESSION_DETECTED → boost intensity
+
+    Emits consolidated events:
+    - FEEDBACK_SIGNALS_UPDATED → {config, intensity, exploration, weight, freshness}
+    - TRAINING_INTENSITY_CHANGED → FeedbackAccelerator
+    - EXPLORATION_BOOST_CHANGED → TemperatureScheduler
+    - CURRICULUM_WEIGHT_CHANGED → CurriculumFeedback
     """
 
-    def __init__(self, config: UnifiedFeedbackConfig | None = None):
-        self.config = config or UnifiedFeedbackConfig()
+    def __init__(self, config: FeedbackConfig | None = None):
+        """Initialize the unified feedback orchestrator.
+
+        Args:
+            config: Feedback configuration (uses defaults if None)
+        """
+        self.config = config or FeedbackConfig()
+        self._states: dict[str, FeedbackState] = {}
         self._running = False
+        self._subscribed = False
         self._lock = threading.Lock()
 
-        # Strategies
-        self._intensity_strategy = IntensityStrategy(self.config)
-        self._exploration_strategy = ExplorationStrategy(self.config)
+        # Metrics for observability
+        self._total_adjustments = 0
+        self._adjustments_by_type: dict[FeedbackSignal, int] = {
+            signal: 0 for signal in FeedbackSignal
+        }
+        self._last_adjustment_time = 0.0
 
-        # Event subscriptions
-        self._unsubscribers: list = []
+        logger.debug("[UnifiedFeedbackOrchestrator] Initialized")
 
-        # Metrics
-        self._signals_processed = 0
-        self._last_activity = time.time()
+    def _get_or_create_state(self, config_key: str) -> FeedbackState:
+        """Get or create feedback state for a config.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+
+        Returns:
+            FeedbackState for the config
+        """
+        with self._lock:
+            if config_key not in self._states:
+                self._states[config_key] = FeedbackState(config_key=config_key)
+            return self._states[config_key]
 
     async def start(self) -> None:
-        """Start the unified feedback orchestrator."""
+        """Start the orchestrator and subscribe to events."""
         if self._running:
-            logger.warning("[UnifiedFeedback] Already running")
+            logger.warning("[UnifiedFeedbackOrchestrator] Already running")
             return
 
         self._running = True
-        logger.info("[UnifiedFeedback] Starting unified feedback orchestrator")
+        self._subscribe_to_events()
 
-        # Subscribe to data events if enabled
-        if self.config.subscribe_to_events:
-            self._subscribe_to_events()
-
-        # Wire legacy systems to emit through unified signals
-        self._wire_legacy_systems()
-
-        logger.info("[UnifiedFeedback] Started successfully")
+        logger.info("[UnifiedFeedbackOrchestrator] Started")
 
     async def stop(self) -> None:
-        """Stop the orchestrator."""
+        """Stop the orchestrator and unsubscribe from events."""
         self._running = False
-
-        # Unsubscribe from events
-        for unsub in self._unsubscribers:
-            try:
-                unsub()
-            except Exception:
-                pass
-        self._unsubscribers.clear()
-
-        logger.info("[UnifiedFeedback] Stopped")
+        self._unsubscribe_from_events()
+        logger.info("[UnifiedFeedbackOrchestrator] Stopped")
 
     def _subscribe_to_events(self) -> None:
-        """Subscribe to data events from the event bus."""
+        """Subscribe to all relevant events."""
+        if self._subscribed:
+            return
+
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, get_event_bus
 
             bus = get_event_bus()
             if bus is None:
-                logger.debug("[UnifiedFeedback] No event bus available")
+                logger.warning("[UnifiedFeedbackOrchestrator] Event bus not available")
                 return
 
-            # Subscribe to key events
-            events_to_subscribe = [
-                ("TRAINING_COMPLETE", self._on_training_complete),
-                ("EVALUATION_COMPLETED", self._on_evaluation_complete),
-                ("MODEL_PROMOTED", self._on_model_promoted),
-                ("PROMOTION_FAILED", self._on_promotion_failed),
-                ("SELFPLAY_COMPLETE", self._on_selfplay_complete),
-            ]
+            # Core pipeline events
+            bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
+            bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
+            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
 
-            for event_name, handler in events_to_subscribe:
-                try:
-                    if hasattr(DataEventType, event_name):
-                        bus.subscribe(event_name, handler)
-                        logger.debug(f"[UnifiedFeedback] Subscribed to {event_name}")
-                except Exception as e:
-                    logger.debug(f"[UnifiedFeedback] Could not subscribe to {event_name}: {e}")
+            # Quality & anomaly events
+            bus.subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+            bus.subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
+            bus.subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+            bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
-        except ImportError:
-            logger.debug("[UnifiedFeedback] Data events not available")
+            # Data freshness events
+            bus.subscribe(DataEventType.DATA_FRESH, self._on_data_fresh)
+            bus.subscribe(DataEventType.DATA_STALE, self._on_data_stale)
 
-    def _wire_legacy_systems(self) -> None:
-        """Wire legacy feedback systems to emit through unified signals."""
-        # Wire FeedbackLoopController signals
-        try:
-            unsub = subscribe_to_signal(
-                SignalType.INTENSITY,
-                self._on_intensity_signal,
-            )
-            self._unsubscribers.append(unsub)
+            # Elo momentum events
+            if hasattr(DataEventType, "ELO_VELOCITY_CHANGED"):
+                bus.subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+
+            # Quality penalty events
+            if hasattr(DataEventType, "QUALITY_PENALTY_APPLIED"):
+                bus.subscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
+
+            self._subscribed = True
+            logger.info("[UnifiedFeedbackOrchestrator] Subscribed to events")
+
         except Exception as e:
-            logger.debug(f"[UnifiedFeedback] Could not wire intensity signals: {e}")
+            logger.warning(f"[UnifiedFeedbackOrchestrator] Failed to subscribe: {e}")
 
-        # Wire exploration signals
+    def _unsubscribe_from_events(self) -> None:
+        """Unsubscribe from all events."""
+        if not self._subscribed:
+            return
+
         try:
-            unsub = subscribe_to_signal(
-                SignalType.EXPLORATION,
-                self._on_exploration_signal,
-            )
-            self._unsubscribers.append(unsub)
+            from app.coordination.event_router import DataEventType, get_event_bus
+
+            bus = get_event_bus()
+            if bus:
+                bus.unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+                bus.unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
+                bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
+                bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
+                bus.unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+                bus.unsubscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
+                bus.unsubscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+                bus.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+                bus.unsubscribe(DataEventType.DATA_FRESH, self._on_data_fresh)
+                bus.unsubscribe(DataEventType.DATA_STALE, self._on_data_stale)
+
+                if hasattr(DataEventType, "ELO_VELOCITY_CHANGED"):
+                    bus.unsubscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+
+                if hasattr(DataEventType, "QUALITY_PENALTY_APPLIED"):
+                    bus.unsubscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
+
+            self._subscribed = False
+
         except Exception as e:
-            logger.debug(f"[UnifiedFeedback] Could not wire exploration signals: {e}")
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error unsubscribing: {e}")
 
     # =========================================================================
     # Event Handlers
     # =========================================================================
 
-    def _on_training_complete(self, event: Any) -> None:
-        """Handle training complete event."""
+    def _on_selfplay_complete(self, event: Any) -> None:
+        """Handle SELFPLAY_COMPLETE event."""
         try:
-            payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config", "")
+            games_count = payload.get("games_count", 0)
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.last_selfplay_time = time.time()
+
+            # Assess quality (simplified - actual implementation would use UnifiedQualityScorer)
+            quality_score = self._estimate_quality_from_payload(payload)
+            old_quality = state.last_selfplay_quality
+            state.last_selfplay_quality = quality_score
+
+            logger.info(
+                f"[UnifiedFeedbackOrchestrator] Selfplay complete: {config_key}, "
+                f"quality={quality_score:.2f} (prev={old_quality:.2f})"
+            )
+
+            # Recompute feedback signals
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling selfplay complete: {e}")
+
+    def _on_training_complete(self, event: Any) -> None:
+        """Handle TRAINING_COMPLETED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config", "")
             policy_accuracy = payload.get("policy_accuracy", 0.0)
 
             if not config_key:
                 return
 
-            self._signals_processed += 1
-            self._last_activity = time.time()
-
-            # Compute new intensity
-            new_intensity = self._intensity_strategy.compute_intensity(
-                config_key,
-                policy_accuracy=policy_accuracy,
-            )
-
-            if new_intensity:
-                emit_intensity_signal(
-                    config_key=config_key,
-                    intensity=new_intensity,
-                    reason=f"policy_accuracy={policy_accuracy:.2%}",
-                    source=SignalSource.TRAINING,
-                )
-                logger.info(
-                    f"[UnifiedFeedback] {config_key}: intensity → {new_intensity} "
-                    f"(accuracy={policy_accuracy:.2%})"
-                )
-
-        except Exception as e:
-            logger.error(f"[UnifiedFeedback] Error handling training complete: {e}")
-
-    def _on_evaluation_complete(self, event: Any) -> None:
-        """Handle evaluation complete event."""
-        try:
-            payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
-            win_rate = payload.get("win_rate_vs_heuristic", 0.0)
-            elo = payload.get("elo", 0.0)
-
-            if not config_key:
-                return
-
-            self._signals_processed += 1
-            self._last_activity = time.time()
-
-            # Compute new exploration
-            new_exploration = self._exploration_strategy.compute_exploration(
-                config_key,
-                win_rate_vs_heuristic=win_rate,
-            )
-
-            if new_exploration:
-                emit_exploration_signal(
-                    config_key=config_key,
-                    multiplier=new_exploration,
-                    reason=f"win_rate={win_rate:.2%}",
-                    source=SignalSource.EVALUATION,
-                )
-                logger.info(
-                    f"[UnifiedFeedback] {config_key}: exploration → {new_exploration:.2f} "
-                    f"(win_rate={win_rate:.2%})"
-                )
-
-            # Check for regression
-            state = get_feedback_state(config_key)
-            if hasattr(state, "last_elo") and state.last_elo > 0:
-                elo_drop = state.last_elo - elo
-                if elo_drop > self.config.regression_elo_drop:
-                    emit_regression_signal(
-                        config_key=config_key,
-                        detected=True,
-                        elo_drop=elo_drop,
-                    )
-                    logger.warning(
-                        f"[UnifiedFeedback] {config_key}: REGRESSION detected "
-                        f"(elo_drop={elo_drop:.1f})"
-                    )
-
-        except Exception as e:
-            logger.error(f"[UnifiedFeedback] Error handling evaluation complete: {e}")
-
-    def _on_model_promoted(self, event: Any) -> None:
-        """Handle model promoted event."""
-        try:
-            payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
-            model_path = payload.get("model_path", "")
-
-            if not config_key:
-                return
-
-            self._signals_processed += 1
-            self._last_activity = time.time()
-
-            # Reset exploration on successful promotion
-            emit_exploration_signal(
-                config_key=config_key,
-                multiplier=1.0,
-                reason="promotion_success",
-                source=SignalSource.PROMOTION,
-            )
-
-            emit_promotion_signal(
-                config_key=config_key,
-                outcome="promoted",
-                model_path=model_path,
-            )
-
-            logger.info(f"[UnifiedFeedback] {config_key}: promotion SUCCESS, exploration reset")
-
-        except Exception as e:
-            logger.error(f"[UnifiedFeedback] Error handling model promoted: {e}")
-
-    def _on_promotion_failed(self, event: Any) -> None:
-        """Handle promotion failed event."""
-        try:
-            payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
-
-            if not config_key:
-                return
-
-            self._signals_processed += 1
-            self._last_activity = time.time()
-
-            # Boost exploration on failed promotion
-            new_exploration = self._exploration_strategy.compute_exploration(
-                config_key,
-                promotion_failed=True,
-            )
-
-            if new_exploration:
-                emit_exploration_signal(
-                    config_key=config_key,
-                    multiplier=new_exploration,
-                    reason="promotion_failed",
-                    source=SignalSource.PROMOTION,
-                )
-
-            emit_promotion_signal(
-                config_key=config_key,
-                outcome="rejected",
-            )
+            state = self._get_or_create_state(config_key)
+            state.last_training_time = time.time()
+            state.last_training_accuracy = policy_accuracy
 
             logger.info(
-                f"[UnifiedFeedback] {config_key}: promotion FAILED, "
-                f"exploration → {new_exploration:.2f}"
+                f"[UnifiedFeedbackOrchestrator] Training complete: {config_key}, "
+                f"accuracy={policy_accuracy:.2%}"
             )
 
-        except Exception as e:
-            logger.error(f"[UnifiedFeedback] Error handling promotion failed: {e}")
+            # Recompute signals
+            self._recompute_signals(state)
 
-    def _on_selfplay_complete(self, event: Any) -> None:
-        """Handle selfplay complete event."""
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling training complete: {e}")
+
+    def _on_evaluation_complete(self, event: Any) -> None:
+        """Handle EVALUATION_COMPLETED event."""
         try:
-            payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
-            quality_score = payload.get("quality_score", 0.0)
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config", "")
+            elo = payload.get("elo", 1000.0)
+            win_rate = payload.get("win_rate", 0.5)
 
             if not config_key:
                 return
 
-            self._signals_processed += 1
-            self._last_activity = time.time()
+            state = self._get_or_create_state(config_key)
+            state.last_evaluation_time = time.time()
 
-            # Emit quality signal
-            if quality_score > 0:
-                emit_quality_signal(
-                    config_key=config_key,
-                    score=quality_score,
-                    reason="selfplay_batch",
-                    source=SignalSource.SELFPLAY,
-                )
+            # Update Elo and compute velocity
+            old_elo = state.last_evaluation_elo
+            state.last_evaluation_elo = elo
+            state.last_evaluation_win_rate = win_rate
+            state.elo_history.append((time.time(), elo))
+
+            # Compute Elo velocity (change per hour)
+            state.elo_velocity = self._compute_elo_velocity(state)
+
+            logger.info(
+                f"[UnifiedFeedbackOrchestrator] Evaluation complete: {config_key}, "
+                f"elo={elo:.0f} (Δ{elo-old_elo:+.0f}), velocity={state.elo_velocity:.1f}/hr"
+            )
+
+            # Recompute signals
+            self._recompute_signals(state)
 
         except Exception as e:
-            logger.error(f"[UnifiedFeedback] Error handling selfplay complete: {e}")
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling evaluation complete: {e}")
 
-    def _on_intensity_signal(self, signal: FeedbackSignal) -> None:
-        """Handle intensity signal from legacy system."""
-        self._signals_processed += 1
-        self._last_activity = time.time()
-        # Signal is already processed by feedback_signals module
-        logger.debug(f"[UnifiedFeedback] Intensity signal: {signal}")
+    def _on_promotion_complete(self, event: Any) -> None:
+        """Handle MODEL_PROMOTED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            metadata = payload.get("metadata", payload)
+            config_key = metadata.get("config") or metadata.get("config_key", "")
+            promoted = metadata.get("promoted", False)
 
-    def _on_exploration_signal(self, signal: FeedbackSignal) -> None:
-        """Handle exploration signal from legacy system."""
-        self._signals_processed += 1
-        self._last_activity = time.time()
-        # Signal is already processed by feedback_signals module
-        logger.debug(f"[UnifiedFeedback] Exploration signal: {signal}")
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.last_promotion_time = time.time()
+
+            if promoted:
+                state.consecutive_successes += 1
+                state.consecutive_failures = 0
+                logger.info(
+                    f"[UnifiedFeedbackOrchestrator] Promotion SUCCESS: {config_key}, "
+                    f"streak={state.consecutive_successes}"
+                )
+            else:
+                state.consecutive_failures += 1
+                state.consecutive_successes = 0
+                logger.info(
+                    f"[UnifiedFeedbackOrchestrator] Promotion FAILED: {config_key}, "
+                    f"streak={state.consecutive_failures}"
+                )
+
+            # Recompute signals
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling promotion: {e}")
+
+    def _on_loss_anomaly(self, event: Any) -> None:
+        """Handle TRAINING_LOSS_ANOMALY event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config", "")
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.consecutive_anomalies += 1
+
+            logger.warning(
+                f"[UnifiedFeedbackOrchestrator] Loss anomaly: {config_key}, "
+                f"count={state.consecutive_anomalies}"
+            )
+
+            # Recompute signals (will boost exploration)
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling loss anomaly: {e}")
+
+    def _on_quality_degraded(self, event: Any) -> None:
+        """Handle QUALITY_DEGRADED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            quality_score = payload.get("quality_score", 0.5)
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.last_selfplay_quality = quality_score
+
+            logger.warning(
+                f"[UnifiedFeedbackOrchestrator] Quality degraded: {config_key}, "
+                f"score={quality_score:.2f}"
+            )
+
+            # Recompute signals
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling quality degraded: {e}")
+
+    def _on_plateau_detected(self, event: Any) -> None:
+        """Handle PLATEAU_DETECTED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", payload.get("config", ""))
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+
+            logger.info(f"[UnifiedFeedbackOrchestrator] Plateau detected: {config_key}")
+
+            # Boost exploration to escape plateau
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling plateau: {e}")
+
+    def _on_regression_detected(self, event: Any) -> None:
+        """Handle REGRESSION_DETECTED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", payload.get("config", ""))
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.consecutive_failures += 1
+
+            logger.warning(
+                f"[UnifiedFeedbackOrchestrator] Regression detected: {config_key}, "
+                f"failures={state.consecutive_failures}"
+            )
+
+            # Recompute signals (will increase intensity)
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.error(f"[UnifiedFeedbackOrchestrator] Error handling regression: {e}")
+
+    def _on_data_fresh(self, event: Any) -> None:
+        """Handle DATA_FRESH event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = f"{payload.get('board_type', '')}_{payload.get('num_players', 0)}p"
+            data_age_hours = payload.get("data_age_hours", 0.0)
+
+            state = self._get_or_create_state(config_key)
+            state.data_freshness_hours = data_age_hours
+
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Data fresh: {config_key}, age={data_age_hours:.1f}h")
+
+        except Exception as e:
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error handling data fresh: {e}")
+
+    def _on_data_stale(self, event: Any) -> None:
+        """Handle DATA_STALE event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = f"{payload.get('board_type', '')}_{payload.get('num_players', 0)}p"
+            data_age_hours = payload.get("data_age_hours", float("inf"))
+
+            state = self._get_or_create_state(config_key)
+            state.data_freshness_hours = data_age_hours
+
+            logger.warning(f"[UnifiedFeedbackOrchestrator] Data stale: {config_key}, age={data_age_hours:.1f}h")
+
+        except Exception as e:
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error handling data stale: {e}")
+
+    def _on_elo_velocity_changed(self, event: Any) -> None:
+        """Handle ELO_VELOCITY_CHANGED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            velocity = payload.get("velocity", 0.0)
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.elo_velocity = velocity
+
+            logger.info(f"[UnifiedFeedbackOrchestrator] Elo velocity changed: {config_key}, v={velocity:.1f}/hr")
+
+            # Recompute curriculum weight based on momentum
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error handling velocity change: {e}")
+
+    def _on_quality_penalty(self, event: Any) -> None:
+        """Handle QUALITY_PENALTY_APPLIED event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            penalty = payload.get("new_penalty", 0)
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+            state.quality_penalties_applied = int(penalty)
+
+            logger.info(f"[UnifiedFeedbackOrchestrator] Quality penalty: {config_key}, penalty={penalty}")
+
+            # Recompute signals
+            self._recompute_signals(state)
+
+        except Exception as e:
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error handling quality penalty: {e}")
+
+    # =========================================================================
+    # Signal Computation
+    # =========================================================================
+
+    def _recompute_signals(self, state: FeedbackState) -> None:
+        """Recompute all feedback signals for a config.
+
+        Args:
+            state: Feedback state to update
+        """
+        # Check cooldown
+        now = time.time()
+        if now - state.last_adjustment_time < self.config.adjustment_cooldown:
+            return
+
+        # Compute each signal
+        old_intensity = state.training_intensity
+        old_exploration = state.exploration_boost
+        old_weight = state.curriculum_weight
+
+        state.training_intensity = self._compute_training_intensity(state)
+        state.exploration_boost = self._compute_exploration_boost(state)
+        state.curriculum_weight = self._compute_curriculum_weight(state)
+
+        # Check if anything changed
+        intensity_changed = old_intensity != state.training_intensity
+        exploration_changed = abs(old_exploration - state.exploration_boost) > 0.05
+        weight_changed = abs(old_weight - state.curriculum_weight) > 0.05
+
+        if not (intensity_changed or exploration_changed or weight_changed):
+            return
+
+        # Update adjustment time and counters
+        state.last_adjustment_time = now
+        self._total_adjustments += 1
+        self._last_adjustment_time = now
+
+        if intensity_changed:
+            self._adjustments_by_type[FeedbackSignal.TRAINING_INTENSITY] += 1
+        if exploration_changed:
+            self._adjustments_by_type[FeedbackSignal.EXPLORATION_BOOST] += 1
+        if weight_changed:
+            self._adjustments_by_type[FeedbackSignal.CURRICULUM_WEIGHT] += 1
+
+        # Log changes
+        logger.info(
+            f"[UnifiedFeedbackOrchestrator] Signals updated for {state.config_key}: "
+            f"intensity={old_intensity}→{state.training_intensity}, "
+            f"exploration={old_exploration:.2f}→{state.exploration_boost:.2f}, "
+            f"weight={old_weight:.2f}→{state.curriculum_weight:.2f}"
+        )
+
+        # Emit consolidated event
+        self._emit_signals_updated(state)
+
+    def _compute_training_intensity(self, state: FeedbackState) -> str:
+        """Compute training intensity level.
+
+        Args:
+            state: Feedback state
+
+        Returns:
+            Intensity level: "paused", "reduced", "normal", "accelerated", "hot_path"
+        """
+        if self.config.intensity_strategy == FeedbackStrategy.QUALITY_GRADIENT:
+            return self._intensity_from_quality(state.last_selfplay_quality)
+
+        elif self.config.intensity_strategy == FeedbackStrategy.MOMENTUM_BASED:
+            return self._intensity_from_momentum(state)
+
+        else:  # HYBRID
+            quality_intensity = self._intensity_from_quality(state.last_selfplay_quality)
+            momentum_intensity = self._intensity_from_momentum(state)
+
+            # Take the more aggressive setting
+            intensity_levels = ["paused", "reduced", "normal", "accelerated", "hot_path"]
+            q_level = intensity_levels.index(quality_intensity)
+            m_level = intensity_levels.index(momentum_intensity)
+            return intensity_levels[max(q_level, m_level)]
+
+    def _intensity_from_quality(self, quality: float) -> str:
+        """Map quality score to intensity level."""
+        if quality >= self.config.quality_excellent_threshold:
+            return "hot_path"
+        elif quality >= self.config.quality_good_threshold:
+            return "accelerated"
+        elif quality >= self.config.quality_adequate_threshold:
+            return "normal"
+        elif quality >= self.config.quality_poor_threshold:
+            return "reduced"
+        else:
+            return "paused"
+
+    def _intensity_from_momentum(self, state: FeedbackState) -> str:
+        """Map momentum (success/failure streaks) to intensity level."""
+        # Hot path after 3+ consecutive successes
+        if state.consecutive_successes >= 3:
+            return "hot_path"
+
+        # Accelerated after success or 3+ failures
+        if state.consecutive_successes >= 1 or state.consecutive_failures >= 3:
+            return "accelerated"
+
+        # Normal by default
+        return "normal"
+
+    def _compute_exploration_boost(self, state: FeedbackState) -> float:
+        """Compute exploration boost factor.
+
+        Args:
+            state: Feedback state
+
+        Returns:
+            Exploration boost (1.0 = normal, >1.0 = more exploration)
+        """
+        boost = 1.0
+
+        if self.config.exploration_strategy == FeedbackStrategy.QUALITY_REACTIVE:
+            if state.last_selfplay_quality < self.config.low_quality_threshold:
+                boost = self.config.base_exploration_boost
+
+        elif self.config.exploration_strategy == FeedbackStrategy.LOSS_REACTIVE:
+            # Boost per anomaly
+            boost = 1.0 + (state.consecutive_anomalies * (self.config.anomaly_exploration_boost - 1.0))
+
+        elif self.config.exploration_strategy == FeedbackStrategy.PLATEAU_REACTIVE:
+            # Boost if Elo velocity is near zero
+            if abs(state.elo_velocity) < 5.0:
+                boost = self.config.base_exploration_boost
+
+        else:  # ADAPTIVE - combines all signals
+            # Base boost from quality
+            if state.last_selfplay_quality < self.config.low_quality_threshold:
+                boost = max(boost, self.config.base_exploration_boost)
+
+            # Additional boost from anomalies
+            if state.consecutive_anomalies > 0:
+                anomaly_boost = 1.0 + (state.consecutive_anomalies * (self.config.anomaly_exploration_boost - 1.0))
+                boost = max(boost, anomaly_boost)
+
+            # Additional boost from plateau
+            if abs(state.elo_velocity) < 5.0:
+                boost = max(boost, 1.2)
+
+            # Reduce after successful promotion
+            if state.consecutive_successes > 0:
+                boost = max(1.0, boost * 0.9)
+
+        # Cap at max
+        return min(self.config.max_exploration_boost, boost)
+
+    def _compute_curriculum_weight(self, state: FeedbackState) -> float:
+        """Compute curriculum weight.
+
+        Args:
+            state: Feedback state
+
+        Returns:
+            Curriculum weight (relative priority for selfplay allocation)
+        """
+        base_weight = 1.0
+
+        if self.config.curriculum_strategy == FeedbackStrategy.MOMENTUM_WEIGHTED:
+            # Weight by Elo velocity
+            if state.elo_velocity > 10.0:
+                base_weight *= (1.0 + self.config.momentum_weight_factor)
+            elif state.elo_velocity < -10.0:
+                base_weight *= (1.0 - self.config.momentum_weight_factor)
+
+        elif self.config.curriculum_strategy == FeedbackStrategy.QUALITY_WEIGHTED:
+            # Weight by quality
+            if state.last_selfplay_quality < 0.5:
+                base_weight *= (1.0 + self.config.momentum_weight_factor)
+            elif state.last_selfplay_quality > 0.7:
+                base_weight *= (1.0 - self.config.momentum_weight_factor * 0.5)
+
+        else:  # BALANCED
+            # Combine momentum and quality
+            if state.elo_velocity > 10.0 or state.last_selfplay_quality < 0.5:
+                base_weight *= (1.0 + self.config.momentum_weight_factor)
+            elif state.elo_velocity < -10.0 and state.last_selfplay_quality > 0.7:
+                base_weight *= (1.0 - self.config.momentum_weight_factor * 0.5)
+
+        # Apply quality penalty
+        if state.quality_penalties_applied > 0:
+            penalty_factor = 1.0 - (state.quality_penalties_applied * self.config.quality_penalty_factor)
+            base_weight *= max(0.3, penalty_factor)
+
+        # Clamp to range
+        return max(self.config.weight_min, min(self.config.weight_max, base_weight))
+
+    def _compute_elo_velocity(self, state: FeedbackState) -> float:
+        """Compute Elo velocity (change per hour).
+
+        Args:
+            state: Feedback state
+
+        Returns:
+            Elo velocity in points/hour
+        """
+        if len(state.elo_history) < 2:
+            return 0.0
+
+        # Linear regression over Elo history
+        points = list(state.elo_history)
+        n = len(points)
+
+        sum_t = sum(t for t, _ in points)
+        sum_elo = sum(elo for _, elo in points)
+        sum_t_elo = sum(t * elo for t, elo in points)
+        sum_t2 = sum(t * t for t, _ in points)
+
+        # Slope = (n * sum(t*elo) - sum(t)*sum(elo)) / (n * sum(t^2) - sum(t)^2)
+        denominator = n * sum_t2 - sum_t * sum_t
+        if abs(denominator) < 1e-6:
+            return 0.0
+
+        slope = (n * sum_t_elo - sum_t * sum_elo) / denominator
+
+        # Convert from points/second to points/hour
+        return slope * 3600
+
+    def _estimate_quality_from_payload(self, payload: dict[str, Any]) -> float:
+        """Estimate quality score from event payload.
+
+        Args:
+            payload: Event payload
+
+        Returns:
+            Quality score 0.0-1.0
+        """
+        # Check if quality score is directly provided
+        if "quality_score" in payload:
+            return payload["quality_score"]
+
+        # Estimate from game count (fallback)
+        games_count = payload.get("games_count", 0)
+        if games_count < 100:
+            return 0.3
+        elif games_count < 500:
+            return 0.6
+        elif games_count < 1000:
+            return 0.8
+        else:
+            return 0.9
+
+    # =========================================================================
+    # Event Emission
+    # =========================================================================
+
+    def _emit_signals_updated(self, state: FeedbackState) -> None:
+        """Emit consolidated FEEDBACK_SIGNALS_UPDATED event.
+
+        Args:
+            state: Updated feedback state
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                # Emit consolidated event
+                router.publish_sync(
+                    "FEEDBACK_SIGNALS_UPDATED",
+                    {
+                        "config_key": state.config_key,
+                        "signals": {
+                            "training_intensity": state.training_intensity,
+                            "exploration_boost": state.exploration_boost,
+                            "curriculum_weight": state.curriculum_weight,
+                            "data_freshness_hours": state.data_freshness_hours,
+                        },
+                        "metrics": {
+                            "selfplay_quality": state.last_selfplay_quality,
+                            "training_accuracy": state.last_training_accuracy,
+                            "elo": state.last_evaluation_elo,
+                            "elo_velocity": state.elo_velocity,
+                        },
+                        "timestamp": time.time(),
+                    },
+                    source="unified_feedback_orchestrator",
+                )
+
+                # Also emit individual signal change events for backward compatibility
+                self._emit_individual_signals(state)
+
+        except Exception as e:
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error emitting event: {e}")
+
+    def _emit_individual_signals(self, state: FeedbackState) -> None:
+        """Emit individual signal change events for backward compatibility.
+
+        Args:
+            state: Feedback state
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if not router:
+                return
+
+            # Training intensity changed
+            router.publish_sync(
+                "TRAINING_INTENSITY_CHANGED",
+                {
+                    "config_key": state.config_key,
+                    "intensity": state.training_intensity,
+                    "quality": state.last_selfplay_quality,
+                },
+                source="unified_feedback_orchestrator",
+            )
+
+            # Exploration boost changed
+            router.publish_sync(
+                "EXPLORATION_BOOST",
+                {
+                    "config_key": state.config_key,
+                    "boost_factor": state.exploration_boost,
+                    "reason": "unified_feedback",
+                },
+                source="unified_feedback_orchestrator",
+            )
+
+            # Curriculum weight changed
+            router.publish_sync(
+                "CURRICULUM_REBALANCED",
+                {
+                    "trigger": "unified_feedback",
+                    "changed_configs": [state.config_key],
+                    "new_weights": {state.config_key: state.curriculum_weight},
+                    "timestamp": time.time(),
+                },
+                source="unified_feedback_orchestrator",
+            )
+
+        except Exception as e:
+            logger.debug(f"[UnifiedFeedbackOrchestrator] Error emitting individual signals: {e}")
 
     # =========================================================================
     # Public API
     # =========================================================================
 
-    def signal_training_complete(
-        self,
-        config_key: str,
-        policy_accuracy: float,
-        loss: float = 0.0,
-    ) -> None:
-        """Manually signal training completion.
+    def get_config_state(self, config_key: str) -> FeedbackState | None:
+        """Get feedback state for a configuration.
 
         Args:
-            config_key: Config that completed training
-            policy_accuracy: Final policy accuracy
-            loss: Final training loss
-        """
-        self._on_training_complete({
-            "config_key": config_key,
-            "policy_accuracy": policy_accuracy,
-            "loss": loss,
-        })
-
-    def signal_evaluation_complete(
-        self,
-        config_key: str,
-        win_rate: float,
-        elo: float = 0.0,
-    ) -> None:
-        """Manually signal evaluation completion.
-
-        Args:
-            config_key: Config that was evaluated
-            win_rate: Win rate vs heuristic
-            elo: Current Elo rating
-        """
-        self._on_evaluation_complete({
-            "config_key": config_key,
-            "win_rate_vs_heuristic": win_rate,
-            "elo": elo,
-        })
-
-    def get_state(self, config_key: str) -> FeedbackState:
-        """Get current feedback state for a config.
-
-        Args:
-            config_key: Config key (e.g., "hex8_2p")
+            config_key: Configuration key (e.g., "hex8_2p")
 
         Returns:
-            Current feedback state
+            FeedbackState or None if not found
         """
-        return get_feedback_state(config_key)
+        return self._states.get(config_key)
 
     def get_all_states(self) -> dict[str, FeedbackState]:
-        """Get current feedback state for all configs."""
-        return get_all_feedback_states()
+        """Get all feedback states.
+
+        Returns:
+            Dictionary of config_key -> FeedbackState
+        """
+        return dict(self._states)
 
     def get_metrics(self) -> dict[str, Any]:
-        """Get orchestrator metrics."""
+        """Get orchestrator metrics for dashboard integration.
+
+        Returns:
+            Dictionary of metrics
+        """
         return {
             "running": self._running,
-            "signals_processed": self._signals_processed,
-            "last_activity": self._last_activity,
-            "states_count": len(get_all_feedback_states()),
+            "subscribed": self._subscribed,
+            "configs_tracked": len(self._states),
+            "total_adjustments": self._total_adjustments,
+            "adjustments_by_type": {
+                signal.value: count
+                for signal, count in self._adjustments_by_type.items()
+            },
+            "last_adjustment_time": self._last_adjustment_time,
+            "states": {
+                config_key: state.to_dict()
+                for config_key, state in self._states.items()
+            },
         }
+
+    def force_recompute(self, config_key: str) -> None:
+        """Force recomputation of signals for a config (ignores cooldown).
+
+        Args:
+            config_key: Configuration key
+        """
+        state = self._states.get(config_key)
+        if state:
+            state.last_adjustment_time = 0.0  # Reset cooldown
+            self._recompute_signals(state)
 
 
 # =============================================================================
@@ -596,21 +1047,39 @@ _orchestrator: UnifiedFeedbackOrchestrator | None = None
 _orchestrator_lock = threading.Lock()
 
 
-def get_feedback_orchestrator() -> UnifiedFeedbackOrchestrator:
-    """Get the singleton UnifiedFeedbackOrchestrator instance."""
-    global _orchestrator
-    with _orchestrator_lock:
-        if _orchestrator is None:
-            _orchestrator = UnifiedFeedbackOrchestrator()
-        return _orchestrator
+def get_unified_feedback(config: FeedbackConfig | None = None) -> UnifiedFeedbackOrchestrator:
+    """Get the singleton UnifiedFeedbackOrchestrator instance.
 
-
-async def start_unified_feedback() -> UnifiedFeedbackOrchestrator:
-    """Start the unified feedback orchestrator.
+    Args:
+        config: Configuration (only used on first call)
 
     Returns:
-        The running orchestrator instance
+        The singleton orchestrator instance
     """
-    orchestrator = get_feedback_orchestrator()
-    await orchestrator.start()
-    return orchestrator
+    global _orchestrator
+    if _orchestrator is None:
+        with _orchestrator_lock:
+            if _orchestrator is None:
+                _orchestrator = UnifiedFeedbackOrchestrator(config)
+    return _orchestrator
+
+
+def reset_unified_feedback() -> None:
+    """Reset the singleton (for testing)."""
+    global _orchestrator
+    _orchestrator = None
+
+
+__all__ = [
+    # Main class
+    "UnifiedFeedbackOrchestrator",
+    # Configuration
+    "FeedbackConfig",
+    "FeedbackSignal",
+    "FeedbackStrategy",
+    # State
+    "FeedbackState",
+    # Singleton
+    "get_unified_feedback",
+    "reset_unified_feedback",
+]
