@@ -27,14 +27,24 @@ class NodeBenchmark:
         self.ssh_key = ssh_key
         self.provider = provider
         self.gpu = gpu
+        # SSH base command as list (avoids shell injection)
+        self._ssh_base_list = [
+            "ssh", "-p", str(ssh_port), "-i", ssh_key,
+            "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+            f"{ssh_user}@{ssh_host}"
+        ]
+        # Legacy string for complex pipelines (still needed for piped commands)
         self.ssh_base = f"ssh -p {ssh_port} -i {ssh_key} -o ConnectTimeout=10 -o StrictHostKeyChecking=no {ssh_user}@{ssh_host}"
+
+    def _ssh_cmd(self, remote_cmd: str) -> List[str]:
+        """Build SSH command as list (safe from shell injection)."""
+        return self._ssh_base_list + [remote_cmd]
 
     def check_reachable(self) -> bool:
         """Check if node is reachable via SSH."""
         try:
             result = subprocess.run(
-                f"{self.ssh_base} 'echo ok'",
-                shell=True,
+                self._ssh_cmd("echo ok"),
                 capture_output=True,
                 timeout=15
             )
@@ -46,8 +56,7 @@ class NodeBenchmark:
         """Measure ping latency in ms."""
         try:
             result = subprocess.run(
-                f"ping -c 3 -W 2 {self.ssh_host}",
-                shell=True,
+                ["ping", "-c", "3", "-W", "2", self.ssh_host],
                 capture_output=True,
                 timeout=10
             )
@@ -71,13 +80,13 @@ class NodeBenchmark:
         """Test network download speed in MB/s."""
         try:
             # Create 100MB test file, download via SSH, measure throughput
-            cmd = (
-                f"{self.ssh_base} 'dd if=/dev/zero bs=1M count=100 2>/dev/null' | "
-                "pv -f -q -s 100M 2>&1 > /dev/null"
-            )
-
+            # Use shell=False with explicit command list to avoid command injection
             start = time.time()
-            result = subprocess.run(cmd, shell=True, capture_output=True, timeout=30)
+            result = subprocess.run(
+                self._ssh_cmd("dd if=/dev/zero bs=1M count=100 2>/dev/null"),
+                capture_output=True,
+                timeout=30
+            )
             elapsed = time.time() - start
 
             if result.returncode == 0 and elapsed > 0:
@@ -85,9 +94,11 @@ class NodeBenchmark:
                 return 100.0 / elapsed
 
             # Fallback: simple time-based estimate
-            cmd_fallback = f"{self.ssh_base} 'dd if=/dev/zero bs=1M count=100 2>/dev/null | cat > /dev/null'"
             start = time.time()
-            subprocess.run(cmd_fallback, shell=True, timeout=30)
+            subprocess.run(
+                self._ssh_cmd("dd if=/dev/zero bs=1M count=100 2>/dev/null | cat > /dev/null"),
+                timeout=30
+            )
             elapsed = time.time() - start
 
             if elapsed > 0:
@@ -101,12 +112,12 @@ class NodeBenchmark:
     def disk_io_speed(self) -> Optional[Tuple[float, float]]:
         """Test disk write/read speed in MB/s. Returns (write_speed, read_speed)."""
         try:
-            # Write test
-            write_cmd = (
-                f"{self.ssh_base} "
-                "'cd /tmp && dd if=/dev/zero of=testfile bs=1M count=512 oflag=direct 2>&1 | grep MB/s'"
+            # Write test - use shell=False with _ssh_cmd to avoid command injection
+            result = subprocess.run(
+                self._ssh_cmd("cd /tmp && dd if=/dev/zero of=testfile bs=1M count=512 oflag=direct 2>&1 | grep MB/s"),
+                capture_output=True,
+                timeout=30
             )
-            result = subprocess.run(write_cmd, shell=True, capture_output=True, timeout=30)
             write_speed = None
             if result.returncode == 0:
                 output = result.stdout.decode()
@@ -114,26 +125,26 @@ class NodeBenchmark:
                 if 'MB/s' in output:
                     try:
                         write_speed = float(output.split('MB/s')[0].split()[-1])
-                    except:
+                    except ValueError:
                         pass
 
             # Read test
-            read_cmd = (
-                f"{self.ssh_base} "
-                "'cd /tmp && dd if=testfile of=/dev/null bs=1M iflag=direct 2>&1 | grep MB/s'"
+            result = subprocess.run(
+                self._ssh_cmd("cd /tmp && dd if=testfile of=/dev/null bs=1M iflag=direct 2>&1 | grep MB/s"),
+                capture_output=True,
+                timeout=30
             )
-            result = subprocess.run(read_cmd, shell=True, capture_output=True, timeout=30)
             read_speed = None
             if result.returncode == 0:
                 output = result.stdout.decode()
                 if 'MB/s' in output:
                     try:
                         read_speed = float(output.split('MB/s')[0].split()[-1])
-                    except:
+                    except ValueError:
                         pass
 
             # Cleanup
-            subprocess.run(f"{self.ssh_base} 'rm -f /tmp/testfile'", shell=True, timeout=10)
+            subprocess.run(self._ssh_cmd("rm -f /tmp/testfile"), timeout=10)
 
             return (write_speed, read_speed)
 
@@ -178,10 +189,14 @@ tflops = (ops / 1e12) / (elapsed_ms / 1000.0)
 print(f'{tflops:.2f}')
 """
 
-            # Run benchmark - escape quotes properly
-            escaped_code = benchmark_code.replace('"', '\\"').replace('$', '\\$')
-            cmd = f'{self.ssh_base} "python3 -c \\"{escaped_code}\\""'
-            result = subprocess.run(cmd, shell=True, capture_output=True, timeout=60)
+            # Run benchmark - pass code directly to avoid shell escaping issues
+            # Using _ssh_cmd with shell=False is safer than shell=True
+            python_cmd = f'python3 -c "{benchmark_code}"'
+            result = subprocess.run(
+                self._ssh_cmd(python_cmd),
+                capture_output=True,
+                timeout=60
+            )
 
             if result.returncode != 0 or b'NO_GPU' in result.stdout:
                 return None
@@ -189,7 +204,7 @@ print(f'{tflops:.2f}')
             output = result.stdout.decode().strip()
             try:
                 return float(output)
-            except:
+            except (ValueError, TypeError):
                 return None
 
         except Exception as e:

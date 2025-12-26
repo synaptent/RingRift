@@ -598,8 +598,8 @@ class MasterLoopController:
             bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
             bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
-            bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
-            bus.subscribe(DataEventType.DATA_QUALITY_ASSESSED, self._on_quality_assessed)
+            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
+            bus.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_assessed)
 
             logger.info("[MasterLoop] Subscribed to pipeline events (including quality)")
         except Exception as e:
@@ -806,8 +806,12 @@ class MasterLoopController:
             from app.coordination.event_router import emit_event, DataEventType
 
             await emit_event(
-                DataEventType.CLUSTER_HEALTH,
-                {"action": "throttle_selfplay", "reason": "load_critical"}
+                DataEventType.HEALTH_ALERT,
+                {
+                    "alert": "throttle_selfplay",
+                    "action": "throttle_selfplay",
+                    "reason": "load_critical",
+                }
             )
         except Exception as e:
             logger.debug(f"[MasterLoop] Error emitting throttle event: {e}")
@@ -873,12 +877,13 @@ class MasterLoopController:
             from app.coordination.event_router import emit_event, DataEventType
 
             await emit_event(
-                DataEventType.TRIGGER_TRAINING,
+                DataEventType.TRAINING_THRESHOLD_REACHED,
                 {
-                    "config_key": config_key,
+                    "config": config_key,
                     "board_type": board_type,
                     "num_players": num_players,
-                    "intensity": self._states[config_key].training_intensity,
+                    "priority": self._states[config_key].training_intensity,
+                    "reason": "master_loop_trigger",
                 }
             )
 
@@ -988,13 +993,14 @@ class MasterLoopController:
             num_players = int(parts[1].replace("p", ""))
 
             await emit_event(
-                DataEventType.REQUEST_SELFPLAY_PRIORITY,
+                DataEventType.SELFPLAY_TARGET_UPDATED,
                 {
                     "node_id": node_id,
                     "config_key": config_key,
                     "board_type": board_type,
                     "num_players": num_players,
-                    "num_games": num_games,
+                    "target_games": num_games,
+                    "priority": "high",
                     "source": "master_loop",
                 }
             )

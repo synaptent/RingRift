@@ -15,7 +15,7 @@ Usage:
     class MyOrchestrator:
         def subscribe_to_events(self):
             bus.subscribe(
-                DataEventType.SOME_EVENT,
+                DataEventType.TRAINING_COMPLETED,
                 resilient_handler(self._on_some_event, coordinator="MyOrchestrator")
             )
 

@@ -331,25 +331,32 @@ class MaterialEvaluator:
                 opponent_stacks += 1
                 opponent_height += self._effective_height(stack.stack_height)
                 opponent_cap_height += stack.cap_height
-        
-        # Stack control (symmetric)
+
+        # Normalize opponent values by number of opponents (GPU-style averaging)
+        # This ensures symmetric evaluation in multi-player games
+        num_opponents = max(1, len(state.players) - 1)
+        opponent_stacks_avg = opponent_stacks / num_opponents
+        opponent_height_avg = opponent_height / num_opponents
+        opponent_cap_height_avg = opponent_cap_height / num_opponents
+
+        # Stack control (symmetric with per-opponent averaging)
         result.stack_control = (
-            (my_stacks - opponent_stacks) * self.weights.stack_control
+            (my_stacks - opponent_stacks_avg) * self.weights.stack_control
         )
-        
-        # Stack height (symmetric)
+
+        # Stack height (symmetric with per-opponent averaging)
         result.stack_height = (
-            (my_height - opponent_height) * self.weights.stack_height
+            (my_height - opponent_height_avg) * self.weights.stack_height
         )
-        
-        # Cap height (symmetric) - measures capture power per rules §10.1
+
+        # Cap height (symmetric with per-opponent averaging)
         result.cap_height = (
-            (my_cap_height - opponent_cap_height) * self.weights.cap_height
+            (my_cap_height - opponent_cap_height_avg) * self.weights.cap_height
         )
-        
-        # Stack diversity (symmetric)
+
+        # Stack diversity (symmetric with per-opponent averaging)
         my_diversity = self._diversity_score(my_stacks)
-        opp_diversity = self._diversity_score(opponent_stacks)
+        opp_diversity = self._diversity_score(opponent_stacks_avg)
         result.stack_diversity = my_diversity - opp_diversity
         
         # Rings in hand (symmetric vs best opponent)

@@ -195,8 +195,8 @@ def evaluate_model(
 
     # Fallback: simple sanity check (model loads and runs)
     try:
-        import torch
-        state_dict = torch.load(model_path, map_location="cpu")
+        from app.utils.torch_utils import safe_load_checkpoint
+        state_dict = safe_load_checkpoint(model_path, map_location="cpu")
         print(f"[Deploy] Model loads successfully ({len(state_dict)} keys)")
         return EvaluationResult(
             win_rate=0.5,

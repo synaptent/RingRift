@@ -29,13 +29,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
+
+from app.config.ports import get_p2p_status_url
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ HIGH_PRIORITY_CONFIGS: frozenset[str] = frozenset({
     "square8_2p", "hex8_2p", "hex8_3p", "hex8_4p"
 })
 
-# P2P status endpoint
-P2P_STATUS_URL = "http://localhost:8770/status"
+# P2P status endpoint (uses centralized port configuration)
+P2P_STATUS_URL = get_p2p_status_url()
 
 
 # =============================================================================
@@ -117,7 +117,7 @@ def get_p2p_status() -> dict[str, Any]:
         return {}
 
 
-def get_sync_targets() -> list[SyncTarget]:
+def get_sync_targets() -> list["EligibleSyncNode"]:
     """Get nodes eligible to receive synced data.
 
     Uses DaemonExclusionPolicy from coordinator_config for filtering.
@@ -133,10 +133,6 @@ def get_sync_targets() -> list[SyncTarget]:
         return []
 
     targets = []
-
-    # Check self node
-    self_info = status.get("self", {})
-    self_node_id = self_info.get("node_id", "")
 
     # Get unified exclusion policy
     exclusion_policy = get_exclusion_policy()
@@ -174,7 +170,7 @@ def get_sync_targets() -> list[SyncTarget]:
         if not host:
             continue
 
-        targets.append(SyncTarget(
+        targets.append(EligibleSyncNode(
             node_id=node_id,
             host=host,
             disk_free_gb=disk_free,
@@ -215,7 +211,7 @@ def discover_local_databases() -> list[Path]:
     return databases
 
 
-async def sync_to_target(source: Path, target: SyncTarget) -> SyncResult:
+async def sync_to_target(source: Path, target: EligibleSyncNode) -> SyncResult:
     """Push a database to a target node using rsync.
 
     For NFS-connected nodes (Lambda cluster), this is a no-op since they
@@ -398,7 +394,7 @@ class ClusterDataSyncDaemon:
         results: list[SyncResult] = []
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_SYNCS)
 
-        async def sync_with_limit(db: Path, target: SyncTarget) -> SyncResult:
+        async def sync_with_limit(db: Path, target: EligibleSyncNode) -> SyncResult:
             async with semaphore:
                 return await sync_to_target(db, target)
 

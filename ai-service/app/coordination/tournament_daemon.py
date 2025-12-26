@@ -350,29 +350,30 @@ class TournamentDaemon:
 
         try:
             # Run gauntlet evaluation
-            from app.gauntlet.game_gauntlet import GameGauntlet
-
-            gauntlet = GameGauntlet(
-                board_type=board_type,
-                num_players=num_players,
-                games_per_opponent=self.config.games_per_baseline,
-            )
+            from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
 
             gauntlet_results = await asyncio.wait_for(
                 asyncio.to_thread(
-                    gauntlet.run_gauntlet,
+                    run_baseline_gauntlet,
                     model_path=model_path,
+                    board_type=board_type,
+                    num_players=num_players,
+                    games_per_opponent=self.config.games_per_baseline,
+                    opponents=[BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC],
                 ),
                 timeout=self.config.evaluation_timeout_seconds,
             )
 
             results["success"] = True
-            results["games_played"] = gauntlet_results.get("total_games", 0)
-            results["win_rates"] = gauntlet_results.get("win_rates", {})
+            results["games_played"] = gauntlet_results.total_games
+            results["win_rates"] = {
+                opponent: stats.get("win_rate", 0.0)
+                for opponent, stats in gauntlet_results.opponent_results.items()
+            }
 
             # Update ELO
-            if gauntlet_results.get("elo"):
-                results["elo"] = gauntlet_results["elo"]
+            if gauntlet_results.estimated_elo:
+                results["elo"] = gauntlet_results.estimated_elo
                 await self._update_elo(model_path, board_type, num_players, gauntlet_results)
 
             self._stats.games_played += results["games_played"]

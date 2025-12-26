@@ -695,7 +695,8 @@ def main() -> None:
     # Load existing checkpoint if resuming
     if args.resume:
         logger.info(f"Resuming from checkpoint: {args.resume}")
-        checkpoint = torch.load(args.resume, map_location=device)
+        from app.utils.torch_utils import safe_load_checkpoint
+        checkpoint = safe_load_checkpoint(args.resume, map_location=device)
         student_model.load_state_dict(checkpoint["model_state_dict"])
         logger.info(f"Loaded NNUE weights from {args.resume}")
 

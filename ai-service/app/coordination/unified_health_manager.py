@@ -19,6 +19,7 @@ Event Integration:
 - Subscribes to HOST_OFFLINE: Track offline hosts for recovery
 - Subscribes to NODE_RECOVERED: Update recovery state
 - Subscribes to PARITY_FAILURE_RATE_CHANGED: Alert on TS/Python parity issues (Dec 2025)
+- Subscribes to COORDINATOR_HEALTH_DEGRADED: Track coordinator health issues (Dec 2025)
 
 Usage:
     from app.coordination.unified_health_manager import (
@@ -365,6 +366,9 @@ class UnifiedHealthManager(CoordinatorBase):
 
             # Parity monitoring (December 2025 - closes parity → alert loop)
             router.subscribe(DataEventType.PARITY_FAILURE_RATE_CHANGED.value, self._on_parity_failure_rate_changed)
+
+            # Coordinator health monitoring (December 2025 - wires ghost event)
+            router.subscribe(DataEventType.COORDINATOR_HEALTH_DEGRADED.value, self._on_coordinator_health_degraded)
 
             self._subscribed = True
             logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
@@ -791,6 +795,97 @@ class UnifiedHealthManager(CoordinatorBase):
                 config_key,
                 f"Critical parity failure rate: {failure_rate:.1%} "
                 f"({failed_games}/{total_games} games)",
+            )
+
+    async def _on_coordinator_health_degraded(self, event) -> None:
+        """Handle COORDINATOR_HEALTH_DEGRADED event - track and respond to coordinator issues.
+
+        December 2025: Wired handler for COORDINATOR_HEALTH_DEGRADED events.
+        When a coordinator reports degraded health (e.g., from consecutive handler failures),
+        this handler:
+        1. Records the health issue as an error
+        2. Updates circuit breaker for the affected component
+        3. May trigger recovery actions if severity warrants
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        coordinator_name = payload.get("coordinator_name", "unknown")
+        reason = payload.get("reason", "")
+        health_score = payload.get("health_score", 0.5)
+        issues = payload.get("issues", [])
+        node_id = payload.get("node_id", "")
+
+        # Determine severity based on health score
+        if health_score < 0.3:
+            severity = ErrorSeverity.CRITICAL
+        elif health_score < 0.5:
+            severity = ErrorSeverity.ERROR
+        elif health_score < 0.7:
+            severity = ErrorSeverity.WARNING
+        else:
+            severity = ErrorSeverity.INFO
+
+        logger.warning(
+            f"[UnifiedHealthManager] COORDINATOR_HEALTH_DEGRADED: {coordinator_name} "
+            f"(health={health_score:.2f}, reason={reason})"
+        )
+
+        # Record as error for tracking
+        error = ErrorRecord(
+            error_id=self._generate_error_id(),
+            component=f"coordinator:{coordinator_name}",
+            error_type="health_degraded",
+            message=f"Coordinator health degraded: {reason}",
+            node_id=node_id,
+            severity=severity,
+            context={
+                "coordinator_name": coordinator_name,
+                "health_score": health_score,
+                "issues": issues[:5] if issues else [],  # Limit to first 5 issues
+            },
+        )
+        self._record_error(error)
+
+        # Update circuit breaker for the coordinator
+        component_key = f"coordinator:{coordinator_name}"
+        if health_score < 0.5:
+            # Multiple failures implied by low health score
+            for _ in range(2):  # Record multiple failures to potentially trip breaker
+                self._on_component_failure(component_key)
+
+        # For critical health issues, take additional action
+        if severity == ErrorSeverity.CRITICAL:
+            # Emit recovery event to attempt coordinator restart
+            try:
+                from app.coordination.event_router import get_router
+
+                router = get_router()
+
+                # Emit recovery initiation
+                await router.publish(
+                    "recovery_initiated",
+                    {
+                        "error_id": error.error_id,
+                        "component": coordinator_name,
+                        "node_id": node_id,
+                        "strategy": "coordinator_restart",
+                        "health_score": health_score,
+                    },
+                )
+                logger.info(
+                    f"[UnifiedHealthManager] Initiated recovery for degraded "
+                    f"coordinator: {coordinator_name}"
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"[UnifiedHealthManager] Failed to initiate coordinator recovery: {e}"
+                )
+
+            # Escalate critical coordinator failures
+            await self._escalate_to_human(
+                coordinator_name,
+                f"Coordinator health critical (score={health_score:.2f}): {reason}",
             )
 
     # =========================================================================

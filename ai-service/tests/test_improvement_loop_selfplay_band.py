@@ -25,7 +25,7 @@ def test_run_selfplay_passes_difficulty_band(monkeypatch) -> None:
         "selfplay_difficulty_band": "canonical",
     }
 
-    ok, games = loop.run_selfplay(config, iteration=0, dry_run=True)
+    ok, games, _staging_db_path = loop.run_selfplay(config, iteration=0, dry_run=True)
     assert ok
     assert games == 3
 

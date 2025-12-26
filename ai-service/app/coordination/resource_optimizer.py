@@ -47,6 +47,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config.env import env
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -63,12 +65,12 @@ try:
     SCALE_UP_THRESHOLD = TARGET_UTIL_MIN - 5  # 55%
     SCALE_DOWN_THRESHOLD = TARGET_UTIL_MAX + 5  # 85%
 except ImportError:
-    # Fallback if resource_targets not available
-    TARGET_UTIL_MIN = float(os.environ.get("RINGRIFT_TARGET_UTIL_MIN", "60"))
-    TARGET_UTIL_MAX = float(os.environ.get("RINGRIFT_TARGET_UTIL_MAX", "80"))
+    # Fallback if resource_targets not available - use centralized env config
+    TARGET_UTIL_MIN = env.target_util_min
+    TARGET_UTIL_MAX = env.target_util_max
     TARGET_UTIL_OPTIMAL = (TARGET_UTIL_MIN + TARGET_UTIL_MAX) / 2  # 70%
-    SCALE_UP_THRESHOLD = float(os.environ.get("RINGRIFT_SCALE_UP_THRESHOLD", "55"))
-    SCALE_DOWN_THRESHOLD = float(os.environ.get("RINGRIFT_SCALE_DOWN_THRESHOLD", "85"))
+    SCALE_UP_THRESHOLD = env.scale_up_threshold
+    SCALE_DOWN_THRESHOLD = env.scale_down_threshold
 
 # PID controller parameters - use centralized defaults (December 2025)
 try:
@@ -79,10 +81,10 @@ try:
     UTILIZATION_UPDATE_INTERVAL = UtilizationDefaults.UPDATE_INTERVAL
     OPTIMIZATION_INTERVAL = UtilizationDefaults.OPTIMIZATION_INTERVAL
 except ImportError:
-    # Fallback to env vars or defaults
-    PID_KP = float(os.environ.get("RINGRIFT_PID_KP", "0.3"))
-    PID_KI = float(os.environ.get("RINGRIFT_PID_KI", "0.05"))
-    PID_KD = float(os.environ.get("RINGRIFT_PID_KD", "0.1"))
+    # Fallback to centralized env config
+    PID_KP = env.pid_kp
+    PID_KI = env.pid_ki
+    PID_KD = env.pid_kd
     UTILIZATION_UPDATE_INTERVAL = 10  # seconds
     OPTIMIZATION_INTERVAL = 30  # seconds
 
@@ -725,13 +727,10 @@ class ResourceOptimizer:
             self._pid_gpu = PIDController(setpoint=TARGET_UTIL_OPTIMAL)
 
         # Local node ID (for identifying this orchestrator's reports)
-        self._node_id = os.environ.get("RINGRIFT_NODE_ID", "")
-        if not self._node_id:
-            import socket
-            self._node_id = socket.gethostname()
+        self._node_id = env.node_id
 
         # Orchestrator identifier
-        self._orchestrator_id = os.environ.get("RINGRIFT_ORCHESTRATOR", "unknown")
+        self._orchestrator_id = env.orchestrator_id
 
         # Cached state
         self._cached_cluster_state: ClusterState | None = None
@@ -757,7 +756,11 @@ class ResourceOptimizer:
         """
         try:
             import yaml
+        except ImportError as e:
+            logger.warning(f"Failed to import yaml module: {e}")
+            return None
 
+        try:
             # Try to find unified_loop.yaml
             config_paths = [
                 Path(__file__).parent.parent.parent / "config" / "unified_loop.yaml",
@@ -779,7 +782,7 @@ class ResourceOptimizer:
             logger.debug("No PID config found, using defaults")
             return None
 
-        except Exception as e:
+        except (IOError, OSError, yaml.YAMLError, KeyError, ValueError) as e:
             logger.warning(f"Failed to load PID config: {e}")
             return None
 

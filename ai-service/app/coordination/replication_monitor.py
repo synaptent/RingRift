@@ -404,8 +404,9 @@ class ReplicationMonitorDaemon:
             for alert in alerts:
                 # Phase 22.2 fix: Use publish instead of emit (which doesn't exist)
                 await router.publish(
-                    event_type=DataEventType.HEALTH_UPDATED,
+                    event_type=DataEventType.HEALTH_ALERT,
                     payload={
+                        "alert": "replication_health",
                         "source": "replication_monitor",
                         "level": alert.level.value,
                         "message": alert.message,

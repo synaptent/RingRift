@@ -6,7 +6,9 @@ import { config } from '../config';
 
 const router = Router();
 
-if (config.healthChecks.enabled) {
+// Be defensive for unit tests that mock `config` with partial shapes.
+// In normal runtime `config.healthChecks` is always present (validated in unified config).
+if (config.healthChecks?.enabled) {
   /**
    * @openapi
    * /internal/health/live:

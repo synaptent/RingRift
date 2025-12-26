@@ -373,26 +373,14 @@ GUMBEL_DEFAULT_C_PUCT = 1.5
 # Simulation Budget Tiers
 # =============================================================================
 # Different budgets serve different use cases. Use the appropriate tier:
-
-# THROUGHPUT: Multi-tree parallel selfplay (64+ games at once)
-# - Low per-game budget, high aggregate throughput
-# - Used by: tensor_gumbel_tree.py MultiTreeMCTS
-GUMBEL_BUDGET_THROUGHPUT = 64
-
-# STANDARD: Single-game search with good quality/latency tradeoff
-# - Balanced for human-facing games (D6-D9)
-# - Used by: gumbel_mcts_ai.py default, unified_orchestrator.py
-GUMBEL_BUDGET_STANDARD = 150
-GUMBEL_DEFAULT_BUDGET = GUMBEL_BUDGET_STANDARD  # Backward compatibility alias
-
-# QUALITY: High-quality search for training data generation
-# - Maximum strength, higher latency acceptable
-# - Used by: batched_gumbel_mcts.py, factory.py expert mode
-GUMBEL_BUDGET_QUALITY = 800
-
-# ULTIMATE: Extended search for maximum strength (D11)
-# - Competition/benchmark mode
-GUMBEL_BUDGET_ULTIMATE = 1600
+# SOURCE OF TRUTH: app/config/thresholds.py (to avoid circular imports with torch)
+from app.config.thresholds import (
+    GUMBEL_BUDGET_THROUGHPUT,   # 64 - Multi-tree parallel selfplay
+    GUMBEL_BUDGET_STANDARD,     # 150 - Single-game, good quality/latency
+    GUMBEL_BUDGET_QUALITY,      # 800 - High-quality training data
+    GUMBEL_BUDGET_ULTIMATE,     # 1600 - Maximum strength for benchmarks
+    GUMBEL_DEFAULT_BUDGET,      # Same as STANDARD (backward compatibility)
+)
 
 
 def get_budget_for_difficulty(difficulty: int) -> int:

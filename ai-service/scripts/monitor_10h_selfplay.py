@@ -61,7 +61,7 @@ def get_node_status(node) -> dict:
     if success:
         try:
             status["selfplay_count"] = int(output.strip())
-        except:
+        except (ValueError, AttributeError):
             pass
 
     # Get game counts
@@ -79,7 +79,7 @@ done"""
                     db, count = line.split(":")
                     try:
                         status["games"][db] = int(count)
-                    except:
+                    except (ValueError, IndexError):
                         pass
 
     return status
@@ -126,7 +126,7 @@ ls data/games/*.db 2>/dev/null | xargs -I{} basename {}"""
             result = subprocess.run(scp_cmd, capture_output=True, timeout=120)
             if result.returncode == 0:
                 synced += 1
-        except:
+        except (subprocess.TimeoutExpired, OSError):
             pass
 
     return True, f"{node.name}: synced {synced}/{len(dbs)} databases"
@@ -165,7 +165,7 @@ def merge_synced_databases():
                                 try:
                                     conn.execute("INSERT OR IGNORE INTO game_moves SELECT * FROM source.game_moves WHERE game_id IN (SELECT game_id FROM source.games)")
                                     conn.execute("INSERT OR IGNORE INTO game_players SELECT * FROM source.game_players WHERE game_id IN (SELECT game_id FROM source.games)")
-                                except:
+                                except sqlite3.OperationalError:
                                     pass  # Tables might not exist
                                 conn.execute("DETACH DATABASE source")
                                 conn.commit()
@@ -247,7 +247,7 @@ def print_summary():
                 status = "OK"
 
             log(f"  {config}: {count} games [{status}]")
-        except:
+        except sqlite3.Error:
             pass
 
 

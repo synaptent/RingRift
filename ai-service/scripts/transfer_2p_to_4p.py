@@ -41,9 +41,10 @@ def transfer_2p_to_np(source_path: str, output_path: str, board_type: str, targe
     if target_players not in (3, 4):
         raise ValueError(f"target_players must be 3 or 4, got {target_players}")
 
+    from app.utils.torch_utils import safe_load_checkpoint
     logger.info(f"Loading source model: {source_path}")
     logger.info(f"Transfer: 2-player -> {target_players}-player")
-    checkpoint = torch.load(source_path, map_location='cpu')
+    checkpoint = safe_load_checkpoint(source_path, map_location='cpu')
 
     # Handle different checkpoint formats
     if 'model_state_dict' in checkpoint:
@@ -120,7 +121,7 @@ def transfer_2p_to_np(source_path: str, output_path: str, board_type: str, targe
     logger.info(f"Saved {target_players}-player model to: {output_path}")
 
     # Verify
-    verify = torch.load(output_path, map_location='cpu')
+    verify = safe_load_checkpoint(output_path, map_location='cpu')
     verify_sd = verify['model_state_dict']
     for key in verify_sd:
         if 'value_fc2' in key:

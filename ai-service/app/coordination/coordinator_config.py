@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class TaskLifecycleConfig:
     """Configuration for TaskLifecycleCoordinator."""
 
@@ -53,7 +53,7 @@ class TaskLifecycleConfig:
     max_history: int = 1000
 
 
-@dataclass
+@dataclass(frozen=True)
 class SelfplayConfig:
     """Configuration for SelfplayOrchestrator."""
 
@@ -95,7 +95,7 @@ class PipelineConfig:
     training_model_version: str = "v2"
 
 
-@dataclass
+@dataclass(frozen=True)
 class OptimizationConfig:
     """Configuration for OptimizationCoordinator."""
 
@@ -105,7 +105,7 @@ class OptimizationConfig:
     min_plateau_epochs_for_trigger: int = 15
 
 
-@dataclass
+@dataclass(frozen=True)
 class MetricsConfig:
     """Configuration for MetricsAnalysisOrchestrator."""
 
@@ -223,21 +223,27 @@ class CoordinatorConfig:
         """
         config = cls()
 
-        # Task lifecycle
+        # Task lifecycle (frozen - use replace())
+        task_updates: dict[str, Any] = {}
         if val := os.environ.get("COORDINATOR_HEARTBEAT_THRESHOLD"):
-            config.task_lifecycle.heartbeat_threshold_seconds = float(val)
+            task_updates["heartbeat_threshold_seconds"] = float(val)
         if val := os.environ.get("COORDINATOR_ORPHAN_CHECK_INTERVAL"):
-            config.task_lifecycle.orphan_check_interval_seconds = float(val)
+            task_updates["orphan_check_interval_seconds"] = float(val)
+        if task_updates:
+            config.task_lifecycle = replace(config.task_lifecycle, **task_updates)
 
         # Pipeline
         if val := os.environ.get("COORDINATOR_AUTO_TRIGGER_PIPELINE"):
             config.pipeline.auto_trigger = val.lower() in ("true", "1", "yes")
 
-        # Optimization
+        # Optimization (frozen - use replace())
+        opt_updates: dict[str, Any] = {}
         if val := os.environ.get("COORDINATOR_CMAES_COOLDOWN"):
-            config.optimization.cmaes_cooldown_seconds = float(val)
+            opt_updates["cmaes_cooldown_seconds"] = float(val)
         if val := os.environ.get("COORDINATOR_AUTO_TRIGGER_CMAES"):
-            config.optimization.auto_trigger_on_plateau = val.lower() in ("true", "1", "yes")
+            opt_updates["auto_trigger_on_plateau"] = val.lower() in ("true", "1", "yes")
+        if opt_updates:
+            config.optimization = replace(config.optimization, **opt_updates)
 
         # Handler resilience
         if val := os.environ.get("COORDINATOR_HANDLER_TIMEOUT"):
@@ -251,11 +257,14 @@ class CoordinatorConfig:
         if val := os.environ.get("COORDINATOR_HEARTBEAT_ENABLED"):
             config.heartbeat.enabled = val.lower() in ("true", "1", "yes")
 
-        # Metrics
+        # Metrics (frozen - use replace())
+        metrics_updates: dict[str, Any] = {}
         if val := os.environ.get("COORDINATOR_METRICS_WINDOW_SIZE"):
-            config.metrics.window_size = int(val)
+            metrics_updates["window_size"] = int(val)
         if val := os.environ.get("COORDINATOR_PLATEAU_THRESHOLD"):
-            config.metrics.plateau_threshold = float(val)
+            metrics_updates["plateau_threshold"] = float(val)
+        if metrics_updates:
+            config.metrics = replace(config.metrics, **metrics_updates)
 
         # Resources
         if val := os.environ.get("COORDINATOR_MEMORY_WARNING_THRESHOLD"):

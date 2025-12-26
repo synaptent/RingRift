@@ -75,6 +75,7 @@ class DataEventType(Enum):
     DATA_STALE = "data_stale"  # Training data is stale
     DATA_FRESH = "data_fresh"  # Training data is fresh
     SYNC_TRIGGERED = "sync_triggered"  # Sync triggered due to stale data
+    SYNC_REQUEST = "sync_request"  # Explicit sync request (router-driven)
 
     # Training events
     TRAINING_THRESHOLD_REACHED = "training_threshold"
@@ -96,6 +97,7 @@ class DataEventType(Enum):
     MODEL_PROMOTED = "model_promoted"
     PROMOTION_FAILED = "promotion_failed"
     PROMOTION_REJECTED = "promotion_rejected"
+    MODEL_UPDATED = "model_updated"  # Model metadata or path updated (pre-promotion)
 
     # Curriculum events
     CURRICULUM_REBALANCED = "curriculum_rebalanced"
@@ -176,6 +178,8 @@ class DataEventType(Enum):
 
     # P2P/Model sync events
     P2P_MODEL_SYNCED = "p2p_model_synced"
+    MODEL_SYNC_REQUESTED = "model_sync_requested"
+    MODEL_DISTRIBUTION_COMPLETE = "model_distribution_complete"  # Dec 2025: Model distributed to cluster
     P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
     P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
     P2P_NODES_DEAD = "p2p_nodes_dead"
@@ -266,6 +270,8 @@ class DataEventType(Enum):
     TRAINING_ROLLBACK_NEEDED = "training_rollback_needed"  # Rollback to previous checkpoint
     TRAINING_ROLLBACK_COMPLETED = "training_rollback_completed"
     MODEL_CORRUPTED = "model_corrupted"  # Model file corruption detected
+    COORDINATOR_HEALTHY = "coordinator_healthy"  # Coordinator healthy signal
+    COORDINATOR_UNHEALTHY = "coordinator_unhealthy"  # Coordinator unhealthy signal
     COORDINATOR_HEALTH_DEGRADED = "coordinator_health_degraded"  # Coordinator not fully healthy
     COORDINATOR_SHUTDOWN = "coordinator_shutdown"  # Graceful coordinator shutdown
     COORDINATOR_INIT_FAILED = "coordinator_init_failed"  # Coordinator failed to initialize
@@ -2371,6 +2377,108 @@ async def emit_daemon_status_changed(
             "new_status": new_status,
             "reason": reason,
             "error": error,
+        },
+        source=source,
+    ))
+
+
+async def emit_data_fresh(
+    config: str,
+    data_age_hours: float,
+    last_sync_time: str,
+    threshold_hours: float = 1.0,
+    source: str = "training_freshness",
+) -> None:
+    """Emit a DATA_FRESH event when training data meets freshness requirements.
+
+    P0.5 Dec 2025: Closes feedback loop for data freshness monitoring.
+    Counterpart to DATA_STALE - signals that sync is NOT needed.
+
+    Args:
+        config: Board configuration (e.g., "hex8_2p")
+        data_age_hours: How old the data is in hours
+        last_sync_time: ISO timestamp of last data sync
+        threshold_hours: Threshold at which data is considered stale
+        source: Component that checked freshness
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.DATA_FRESH,
+        payload={
+            "config": config,
+            "data_age_hours": data_age_hours,
+            "last_sync_time": last_sync_time,
+            "threshold_hours": threshold_hours,
+        },
+        source=source,
+    ))
+
+
+async def emit_sync_triggered(
+    config: str,
+    reason: str,
+    source_host: str = "",
+    target_hosts: list[str] | None = None,
+    data_age_hours: float = 0.0,
+    source: str = "auto_sync_daemon",
+) -> None:
+    """Emit a SYNC_TRIGGERED event when data sync is initiated due to staleness.
+
+    P0.5 Dec 2025: Closes feedback loop for sync coordination.
+    Enables components to track when syncs are triggered and why.
+
+    Args:
+        config: Board configuration (e.g., "hex8_2p")
+        reason: Why sync was triggered (stale_data, manual_request, new_games)
+        source_host: Host that initiated the sync
+        target_hosts: List of hosts being synced to
+        data_age_hours: How stale the data was when sync was triggered
+        source: Component that triggered the sync
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.SYNC_TRIGGERED,
+        payload={
+            "config": config,
+            "reason": reason,
+            "source_host": source_host,
+            "target_hosts": target_hosts or [],
+            "data_age_hours": data_age_hours,
+        },
+        source=source,
+    ))
+
+
+async def emit_weight_updated(
+    config: str,
+    component: str,
+    old_weight: float,
+    new_weight: float,
+    reason: str,
+    trigger_event: str = "",
+    source: str = "curriculum_integration",
+) -> None:
+    """Emit a WEIGHT_UPDATED event when curriculum/opponent weights change.
+
+    P0.5 Dec 2025: Closes curriculum feedback loop.
+    Enables tracking of weight changes for debugging and auditing.
+
+    Args:
+        config: Board configuration (e.g., "hex8_2p")
+        component: What weight changed (opponent, curriculum_tier, exploration)
+        old_weight: Previous weight value
+        new_weight: New weight value
+        reason: Why the weight changed (elo_velocity, win_rate, manual)
+        trigger_event: Event that triggered this change (if any)
+        source: Component that changed the weight
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.WEIGHT_UPDATED,
+        payload={
+            "config": config,
+            "component": component,
+            "old_weight": old_weight,
+            "new_weight": new_weight,
+            "reason": reason,
+            "trigger_event": trigger_event,
         },
         source=source,
     ))

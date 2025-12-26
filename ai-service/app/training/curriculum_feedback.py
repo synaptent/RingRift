@@ -1814,7 +1814,7 @@ class PromotionToCurriculumWatcher:
         self._failures_processed = 0
 
     def subscribe_to_promotion_events(self) -> bool:
-        """Subscribe to PROMOTION_COMPLETE events from the event bus.
+        """Subscribe to MODEL_PROMOTED events from the event bus.
 
         Returns:
             True if successfully subscribed
@@ -1826,13 +1826,9 @@ class PromotionToCurriculumWatcher:
             )
 
             bus = get_event_bus()
-            bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
-            # P1.2 (Dec 2025): Also subscribe to MODEL_PROMOTED for complete coverage
-            # MODEL_PROMOTED is emitted when a model is actually promoted to production
-            if hasattr(DataEventType, 'MODEL_PROMOTED'):
-                bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._subscribed = True
-            logger.info("[PromotionToCurriculumWatcher] Subscribed to PROMOTION_COMPLETE + MODEL_PROMOTED events")
+            logger.info("[PromotionToCurriculumWatcher] Subscribed to MODEL_PROMOTED events")
             return True
         except Exception as e:
             logger.warning(f"[PromotionToCurriculumWatcher] Failed to subscribe: {e}")
@@ -1850,10 +1846,7 @@ class PromotionToCurriculumWatcher:
             )
 
             bus = get_event_bus()
-            bus.unsubscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
-            # P1.2: Unsubscribe from MODEL_PROMOTED
-            if hasattr(DataEventType, 'MODEL_PROMOTED'):
-                bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._subscribed = False
         except Exception:
             pass

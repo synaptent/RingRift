@@ -132,7 +132,11 @@ class MomentumToCurriculumBridge:
             logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED")
             return True
 
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: modules not available
+            # AttributeError: router method missing
+            # TypeError: invalid subscription arguments
+            # RuntimeError: subscription failed
             logger.debug(f"[MomentumToCurriculumBridge] Event subscription failed: {e}")
             return False
 
@@ -151,7 +155,11 @@ class MomentumToCurriculumBridge:
                 if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
                     router.unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, self._on_selfplay_rate_changed)
             self._event_subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            # ImportError: modules not available
+            # AttributeError: router method missing
+            # TypeError: invalid unsubscription arguments
+            # RuntimeError: unsubscription failed
             pass
 
     def _on_evaluation_completed(self, event) -> None:
@@ -162,7 +170,11 @@ class MomentumToCurriculumBridge:
         """
         try:
             self._sync_weights()
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: feedback modules not available
+            # AttributeError: method missing
+            # TypeError: invalid weight types
+            # RuntimeError: sync operation failed
             logger.warning(f"[MomentumToCurriculumBridge] Error syncing on event: {e}")
 
     def _on_selfplay_rate_changed(self, event) -> None:
@@ -195,7 +207,11 @@ class MomentumToCurriculumBridge:
             # Sync curriculum weights based on momentum state
             self._sync_weights_for_momentum(config_key, momentum_state, change_percent)
 
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            # AttributeError: event attribute missing
+            # KeyError: missing payload field
+            # TypeError: invalid data types
+            # ValueError: invalid percentage value
             logger.warning(f"[MomentumToCurriculumBridge] Error handling rate change: {e}")
 
     def _sync_weights_for_momentum(
@@ -241,7 +257,11 @@ class MomentumToCurriculumBridge:
 
         except ImportError as e:
             logger.debug(f"[MomentumToCurriculumBridge] curriculum_feedback import error: {e}")
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            # AttributeError: feedback method missing
+            # TypeError: invalid weight types
+            # ValueError: invalid weight values
+            # KeyError: unknown config_key
             logger.warning(f"[MomentumToCurriculumBridge] Error syncing momentum weights: {e}")
 
     def _poll_loop(self) -> None:
@@ -249,7 +269,11 @@ class MomentumToCurriculumBridge:
         while self._running:
             try:
                 self._sync_weights()
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: feedback modules not available
+                # AttributeError: method missing
+                # TypeError: invalid weight types
+                # RuntimeError: sync operation failed
                 logger.warning(f"[MomentumToCurriculumBridge] Error syncing: {e}")
 
             time.sleep(self.poll_interval_seconds)
@@ -316,7 +340,11 @@ class MomentumToCurriculumBridge:
                 },
                 source="momentum_curriculum_bridge",
             )
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid event arguments
+            # RuntimeError: publish failed
             logger.debug(f"Failed to emit rebalance event: {e}")
 
     def force_sync(self) -> dict[str, float]:
@@ -379,7 +407,11 @@ class PFSPWeaknessWatcher:
         while self._running:
             try:
                 self._check_for_mastery()
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: pfsp module not available
+                # AttributeError: selector method missing
+                # TypeError: invalid data types
+                # RuntimeError: check operation failed
                 logger.warning(f"[PFSPWeaknessWatcher] Error checking: {e}")
 
             time.sleep(self.CHECK_INTERVAL)
@@ -473,7 +505,11 @@ class PFSPWeaknessWatcher:
                 },
                 source="pfsp_weakness_watcher",
             )
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid event arguments
+            # RuntimeError: publish failed
             logger.debug(f"Failed to emit opponent mastered event: {e}")
 
     def _update_curriculum_weight(self, config_key: str) -> None:
@@ -555,7 +591,11 @@ class QualityPenaltyToCurriculumWatcher:
             logger.info("[QualityPenaltyToCurriculumWatcher] Subscribed to QUALITY_PENALTY_APPLIED")
             return True
 
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid subscription arguments
+            # RuntimeError: subscription failed
             logger.warning(f"[QualityPenaltyToCurriculumWatcher] Failed to subscribe: {e}")
             return False
 
@@ -572,7 +612,11 @@ class QualityPenaltyToCurriculumWatcher:
             if router:
                 router.unsubscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid unsubscription arguments
+            # RuntimeError: unsubscription failed
             pass
 
     def _on_quality_penalty(self, event) -> None:
@@ -601,7 +645,11 @@ class QualityPenaltyToCurriculumWatcher:
                 self._penalty_weights[config_key] = weight_factor
                 self._apply_curriculum_weight(config_key, weight_factor, new_penalty, reason)
 
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            # AttributeError: event attribute missing
+            # KeyError: missing payload field
+            # TypeError: invalid data types
+            # ValueError: invalid penalty values
             logger.warning(f"[QualityPenaltyToCurriculumWatcher] Error handling penalty: {e}")
 
     def _apply_curriculum_weight(
@@ -634,7 +682,11 @@ class QualityPenaltyToCurriculumWatcher:
 
         except ImportError as e:
             logger.debug(f"[QualityPenaltyToCurriculumWatcher] curriculum_feedback import error: {e}")
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            # AttributeError: feedback method missing
+            # TypeError: invalid weight types
+            # ValueError: invalid weight values
+            # KeyError: unknown config_key
             logger.warning(f"[QualityPenaltyToCurriculumWatcher] Error applying weight: {e}")
 
     def _emit_rebalance_event(
@@ -659,7 +711,11 @@ class QualityPenaltyToCurriculumWatcher:
                 },
                 source="quality_penalty_curriculum_watcher",
             )
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid event arguments
+            # RuntimeError: publish failed
             logger.debug(f"Failed to emit rebalance event: {e}")
 
     def get_penalty_weights(self) -> dict[str, float]:
@@ -721,7 +777,11 @@ class QualityToTemperatureWatcher:
             self._subscribed = True
             logger.info("[QualityToTemperatureWatcher] Subscribed to quality events")
             return True
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid subscription arguments
+            # RuntimeError: subscription failed
             logger.warning(f"[QualityToTemperatureWatcher] Failed to subscribe: {e}")
             return False
 
@@ -739,7 +799,11 @@ class QualityToTemperatureWatcher:
             router.unsubscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
             router.unsubscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid unsubscription arguments
+            # RuntimeError: unsubscription failed
             pass
 
     def _on_quality_adjusted(self, event: Any) -> None:
@@ -798,7 +862,10 @@ class QualityToTemperatureWatcher:
                 logger.debug(f"Applied exploration boost {boost:.2f} to {config_key} scheduler")
         except ImportError:
             pass
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError) as e:
+            # AttributeError: scheduler method missing
+            # TypeError: invalid boost type
+            # KeyError: unknown config_key
             logger.debug(f"Failed to apply temperature boost: {e}")
 
         # Also emit event for downstream systems
@@ -820,7 +887,11 @@ class QualityToTemperatureWatcher:
                 },
                 source="quality_temperature_watcher",
             )
-        except Exception:
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            # ImportError: event_router not available
+            # AttributeError: router method missing
+            # TypeError: invalid event arguments
+            # RuntimeError: publish failed
             pass
 
     def get_exploration_boost(self, config_key: str) -> float:
@@ -874,7 +945,11 @@ def wire_all_feedback_loops(
                 bridge.start()
                 _watcher_instances["momentum_bridge"] = bridge
                 status["watchers"].append("momentum_bridge")
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: feedback modules not available
+                # AttributeError: bridge method missing
+                # TypeError: invalid configuration
+                # RuntimeError: bridge start failed
                 status["momentum_bridge_error"] = str(e)
                 logger.warning(f"Failed to start momentum bridge: {e}")
 
@@ -885,7 +960,11 @@ def wire_all_feedback_loops(
                 watcher.start()
                 _watcher_instances["pfsp_weakness"] = watcher
                 status["watchers"].append("pfsp_weakness")
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: pfsp modules not available
+                # AttributeError: watcher method missing
+                # TypeError: invalid configuration
+                # RuntimeError: watcher start failed
                 status["pfsp_weakness_error"] = str(e)
                 logger.warning(f"Failed to start PFSP weakness watcher: {e}")
 
@@ -896,7 +975,11 @@ def wire_all_feedback_loops(
                 watcher.subscribe()
                 _watcher_instances["quality_penalty_curriculum"] = watcher
                 status["watchers"].append("quality_penalty_curriculum")
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: quality modules not available
+                # AttributeError: watcher method missing
+                # TypeError: invalid configuration
+                # RuntimeError: watcher subscribe failed
                 status["quality_penalty_curriculum_error"] = str(e)
                 logger.warning(f"Failed to start quality penalty curriculum watcher: {e}")
 
@@ -907,7 +990,11 @@ def wire_all_feedback_loops(
                 watcher.subscribe()
                 _watcher_instances["quality_temperature"] = watcher
                 status["watchers"].append("quality_temperature")
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: quality modules not available
+                # AttributeError: watcher method missing
+                # TypeError: invalid configuration
+                # RuntimeError: watcher subscribe failed
                 status["quality_temperature_error"] = str(e)
                 logger.warning(f"Failed to start quality temperature watcher: {e}")
 
@@ -919,7 +1006,11 @@ def wire_all_feedback_loops(
                 _watcher_instances["curriculum_feedback"] = curriculum_watchers
                 status["watchers"].append("curriculum_feedback")
                 status["curriculum_watchers"] = list(curriculum_watchers.keys())
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: curriculum_feedback module not available
+                # AttributeError: wire function missing
+                # TypeError: invalid configuration
+                # RuntimeError: wiring failed
                 status["curriculum_feedback_error"] = str(e)
                 logger.warning(f"Failed to wire curriculum feedback: {e}")
 
@@ -946,7 +1037,10 @@ def unwire_all_feedback_loops() -> None:
                     watcher.stop()
                 elif hasattr(watcher, 'unsubscribe'):
                     watcher.unsubscribe()
-            except Exception as e:
+            except (AttributeError, TypeError, RuntimeError) as e:
+                # AttributeError: method missing
+                # TypeError: invalid stop arguments
+                # RuntimeError: stop operation failed
                 logger.warning(f"Error stopping {name}: {e}")
 
         _watcher_instances.clear()

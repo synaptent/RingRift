@@ -335,7 +335,7 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 | `RINGRIFT_NFS_PATH`              | NFS data root                                                  | `/mnt/nfs/ringrift`                 |
 | `RINGRIFT_AI_SERVICE_DIR`        | AI service working dir                                         | `.`                                 |
 | `RINGRIFT_AI_SERVICE_PATH`       | AI service root override                                       | `repo auto-detect`                  |
-| `RINGRIFT_P2P_PORT`              | P2P SSH port                                                   | `8770`                              |
+| `RINGRIFT_P2P_PORT`              | P2P HTTP port                                                  | `8770`                              |
 | `RINGRIFT_VAST_SSH_USER`         | Vast.ai SSH user                                               | `root`                              |
 | `RINGRIFT_STORAGE_PROVIDER`      | Storage provider override (`lambda` legacy, `vast`, `local`)   | `auto`                              |
 | `RINGRIFT_TARGET_UTIL_MIN`       | Utilization target min (%)                                     | `60`                                |

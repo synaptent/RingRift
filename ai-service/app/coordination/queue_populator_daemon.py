@@ -311,7 +311,7 @@ class QueuePopulatorDaemon:
     def _load_curriculum_weights(self) -> None:
         """Load curriculum weights for prioritization."""
         try:
-            from scripts.unified_loop.curriculum import load_curriculum_weights
+            from app.coordination.curriculum_weights import load_curriculum_weights
 
             weights = load_curriculum_weights()
             for config_key, weight in weights.items():

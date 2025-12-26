@@ -382,6 +382,23 @@ def _process_gpu_selfplay_record(
         except (ValueError, KeyError):
             pass  # Keep original if record has invalid board_type
 
+    # Fix board.size if incorrect (common issue with older JSONL files)
+    # Hex boards should have bounding box size (2*radius+1), not radius
+    correct_sizes = {"hex8": 9, "hexagonal": 25, "square8": 8, "square19": 19}
+    expected_size = correct_sizes.get(board_type_str, initial_state.board.size)
+    if initial_state.board.size != expected_size:
+        from app.models import BoardState
+        initial_state.board = BoardState(
+            type=initial_state.board.type,
+            size=expected_size,
+            stacks=initial_state.board.stacks,
+            markers=initial_state.board.markers,
+            collapsed_spaces=initial_state.board.collapsed_spaces,
+            eliminated_rings=initial_state.board.eliminated_rings,
+            formed_lines=initial_state.board.formed_lines,
+            territories=initial_state.board.territories,
+        )
+
     # Parse moves (keep original dicts for mcts_policy soft targets)
     moves = [parse_move(m) for m in moves_list]
     move_dicts = moves_list  # Keep original for mcts_policy

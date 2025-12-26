@@ -45,7 +45,9 @@ from .nnue import (
 
 try:  # pragma: no cover
     from ..training.selfplay_config import normalize_engine_mode
-except Exception:  # pragma: no cover
+except (ImportError, AttributeError):  # pragma: no cover
+    # ImportError: module not available
+    # AttributeError: function missing from module
     logger.debug("Using fallback normalize_engine_mode (selfplay_config not available)")
 
     def normalize_engine_mode(raw_mode: str) -> str:
@@ -1370,14 +1372,20 @@ def _process_game_batch(
                             initial_json = gzip.decompress(bytes(initial_json)).decode("utf-8")
                         else:
                             initial_json = gzip.decompress(str(initial_json).encode("utf-8")).decode("utf-8")
-                    except Exception:
+                    except (OSError, UnicodeDecodeError, TypeError):
+                        # OSError: gzip decompression failed
+                        # UnicodeDecodeError: invalid UTF-8 data
+                        # TypeError: invalid data type for decompression
                         initial_json = None
 
                 if initial_json:
                     try:
                         state_dict = json.loads(initial_json)
                         state = GameState(**state_dict)
-                    except Exception:
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        # json.JSONDecodeError: invalid JSON
+                        # TypeError: invalid GameState construction
+                        # ValueError: invalid field values
                         state = None
 
             # Fall back to creating initial state from board_type
@@ -1385,7 +1393,10 @@ def _process_game_batch(
                 try:
                     from ..training.initial_state import create_initial_state
                     state = create_initial_state(board_type, config_dict.get('num_players', 2))
-                except Exception:
+                except (ImportError, TypeError, ValueError):
+                    # ImportError: module not available
+                    # TypeError: invalid arguments
+                    # ValueError: invalid board type or num_players
                     continue
 
             # Get all moves
@@ -1462,7 +1473,11 @@ def _process_game_batch(
                                         'move_number': move_number,
                                         'sample_weight': sample_weight,
                                     })
-                        except Exception:
+                        except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                            # json.JSONDecodeError: invalid move JSON
+                            # TypeError: invalid Move construction or feature extraction
+                            # ValueError: invalid move or feature values
+                            # AttributeError: missing state/move attributes
                             pass
 
                 # Advance state
@@ -1470,10 +1485,17 @@ def _process_game_batch(
                     move_dict = json.loads(move_json_str)
                     move = Move(**move_dict)
                     state = engine.apply_move(state, move)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                    # json.JSONDecodeError: invalid move JSON
+                    # TypeError: invalid Move construction
+                    # ValueError: invalid move application
+                    # AttributeError: missing move/state attributes
                     break
 
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
+            # TypeError: invalid database row types
+            # ValueError: invalid field values
+            # AttributeError: missing database fields
             continue
 
     conn.close()
@@ -1634,7 +1656,11 @@ class NNUEPolicyDataset(Dataset):
                 samples = self._extract_from_jsonl(jsonl_path)
                 self.samples.extend(samples)
                 logger.info(f"Extracted {len(samples)} policy samples from JSONL {jsonl_path}")
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, TypeError, ValueError) as e:
+                # OSError: file read error
+                # json.JSONDecodeError: invalid JSONL format
+                # TypeError: invalid data types
+                # ValueError: invalid field values
                 import traceback
                 logger.error(f"Failed to extract from JSONL {jsonl_path}: {e}\n{traceback.format_exc()}")
 
@@ -1655,7 +1681,11 @@ class NNUEPolicyDataset(Dataset):
                     samples = self._extract_from_db(db_path)
                 self.samples.extend(samples)
                 logger.info(f"Extracted {len(samples)} policy samples from {db_path}")
-            except Exception as e:
+            except (OSError, sqlite3.Error, TypeError, ValueError) as e:
+                # OSError: database file access error
+                # sqlite3.Error: database corruption or query error
+                # TypeError: invalid data types
+                # ValueError: invalid field values
                 logger.error(f"Failed to extract from {db_path}: {e}")
 
             if self.max_samples and len(self.samples) >= self.max_samples:
@@ -1800,7 +1830,9 @@ class NNUEPolicyDataset(Dataset):
                 if initial_state_dict:
                     try:
                         state = GameState(**initial_state_dict)
-                    except Exception:
+                    except (TypeError, ValueError):
+                        # TypeError: invalid GameState construction
+                        # ValueError: invalid field values
                         state = create_initial_state(self.config.board_type, self.config.num_players)
                 else:
                     state = create_initial_state(self.config.board_type, self.config.num_players)
@@ -1840,7 +1872,10 @@ class NNUEPolicyDataset(Dataset):
                     if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
                         try:
                             state = auto_advance_phase(state)  # emits DeprecationWarning
-                        except Exception:
+                        except (TypeError, ValueError, AttributeError):
+                            # TypeError: invalid state type
+                            # ValueError: invalid phase transition
+                            # AttributeError: missing state attributes
                             break  # Can't continue if phase advance fails
 
                     # Skip sampling from bookkeeping moves (not decision points)
@@ -1850,7 +1885,10 @@ class NNUEPolicyDataset(Dataset):
                             move = self._parse_jsonl_move(move_dict, move_idx, uses_offset_coords)
                             if move is not None:
                                 state = GameEngine.apply_move(state, move)
-                        except Exception:
+                        except (TypeError, ValueError, AttributeError):
+                            # TypeError: invalid move parsing or application
+                            # ValueError: invalid move values
+                            # AttributeError: missing move/state attributes
                             break
                         continue
 
@@ -1925,7 +1963,11 @@ class NNUEPolicyDataset(Dataset):
                                                 mcts_visit_distribution=mcts_visit_dist,
                                             )
                                             samples.append(sample)
-                            except Exception as e:
+                            except (TypeError, ValueError, AttributeError, KeyError) as e:
+                                # TypeError: invalid data types in move/feature extraction
+                                # ValueError: invalid values during processing
+                                # AttributeError: missing move/state attributes
+                                # KeyError: missing dict keys
                                 logger.debug(f"Failed to process {game_id}:{move_number}: {e}")
 
                     # Apply move to advance state
@@ -1955,7 +1997,10 @@ class NNUEPolicyDataset(Dataset):
                             game_status_str = state.game_status.value if hasattr(state.game_status, 'value') else str(state.game_status)
                             if is_gpu_selfplay and not has_explicit_bookkeeping and game_status_str == "active":
                                 state = auto_advance_phase(state)
-                    except Exception:
+                    except (TypeError, ValueError, AttributeError):
+                        # TypeError: invalid move parsing or application
+                        # ValueError: invalid move values or phase transition
+                        # AttributeError: missing move/state attributes
                         break  # Can't continue if move application fails
 
                     if self.max_samples and len(samples) >= self.max_samples:
@@ -2232,7 +2277,11 @@ class NNUEPolicyDataset(Dataset):
                         rate = completed / elapsed if elapsed > 0 else 0
                         eta = (len(batches) - completed) / rate if rate > 0 else 0
                         logger.info(f"  Completed {completed}/{len(batches)} batches ({rate:.2f} batches/s, ETA: {eta:.0f}s), {len(all_sample_dicts)} samples")
-                except Exception as e:
+                except (OSError, sqlite3.Error, TypeError, ValueError) as e:
+                    # OSError: database access error
+                    # sqlite3.Error: database corruption or query error
+                    # TypeError: invalid data types from worker
+                    # ValueError: invalid field values from worker
                     logger.warning(f"Batch failed: {e}")
 
                 # Early exit if we have enough samples
@@ -2362,13 +2411,19 @@ class NNUEPolicyDataset(Dataset):
                         initial_json = gzip.decompress(bytes(initial_json)).decode("utf-8")
                     else:
                         initial_json = gzip.decompress(str(initial_json).encode("utf-8")).decode("utf-8")
-                except Exception:
+                except (OSError, UnicodeDecodeError, TypeError):
+                    # OSError: gzip decompression failed
+                    # UnicodeDecodeError: invalid UTF-8 data
+                    # TypeError: invalid data type for decompression
                     continue
 
             try:
                 state_dict = json.loads(initial_json)
                 state = GameState(**state_dict)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
+                # json.JSONDecodeError: invalid JSON
+                # TypeError: invalid GameState construction
+                # ValueError: invalid field values
                 continue
 
             # Get all moves with phase information
@@ -2392,7 +2447,10 @@ class NNUEPolicyDataset(Dataset):
                 # GPU selfplay records phases in a different order than CPU expects
                 try:
                     state = _advance_to_phase(state, recorded_phase)
-                except Exception:
+                except (TypeError, ValueError, AttributeError):
+                    # TypeError: invalid state or phase types
+                    # ValueError: invalid phase value
+                    # AttributeError: missing state attributes
                     break  # Can't continue if phase advancement fails
 
                 # Skip bookkeeping moves for sampling (not decision points)
@@ -2484,7 +2542,12 @@ class NNUEPolicyDataset(Dataset):
                                         mcts_visit_distribution=mcts_visit_dist,
                                     )
                                     samples.append(sample)
-                        except Exception as e:
+                        except (TypeError, ValueError, AttributeError, KeyError, json.JSONDecodeError) as e:
+                            # TypeError: invalid data types in move/feature extraction
+                            # ValueError: invalid values during processing
+                            # AttributeError: missing move/state attributes
+                            # KeyError: missing dict keys
+                            # json.JSONDecodeError: invalid move JSON
                             logger.debug(f"Failed to process {game_id}:{move_number}: {e}")
 
                 # Apply move to advance state
@@ -2492,7 +2555,11 @@ class NNUEPolicyDataset(Dataset):
                     move_dict = json.loads(move_json_str)
                     move = Move(**move_dict)
                     state = engine.apply_move(state, move)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                    # json.JSONDecodeError: invalid move JSON
+                    # TypeError: invalid Move construction
+                    # ValueError: invalid move application
+                    # AttributeError: missing move/state attributes
                     break
 
                 if self.max_samples and len(samples) >= self.max_samples:

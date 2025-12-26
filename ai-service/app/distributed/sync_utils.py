@@ -4,6 +4,15 @@ This module provides shared utilities for file synchronization operations:
 - rsync-based file transfer with SSH support
 - Remote file discovery
 
+SSH Connection:
+    This module uses hosts.py:HostConfig for SSH connection details.
+    The canonical SSH utilities are:
+    - hosts.py:SSHExecutor for synchronous command execution
+    - ssh_transport.py:SSHTransport for async P2P operations
+
+    For rsync, we build SSH options from HostConfig to ensure consistency
+    with the rest of the codebase.
+
 Used by:
 - scripts/unified_data_sync.py
 - scripts/external_drive_sync_daemon.py
@@ -20,6 +29,30 @@ if TYPE_CHECKING:
     from app.distributed.hosts import HostConfig
 
 logger = logging.getLogger(__name__)
+
+
+def build_ssh_command_for_rsync(host: "HostConfig") -> str:
+    """Build SSH command string for use with rsync -e option.
+
+    Uses HostConfig properties to build a consistent SSH command string.
+    This is the single place where rsync SSH options are constructed.
+
+    Args:
+        host: HostConfig with SSH connection details
+
+    Returns:
+        SSH command string for rsync -e option
+    """
+    parts = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes"]
+
+    if host.ssh_key:
+        key_path = os.path.expanduser(host.ssh_key)
+        parts.extend(["-i", key_path])
+
+    if host.ssh_port != 22:
+        parts.extend(["-p", str(host.ssh_port)])
+
+    return " ".join(parts)
 
 
 def rsync_file(
@@ -44,14 +77,8 @@ def rsync_file(
 
         rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
 
-        # Build SSH command with options
-        ssh_cmd = "ssh -o StrictHostKeyChecking=no -o BatchMode=yes"
-        if host.ssh_key:
-            key_path = os.path.expanduser(host.ssh_key)
-            ssh_cmd += f" -i {key_path}"
-        if host.ssh_port != 22:
-            ssh_cmd += f" -p {host.ssh_port}"
-
+        # Build SSH command using centralized helper
+        ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
 
         # Build source path using host's ssh_target
@@ -112,14 +139,8 @@ def rsync_directory(
             for pattern in exclude_patterns:
                 rsync_args.extend(["--exclude", pattern])
 
-        # Build SSH command with options
-        ssh_cmd = "ssh -o StrictHostKeyChecking=no -o BatchMode=yes"
-        if host.ssh_key:
-            key_path = os.path.expanduser(host.ssh_key)
-            ssh_cmd += f" -i {key_path}"
-        if host.ssh_port != 22:
-            ssh_cmd += f" -p {host.ssh_port}"
-
+        # Build SSH command using centralized helper
+        ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
 
         # Ensure trailing slash for directory sync
@@ -166,14 +187,8 @@ def rsync_push_file(
 
         rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
 
-        # Build SSH command with options
-        ssh_cmd = "ssh -o StrictHostKeyChecking=no -o BatchMode=yes"
-        if host.ssh_key:
-            key_path = os.path.expanduser(host.ssh_key)
-            ssh_cmd += f" -i {key_path}"
-        if host.ssh_port != 22:
-            ssh_cmd += f" -p {host.ssh_port}"
-
+        # Build SSH command using centralized helper
+        ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
 
         # Build destination path using host's ssh_target

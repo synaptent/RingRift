@@ -12,6 +12,8 @@ This document designates the authoritative configuration file for each concept t
 | **Selfplay Workers**     | `selfplay_workers.yaml`     | -                                    |
 | **Training Hyperparams** | `training_hyperparams.yaml` | -                                    |
 | **Promotion Settings**   | `promotion_daemon.yaml`     | -                                    |
+| **Node Policies**        | `node_policies.yaml`        | -                                    |
+| **Notification Hooks**   | `notification_hooks.yaml`   | -                                    |
 | **Unified Loop**         | `unified_loop.yaml`         | -                                    |
 
 ## Authoritative Files
@@ -79,6 +81,30 @@ hosts:
 - ELO improvement requirements
 - Evaluation game counts
 - Promotion cooldowns
+
+---
+
+### `node_policies.yaml` - NODE WORK ASSIGNMENT
+
+**Status**: Authoritative for node work assignment policies
+
+**Contains**:
+
+- Default work allow/deny lists
+- Per-node overrides
+- Priority weights for work types
+
+---
+
+### `notification_hooks.yaml` - NOTIFICATION ROUTING
+
+**Status**: Authoritative for alert/notification hooks
+
+**Contains**:
+
+- Webhook destinations
+- Notification channels per event type
+- Retry and rate-limit settings
 
 ---
 

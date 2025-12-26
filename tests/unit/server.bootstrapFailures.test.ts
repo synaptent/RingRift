@@ -14,23 +14,52 @@ const mockConnectDatabase = jest.fn();
 const mockConnectRedis = jest.fn();
 
 const mockEnforceAppTopology = jest.fn();
+
+// NOTE: src/server/index.ts reads many config fields at module-import time.
+// Keep this mock in sync with the canonical config shape.
 const mockConfig = {
+  nodeEnv: 'development',
+  isProduction: false,
+  isDevelopment: true,
+  isTest: false,
+  app: {
+    version: 'test',
+    topology: 'single',
+  },
   server: {
     port: 3000,
+    host: '127.0.0.1',
   },
-  nodeEnv: 'development',
+  metrics: {
+    enabled: false,
+    exposeOnMain: false,
+    port: 9090,
+    apiKey: undefined,
+  },
+  healthChecks: {
+    enabled: false,
+  },
   featureFlags: {
     orchestrator: {
       adapterEnabled: true,
-      shadowModeEnabled: false,
+      allowlistUsers: [],
+      denylistUsers: [],
       circuitBreaker: {
         enabled: true,
         errorThresholdPercent: 5,
         errorWindowSeconds: 300,
       },
+      latencyThresholdMs: 500,
     },
     analysisMode: {
       enabled: false,
+    },
+    sandboxAi: {
+      enabled: false,
+    },
+    httpMoveHarness: {
+      enabled: false,
+      timeoutMs: 30_000,
     },
   },
   rules: {

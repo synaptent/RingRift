@@ -4,11 +4,16 @@ Operational runbooks for RingRift AI service alerts and incidents.
 
 ## Available Runbooks
 
-| Runbook                                                  | Alert                 | Severity | Description                  |
-| -------------------------------------------------------- | --------------------- | -------- | ---------------------------- |
-| [COORDINATOR_ERROR.md](COORDINATOR_ERROR.md)             | CoordinatorError      | Critical | Coordinator in error state   |
-| [CLUSTER_HEALTH_CRITICAL.md](CLUSTER_HEALTH_CRITICAL.md) | ClusterHealthCritical | Critical | Cluster health below 50%     |
-| [SYNC_HOST_CRITICAL.md](SYNC_HOST_CRITICAL.md)           | CriticalSyncHosts     | Critical | Hosts in critical sync state |
+| Runbook                                                  | Alert                       | Severity | Description                       |
+| -------------------------------------------------------- | --------------------------- | -------- | --------------------------------- |
+| [COORDINATOR_ERROR.md](COORDINATOR_ERROR.md)             | CoordinatorError            | Critical | Coordinator in error state        |
+| [CLUSTER_HEALTH_CRITICAL.md](CLUSTER_HEALTH_CRITICAL.md) | ClusterHealthCritical       | Critical | Cluster health below 50%          |
+| [CLUSTER_CONNECTIVITY.md](CLUSTER_CONNECTIVITY.md)       | ClusterConnectivityDegraded | High     | Node connectivity and P2P issues  |
+| [SYNC_HOST_CRITICAL.md](SYNC_HOST_CRITICAL.md)           | CriticalSyncHosts           | Critical | Hosts in critical sync state      |
+| [GPU_OOM_DEBUG.md](GPU_OOM_DEBUG.md)                     | GPUMemoryExhausted          | High     | GPU out-of-memory debugging       |
+| [PARITY_MISMATCH_DEBUG.md](PARITY_MISMATCH_DEBUG.md)     | ParityValidationFailed      | Critical | TS/Python parity mismatch         |
+| [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md)             | N/A                         | Critical | Major failure recovery procedures |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md)                 | N/A                         | Info     | General troubleshooting guide     |
 
 ## Runbook Structure
 

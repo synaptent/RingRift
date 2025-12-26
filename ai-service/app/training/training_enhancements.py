@@ -176,10 +176,10 @@ class TrainingConfig:
     warm_restart_t_mult: int = 2  # Period multiplier after each restart
     warm_restart_eta_min: float = 1e-6
 
-    # === Early Stopping ===
-    early_stopping_patience: int = 10
+    # === Early Stopping === (December 2025: use centralized thresholds module)
+    early_stopping_patience: int = 10  # See app.config.thresholds.EARLY_STOPPING_PATIENCE
     early_stopping_min_delta: float = 1e-4
-    elo_patience: int = 10
+    elo_patience: int = 10  # See app.config.thresholds.ELO_PATIENCE
     elo_min_improvement: float = 5.0
 
     # === Data Quality Scoring ===

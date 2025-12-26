@@ -202,6 +202,6 @@ config = TournamentConfig(
 
 ## See Also
 
-- `app.gauntlet` - Game gauntlet runner
+- `app.training.game_gauntlet` - Game gauntlet runner
 - `app.evaluation` - Benchmark framework
 - `app.training.elo_service` - Canonical Elo service

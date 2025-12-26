@@ -37,10 +37,11 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from app.config.ports import P2P_DEFAULT_PORT
+
 logger = logging.getLogger(__name__)
 
-# P2P orchestrator defaults
-P2P_DEFAULT_PORT = 8770
+# P2P orchestrator timing constants
 P2P_HTTP_TIMEOUT = 30  # seconds
 P2P_JOB_POLL_INTERVAL = 10  # seconds
 MAX_PHASE_WAIT_MINUTES = 120  # Maximum wait for any phase
@@ -400,7 +401,7 @@ class P2PBackend:
             session = await self._get_session()
             async with session.get(f"{self.leader_url}/health") as resp:
                 return resp.status == 200
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
             logger.debug(f"P2P health check failed: {e}")
             return False
 
@@ -519,7 +520,7 @@ async def discover_p2p_leader_url(
                 async with session.get(f"{base}/health") as resp:
                     if resp.status == 200:
                         return base
-            except Exception:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
                 continue
         return None
 
@@ -530,7 +531,7 @@ async def discover_p2p_leader_url(
                     if resp.status != 200:
                         continue
                     status = await resp.json()
-            except Exception:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
                 continue
 
             if not isinstance(status, dict):
@@ -684,7 +685,7 @@ def register_p2p_leader_in_registry(
                 logger.debug(f"P2P_LEADER role held by {holder.hostname}:{holder.pid}")
             return False
 
-    except Exception as e:
+    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
         logger.warning(f"Failed to register P2P leader in registry: {e}")
         return False
 
@@ -708,7 +709,7 @@ def get_p2p_leader_from_registry() -> str | None:
                 logger.debug(f"Found P2P leader in registry: {leader_url}")
                 return leader_url
 
-    except Exception as e:
+    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
         logger.debug(f"Could not get P2P leader from registry: {e}")
 
     return None
@@ -736,7 +737,7 @@ def sync_p2p_leader_heartbeat(leader_url: str, leader_id: str = "") -> None:
             "last_sync": time.time(),
         })
 
-    except Exception as e:
+    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
         logger.debug(f"Failed to sync P2P leader heartbeat: {e}")
 
 
@@ -780,7 +781,7 @@ async def get_p2p_backend_with_registry(
                             if resp.status == 200:
                                 logger.info(f"Using P2P leader from registry: {registry_leader}")
                                 return backend
-            except Exception as e:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError, RuntimeError) as e:
                 logger.debug(f"Registry leader not reachable: {e}")
 
     # Fall back to seed discovery

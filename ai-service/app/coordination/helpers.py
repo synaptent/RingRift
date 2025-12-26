@@ -138,7 +138,10 @@ def get_coordinator_safe() -> Any | None:
         return None
     try:
         return _get_coordinator()
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: coordinator not initialized
+        # TypeError: invalid coordinator configuration
+        # RuntimeError: coordinator initialization failed
         logger.debug(f"Failed to get coordinator: {e}")
         return None
 
@@ -166,7 +169,11 @@ def can_spawn_safe(
     try:
         coordinator = _get_coordinator()
         return coordinator.can_spawn_task(task_type, node_id)
-    except Exception as e:
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
+        # AttributeError: coordinator not initialized
+        # TypeError: invalid task type
+        # KeyError: unknown node or task type
+        # RuntimeError: database access failed
         logger.warning(f"can_spawn check failed: {e}")
         return (True, f"check_failed: {e}")
 
@@ -203,7 +210,11 @@ def register_task_safe(
     try:
         coordinator.register_task(task_id, task_type, node_id, pid)
         return True
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # AttributeError: coordinator method missing
+        # TypeError: invalid argument types
+        # ValueError: invalid task_id or node_id
+        # RuntimeError: database write failed
         logger.warning(f"Task registration failed: {e}")
         return False
 
@@ -227,7 +238,10 @@ def complete_task_safe(task_id: str) -> bool:
     try:
         coordinator.complete_task(task_id)
         return True
-    except Exception as e:
+    except (AttributeError, ValueError, RuntimeError) as e:
+        # AttributeError: coordinator method missing
+        # ValueError: invalid task_id
+        # RuntimeError: database write failed
         logger.warning(f"Task completion failed: {e}")
         return False
 
@@ -252,7 +266,10 @@ def fail_task_safe(task_id: str, error: str = "") -> bool:
     try:
         coordinator.fail_task(task_id, error)
         return True
-    except Exception as e:
+    except (AttributeError, ValueError, RuntimeError) as e:
+        # AttributeError: coordinator method missing
+        # ValueError: invalid task_id
+        # RuntimeError: database write failed
         logger.warning(f"Task failure recording failed: {e}")
         return False
 
@@ -271,7 +288,10 @@ def get_registry_safe() -> Any | None:
         return None
     try:
         return _get_registry()
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: registry not initialized
+        # TypeError: invalid registry configuration
+        # RuntimeError: registry initialization failed
         logger.debug(f"Failed to get registry: {e}")
         return None
 
@@ -290,7 +310,11 @@ def acquire_role_safe(role: Any) -> bool:
 
     try:
         return _acquire_orchestrator_role(role)
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError, OSError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid role type
+        # RuntimeError: database lock failed
+        # OSError: lock file creation failed
         logger.warning(f"Role acquisition failed: {e}")
         return False
 
@@ -310,7 +334,11 @@ def release_role_safe(role: Any) -> bool:
     try:
         _release_orchestrator_role(role)
         return True
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError, OSError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid role type
+        # RuntimeError: database unlock failed
+        # OSError: lock file removal failed
         logger.warning(f"Role release failed: {e}")
         return False
 
@@ -330,7 +358,10 @@ def has_role(role: Any) -> bool:
 
     try:
         return registry.is_role_held(role)
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: registry method missing
+        # TypeError: invalid role type
+        # RuntimeError: database read failed
         logger.debug(f"Role check failed: {e}")
         return False
 
@@ -350,7 +381,10 @@ def get_role_holder(role: Any) -> Any | None:
 
     try:
         return registry.get_role_holder(role)
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: registry method missing
+        # TypeError: invalid role type
+        # RuntimeError: database read failed
         logger.debug(f"Could not get role holder for {role}: {e}")
         return None
 
@@ -377,7 +411,10 @@ def check_spawn_allowed(
 
     try:
         return _check_before_spawn(task_type, config_key)
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # RuntimeError: safeguard check failed
         logger.warning(f"Safeguard check failed: {e}")
         return (True, f"check_failed: {e}")
 
@@ -392,7 +429,10 @@ def get_safeguards() -> Any | None:
         return None
     try:
         return _Safeguards()
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: class not initialized
+        # TypeError: invalid initialization
+        # RuntimeError: database access failed
         return None
 
 
@@ -422,7 +462,10 @@ def is_unified_loop_running() -> bool:
 
     try:
         return has_role(_OrchestratorRole.UNIFIED_LOOP)
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: role enum not initialized
+        # TypeError: invalid role value
+        # RuntimeError: registry access failed
         return False
 
 
@@ -445,7 +488,10 @@ def warn_if_orchestrator_running(daemon_name: str = "daemon") -> None:
             existing_pid = holder.pid if holder else "unknown"
             print(f"[{daemon_name}] WARNING: Unified orchestrator is running (PID {existing_pid})")
             print(f"[{daemon_name}] The orchestrator handles this work - this {daemon_name} may duplicate work")
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: registry methods missing
+        # TypeError: invalid role type
+        # RuntimeError: database read failed
         logger.debug(f"Could not check orchestrator status: {e}")
 
 
@@ -497,7 +543,10 @@ def should_throttle_safe(queue_type: Any = None) -> bool:
         if queue_type is None and _QueueType is not None:
             queue_type = _QueueType.TRAINING_DATA
         return _should_throttle_production(queue_type) if queue_type else False
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid queue type
+        # RuntimeError: check operation failed
         return False
 
 
@@ -513,7 +562,10 @@ def should_stop_safe(queue_type: Any = None) -> bool:
         if queue_type is None and _QueueType is not None:
             queue_type = _QueueType.TRAINING_DATA
         return _should_stop_production(queue_type) if queue_type else False
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid queue type
+        # RuntimeError: check operation failed
         return False
 
 
@@ -529,7 +581,10 @@ def get_throttle_factor_safe(queue_type: Any = None) -> float:
         if queue_type is None and _QueueType is not None:
             queue_type = _QueueType.TRAINING_DATA
         return _get_throttle_factor(queue_type) if queue_type else 1.0
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid queue type
+        # RuntimeError: calculation failed
         return 1.0
 
 
@@ -537,7 +592,11 @@ def report_queue_depth_safe(queue_type: Any, depth: int) -> None:
     """Safely report queue depth for backpressure calculation."""
     if _report_queue_depth is None:
         return
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(AttributeError, TypeError, ValueError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid depth value
+        # RuntimeError: reporting failed
         _report_queue_depth(queue_type, depth)
 
 
@@ -590,7 +649,11 @@ def acquire_sync_lock_safe(host: str, timeout: float = 120.0) -> bool:
         return True  # Allow operation if no lock available
     try:
         return _acquire_sync_lock(host, timeout)
-    except Exception as e:
+    except (AttributeError, TypeError, OSError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # OSError: lock file creation failed
+        # RuntimeError: database lock failed
         logger.warning(f"Failed to acquire sync lock for {host}: {e}")
         return True  # Allow operation on error
 
@@ -601,7 +664,11 @@ def release_sync_lock_safe(host: str) -> None:
         return
     try:
         _release_sync_lock(host)
-    except Exception as e:
+    except (AttributeError, TypeError, OSError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # OSError: lock file removal failed
+        # RuntimeError: database unlock failed
         logger.warning(f"Failed to release sync lock for {host}: {e}")
 
 
@@ -660,7 +727,11 @@ def request_bandwidth_safe(
         if priority is None and _TransferPriority is not None:
             priority = _TransferPriority.NORMAL
         return _request_bandwidth(host, requested_mbps, priority)
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid bandwidth value
+        # RuntimeError: allocation failed
         logger.warning(f"Bandwidth request failed for {host}: {e}")
         return (True, requested_mbps)
 
@@ -671,7 +742,10 @@ def release_bandwidth_safe(host: str) -> None:
         return
     try:
         _release_bandwidth(host)
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # RuntimeError: release failed
         logger.warning(f"Bandwidth release failed for {host}: {e}")
 
 
@@ -723,7 +797,11 @@ def can_schedule_task_safe(task_type: str, estimated_duration: float = 60.0) -> 
         return True
     try:
         return _can_schedule_task(task_type, estimated_duration)
-    except Exception:
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid duration
+        # RuntimeError: scheduler check failed
         return True
 
 
@@ -742,7 +820,11 @@ def register_running_task_safe(
     try:
         _register_running_task(task_id, task_type, estimated_duration)
         return True
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid task_id or duration
+        # RuntimeError: registration failed
         logger.debug(f"Failed to register running task: {e}")
         return False
 
@@ -762,7 +844,11 @@ def record_task_completion_safe(
     try:
         _record_task_completion(task_id, task_type, actual_duration)
         return True
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid task_id or duration
+        # RuntimeError: database write failed
         logger.debug(f"Failed to record task completion: {e}")
         return False
 
@@ -781,7 +867,11 @@ def estimate_duration_safe(task_type: str, default: float = 60.0) -> float:
         return default
     try:
         return _estimate_task_duration(task_type) or default
-    except Exception:
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid task type
+        # ValueError: invalid task_type string
+        # RuntimeError: estimation failed
         return default
 
 
@@ -828,7 +918,11 @@ def publish_event_safe(event_type: str, payload: dict[str, Any] | None = None) -
     try:
         _publish_event(event_type, payload or {})
         return True
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid event type or payload
+        # RuntimeError: publish failed
         logger.debug(f"Failed to publish event: {e}")
         return False
 
@@ -846,7 +940,11 @@ def poll_events_safe(
         return []
     try:
         return _poll_events(event_types, limit) or []
-    except Exception:
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid arguments
+        # ValueError: invalid event types or limit
+        # RuntimeError: poll failed
         return []
 
 
@@ -857,7 +955,11 @@ def ack_event_safe(event_id: int) -> bool:
     try:
         _ack_event(event_id)
         return True
-    except Exception:
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid event_id type
+        # ValueError: invalid event_id value
+        # RuntimeError: acknowledgement failed
         return False
 
 
@@ -868,7 +970,10 @@ def subscribe_process_safe(process_name: str | None = None) -> bool:
     try:
         _subscribe_process(process_name)
         return True
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid process_name type
+        # RuntimeError: subscription failed
         return False
 
 
@@ -918,7 +1023,10 @@ def get_resource_targets_safe() -> Any | None:
         return None
     try:
         return _get_resource_targets()
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid return type
+        # RuntimeError: retrieval failed
         return None
 
 
@@ -928,7 +1036,11 @@ def get_host_targets_safe(host: str) -> Any | None:
         return None
     try:
         return _get_host_targets(host)
-    except Exception:
+    except (AttributeError, TypeError, KeyError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid host type
+        # KeyError: unknown host
+        # RuntimeError: retrieval failed
         return None
 
 
@@ -938,7 +1050,10 @@ def get_cluster_summary_safe() -> dict[str, Any]:
         return {}
     try:
         return _get_cluster_summary() or {}
-    except Exception:
+    except (AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid return type
+        # RuntimeError: summary generation failed
         return {}
 
 
@@ -948,7 +1063,11 @@ def should_scale_up_safe(host: str) -> bool:
         return False
     try:
         return _should_scale_up_targets(host)
-    except Exception:
+    except (AttributeError, TypeError, KeyError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid host type
+        # KeyError: unknown host
+        # RuntimeError: check failed
         return False
 
 
@@ -958,7 +1077,11 @@ def should_scale_down_safe(host: str) -> bool:
         return False
     try:
         return _should_scale_down_targets(host)
-    except Exception:
+    except (AttributeError, TypeError, KeyError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid host type
+        # KeyError: unknown host
+        # RuntimeError: check failed
         return False
 
 
@@ -966,7 +1089,10 @@ def set_backpressure_safe(active: bool) -> None:
     """Safely set backpressure state."""
     if _set_backpressure is None:
         return
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(AttributeError, TypeError, RuntimeError):
+        # AttributeError: function not initialized
+        # TypeError: invalid active type
+        # RuntimeError: state change failed
         _set_backpressure(active)
 
 

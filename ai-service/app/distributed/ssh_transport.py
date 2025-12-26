@@ -1,5 +1,17 @@
 """SSH Transport Layer for P2P Communication.
 
+CANONICAL SSH UTILITY FOR ASYNC P2P OPERATIONS
+==============================================
+This is the single source of truth for async SSH-based P2P communication
+in the ai-service codebase. Use this class for:
+- Sending P2P commands to nodes via SSH (send_command, send_heartbeat)
+- Executing arbitrary commands on nodes asynchronously (ssh_exec)
+- Probing node connectivity (check_connectivity, get_node_status)
+- Command relay through intermediate nodes (relay_command)
+
+For synchronous SSH operations (scripts, general command execution),
+use hosts.py:SSHExecutor instead.
+
 Provides SSH-based communication as a fallback when HTTP fails for Vast.ai
 instances behind NAT with userland Tailscale (no TUN device).
 
@@ -10,23 +22,42 @@ Architecture:
 - Primary: HTTP via Tailscale mesh (when it works)
 - Fallback: SSH exec commands through Vast proxy
 
+Features:
+- SSH ControlMaster for connection pooling (5 min persist)
+- Circuit breaker integration for fault tolerance
+- Automatic address discovery from cluster_hosts.yaml or DynamicHostRegistry
+- Address caching with TTL
+- Retry with exponential backoff
+- Health tracking per node
+
 Usage:
-    from app.distributed.ssh_transport import SSHTransport
+    from app.distributed.ssh_transport import SSHTransport, get_ssh_transport
 
-    transport = SSHTransport()
+    # Use global singleton (recommended)
+    transport = get_ssh_transport()
 
-    # Send command to NAT-blocked Vast instance
-    result = await transport.send_command(
+    # Send P2P command to NAT-blocked Vast instance
+    success, response = await transport.send_command(
         node_id="vast-5090-quad",
         command_type="heartbeat",
         payload={"status": "active"},
     )
 
     # Execute arbitrary command
-    output = await transport.ssh_exec(
+    result = await transport.ssh_exec(
         node_id="vast-5090-quad",
         command="curl -s localhost:8770/status",
     )
+    if result.success:
+        print(result.stdout)
+
+    # Check connectivity
+    reachable, msg = await transport.check_connectivity("vast-5090-quad")
+
+See also:
+    - hosts.py:SSHExecutor for synchronous SSH command execution
+    - hybrid_transport.py for unified HTTP/SSH transport selection
+    - sync_utils.py for rsync-based file synchronization
 """
 
 from __future__ import annotations
@@ -60,7 +91,7 @@ except ImportError:
         """Fallback when circuit_breaker module not available."""
         return default
 
-# Try to load from unified config, with fallback defaults
+# Try to load from unified config, with fallback to centralized thresholds (December 2025)
 try:
     from app.config.unified_config import get_config
     _config = get_config()
@@ -71,13 +102,26 @@ try:
     SSH_ADDRESS_CACHE_TTL = _config.ssh.address_cache_ttl_seconds
     LOCAL_P2P_PORT = _config.distributed.p2p_port
 except ImportError:
-    # Fallback defaults if config not available
-    SSH_CONNECT_TIMEOUT = 10  # seconds
-    SSH_COMMAND_TIMEOUT = 30  # seconds
-    SSH_MAX_RETRIES = 2
-    SSH_RETRY_DELAY = 1.0  # seconds
-    SSH_ADDRESS_CACHE_TTL = 300  # 5 minutes
-    LOCAL_P2P_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
+    # Try centralized thresholds (December 2025)
+    try:
+        from app.config.thresholds import (
+            P2P_DEFAULT_PORT,
+            RETRY_BASE_DELAY_SECONDS,
+            SSH_COMMAND_TIMEOUT,
+            SSH_CONNECT_TIMEOUT,
+            SSH_MAX_RETRIES,
+        )
+        SSH_RETRY_DELAY = RETRY_BASE_DELAY_SECONDS
+        SSH_ADDRESS_CACHE_TTL = 300  # 5 minutes
+        LOCAL_P2P_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", str(P2P_DEFAULT_PORT)))
+    except ImportError:
+        # Final fallback defaults if neither config nor thresholds available
+        SSH_CONNECT_TIMEOUT = 10  # seconds
+        SSH_COMMAND_TIMEOUT = 30  # seconds
+        SSH_MAX_RETRIES = 2
+        SSH_RETRY_DELAY = 1.0  # seconds
+        SSH_ADDRESS_CACHE_TTL = 300  # 5 minutes
+        LOCAL_P2P_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
 
 # Default SSH user for Vast instances (env override always available)
 VAST_SSH_USER = os.environ.get("RINGRIFT_VAST_SSH_USER", "root")

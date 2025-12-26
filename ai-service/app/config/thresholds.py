@@ -1215,3 +1215,202 @@ def update_threshold(category: str, key: str, value: Any) -> None:
     """
     if category in MONITORING_THRESHOLDS:
         MONITORING_THRESHOLDS[category][key] = value
+
+
+# =============================================================================
+# Training Control Thresholds (December 2025)
+# =============================================================================
+
+# Checkpoint timeout for async save operations (seconds)
+CHECKPOINT_TIMEOUT = 120
+
+# Validation patience - epochs without improvement before early stopping
+VALIDATION_PATIENCE = 10
+
+# Elo plateau patience - updates without Elo improvement before early stopping
+ELO_PATIENCE = 10
+
+# Learning rate warmup steps (linear warmup from 0 to lr)
+LR_WARMUP_STEPS = 0  # Default: no warmup (set via CLI --warmup-steps)
+
+# Early stopping patience - epochs without validation improvement
+EARLY_STOPPING_PATIENCE = 10
+
+# Validation interval - steps between validation checks
+VALIDATION_INTERVAL_STEPS = 500
+
+# Checkpoint save interval - epochs between checkpoint saves
+CHECKPOINT_SAVE_INTERVAL_EPOCHS = 1
+
+# Model checkpoint retention - number of recent checkpoints to keep
+CHECKPOINT_RETENTION_COUNT = 5
+
+
+# =============================================================================
+# MCTS Thresholds (December 2025)
+# =============================================================================
+
+# MCTS search timeout per move (seconds) - 0 means no timeout, budget-driven
+MCTS_SEARCH_TIMEOUT = 0
+
+# Minimum visit count threshold before selecting move
+MCTS_MIN_VISIT_THRESHOLD = 10
+
+# Gumbel MCTS top-K actions to sample
+GUMBEL_TOP_K = 16
+
+# Gumbel visit completion coefficient
+GUMBEL_C_VISIT = 50.0
+
+# Gumbel exploration constant (UCB)
+GUMBEL_C_PUCT = 1.5
+
+# Gumbel MCTS budget constants (SOURCE OF TRUTH)
+# Previously imported from gumbel_common.py, now defined here to avoid torch import
+# gumbel_common.py should import FROM here, not the other way around
+GUMBEL_BUDGET_THROUGHPUT = 64    # Maximum speed, low quality (for fast iteration)
+GUMBEL_BUDGET_STANDARD = 150     # Default balance for training games
+GUMBEL_BUDGET_QUALITY = 800      # High quality for evaluation/gauntlet
+GUMBEL_BUDGET_ULTIMATE = 1600    # Maximum quality for final benchmarks
+GUMBEL_DEFAULT_BUDGET = GUMBEL_BUDGET_STANDARD
+
+
+# =============================================================================
+# GPU Thresholds (December 2025)
+# =============================================================================
+
+# Memory check interval for GPU monitoring (seconds)
+GPU_MEMORY_CHECK_INTERVAL = 60
+
+# Batch operation timeout for GPU operations (seconds)
+GPU_BATCH_TIMEOUT = 300
+
+# Device synchronization timeout (seconds)
+GPU_DEVICE_SYNC_TIMEOUT = 30
+
+# GPU warmup steps before enabling optimizations
+GPU_WARMUP_STEPS = 10
+
+# Minimum GPU memory free before allocation (GB)
+GPU_MIN_FREE_MEMORY_GB = 2.0
+
+# Neural network batch evaluation timeout (milliseconds)
+NN_EVAL_BATCH_TIMEOUT_MS = 2
+
+
+# =============================================================================
+# Coordination Thresholds (December 2025)
+# =============================================================================
+# Note: Some of these duplicate P2P/cluster sections above for backward compatibility
+
+# Daemon restart delay after failure (seconds)
+DAEMON_RESTART_DELAY_BASE = 5
+
+# Daemon restart exponential backoff cap (seconds)
+DAEMON_RESTART_DELAY_MAX = 300
+
+# Daemon restart count reset after stability period (seconds)
+DAEMON_RESTART_RESET_AFTER = 3600
+
+# Lock timeout for coordination primitives (seconds)
+COORDINATION_LOCK_TIMEOUT = 60
+
+# Queue poll interval for work queue checks (seconds)
+QUEUE_POLL_INTERVAL = 5
+
+# Event handler timeout (seconds)
+EVENT_HANDLER_TIMEOUT = 30
+
+# Work timeout for async tasks (seconds)
+WORK_TIMEOUT = 300
+
+# Lock acquisition timeout for distributed locks (seconds)
+LOCK_ACQUIRE_TIMEOUT = 60
+
+
+# =============================================================================
+# Distributed Transport Thresholds (December 2025)
+# =============================================================================
+
+# Sync timeout for distributed data synchronization (seconds)
+DISTRIBUTED_SYNC_TIMEOUT = 300
+
+# Retry backoff multiplier for exponential backoff
+RETRY_BACKOFF_MULTIPLIER = 2.0
+
+# Retry base delay (seconds)
+RETRY_BASE_DELAY_SECONDS = 1.0
+
+# Maximum retry attempts for transient failures
+MAX_RETRY_ATTEMPTS_DISTRIBUTED = 3
+
+# SSH maximum retries per connection attempt
+SSH_MAX_RETRIES = 2
+
+# Transport health: consecutive failures before disabling transport
+TRANSPORT_FAILURE_THRESHOLD = 3
+
+# Transport health: disable duration after failures (seconds)
+TRANSPORT_DISABLE_DURATION = 300
+
+# Transport health: latency history weight (exponential moving average)
+TRANSPORT_LATENCY_WEIGHT = 0.7
+
+# Transport health: minimum samples before preferring a transport
+TRANSPORT_MIN_SAMPLES_FOR_PREFERENCE = 3
+
+
+# =============================================================================
+# Alert & Monitoring Thresholds (December 2025)
+# =============================================================================
+
+# Minimum interval between duplicate alerts (seconds)
+MIN_ALERT_INTERVAL_SECONDS = 1800  # 30 minutes
+
+# Maximum alerts per hour (rate limiting)
+MAX_ALERTS_PER_HOUR = 20
+
+# Partition threshold - suppress if >50% nodes have same issue
+ALERT_PARTITION_THRESHOLD = 0.5
+
+
+# =============================================================================
+# Selfplay & Game Execution Thresholds (December 2025)
+# =============================================================================
+
+# Maximum moves per game before forced termination
+MAX_MOVES_PER_GAME = 10000
+
+# Game execution timeout (seconds) - 0 means no timeout
+GAME_EXECUTION_TIMEOUT = 0
+
+# Minimum game length to be considered valid (moves)
+MIN_VALID_GAME_LENGTH = 5
+
+# Maximum game duration before termination (seconds)
+MAX_GAME_DURATION_SECONDS = 600
+
+# Minimum games per hour for selfplay monitoring
+MIN_SELFPLAY_GAMES_PER_HOUR = 100
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def get_gumbel_budget(difficulty: int = 6) -> int:
+    """Get Gumbel MCTS budget for a difficulty level.
+
+    Args:
+        difficulty: Difficulty level 1-11
+
+    Returns:
+        Recommended simulation budget
+    """
+    if difficulty <= 6:
+        return GUMBEL_BUDGET_STANDARD
+    elif difficulty <= 9:
+        return GUMBEL_BUDGET_QUALITY
+    else:
+        return GUMBEL_BUDGET_ULTIMATE

@@ -203,9 +203,9 @@ Assess model strength using gauntlet tournaments:
 
 ```bash
 # Gauntlet: Play candidate model vs baselines
-python -m app.gauntlet.runner \
+python scripts/quick_gauntlet.py \
+  --model models/hex8_2p_candidate.pt \
   --board-type hex8 --num-players 2 \
-  --model-path models/hex8_2p_candidate.pt \
   --games 100
 ```
 
@@ -213,7 +213,7 @@ python -m app.gauntlet.runner \
 
 - **RANDOM**: Random move selection
 - **HEURISTIC**: Rule-based heuristic AI
-- **PREVIOUS**: Current production model
+- **PRODUCTION**: Use Elo tournaments for full model-vs-model comparisons
 
 **Promotion Thresholds:**
 
@@ -786,9 +786,9 @@ python -m app.training.train \
   --save-path models/hex8_2p_candidate.pt
 
 # 2. Evaluate
-python -m app.gauntlet.runner \
-  --board-type hex8 --num-players 2 \
-  --model-path models/hex8_2p_candidate.pt
+python scripts/quick_gauntlet.py \
+  --model models/hex8_2p_candidate.pt \
+  --board-type hex8 --num-players 2
 
 # 3. Auto-promote
 python scripts/auto_promote.py --gauntlet \

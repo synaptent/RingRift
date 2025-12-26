@@ -388,8 +388,10 @@ class NonRetryableError(RingRiftError):
     code: str = "NON_RETRYABLE_ERROR"
 
 
-# Alias for backwards compatibility with fault_tolerance.py
+# Aliases for backwards compatibility with fault_tolerance.py
 FatalError = NonRetryableError
+RecoverableError = RetryableError
+NonRecoverableError = NonRetryableError
 
 
 class EmergencyHaltError(RingRiftError):

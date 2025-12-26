@@ -35,6 +35,7 @@ import type {
 } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import type { ConnectionStatus } from '../domain/GameAPI';
+import type { ColorVisionMode } from '../utils/playerTheme';
 import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';
 import type { ChoiceKind } from './choiceViewModels';
 import { getWeirdStateBanner, type WeirdStateBanner } from '../utils/gameStateWeirdness';
@@ -205,6 +206,11 @@ export interface HUDViewModel {
    * a prominent explanation panel above the phase indicator.
    */
   weirdState?: HUDWeirdStateViewModel | undefined;
+  /**
+   * Last-Player-Standing tracking state for UI display (RR-CANON-R172).
+   * Passed through from the host / engine snapshot.
+   */
+  lpsTracking?: GameState['lpsTracking'] | undefined;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -510,6 +516,14 @@ export const PHASE_INFO: Record<GamePhase, Omit<PhaseViewModel, 'phaseKey'>> = {
     actionHint: 'Choose which stack to sacrifice when prompted',
     spectatorHint: 'Player is paying a forced elimination cost',
   },
+  game_over: {
+    label: 'Game Over',
+    description: 'The game has ended',
+    colorClass: 'bg-slate-600',
+    icon: '🏁',
+    actionHint: '',
+    spectatorHint: 'Game finished',
+  },
 };
 
 function toPhaseViewModel(phase: GamePhase): PhaseViewModel {
@@ -590,8 +604,9 @@ function toAIInfoViewModel(player: Player): AIInfoViewModel {
 
 const BOARD_CONFIGS_LOCAL = {
   square8: { ringsPerPlayer: 18 },
-  square19: { ringsPerPlayer: 36 },
-  hexagonal: { ringsPerPlayer: 36 },
+  square19: { ringsPerPlayer: 72 },
+  hex8: { ringsPerPlayer: 18 },
+  hexagonal: { ringsPerPlayer: 96 },
 } as const;
 
 function calculateRingStats(player: Player, gameState: GameState): PlayerRingStatsViewModel {
@@ -662,6 +677,8 @@ export interface ToHUDViewModelOptions {
    * understand reconciliation semantics itself.
    */
   decisionIsServerCapped?: boolean | undefined;
+  /** Optional color-vision mode from AccessibilityContext (presentation-only). */
+  colorVisionMode?: ColorVisionMode | undefined;
   /**
    * Optional terminal victory state for the current game, when known. Used
    * purely for UX surfaces such as structural-stalemate banners; does not
@@ -674,6 +691,8 @@ export interface ToHUDViewModelOptions {
    * the HUD when the game has ended.
    */
   gameEndExplanation?: GameEndExplanation | null | undefined;
+  /** Optional LPS tracking state to surface progress (RR-CANON-R172). */
+  lpsTracking?: GameState['lpsTracking'] | undefined;
 }
 
 /**
@@ -692,6 +711,7 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     decisionIsServerCapped,
     victoryState,
     gameEndExplanation,
+    lpsTracking,
   } = options;
 
   const HEARTBEAT_STALE_THRESHOLD_MS = 8000;
@@ -862,23 +882,34 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
   };
 
   // If we have a canonical GameEndExplanation, use it to drive the weird-state
-  // banner for game-end scenarios (structural stalemate, etc.) preferentially.
-  if (gameEndExplanation?.uxCopy?.shortSummaryKey) {
-    const key = gameEndExplanation.uxCopy.shortSummaryKey;
-    if (key.startsWith('game_end.structural_stalemate')) {
+  // banner for game-end scenarios (structural stalemate, LPS, etc.) preferentially.
+  // NOTE: Prefer semantic fields (outcomeType) over uxCopy keys so callers that
+  // intentionally omit UX strings still get a correct classification.
+  if (gameEndExplanation) {
+    const key = gameEndExplanation.uxCopy?.shortSummaryKey ?? '';
+
+    if (
+      gameEndExplanation.outcomeType === 'structural_stalemate' ||
+      key.startsWith('game_end.structural_stalemate')
+    ) {
       weirdState = {
         type: 'structural-stalemate',
         title: 'Structural stalemate',
         body: 'No legal placements, movements, captures, or forced eliminations remain for any player. The game ends here and the final score is computed from territory and eliminated rings.',
         tone: 'critical',
       };
-    } else if (key.startsWith('game_end.lps.with_anm_fe')) {
-      // For LPS involving ANM/FE, surface a banner explaining why the game ended
-      // even if it looks like players still have material.
+    } else if (
+      gameEndExplanation.outcomeType === 'last_player_standing' ||
+      key.startsWith('game_end.lps.')
+    ) {
+      // LPS involving ANM/FE: explain why the game ended even if it looks like
+      // players still have pieces on the board.
       weirdState = {
-        type: 'forced-elimination', // Reuse FE styling for LPS-FE endings
-        title: 'Last Player Standing (via Forced Elimination)',
-        body: 'The game ended because only one player could make real moves for a full round. Other players were blocked or forced to eliminate rings.',
+        type: 'last-player-standing',
+        title: 'Last Player Standing',
+        body: key.startsWith('game_end.lps.with_anm_fe')
+          ? 'The game ended because only one player could make real moves for a full round. Other players were blocked or could only perform forced eliminations, which do not count as real moves for Last Player Standing.'
+          : 'The game ended because only one player could make real moves for a full round of turns.',
         tone: 'warning',
       };
     }
@@ -963,6 +994,7 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     subPhaseDetail,
     decisionPhase,
     weirdState,
+    lpsTracking: lpsTracking ?? gameState.lpsTracking,
   };
 }
 
@@ -1674,7 +1706,7 @@ function getVictoryMessage(
     return {
       title: `🏰 ${winnerName} Wins!`,
       description:
-        'Victory by territory after resolving the final disconnected mini-region. Once no further placements, movements, captures, or territory actions were possible, the rules compared Territory spaces, eliminated rings (including rings in hand), and markers to break the tie.',
+        'Victory by Territory Control after resolving the final disconnected mini-region. Once no further placements, movements, captures, or territory actions were possible, the rules compared Territory spaces, eliminated rings (including rings in hand), and markers to break the tie.',
       titleColorClass,
     };
   }

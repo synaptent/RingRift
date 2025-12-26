@@ -97,7 +97,7 @@ class ActionConfig:
     sync_script: str = "scripts/sync_cluster_data.py"
     export_script: str = "scripts/export_replay_dataset.py"
     train_module: str = "app.training.train"
-    evaluate_module: str = "app.gauntlet.runner"
+    evaluate_script: str = "scripts/quick_gauntlet.py"
     promote_script: str = "scripts/auto_promote.py"
 
     # Timeouts (seconds)
@@ -605,10 +605,10 @@ async def trigger_evaluation(
         try:
             cmd = [
                 config.python_executable,
-                "-m", config.evaluate_module,
+                config.evaluate_script,
                 "--board-type", board_type,
                 "--num-players", str(num_players),
-                "--model-path", model_path,
+                "--model", model_path,
                 "--games", str(retry_games),
             ]
 

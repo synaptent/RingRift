@@ -70,10 +70,20 @@ SLACK_WEBHOOK_URL = os.environ.get("RINGRIFT_SLACK_WEBHOOK", "")
 DISCORD_WEBHOOK_URL = os.environ.get("RINGRIFT_DISCORD_WEBHOOK", "")
 PAGERDUTY_ROUTING_KEY = os.environ.get("PAGERDUTY_ROUTING_KEY", "")
 
-# Rate limiting
-MIN_ALERT_INTERVAL = 1800  # 30 minutes between same alert
-MAX_ALERTS_PER_HOUR = 20
-PARTITION_THRESHOLD = 0.5  # Suppress if >50% nodes have same issue
+# Rate limiting (December 2025: imported from centralized thresholds)
+try:
+    from app.config.thresholds import (
+        ALERT_PARTITION_THRESHOLD,
+        MAX_ALERTS_PER_HOUR,
+        MIN_ALERT_INTERVAL_SECONDS,
+    )
+    MIN_ALERT_INTERVAL = MIN_ALERT_INTERVAL_SECONDS  # Legacy alias
+    PARTITION_THRESHOLD = ALERT_PARTITION_THRESHOLD  # Legacy alias
+except ImportError:
+    # Fallback if thresholds not available
+    MIN_ALERT_INTERVAL = 1800  # 30 minutes between same alert
+    MAX_ALERTS_PER_HOUR = 20
+    PARTITION_THRESHOLD = 0.5  # Suppress if >50% nodes have same issue
 
 # State persistence
 STATE_FILE = Path("/tmp/ringrift_alert_router_state.json")

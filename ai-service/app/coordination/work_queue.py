@@ -1159,7 +1159,7 @@ class WorkQueue:
         """
         try:
             # Try to load from curriculum module
-            from scripts.unified_loop.curriculum import load_curriculum_weights
+            from app.coordination.curriculum_weights import load_curriculum_weights
             return load_curriculum_weights()
         except ImportError:
             pass

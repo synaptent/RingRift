@@ -38,11 +38,13 @@ Purpose: Consolidate event bus fragmentation (Phase 13 consolidation)
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import logging
 import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -196,8 +198,9 @@ class UnifiedEventRouter:
         # Deduplication: track seen event IDs and content hashes to prevent loops
         self._seen_events: set[str] = set()  # event_id based
         self._seen_content_hashes: set[str] = set()  # content-based (Dec 2025)
-        self._seen_events_order: list[str] = []  # For LRU eviction (event_id)
-        self._seen_hashes_order: list[str] = []  # For LRU eviction (content hash)
+        # Use deque for O(1) popleft instead of O(n) list.pop(0) - Dec 2025 perf fix
+        self._seen_events_order: deque[str] = deque()  # For LRU eviction (event_id)
+        self._seen_hashes_order: deque[str] = deque()  # For LRU eviction (content hash)
         self._max_seen_events = max_seen_events
         self._duplicates_prevented = 0
         self._content_duplicates_prevented = 0  # Content-hash based duplicates
@@ -451,17 +454,17 @@ class UnifiedEventRouter:
             self._seen_events.add(event.event_id)
             self._seen_events_order.append(event.event_id)
             while len(self._seen_events) > self._max_seen_events:
-                oldest = self._seen_events_order.pop(0)
+                oldest = self._seen_events_order.popleft()  # O(1) with deque
                 self._seen_events.discard(oldest)
 
             if not content_seen:
                 self._seen_content_hashes.add(content_hash)
             self._seen_hashes_order.append(content_hash)
 
-            # Bound the LRU list even if we allow repeated router-origin events
+            # Bound the LRU deque even if we allow repeated router-origin events
             # with identical content hashes.
             while len(self._seen_hashes_order) > self._max_seen_events:
-                oldest_hash = self._seen_hashes_order.pop(0)
+                oldest_hash = self._seen_hashes_order.popleft()  # O(1) with deque
                 if oldest_hash not in self._seen_hashes_order:
                     self._seen_content_hashes.discard(oldest_hash)
 
@@ -527,7 +530,7 @@ class UnifiedEventRouter:
             self._seen_events.add(event.event_id)
             self._seen_events_order.append(event.event_id)
             while len(self._seen_events) > self._max_seen_events:
-                oldest = self._seen_events_order.pop(0)
+                oldest = self._seen_events_order.popleft()  # O(1) with deque
                 self._seen_events.discard(oldest)
 
             if not content_seen:
@@ -535,7 +538,7 @@ class UnifiedEventRouter:
             self._seen_hashes_order.append(content_hash)
 
             while len(self._seen_hashes_order) > self._max_seen_events:
-                oldest_hash = self._seen_hashes_order.pop(0)
+                oldest_hash = self._seen_hashes_order.popleft()  # O(1) with deque
                 if oldest_hash not in self._seen_hashes_order:
                     self._seen_content_hashes.discard(oldest_hash)
 
@@ -558,25 +561,30 @@ class UnifiedEventRouter:
             callbacks.extend(self._subscribers[event.event_type])
 
         # Invoke callbacks (handle both sync and async)
+        # Dec 2025 fix: Use thread pool to avoid asyncio.run() blocking the caller
         for callback in callbacks:
             try:
                 result = callback(event)
-                # Run async callbacks in a new event loop (Dec 2025 fix)
-                # Previously these were silently skipped, causing training events to be dropped!
+                # Run async callbacks in thread pool (non-blocking)
+                # Previously used asyncio.run() which blocked and failed on nested loops
                 if asyncio.iscoroutine(result):
-                    try:
-                        # Use asyncio.run() to execute async callback in sync context
-                        asyncio.run(result)
-                        logger.debug(
-                            f"[EventRouter] Ran async callback {callback.__name__} "
-                            f"for {event.event_type} via asyncio.run()"
+                    def run_async_in_thread(coro):
+                        """Run async callback in a new thread with its own event loop."""
+                        try:
+                            asyncio.run(coro)
+                        except Exception as e:
+                            logger.error(f"[EventRouter] Async callback failed: {e}")
+
+                    # Use module-level thread pool (created lazily, max 4 workers)
+                    if not hasattr(self, "_thread_pool"):
+                        self._thread_pool = concurrent.futures.ThreadPoolExecutor(
+                            max_workers=4, thread_name_prefix="event_router"
                         )
-                    except RuntimeError as loop_err:
-                        # If there's a nested loop issue, try run_coroutine_threadsafe
-                        logger.warning(
-                            f"[EventRouter] asyncio.run() failed for {callback.__name__}: {loop_err}. "
-                            f"Event: {event.event_type}"
-                        )
+                    self._thread_pool.submit(run_async_in_thread, result)
+                    logger.debug(
+                        f"[EventRouter] Dispatched async callback {callback.__name__} "
+                        f"for {event.event_type} to thread pool"
+                    )
             except Exception as e:
                 logger.error(f"[EventRouter] Callback error for {event.event_type}: {e}")
 

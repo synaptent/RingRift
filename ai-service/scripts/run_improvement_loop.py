@@ -37,6 +37,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -693,8 +694,14 @@ def run_selfplay(
 
     Returns: (success, games_generated, staging_db_path)
     """
-    # Check system load before starting
-    if is_system_overloaded(verbose=True) and not wait_for_load_decrease(max_wait_seconds=300.0, verbose=True):
+    # Check system load before starting.
+    #
+    # IMPORTANT: when dry_run=True, callers (including tests) expect this helper
+    # to be side-effect free and deterministic. It must not block on host load.
+    if (not dry_run) and is_system_overloaded(verbose=True) and not wait_for_load_decrease(
+        max_wait_seconds=300.0,
+        verbose=True,
+    ):
         print("[selfplay] Skipping due to system overload", file=sys.stderr)
         return False, 0, None
 
@@ -710,20 +717,79 @@ def run_selfplay(
 
     replay_db_path = Path(config["replay_db"])
     canonical_mode = bool(config.get("canonical_mode", False))
+    difficulty_band = str(config.get("selfplay_difficulty_band", "canonical"))
+    engine_mode = str(config.get("selfplay_engine_mode", "mixed"))
+
+    def _count_completed_games(db_path: Path) -> int | None:
+        if not db_path.exists():
+            return 0
+        try:
+            conn = sqlite3.connect(str(db_path), timeout=1.0)
+        except Exception:
+            return None
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM games WHERE game_status = 'completed'"
+            ).fetchone()
+            if row is None:
+                return 0
+            return int(row[0] or 0)
+        except Exception:
+            return None
+        finally:
+            conn.close()
 
     staging_db_path: Path | None = None
-    record_db_path = replay_db_path
-    if canonical_mode:
-        staging_dir = _resolve_ai_service_path(str(config.get("staging_db_dir") or "data/games/staging/improvement_loop"))
-        staging_dir.mkdir(parents=True, exist_ok=True)
-        staging_db_path = (staging_dir / f"selfplay_iter{iteration}_{board}_{players}p.db").resolve()
-        record_db_path = staging_db_path
-        if record_db_path.exists() and not dry_run:
-            archived = Path(f"{record_db_path.as_posix()}.archived_{time.strftime('%Y%m%d_%H%M%S')}")
-            record_db_path.rename(archived)
-            print(f"[selfplay] archived existing staging DB -> {archived}", file=sys.stderr)
 
-    engine_mode = str(config.get("selfplay_engine_mode", "mixed"))
+    if canonical_mode:
+        summary_path = config.get("gate_summary")
+        cmd = [
+            sys.executable,
+            "scripts/generate_canonical_selfplay.py",
+            "--board-type",
+            board,
+            "--num-games",
+            str(games),
+            "--num-players",
+            str(players),
+            "--difficulty-band",
+            difficulty_band,
+            "--engine-mode",
+            engine_mode,
+            "--db",
+            str(replay_db_path),
+        ]
+        if summary_path:
+            cmd += ["--summary", str(summary_path)]
+        if bool(config.get("selfplay_skip_analyses", True)):
+            cmd.append("--skip-analyses")
+
+        print(f"Running selfplay: {games} games on {board} {players}p...")
+        games_before: int | None = None
+        if not dry_run:
+            games_before = _count_completed_games(replay_db_path)
+
+        code, _, stderr = run_command(
+            cmd,
+            dry_run=dry_run,
+            timeout=7200,
+            cwd=AI_SERVICE_ROOT,
+        )
+        if code != 0:
+            print(f"Selfplay failed: {stderr[:200]}")
+            return False, 0, None
+
+        if dry_run:
+            return True, games, None
+
+        games_after = _count_completed_games(replay_db_path)
+        if games_before is not None and games_after is not None:
+            games_completed = max(0, games_after - games_before)
+        else:
+            games_completed = games
+        return True, games_completed, None
+
+    # Legacy / non-canonical self-play: fast soak runner.
     cmd = [
         sys.executable,
         "scripts/run_self_play_soak.py",
@@ -734,7 +800,7 @@ def run_selfplay(
         "--engine-mode",
         engine_mode,
         "--difficulty-band",
-        str(config.get("selfplay_difficulty_band", "canonical")),
+        difficulty_band,
         "--num-players",
         str(players),
         "--max-moves",
@@ -742,7 +808,7 @@ def run_selfplay(
         "--seed",
         str(seed),
         "--record-db",
-        str(record_db_path),
+        str(replay_db_path),
         "--log-jsonl",
         str(log_file),
     ]
@@ -758,7 +824,7 @@ def run_selfplay(
 
     if code != 0:
         print(f"Selfplay failed: {stderr[:200]}")
-        return False, 0, staging_db_path
+        return False, 0, None
 
     # Count completed games from log file
     games_completed = 0
@@ -1056,8 +1122,14 @@ def train_model(
 
     Returns: (success, model_path)
     """
-    # Check system load before starting
-    if is_system_overloaded(verbose=True) and not wait_for_load_decrease(max_wait_seconds=300.0, verbose=True):
+    # Check system load before starting.
+    #
+    # IMPORTANT: when dry_run=True, callers (including tests) expect this helper
+    # to be side-effect free and deterministic. It must not block on host load.
+    if (not dry_run) and is_system_overloaded(verbose=True) and not wait_for_load_decrease(
+        max_wait_seconds=300.0,
+        verbose=True,
+    ):
         print("[training] Skipping due to system overload", file=sys.stderr)
         return False, Path("")
 

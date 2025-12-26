@@ -210,7 +210,8 @@ def extract_features(state) -> tuple[np.ndarray, np.ndarray]:
 
 def load_model(checkpoint_path: str, device: str = "cpu"):
     """Load CNN policy model from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(checkpoint_path, map_location=device)
 
     model = CNNPolicyNet(
         input_channels=56,  # Default

@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import random
 import socket
 import sqlite3
@@ -36,6 +37,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # Constants
 GOSSIP_PORT = 8771  # Port for gossip protocol
@@ -156,7 +159,7 @@ class GossipSyncDaemon:
             )
 
         if self.exclude_hosts:
-            print(f"[Gossip] Excluding hosts from sync: {self.exclude_hosts}")
+            logger.info(f"Excluding hosts from sync: {self.exclude_hosts}")
 
         # Load known game IDs from local databases
         self._load_known_games()
@@ -178,7 +181,7 @@ class GossipSyncDaemon:
                 exclude.update(data_agg.get("excluded_nodes", []))
                 return exclude
         except Exception as e:
-            print(f"[Gossip] Warning: Could not load exclude hosts from config: {e}")
+            logger.warning(f"Could not load exclude hosts from config: {e}")
         return set()
 
     def _load_known_games(self):
@@ -194,10 +197,10 @@ class GossipSyncDaemon:
                     game_ids.add(row[0])
                 conn.close()
             except Exception as e:
-                print(f"[Gossip] Error loading {db_path}: {e}")
+                logger.error(f"Error loading {db_path}: {e}")
 
         self.state.known_game_ids = game_ids
-        print(f"[Gossip] Loaded {len(game_ids):,} known game IDs")
+        logger.info(f"Loaded {len(game_ids):,} known game IDs")
 
     def _build_bloom_filter(self) -> BloomFilter:
         """Build a bloom filter of known game IDs."""
@@ -216,12 +219,12 @@ class GossipSyncDaemon:
             "0.0.0.0",
             self.listen_port,
         )
-        print(f"[Gossip] Server listening on port {self.listen_port}")
+        logger.info(f"Server listening on port {self.listen_port}")
 
         # Start background sync loop
         asyncio.create_task(self._sync_loop())
 
-        print(f"[Gossip] Daemon started for {self.node_id}")
+        logger.info(f"Daemon started for {self.node_id}")
 
     async def stop(self):
         """Stop the gossip daemon."""
@@ -229,7 +232,7 @@ class GossipSyncDaemon:
         if self._server:
             self._server.close()
             await self._server.wait_closed()
-        print("[Gossip] Daemon stopped")
+        logger.info("Daemon stopped")
 
     async def _sync_loop(self):
         """Main sync loop - periodically sync with peers."""
@@ -238,7 +241,7 @@ class GossipSyncDaemon:
                 await self._sync_cycle()
                 self.state.sync_cycles += 1
             except Exception as e:
-                print(f"[Gossip] Sync cycle error: {e}")
+                logger.error(f"Sync cycle error: {e}")
 
             await asyncio.sleep(SYNC_INTERVAL)
 
@@ -257,7 +260,7 @@ class GossipSyncDaemon:
                 await self._sync_with_peer(peer)
                 peer.last_sync = time.time()
             except Exception as e:
-                print(f"[Gossip] Failed to sync with {peer.name}: {e}")
+                logger.warning(f"Failed to sync with {peer.name}: {e}")
                 peer.is_healthy = False
 
         self.state.last_sync_time = time.time()
@@ -306,7 +309,7 @@ class GossipSyncDaemon:
                     "games": games_data,
                 })
                 self.state.total_games_pushed += len(games_data)
-                print(f"[Gossip] Pushed {len(games_data)} games to {peer.name}")
+                logger.debug(f"Pushed {len(games_data)} games to {peer.name}")
 
             # Phase 3: Find games we don't have
             games_to_pull = []
@@ -326,7 +329,7 @@ class GossipSyncDaemon:
                 if pull_response["type"] == "games_data":
                     received = self._store_games(pull_response["games"])
                     self.state.total_games_pulled += received
-                    print(f"[Gossip] Pulled {received} games from {peer.name}")
+                    logger.debug(f"Pulled {received} games from {peer.name}")
 
             peer.games_synced += len(games_to_push)
 
@@ -454,7 +457,7 @@ class GossipSyncDaemon:
                     })
 
         except Exception as e:
-            print(f"[Gossip] Connection handler error: {e}")
+            logger.error(f"Connection handler error: {e}")
         finally:
             writer.close()
             await writer.wait_closed()

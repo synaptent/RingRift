@@ -136,7 +136,9 @@ class UnifiedLoopExtensions:
         """Subscribe to events from the unified loop."""
         if hasattr(self.loop, 'event_bus'):
             try:
-                from scripts.unified_ai_loop import DataEventType
+                from app.coordination.event_router import DataEventType
+                if DataEventType is None:
+                    raise ImportError("DataEventType unavailable")
 
                 # Subscribe to training completion for calibration
                 self.loop.event_bus.subscribe(
@@ -404,11 +406,12 @@ class UnifiedLoopExtensions:
         # Publish event if event bus available
         if hasattr(self.loop, 'event_bus'):
             try:
-                from scripts.unified_ai_loop import DataEvent, DataEventType
-                await self.loop.event_bus.publish(DataEvent(
-                    event_type=DataEventType.CMAES_TRIGGERED,
-                    payload={'reason': 'plateau_detected', 'plateau_count': self.state.plateau_count}
-                ))
+                from app.coordination.event_router import DataEvent, DataEventType
+                if DataEventType is not None and DataEvent is not None:
+                    await self.loop.event_bus.publish(DataEvent(
+                        event_type=DataEventType.CMAES_TRIGGERED,
+                        payload={'reason': 'plateau_detected', 'plateau_count': self.state.plateau_count}
+                    ))
             except Exception:
                 pass
 
@@ -420,11 +423,12 @@ class UnifiedLoopExtensions:
 
         if hasattr(self.loop, 'event_bus'):
             try:
-                from scripts.unified_ai_loop import DataEvent, DataEventType
-                await self.loop.event_bus.publish(DataEvent(
-                    event_type=DataEventType.NAS_TRIGGERED,
-                    payload={'reason': 'severe_plateau', 'plateau_count': self.state.plateau_count}
-                ))
+                from app.coordination.event_router import DataEvent, DataEventType
+                if DataEventType is not None and DataEvent is not None:
+                    await self.loop.event_bus.publish(DataEvent(
+                        event_type=DataEventType.NAS_TRIGGERED,
+                        payload={'reason': 'severe_plateau', 'plateau_count': self.state.plateau_count}
+                    ))
             except Exception:
                 pass
 

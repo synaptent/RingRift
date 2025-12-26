@@ -239,7 +239,7 @@ class AsyncBridgeManager:
 
             return result
 
-        except Exception:
+        except (RuntimeError, ValueError, OSError, TypeError, AttributeError):
             with self._lock:
                 self._stats.total_tasks_failed += 1
             raise
@@ -316,7 +316,7 @@ class AsyncBridgeManager:
                     callback_result = reg.shutdown_callback()
                     if asyncio.iscoroutine(callback_result):
                         await callback_result
-                except Exception as e:
+                except (RuntimeError, ValueError, OSError, AttributeError) as e:
                     logger.warning(f"[AsyncBridgeManager] Error shutting down {name}: {e}")
 
         # Wait for active tasks if requested
@@ -450,7 +450,7 @@ def reset_bridge_manager() -> None:
                 # Synchronous cleanup
                 if _manager._executor:
                     _manager._executor.shutdown(wait=False)
-            except Exception:
+            except (RuntimeError, OSError):
                 pass
         _manager = None
 

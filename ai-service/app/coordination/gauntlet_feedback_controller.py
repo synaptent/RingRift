@@ -286,7 +286,7 @@ class GauntletFeedbackController:
             logger.info(f"[{self.name}] Subscribed to EVALUATION_COMPLETED events")
             return True
 
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to subscribe: {e}")
             return False
 
@@ -306,7 +306,7 @@ class GauntletFeedbackController:
                 bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
             self._subscribed = False
 
-        except Exception:
+        except (ImportError, RuntimeError, ValueError, AttributeError):
             pass
 
     # =========================================================================
@@ -322,7 +322,7 @@ class GauntletFeedbackController:
             from app.core.async_context import fire_and_forget
 
             fire_and_forget(self._handle_evaluation_async(event))
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to schedule evaluation handling: {e}")
 
     async def _handle_evaluation_async(self, event: Any) -> None:
@@ -330,7 +330,7 @@ class GauntletFeedbackController:
         async with self._lock:
             try:
                 await self._process_evaluation(event)
-            except Exception as e:
+            except (RuntimeError, ValueError, KeyError, AttributeError) as e:
                 self._errors_count += 1
                 self._last_error = str(e)
                 logger.error(f"[{self.name}] Error processing evaluation: {e}")
@@ -585,7 +585,7 @@ class GauntletFeedbackController:
                     f"[{self.name}] Triggered {self.config.extra_selfplay_games} extra selfplay games "
                     f"for {record.config_key}"
                 )
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit selfplay target update: {e}")
 
     async def _extend_training_epochs(self, record: EvaluationRecord) -> None:
@@ -625,7 +625,7 @@ class GauntletFeedbackController:
                     source=self.name,
                 )
                 logger.info(f"[{self.name}] Advanced curriculum for {record.config_key}")
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit curriculum advancement: {e}")
 
     async def _emit_regression_detected(
@@ -667,7 +667,7 @@ class GauntletFeedbackController:
                     f"[{self.name}] Emitted REGRESSION_DETECTED for {record.config_key} "
                     f"(ELO drop: {elo_drop:.0f})"
                 )
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit regression detected: {e}")
 
     async def _emit_rollback_consideration(
@@ -718,7 +718,7 @@ class GauntletFeedbackController:
                     f"[{self.name}] Emitted REGRESSION_CRITICAL for {record.config_key} "
                     f"(severity: {severity}, ELO drop: {elo_drop:.0f}) - rollback recommended"
                 )
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit regression critical: {e}")
 
     # =========================================================================
@@ -771,7 +771,7 @@ class GauntletFeedbackController:
                     f"[{self.name}] Emitted HYPERPARAMETER_UPDATED: "
                     f"{parameter} {old_value} -> {new_value} for {config_key}"
                 )
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit hyperparameter update: {e}")
 
     async def _emit_plateau_detected(
@@ -812,7 +812,7 @@ class GauntletFeedbackController:
                     f"[{self.name}] Emitted PLATEAU_DETECTED: "
                     f"ELO={current_elo:.0f} for {config_key}"
                 )
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit plateau detected: {e}")
 
     async def _emit_adaptive_params_changed(
@@ -882,7 +882,7 @@ class GauntletFeedbackController:
                     f"budget={payload.get('search_budget_multiplier', 1.0):.2f}"
                 )
 
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.debug(f"[{self.name}] Failed to emit ADAPTIVE_PARAMS_CHANGED: {e}")
 
     async def _detect_elo_plateau(self, tracker: ConfigTracker) -> bool:

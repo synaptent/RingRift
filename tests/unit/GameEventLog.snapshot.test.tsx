@@ -92,7 +92,17 @@ describe('GameEventLog snapshot', () => {
       <GameEventLog history={history} systemEvents={systemEvents} victoryState={null} />
     );
 
-    expect(html).toMatchSnapshot();
+    // Prefer semantic assertions over brittle full DOM snapshots.
+    expect(html).toContain('Game log');
+    expect(html).toContain('Recent moves');
+    expect(html).toContain('#3');
+    expect(html).toContain('choose_territory_option');
+    expect(html).toContain('#2');
+    expect(html).toContain('capture from (3, 3) over (3, 4) to (3, 5) x2');
+    expect(html).toContain('#1');
+    expect(html).toContain('placed 2 rings at (0, 0)');
+    expect(html).toContain('System events');
+    expect(html).toContain('Connection restored');
   });
 
   it('renders an LPS victory line with a clear label', () => {

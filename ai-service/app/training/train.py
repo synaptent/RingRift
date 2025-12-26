@@ -110,6 +110,15 @@ from app.ai.neural_net import (
 from app.models import BoardType
 from app.utils.canonical_naming import normalize_board_type
 from app.training.config import TrainConfig
+# December 2025: Structured config objects for train_model() parameter reduction
+from app.training.train_config import (
+    FullTrainingConfig,
+    TrainingDataConfig,
+    DistributedConfig,
+    CheckpointConfig,
+    EnhancementConfig,
+    config_from_legacy_params,
+)
 from app.training.data_loader import (
     StreamingDataLoader,
     WeightedStreamingDataLoader,
@@ -163,6 +172,22 @@ try:
 except ImportError:
     verify_npz_checksums = None
     HAS_CHECKSUM_VERIFICATION = False
+
+# December 2025: Extracted validation utilities
+try:
+    from app.training.train_validation import (
+        validate_training_data_freshness,
+        validate_training_data_files,
+        validate_data_checksums,
+        FreshnessResult,
+    )
+    HAS_TRAIN_VALIDATION = True
+except ImportError:
+    HAS_TRAIN_VALIDATION = False
+    validate_training_data_freshness = None
+    validate_training_data_files = None
+    validate_data_checksums = None
+    FreshnessResult = None
 
 # Hot data buffer for priority experience replay (2024-12)
 try:
@@ -927,8 +952,7 @@ def train_model(
                         # P1.1 (Dec 2025): Emit TRAINING_BLOCKED_BY_QUALITY to trigger selfplay acceleration
                         # This closes the critical feedback loop: stale data → more selfplay → fresh data
                         try:
-                            from app.distributed.data_events import DataEventType
-                            from app.coordination.event_router import get_event_bus
+                            from app.coordination.event_router import DataEventType, get_event_bus
 
                             config_key = f"{config.board_type.value}_{num_players}p"
                             bus = get_event_bus()

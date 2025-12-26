@@ -274,10 +274,9 @@ class OrphanDetectionDaemon:
             # Try to get game count
             game_count = 0
             try:
-                conn = sqlite3.connect(str(db_path))
-                cursor = conn.execute("SELECT COUNT(*) FROM games")
-                game_count = cursor.fetchone()[0]
-                conn.close()
+                with sqlite3.connect(str(db_path)) as conn:
+                    cursor = conn.execute("SELECT COUNT(*) FROM games")
+                    game_count = cursor.fetchone()[0]
             except Exception:
                 # Not a valid game database
                 return None

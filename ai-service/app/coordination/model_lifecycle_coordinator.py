@@ -11,6 +11,7 @@ Event Integration:
 - Subscribes to PROMOTION_ROLLED_BACK: Track rollbacks
 - Subscribes to TRAINING_COMPLETED: Track training completions
 - Subscribes to ELO_UPDATED: Track Elo changes
+- Subscribes to MODEL_CORRUPTED: Handle corrupted model recovery (December 2025)
 
 Key Responsibilities:
 1. Track model state transitions (training -> eval -> staging -> production)
@@ -200,6 +201,7 @@ class ModelLifecycleCoordinator:
             router.subscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
             router.subscribe(DataEventType.TRAINING_COMPLETED.value, self._on_training_completed)
             router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
+            router.subscribe(DataEventType.MODEL_CORRUPTED.value, self._on_model_corrupted)
 
             self._subscribed = True
             logger.info("[ModelLifecycleCoordinator] Subscribed to model events")
@@ -468,6 +470,115 @@ class ModelLifecycleCoordinator:
             model.elo_uncertainty = payload.get("uncertainty", model.elo_uncertainty)
             model.games_played = payload.get("games_played", model.games_played)
             model.win_rate = payload.get("win_rate", model.win_rate)
+
+    async def _on_model_corrupted(self, event) -> None:
+        """Handle MODEL_CORRUPTED event - trigger model recovery/re-download.
+
+        December 2025: Wired handler for MODEL_CORRUPTED events.
+        When a model file is detected as corrupted, this handler:
+        1. Records the corruption in model history
+        2. Invalidates any cached versions
+        3. Attempts to recover from cluster peers or rollback to previous version
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+        model_path = payload.get("model_path", "")
+        model_id = payload.get("model_id", "")
+        corruption_type = payload.get("corruption_type", "unknown")
+        error_msg = payload.get("error", "")
+        node_id = payload.get("node_id", "")
+
+        # Extract config key from model path or use provided
+        config_key = payload.get("config_key", "")
+        if not config_key and model_path:
+            # Try to extract from path like "canonical_hex8_2p.pth"
+            import re
+            match = re.search(r"(hex8|square8|square19|hexagonal)_(\d)p", model_path)
+            if match:
+                config_key = f"{match.group(1)}_{match.group(2)}p"
+
+        logger.warning(
+            f"[ModelLifecycleCoordinator] MODEL_CORRUPTED: {model_path} "
+            f"(type={corruption_type}, node={node_id}, error={error_msg})"
+        )
+
+        # Update model state if we have a record
+        if model_id and model_id in self._models:
+            model = self._models[model_id]
+            self._record_state_transition(
+                model, ModelState.ARCHIVED, f"corrupted: {corruption_type}"
+            )
+
+        # Invalidate caches for corrupted model
+        if model_id:
+            invalidated = self.invalidate_cache(model_id, node_id if node_id else None)
+            if invalidated > 0:
+                logger.info(
+                    f"[ModelLifecycleCoordinator] Invalidated {invalidated} cache entries "
+                    f"for corrupted model {model_id}"
+                )
+
+        # Attempt recovery via model distribution daemon
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_router()
+
+            # Emit MODEL_SYNC_REQUESTED to trigger re-download from healthy nodes
+            await router.publish(
+                DataEventType.MODEL_SYNC_REQUESTED.value,
+                {
+                    "model_id": model_id,
+                    "config_key": config_key,
+                    "model_path": model_path,
+                    "target_node": node_id,
+                    "reason": f"corruption_recovery:{corruption_type}",
+                    "priority": "high",
+                },
+            )
+            logger.info(
+                f"[ModelLifecycleCoordinator] Requested model re-sync for {config_key} "
+                f"to {node_id or 'all nodes'}"
+            )
+
+        except Exception as e:
+            logger.error(f"[ModelLifecycleCoordinator] Failed to request model recovery: {e}")
+
+        # If this was the production model, attempt rollback
+        if model_id and self._production_model_id == model_id:
+            logger.warning(
+                f"[ModelLifecycleCoordinator] Production model corrupted! "
+                f"Attempting rollback..."
+            )
+            try:
+                from app.training.rollback_manager import RollbackManager
+                from app.training.model_registry import get_model_registry
+
+                registry = get_model_registry()
+                rollback_mgr = RollbackManager(registry)
+
+                result = rollback_mgr.rollback_model(
+                    model_id=config_key or model_id,
+                    reason=f"Model corruption detected: {corruption_type}",
+                    triggered_by="model_corrupted_handler",
+                )
+
+                if result.get("success"):
+                    logger.info(
+                        f"[ModelLifecycleCoordinator] Rollback successful: "
+                        f"v{result.get('from_version')} -> v{result.get('to_version')}"
+                    )
+                else:
+                    logger.error(
+                        f"[ModelLifecycleCoordinator] Rollback failed: {result.get('error')}"
+                    )
+
+            except ImportError:
+                logger.warning(
+                    "[ModelLifecycleCoordinator] RollbackManager not available for recovery"
+                )
+            except Exception as e:
+                logger.error(f"[ModelLifecycleCoordinator] Rollback failed: {e}")
 
     def register_model(
         self,

@@ -22,14 +22,41 @@ Game Discovery (Canonical Exports):
     find_all_game_databases: Quick function to find all databases
     count_games_for_config: Count games for a board/player configuration
     get_game_counts_summary: Get summary of all game counts
+
+Note (Dec 2025): This module uses lazy imports to avoid loading torch at package import time.
+Use direct imports like `from app.utils.torch_utils import X` for heavy dependencies.
 """
 
 from __future__ import annotations
 
-# Canonical device management exports
-from app.utils.torch_utils import get_device, get_device_info
+__all__ = [
+    "debug_utils",
+    "env_config",
+    "torch_utils",
+    "game_discovery",
+    # Device management (lazy)
+    "get_device",
+    "get_device_info",
+    # Environment configuration (always available)
+    "EnvConfig",
+    "env",
+    "get_bool",
+    "get_float",
+    "get_int",
+    "get_list",
+    "get_str",
+    # Game discovery (lazy)
+    "GameDiscovery",
+    "find_all_game_databases",
+    "count_games_for_config",
+    "get_game_counts_summary",
+]
 
-# Canonical environment configuration exports
+# =============================================================================
+# Fast imports (no heavy dependencies)
+# =============================================================================
+
+# Environment configuration - no torch dependency
 from app.utils.env_config import (
     EnvConfig,
     env,
@@ -40,33 +67,45 @@ from app.utils.env_config import (
     get_str,
 )
 
-# Canonical game discovery exports
-from app.utils.game_discovery import (
-    GameDiscovery,
-    count_games_for_config,
-    find_all_game_databases,
-    get_game_counts_summary,
-)
+# =============================================================================
+# Lazy imports for torch-dependent modules
+# =============================================================================
 
-__all__ = [
-    "debug_utils",
-    "env_config",
-    "torch_utils",
-    "game_discovery",
-    # Device management
-    "get_device",
-    "get_device_info",
-    # Environment configuration
-    "EnvConfig",
-    "env",
-    "get_bool",
-    "get_float",
-    "get_int",
-    "get_list",
-    "get_str",
-    # Game discovery
-    "GameDiscovery",
-    "find_all_game_databases",
-    "count_games_for_config",
-    "get_game_counts_summary",
-]
+_lazy_cache: dict = {}
+
+
+def __getattr__(name: str):
+    """Lazy import for torch-dependent utilities."""
+
+    # Device management (torch_utils - loads torch)
+    if name in ("get_device", "get_device_info"):
+        if "torch_utils" not in _lazy_cache:
+            from app.utils.torch_utils import (
+                get_device as _gd,
+                get_device_info as _gdi,
+            )
+            _lazy_cache["torch_utils"] = {
+                "get_device": _gd,
+                "get_device_info": _gdi,
+            }
+        return _lazy_cache["torch_utils"][name]
+
+    # Game discovery (may have heavy deps)
+    if name in ("GameDiscovery", "find_all_game_databases",
+                "count_games_for_config", "get_game_counts_summary"):
+        if "game_discovery" not in _lazy_cache:
+            from app.utils.game_discovery import (
+                GameDiscovery as _GD,
+                count_games_for_config as _cgfc,
+                find_all_game_databases as _fagd,
+                get_game_counts_summary as _ggcs,
+            )
+            _lazy_cache["game_discovery"] = {
+                "GameDiscovery": _GD,
+                "find_all_game_databases": _fagd,
+                "count_games_for_config": _cgfc,
+                "get_game_counts_summary": _ggcs,
+            }
+        return _lazy_cache["game_discovery"][name]
+
+    raise AttributeError(f"module 'app.utils' has no attribute {name!r}")

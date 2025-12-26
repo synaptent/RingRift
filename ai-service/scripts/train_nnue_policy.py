@@ -814,7 +814,8 @@ def train_nnue_policy(
     if pretrained_path and os.path.exists(pretrained_path):
         logger.info(f"Loading pretrained model from {pretrained_path}")
         try:
-            checkpoint = torch.load(pretrained_path, map_location="cpu")
+            from app.utils.torch_utils import safe_load_checkpoint
+            checkpoint = safe_load_checkpoint(pretrained_path, map_location="cpu")
             state_dict = checkpoint
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
                 state_dict = checkpoint["model_state_dict"]

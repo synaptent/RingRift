@@ -502,24 +502,25 @@ results = await executor.run_parallel(
 ```yaml
 # config/distributed_hosts.yaml
 hosts:
-  - name: gpu-node-1
-    ip: 100.x.x.x
-    user: ubuntu
-    key_path: ~/.ssh/id_cluster
-    gpu_type: GH200
-    gpu_memory_gb: 96
-    capabilities:
-      - selfplay
-      - training
-
-  - name: gpu-node-2
-    ip: 100.x.x.x
-    user: ubuntu
-    key_path: ~/.ssh/id_cluster
-    gpu_type: H100
-    gpu_memory_gb: 80
-    capabilities:
-      - training
+  gpu-node-1:
+    ssh_host: 203.0.113.10
+    tailscale_ip: 100.x.x.x
+    ssh_user: ubuntu
+    ssh_port: 22
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 96
+    cpus: 32
+    gpu: H100
+    gpu_vram_gb: 80
+    role: training
+    status: ready
+    worker_port: 8765
+    # Optional Cloudflare Zero Trust tunnel for SSH
+    cloudflare_tunnel: gpu-node-1.example.com
+    cloudflare_service_token_id: CF_TOKEN_ID
+    cloudflare_service_token_secret: CF_TOKEN_SECRET
 
 sync:
   batch_size: 100

@@ -389,7 +389,8 @@ def compress_model(
     logger.info(f"Compressing model: {model_path}")
 
     # Load model
-    model = torch.load(model_path, map_location="cpu")
+    from app.utils.torch_utils import safe_load_checkpoint
+    model = safe_load_checkpoint(model_path, map_location="cpu")
     if hasattr(model, "eval"):
         model.eval()
 
@@ -441,7 +442,7 @@ def compress_model(
 
     # Reload for latency measurement (quantized model may need different handling)
     try:
-        compressed_model = torch.load(output_path, map_location="cpu")
+        compressed_model = safe_load_checkpoint(output_path, map_location="cpu")
         compressed_latency = measure_latency(compressed_model, input_shape)
     except Exception:
         compressed_latency = original_latency * 0.5  # Estimate
@@ -450,7 +451,7 @@ def compress_model(
     accuracy_drop = None
     if config.validate_accuracy and validation_fn:
         try:
-            compressed_model = torch.load(output_path, map_location="cpu")
+            compressed_model = safe_load_checkpoint(output_path, map_location="cpu")
             compressed_accuracy = validation_fn(compressed_model)
             if original_accuracy:
                 accuracy_drop = original_accuracy - compressed_accuracy
@@ -489,7 +490,8 @@ def create_student_model(
     Returns:
         Smaller student model
     """
-    teacher = torch.load(teacher_path, map_location="cpu")
+    from app.utils.torch_utils import safe_load_checkpoint
+    teacher = safe_load_checkpoint(teacher_path, map_location="cpu")
 
     # This is a simplified version - in practice, you'd need to
     # create a model with same architecture but smaller dimensions
@@ -577,7 +579,8 @@ def main():
     )
 
     if args.benchmark:
-        model = torch.load(input_path, map_location="cpu")
+        from app.utils.torch_utils import safe_load_checkpoint
+        model = safe_load_checkpoint(input_path, map_location="cpu")
         input_shape = (1, 10, 25, 25)
         latency = measure_latency(model, input_shape)
         print(f"Latency: {latency:.2f}ms")

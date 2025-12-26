@@ -323,6 +323,28 @@ __all__ = [
     "get_high_tier_selfplay_config",
     "get_high_tier_training_config",
     "should_use_gumbel_engine",
+    # Training configuration objects (December 2025)
+    "HAS_TRAIN_CONFIG",
+    "HAS_TRAIN_VALIDATION",
+    "AugmentationConfig",
+    "CheckpointConfig",
+    "TrainingDistributedConfig",
+    "EarlyStoppingConfig",
+    "EnhancementConfig",
+    "TrainingFaultToleranceConfig",
+    "FullTrainingConfig",
+    "HeartbeatConfig",
+    "LearningRateConfig",
+    "MixedPrecisionConfig",
+    "ModelArchConfig",
+    "TrainingDataConfig",
+    "config_from_legacy_params",
+    # Training validation utilities (December 2025)
+    "FreshnessResult",
+    "ValidationResult",
+    "validate_data_checksums",
+    "validate_training_data_files",
+    "validate_training_data_freshness",
 ]
 
 # Import promotion controller if available
@@ -851,3 +873,46 @@ try:
     HAS_HIGH_TIER_ORCHESTRATOR = True
 except ImportError:
     HAS_HIGH_TIER_ORCHESTRATOR = False
+
+# =============================================================================
+# Training Configuration Objects (December 2025)
+# =============================================================================
+# Structured config objects to reduce train_model() 96-parameter signature
+# See TRAIN_REFACTORING.md for full decomposition strategy
+
+try:
+    from app.training.train_config import (
+        AugmentationConfig,
+        CheckpointConfig,
+        DistributedConfig as TrainingDistributedConfig,  # Alias to avoid conflict
+        EarlyStoppingConfig,
+        EnhancementConfig,
+        FaultToleranceConfig as TrainingFaultToleranceConfig,  # Alias to avoid conflict
+        FullTrainingConfig,
+        HeartbeatConfig,
+        LearningRateConfig,
+        MixedPrecisionConfig,
+        ModelArchConfig,
+        TrainingDataConfig,
+        config_from_legacy_params,
+    )
+    HAS_TRAIN_CONFIG = True
+except ImportError:
+    HAS_TRAIN_CONFIG = False
+
+# =============================================================================
+# Training Validation Utilities (December 2025)
+# =============================================================================
+# Extracted validation logic from train.py for testability
+
+try:
+    from app.training.train_validation import (
+        FreshnessResult,
+        ValidationResult,
+        validate_data_checksums,
+        validate_training_data_files,
+        validate_training_data_freshness,
+    )
+    HAS_TRAIN_VALIDATION = True
+except ImportError:
+    HAS_TRAIN_VALIDATION = False

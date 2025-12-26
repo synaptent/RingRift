@@ -158,6 +158,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=123,
         help="Random seed for reproducibility (default: 123).",
     )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=None,
+        help="Optional timeout for training subprocesses (seconds).",
+    )
     return parser.parse_args(argv)
 
 
@@ -359,7 +365,7 @@ def run_neural_training(
     print(f"Running neural training for tier {args.tier}...")
     print(f'Command: {" ".join(cmd)}')
 
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, timeout=args.timeout_seconds)
     success = result.returncode == 0
 
     if success and model_path.exists():
@@ -399,7 +405,7 @@ def run_heuristic_cmaes(
     print(f"CMA-ES mode: {mode}")
     print(f'Command: {" ".join(cmd)}')
 
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, timeout=args.timeout_seconds)
 
     return {
         "mode": "heuristic_cmaes",

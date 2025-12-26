@@ -276,10 +276,10 @@ def validate_model_file(file_path: Path) -> ValidationResult:
         return result
 
     try:
-        import torch
+        from app.utils.torch_utils import safe_load_checkpoint
 
         # Load checkpoint
-        checkpoint = torch.load(file_path, map_location="cpu")
+        checkpoint = safe_load_checkpoint(file_path, map_location="cpu")
 
         # Check for model state dict
         if isinstance(checkpoint, dict):

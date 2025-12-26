@@ -4198,7 +4198,8 @@ def train_nnue(
     transfer_frozen_params = set()
     if transfer_from and os.path.exists(transfer_from):
         try:
-            source_checkpoint = torch.load(transfer_from, map_location=device)
+            from app.utils.torch_utils import safe_load_checkpoint
+            source_checkpoint = safe_load_checkpoint(transfer_from, map_location=device)
             source_state = source_checkpoint.get("model_state_dict", source_checkpoint)
 
             # Transfer compatible weights (hidden layers, output layer)
@@ -4238,7 +4239,8 @@ def train_nnue(
             logger.warning(f"Teacher model not found: {teacher_model}")
         else:
             try:
-                teacher_checkpoint = torch.load(teacher_model, map_location=device)
+                from app.utils.torch_utils import safe_load_checkpoint
+                teacher_checkpoint = safe_load_checkpoint(teacher_model, map_location=device)
                 teacher_hidden_dim = teacher_checkpoint.get("hidden_dim", hidden_dim)
                 teacher_num_layers = teacher_checkpoint.get("num_hidden_layers", num_hidden_layers)
                 teacher_model_loaded = RingRiftNNUE(
@@ -4551,12 +4553,13 @@ def train_nnue(
     # Knowledge distillation with Phase 3 parameters
     if distillation and teacher_path:
         try:
+            from app.utils.torch_utils import safe_load_checkpoint
             teacher = RingRiftNNUE(
                 feature_dim=get_feature_dim(board_type),
                 hidden_dim=hidden_dim * 2,  # Assume larger teacher
                 num_hidden_layers=num_hidden_layers + 1,
             ).to(device)
-            teacher.load_state_dict(torch.load(teacher_path, map_location=device))
+            teacher.load_state_dict(safe_load_checkpoint(teacher_path, map_location=device))
             KnowledgeDistillation(
                 teacher_model=teacher,
                 temperature=distill_temp,

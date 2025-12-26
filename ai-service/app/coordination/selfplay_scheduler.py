@@ -38,7 +38,6 @@ December 2025: Created as part of strategic integration plan.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -48,7 +47,6 @@ from typing import Any
 import yaml
 
 from app.config.thresholds import (
-    GPU_MEMORY_WEIGHTS,
     SELFPLAY_GAMES_PER_NODE,
     is_ephemeral_node,
     get_gpu_weight,
@@ -902,7 +900,7 @@ class SelfplayScheduler:
             if bus:
                 bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
                 bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
-                bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+                bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
                 # Phase 5: Subscribe to feedback events
                 bus.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, self._on_selfplay_target_updated)
                 bus.subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)

@@ -91,8 +91,9 @@ def transfer_weights(
     - 2p -> 4p: resize value head
     - Different board: copy compatible layers only
     """
+    from app.utils.torch_utils import safe_load_checkpoint
     logger.info(f"Loading source model: {source_model}")
-    checkpoint = torch.load(source_model, map_location="cpu")
+    checkpoint = safe_load_checkpoint(source_model, map_location="cpu")
 
     if "model_state_dict" in checkpoint:
         state_dict = checkpoint["model_state_dict"]
@@ -190,7 +191,8 @@ def validate_output(model_path: str, data_path: str) -> bool:
         return False
 
     try:
-        checkpoint = torch.load(model_path, map_location="cpu")
+        from app.utils.torch_utils import safe_load_checkpoint
+        checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
         if "model_state_dict" in checkpoint:
             state_dict = checkpoint["model_state_dict"]
         else:

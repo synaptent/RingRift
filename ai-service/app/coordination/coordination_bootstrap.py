@@ -587,7 +587,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             # Emit sync complete to pipeline (will trigger export if auto_trigger)
             await pipeline._on_sync_complete(event.payload)
 
-        bus.subscribe(DataEventType.SYNC_COMPLETE, on_cluster_sync_complete)
+        bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, on_cluster_sync_complete)
         results["cluster_sync_to_pipeline"] = True
         logger.debug("[Bootstrap] Wired CLUSTER_SYNC_COMPLETE -> DataPipelineOrchestrator")
 
@@ -610,7 +610,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             elif hasattr(model_coord, "refresh_model_cache"):
                 model_coord.refresh_model_cache()
 
-        bus.subscribe(DataEventType.MODEL_SYNC_COMPLETE, on_model_sync_complete)
+        bus.subscribe(DataEventType.P2P_MODEL_SYNCED, on_model_sync_complete)
         results["model_sync_to_lifecycle"] = True
         logger.debug("[Bootstrap] Wired MODEL_SYNC_COMPLETE -> ModelLifecycleCoordinator")
 

@@ -154,25 +154,25 @@ class AutoExportDaemon:
             db_path = self.config.state_db_path
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
+            # Use context manager to ensure connection is always closed
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS export_state (
-                    config_key TEXT PRIMARY KEY,
-                    board_type TEXT NOT NULL,
-                    num_players INTEGER NOT NULL,
-                    games_since_last_export INTEGER DEFAULT 0,
-                    last_export_time REAL DEFAULT 0,
-                    last_export_games INTEGER DEFAULT 0,
-                    total_exported_samples INTEGER DEFAULT 0,
-                    consecutive_failures INTEGER DEFAULT 0,
-                    updated_at REAL DEFAULT 0
-                )
-            """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS export_state (
+                        config_key TEXT PRIMARY KEY,
+                        board_type TEXT NOT NULL,
+                        num_players INTEGER NOT NULL,
+                        games_since_last_export INTEGER DEFAULT 0,
+                        last_export_time REAL DEFAULT 0,
+                        last_export_games INTEGER DEFAULT 0,
+                        total_exported_samples INTEGER DEFAULT 0,
+                        consecutive_failures INTEGER DEFAULT 0,
+                        updated_at REAL DEFAULT 0
+                    )
+                """)
 
-            conn.commit()
-            conn.close()
+                conn.commit()
             self._state_db_initialized = True
 
             logger.info(f"[AutoExportDaemon] State database initialized: {db_path}")
@@ -193,29 +193,28 @@ class AutoExportDaemon:
         import sqlite3
 
         try:
-            conn = sqlite3.connect(self.config.state_db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            # Use context manager to ensure connection is always closed
+            with sqlite3.connect(self.config.state_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            cursor.execute("SELECT * FROM export_state")
-            rows = cursor.fetchall()
+                cursor.execute("SELECT * FROM export_state")
+                rows = cursor.fetchall()
 
-            loaded_count = 0
-            for row in rows:
-                config_key = row["config_key"]
-                self._export_states[config_key] = ConfigExportState(
-                    config_key=config_key,
-                    board_type=row["board_type"],
-                    num_players=row["num_players"],
-                    games_since_last_export=row["games_since_last_export"],
-                    last_export_time=row["last_export_time"],
-                    last_export_games=row["last_export_games"],
-                    total_exported_samples=row["total_exported_samples"],
-                    consecutive_failures=row["consecutive_failures"],
-                )
-                loaded_count += 1
-
-            conn.close()
+                loaded_count = 0
+                for row in rows:
+                    config_key = row["config_key"]
+                    self._export_states[config_key] = ConfigExportState(
+                        config_key=config_key,
+                        board_type=row["board_type"],
+                        num_players=row["num_players"],
+                        games_since_last_export=row["games_since_last_export"],
+                        last_export_time=row["last_export_time"],
+                        last_export_games=row["last_export_games"],
+                        total_exported_samples=row["total_exported_samples"],
+                        consecutive_failures=row["consecutive_failures"],
+                    )
+                    loaded_count += 1
 
             if loaded_count > 0:
                 logger.info(
@@ -240,29 +239,29 @@ class AutoExportDaemon:
         import sqlite3
 
         try:
-            conn = sqlite3.connect(self.config.state_db_path)
-            cursor = conn.cursor()
+            # Use context manager to ensure connection is always closed
+            with sqlite3.connect(self.config.state_db_path) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                INSERT OR REPLACE INTO export_state
-                (config_key, board_type, num_players, games_since_last_export,
-                 last_export_time, last_export_games, total_exported_samples,
-                 consecutive_failures, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                config_key,
-                state.board_type,
-                state.num_players,
-                state.games_since_last_export,
-                state.last_export_time,
-                state.last_export_games,
-                state.total_exported_samples,
-                state.consecutive_failures,
-                time.time(),
-            ))
+                cursor.execute("""
+                    INSERT OR REPLACE INTO export_state
+                    (config_key, board_type, num_players, games_since_last_export,
+                     last_export_time, last_export_games, total_exported_samples,
+                     consecutive_failures, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    config_key,
+                    state.board_type,
+                    state.num_players,
+                    state.games_since_last_export,
+                    state.last_export_time,
+                    state.last_export_games,
+                    state.total_exported_samples,
+                    state.consecutive_failures,
+                    time.time(),
+                ))
 
-            conn.commit()
-            conn.close()
+                conn.commit()
 
         except Exception as e:
             logger.debug(f"[AutoExportDaemon] Failed to save state for {config_key}: {e}")

@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shlex
 import socket
 import subprocess
 import time
@@ -501,13 +502,13 @@ class ClusterWatchdogDaemon:
             return
 
         try:
-            # Check GPU utilization
-            gpu_cmd = f"{node.ssh_cmd} 'nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader 2>/dev/null | head -1'"
+            # Check GPU utilization - use shlex to avoid shell=True
+            ssh_parts = shlex.split(node.ssh_cmd)
+            gpu_remote_cmd = "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader 2>/dev/null | head -1"
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    gpu_cmd,
-                    shell=True,
+                    ssh_parts + [gpu_remote_cmd],
                     capture_output=True,
                     text=True,
                     timeout=self.config.ssh_timeout_seconds,
@@ -521,13 +522,12 @@ class ClusterWatchdogDaemon:
                 except ValueError:
                     node.gpu_utilization = 0.0
 
-            # Check Python processes
-            proc_cmd = f"{node.ssh_cmd} 'pgrep -c python 2>/dev/null || echo 0'"
+            # Check Python processes - use shlex to avoid shell=True
+            proc_remote_cmd = "pgrep -c python 2>/dev/null || echo 0"
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    proc_cmd,
-                    shell=True,
+                    ssh_parts + [proc_remote_cmd],
                     capture_output=True,
                     text=True,
                     timeout=self.config.ssh_timeout_seconds,
@@ -566,7 +566,8 @@ class ClusterWatchdogDaemon:
         )
 
         try:
-            # Build selfplay command
+            # Build selfplay command - use shlex to avoid shell=True
+            ssh_parts = shlex.split(node.ssh_cmd)
             selfplay_cmd = (
                 f"cd ~/ringrift/ai-service && "
                 f"mkdir -p logs data/games && "
@@ -578,14 +579,11 @@ class ClusterWatchdogDaemon:
                 f"> logs/selfplay_{board_type}_{num_players}p.log 2>&1 &"
             )
 
-            full_cmd = f"{node.ssh_cmd} '{selfplay_cmd}'"
-
             # Run with timeout - but nohup should return quickly
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    full_cmd,
-                    shell=True,
+                    ssh_parts + [selfplay_cmd],
                     capture_output=True,
                     text=True,
                     timeout=60,  # 1 minute timeout

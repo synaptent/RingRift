@@ -141,7 +141,7 @@ class DaemonWatchdog:
                     await callback(alert_type, daemon_name, details)
                 else:
                     callback(alert_type, daemon_name, details)
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
                 logger.error(f"Alert callback error: {e}")
 
         # Emit through event router if available
@@ -159,7 +159,7 @@ class DaemonWatchdog:
                     },
                     source="DaemonWatchdog",
                 )
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.debug(f"Event router not available for alert: {e}")
 
         # Log the alert
@@ -227,7 +227,7 @@ class DaemonWatchdog:
                         info.last_error = str(exc)
                     else:
                         info.state = DaemonState.STOPPED
-                except Exception:
+                except (asyncio.InvalidStateError, RuntimeError):
                     info.state = DaemonState.FAILED
                     info.last_error = "Task completed unexpectedly"
 
@@ -293,7 +293,7 @@ class DaemonWatchdog:
                     )
                 else:
                     logger.error(f"Failed to auto-restart daemon: {daemon_name}")
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, AttributeError) as e:
                 logger.error(f"Error auto-restarting {daemon_name}: {e}")
 
         # Track healthy checks (for stability monitoring)
@@ -316,7 +316,7 @@ class DaemonWatchdog:
                     for daemon_name in daemons:
                         await self._check_daemon_health(daemon_name)
 
-            except Exception as e:
+            except (RuntimeError, ValueError, KeyError, AttributeError) as e:
                 logger.error(f"Watchdog health check error: {e}")
 
             # Wait for next check interval

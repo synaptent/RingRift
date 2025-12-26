@@ -407,7 +407,8 @@ def detect_model_type(model_path: Path) -> str:
 
     # Check checkpoint contents
     try:
-        ckpt = torch.load(model_path, map_location="cpu")
+        from app.utils.torch_utils import safe_load_checkpoint
+        ckpt = safe_load_checkpoint(model_path, map_location="cpu")
         if isinstance(ckpt, dict):
             # GNN models have conv_type in checkpoint
             if "conv_type" in ckpt:

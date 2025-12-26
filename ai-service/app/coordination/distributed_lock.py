@@ -383,19 +383,23 @@ class DistributedLock:
         if not lock_path.exists():
             return False
 
+        fd: int | None = None
         try:
             fd = os.open(str(lock_path), os.O_RDONLY)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 fcntl.flock(fd, fcntl.LOCK_UN)
-                os.close(fd)
                 return False  # Could acquire, so not locked
             except BlockingIOError:
-                os.close(fd)
                 return True  # Couldn't acquire, so locked
         except Exception as e:
             logger.debug(f"Error checking lock status for {self.name}: {e}")
             return False
+        finally:
+            # Dec 2025: Always close fd to prevent leaks
+            if fd is not None:
+                with suppress(OSError):
+                    os.close(fd)
 
     def _is_file_lock_expired(self) -> bool:
         """Check if existing file lock has expired."""

@@ -694,6 +694,31 @@ def _evaluate_single_opponent(
                     f"{outcome} ({game_result.victory_reason}, {game_result.move_count} moves)"
                 )
 
+            # Emit EVALUATION_PROGRESS event for real-time monitoring (December 2025)
+            try:
+                from app.distributed.data_events import DataEventType, DataEvent
+                from app.coordination.event_router import get_event_bus
+
+                bus = get_event_bus()
+                if bus:
+                    current_win_rate = result["wins"] / result["games"] if result["games"] > 0 else 0.0
+                    bus.publish_sync(DataEvent(
+                        event_type=DataEventType.EVALUATION_PROGRESS,
+                        payload={
+                            "baseline": baseline_name,
+                            "games_completed": result["games"],
+                            "games_total": games_per_opponent,
+                            "wins": result["wins"],
+                            "losses": result["losses"],
+                            "draws": result["draws"],
+                            "current_win_rate": current_win_rate,
+                            "num_players": num_players,
+                        },
+                        source="game_gauntlet",
+                    ))
+            except Exception:
+                pass  # Silent fail - progress events are optional
+
             # Check for early stopping
             if early_stopping:
                 # Get the threshold for this baseline

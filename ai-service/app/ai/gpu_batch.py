@@ -33,6 +33,7 @@ from __future__ import annotations
 import contextlib
 import gc
 import logging
+import os
 import queue
 import threading
 import time
@@ -431,12 +432,16 @@ class GPUBatchEvaluator:
         values, policies = evaluator.evaluate_batch(states, valid_moves_batch)
     """
 
+    # Default timeout threshold for warning (10 seconds per batch is very slow)
+    DEFAULT_WARN_TIMEOUT_SECONDS = float(os.environ.get("RINGRIFT_NN_WARN_TIMEOUT", "10.0"))
+
     def __init__(
         self,
         device: str | torch.device | None = None,
         model: nn.Module | None = None,
         use_mixed_precision: bool = True,
         max_batch_size: int = 256,
+        warn_timeout_seconds: float | None = None,
     ):
         """Initialize GPU batch evaluator.
 
@@ -445,6 +450,7 @@ class GPUBatchEvaluator:
             model: Neural network model for evaluation
             use_mixed_precision: Use fp16 for faster inference on supported GPUs
             max_batch_size: Maximum batch size for memory management
+            warn_timeout_seconds: Log warning if batch takes longer than this (default: 10s)
         """
         if device is None:
             self.device = get_device()
@@ -460,14 +466,16 @@ class GPUBatchEvaluator:
 
         self.use_mixed_precision = use_mixed_precision and self.device.type == "cuda"
         self.max_batch_size = max_batch_size
+        self.warn_timeout_seconds = warn_timeout_seconds or self.DEFAULT_WARN_TIMEOUT_SECONDS
 
         # Performance tracking
         self._inference_count = 0
         self._total_inference_time = 0.0
+        self._slow_eval_count = 0  # Count of evaluations exceeding timeout
 
         logger.info(
             f"GPUBatchEvaluator initialized on {self.device} "
-            f"(mixed_precision={self.use_mixed_precision})"
+            f"(mixed_precision={self.use_mixed_precision}, warn_timeout={self.warn_timeout_seconds}s)"
         )
 
     def set_model(self, model: nn.Module) -> None:
@@ -534,6 +542,15 @@ class GPUBatchEvaluator:
         elapsed = time.perf_counter() - start_time
         self._inference_count += batch_size
         self._total_inference_time += elapsed
+
+        # Timeout warning for slow batches (Dec 2025 monitoring)
+        if elapsed > self.warn_timeout_seconds:
+            self._slow_eval_count += 1
+            logger.warning(
+                f"[GPUBatchEvaluator] Slow NN evaluation: {elapsed:.2f}s for batch_size={batch_size} "
+                f"(threshold={self.warn_timeout_seconds}s, slow_count={self._slow_eval_count}). "
+                f"Consider reducing batch size or checking GPU health."
+            )
 
         return values_np, policies_np
 

@@ -53,9 +53,9 @@ DEFAULT_SNAPSHOT_INTERVAL = 20
 
 # Import centralized timeout thresholds
 try:
-    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_LONG_MS, SQLITE_TIMEOUT
+    from app.config.thresholds import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT
 except ImportError:
-    SQLITE_BUSY_TIMEOUT_LONG_MS = 30000
+    SQLITE_BUSY_TIMEOUT_MS = 10000  # 10s standard timeout (was 30s, reduced for training)
     SQLITE_TIMEOUT = 30
 
 # SQL schema creation statements (v2)
@@ -652,8 +652,8 @@ class GameReplayDB:
         conn.row_factory = sqlite3.Row
         # Set journal mode (WAL for local, DELETE for NFS)
         conn.execute(f"PRAGMA journal_mode={self._journal_mode}")
-        # Wait for locks using centralized threshold
-        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_LONG_MS}")
+        # Wait for locks using centralized threshold (10s standard, was 30s)
+        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
         conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn

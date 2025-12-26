@@ -233,7 +233,7 @@ class CoordinatorBase(ABC):
                 await self._do_initialize()
                 self._status = CoordinatorStatus.READY
                 logger.info(f"[{self._name}] Initialized")
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, AttributeError) as e:
                 self._status = CoordinatorStatus.ERROR
                 self._last_error = str(e)
                 logger.error(f"[{self._name}] Initialization failed: {e}")
@@ -257,7 +257,7 @@ class CoordinatorBase(ABC):
                 self._status = CoordinatorStatus.RUNNING
                 await self._do_start()
                 logger.info(f"[{self._name}] Started")
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, AttributeError) as e:
                 self._running = False
                 self._status = CoordinatorStatus.ERROR
                 self._last_error = str(e)
@@ -279,7 +279,7 @@ class CoordinatorBase(ABC):
                 self._running = False
                 self._status = CoordinatorStatus.STOPPED
                 logger.info(f"[{self._name}] Stopped")
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, AttributeError) as e:
                 self._status = CoordinatorStatus.ERROR
                 self._last_error = str(e)
                 logger.error(f"[{self._name}] Stop failed: {e}")
@@ -555,7 +555,7 @@ class CallbackMixin:
                 else:
                     result = callback(*args, **kwargs)
                 results.append(result)
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
                 logger.warning(f"Callback error for {event_type}: {e}")
                 results.append(None)
         return results
@@ -661,7 +661,7 @@ class EventDrivenMonitorMixin:
         except ImportError:
             logger.warning("Event coordinator not available")
             return False
-        except Exception as e:
+        except (RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"Failed to subscribe to events: {e}")
             return False
 
@@ -683,7 +683,7 @@ class EventDrivenMonitorMixin:
                     await handler(payload)
                 else:
                     handler(payload)
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
                 logger.warning(f"Event handler error for {event_type}: {e}")
 
     def get_event_status(self) -> dict[str, Any]:
@@ -857,7 +857,7 @@ class CoordinatorRegistry:
                 results[name] = False
                 if not force_after_timeout:
                     break
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, AttributeError) as e:
                 logger.error(f"Coordinator {name} shutdown failed: {e}")
                 results[name] = False
 
@@ -878,7 +878,7 @@ class CoordinatorRegistry:
         async def drain_one(coord: CoordinatorBase) -> None:
             try:
                 await coord.stop()
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, AttributeError) as e:
                 logger.warning(f"Error draining {coord.name}: {e}")
 
         tasks = [drain_one(c) for c in self._coordinators.values() if c.is_running]
@@ -914,7 +914,7 @@ class CoordinatorRegistry:
                 logger.warning("No event loop running, attempting sync shutdown")
                 try:
                     asyncio.run(self.shutdown_all(timeout=10.0))
-                except Exception as e:
+                except (RuntimeError, OSError) as e:
                     logger.error(f"Sync shutdown failed: {e}")
 
         # Install handlers for common termination signals
@@ -1003,7 +1003,7 @@ def get_coordinator_statuses() -> dict[str, dict[str, Any]]:
         if hasattr(coord, 'get_status') and callable(coord.get_status):
             try:
                 result[name] = coord.get_status()
-            except Exception:
+            except (RuntimeError, ValueError, AttributeError):
                 result[name] = {
                     "status": coord.status.value,
                     "is_running": coord.is_running,

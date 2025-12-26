@@ -46,7 +46,8 @@ def parse_board_type(model_path: str) -> BoardType:
 
 def load_model(model_path: str) -> RingRiftNNUE:
     """Load an NNUE model from checkpoint."""
-    checkpoint = torch.load(model_path, map_location="cpu")
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
 
     # Get board type from checkpoint or path
     if "board_type" in checkpoint:
@@ -89,7 +90,8 @@ def save_quantized_model(
 ) -> str:
     """Save quantized model to checkpoint."""
     # Load original checkpoint to preserve metadata
-    original = torch.load(original_checkpoint_path, map_location="cpu")
+    from app.utils.torch_utils import safe_load_checkpoint
+    original = safe_load_checkpoint(original_checkpoint_path, map_location="cpu")
 
     if output_path is None:
         # Add _int8 suffix to filename

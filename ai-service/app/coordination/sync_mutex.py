@@ -237,7 +237,7 @@ class SyncMutex:
                 self._cleanup_expired(conn)
 
             except sqlite3.Error as e:
-                print(f"[SyncMutex] Database error: {e}")
+                logger.error(f"Database error acquiring lock for {host}: {e}")
                 return False
 
     def release(self, host: str) -> bool:
@@ -303,10 +303,10 @@ class SyncMutex:
         indicating cluster bottlenecks or dead locks.
         """
         try:
-            from app.distributed.data_events import get_event_bus, DataEvent, DataEventType
+            from app.coordination.event_router import publish_sync
 
-            event = DataEvent(
-                event_type=DataEventType.LOCK_TIMEOUT,
+            publish_sync(
+                "LOCK_TIMEOUT",
                 payload={
                     "host": host,
                     "operation": operation,
@@ -317,16 +317,8 @@ class SyncMutex:
                 },
                 source="SyncMutex",
             )
-
-            # Try to emit asynchronously if we have a running event loop
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(get_event_bus().publish(event))
-            except RuntimeError:
-                # No running loop, try sync publish
-                asyncio.run(get_event_bus().publish(event))
         except Exception as e:
-            logger.debug(f"[SyncMutex] Failed to emit LOCK_TIMEOUT event: {e}")
+            logger.debug(f"Failed to emit LOCK_TIMEOUT event: {e}")
 
     def get_lock_info(self, host: str) -> SyncLockInfo | None:
         """Get information about a lock."""
@@ -491,8 +483,7 @@ class SyncMutex:
             if should_release:
                 conn.execute('DELETE FROM sync_locks WHERE lock_id = ?', (lock_id,))
                 cleaned += 1
-                # Log using print since this is coordination code
-                print(f"[SyncMutex] Released stale lock for {host}: {reason}")
+                logger.info(f"Released stale lock for {host}: {reason}")
 
         if cleaned > 0:
             conn.commit()

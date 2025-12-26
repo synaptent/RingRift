@@ -136,7 +136,7 @@ def check_status(node: Node) -> tuple:
     if success:
         try:
             return True, int(output.strip())
-        except:
+        except (ValueError, AttributeError):
             return True, 0
     return False, 0
 

@@ -297,7 +297,7 @@ class SyncRouter:
 
             bus = get_event_bus()
             if bus:
-                bus.emit(DataEventType.DISK_USAGE_UPDATED, {
+                bus.emit(DataEventType.NODE_CAPACITY_UPDATED, {
                     "node_id": self.node_id,
                     "reason": "capacity_refresh",
                 })

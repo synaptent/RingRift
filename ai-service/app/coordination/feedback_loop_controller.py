@@ -38,7 +38,7 @@ import asyncio
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -194,7 +194,7 @@ class FeedbackLoopController:
             bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
             bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
-            bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
 
             # Phase 23.1: Subscribe to selfplay rate change events for monitoring
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
@@ -240,7 +240,7 @@ class FeedbackLoopController:
             bus.unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
             bus.unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
             bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
-            bus.unsubscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+            bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
 
             # Phase 23.1: Unsubscribe from rate change events
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
@@ -649,7 +649,6 @@ class FeedbackLoopController:
 
             # Emit the event (handle both sync and async contexts)
             try:
-                loop = asyncio.get_running_loop()
                 asyncio.create_task(emit_quality_check_requested(
                     config_key=config_key,
                     reason=reason,
@@ -719,7 +718,7 @@ class FeedbackLoopController:
                         scheduler.set_exploration_boost(boost)
                         wired = True
             if wired:
-                logger.debug(f"[FeedbackLoopController] Wired boost to temperature scheduler")
+                logger.debug("[FeedbackLoopController] Wired boost to temperature scheduler")
         except ImportError:
             logger.debug("[FeedbackLoopController] Temperature scheduling not available (using fallback)")
         except Exception as e:
@@ -766,7 +765,7 @@ class FeedbackLoopController:
                 if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
                     if hasattr(scheduler, 'set_exploration_boost'):
                         scheduler.set_exploration_boost(boost)
-                        logger.debug(f"[FeedbackLoopController] Wired stall boost to scheduler")
+                        logger.debug("[FeedbackLoopController] Wired stall boost to scheduler")
         except ImportError:
             logger.debug("[FeedbackLoopController] Temperature scheduling not available (using fallback)")
         except Exception as e:
@@ -907,14 +906,11 @@ class FeedbackLoopController:
             )
 
             try:
-                loop = asyncio.get_running_loop()
                 _safe_create_task(bus.publish(event), "curriculum_event_publish")
             except RuntimeError:
                 asyncio.run(bus.publish(event))
 
-            logger.debug(
-                f"[FeedbackLoopController] Emitted CURRICULUM_REBALANCED (training_complete)"
-            )
+            logger.debug("[FeedbackLoopController] Emitted CURRICULUM_REBALANCED (training_complete)")
 
         except ImportError:
             pass  # Event system not available
@@ -1109,8 +1105,6 @@ class FeedbackLoopController:
 
             config_key = metadata.get("config") or metadata.get("config_key", "")
             promoted = metadata.get("promoted", False)
-            new_elo = metadata.get("new_elo") or metadata.get("elo")
-
             if not config_key:
                 return
 

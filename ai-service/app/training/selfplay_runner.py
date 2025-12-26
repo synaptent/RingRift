@@ -319,11 +319,19 @@ class SelfplayRunner(ABC):
         logger.info(f"  Throughput: {self.stats.games_per_second:.2f} games/sec")
 
     def _load_model(self) -> None:
-        """Load neural network model if configured."""
+        """Load neural network model if configured.
+
+        Includes race condition protection: waits for model distribution
+        to complete before attempting to load, avoiding failures when
+        selfplay starts immediately after a model promotion.
+        """
         if not self.config.use_neural_net:
             return
 
         try:
+            # First, wait for model distribution if needed (fixes race condition)
+            self._wait_for_model_availability()
+
             from .selfplay_model_selector import get_model_for_config
             model_path = get_model_for_config(
                 self.config.board_type,
@@ -335,6 +343,69 @@ class SelfplayRunner(ABC):
                 self._model = model_path
         except Exception as e:
             logger.warning(f"Model loading failed: {e}")
+
+    def _wait_for_model_availability(self) -> None:
+        """Wait for model to be distributed before loading.
+
+        Prevents race condition where selfplay nodes receive MODEL_PROMOTED
+        event and try to load models before ModelDistributionDaemon finishes
+        distributing them to the cluster.
+
+        Uses asyncio to wait for MODEL_DISTRIBUTION_COMPLETE event or
+        checks if model already exists locally. Times out after 300s.
+        """
+        try:
+            from app.coordination.model_distribution_daemon import (
+                wait_for_model_distribution,
+                check_model_availability,
+            )
+
+            # Quick synchronous check first
+            if check_model_availability(self.config.board_type, self.config.num_players):
+                logger.debug("[ModelDistribution] Model already available locally")
+                return
+
+            # If not available, wait for distribution with timeout
+            logger.info(
+                f"[ModelDistribution] Waiting for model distribution for "
+                f"{self.config.board_type}_{self.config.num_players}p..."
+            )
+
+            # Run async wait in sync context
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                # We're in an async context - use await directly
+                task = loop.create_task(
+                    wait_for_model_distribution(
+                        self.config.board_type,
+                        self.config.num_players,
+                        timeout=300.0,
+                    )
+                )
+                # Block on the task
+                available = loop.run_until_complete(task)
+            except RuntimeError:
+                # No running loop - create new one
+                available = asyncio.run(
+                    wait_for_model_distribution(
+                        self.config.board_type,
+                        self.config.num_players,
+                        timeout=300.0,
+                    )
+                )
+
+            if not available:
+                logger.warning(
+                    f"[ModelDistribution] Model distribution timed out after 300s. "
+                    "Will attempt to use fallback model or random policy."
+                )
+
+        except ImportError:
+            # Model distribution daemon not available - skip wait
+            logger.debug("[ModelDistribution] Distribution daemon not available, skipping wait")
+        except Exception as e:
+            logger.warning(f"[ModelDistribution] Error waiting for model: {e}")
 
     def _open_database(self) -> None:
         """Open database for game recording if record_db is configured."""

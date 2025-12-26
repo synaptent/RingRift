@@ -176,6 +176,15 @@ def _encode_single_game(
         board_type = BoardType(board_type_str)
         is_hex = board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
 
+        # Fix board.size if incorrect (common issue with older JSONL data)
+        # Hex boards should have bounding box size, not radius
+        correct_sizes = {"hex8": 9, "hexagonal": 25, "square8": 8, "square19": 19}
+        expected_size = correct_sizes.get(board_type_str, initial_state.board.size)
+        if initial_state.board.size != expected_size:
+            # Create corrected board and state
+            corrected_board = initial_state.board.model_copy(update={"size": expected_size})
+            initial_state = initial_state.model_copy(update={"board": corrected_board})
+
         # Get appropriate encoder
         if is_hex:
             encoder = _get_encoder(

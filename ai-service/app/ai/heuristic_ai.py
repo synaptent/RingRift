@@ -227,7 +227,8 @@ def _evaluate_moves_chunk_worker(args: tuple) -> list[tuple[int, float]]:
             original_player = ai.player_number
             ai.player_number = 1 if original_player == 2 else 2
             score = ai.evaluate_position(next_state)
-            score += ai.evaluate_swap_opening_bonus(game_state)
+            # NOTE: Swap bonus removed - it was asymmetric (only P2 got it)
+            # and double-counted opening strength already in position eval
             ai.player_number = original_player
         else:
             score = ai.evaluate_position(next_state)
@@ -691,8 +692,8 @@ class HeuristicAI(BaseAI):
                         # After swap, P2 becomes P1 (swap toggles 1<->2)
                         self.player_number = 1 if original_player == 2 else 2
                         score = self.evaluate_position(next_state)
-                        # Add swap bonus for strong opening positions
-                        score += self.evaluate_swap_opening_bonus(game_state)
+                        # NOTE: Swap bonus removed - it was asymmetric (only P2 got it)
+                        # and double-counted opening strength already in position eval
 
                         # Add stochastic exploration for training diversity
                         if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
@@ -888,10 +889,8 @@ class HeuristicAI(BaseAI):
                 score = evaluate_position_light(
                     light_state, new_player, weights, self.eval_mode
                 )
-                # Add swap bonus for strong opening positions
-                score += self._evaluate_swap_opening_bonus_light(
-                    light_state, player_number=new_player
-                )
+                # NOTE: Swap bonus removed - it was asymmetric (only P2 got it)
+                # and double-counted opening strength already in position eval
             else:
                 score = evaluate_position_light(
                     light_state, self.player_number, weights, self.eval_mode
@@ -1034,9 +1033,8 @@ class HeuristicAI(BaseAI):
                 score = evaluate_position_light(
                     light_state, new_player, weights, self.eval_mode
                 )
-                score += self._evaluate_swap_opening_bonus_light(
-                    light_state, player_number=new_player
-                )
+                # NOTE: Swap bonus removed - it was asymmetric (only P2 got it)
+                # and double-counted opening strength already in position eval
 
             results.append((move, score))
 

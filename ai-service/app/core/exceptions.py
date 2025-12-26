@@ -1,9 +1,19 @@
 """RingRift Exception Hierarchy - Typed exceptions for better error handling.
 
-Phase 21.2 (December 2025): Replace bare `except Exception:` catches with
-specific exception types for better debugging and error handling.
+.. deprecated:: December 2025
+    This module is deprecated. Use `app.errors` instead:
 
-Usage:
+        from app.errors import (
+            RingRiftError,
+            ResourceError,
+            SyncError,
+            TrainingError,
+            # ... etc
+        )
+
+    This module will be removed in a future version.
+
+Legacy Usage (deprecated):
     from app.core.exceptions import (
         RingRiftError,
         ResourceError,

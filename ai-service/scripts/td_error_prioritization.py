@@ -169,7 +169,8 @@ def compute_td_errors(
     n_samples = len(values)
 
     # Load model
-    checkpoint = torch.load(model_path, map_location="cpu")
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
     checkpoint.get("board_type", "square8")
 
     # Determine input dimensions

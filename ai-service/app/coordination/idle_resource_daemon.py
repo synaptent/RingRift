@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.env import env
 from app.coordination.protocols import (
     CoordinatorStatus,
     register_coordinator,
@@ -116,20 +117,14 @@ class IdleResourceConfig:
 
     @classmethod
     def from_env(cls) -> IdleResourceConfig:
-        """Load configuration from environment variables."""
+        """Load configuration from centralized env config."""
         config = cls()
-        config.enabled = os.environ.get("RINGRIFT_IDLE_RESOURCE_ENABLED", "1") == "1"
+        config.enabled = env.idle_resource_enabled
         # Faster detection: reduced from 300s to 60s (Dec 2025)
-        config.check_interval_seconds = int(
-            os.environ.get("RINGRIFT_IDLE_CHECK_INTERVAL", "60")
-        )
-        config.idle_threshold_percent = float(
-            os.environ.get("RINGRIFT_IDLE_THRESHOLD", "10.0")
-        )
+        config.check_interval_seconds = env.idle_check_interval
+        config.idle_threshold_percent = env.idle_threshold
         # Faster spawning: reduced from 900s to 120s (Dec 2025)
-        config.idle_duration_seconds = int(
-            os.environ.get("RINGRIFT_IDLE_DURATION", "120")
-        )
+        config.idle_duration_seconds = env.idle_duration
         return config
 
 

@@ -45,7 +45,8 @@ AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 def load_source_model(model_path: str) -> dict:
     """Load source model state dict."""
-    checkpoint = torch.load(model_path, map_location="cpu")
+    from app.utils.torch_utils import safe_load_checkpoint
+    checkpoint = safe_load_checkpoint(model_path, map_location="cpu")
     if "state_dict" in checkpoint:
         return checkpoint["state_dict"]
     elif "model_state_dict" in checkpoint:

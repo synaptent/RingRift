@@ -192,11 +192,13 @@ class SystemHealthMonitorDaemon:
             # Try P2P status first
             import requests
 
-            response = requests.get("http://localhost:8770/status", timeout=2)
+            response = requests.get("http://localhost:8770/status", timeout=5)
             if response.ok:
                 return response.json()
-        except Exception:
-            pass
+        except (requests.Timeout, requests.ConnectionError) as e:
+            logger.debug(f"P2P status request failed: {e}")
+        except Exception as e:
+            logger.debug(f"P2P status request error: {e}")
 
         return {}
 

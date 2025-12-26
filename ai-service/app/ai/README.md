@@ -728,7 +728,7 @@ app.training.train
     ↓
 Model Checkpoint (.pth)
     ↓
-Gauntlet Evaluation (app.gauntlet)
+Gauntlet Evaluation (app.training.game_gauntlet)
     ↓
 Auto-Promotion (scripts/auto_promote.py)
     ↓
@@ -842,9 +842,8 @@ export RINGRIFT_GPU_SHADOW_RATE=0.05          # Validate 5% of games
   - `temperature_scheduling.py` - Exploration schedules
   - `online_learning.py` - EBMO online learning
 
-- **`app/gauntlet/`** - AI evaluation framework
-  - `runner.py` - Gauntlet evaluation
-  - `game_gauntlet.py` - Head-to-head matches
+- **`app/training/game_gauntlet.py`** - AI evaluation framework
+  - `run_baseline_gauntlet()` - Head-to-head baselines
 
 - **`app/rules/`** - Python game rules (mirrors TypeScript)
   - `engine/` - Core game logic
@@ -854,6 +853,7 @@ export RINGRIFT_GPU_SHADOW_RATE=0.05          # Validate 5% of games
   - `selfplay.py` - Unified selfplay entry point
   - `export_replay_dataset.py` - Convert .db to .npz
   - `auto_promote.py` - Automated model promotion
+  - `quick_gauntlet.py` - Baseline gauntlet CLI
   - `run_training_loop.py` - Full training pipeline
 
 ## See Also

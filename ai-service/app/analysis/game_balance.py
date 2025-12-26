@@ -164,37 +164,36 @@ class GameBalanceAnalyzer:
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Load completed games from database."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
 
-        query = """
-            SELECT game_id, board_type, num_players, winner,
-                   move_history, created_at, completed_at
-            FROM games
-            WHERE status = 'completed'
-        """
-        params = []
+            query = """
+                SELECT game_id, board_type, num_players, winner,
+                       move_history, created_at, completed_at
+                FROM games
+                WHERE status = 'completed'
+            """
+            params = []
 
-        bt = board_type or self.board_type
-        np_ = num_players or self.num_players
+            bt = board_type or self.board_type
+            np_ = num_players or self.num_players
 
-        if bt:
-            query += " AND board_type = ?"
-            params.append(bt)
+            if bt:
+                query += " AND board_type = ?"
+                params.append(bt)
 
-        if np_:
-            query += " AND num_players = ?"
-            params.append(np_)
+            if np_:
+                query += " AND num_players = ?"
+                params.append(np_)
 
-        query += " ORDER BY completed_at DESC"
+            query += " ORDER BY completed_at DESC"
 
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
+            if limit:
+                query += " LIMIT ?"
+                params.append(limit)
 
-        cursor.execute(query, params)
-        games = [dict(row) for row in cursor.fetchall()]
-        conn.close()
+            cursor.execute(query, params)
+            games = [dict(row) for row in cursor.fetchall()]
 
         return games
 

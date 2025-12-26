@@ -287,7 +287,23 @@ class LocalExecutor(BaseExecutor):
 
 
 class SSHExecutor(BaseExecutor):
-    """Execute commands on a remote host via SSH."""
+    """Execute commands on a remote host via SSH (async).
+
+    This is a lightweight async SSH executor for generic use cases where
+    you have raw connection parameters (host, user, port, key).
+
+    For cluster operations with HostConfig objects and advanced features
+    (Cloudflare tunnel fallback, venv activation, tailscale routing),
+    use app.distributed.hosts.SSHExecutor instead.
+
+    Key differences:
+    - This class: async, raw parameters, simple retry logic
+    - hosts.SSHExecutor: sync, HostConfig, multi-transport fallback
+
+    Usage:
+        executor = SSHExecutor(host="1.2.3.4", user="root", port=22)
+        result = await executor.run("nvidia-smi", timeout=30)
+    """
 
     def __init__(
         self,

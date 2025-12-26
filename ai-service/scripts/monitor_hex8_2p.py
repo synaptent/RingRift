@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Monitor hex8_2p game generation progress across cluster."""
 
+import shlex
 import subprocess
 import time
 import sys
@@ -12,10 +13,15 @@ NODES = [
     ("runpod-a100-2", "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 -p 11681 root@104.255.9.187"),
 ]
 
-def run_cmd(cmd: str, timeout: int = 10) -> str:
+def run_ssh_cmd(ssh_cmd: str, remote_cmd: str, timeout: int = 10) -> str:
+    """Run a command via SSH without shell=True for security."""
     try:
+        ssh_parts = shlex.split(ssh_cmd)
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout
+            ssh_parts + [remote_cmd],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         return result.stdout.strip() if result.returncode == 0 else f"error: {result.stderr.strip()}"
     except subprocess.TimeoutExpired:
@@ -25,24 +31,24 @@ def run_cmd(cmd: str, timeout: int = 10) -> str:
 
 def get_game_count(ssh_cmd: str, base_path: str) -> int:
     # Use Python to count since sqlite3 may not be installed
-    cmd = f'''{ssh_cmd} 'cd {base_path} && python3 -c "
+    remote_cmd = f'''cd {base_path} && python3 -c "
 import sqlite3
 try:
-    conn = sqlite3.connect(\\\"data/games/hex8_2p.db\\\")
-    count = conn.execute(\\\"SELECT COUNT(*) FROM games\\\").fetchone()[0]
+    conn = sqlite3.connect('data/games/hex8_2p.db')
+    count = conn.execute('SELECT COUNT(*) FROM games').fetchone()[0]
     print(count)
     conn.close()
-except: print(0)
-"' '''
-    result = run_cmd(cmd, timeout=15)
+except Exception: print(0)
+"'''
+    result = run_ssh_cmd(ssh_cmd, remote_cmd, timeout=15)
     try:
         return int(result.strip().split('\n')[-1])
-    except:
+    except (ValueError, AttributeError, IndexError):
         return 0
 
 def get_selfplay_progress(ssh_cmd: str, log_pattern: str) -> str:
-    cmd = f"{ssh_cmd} 'grep -E \"Progress:|Game [0-9]+/\" {log_pattern} 2>/dev/null | tail -1'"
-    result = run_cmd(cmd)
+    remote_cmd = f'grep -E "Progress:|Game [0-9]+/" {log_pattern} 2>/dev/null | tail -1'
+    result = run_ssh_cmd(ssh_cmd, remote_cmd)
     return result if result and "error" not in result.lower() else "no progress"
 
 def get_local_count() -> int:
@@ -56,10 +62,10 @@ def get_local_count() -> int:
                 count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
                 conn.close()
                 total += count
-            except:
+            except (sqlite3.Error, TypeError):
                 pass
         return total
-    except:
+    except (ImportError, OSError):
         return 0
 
 def monitor_once():

@@ -104,6 +104,94 @@ if not can_proceed():
 - Use `psutil.cpu_percent()` directly
 - Hardcode utilization thresholds
 
+### Environment Variables
+
+**Canonical Source:** `app/config/env.py` (December 2025)
+
+All `RINGRIFT_*` environment variables should be accessed through the typed `env` singleton:
+
+```python
+from app.config.env import env
+
+# Access typed values with defaults
+node_id = env.node_id  # str, defaults to hostname
+log_level = env.log_level  # str, defaults to "INFO"
+skip_shadow = env.skip_shadow_contracts  # bool
+
+# Check if set
+if env.is_set("COORDINATOR_URL"):
+    url = env.coordinator_url
+```
+
+**Do NOT:**
+
+- Use `os.environ.get("RINGRIFT_...")` directly in new code
+- Duplicate default values across modules
+
+### SSH Operations
+
+**Canonical Source:** `app/core/ssh.py` (December 2025)
+
+All SSH operations should use the unified SSHClient:
+
+```python
+from app.core.ssh import (
+    SSHClient,
+    get_ssh_client,
+    run_ssh_command_async,
+    SSHConfig,
+)
+
+# Get client for a known host
+client = get_ssh_client("runpod-h100")
+result = await client.run_async("nvidia-smi")
+
+# Or use convenience function
+result = await run_ssh_command_async("runpod-h100", "echo hello")
+
+# Check result
+if result.success:
+    print(result.stdout)
+```
+
+**Do NOT:**
+
+- Use `subprocess.run()` with `shell=True` for SSH
+- Implement custom SSH helpers in scripts
+- Build SSH commands as strings with f-strings
+
+### Node Information
+
+**Canonical Source:** `app/core/node.py` (December 2025)
+
+All node/host dataclasses should use the unified NodeInfo:
+
+```python
+from app.core.node import (
+    NodeInfo,
+    NodeRole,
+    NodeHealth,
+    GPUInfo,
+    ConnectionInfo,
+)
+
+# Create from P2P status
+node = NodeInfo.from_p2p_status(p2p_data)
+
+# Create from SSH discovery
+node = NodeInfo.from_ssh_discovery(host, gpu_output, process_output)
+
+# Access typed fields
+if node.health == NodeHealth.HEALTHY:
+    for gpu in node.gpus:
+        print(f"GPU {gpu.index}: {gpu.utilization}%")
+```
+
+**Do NOT:**
+
+- Create ad-hoc dataclasses for node information
+- Use raw dicts for node status
+
 ### Host Configuration
 
 **Canonical Source:** `config/distributed_hosts.yaml`

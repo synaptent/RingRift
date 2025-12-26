@@ -154,12 +154,15 @@ class TrainingJob:
 
 
 def run_ssh_command(ssh_cmd: str, command: str, timeout: int = 30) -> tuple[bool, str]:
-    """Run a command via SSH and return success status and output."""
+    """Run a command via SSH and return success status and output.
+
+    Uses shlex.split to avoid shell=True for security.
+    """
+    import shlex
     try:
-        full_cmd = f"{ssh_cmd} '{command}'"
+        ssh_parts = shlex.split(ssh_cmd)
         result = subprocess.run(
-            full_cmd,
-            shell=True,
+            ssh_parts + [command],
             capture_output=True,
             text=True,
             timeout=timeout,
