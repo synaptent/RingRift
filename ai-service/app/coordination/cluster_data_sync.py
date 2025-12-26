@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 # Import unified exclusion policy (December 2025)
 # This replaces the hardcoded EXCLUDED_NODES frozenset
 from app.coordination.coordinator_config import get_exclusion_policy
+from app.coordination.sync_constants import SyncResult
 
 # Legacy alias for backwards compatibility - do not use directly
 # Use get_exclusion_policy().excluded_nodes instead
@@ -86,23 +87,19 @@ P2P_STATUS_URL = "http://localhost:8770/status"
 # =============================================================================
 
 @dataclass
-class SyncTarget:
-    """A node eligible to receive synced data."""
+class EligibleSyncNode:
+    """A node eligible to receive synced data.
+
+    Note: This is different from sync_constants.SyncTarget which is for SSH connection details.
+    This class tracks node eligibility and capacity for sync operations.
+    """
     node_id: str
     host: str
     disk_free_gb: float
     is_nfs: bool = False  # Lambda nodes share NFS, skip rsync between them
 
 
-@dataclass
-class SyncResult:
-    """Result of a sync operation."""
-    source: str
-    target: str
-    success: bool
-    bytes_transferred: int = 0
-    duration_seconds: float = 0.0
-    error: str | None = None
+# SyncResult is now imported from sync_constants
 
 
 # =============================================================================

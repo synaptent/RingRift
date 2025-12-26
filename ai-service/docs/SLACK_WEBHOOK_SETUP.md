@@ -61,9 +61,10 @@ curl -X POST -H 'Content-type: application/json' \
 To deploy to all cluster nodes:
 
 ```bash
-# From coordinator (mac-studio)
-cd ~/Development/RingRift/ai-service
-python scripts/deploy_env_var.py --var RINGRIFT_SLACK_WEBHOOK --value "YOUR_WEBHOOK_URL"
+# From coordinator (edit host list as needed)
+for host in host1 host2 host3; do
+  ssh ubuntu@$host 'echo "export RINGRIFT_SLACK_WEBHOOK=YOUR_WEBHOOK_URL" >> ~/.bashrc'
+done
 ```
 
 Or manually on each node:

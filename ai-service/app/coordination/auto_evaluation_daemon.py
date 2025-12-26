@@ -244,6 +244,56 @@ class AutoEvaluationDaemon:
         except Exception as e:
             logger.debug(f"[AutoEvaluation] Error handling model updated: {e}")
 
+    async def _on_training_completed_data_event(self, event: Any) -> None:
+        """Handle TRAINING_COMPLETED event from data bus (Phase 1.3).
+
+        This bridges the train.py event emission to evaluation queue.
+        The event payload format from train.py:
+        {
+            "epochs_completed": int,
+            "best_val_loss": float,
+            "config": "board_type_Np",  # e.g., "hex8_2p"
+            "checkpoint_path": str,
+        }
+        """
+        try:
+            payload = getattr(event, "payload", event)
+            if isinstance(payload, dict):
+                checkpoint_path = payload.get("checkpoint_path")
+                config = payload.get("config", "")
+
+                if not checkpoint_path:
+                    logger.debug("[AutoEvaluation] No checkpoint_path in TRAINING_COMPLETED")
+                    return
+
+                # Parse config (e.g., "hex8_2p" -> board_type="hex8", num_players=2)
+                if "_" in config and config.endswith("p"):
+                    parts = config.rsplit("_", 1)
+                    board_type = parts[0]
+                    try:
+                        num_players = int(parts[1].rstrip("p"))
+                    except ValueError:
+                        logger.debug(f"[AutoEvaluation] Invalid config format: {config}")
+                        return
+                else:
+                    logger.debug(f"[AutoEvaluation] Cannot parse config: {config}")
+                    return
+
+                logger.info(
+                    f"[AutoEvaluation] Received TRAINING_COMPLETED for {config} "
+                    f"at {checkpoint_path}"
+                )
+
+                # Queue for evaluation
+                await self._queue_evaluation(
+                    model_path=str(checkpoint_path),
+                    board_type=board_type,
+                    num_players=num_players,
+                )
+
+        except Exception as e:
+            logger.error(f"[AutoEvaluation] Error handling TRAINING_COMPLETED: {e}")
+
     async def _queue_evaluation(
         self, model_path: str, board_type: str, num_players: int
     ) -> None:
