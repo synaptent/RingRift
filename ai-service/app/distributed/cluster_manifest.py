@@ -1841,6 +1841,29 @@ class ClusterManifest:
                     "last_seen": row[5],
                 })
 
+            # Export checkpoints (December 2025)
+            cursor.execute("""
+                SELECT checkpoint_path, config_key, board_type, num_players,
+                       epoch, step, loss, file_size, is_best, last_seen
+                FROM checkpoint_locations
+                WHERE node_id = ?
+            """, (self.node_id,))
+
+            checkpoints = []
+            for row in cursor.fetchall():
+                checkpoints.append({
+                    "checkpoint_path": row[0],
+                    "config_key": row[1],
+                    "board_type": row[2],
+                    "num_players": row[3],
+                    "epoch": row[4],
+                    "step": row[5],
+                    "loss": row[6],
+                    "file_size": row[7],
+                    "is_best": bool(row[8]),
+                    "last_seen": row[9],
+                })
+
             # Export capacity
             capacity = self.get_node_capacity(self.node_id)
 
@@ -1850,6 +1873,7 @@ class ClusterManifest:
                 "games": games,
                 "models": models,
                 "npz_files": npz_files,
+                "checkpoints": checkpoints,
                 "capacity": {
                     "total_bytes": capacity.total_bytes if capacity else 0,
                     "used_bytes": capacity.used_bytes if capacity else 0,
@@ -1906,6 +1930,22 @@ class ClusterManifest:
                 num_players=npz.get("num_players"),
                 sample_count=npz.get("sample_count", 0),
                 file_size=npz.get("file_size", 0),
+            )
+            imported += 1
+
+        # Import checkpoints (December 2025)
+        for checkpoint in state.get("checkpoints", []):
+            self.register_checkpoint(
+                checkpoint_path=checkpoint["checkpoint_path"],
+                node_id=node_id,
+                config_key=checkpoint.get("config_key"),
+                board_type=checkpoint.get("board_type"),
+                num_players=checkpoint.get("num_players"),
+                epoch=checkpoint.get("epoch", 0),
+                step=checkpoint.get("step", 0),
+                loss=checkpoint.get("loss", 0.0),
+                file_size=checkpoint.get("file_size", 0),
+                is_best=checkpoint.get("is_best", False),
             )
             imported += 1
 
