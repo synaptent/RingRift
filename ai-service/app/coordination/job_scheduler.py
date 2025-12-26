@@ -407,6 +407,9 @@ class PriorityJobScheduler:
         if not self._queue:
             return None
 
+        # P2.2 (Dec 2025): Apply starvation prevention before job selection
+        self._apply_starvation_prevention()
+
         # Default accessor functions
         def _has_gpu(h: Any) -> bool:
             if host_has_gpu:
@@ -463,6 +466,11 @@ class PriorityJobScheduler:
 
         # Find best match for highest priority job
         for job_idx, job in enumerate(self._queue):
+            # P2.1 (Dec 2025): Skip jobs from over-quota configs (unless CRITICAL)
+            config_key = self._get_config_key(job)
+            if job.priority > JobPriority.CRITICAL and self._is_over_quota(config_key):
+                continue
+
             for host, status in available_hosts:
                 host_name = _get_name(host)
 
@@ -536,6 +544,12 @@ class PriorityJobScheduler:
                     )
                 except Exception as e:
                     logger.debug(f"Failed to record duration: {e}")
+
+            # P2.1 (Dec 2025): Update allocation tracking for fair quota enforcement
+            if job.started_at:
+                duration = job.completed_at - job.started_at
+                config_key = self._get_config_key(job)
+                self._update_allocation(config_key, duration)
 
             # Keep history of completed jobs
             self._completed_jobs.append(job)

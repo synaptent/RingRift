@@ -665,6 +665,63 @@ class SelfplayOrchestrator:
                 f"{old_multiplier:.1f}x→{multiplier:.1f}x (quality={quality_score:.2f})"
             )
 
+    async def _on_idle_resource_detected(self, event) -> None:
+        """Handle IDLE_RESOURCE_DETECTED - spawn selfplay on idle GPUs.
+
+        December 2025: Closes the idle resource → selfplay feedback loop.
+        When IdleResourceDaemon detects idle GPU resources, this handler
+        spawns selfplay jobs to utilize them.
+
+        The handler uses SelfplayScheduler priorities to decide which
+        config to run selfplay for (curriculum weights, ELO velocity).
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+        node_id = payload.get("node_id", "")
+        host = payload.get("host", "")
+        gpu_utilization = payload.get("gpu_utilization", 0.0)
+        idle_duration_seconds = payload.get("idle_duration_seconds", 0)
+
+        if not node_id and not host:
+            return
+
+        # Skip if node is under backpressure
+        if node_id and self.is_node_under_backpressure(node_id):
+            logger.debug(f"[SelfplayOrchestrator] Skipping idle {node_id} - under backpressure")
+            return
+
+        # Get next config to run based on curriculum priorities
+        try:
+            from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+            scheduler = get_selfplay_scheduler()
+            if scheduler is None:
+                logger.debug("[SelfplayOrchestrator] No scheduler available for idle resource")
+                return
+
+            next_config = scheduler.get_next_selfplay_config()
+            if next_config is None:
+                logger.debug("[SelfplayOrchestrator] No selfplay config needed")
+                return
+
+            # Request selfplay for this config
+            self.request_selfplay(
+                config_key=next_config,
+                num_games=100,  # Default batch size
+                priority="normal",
+                source="idle_resource_detection",
+            )
+
+            logger.info(
+                f"[SelfplayOrchestrator] Spawning selfplay on idle {node_id or host}: "
+                f"config={next_config}, gpu_util={gpu_utilization:.1f}%, "
+                f"idle={idle_duration_seconds:.0f}s"
+            )
+
+        except ImportError:
+            logger.debug("[SelfplayOrchestrator] SelfplayScheduler not available")
+        except Exception as e:
+            logger.warning(f"[SelfplayOrchestrator] Failed to spawn selfplay on idle resource: {e}")
+
     def get_quality_budget_multiplier(self, config_key: str) -> float:
         """Get the quality-based budget multiplier for a config.
 
