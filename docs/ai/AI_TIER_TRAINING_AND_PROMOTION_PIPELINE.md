@@ -143,9 +143,9 @@ We standardise what a _candidate_ is at each tier and how it will be wired into 
 | ---- | --------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | D1   | RANDOM                      | None (baseline)                    | —                                                                                                 | —                                                              |
 | D2   | HEURISTIC                   | Heuristic profile                  | New entry in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1) | `heuristic_profile_id` (and optionally `model_id`)             |
-| D3   | MINIMAX (non-neural)        | Search persona + heuristic profile | Minimax config snapshot + optional D3-specific heuristic profile                                  | `model_id` (persona tag) and optionally `heuristic_profile_id` |
+| D3   | HEURISTIC (tuned)           | Heuristic profile                  | New entry in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1) | `heuristic_profile_id` (and optionally `model_id`)             |
 | D4   | MINIMAX (NNUE)              | NNUE checkpoint + search persona   | Versioned NNUE checkpoint (`models/nnue/<nn_model_id>.pt`) and/or minimax config                  | `model_id` (mapped to `nn_model_id`)                           |
-| D5   | DESCENT (neural)            | Neural checkpoint                  | Versioned NN checkpoint (`models/<nn_model_id>.pth`)                                              | `model_id` (mapped to `nn_model_id`)                           |
+| D5   | MINIMAX (NNUE)              | NNUE checkpoint + search persona   | Versioned NNUE checkpoint (`models/nnue/<nn_model_id>.pt`) and/or minimax config                  | `model_id` (mapped to `nn_model_id`)                           |
 | D6   | DESCENT (neural)            | Neural checkpoint                  | Versioned NN checkpoint (`models/<nn_model_id>.pth`)                                              | `model_id` (mapped to `nn_model_id`)                           |
 | D7   | MCTS (heuristic-only)       | Search persona + heuristic profile | MCTS config snapshot (search persona) + heuristic profile                                         | `model_id` (persona tag) and optionally `heuristic_profile_id` |
 | D8   | MCTS (neural)               | Neural checkpoint + MCTS config    | Versioned NN checkpoint (`models/<nn_model_id>.pth`) and MCTS config                              | `model_id` (mapped to `nn_model_id`)                           |
@@ -178,9 +178,9 @@ Rules:
 | ---- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------ |
 | D1   | RANDOM                 | —                                    | —                                                                  |
 | D2   | HEURISTIC              | `heuristic_cmaes`                    | Trained heuristic profile (`data/trained_heuristic_profiles.json`) |
-| D3   | MINIMAX (non-neural)   | `heuristic_cmaes`                    | Heuristic profile for minimax eval (plus optional persona)         |
+| D3   | HEURISTIC (tuned)      | `heuristic_cmaes`                    | Trained heuristic profile                                          |
 | D4   | MINIMAX (NNUE)         | `search_persona`                     | Minimax persona + NNUE checkpoint                                  |
-| D5   | DESCENT (neural)       | `neural`                             | NN checkpoint (`models/<nn_model_id>.pth`)                         |
+| D5   | MINIMAX (NNUE)         | `search_persona`                     | Minimax persona + NNUE checkpoint                                  |
 | D6   | DESCENT (neural)       | `neural`                             | NN checkpoint                                                      |
 | D7   | MCTS (heuristic-only)  | `search_persona`                     | MCTS persona JSON + heuristic profile                              |
 | D8   | MCTS (neural)          | `neural`                             | NN checkpoint + MCTS config                                        |
@@ -188,7 +188,7 @@ Rules:
 | D10  | GUMBEL_MCTS (neural)   | `neural`                             | NN checkpoint + Gumbel config                                      |
 | D11  | GUMBEL_MCTS (internal) | —                                    | Internal-only                                                      |
 
-> **Note:** `config/tier_training_pipeline.square8_2p.json` lists D5 as `neural` to match the Descent ladder mapping; update this only if the D5 engine changes.
+> **Note:** `config/tier_training_pipeline.square8_2p.json` lists D5 as `search_persona` to match the minimax ladder mapping.
 
 ### 4.3 D2 – heuristic baseline
 

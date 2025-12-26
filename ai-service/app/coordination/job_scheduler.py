@@ -158,6 +158,13 @@ PROVIDER_COSTS: dict[str, float] = {
     "unknown": 2.0,    # Default to middle tier
 }
 
+# P2.4 (Dec 2025): Ephemeral node optimization
+# Ephemeral providers can be terminated at any time - only schedule short jobs
+EPHEMERAL_PROVIDERS: set[str] = {"vast"}  # Vast.ai spot instances
+MAX_EPHEMERAL_JOB_DURATION_SECONDS = 1800  # 30 minutes max for ephemeral hosts
+# Job types that should NEVER run on ephemeral hosts (too important to lose)
+EPHEMERAL_BLOCKED_JOB_TYPES: set[str] = {"training", "promotion", "evaluation"}
+
 
 @dataclass
 class ScheduledJob:
@@ -497,7 +504,18 @@ class PriorityJobScheduler:
             if job.priority > JobPriority.CRITICAL and self._is_over_quota(config_key):
                 continue
 
-            for host, status in available_hosts:
+            # P2.3 (Dec 2025): Cost-aware host selection for lower priority jobs
+            # Sort hosts by cost (cheapest first) for NORMAL/LOW priority work
+            if job.priority >= JobPriority.NORMAL:
+                hosts_to_try = sorted(
+                    available_hosts,
+                    key=lambda x: self._get_host_cost(_get_name(x[0]))
+                )
+            else:
+                # For CRITICAL/HIGH priority, use default order (typically by capability)
+                hosts_to_try = available_hosts
+
+            for host, status in hosts_to_try:
                 host_name = _get_name(host)
 
                 # Check GPU requirement
@@ -1622,6 +1640,8 @@ __all__ = [
     "DEFAULT_CONFIG_QUOTA",
     # P2.2 (Dec 2025): Starvation prevention
     "STARVATION_THRESHOLD_HOURS",
+    # P2.3 (Dec 2025): Cost-aware scheduling
+    "PROVIDER_COSTS",
     # Job migration (December 2025)
     "HostDeadJobMigrator",
     "JobPriority",

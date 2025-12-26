@@ -362,6 +362,9 @@ class UnifiedHealthManager(CoordinatorBase):
             router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
             router.subscribe(DataEventType.NODE_RECOVERED.value, self._on_node_recovered)
 
+            # Parity monitoring (December 2025 - closes parity → alert loop)
+            router.subscribe(DataEventType.PARITY_FAILURE_RATE_CHANGED.value, self._on_parity_failure_rate_changed)
+
             self._subscribed = True
             logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
             return True

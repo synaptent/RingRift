@@ -199,13 +199,9 @@ class SlurmJobStatus:
         )
 
 
-# Lambda nodes that should be managed by Slurm
-SLURM_MANAGED_PATTERNS = [
-    "lambda-gh200-*",
-    "lambda-h100*",
-    "lambda-2xh100",
-    "lambda-a10",
-]
+# Nodes that should be managed by Slurm
+# Note: Lambda Labs terminated Dec 2025
+SLURM_MANAGED_PATTERNS: list[str] = []
 
 # Slurm controller configuration (loaded from environment - no hardcoded defaults)
 SLURM_CONTROLLER_HOST = os.getenv("SLURM_CONTROLLER_HOST", "")  # Must be set in environment
