@@ -465,6 +465,9 @@ class MasterLoopController:
         # Save state before shutdown - Gap 3 fix
         self._save_persisted_state()
 
+        # Mark heartbeat as stopped (Dec 2025)
+        self._update_heartbeat("stopped")
+
         # Stop daemons
         if not self.skip_daemons and self._daemon_manager is not None:
             await self.daemon_manager.shutdown()
@@ -505,6 +508,9 @@ class MasterLoopController:
 
                     # 6. Periodically save state - Gap 3 fix
                     self._maybe_save_state()
+
+                    # 7. Update heartbeat for health monitoring (Dec 2025)
+                    self._update_heartbeat("running")
 
                 except Exception as e:
                     logger.error(f"[MasterLoop] Error in loop iteration: {e}")

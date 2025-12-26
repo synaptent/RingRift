@@ -457,10 +457,12 @@ class PFSPWeaknessWatcher:
         """Emit OPPONENT_MASTERED event."""
         try:
             from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
             router = get_router()
+            # P1.4 Dec 2025: Use DataEventType enum for type-safe emission
             router.publish_sync(
-                "OPPONENT_MASTERED",
+                DataEventType.OPPONENT_MASTERED,
                 {
                     "config": config_key,
                     "current_model": mastery["current_model"],
