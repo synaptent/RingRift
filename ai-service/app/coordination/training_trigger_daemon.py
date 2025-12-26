@@ -770,6 +770,25 @@ class TrainingTriggerDaemon:
                 else:
                     # Failure
                     state.consecutive_failures += 1
+
+                    # Adjust training intensity on consecutive failures (December 2025)
+                    # This prevents wasting compute on configs that repeatedly fail
+                    if state.consecutive_failures >= 3:
+                        old_intensity = state.training_intensity
+                        state.training_intensity = "paused"
+                        logger.warning(
+                            f"[TrainingTriggerDaemon] {config_key}: {state.consecutive_failures} "
+                            f"consecutive failures, pausing training (was: {old_intensity})"
+                        )
+                    elif state.consecutive_failures >= 2:
+                        old_intensity = state.training_intensity
+                        if state.training_intensity not in ("reduced", "paused"):
+                            state.training_intensity = "reduced"
+                            logger.info(
+                                f"[TrainingTriggerDaemon] {config_key}: 2 failures, reducing intensity "
+                                f"(was: {old_intensity})"
+                            )
+
                     logger.error(
                         f"[TrainingTriggerDaemon] Training failed for {config_key}: "
                         f"exit code {process.returncode}\n"
@@ -780,6 +799,16 @@ class TrainingTriggerDaemon:
 
             except Exception as e:
                 state.consecutive_failures += 1
+
+                # Also adjust intensity on exceptions (December 2025)
+                if state.consecutive_failures >= 2:
+                    old_intensity = state.training_intensity
+                    state.training_intensity = "reduced"
+                    logger.info(
+                        f"[TrainingTriggerDaemon] {config_key}: {state.consecutive_failures} failures "
+                        f"(exception), reducing intensity (was: {old_intensity})"
+                    )
+
                 logger.error(f"[TrainingTriggerDaemon] Training error for {config_key}: {e}")
                 return False
 

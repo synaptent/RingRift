@@ -674,6 +674,7 @@ class MaintenanceDaemon:
                 "orphan_dbs_found": self._stats.orphan_dbs_found,  # December 2025
                 "orphan_npz_found": self._stats.orphan_npz_found,  # December 2025
                 "orphan_models_found": self._stats.orphan_models_found,  # December 2025
+                "orphan_dbs_recovered": self._stats.orphan_dbs_recovered,  # December 2025
             },
             "last_runs": {
                 "log_rotation": self._stats.last_log_rotation,

@@ -61,17 +61,17 @@ async def _on_training_blocked_by_quality(self, event: dict) -> None:
 
 ### Gap 1.3: Orphaned Event Types
 
-5 events published but no subscribers:
+5 events listed as orphaned - **ALL NOW WIRED (Dec 25, 2025)**:
 
-| Event                      | Should Trigger              |
-| -------------------------- | --------------------------- |
-| `QUALITY_PENALTY_APPLIED`  | Curriculum weight reduction |
-| `LOW_QUALITY_DATA_WARNING` | Selfplay throttle           |
-| `OPPONENT_MASTERED`        | Curriculum advancement      |
-| `EXPLORATION_BOOST`        | Temperature adjustment      |
-| `TRAINING_LOSS_ANOMALY`    | Quality check               |
+| Event                      | Status | Subscribers                                           |
+| -------------------------- | ------ | ----------------------------------------------------- |
+| `QUALITY_PENALTY_APPLIED`  | ✅     | selfplay_runner.py (rate reduction)                   |
+| `LOW_QUALITY_DATA_WARNING` | ✅     | 8+ subscribers (throttle, rollback, sync)             |
+| `OPPONENT_MASTERED`        | ✅     | selfplay_scheduler.py (curriculum advancement)        |
+| `EXPLORATION_BOOST`        | ✅     | temperature_scheduling.py (temp adjustment)           |
+| `TRAINING_LOSS_ANOMALY`    | ✅     | feedback_loop_controller.py, training_enhancements.py |
 
-**Action**: Wire each to appropriate handler in feedback_loop_controller.py.
+**Status**: All orphaned events now fully wired.
 
 ---
 

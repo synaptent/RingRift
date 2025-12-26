@@ -929,6 +929,41 @@ async def emit_elo_updated(
         ))
 
 
+async def emit_elo_velocity_changed(
+    config_key: str,
+    velocity: float,
+    previous_velocity: float,
+    trend: str,
+    source: str = "queue_populator",
+) -> None:
+    """Emit an ELO_VELOCITY_CHANGED event.
+
+    P10-LOOP-3 (Dec 2025): Signals when Elo improvement velocity changes significantly.
+    This triggers selfplay rate adjustments:
+    - Accelerating velocity → increase selfplay to capitalize on momentum
+    - Decelerating velocity → reduce selfplay, focus on quality
+    - Negative velocity → boost exploration to escape local minimum
+
+    Args:
+        config_key: Configuration key (e.g., "hex8_2p")
+        velocity: Current Elo points per day
+        previous_velocity: Previous velocity measurement
+        trend: Velocity trend ("accelerating", "stable", "decelerating")
+        source: Component emitting the event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.ELO_VELOCITY_CHANGED,
+        payload={
+            "config_key": config_key,
+            "velocity": velocity,
+            "previous_velocity": previous_velocity,
+            "velocity_change": velocity - previous_velocity,
+            "trend": trend,
+        },
+        source=source,
+    ))
+
+
 async def emit_quality_score_updated(
     game_id: str,
     quality_score: float,
