@@ -363,11 +363,14 @@ class TrainingCoordinator:
             bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
             bus.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
 
+            # P0.4 Dec 2025: Subscribe to rollback events (closes rollback feedback loop)
+            bus.subscribe(DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
+
             # Subscribe to quality events (December 2025 - real-time quality feedback)
             bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._on_low_quality_warning)
             bus.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY, self._on_training_blocked_by_quality)
 
-            logger.info("[TrainingCoordinator] Subscribed to cluster health, regression, and quality events")
+            logger.info("[TrainingCoordinator] Subscribed to cluster health, regression, rollback, and quality events")
         except Exception as e:
             logger.warning(f"[TrainingCoordinator] Failed to subscribe to cluster events: {e}")
 
@@ -559,6 +562,87 @@ class TrainingCoordinator:
             logger.debug("[TrainingCoordinator] RollbackManager not available for import")
         except Exception as e:
             logger.error(f"[TrainingCoordinator] Error triggering rollback: {e}")
+
+    def _on_training_rollback_needed(self, event: Any) -> None:
+        """Handle TRAINING_ROLLBACK_NEEDED event - execute model rollback (P0.4).
+
+        P0.4 Dec 2025: Closes the rollback feedback loop.
+        When TRAINING_ROLLBACK_NEEDED is emitted (e.g., from gauntlet failure),
+        this handler actually executes the rollback.
+
+        Args:
+            event: TRAINING_ROLLBACK_NEEDED event with payload:
+                - model_id: Model to rollback
+                - config_key: Config identifier
+                - reason: Reason for rollback
+                - checkpoint_id: Optional specific checkpoint to rollback to
+        """
+        if not hasattr(event, 'payload') or not event.payload:
+            logger.warning("[TrainingCoordinator] TRAINING_ROLLBACK_NEEDED without payload")
+            return
+
+        payload = event.payload
+        model_id = payload.get("model_id", "")
+        config_key = payload.get("config_key", "")
+        reason = payload.get("reason", "unknown")
+        checkpoint_id = payload.get("checkpoint_id")
+
+        if not model_id:
+            logger.error("[TrainingCoordinator] TRAINING_ROLLBACK_NEEDED without model_id")
+            return
+
+        self._events_processed += 1
+
+        logger.info(
+            f"[TrainingCoordinator] TRAINING_ROLLBACK_NEEDED for {model_id}: {reason}"
+        )
+
+        # Pause training for this config first
+        if config_key:
+            self._pause_training_for_config(config_key, reason=f"rollback_{reason}")
+
+        # Execute the rollback
+        try:
+            from app.training.rollback_manager import get_rollback_manager
+
+            manager = get_rollback_manager()
+            if manager is None:
+                logger.warning("[TrainingCoordinator] RollbackManager not available")
+                return
+
+            result = manager.rollback(
+                model_id=model_id,
+                reason=reason,
+                checkpoint_id=checkpoint_id,
+            )
+
+            if result and result.success:
+                logger.info(
+                    f"[TrainingCoordinator] Rollback complete: {model_id} → {result.rolled_back_to}"
+                )
+                # Emit completion event
+                self._emit_via_router(
+                    "TRAINING_ROLLBACK_COMPLETED",
+                    {
+                        "model_id": model_id,
+                        "config_key": config_key,
+                        "rolled_back_to": result.rolled_back_to,
+                        "reason": reason,
+                    },
+                )
+            else:
+                logger.error(
+                    f"[TrainingCoordinator] Rollback failed for {model_id}: "
+                    f"{result.error if result else 'No result'}"
+                )
+                self._errors_count += 1
+                self._last_error = f"Rollback failed: {model_id}"
+
+        except ImportError:
+            logger.debug("[TrainingCoordinator] RollbackManager not available")
+        except Exception as e:
+            logger.error(f"[TrainingCoordinator] Error executing rollback: {e}")
+            self._errors_count += 1
 
     def _pause_training_for_config(self, config_key: str, reason: str) -> bool:
         """Pause training for a specific config.
