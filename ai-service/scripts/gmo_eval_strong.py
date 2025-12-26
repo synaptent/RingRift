@@ -91,11 +91,17 @@ def play_game(
     ai2,
     board_type: BoardType = BoardType.SQUARE8,
     max_moves: int = 500,
+    game_idx: int = 0,
 ) -> tuple[int | None, int, float, float]:
     """Play a game and return (winner, moves, ai1_time, ai2_time)."""
     state = create_initial_state(board_type=board_type, num_players=2)
 
     ais = {1: ai1, 2: ai2}
+
+    # Reset AIs with unique seeds per game for variety
+    for p, ai in ais.items():
+        if hasattr(ai, 'reset_for_new_game'):
+            ai.reset_for_new_game(rng_seed=game_idx * 1000 + p)
     times = {1: 0.0, 2: 0.0}
     num_moves = 0
 
@@ -155,7 +161,7 @@ def evaluate_matchup(
         gmo = create_gmo(1, device)
         opponent = create_opponent(opponent_type, 2)
 
-        winner, moves, p1_time, p2_time = play_game(gmo, opponent)
+        winner, moves, p1_time, p2_time = play_game(gmo, opponent, game_idx=game_idx)
         total_moves += moves
         total_gmo_time += p1_time
         total_opponent_time += p2_time
@@ -177,7 +183,7 @@ def evaluate_matchup(
         opponent = create_opponent(opponent_type, 1)
         gmo = create_gmo(2, device)
 
-        winner, moves, p1_time, p2_time = play_game(opponent, gmo)
+        winner, moves, p1_time, p2_time = play_game(opponent, gmo, game_idx=games_per_side + game_idx)
         total_moves += moves
         total_opponent_time += p1_time
         total_gmo_time += p2_time

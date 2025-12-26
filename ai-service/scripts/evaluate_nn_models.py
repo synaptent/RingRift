@@ -275,6 +275,12 @@ def evaluate_model(
     opponent_ai = create_ai(opponent_type, player_number=2, device=device)
 
     for i in range(games_per_side):
+        # Reset AIs with unique seeds per game for variety
+        if hasattr(model_ai, 'reset_for_new_game'):
+            model_ai.reset_for_new_game(rng_seed=i * 1000 + 1)
+        if hasattr(opponent_ai, 'reset_for_new_game'):
+            opponent_ai.reset_for_new_game(rng_seed=i * 1000 + 2)
+
         winner, moves = play_game(
             model_ai, opponent_ai,
             game_id=f"{model_name}_p1_{i}",
@@ -290,6 +296,12 @@ def evaluate_model(
     opponent_ai = create_ai(opponent_type, player_number=1, device=device)
 
     for i in range(games_per_side):
+        # Reset AIs with unique seeds per game for variety (offset to avoid overlap with P1 games)
+        if hasattr(opponent_ai, 'reset_for_new_game'):
+            opponent_ai.reset_for_new_game(rng_seed=(games_per_side + i) * 1000 + 1)
+        if hasattr(model_ai, 'reset_for_new_game'):
+            model_ai.reset_for_new_game(rng_seed=(games_per_side + i) * 1000 + 2)
+
         winner, moves = play_game(
             opponent_ai, model_ai,
             game_id=f"{model_name}_p2_{i}",

@@ -110,7 +110,7 @@ def benchmark_ebmo(model_path: Path, num_games: int = 20):
     # Test vs Random
     wins_vs_random = 0
     for i in range(num_games):
-        winner = run_game(ebmo_ai, random_ai, BoardType.SQUARE8, 2)
+        winner = run_game(ebmo_ai, random_ai, BoardType.SQUARE8, 2, game_idx=i)
         if winner == 1:  # EBMO is player 1
             wins_vs_random += 1
         print(f"\rEBMO vs Random: {i+1}/{num_games}", end="")
@@ -119,7 +119,7 @@ def benchmark_ebmo(model_path: Path, num_games: int = 20):
     # Test vs Heuristic
     wins_vs_heur = 0
     for i in range(num_games):
-        winner = run_game(ebmo_ai, heuristic_ai, BoardType.SQUARE8, 2)
+        winner = run_game(ebmo_ai, heuristic_ai, BoardType.SQUARE8, 2, game_idx=num_games + i)
         if winner == 1:  # EBMO is player 1
             wins_vs_heur += 1
         print(f"\rEBMO vs Heuristic: {i+1}/{num_games}", end="")

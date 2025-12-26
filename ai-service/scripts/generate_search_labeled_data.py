@@ -114,16 +114,26 @@ def generate_labeled_samples_mcts(
     while games_completed < num_games:
         state = create_initial_state(board_type=board_type, num_players=2)
 
-        # Create Gumbel MCTS players
-        mcts_config = AIConfig(
+        # Create Gumbel MCTS players with unique seeds per game
+        game_seed = games_completed * 1000
+        mcts_config1 = AIConfig(
             difficulty=7,
+            rng_seed=game_seed + 1,
             extra={
                 'num_sampled_actions': 16,
                 'simulation_budget': mcts_simulations,
             }
         )
-        player1 = GumbelMCTSAI(1, mcts_config)
-        player2 = GumbelMCTSAI(2, mcts_config)
+        mcts_config2 = AIConfig(
+            difficulty=7,
+            rng_seed=game_seed + 2,
+            extra={
+                'num_sampled_actions': 16,
+                'simulation_budget': mcts_simulations,
+            }
+        )
+        player1 = GumbelMCTSAI(1, mcts_config1)
+        player2 = GumbelMCTSAI(2, mcts_config2)
         ais = {1: player1, 2: player2}
 
         game_samples = 0
@@ -240,9 +250,11 @@ def generate_labeled_samples_heuristic(
     while games_completed < num_games:
         state = create_initial_state(board_type=board_type, num_players=2)
 
-        evaluator = HeuristicAI(1, AIConfig(difficulty=evaluator_difficulty))
-        player1 = AIFactory.create(AIType.HEURISTIC, 1, AIConfig(difficulty=5))
-        player2 = AIFactory.create(AIType.HEURISTIC, 2, AIConfig(difficulty=5))
+        # Use unique seeds per game for variety
+        game_seed = games_completed * 1000
+        evaluator = HeuristicAI(1, AIConfig(difficulty=evaluator_difficulty, rng_seed=game_seed))
+        player1 = AIFactory.create(AIType.HEURISTIC, 1, AIConfig(difficulty=5, rng_seed=game_seed + 1))
+        player2 = AIFactory.create(AIType.HEURISTIC, 2, AIConfig(difficulty=5, rng_seed=game_seed + 2))
         ais = {1: player1, 2: player2}
 
         game_samples = 0

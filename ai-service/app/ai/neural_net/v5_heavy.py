@@ -3,13 +3,16 @@
 This architecture combines the best features from all previous versions:
 - SE blocks for channel attention (from v2/v3)
 - Multi-head self-attention for long-range dependencies (from v4)
-- 49-dimensional heuristic feature embedding for expert knowledge
+- Configurable heuristic features (21 fast or 49 full) with FiLM conditioning
 - Optional GNN refinement for connectivity modeling (from Hybrid)
+- Optional geometry encoding (distance-from-center, directional occupancy)
 - Spatial policy heads for geometric consistency (from v3)
 - Rank distribution value head for multiplayer outcomes (from v3)
 
 Architecture:
-    Input (C, H, W) + Global (G) + Heuristics (49)
+    Input (C, H, W) + Global (G) + Heuristics (21 or 49)
+        ↓
+    [Optional] Geometry Encoding (add spatial channels)
         ↓
     Initial Conv (5x5, NAS-optimal)
         ↓
@@ -28,23 +31,32 @@ Architecture:
 Usage:
     from app.ai.neural_net.v5_heavy import RingRiftCNN_v5_Heavy
 
+    # Standard mode (21 fast features)
+    model = RingRiftCNN_v5_Heavy(board_size=8, num_players=2)
+
+    # Maximum strength (49 full features + geometry encoding)
     model = RingRiftCNN_v5_Heavy(
         board_size=8,
         num_players=2,
-        use_gnn=False,  # Toggle GNN refinement
+        num_heuristics=49,
+        use_geometry_encoding=True,
+        use_gnn=True,
     )
     value, policy, rank_dist = model(features, globals_, heuristics)
 
-Heuristic Features (21 total):
-    See app.ai.heuristic_weights.HEURISTIC_WEIGHT_KEYS for the full list.
-    These are computed by app.training.heuristic_features.extract_linear_features().
+Heuristic Features:
+    - Fast mode (21): Aggregated component scores from HeuristicAI
+      Extracted via: app.training.fast_heuristic_features.extract_heuristic_features()
+    - Full mode (49): All 49 weight decomposition features
+      Extracted via: app.training.fast_heuristic_features.extract_full_heuristic_features()
 
 Architecture Version:
-    v5.0.0 - Maximum strength heavy architecture with all features combined.
+    v5.1.0 - Added configurable heuristics (21/49) and geometry encoding.
 
 Estimated Parameters:
-    - Without GNN: ~6.2M params (~25MB)
-    - With GNN: ~6.3M params (~26MB)
+    - Standard (21 heuristics): ~6.2M params (~25MB)
+    - Full (49 heuristics): ~6.5M params (~26MB)
+    - Full + GNN: ~6.6M params (~27MB)
 """
 
 from __future__ import annotations
@@ -102,15 +114,25 @@ except ImportError:
     HAS_PYG = False
     SAGEConv = None
 
-# Number of heuristic features from fast_heuristic_features.py
-# Uses efficient component extraction (21 features) instead of full 49-weight decomposition
-NUM_HEURISTIC_FEATURES = 21
+# Heuristic feature counts
+# Fast mode: 21 features from efficient component extraction
+# Full mode: 49 features from linear weight decomposition
+NUM_HEURISTIC_FEATURES_FAST = 21
+NUM_HEURISTIC_FEATURES_FULL = 49
+NUM_HEURISTIC_FEATURES = NUM_HEURISTIC_FEATURES_FAST  # Default for backwards compat
+
+# Geometry encoding constants
+NUM_GEOMETRY_CHANNELS = 10  # distance_from_center(1) + center_zone(1) + directional_occupancy(8)
 
 
 class HeuristicEncoder(nn.Module):
     """Encoder for heuristic features with FiLM-style conditioning.
 
-    Takes the 49 heuristic weight features and produces:
+    Supports both fast (21) and full (49) heuristic feature modes:
+    - Fast mode (21 features): Standard 2-layer encoder
+    - Full mode (49 features): Deeper 3-layer encoder for richer representation
+
+    Produces:
     1. A global embedding vector for concatenation with backbone features
     2. Scale and shift parameters for FiLM conditioning of spatial features
 
@@ -131,16 +153,35 @@ class HeuristicEncoder(nn.Module):
         self.output_dim = output_dim
         self.num_filters = num_filters
 
-        # Main encoder: 49 -> hidden -> output
-        self.encoder = nn.Sequential(
-            nn.Linear(num_heuristics, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(hidden_dim, output_dim),
-            nn.LayerNorm(output_dim),
-            nn.ReLU(),
-        )
+        # Use deeper encoder for full 49-feature mode
+        use_deep_encoder = num_heuristics >= NUM_HEURISTIC_FEATURES_FULL
+
+        if use_deep_encoder:
+            # Deep encoder: 49 -> 256 -> 256 -> 128 (3 layers)
+            self.encoder = nn.Sequential(
+                nn.Linear(num_heuristics, 256),
+                nn.LayerNorm(256),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(256, 256),
+                nn.LayerNorm(256),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(256, output_dim),
+                nn.LayerNorm(output_dim),
+                nn.ReLU(),
+            )
+        else:
+            # Standard encoder: 21 -> 128 -> 128 (2 layers)
+            self.encoder = nn.Sequential(
+                nn.Linear(num_heuristics, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_dim, output_dim),
+                nn.LayerNorm(output_dim),
+                nn.ReLU(),
+            )
 
         # FiLM conditioning heads
         # Produce per-channel scale (gamma) and shift (beta)
@@ -158,7 +199,7 @@ class HeuristicEncoder(nn.Module):
         """Encode heuristics into embedding and FiLM parameters.
 
         Args:
-            heuristics: [B, 49] heuristic feature values
+            heuristics: [B, num_heuristics] heuristic feature values (21 or 49)
 
         Returns:
             embedding: [B, output_dim] global embedding
@@ -255,12 +296,105 @@ class GNNRefinement(nn.Module):
         return h.reshape(B, H, W, -1).permute(0, 3, 1, 2)
 
 
+class GeometryEncoder(nn.Module):
+    """Encodes spatial geometry features as additional input channels.
+
+    Adds 10 geometry-aware channels to the input:
+    - distance_from_center (1): Normalized Manhattan distance from board center
+    - center_zone (1): Binary mask for cells within radius 2 of center
+    - directional_occupancy (8): Per-direction neighbor occupancy masks
+
+    These provide explicit spatial bias that helps the network understand
+    positional importance without relying on implicit learning.
+    """
+
+    def __init__(self, board_size: int = 8):
+        super().__init__()
+        self.board_size = board_size
+        self.center = board_size // 2
+        self.max_dist = self.center * 2.0
+
+        # Pre-compute static geometry features
+        self._register_geometry_buffers()
+
+    def _register_geometry_buffers(self) -> None:
+        """Pre-compute and register geometry feature planes as buffers."""
+        H = W = self.board_size
+        center = self.center
+
+        # Distance from center (normalized to [0, 1])
+        y_coords = torch.arange(H).float().view(H, 1).expand(H, W)
+        x_coords = torch.arange(W).float().view(1, W).expand(H, W)
+        dist_from_center = (
+            (y_coords - center).abs() + (x_coords - center).abs()
+        ) / self.max_dist
+        self.register_buffer("dist_from_center", dist_from_center.unsqueeze(0).unsqueeze(0))
+
+        # Center zone mask (cells within radius 2 of center)
+        center_zone = ((y_coords - center).abs() <= 2) & ((x_coords - center).abs() <= 2)
+        self.register_buffer("center_zone", center_zone.float().unsqueeze(0).unsqueeze(0))
+
+        # 8 directional shift masks for neighbor detection
+        # Directions: NW, N, NE, W, E, SW, S, SE
+        directions = [
+            (-1, -1), (-1, 0), (-1, 1),  # NW, N, NE
+            (0, -1),           (0, 1),   # W, E
+            (1, -1),  (1, 0),  (1, 1),   # SW, S, SE
+        ]
+        self.directions = directions
+
+    def forward(self, spatial_features: Tensor) -> Tensor:
+        """Compute geometry encoding channels.
+
+        Args:
+            spatial_features: [B, C, H, W] input features (used to determine batch size)
+
+        Returns:
+            Geometry channels [B, 10, H, W] to concatenate with input
+        """
+        B, C, H, W = spatial_features.shape
+        device = spatial_features.device
+
+        # Static geometry features (broadcast to batch)
+        dist_channel = self.dist_from_center.expand(B, -1, -1, -1).to(device)
+        center_channel = self.center_zone.expand(B, -1, -1, -1).to(device)
+
+        # Compute directional occupancy from spatial features
+        # Use first channel as occupancy indicator (has_stack proxy)
+        occupancy = (spatial_features[:, 0:1, :, :] > 0).float()
+
+        # Shift occupancy in each direction to detect neighbors
+        direction_channels = []
+        for dy, dx in self.directions:
+            shifted = torch.zeros_like(occupancy)
+            # Compute valid source and target regions
+            src_y_start = max(0, -dy)
+            src_y_end = H - max(0, dy)
+            src_x_start = max(0, -dx)
+            src_x_end = W - max(0, dx)
+            tgt_y_start = max(0, dy)
+            tgt_y_end = H - max(0, -dy)
+            tgt_x_start = max(0, dx)
+            tgt_x_end = W - max(0, -dx)
+
+            shifted[:, :, tgt_y_start:tgt_y_end, tgt_x_start:tgt_x_end] = \
+                occupancy[:, :, src_y_start:src_y_end, src_x_start:src_x_end]
+            direction_channels.append(shifted)
+
+        dir_stack = torch.cat(direction_channels, dim=1)  # [B, 8, H, W]
+
+        # Concatenate all geometry channels
+        geometry = torch.cat([dist_channel, center_channel, dir_stack], dim=1)  # [B, 10, H, W]
+        return geometry
+
+
 class RingRiftCNN_v5_Heavy(nn.Module):
     """V5 Heavy Architecture: Maximum strength for RingRift.
 
     Combines all architectural innovations:
     - SE blocks + Multi-head attention (mixed backbone)
-    - 49 heuristic features with FiLM conditioning
+    - Configurable heuristic features (21 fast or 49 full) with FiLM conditioning
+    - Optional geometry encoding (distance-from-center, directional occupancy)
     - Optional GNN refinement
     - Spatial policy heads
     - Rank distribution value head
@@ -269,7 +403,8 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         board_size: Board dimension (8 or 19)
         in_channels: Base input channels per frame (default 14)
         global_features: Global feature dimension (default 20)
-        num_heuristics: Heuristic feature dimension (default 49)
+        num_heuristics: Heuristic feature dimension (21 for fast, 49 for full)
+        use_geometry_encoding: Add geometry feature planes (default False)
         num_se_blocks: Number of SE residual blocks (default 6)
         num_attention_blocks: Number of attention blocks (default 5)
         num_filters: CNN channel count (default 160)
@@ -281,7 +416,7 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         initial_kernel_size: Initial conv kernel (default 5, NAS optimal)
     """
 
-    ARCHITECTURE_VERSION = "v5.0.0"
+    ARCHITECTURE_VERSION = "v5.1.0"
 
     def __init__(
         self,
@@ -296,6 +431,7 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         policy_size: int | None = None,
         num_players: int = 4,
         use_gnn: bool = False,
+        use_geometry_encoding: bool = False,
         dropout: float = 0.1,
         initial_kernel_size: int = 5,
         num_attention_heads: int = 4,
@@ -314,6 +450,7 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         self.global_features = global_features
         self.num_heuristics = num_heuristics
         self.use_gnn = use_gnn and HAS_PYG
+        self.use_geometry_encoding = use_geometry_encoding
         self.dropout_rate = dropout
 
         # Determine max distance based on board size
@@ -331,9 +468,18 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         self.movement_channels = num_directions * self.max_distance
         self.territory_choice_channels = territory_size_buckets * territory_max_players
 
-        # Input channels = base_channels * (history_length + 1)
-        self.total_in_channels = in_channels * (history_length + 1)
+        # Input channels = base_channels * (history_length + 1) + optional geometry
+        base_in_channels = in_channels * (history_length + 1)
+        geometry_channels = NUM_GEOMETRY_CHANNELS if use_geometry_encoding else 0
+        self.total_in_channels = base_in_channels + geometry_channels
         self.in_channels = self.total_in_channels
+        self.base_in_channels = base_in_channels
+
+        # === Geometry Encoder (optional) ===
+        if use_geometry_encoding:
+            self.geometry_encoder = GeometryEncoder(board_size=board_size)
+        else:
+            self.geometry_encoder = None
 
         # Determine policy size
         if policy_size is not None:
@@ -603,9 +749,12 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         """Forward pass with heuristic feature conditioning.
 
         Args:
-            x: Input features [B, in_channels, H, W]
+            x: Input features [B, in_channels, H, W] or [B, base_channels, H, W]
+               If geometry encoding is enabled and base channels provided,
+               geometry channels are automatically added.
             globals_: Global features [B, global_features]
-            heuristics: Heuristic features [B, 49] (optional, zeros if None)
+            heuristics: Heuristic features [B, num_heuristics] (21 or 49)
+                Optional, zeros if None.
             return_features: If True, also return backbone features
 
         Returns:
@@ -621,8 +770,22 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         if heuristics is None:
             heuristics = torch.zeros(B, self.num_heuristics, device=device, dtype=x.dtype)
 
-        # Input validation
-        if x.shape[1] != self.in_channels:
+        # === Geometry Encoding (optional) ===
+        if self.geometry_encoder is not None:
+            # Expect base input channels, will add geometry channels
+            if x.shape[1] == self.base_in_channels:
+                geometry_features = self.geometry_encoder(x)
+                x = torch.cat([x, geometry_features], dim=1)
+            # If already has geometry channels, skip encoding
+            elif x.shape[1] != self.in_channels:
+                raise RuntimeError(
+                    f"Input channel mismatch in {self.__class__.__name__}.forward():\n"
+                    f"  Input has {x.shape[1]} channels\n"
+                    f"  Model expects {self.base_in_channels} (base) or {self.in_channels} (with geometry)"
+                )
+
+        # Input validation (for non-geometry mode)
+        if self.geometry_encoder is None and x.shape[1] != self.in_channels:
             raise RuntimeError(
                 f"Input channel mismatch in {self.__class__.__name__}.forward():\n"
                 f"  Input has {x.shape[1]} channels\n"
@@ -821,10 +984,18 @@ def create_v5_heavy_model(
 
 
 __all__ = [
+    # Model classes
     "RingRiftCNN_v5_Heavy",
     "HexNeuralNet_v5_Heavy",
+    # Encoder components
     "HeuristicEncoder",
+    "GeometryEncoder",
     "GNNRefinement",
+    # Factory function
     "create_v5_heavy_model",
+    # Constants
     "NUM_HEURISTIC_FEATURES",
+    "NUM_HEURISTIC_FEATURES_FAST",
+    "NUM_HEURISTIC_FEATURES_FULL",
+    "NUM_GEOMETRY_CHANNELS",
 ]

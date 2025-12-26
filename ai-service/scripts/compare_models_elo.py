@@ -183,7 +183,8 @@ def play_single_game(
         """
         # Handle special "heuristic" keyword for baseline comparison
         if model_path.lower() == "heuristic":
-            config = AIConfig(difficulty=5, board_type=bt)
+            # Use game_id for unique seed per game
+            config = AIConfig(difficulty=5, board_type=bt, rng_seed=game_id * 1000 + player)
             return HeuristicAI(player_number=player, config=config)
 
         try:

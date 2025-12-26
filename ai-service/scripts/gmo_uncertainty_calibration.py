@@ -83,9 +83,9 @@ def collect_predictions(
     records = []
 
     for game_id in range(num_games):
-        # Create AIs
+        # Create AIs with unique seeds per game
         gmo = create_gmo(1, device)
-        opponent = RandomAI(player_number=2, config=AIConfig(difficulty=1))
+        opponent = RandomAI(player_number=2, config=AIConfig(difficulty=1, rng_seed=game_id))
 
         state = create_initial_state(board_type=BoardType.SQUARE8, num_players=num_players)
         game_predictions = []

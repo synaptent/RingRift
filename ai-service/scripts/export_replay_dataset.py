@@ -104,18 +104,24 @@ except ImportError:
     HAS_QUALITY_SCORER = False
     compute_game_quality_from_params = None
 
-# Fast heuristic feature extraction for v5 training (December 2025)
-# Uses efficient O(1) component scores instead of 50x linear decomposition
+# Heuristic feature extraction for v5 training (December 2025)
+# Fast mode (21 features): O(1) component scores
+# Full mode (49 features): Linear weight decomposition for maximum strength
 try:
     from app.training.fast_heuristic_features import (
         extract_heuristic_features,
+        extract_full_heuristic_features,
         HEURISTIC_FEATURE_NAMES,
         NUM_HEURISTIC_FEATURES,
+        NUM_HEURISTIC_FEATURES_FULL,
     )
     HAS_HEURISTIC_EXTRACTOR = True
+    HAS_FULL_HEURISTIC_EXTRACTOR = True
 except ImportError:
     HAS_HEURISTIC_EXTRACTOR = False
-    NUM_HEURISTIC_FEATURES = 21  # Fallback value (21 component scores)
+    HAS_FULL_HEURISTIC_EXTRACTOR = False
+    NUM_HEURISTIC_FEATURES = 21  # Fallback (fast mode)
+    NUM_HEURISTIC_FEATURES_FULL = 49  # Fallback (full mode)
 
 
 def _normalize_hex_board_size(board: "BoardState") -> "BoardState":
@@ -334,6 +340,7 @@ def export_replay_dataset_multi(
     require_moves: bool = True,
     min_quality: float | None = None,  # December 2025: Quality filtering
     include_heuristics: bool = False,  # December 2025: Extract heuristic features for v5
+    full_heuristics: bool = False,  # December 2025: Use full 49-feature extraction
 ) -> None:
     """
     Export training samples from multiple GameReplayDB files into an NPZ dataset
@@ -388,6 +395,15 @@ def export_replay_dataset_multi(
     if include_heuristics and not HAS_HEURISTIC_EXTRACTOR:
         print("Warning: --include-heuristics requested but heuristic extractor not available")
         include_heuristics = False
+    if full_heuristics and not HAS_FULL_HEURISTIC_EXTRACTOR:
+        print("Warning: --full-heuristics requested but full extractor not available")
+        full_heuristics = False
+    if full_heuristics and not include_heuristics:
+        print("Note: --full-heuristics implies --include-heuristics")
+        include_heuristics = True
+
+    # Determine the heuristic feature count for this export
+    effective_num_heuristics = NUM_HEURISTIC_FEATURES_FULL if full_heuristics else NUM_HEURISTIC_FEATURES
 
     # Track seen game_ids for deduplication across databases
     seen_game_ids: set = set()
@@ -648,19 +664,27 @@ def export_replay_dataset_multi(
                     move_type_str = str(move_type_raw) if move_type_raw else "unknown"
 
                 # Extract heuristic features for v5 training (if enabled)
-                # Uses fast O(1) component scores (21 features) instead of slow decomposition
+                # Fast mode: 21 component scores (O(1) extraction)
+                # Full mode: 49 weight decomposition features (O(50) extraction)
                 heuristic_vec = None
                 if include_heuristics:
                     try:
-                        heuristic_vec = extract_heuristic_features(
-                            state_before,
-                            player_number=state_before.current_player,
-                            eval_mode="full",
-                            normalize=True,
-                        )  # Returns np.ndarray of shape (21,)
+                        if full_heuristics:
+                            heuristic_vec = extract_full_heuristic_features(
+                                state_before,
+                                player_number=state_before.current_player,
+                                normalize=True,
+                            )  # Returns np.ndarray of shape (49,)
+                        else:
+                            heuristic_vec = extract_heuristic_features(
+                                state_before,
+                                player_number=state_before.current_player,
+                                eval_mode="full",
+                                normalize=True,
+                            )  # Returns np.ndarray of shape (21,)
                     except Exception as e:
                         # Fallback to zeros if extraction fails
-                        heuristic_vec = np.zeros(NUM_HEURISTIC_FEATURES, dtype=np.float32)
+                        heuristic_vec = np.zeros(effective_num_heuristics, dtype=np.float32)
                         logger.debug(f"Heuristic extraction failed at move {move_index}: {e}")
 
                 game_samples.append((
@@ -909,8 +933,10 @@ def export_replay_dataset_multi(
     if include_heuristics and heuristics_list:
         heuristics_arr = np.stack(heuristics_list, axis=0).astype(np.float32)
         save_kwargs["heuristics"] = heuristics_arr
-        save_kwargs["num_heuristic_features"] = np.asarray(int(NUM_HEURISTIC_FEATURES))
-        print(f"Including heuristic features: {heuristics_arr.shape} ({NUM_HEURISTIC_FEATURES} features per sample)")
+        save_kwargs["num_heuristic_features"] = np.asarray(int(effective_num_heuristics))
+        save_kwargs["heuristic_mode"] = np.asarray("full" if full_heuristics else "fast")
+        mode_str = "full (49)" if full_heuristics else "fast (21)"
+        print(f"Including heuristic features: {heuristics_arr.shape} ({mode_str} features per sample)")
 
     # Phase 5 Metadata
     save_kwargs.update({
@@ -1295,6 +1321,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Adds 'heuristics' array to NPZ output. Only for single-threaded mode."
         ),
     )
+    parser.add_argument(
+        "--full-heuristics",
+        action="store_true",
+        help=(
+            "Use full 49-feature heuristic extraction (maximum strength mode). "
+            "Requires --include-heuristics. Uses linear weight decomposition "
+            "instead of fast component scores. Slower (O(50) vs O(1) per state) "
+            "but captures all heuristic knowledge including line patterns, swap "
+            "evaluation, and recovery mechanics. Best for training maximum-strength models."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1477,6 +1514,7 @@ def main(argv: list[str] | None = None) -> int:
         require_moves=not args.no_require_moves,
         min_quality=args.min_quality,
         include_heuristics=args.include_heuristics,
+        full_heuristics=args.full_heuristics,
     )
 
     # Update cache if enabled

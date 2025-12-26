@@ -193,18 +193,27 @@ def evaluate_config(
     total_moves = 0
     total_move_time = 0.0
 
+    # Factory functions with game_idx for unique seeds
+    def make_random(p: int, game_idx: int):
+        return RandomAI(player_number=p, config=AIConfig(difficulty=1, rng_seed=game_idx * 1000 + p))
+
+    def make_heuristic(p: int, game_idx: int):
+        return HeuristicAI(player_number=p, config=AIConfig(difficulty=3, rng_seed=game_idx * 1000 + p))
+
     baselines = {
-        "vs_random": lambda p: RandomAI(player_number=p, config=AIConfig(difficulty=1)),
-        "vs_heuristic": lambda p: HeuristicAI(player_number=p, config=AIConfig(difficulty=3)),
+        "vs_random": make_random,
+        "vs_heuristic": make_heuristic,
     }
 
+    game_counter = 0
     for baseline_name, baseline_factory in baselines.items():
         games_per_side = games_per_baseline // 2
 
         # GMO as player 1
         for _ in range(games_per_side):
             gmo = create_gmo_from_config(sweep_config, 1, checkpoint_path, device)
-            baseline = baseline_factory(2)
+            baseline = baseline_factory(2, game_counter)
+            game_counter += 1
 
             winner, moves, move_time = play_game(gmo, baseline)
             total_moves += moves
@@ -219,7 +228,8 @@ def evaluate_config(
 
         # GMO as player 2
         for _ in range(games_per_side):
-            baseline = baseline_factory(1)
+            baseline = baseline_factory(1, game_counter)
+            game_counter += 1
             gmo = create_gmo_from_config(sweep_config, 2, checkpoint_path, device)
 
             winner, moves, move_time = play_game(baseline, gmo)

@@ -1702,6 +1702,38 @@ def train_model(
     use_hex_v5 = bool(use_hex_model and model_version in ('v5', 'v5-gnn', 'v5-heavy'))
     use_hex_v4 = bool(use_hex_model and model_version == 'v4')
     use_hex_v3 = bool(use_hex_model and model_version == 'v3')
+
+    # December 2025: Detect heuristic feature count from NPZ for v5_heavy model
+    # This enables automatic switching between fast (21) and full (49) modes
+    detected_num_heuristics: int | None = None
+    if model_version in ('v5', 'v5-gnn', 'v5-heavy'):
+        if isinstance(data_path, list):
+            heuristic_check_path = data_path[0] if data_path else ""
+        else:
+            heuristic_check_path = data_path
+        if heuristic_check_path and os.path.exists(heuristic_check_path):
+            try:
+                with np.load(heuristic_check_path, mmap_mode="r", allow_pickle=True) as d:
+                    if "heuristics" in d:
+                        heuristic_shape = d["heuristics"].shape
+                        if len(heuristic_shape) >= 2:
+                            detected_num_heuristics = int(heuristic_shape[1])
+                            if not distributed or is_main_process():
+                                heuristic_mode = "full (49)" if detected_num_heuristics >= 49 else "fast (21)"
+                                logger.info(
+                                    "Detected %d heuristic features (%s mode) from %s",
+                                    detected_num_heuristics,
+                                    heuristic_mode,
+                                    heuristic_check_path,
+                                )
+            except Exception as exc:
+                if not distributed or is_main_process():
+                    logger.warning(
+                        "Failed to detect heuristic count from %s: %s",
+                        heuristic_check_path,
+                        exc,
+                    )
+
     if use_hex_model:
         # Try to infer in_channels from the dataset's feature shape
         inferred_in_channels = None
@@ -1834,8 +1866,11 @@ def train_model(
     elif use_hex_v5:
         # HexNeuralNet_v5_Heavy for hexagonal boards with all features
         # V5 uses 16 base channels * (history_length + 1) frames = 64 channels
+        from app.ai.neural_net.v5_heavy import NUM_HEURISTIC_FEATURES_FAST
         v5_filters = num_filters if num_filters is not None else 160
         use_gnn = model_version in ('v5-gnn',)
+        # Use detected heuristic count from NPZ, or default to fast mode (21)
+        hex_v5_num_heuristics = detected_num_heuristics if detected_num_heuristics else NUM_HEURISTIC_FEATURES_FAST
         model = HexNeuralNet_v5_Heavy(
             board_size=board_size,
             hex_radius=hex_radius,
@@ -1844,6 +1879,7 @@ def train_model(
             num_filters=v5_filters,
             policy_size=policy_size,
             num_players=hex_num_players,
+            num_heuristics=hex_v5_num_heuristics,  # Auto-detected from NPZ
             use_gnn=use_gnn,
             dropout=dropout,
         )
@@ -1935,9 +1971,12 @@ def train_model(
         # V5 Heavy architecture with all features (December 2025)
         # Combines SE blocks + attention + heuristic features + optional GNN
         from app.ai.neural_net import RingRiftCNN_v5_Heavy
+        from app.ai.neural_net.v5_heavy import NUM_HEURISTIC_FEATURES_FAST
         v5_num_players = MAX_PLAYERS if multi_player else num_players
         v5_filters = num_filters if num_filters is not None else 160
         use_gnn = model_version in ('v5-gnn',)
+        # Use detected heuristic count from NPZ, or default to fast mode (21)
+        v5_num_heuristics = detected_num_heuristics if detected_num_heuristics else NUM_HEURISTIC_FEATURES_FAST
         model = RingRiftCNN_v5_Heavy(
             board_size=board_size,
             in_channels=14,  # 14 spatial feature channels per frame
@@ -1946,14 +1985,16 @@ def train_model(
             policy_size=policy_size,
             num_players=v5_num_players,
             num_filters=v5_filters,
+            num_heuristics=v5_num_heuristics,  # Auto-detected from NPZ
             use_gnn=use_gnn,
             dropout=dropout,
         )
         if not distributed or is_main_process():
+            heuristic_mode_str = "full (49)" if v5_num_heuristics >= 49 else "fast (21)"
             logger.info(
                 f"Initializing RingRiftCNN_v5_Heavy with board_size={board_size}, "
                 f"policy_size={policy_size}, num_players={v5_num_players}, "
-                f"filters={v5_filters}, use_gnn={use_gnn}"
+                f"filters={v5_filters}, use_gnn={use_gnn}, heuristics={heuristic_mode_str}"
             )
     elif multi_player:
         # Multi-player mode: RingRiftCNN_v2 with per-player value head + multi_player_value_loss

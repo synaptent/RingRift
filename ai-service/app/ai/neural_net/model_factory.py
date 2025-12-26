@@ -72,23 +72,23 @@ def get_memory_tier() -> str:
     """Get the memory tier configuration from environment variable.
 
     The memory tier controls which model variant to use:
-    - "high" (default, 96GB target): Full-capacity v2 models
+    - "v4" (default): NAS-optimized attention architecture (~5M params)
+    - "high" (96GB target): Full-capacity v2 models with SE blocks
     - "low" (48GB target): Memory-efficient v2-lite models
     - "v3-high": V3 models with spatial policy heads
     - "v3-low": V3-lite models with spatial policy heads
-    - "v4": V4 NAS-optimized models with attention
     - "v5": V5 Heavy models with all features (SE+attention+heuristics)
     - "v5-gnn": V5 Heavy with GNN refinement layer
     - "gnn": Pure Graph Neural Network (GNNPolicyNet, ~255K params)
     - "hybrid": CNN-GNN hybrid architecture (HybridPolicyNet, ~15.5M params)
 
     Returns:
-        One of "high", "low", "v3-high", "v3-low", "v4", "v5", "v5-gnn", "gnn", or "hybrid".
+        One of "v4", "high", "low", "v3-high", "v3-low", "v5", "v5-gnn", "gnn", or "hybrid".
     """
-    tier = os.environ.get("RINGRIFT_NN_MEMORY_TIER", "high").lower()
+    tier = os.environ.get("RINGRIFT_NN_MEMORY_TIER", "v4").lower()
     if tier not in VALID_MEMORY_TIERS:
-        logger.warning(f"Unknown memory tier '{tier}', defaulting to 'high'")
-        return "high"
+        logger.warning(f"Unknown memory tier '{tier}', defaulting to 'v4'")
+        return "v4"
     return tier
 
 
@@ -126,11 +126,13 @@ def create_model_for_board(
         Number of historical frames to stack (default 3).
     memory_tier : str, optional
         Memory tier override. Valid values:
-        - "high" (default, 96GB target): V2 models with GAP→FC policy heads
+        - "v4" (default): NAS-optimized attention architecture (~5M params)
+        - "high" (96GB target): V2 models with GAP→FC policy heads
         - "low" (48GB target): V2-lite models with reduced capacity
         - "v3-high": V3 models with spatial policy heads
         - "v3-low": V3-lite models with spatial policy heads
-        - "v4": V4 NAS-optimized architecture with attention
+        - "v5": V5 Heavy with SE+attention+heuristics (~6M params)
+        - "v5-gnn": V5 Heavy with GNN refinement layer
         - "gnn": Pure Graph Neural Network (requires PyTorch Geometric)
         - "hybrid": CNN-GNN hybrid architecture (requires PyTorch Geometric)
         If None, reads from RINGRIFT_NN_MEMORY_TIER environment variable.

@@ -245,18 +245,27 @@ def run_ablation(
     total_moves = 0
     start_time = time.time()
 
+    # Factory functions with game_idx for unique seeds
+    def make_random(p: int, game_idx: int):
+        return RandomAI(player_number=p, config=AIConfig(difficulty=1, rng_seed=game_idx * 1000 + p))
+
+    def make_heuristic(p: int, game_idx: int):
+        return HeuristicAI(player_number=p, config=AIConfig(difficulty=3, rng_seed=game_idx * 1000 + p))
+
     baselines = {
-        "vs_random": lambda p: RandomAI(player_number=p, config=AIConfig(difficulty=1)),
-        "vs_heuristic": lambda p: HeuristicAI(player_number=p, config=AIConfig(difficulty=3)),
+        "vs_random": make_random,
+        "vs_heuristic": make_heuristic,
     }
 
     games_per_baseline = num_games // 2
 
+    game_counter = 0
     for baseline_name, baseline_factory in baselines.items():
         # GMO as P1
         for _ in range(games_per_baseline // 2):
             gmo = create_ablated_gmo(1, ablation_config, device)
-            baseline = baseline_factory(2)
+            baseline = baseline_factory(2, game_counter)
+            game_counter += 1
 
             winner, moves = play_game(gmo, baseline)
             total_moves += moves
@@ -270,7 +279,8 @@ def run_ablation(
 
         # GMO as P2
         for _ in range(games_per_baseline // 2):
-            baseline = baseline_factory(1)
+            baseline = baseline_factory(1, game_counter)
+            game_counter += 1
             gmo = create_ablated_gmo(2, ablation_config, device)
 
             winner, moves = play_game(baseline, gmo)

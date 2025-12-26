@@ -107,13 +107,13 @@ from app.ai.neural_net.square_encoding import (
 )
 
 # Square architectures - migrated to square_architectures.py (Phase 2)
+# NOTE: RingRiftCNN_v5 (v5.0.0) was removed Dec 2025 - use RingRiftCNN_v5_Heavy instead
 from app.ai.neural_net.square_architectures import (
     RingRiftCNN_v2,
     RingRiftCNN_v2_Lite,
     RingRiftCNN_v3,
     RingRiftCNN_v3_Lite,
     RingRiftCNN_v4,
-    RingRiftCNN_v5,
 )
 
 # Hex architectures - migrated to hex_architectures.py (Phase 2)
@@ -242,7 +242,6 @@ __all__ = [
     "RingRiftCNN_v3",
     "RingRiftCNN_v3_Lite",
     "RingRiftCNN_v4",
-    "RingRiftCNN_v5",
     "RingRiftCNN_v5_Heavy",
     "SEResidualBlock",
     "create_v5_heavy_model",
