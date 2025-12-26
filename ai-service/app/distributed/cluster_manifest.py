@@ -1649,6 +1649,9 @@ class ClusterManifest:
             return policy.receive_models
         elif data_type == DataType.NPZ:
             return policy.receive_npz
+        elif data_type == DataType.CHECKPOINT:
+            # Checkpoints follow model policy - training nodes need them
+            return policy.receive_models
 
         return True
 
@@ -1982,6 +1985,19 @@ class ClusterManifest:
             cursor.execute("SELECT COUNT(DISTINCT npz_path) FROM npz_locations")
             total_npz = cursor.fetchone()[0]
 
+            # Total checkpoints (December 2025)
+            cursor.execute("SELECT COUNT(DISTINCT checkpoint_path) FROM checkpoint_locations")
+            total_checkpoints = cursor.fetchone()[0]
+
+            # Best checkpoints by config
+            cursor.execute("""
+                SELECT config_key, COUNT(DISTINCT checkpoint_path)
+                FROM checkpoint_locations
+                WHERE is_best = 1 AND config_key IS NOT NULL
+                GROUP BY config_key
+            """)
+            best_checkpoints_by_config = {row[0]: row[1] for row in cursor.fetchall()}
+
             # Games by node
             cursor.execute("""
                 SELECT node_id, COUNT(*) FROM game_locations GROUP BY node_id
@@ -2011,6 +2027,8 @@ class ClusterManifest:
                 "total_games": total_games,
                 "total_models": total_models,
                 "total_npz_files": total_npz,
+                "total_checkpoints": total_checkpoints,
+                "best_checkpoints_by_config": best_checkpoints_by_config,
                 "games_by_node": games_by_node,
                 "games_by_config": games_by_config,
                 "under_replicated_games": under_replicated,

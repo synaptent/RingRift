@@ -176,6 +176,10 @@ class AutoSyncDaemon:
         self._provider = self._detect_provider()
         self._is_nfs_node = self._check_nfs_mount()
 
+        # Phase 9: Event subscription for DATA_STALE triggers
+        self._subscribed = False
+        self._urgent_sync_pending: dict[str, float] = {}  # config_key -> request_time
+
         logger.info(
             f"AutoSyncDaemon initialized: node={self.node_id}, "
             f"provider={self._provider}, nfs={self._is_nfs_node}, "
@@ -271,6 +275,9 @@ class AutoSyncDaemon:
         self._start_time = time.time()
         logger.info(f"Starting AutoSyncDaemon on {self.node_id}")
 
+        # Phase 9: Subscribe to DATA_STALE events to trigger urgent sync
+        self._subscribe_to_events()
+
         # Start gossip sync daemon
         await self._start_gossip_sync()
 
@@ -285,6 +292,111 @@ class AutoSyncDaemon:
             f"interval={self.config.interval_seconds}s, "
             f"exclude={self.config.exclude_hosts}"
         )
+
+    def _subscribe_to_events(self) -> None:
+        """Subscribe to events that trigger sync (Phase 9).
+
+        Subscribes to:
+        - DATA_STALE: Training data is stale, trigger urgent sync
+        - SYNC_TRIGGERED: External sync request
+        """
+        if self._subscribed:
+            return
+        try:
+            from app.coordination.event_router import DataEventType, get_event_bus
+
+            bus = get_event_bus()
+
+            # Subscribe to DATA_STALE to trigger urgent sync
+            if hasattr(DataEventType, 'DATA_STALE'):
+                bus.subscribe(DataEventType.DATA_STALE, self._on_data_stale)
+                logger.info("[AutoSyncDaemon] Subscribed to DATA_STALE")
+
+            # Subscribe to SYNC_TRIGGERED for external requests
+            if hasattr(DataEventType, 'SYNC_TRIGGERED'):
+                bus.subscribe(DataEventType.SYNC_TRIGGERED, self._on_sync_triggered)
+                logger.info("[AutoSyncDaemon] Subscribed to SYNC_TRIGGERED")
+
+            self._subscribed = True
+        except Exception as e:
+            logger.warning(f"[AutoSyncDaemon] Failed to subscribe to events: {e}")
+
+    async def _on_data_stale(self, event) -> None:
+        """Handle DATA_STALE event by triggering urgent sync (Phase 9).
+
+        When training data is detected as stale, we trigger an immediate
+        sync operation to fetch fresh data from the cluster.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            board_type = payload.get("board_type", "")
+            num_players = payload.get("num_players", 0)
+            data_age_hours = payload.get("data_age_hours", 0.0)
+
+            config_key = f"{board_type}_{num_players}p" if board_type and num_players else "unknown"
+
+            logger.warning(
+                f"[AutoSyncDaemon] DATA_STALE received for {config_key}: "
+                f"age={data_age_hours:.1f}h - triggering urgent sync"
+            )
+
+            # Track the urgent sync request
+            self._urgent_sync_pending[config_key] = time.time()
+            self._events_processed += 1
+
+            # Trigger immediate sync (don't wait for next interval)
+            fire_and_forget(self._trigger_urgent_sync(config_key))
+
+        except Exception as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[AutoSyncDaemon] Error handling DATA_STALE: {e}")
+
+    async def _on_sync_triggered(self, event) -> None:
+        """Handle external SYNC_TRIGGERED event (Phase 9)."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            reason = payload.get("reason", "unknown")
+            config_key = payload.get("config_key", "")
+
+            logger.info(
+                f"[AutoSyncDaemon] SYNC_TRIGGERED received: "
+                f"reason={reason}, config={config_key}"
+            )
+
+            self._events_processed += 1
+
+            # Trigger immediate sync
+            if config_key:
+                fire_and_forget(self._trigger_urgent_sync(config_key))
+            else:
+                fire_and_forget(self._sync_all())
+
+        except Exception as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[AutoSyncDaemon] Error handling SYNC_TRIGGERED: {e}")
+
+    async def _trigger_urgent_sync(self, config_key: str) -> None:
+        """Trigger an urgent sync operation for a specific config (Phase 9)."""
+        try:
+            logger.info(f"[AutoSyncDaemon] Urgent sync starting for {config_key}")
+
+            # Find nodes with fresh data for this config
+            if self._cluster_manifest:
+                # Use manifest to find data sources
+                await self._sync_all()
+            else:
+                # Fallback to full sync
+                await self._sync_all()
+
+            # Clear the pending flag
+            self._urgent_sync_pending.pop(config_key, None)
+
+            logger.info(f"[AutoSyncDaemon] Urgent sync completed for {config_key}")
+
+        except Exception as e:
+            logger.error(f"[AutoSyncDaemon] Urgent sync failed for {config_key}: {e}")
 
     async def stop(self) -> None:
         """Stop the auto sync daemon."""
