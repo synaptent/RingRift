@@ -952,6 +952,47 @@ class SelfplayRunner(ABC):
             except Exception as e:
                 logger.warning(f"Callback error: {e}")
 
+        # Phase 4A.5: Ephemeral sync integration for write-through mode
+        self._notify_ephemeral_sync(result)
+
+    def _notify_ephemeral_sync(self, result: GameResult) -> None:
+        """Notify EphemeralSyncDaemon of game completion for immediate sync.
+
+        Phase 4A.5 (December 2025): Ensures games on ephemeral hosts (Vast.ai)
+        are immediately synced to prevent data loss on termination.
+        """
+        try:
+            from app.coordination.ephemeral_sync import get_ephemeral_sync_daemon
+
+            daemon = get_ephemeral_sync_daemon()
+            if not daemon.is_ephemeral:
+                return  # Not on ephemeral host, skip
+
+            # Get db_path if available
+            db_path = self.config.record_db if self.config.record_db else None
+
+            # Create game result dict for sync
+            game_result = {
+                "game_id": result.game_id if hasattr(result, "game_id") else str(id(result)),
+                "board_type": self.config.board_type,
+                "num_players": self.config.num_players,
+                "moves_count": len(result.move_objects) if result.move_objects else 0,
+            }
+
+            # Call on_game_complete (fire-and-forget for non-blocking)
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(daemon.on_game_complete(game_result, db_path))
+            except RuntimeError:
+                # No running loop - run synchronously
+                asyncio.run(daemon.on_game_complete(game_result, db_path))
+
+        except ImportError:
+            pass  # Ephemeral sync not available
+        except Exception as e:
+            logger.debug(f"[Ephemeral] Could not notify sync daemon: {e}")
+
     def _emit_orchestrator_event(self) -> None:
         """Emit SELFPLAY_COMPLETE event to trigger downstream pipeline stages.
 

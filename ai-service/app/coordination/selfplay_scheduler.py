@@ -691,8 +691,10 @@ class SelfplayScheduler:
                 # Phase 5: Subscribe to feedback events
                 bus.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, self._on_selfplay_target_updated)
                 bus.subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
+                # Phase 4A.1: Subscribe to curriculum rebalancing (December 2025)
+                bus.subscribe(DataEventType.CURRICULUM_REBALANCED, self._on_curriculum_rebalanced)
                 self._subscribed = True
-                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including Phase 5)")
+                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including Phase 4A.1 curriculum)")
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Failed to subscribe: {e}")
@@ -794,6 +796,46 @@ class SelfplayScheduler:
                     priority.quality_penalty = 0.0
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling quality degraded: {e}")
+
+    def _on_curriculum_rebalanced(self, event: Any) -> None:
+        """Handle curriculum rebalancing event.
+
+        Phase 4A.1 (December 2025): Updates priority weights when curriculum
+        feedback adjusts config priorities based on training progress.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            new_weight = payload.get("weight", 1.0)
+            reason = payload.get("reason", "")
+
+            if config_key in self._config_priorities:
+                old_weight = self._config_priorities[config_key].curriculum_weight
+                self._config_priorities[config_key].curriculum_weight = new_weight
+
+                # Only log significant changes
+                if abs(new_weight - old_weight) > 0.1:
+                    logger.info(
+                        f"[SelfplayScheduler] Curriculum rebalanced: {config_key} "
+                        f"weight {old_weight:.2f} → {new_weight:.2f}"
+                        + (f" ({reason})" if reason else "")
+                    )
+
+            # Also handle batch updates (multiple configs at once)
+            weights = payload.get("weights", {})
+            if weights:
+                for cfg, weight in weights.items():
+                    if cfg in self._config_priorities:
+                        old_w = self._config_priorities[cfg].curriculum_weight
+                        self._config_priorities[cfg].curriculum_weight = weight
+                        if abs(weight - old_w) > 0.1:
+                            logger.info(
+                                f"[SelfplayScheduler] Curriculum batch update: "
+                                f"{cfg} weight {old_w:.2f} → {weight:.2f}"
+                            )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling curriculum rebalanced: {e}")
 
     # =========================================================================
     # Status & Metrics

@@ -55,6 +55,10 @@ class RegistrySyncState:
     pending_syncs: list[str] = field(default_factory=list)
 
 
+# Backward-compatible alias (tests and older callers import SyncState)
+SyncState = RegistrySyncState
+
+
 @dataclass
 class NodeInfo:
     """Information about a cluster node for registry sync."""

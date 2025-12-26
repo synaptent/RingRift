@@ -732,6 +732,21 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["plateau_to_curriculum"] = False
         logger.debug(f"[Bootstrap] Failed to wire plateau to curriculum: {e}")
 
+    # 7. Wire TRAINING_EARLY_STOPPED to curriculum boost (December 2025)
+    # When training early-stops due to stagnation, boost that config's curriculum weight
+    # so more selfplay data is generated to help it improve
+    try:
+        from app.training.curriculum_feedback import wire_early_stop_to_curriculum
+
+        watcher = wire_early_stop_to_curriculum()
+        results["early_stop_to_curriculum"] = watcher is not None
+        if watcher:
+            logger.debug("[Bootstrap] Wired TRAINING_EARLY_STOPPED -> CurriculumFeedback")
+
+    except Exception as e:
+        results["early_stop_to_curriculum"] = False
+        logger.debug(f"[Bootstrap] Failed to wire early stop to curriculum: {e}")
+
     wired = sum(1 for v in results.values() if v)
     total = len(results)
     logger.info(f"[Bootstrap] Wired {wired}/{total} missing event subscriptions")
