@@ -30,7 +30,7 @@ from app.ai.archive.cage_network import (
     CAGENetwork,
     board_to_graph,
 )
-from app.ai.ebmo_network import ActionFeatureExtractor
+from archive.deprecated_ai.ebmo_network import ActionFeatureExtractor
 
 logger = logging.getLogger(__name__)
 

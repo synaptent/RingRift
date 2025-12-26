@@ -1204,7 +1204,7 @@ def load_nnue_model(
     try:
         model.loaded_checkpoint_path = loaded_checkpoint_path
         model.used_fresh_weights = used_fresh_weights
-    except Exception:
+    except AttributeError:
         pass
 
     model = model.to(device)

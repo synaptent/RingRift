@@ -197,7 +197,7 @@ class MinimaxAI(HeuristicAI):
                         accumulator_weight = state_dict.get("accumulator.weight")
                         if accumulator_weight is not None and hasattr(accumulator_weight, "shape"):
                             hidden_dim = int(accumulator_weight.shape[0])
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError, IndexError):
                         pass
 
                     try:
@@ -210,7 +210,7 @@ class MinimaxAI(HeuristicAI):
                                 layer_indices.add(int(match.group(1)))
                         if layer_indices:
                             num_hidden_layers = len(layer_indices)
-                    except Exception:
+                    except (TypeError, AttributeError, ValueError):
                         pass
 
                 self.policy_model = RingRiftNNUEWithPolicy(

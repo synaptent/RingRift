@@ -267,7 +267,7 @@ class BatchedGumbelMCTS:
                     state._policy_logits, self.board_type
                 )
 
-        except Exception as e:
+        except (RuntimeError, ValueError, IndexError, TypeError) as e:
             logger.warning(f"BatchedGumbelMCTS: batch policy evaluation failed ({e})")
             for state in search_states:
                 state._policy_logits = np.zeros(len(state.valid_moves))
@@ -434,7 +434,7 @@ class BatchedGumbelMCTS:
                 key = (req.game_idx, req.action_idx)
                 action_values[key].append(v)
 
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.warning(f"BatchedGumbelMCTS: batch leaf evaluation failed ({e})")
             for req in requests:
                 key = (req.game_idx, req.action_idx)

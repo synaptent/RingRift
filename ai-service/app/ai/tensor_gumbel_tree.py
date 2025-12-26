@@ -1786,7 +1786,7 @@ class MultiTreeMCTS:
             try:
                 state = batch_state.to_game_state(i)
                 game_states.append(state)
-            except Exception:
+            except (ValueError, TypeError, KeyError, IndexError, RuntimeError):
                 game_states.append(None)
 
         valid_states = [s for s in game_states if s is not None]

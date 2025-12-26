@@ -1700,7 +1700,7 @@ class GumbelMCTSAI(BaseAI):
                     [game_state], value_head=value_head
                 )
                 nn_value = values[0] if values else None
-            except Exception:
+            except (RuntimeError, ValueError, IndexError, AttributeError):
                 pass
 
         # Compute heuristic value if needed
@@ -1717,7 +1717,7 @@ class GumbelMCTSAI(BaseAI):
                     heuristic_ai.player_number = self.player_number
                     raw_score = heuristic_ai.evaluate_position(game_state)
                     heuristic_value = self._normalize_heuristic_score(raw_score)
-                except Exception:
+                except (RuntimeError, ValueError, AttributeError):
                     pass
 
         # Compute final value

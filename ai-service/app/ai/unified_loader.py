@@ -45,10 +45,12 @@ class ModelArchitecture(Enum):
     CNN_V3 = auto()  # RingRiftCNN_v3 - spatial policy heads
     CNN_V3_LITE = auto()  # RingRiftCNN_v3_Lite
     CNN_V4 = auto()  # RingRiftCNN_v4 - NAS with attention
+    CNN_V5_HEAVY = auto()  # RingRiftCNN_v5_Heavy - SE+Attention+FiLM heuristics
     HEX_V2 = auto()  # HexNeuralNet_v2 - hex-specific SE
     HEX_V2_LITE = auto()  # HexNeuralNet_v2_Lite
     HEX_V3 = auto()  # HexNeuralNet_v3 - hex spatial policy
     HEX_V3_LITE = auto()  # HexNeuralNet_v3_Lite
+    HEX_V5_HEAVY = auto()  # HexNeuralNet_v5_Heavy - SE+Attention+FiLM heuristics
     UNKNOWN = auto()  # Fallback for future/experimental architectures
 
 
@@ -90,6 +92,20 @@ ARCHITECTURE_SIGNATURES = [
         forbidden_prefixes=["from_head.", "to_head.", "conv1."],
         architecture=ModelArchitecture.NNUE_VALUE_ONLY,
         priority=90,
+    ),
+    # Hex v5_heavy: has heuristic_encoder and se_blocks with hex_mask
+    ArchitectureSignature(
+        required_prefixes=["heuristic_encoder.", "se_blocks.", "hex_mask"],
+        forbidden_prefixes=[],
+        architecture=ModelArchitecture.HEX_V5_HEAVY,
+        priority=85,
+    ),
+    # CNN v5_heavy: has heuristic_encoder and se_blocks, NO hex_mask
+    ArchitectureSignature(
+        required_prefixes=["heuristic_encoder.", "se_blocks."],
+        forbidden_prefixes=["hex_mask"],
+        architecture=ModelArchitecture.CNN_V5_HEAVY,
+        priority=80,
     ),
     # Hex v3: has hex_mask and typically spatial policy
     ArchitectureSignature(
@@ -689,6 +705,32 @@ class UnifiedModelLoader:
                 policy_size=config.policy_size,
             )
 
+        elif architecture == ModelArchitecture.HEX_V5_HEAVY:
+            from app.ai.neural_net.v5_heavy import HexNeuralNet_v5_Heavy
+
+            hex_board_size = 2 * config.hex_radius + 1
+            return HexNeuralNet_v5_Heavy(
+                board_size=hex_board_size,
+                hex_radius=config.hex_radius,
+                in_channels=config.input_channels,
+                global_features=config.global_features,
+                num_filters=config.num_filters,
+                num_players=config.num_players,
+                policy_size=config.policy_size,
+            )
+
+        elif architecture == ModelArchitecture.CNN_V5_HEAVY:
+            from app.ai.neural_net.v5_heavy import RingRiftCNN_v5_Heavy
+
+            return RingRiftCNN_v5_Heavy(
+                board_size=board_size,
+                in_channels=config.input_channels,
+                global_features=config.global_features,
+                num_filters=config.num_filters,
+                num_players=config.num_players,
+                policy_size=config.policy_size,
+            )
+
         elif architecture == ModelArchitecture.UNKNOWN:
             # Try CNN v2 as fallback
             from app.ai.neural_net.square_architectures import RingRiftCNN_v2
@@ -765,7 +807,7 @@ class UnifiedModelLoader:
             for loaded in cls._cache.values():
                 try:
                     loaded.model.cpu()
-                except Exception:
+                except (RuntimeError, AttributeError):
                     pass
             cls._cache.clear()
 

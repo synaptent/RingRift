@@ -158,7 +158,7 @@ class HybridTreePolicyAI(HeuristicAI):
                 try:
                     self.policy_model = self.policy_model.half()
                     logger.info("HybridTreePolicyAI: Enabled FP16 inference")
-                except Exception:
+                except RuntimeError:
                     pass
 
             self._model_loaded = True

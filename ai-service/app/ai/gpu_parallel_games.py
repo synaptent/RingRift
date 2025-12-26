@@ -470,7 +470,7 @@ class ParallelGameRunner:
             if self.device.type == "cuda" and torch.cuda.is_available():
                 try:
                     self.policy_model = self.policy_model.half()
-                except Exception:
+                except RuntimeError:
                     pass
 
             logger.info(f"ParallelGameRunner: Hot-reloaded policy model from {model_path}")

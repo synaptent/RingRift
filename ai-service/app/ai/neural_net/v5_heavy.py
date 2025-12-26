@@ -468,12 +468,12 @@ class RingRiftCNN_v5_Heavy(nn.Module):
         self.movement_channels = num_directions * self.max_distance
         self.territory_choice_channels = territory_size_buckets * territory_max_players
 
-        # Input channels = base_channels * (history_length + 1) + optional geometry
-        base_in_channels = in_channels * (history_length + 1)
+        # Input channels - in_channels should already be total channels from training data
+        # (e.g., 40 = 10 base channels * 4 frames, not 10 base to be multiplied)
         geometry_channels = NUM_GEOMETRY_CHANNELS if use_geometry_encoding else 0
-        self.total_in_channels = base_in_channels + geometry_channels
+        self.total_in_channels = in_channels + geometry_channels
         self.in_channels = self.total_in_channels
-        self.base_in_channels = base_in_channels
+        self.base_in_channels = in_channels
 
         # === Geometry Encoder (optional) ===
         if use_geometry_encoding:
@@ -974,8 +974,9 @@ class HexNeuralNet_v5_Heavy(nn.Module):
         else:  # hexagonal (25x25)
             self.policy_size = P_HEX
 
-        # Input channels
-        self.base_in_channels = in_channels * (history_length + 1)
+        # Input channels - in_channels should already be total channels from training data
+        # (e.g., 40 = 10 base channels * 4 frames, not 10 base to be multiplied)
+        self.base_in_channels = in_channels
         self.use_geometry_encoding = use_geometry_encoding
         if use_geometry_encoding:
             self.geometry_encoder = GeometryEncoder(board_size)

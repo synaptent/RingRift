@@ -361,7 +361,7 @@ class ModelPromotionCacheInvalidator:
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, KeyError):
             pass
 
     def _on_model_promoted(self, event) -> None:

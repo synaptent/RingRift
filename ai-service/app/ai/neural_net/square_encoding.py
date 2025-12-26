@@ -91,7 +91,7 @@ def _line_anchor_position(move: Move) -> Position | None:
             line = move.formed_lines[0]
             if hasattr(line, "positions") and line.positions:
                 return line.positions[0]
-        except Exception:
+        except (IndexError, AttributeError):
             return None
     return None
 

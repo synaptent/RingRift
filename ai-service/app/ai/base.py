@@ -258,7 +258,7 @@ class BaseAI(ABC):
         evaluator: SwapEvaluator | None = None
         try:
             evaluator = self.swap_evaluator
-        except Exception:
+        except AttributeError:
             evaluator = None
 
         if not isinstance(evaluator, SwapEvaluator):
@@ -317,7 +317,7 @@ class BaseAI(ABC):
         if callable(clear_tree):
             try:
                 clear_tree()
-            except Exception:
+            except (AttributeError, RuntimeError, TypeError):
                 # Best-effort only: failures should not break self-play.
                 pass
 

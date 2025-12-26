@@ -269,7 +269,7 @@ class PolicyOnlyAI(BaseAI):
         try:
             values, _ = self.neural_net.evaluate_batch([game_state])
             return values[0] if values else 0.0
-        except Exception:
+        except (RuntimeError, TypeError, IndexError):
             return 0.0
 
     def get_policy_distribution(

@@ -286,7 +286,7 @@ class RingRiftNNAdapter(NeuralNetworkInterface):
                 raw_value = self._fallback.evaluate_position(game_state)
                 # Normalize to [-1, 1] range
                 value = max(-1.0, min(1.0, raw_value / 1000.0))
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
         return policy, value

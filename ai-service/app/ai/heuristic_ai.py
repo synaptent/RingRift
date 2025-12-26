@@ -97,7 +97,17 @@ from __future__ import annotations
 
 import multiprocessing
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import (
+    CancelledError,
+    ProcessPoolExecutor,
+    TimeoutError as FutureTimeoutError,
+    as_completed,
+)
+try:
+    from concurrent.futures.process import BrokenProcessPool
+except ImportError:
+    # Python 3.10 compatibility
+    BrokenProcessPool = Exception  # type: ignore
 
 from ..models import (
     AIConfig,
@@ -859,7 +869,7 @@ class HeuristicAI(BaseAI):
                 chunk_results = future.result()
                 for move_idx, score in chunk_results:
                     results[move_idx] = score
-            except Exception:
+            except (BrokenProcessPool, CancelledError, FutureTimeoutError, RuntimeError):
                 # On error, moves in this chunk get very low scores
                 pass
 
