@@ -119,12 +119,8 @@ class JobState(str, Enum):
 
 
 # Node patterns for backend routing
-SLURM_PATTERNS = [
-    "lambda-gh200-*",
-    "lambda-h100*",
-    "lambda-2xh100",
-    "lambda-a10",
-]
+# Note: Lambda Labs terminated Dec 2025, patterns kept for reference only
+SLURM_PATTERNS: list[str] = []
 
 VAST_PATTERNS = [
     "vast-*",

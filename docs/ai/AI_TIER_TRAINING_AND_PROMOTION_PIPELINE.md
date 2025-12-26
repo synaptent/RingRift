@@ -38,7 +38,7 @@ This pipeline covers only:
 
 Future work can extend the same patterns to other boards and player counts using the multi-board tier configs already in [`python.tier_eval_config`](../../ai-service/app/training/tier_eval_config.py:196) and [`python.ladder_config`](../../ai-service/app/config/ladder_config.py:121).
 
-> **Note (2025-12-17):** Minimax is disabled for square19 and hexagonal boards. The search space on these larger boards causes minimax to take tens of minutes per move. D3/D4 tiers on square19 and hex currently use Descent + NN instead (see `ai-service/app/config/ladder_config.py`).
+> **Note (2025-12-17):** Minimax is disabled for square19 and hexagonal boards. The search space on these larger boards causes minimax to take tens of minutes per move. D4/D5 tiers on square19 and hex currently use Descent + NN instead (see `ai-service/app/config/ladder_config.py`).
 
 ### 1.2 Non-goals
 
@@ -50,19 +50,19 @@ Future work can extend the same patterns to other boards and player counts using
 
 For Square-8 2-player, the canonical ladder currently defines (simplified):
 
-| Tier | Difficulty | Ladder ai_type | Ladder model_id      | heuristic_profile_id | Intended strength              |
-| ---- | ---------- | -------------- | -------------------- | -------------------- | ------------------------------ |
-| D1   | 1          | RANDOM         | —                    | —                    | Entry / baseline               |
-| D2   | 2          | HEURISTIC      | heuristic_v1_sq8_2p  | heuristic_v1_sq8_2p  | Casual / learning              |
-| D3   | 3          | MINIMAX        | v1-minimax-3         | heuristic_v1_sq8_2p  | Lower-mid (non-neural minimax) |
-| D4   | 4          | MINIMAX        | nnue_square8_2p      | heuristic_v1_sq8_2p  | Mid (NNUE minimax)             |
-| D5   | 5          | DESCENT        | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Upper-mid (neural Descent)     |
-| D6   | 6          | DESCENT        | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | High (neural Descent)          |
-| D7   | 7          | MCTS           | —                    | heuristic_v1_sq8_2p  | Expert (heuristic-only MCTS)   |
-| D8   | 8          | MCTS           | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Strong expert (neural MCTS)    |
-| D9   | 9          | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Master (Gumbel MCTS)           |
-| D10  | 10         | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Grandmaster (Gumbel MCTS)      |
-| D11  | 11         | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Internal-only stress tier      |
+| Tier | Difficulty | Ladder ai_type | Ladder model_id      | heuristic_profile_id | Intended strength            |
+| ---- | ---------- | -------------- | -------------------- | -------------------- | ---------------------------- |
+| D1   | 1          | RANDOM         | —                    | —                    | Entry / baseline             |
+| D2   | 2          | HEURISTIC      | heuristic_v1_weak    | heuristic_v1_weak    | Casual / learning            |
+| D3   | 3          | HEURISTIC      | heuristic_v1_sq8_2p  | heuristic_v1_sq8_2p  | Lower-mid (tuned heuristic)  |
+| D4   | 4          | MINIMAX        | nnue_square8_2p      | heuristic_v1_sq8_2p  | Mid (NNUE minimax)           |
+| D5   | 5          | MINIMAX        | nnue_square8_2p      | heuristic_v1_sq8_2p  | Upper-mid (NNUE minimax)     |
+| D6   | 6          | DESCENT        | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | High (neural Descent)        |
+| D7   | 7          | MCTS           | —                    | heuristic_v1_sq8_2p  | Expert (heuristic-only MCTS) |
+| D8   | 8          | MCTS           | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Strong expert (neural MCTS)  |
+| D9   | 9          | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Master (Gumbel MCTS)         |
+| D10  | 10         | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Grandmaster (Gumbel MCTS)    |
+| D11  | 11         | GUMBEL_MCTS    | ringrift_best_sq8_2p | heuristic_v1_sq8_2p  | Internal-only stress tier    |
 
 (from [`python._build_default_square8_two_player_configs`](../../ai-service/app/config/ladder_config.py:47))
 

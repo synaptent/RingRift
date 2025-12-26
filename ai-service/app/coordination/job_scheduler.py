@@ -147,6 +147,17 @@ CONFIG_QUOTAS: dict[str, float] = {
 # P2.2 (Dec 2025): Starvation prevention - boost priority after N hours
 STARVATION_THRESHOLD_HOURS = 4.0  # After 4 hours, boost priority
 
+# P2.3 (Dec 2025): Cost-aware scheduling - prefer cheaper providers for low priority work
+# Lower cost = better. Scale is relative (not actual $/hr)
+PROVIDER_COSTS: dict[str, float] = {
+    "vast": 1.0,       # Cheapest - spot instances
+    "vultr": 1.5,      # vGPU, moderate cost
+    "runpod": 2.0,     # On-demand GPUs
+    "nebius": 2.5,     # Cloud GPUs
+    "lambda": 3.0,     # Premium datacenter GPUs (when online)
+    "unknown": 2.0,    # Default to middle tier
+}
+
 
 @dataclass
 class ScheduledJob:
@@ -325,6 +336,21 @@ class PriorityJobScheduler:
             f"[JobScheduler] Updated allocation for {config_key}: "
             f"{self._config_allocation[config_key]:.0f}s"
         )
+
+    def _get_host_cost(self, host_name: str) -> float:
+        """Get relative cost for a host based on provider (P2.3).
+
+        Args:
+            host_name: Name of the host
+
+        Returns:
+            Relative cost (lower = cheaper)
+        """
+        host_lower = host_name.lower()
+        for provider, cost in PROVIDER_COSTS.items():
+            if provider in host_lower:
+                return cost
+        return PROVIDER_COSTS.get("unknown", 2.0)
 
     def _apply_starvation_prevention(self) -> int:
         """Boost priority for jobs waiting too long (P2.2).
@@ -1583,14 +1609,19 @@ def reset_overload_handler() -> None:
 
 
 __all__ = [
+    # Configuration
     "ELO_CURRICULUM_ENABLED",
     "ELO_UNDERSERVED_THRESHOLD",
     "MIN_MEMORY_GB_FOR_TASKS",
     "TARGET_CPU_UTILIZATION_MAX",
     "TARGET_CPU_UTILIZATION_MIN",
     "TARGET_GPU_UTILIZATION_MAX",
-    # Configuration
     "TARGET_GPU_UTILIZATION_MIN",
+    # P2.1 (Dec 2025): Fair allocation quotas
+    "CONFIG_QUOTAS",
+    "DEFAULT_CONFIG_QUOTA",
+    # P2.2 (Dec 2025): Starvation prevention
+    "STARVATION_THRESHOLD_HOURS",
     # Job migration (December 2025)
     "HostDeadJobMigrator",
     "JobPriority",
