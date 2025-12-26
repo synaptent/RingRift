@@ -67,7 +67,7 @@ LOGS_DIR = ROOT / "logs"
 
 try:
     from app.distributed.storage_provider import get_storage_provider
-except Exception:
+except (ImportError, ModuleNotFoundError):
     get_storage_provider = None
 
 
@@ -101,7 +101,7 @@ GAMES_DIRS, MODELS_DIR, TRAINING_DIR, ELO_DB_PATHS = _resolve_storage_paths()
 try:
     from app.config.unified_config import get_config
     DEFAULT_DATA_PORT = get_config().distributed.data_server_port
-except Exception:
+except (ImportError, ModuleNotFoundError, AttributeError):
     DEFAULT_DATA_PORT = 8766
 DEFAULT_MODEL_PORT = 8765
 
@@ -119,7 +119,7 @@ def _load_hosts_from_config():
     try:
         from app.sync.cluster_hosts import load_hosts_config
         config = load_hosts_config()
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         config = {}
 
     try:
@@ -294,7 +294,7 @@ def count_games_in_db(db_path: Path) -> int:
         count = cursor.fetchone()[0]
         conn.close()
         return count
-    except Exception:
+    except sqlite3.Error:
         return 0
 
 

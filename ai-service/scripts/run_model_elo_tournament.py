@@ -851,7 +851,7 @@ def play_nn_vs_nn_game(
         try:
             for p_id in final_state.board.collapsed_spaces.values():
                 territory_counts[int(p_id)] = territory_counts.get(int(p_id), 0) + 1
-        except Exception:
+        except (AttributeError, TypeError, ValueError, KeyError):
             pass
 
         marker_counts: dict[int, int] = {int(p.player_number): 0 for p in players}
@@ -859,14 +859,14 @@ def play_nn_vs_nn_game(
             for marker in final_state.board.markers.values():
                 owner = int(marker.player)
                 marker_counts[owner] = marker_counts.get(owner, 0) + 1
-        except Exception:
+        except (AttributeError, TypeError, ValueError, KeyError):
             pass
 
         last_actor: int | None = None
         try:
             if final_state.move_history:
                 last_actor = int(final_state.move_history[-1].player)
-        except Exception:
+        except (AttributeError, TypeError, ValueError, IndexError):
             last_actor = None
 
         sorted_players = sorted(
@@ -1107,7 +1107,7 @@ def play_nn_vs_nn_game(
     if game_state.winner is not None:
         try:
             winner_player = int(game_state.winner)
-        except Exception:
+        except (ValueError, TypeError):
             winner_player = None
 
     timed_out = bool(move_count >= max_moves and winner_player is None)
@@ -1928,7 +1928,7 @@ def update_elo_after_match(
                     config=config_key, model_id=model_b, new_elo=new_elo_b,
                     old_elo=old_elo_b, games_played=games_b, source=GAME_SOURCE_TAG
                 ))
-        except Exception:
+        except (RuntimeError, asyncio.TimeoutError, asyncio.CancelledError, TypeError, AttributeError):
             # Don't fail the match update if event emission fails
             pass
 

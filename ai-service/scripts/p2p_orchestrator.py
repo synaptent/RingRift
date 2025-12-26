@@ -241,8 +241,10 @@ from scripts.p2p.cluster_config import (
     get_webhook_urls,
 )
 from scripts.p2p.handlers import (
+    AdminHandlersMixin,
     ElectionHandlersMixin,
     GauntletHandlersMixin,
+    GossipHandlersMixin,
     RelayHandlersMixin,
     WorkQueueHandlersMixin,
 )
@@ -883,6 +885,8 @@ class P2POrchestrator(
     ElectionHandlersMixin,
     RelayHandlersMixin,
     GauntletHandlersMixin,
+    GossipHandlersMixin,
+    AdminHandlersMixin,
 ):
     """Main P2P orchestrator class that runs on each node.
 
@@ -891,6 +895,8 @@ class P2POrchestrator(
     - ElectionHandlersMixin: Leader election handlers (handle_election*, handle_lease*, handle_voter*)
     - RelayHandlersMixin: NAT relay handlers (handle_relay_*)
     - GauntletHandlersMixin: Gauntlet evaluation handlers (handle_gauntlet_*)
+    - GossipHandlersMixin: Gossip protocol handlers (handle_gossip*)
+    - AdminHandlersMixin: Admin and git handlers (handle_git_*, handle_admin_*)
     """
 
     def __init__(
@@ -7819,191 +7825,8 @@ class P2POrchestrator(
     # Inherited from RelayHandlersMixin: handle_relay_heartbeat, handle_relay_enqueue,
     # handle_relay_peers, handle_relay_status
 
-    async def handle_gossip(self, request: web.Request) -> web.Response:
-        """POST /gossip - Receive gossip from peer and respond with our state.
-
-        GOSSIP PROTOCOL: Decentralized state sharing between nodes.
-        Each node shares its state with random peers, and information
-        propagates through the cluster without leader coordination.
-
-        GOSSIP COMPRESSION: Supports gzip-compressed requests and responses
-        to reduce network bandwidth. Check Content-Encoding header.
-
-        Request body:
-        {
-            "sender": "node-id",
-            "sender_state": { state dict },
-            "known_states": { node_id -> state dict }
-        }
-
-        Response:
-        {
-            "sender_state": { our state },
-            "known_states": { our known states },
-            "peer_manifests": { node_id -> manifest summary }
-        }
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-
-            # GOSSIP COMPRESSION: Handle gzip-compressed requests
-            content_encoding = request.headers.get("Content-Encoding", "")
-            if content_encoding == "gzip":
-                compressed_body = await request.read()
-                decompressed = gzip.decompress(compressed_body)
-                data = json.loads(decompressed.decode("utf-8"))
-            else:
-                data = await request.json()
-        except (json.JSONDecodeError, AttributeError):
-            data = {}
-
-        try:
-            # Process incoming gossip
-            self._process_gossip_response(data)
-            self._record_gossip_metrics("received")
-
-            # Prepare our response
-            now = time.time()
-            self._update_self_info()
-
-            our_state = {
-                "node_id": self.node_id,
-                "timestamp": now,
-                "version": int(now * 1000),
-                "role": self.role.value if hasattr(self.role, "value") else str(self.role),
-                "leader_id": self.leader_id,
-                "leader_lease_expires": getattr(self, "leader_lease_expires", 0),
-                "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
-                "training_jobs": getattr(self.self_info, "training_jobs", 0),
-                "gpu_percent": getattr(self.self_info, "gpu_percent", 0),
-                "cpu_percent": getattr(self.self_info, "cpu_percent", 0),
-                "memory_percent": getattr(self.self_info, "memory_percent", 0),
-                "disk_percent": getattr(self.self_info, "disk_percent", 0),
-                "has_gpu": getattr(self.self_info, "has_gpu", False),
-                "gpu_name": getattr(self.self_info, "gpu_name", ""),
-                "voter_quorum_ok": self._has_voter_quorum(),
-            }
-
-            # Include manifest summary
-            local_manifest = getattr(self, "local_data_manifest", None)
-            if local_manifest:
-                our_state["manifest_summary"] = {
-                    "total_files": getattr(local_manifest, "total_files", 0),
-                    "selfplay_games": getattr(local_manifest, "selfplay_games", 0),
-                    "collected_at": getattr(local_manifest, "collected_at", 0),
-                }
-
-            # Get known states to propagate
-            known_states = self._get_gossip_known_states()
-
-            # Include peer manifests for P2P sync
-            peer_manifests = {}
-            local_manifest = getattr(self, "local_data_manifest", None)
-            if local_manifest and hasattr(local_manifest, "to_dict"):
-                peer_manifests[self.node_id] = local_manifest.to_dict()
-
-            response_data = {
-                "sender_state": our_state,
-                "known_states": known_states,
-                "peer_manifests": peer_manifests,
-            }
-
-            # GOSSIP COMPRESSION: Send compressed response if client accepts it
-            # Always compress responses for efficiency
-            response_json = json.dumps(response_data).encode("utf-8")
-            compressed_response = gzip.compress(response_json, compresslevel=6)
-            return web.Response(
-                body=compressed_response,
-                content_type="application/json",
-                headers={"Content-Encoding": "gzip"},
-            )
-
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
-
-    async def handle_gossip_anti_entropy(self, request: web.Request) -> web.Response:
-        """POST /gossip/anti-entropy - Full state exchange for consistency repair.
-
-        ANTI-ENTROPY: Unlike regular gossip (which shares recent state only),
-        this endpoint exchanges ALL known states to ensure eventual consistency.
-        Used periodically to catch any missed updates from network issues.
-
-        Request body:
-        {
-            "anti_entropy": true,
-            "sender": "node-id",
-            "timestamp": <float>,
-            "all_known_states": { node_id -> state dict }
-        }
-
-        Response: Same format with our full state knowledge.
-        """
-        try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-
-            data = await request.json()
-        except (AttributeError):
-            data = {}
-
-        try:
-            self._record_gossip_metrics("received")
-
-            # Initialize gossip state storage if needed
-            if not hasattr(self, "_gossip_peer_states"):
-                self._gossip_peer_states = {}
-
-            # Process ALL states from peer
-            peer_states = data.get("all_known_states", {})
-            updates = 0
-            for node_id, state in peer_states.items():
-                if node_id == self.node_id:
-                    continue
-                existing = self._gossip_peer_states.get(node_id, {})
-                if state.get("version", 0) > existing.get("version", 0):
-                    self._gossip_peer_states[node_id] = state
-                    updates += 1
-                    self._record_gossip_metrics("update", node_id)
-
-            if updates > 0:
-                self._record_gossip_metrics("anti_entropy")
-
-            # Prepare our full state response
-            now = time.time()
-            self._update_self_info()
-
-            all_known_states = {}
-
-            # Include all our known peer states
-            for node_id, state in self._gossip_peer_states.items():
-                all_known_states[node_id] = state
-
-            # Include our own state
-            all_known_states[self.node_id] = {
-                "node_id": self.node_id,
-                "timestamp": now,
-                "version": int(now * 1000),
-                "role": self.role.value if hasattr(self.role, "value") else str(self.role),
-                "leader_id": self.leader_id,
-                "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
-                "training_jobs": getattr(self.self_info, "training_jobs", 0),
-                "gpu_percent": getattr(self.self_info, "gpu_percent", 0),
-                "cpu_percent": getattr(self.self_info, "cpu_percent", 0),
-                "memory_percent": getattr(self.self_info, "memory_percent", 0),
-                "disk_percent": getattr(self.self_info, "disk_percent", 0),
-            }
-
-            return web.json_response({
-                "anti_entropy": True,
-                "sender": self.node_id,
-                "timestamp": now,
-                "all_known_states": all_known_states,
-                "updates_applied": updates,
-            })
-
-        except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+    # Gossip Handlers moved to scripts/p2p/handlers/gossip.py
+    # Inherited from GossipHandlersMixin: handle_gossip, handle_gossip_anti_entropy
 
     async def handle_register(self, request: web.Request) -> web.Response:
         """POST /register - Node self-registration for dynamic IP updates.

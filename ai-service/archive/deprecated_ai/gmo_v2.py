@@ -52,7 +52,7 @@ import torch.nn.functional as F
 
 from app.models import AIConfig, GameState, Move, MoveType
 from app.utils.torch_utils import safe_load_checkpoint
-from .base import BaseAI
+from app.ai.base import BaseAI
 from .gmo_ai import NoveltyTracker
 
 logger = logging.getLogger(__name__)

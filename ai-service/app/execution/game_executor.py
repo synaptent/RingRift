@@ -253,7 +253,7 @@ class GameExecutor:
             for marker in game_state.board.markers.values():
                 owner = int(marker.player)
                 marker_counts[owner] = marker_counts.get(owner, 0) + 1
-        except Exception:
+        except (AttributeError, ValueError, TypeError, KeyError):
             pass
 
         # Get last actor
@@ -261,7 +261,7 @@ class GameExecutor:
         try:
             if game_state.move_history:
                 last_actor = game_state.move_history[-1].player
-        except Exception:
+        except (AttributeError, IndexError, TypeError):
             pass
 
         # Score each player
@@ -274,12 +274,12 @@ class GameExecutor:
 
             try:
                 eliminated = int(getattr(player, "eliminated_rings", 0) or 0)
-            except Exception:
+            except (ValueError, TypeError):
                 eliminated = 0
 
             try:
                 territory = int(getattr(player, "territory_spaces", 0) or 0)
-            except Exception:
+            except (ValueError, TypeError):
                 territory = 0
 
             markers = marker_counts.get(pid, 0)

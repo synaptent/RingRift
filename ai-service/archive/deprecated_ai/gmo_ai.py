@@ -50,7 +50,7 @@ import torch.nn.functional as F
 
 from app.models import AIConfig, GameState, Move, MoveType, Position
 from app.utils.torch_utils import safe_load_checkpoint
-from .base import BaseAI
+from app.ai.base import BaseAI
 
 logger = logging.getLogger(__name__)
 

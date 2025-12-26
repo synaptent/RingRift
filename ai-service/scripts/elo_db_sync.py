@@ -306,7 +306,7 @@ def check_node_reachable(ip: str, port: int = DEFAULT_PORT, timeout: int = 5) ->
         url = f"http://{ip}:{port}/status"
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return response.status == 200
-    except Exception:
+    except (ConnectionError, TimeoutError, urllib.error.URLError, OSError):
         return False
 
 
@@ -393,7 +393,7 @@ def discover_available_sources(timeout: int = 5) -> list[str]:
                 url = future.result()
                 if url:
                     available.append(url)
-            except Exception:
+            except (ConnectionError, TimeoutError, RuntimeError):
                 pass
 
     return available
@@ -851,7 +851,7 @@ def get_node_status(target: dict[str, Any], timeout: int = 5) -> dict[str, Any]:
             result['matches'] = data.get('matches', 0)
             result['models'] = data.get('models', 0)
             result['db_hash'] = data.get('db_hash')
-    except Exception:
+    except (ConnectionError, TimeoutError, urllib.error.URLError, json.JSONDecodeError, OSError):
         pass
 
     return result
@@ -892,7 +892,7 @@ def cluster_sync_status(db_path: Path) -> dict[str, Any]:
             try:
                 result = future.result()
                 results.append(result)
-            except Exception:
+            except (ConnectionError, TimeoutError, RuntimeError):
                 pass
 
     return {

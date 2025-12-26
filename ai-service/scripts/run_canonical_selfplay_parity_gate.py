@@ -155,11 +155,11 @@ def _start_heartbeat(
                     row = cur.fetchone()
                     if row and row[0] is not None:
                         counts[f"db_{table}_count"] = int(row[0])
-                except Exception:
+                except sqlite3.Error:
                     continue
             conn.close()
             return counts
-        except Exception:
+        except (sqlite3.Error, OSError):
             return {}
 
     def _beat() -> None:
@@ -296,7 +296,7 @@ def run_selfplay_soak(
         try:
             with summary_path.open("r", encoding="utf-8") as f:
                 soak_summary = json.load(f)
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError):
             soak_summary = None
 
     result: dict[str, Any] = {
@@ -366,7 +366,7 @@ def run_parity_check(
         try:
             with summary_path.open("r", encoding="utf-8") as f:
                 summary = json.load(f)
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError):
             summary = {
                 "error": "failed_to_load_parity_summary_file",
                 "summary_path": str(summary_path),

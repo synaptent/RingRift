@@ -342,7 +342,7 @@ class HybridGPUEvaluator:
             try:
                 next_state = rules_engine.apply_move(game_state, move)
                 next_states.append(next_state)
-            except Exception:
+            except (ValueError, TypeError, AttributeError, KeyError):
                 # Invalid move - assign very low score
                 next_states.append(None)
         self._cpu_time += time.perf_counter() - cpu_start
@@ -506,7 +506,7 @@ class AsyncPipelineEvaluator:
                 )
                 next_states.append(next_state)
                 valid_indices.append(i)
-            except Exception:
+            except (ValueError, TypeError, AttributeError, KeyError):
                 pass
 
         # Queue for GPU evaluation
@@ -1030,7 +1030,7 @@ class HybridNNValuePlayer:
                     next_state = GameEngine.apply_move(game_state, move)
                     score = heuristic.evaluate_position(next_state)
                     move_scores.append((move, score))
-                except Exception:
+                except (ValueError, TypeError, AttributeError, KeyError, RuntimeError):
                     move_scores.append((move, -1e6))
         except Exception as e:
             logger.warning(f"Heuristic scoring failed: {e}, using move order")
@@ -1057,7 +1057,7 @@ class HybridNNValuePlayer:
                         next_state = GameEngine.apply_move(game_state, move)
                         next_states.append(next_state)
                         valid_top_moves.append(move)
-                    except Exception:
+                    except (ValueError, TypeError, AttributeError, KeyError):
                         continue
 
                 if next_states:
@@ -1189,7 +1189,7 @@ class HybridNNAI:
             try:
                 values, _ = self._hybrid.neural_net.evaluate_batch([game_state])
                 return float(values[0])
-            except Exception:
+            except (RuntimeError, IndexError, TypeError):
                 pass
 
         # Fallback to heuristic evaluation

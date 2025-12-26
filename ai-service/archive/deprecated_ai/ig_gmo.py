@@ -42,7 +42,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from app.models import AIConfig, GameState, Move
-from .base import BaseAI
+from app.ai.base import BaseAI
 from .gmo_ai import GMOValueNetWithUncertainty, MoveEncoder, NoveltyTracker
 
 logger = logging.getLogger(__name__)

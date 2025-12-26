@@ -27,31 +27,33 @@ The main `p2p_orchestrator.py` (29,767 lines, 510 methods) needs decomposition i
 
 Extract handlers into `scripts/p2p/handlers/`:
 
-| Module | Lines | Methods | Status |
-|--------|-------|---------|--------|
-| `work_queue.py` | 471 | 12 | ✅ Extracted |
-| `election.py` | 349 | 5 | ✅ Extracted |
-| `relay.py` | 368 | 4 | ✅ Extracted |
-| `gauntlet.py` | 382 | 6 | ✅ Extracted |
-| `data_sync.py` | ~1000 | 12 | Pending |
-| `dashboard.py` | ~2000 | 20 | Pending |
-| `api.py` | ~2500 | 25 | Pending |
-| `admin.py` | ~800 | 12 | Pending |
+| Module          | Lines | Methods | Status                |
+| --------------- | ----- | ------- | --------------------- |
+| `work_queue.py` | 471   | 12      | ✅ Extracted          |
+| `election.py`   | 349   | 5       | ✅ Extracted          |
+| `relay.py`      | 368   | 4       | ✅ Extracted          |
+| `gauntlet.py`   | 382   | 6       | ✅ Extracted          |
+| `gossip.py`     | 226   | 2       | ✅ Extracted          |
+| `data_sync.py`  | ~1000 | 12      | Pending (interleaved) |
+| `dashboard.py`  | ~2000 | 20      | Pending               |
+| `api.py`        | ~2500 | 25      | Pending (scattered)   |
+| `admin.py`      | ~800  | 12      | Pending               |
 
-**Progress: 29,767 → 28,586 lines (-1,181 lines, ~4% reduction)**
+**Progress: 29,767 → 28,406 lines (-1,361 lines, ~4.6% reduction)**
 
 ### Phase 2: Core Logic Extraction (TARGET: ~10,000 lines)
 
-| Module | Lines | Methods | Description |
-|--------|-------|---------|-------------|
-| `peer_manager.py` | ~3000 | 40 | Peer discovery, gossip, cache |
-| `leader_election.py` | ~2000 | 25 | Bully algorithm, leases, voters |
-| `job_scheduler.py` | ~3000 | 35 | Work queue, auto-scaling |
-| `data_sync_core.py` | ~2000 | 20 | P2P rsync, manifests |
+| Module               | Lines | Methods | Description                     |
+| -------------------- | ----- | ------- | ------------------------------- |
+| `peer_manager.py`    | ~3000 | 40      | Peer discovery, gossip, cache   |
+| `leader_election.py` | ~2000 | 25      | Bully algorithm, leases, voters |
+| `job_scheduler.py`   | ~3000 | 35      | Work queue, auto-scaling        |
+| `data_sync_core.py`  | ~2000 | 20      | P2P rsync, manifests            |
 
 ### Phase 3: Final Orchestrator (~5,000 lines)
 
 The remaining P2POrchestrator class should coordinate:
+
 - Lifecycle management (start, stop, run loops)
 - Route registration
 - State persistence
@@ -60,6 +62,7 @@ The remaining P2POrchestrator class should coordinate:
 ## Handler Groups (Current p2p_orchestrator.py)
 
 ### Work Queue Handlers (lines 6776-7112)
+
 - `handle_work_add`
 - `handle_work_add_batch`
 - `handle_work_claim`
@@ -73,6 +76,7 @@ The remaining P2POrchestrator class should coordinate:
 - `handle_work_history`
 
 ### Election Handlers (lines 7112-7349)
+
 - `handle_election`
 - `handle_lease_request`
 - `handle_voter_grant_status`
@@ -80,11 +84,13 @@ The remaining P2POrchestrator class should coordinate:
 - `handle_election_force_leader`
 
 ### Gauntlet Handlers (lines 9055-9529)
+
 - `handle_gauntlet_execute`
 - `handle_gauntlet_status`
 - `handle_gauntlet_quick_eval`
 
 ### Dashboard/API Handlers (lines 19073-21370)
+
 - Analytics: `handle_games_analytics`, `handle_training_metrics`
 - A/B Testing: `handle_abtest_*`
 - Jobs API: `handle_api_jobs_*`

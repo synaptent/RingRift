@@ -737,7 +737,7 @@ def iter_jsonl_games(
                 with open(path, 'rb') as check_f:
                     magic = check_f.read(2)
                     is_gzip = magic == b'\x1f\x8b'
-            except Exception:
+            except (FileNotFoundError, OSError, PermissionError, IOError):
                 pass
 
         if is_gzip:
@@ -1152,7 +1152,7 @@ def collect_stats_from_jsonl(
                 if _get_canon_victory_threshold is not None:
                     try:
                         expected_victory_threshold = int(_get_canon_victory_threshold(bt, num_players))
-                    except Exception:
+                    except (ValueError, TypeError, AttributeError):
                         expected_victory_threshold = None
 
             stats.total_games += 1

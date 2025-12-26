@@ -50,8 +50,8 @@ import torch.nn.functional as F
 from app.utils.torch_utils import get_device
 
 from app.models import AIConfig, GameState, Move
-from .base import BaseAI
-from .ebmo_network import (
+from app.ai.base import BaseAI
+from archive.deprecated_ai.ebmo_network import (
     ActionFeatureExtractor,
     EBMOConfig,
     EBMONetwork,

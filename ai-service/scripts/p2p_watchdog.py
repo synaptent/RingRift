@@ -64,7 +64,7 @@ def _load_peers_from_config() -> list[str]:
                     peers.append(f"http://{tailscale_ip}:8770")
 
         return peers[:5]  # Limit to top 5
-    except Exception as e:
+    except (FileNotFoundError, OSError, ImportError, yaml.YAMLError, KeyError, ValueError) as e:
         log(f"[Watchdog] Error loading config: {e}")
         return []
 
@@ -75,7 +75,7 @@ def check_p2p_health(port: int = 8770, timeout: int = 30) -> dict | None:
         url = f"http://localhost:{port}/health"
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode())
-    except Exception:
+    except (ConnectionError, TimeoutError, urllib.error.URLError, json.JSONDecodeError, OSError):
         return None
 
 
@@ -88,7 +88,7 @@ def check_cluster_peers(port: int = 8770) -> int:
             peers = data.get("peers", [])
             online = sum(1 for p in peers if p.get("status") == "online")
             return online
-    except Exception:
+    except (ConnectionError, TimeoutError, urllib.error.URLError, json.JSONDecodeError, OSError):
         return 0
 
 
@@ -101,7 +101,7 @@ def is_p2p_running() -> bool:
             text=True
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
         return False
 
 
@@ -135,7 +135,7 @@ def get_p2p_uptime_seconds() -> float:
 
         uptime_str = ps_result.stdout.strip()
         return float(uptime_str) if uptime_str else 0.0
-    except Exception:
+    except (subprocess.SubprocessError, FileNotFoundError, OSError, ValueError):
         return 0.0
 
 
@@ -153,7 +153,7 @@ def is_systemd_service_available() -> bool:
             capture_output=True, text=True, timeout=5
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False
 
 

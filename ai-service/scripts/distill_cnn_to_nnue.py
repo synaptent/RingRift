@@ -84,7 +84,7 @@ def parse_move(move_dict: dict, move_number: int) -> Move | None:
     if "timestamp" in move_dict and ("thinkTime" in move_dict or "think_time" in move_dict):
         try:
             return Move(**move_dict)
-        except Exception:
+        except (TypeError, ValueError):
             pass  # Fall through to manual construction
 
     # Manual construction for minimal move dicts
@@ -175,7 +175,7 @@ class CNNDistiller:
                         prob = float(probs[policy_idx])
                         if prob > 1e-6:
                             policy_dict[str(move_idx)] = prob
-                except Exception:
+                except (RuntimeError, ValueError, IndexError):
                     continue
 
             # Normalize
@@ -203,7 +203,7 @@ class CNNDistiller:
         if initial_state_dict:
             try:
                 state = GameState(**initial_state_dict)
-            except Exception:
+            except (TypeError, ValueError):
                 state = create_initial_state(self.board_type, num_players)
         else:
             state = create_initial_state(self.board_type, num_players)
@@ -314,11 +314,11 @@ def extract_games_from_db(
                         initial_json = gzip.decompress(bytes(initial_json)).decode("utf-8")
                     else:
                         initial_json = gzip.decompress(str(initial_json).encode("utf-8")).decode("utf-8")
-                except Exception:
+                except (OSError, ValueError):
                     initial_json = None
 
             if initial_json:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(json.JSONDecodeError):
                     initial_state = json.loads(initial_json)
 
         # Get moves - schema stores moves as JSON in move_json column

@@ -38,7 +38,7 @@ def _load_cluster_auth_token() -> str:
     if token_file:
         try:
             return Path(token_file).read_text().strip()
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, IOError):
             return ""
     return ""
 
@@ -58,7 +58,7 @@ def get_public_ip() -> str | None:
                 ip = response.read().decode().strip()
                 if ip:
                     return ip
-        except Exception:
+        except (ConnectionError, TimeoutError, urllib.error.URLError, OSError):
             continue
 
     return None
@@ -79,7 +79,7 @@ def get_tailscale_ip() -> str | None:
         return ip or None
     except FileNotFoundError:
         return None
-    except Exception:
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
         return None
 
 
@@ -91,7 +91,7 @@ def get_local_ip() -> str | None:
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception:
+    except (OSError, ConnectionError, TimeoutError):
         return None
 
 

@@ -1875,7 +1875,7 @@ class RollbackMonitor:
                 prev_rating = elo_service.get_rating(previous_model_id, board_type, num_players)
                 if prev_rating and current_elo is not None:
                     elo_regression = current_elo - prev_rating.rating
-            except Exception:
+            except (OSError, AttributeError, KeyError, TypeError, ValueError):
                 pass
 
         # Record this check in history
@@ -2007,7 +2007,7 @@ class RollbackMonitor:
                         "elo_diff": diff,
                         "is_regression": diff < self.criteria.elo_regression_threshold,
                     })
-            except Exception:
+            except (OSError, AttributeError, KeyError, TypeError, ValueError):
                 comparisons.append({
                     "baseline_id": baseline_id,
                     "error": "Failed to get rating",
@@ -2066,7 +2066,7 @@ class RollbackMonitor:
                     if len(models) >= count:
                         break
             return models
-        except Exception:
+        except (AttributeError, KeyError, TypeError):
             return []
 
     def _prune_history(self, model_id: str) -> None:
@@ -2119,7 +2119,7 @@ class RollbackMonitor:
                     continue
                 if found_current and entry.get("stage") in ("production", "staging"):
                     return entry.get("model_id")
-        except Exception:
+        except (AttributeError, KeyError, TypeError):
             pass
 
         return None

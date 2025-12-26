@@ -32,7 +32,7 @@ def _get_default_data_server_port() -> int:
     try:
         from app.config.unified_config import get_config
         return get_config().distributed.data_server_port
-    except Exception:
+    except (ImportError, AttributeError, KeyError):
         return DATA_SYNC_PORT
 
 
@@ -142,7 +142,7 @@ def load_hosts_config() -> dict[str, Any]:
                     result["elo_sync"][key] = value
 
         return result
-    except Exception:
+    except (OSError, ValueError):
         return {}
 
 
@@ -221,7 +221,7 @@ def check_http_endpoint(ip: str, port: int, path: str = "/status", timeout: int 
         url = f"http://{ip}:{port}{path}"
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode())
-    except Exception:
+    except (OSError, ValueError, TimeoutError):
         return None
 
 
@@ -254,7 +254,7 @@ def discover_reachable_nodes(port: int = ELO_SYNC_PORT, timeout: int = 5) -> lis
                 result = future.result()
                 if result:
                     reachable.append(result)
-            except Exception:
+            except (OSError, TimeoutError, ValueError):
                 pass
 
     return reachable

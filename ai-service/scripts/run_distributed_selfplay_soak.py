@@ -81,7 +81,7 @@ else:
             release_sync_lock,
         )
         HAS_SYNC_LOCK = True
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         HAS_SYNC_LOCK = False
 
 if not HAS_SYNC_LOCK:
@@ -263,7 +263,7 @@ def _format_remote_venv_activate(venv_activate: str) -> str:
 
     try:
         parts = shlex.split(raw)
-    except Exception:
+    except ValueError:
         return f"({raw}) || true"
 
     if parts and parts[0] in ("source", ".") and len(parts) >= 2:
@@ -379,7 +379,7 @@ def get_local_memory_gb() -> tuple[int, int]:
 
         return total_gb, available_gb
 
-    except Exception:
+    except (subprocess.SubprocessError, ValueError, IndexError):
         pass
 
     try:
@@ -393,7 +393,7 @@ def get_local_memory_gb() -> tuple[int, int]:
                     kb = int(line.split()[1])
                     available_gb = kb // (1024 * 1024)
         return total_gb, available_gb
-    except Exception:
+    except (FileNotFoundError, PermissionError, ValueError, IndexError):
         pass
 
     # Fallback: assume 8GB total, 4GB available

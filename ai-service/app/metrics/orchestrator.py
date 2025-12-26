@@ -789,7 +789,7 @@ def collect_quality_metrics_from_bridge() -> bool:
         )
 
         return True
-    except Exception:
+    except (ImportError, ModuleNotFoundError, AttributeError, KeyError, TypeError):
         logger.exception("Failed to collect quality metrics from bridge")
         return False
 
@@ -848,7 +848,7 @@ def collect_quality_metrics_from_manifest(
         )
 
         return True
-    except Exception:
+    except (ImportError, ModuleNotFoundError, OSError, AttributeError, KeyError, TypeError):
         logger.exception("Failed to collect quality metrics from manifest")
         return False
 
@@ -896,7 +896,7 @@ def get_selfplay_queue_size(orchestrator: str = "unified_ai_loop") -> float:
     """
     try:
         return SELFPLAY_QUEUE_SIZE.labels(orchestrator)._value.get()
-    except Exception:
+    except (AttributeError, KeyError, ValueError):
         logger.debug("Failed to get selfplay queue size metric", exc_info=True)
         return 0.0
 
@@ -912,6 +912,6 @@ def get_pipeline_iterations(orchestrator: str = "unified_ai_loop") -> float:
     """
     try:
         return PIPELINE_ITERATIONS_TOTAL.labels(orchestrator)._value.get()
-    except Exception:
+    except (AttributeError, KeyError, ValueError):
         logger.debug("Failed to get pipeline iterations metric", exc_info=True)
         return 0.0

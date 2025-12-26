@@ -88,7 +88,7 @@ def _enable_wal_mode(db_path: str) -> None:
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
         conn.close()
-    except Exception as e:
+    except (sqlite3.Error, OSError, PermissionError) as e:
         print(f"[merge_game_dbs] Warning: Could not enable WAL mode: {e}")
 
 
@@ -99,7 +99,7 @@ def _load_merge_state(output_path: str) -> dict[str, Any]:
         try:
             with open(state_file) as f:
                 return json.load(f)
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError):
             pass
     return {"processed_dbs": [], "seen_game_ids": []}
 
@@ -121,7 +121,7 @@ def _clear_merge_state(output_path: str) -> None:
     try:
         if state_file.exists():
             state_file.unlink()
-    except Exception:
+    except (FileNotFoundError, OSError, PermissionError):
         pass
 
 
@@ -140,7 +140,7 @@ def _load_final_state(
             state = db.get_state_at_move(game_id, total_moves - 1)
             if state is not None:
                 return state
-        except Exception:
+        except (sqlite3.Error, KeyError, ValueError, TypeError):
             # Fall back to replay below
             pass
 
@@ -220,7 +220,7 @@ def _merge_single_db(
         if raw_meta_json:
             try:
                 metadata = json.loads(raw_meta_json)
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 metadata = {}
 
         # Ensure source and provenance tagging

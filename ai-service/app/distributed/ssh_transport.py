@@ -1,5 +1,25 @@
 """SSH Transport Layer for P2P Communication.
 
+DEPRECATED: This module is deprecated and will be removed in a future version.
+============================================================================
+Please migrate to app.core.ssh module for all SSH operations:
+- app.core.ssh.SSHClient for general SSH operations
+- app.core.ssh.get_ssh_client() for cached client instances
+- app.core.ssh.run_ssh_command_async() for async SSH commands
+
+This module remains functional for backward compatibility but emits deprecation
+warnings. All existing functionality is preserved.
+
+OLD USAGE (deprecated):
+    from app.distributed.ssh_transport import SSHTransport, get_ssh_transport
+    transport = get_ssh_transport()
+    result = await transport.ssh_exec(node_id, command)
+
+NEW USAGE (recommended):
+    from app.core.ssh import get_ssh_client, run_ssh_command_async
+    client = get_ssh_client(node_id)
+    result = await client.run_async(command)
+
 CANONICAL SSH UTILITY FOR ASYNC P2P OPERATIONS
 ==============================================
 This is the single source of truth for async SSH-based P2P communication
@@ -61,6 +81,19 @@ See also:
 """
 
 from __future__ import annotations
+
+import warnings
+
+# Emit deprecation warning at module import
+warnings.warn(
+    "app.distributed.ssh_transport is deprecated and will be removed in a future version. "
+    "Please migrate to app.core.ssh for all SSH operations:\n"
+    "  - Use app.core.ssh.SSHClient instead of SSHTransport\n"
+    "  - Use app.core.ssh.get_ssh_client() for cached client instances\n"
+    "  - Use app.core.ssh.run_ssh_command_async() for async SSH commands",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import asyncio
 import json

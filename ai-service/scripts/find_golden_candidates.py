@@ -92,7 +92,7 @@ def _load_metadata_row(game_meta: dict[str, Any]) -> dict[str, Any]:
         return {}
     try:
         return json.loads(raw)
-    except Exception:
+    except json.JSONDecodeError:
         return {}
 
 
@@ -153,7 +153,7 @@ def find_candidates_in_db(
         for k, v in inv.items():
             try:
                 inv_clean[str(k)] = int(v)
-            except Exception:
+            except (ValueError, TypeError):
                 continue
 
         has_violations = any(count > 0 for count in inv_clean.values())
@@ -165,11 +165,11 @@ def find_candidates_in_db(
 
         try:
             swap_sides_moves = int(meta.get("swap_sides_moves") or 0)
-        except Exception:
+        except (ValueError, TypeError):
             swap_sides_moves = 0
         try:
             used_pie_rule = bool(meta.get("used_pie_rule") or False)
-        except Exception:
+        except (ValueError, TypeError):
             used_pie_rule = False
 
         if require_pie_rule and not used_pie_rule:

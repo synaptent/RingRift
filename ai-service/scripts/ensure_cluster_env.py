@@ -201,7 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if stdout.strip():
             try:
                 payload = json.loads(stdout.strip().splitlines()[-1])
-            except Exception:
+            except (json.JSONDecodeError, ValueError, IndexError):
                 payload = {}
 
         missing = payload.get("missing") if isinstance(payload.get("missing"), dict) else {}
@@ -223,7 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     rc, stdout, stderr = _run_remote(host, check_cmd, timeout=int(args.timeout_sec))
                     try:
                         payload = json.loads(stdout.strip().splitlines()[-1]) if stdout.strip() else {}
-                    except Exception:
+                    except (json.JSONDecodeError, ValueError, IndexError):
                         payload = {}
             elif args.install:
                 attempted_install = True
@@ -234,7 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     rc, stdout, stderr = _run_remote(host, check_cmd, timeout=int(args.timeout_sec))
                     try:
                         payload = json.loads(stdout.strip().splitlines()[-1]) if stdout.strip() else {}
-                    except Exception:
+                    except (json.JSONDecodeError, ValueError, IndexError):
                         payload = {}
 
             missing = payload.get("missing") if isinstance(payload.get("missing"), dict) else {}

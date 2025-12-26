@@ -1786,7 +1786,7 @@ class GameEngine:
                 game_state,
                 current_player,
             )
-        except Exception:
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             # If move generation itself fails, treat this conservatively as
             # "no moves"; the snapshot + raise logic below will surface the
             # underlying issue.
@@ -1806,7 +1806,7 @@ class GameEngine:
                 game_state,
                 current_player,
             )
-        except Exception:
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             requirement = None
 
         if requirement is not None:
@@ -1837,7 +1837,7 @@ class GameEngine:
                     by_alias=True,
                     mode="json",
                 )
-            except Exception:
+            except (ValueError, TypeError, AttributeError):
                 state_payload = None
 
             try:
@@ -1845,7 +1845,7 @@ class GameEngine:
                     by_alias=True,
                     mode="json",
                 )
-            except Exception:
+            except (ValueError, TypeError, AttributeError):
                 move_payload = None
 
             with open(path, "w", encoding="utf-8") as f:
@@ -1860,7 +1860,7 @@ class GameEngine:
                     },
                     f,
                 )
-        except Exception:
+        except (OSError, IOError, ValueError, TypeError):
             # Snapshotting must never prevent raising the invariant error.
             pass
 

@@ -560,6 +560,27 @@ def clear_memory_cache() -> None:
 class SSHExecutor:
     """Execute commands on remote hosts via SSH.
 
+    DEPRECATED: This class is deprecated and will be removed in a future version.
+    ===========================================================================
+    Please migrate to app.core.ssh.SSHClient for all SSH operations:
+    - app.core.ssh.SSHClient provides both sync and async methods
+    - app.core.ssh.get_ssh_client() for cached client instances
+    - app.core.ssh.SSHConfig.from_host_config() to convert HostConfig
+
+    This class remains functional for backward compatibility but emits deprecation
+    warnings. All existing functionality is preserved.
+
+    OLD USAGE (deprecated):
+        from app.distributed.hosts import SSHExecutor, load_remote_hosts
+        hosts = load_remote_hosts()
+        executor = SSHExecutor(hosts["runpod-h100"])
+        result = executor.run("nvidia-smi")
+
+    NEW USAGE (recommended):
+        from app.core.ssh import get_ssh_client
+        client = get_ssh_client("runpod-h100")
+        result = client.run("nvidia-smi")
+
     CANONICAL SSH UTILITY FOR SYNCHRONOUS OPERATIONS
     ================================================
     This is the single source of truth for synchronous SSH command execution
@@ -604,6 +625,15 @@ class SSHExecutor:
     """
 
     def __init__(self, host: HostConfig):
+        import warnings
+        warnings.warn(
+            "SSHExecutor is deprecated and will be removed in a future version. "
+            "Please migrate to app.core.ssh.SSHClient:\n"
+            "  OLD: executor = SSHExecutor(host_config)\n"
+            "  NEW: client = get_ssh_client(node_id) or SSHClient(SSHConfig.from_host_config(host_config))",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.host = host
 
     def _normalize_activate(self, command: str) -> str:

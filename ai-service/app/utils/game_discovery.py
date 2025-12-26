@@ -523,8 +523,14 @@ class RemoteGameDiscovery:
             with open(self.hosts_config_path) as f:
                 config = yaml.safe_load(f) or {}
             self._hosts = config.get("hosts", {})
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, KeyError, AttributeError):
             pass
+        except Exception as e:
+            # Catch yaml.YAMLError and other YAML parsing errors
+            if "yaml" in str(type(e).__module__).lower():
+                pass
+            else:
+                raise
 
     def get_active_hosts(self) -> list[str]:
         """Get list of active host names."""
@@ -594,8 +600,15 @@ class RemoteGameDiscovery:
                             self._remote_cache[host_name] = (counts, time.time())
                         return counts
             return {}
-        except Exception:
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
             return {}
+        except Exception as e:
+            # Catch json.JSONDecodeError and other JSON parsing errors
+            import json
+            if isinstance(e, json.JSONDecodeError):
+                return {}
+            else:
+                raise
 
     def clear_cache(self, host_name: str | None = None):
         """Clear cached remote results.
@@ -638,8 +651,15 @@ class RemoteGameDiscovery:
                     host = futures[future]
                     try:
                         results[host] = future.result()
-                    except Exception:
+                    except (concurrent.futures.TimeoutError, concurrent.futures.CancelledError, subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
                         results[host] = {}
+                    except Exception as e:
+                        # Catch json.JSONDecodeError from get_remote_game_counts
+                        import json
+                        if isinstance(e, json.JSONDecodeError):
+                            results[host] = {}
+                        else:
+                            results[host] = {}
         else:
             for host in hosts:
                 results[host] = self.get_remote_game_counts(host)
@@ -758,7 +778,7 @@ def run_diagnostics(discovery: GameDiscovery) -> None:
                         conn.close()
                         if game_count > 0:
                             issues.append(f"Undiscovered DB with {game_count:,} games: {db_file}")
-                    except Exception:
+                    except (sqlite3.Error, OSError, PermissionError):
                         pass
 
     if issues:
