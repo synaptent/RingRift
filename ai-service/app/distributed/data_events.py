@@ -158,6 +158,7 @@ class DataEventType(Enum):
     QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
     # P1.4 Dec 2025: Added orphaned event types to enable type-safe subscriptions
     EXPLORATION_BOOST = "exploration_boost"  # Request to boost exploration temperature
+    EXPLORATION_ADJUSTED = "exploration_adjusted"  # Exploration strategy changed (from FeedbackSignals)
     OPPONENT_MASTERED = "opponent_mastered"  # Opponent mastered → advance curriculum
 
     # Registry & metrics events

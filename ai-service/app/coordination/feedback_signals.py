@@ -154,7 +154,11 @@ def _get_event_type_for_signal(signal: "FeedbackSignal") -> "DataEventType | Non
             return DataEventType.QUALITY_DEGRADED  # Freshness issues = quality concern
         return None
 
-    # EXPLORATION signals don't have a direct event mapping yet
+    elif signal_type == SignalType.EXPLORATION:
+        # Dec 2025: Route exploration adjustments to DataEventBus
+        # This enables cross-process coordination of exploration strategies
+        return DataEventType.EXPLORATION_ADJUSTED
+
     return None
 
 

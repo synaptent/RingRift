@@ -800,6 +800,7 @@ def wire_queue_populator_events() -> QueuePopulator:
     - ELO_UPDATED: Update target Elo for configurations
     - TRAINING_COMPLETED: Increment training count
     - NEW_GAMES_AVAILABLE: Increment games count
+    - TRAINING_BLOCKED_BY_QUALITY: Trigger extra selfplay to regenerate data
 
     Returns:
         The configured QueuePopulator instance
@@ -845,11 +846,71 @@ def wire_queue_populator_events() -> QueuePopulator:
             if board_type and num_players:
                 populator.increment_games(board_type, num_players, count)
 
+        def _on_training_blocked_by_quality(event: Any) -> None:
+            """Handle training blocked by quality - add extra selfplay work items.
+
+            Phase 7 Fix (Dec 2025): Closes the quality gate deadlock by
+            immediately queueing extra selfplay work for the blocked config.
+
+            This completes the feedback loop:
+            TRAINING_BLOCKED_BY_QUALITY → Extra selfplay items → Fresh data → Training resumes
+            """
+            payload = _event_payload(event)
+            config_key = payload.get("config_key", "") or payload.get("config", "")
+            reason = payload.get("reason", "unknown")
+            quality_score = payload.get("quality_score", 0.0)
+
+            if not config_key:
+                logger.debug("[QueuePopulator] TRAINING_BLOCKED_BY_QUALITY without config_key")
+                return
+
+            # Parse config_key (e.g., "hex8_2p" -> board_type="hex8", num_players=2)
+            parts = config_key.rsplit("_", 1)
+            if len(parts) != 2 or not parts[1].endswith("p"):
+                logger.warning(f"[QueuePopulator] Invalid config_key format: {config_key}")
+                return
+
+            board_type = parts[0]
+            try:
+                num_players = int(parts[1][:-1])
+            except ValueError:
+                logger.warning(f"[QueuePopulator] Cannot parse num_players from: {config_key}")
+                return
+
+            # Check if work queue is available
+            if populator._work_queue is None:
+                logger.warning("[QueuePopulator] No work queue, cannot queue extra selfplay")
+                return
+
+            # Add 3 extra selfplay items for the blocked config (150 games = 3 * 50)
+            # This should generate enough fresh data to pass quality gate
+            added = 0
+            for _ in range(3):
+                try:
+                    item = populator._create_selfplay_item(board_type, num_players)
+                    # Boost priority to ensure these run soon
+                    item.priority = populator.config.selfplay_priority + 30
+                    populator._work_queue.add_work(item)
+                    populator._queued_work_ids.add(item.work_id)
+                    added += 1
+                except Exception as e:
+                    logger.error(f"[QueuePopulator] Failed to add priority selfplay item: {e}")
+
+            if added > 0:
+                logger.info(
+                    f"[QueuePopulator] Queued {added} priority selfplay items for {config_key} "
+                    f"(reason: {reason}, quality: {quality_score:.2f})"
+                )
+
         router.subscribe(DataEventType.ELO_UPDATED.value, _on_elo_updated)
         router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
         router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
+        router.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY.value, _on_training_blocked_by_quality)
 
-        logger.info("[QueuePopulator] Wired to event bus (ELO_UPDATED, TRAINING_COMPLETED, NEW_GAMES_AVAILABLE)")
+        logger.info(
+            "[QueuePopulator] Wired to event bus "
+            "(ELO_UPDATED, TRAINING_COMPLETED, NEW_GAMES_AVAILABLE, TRAINING_BLOCKED_BY_QUALITY)"
+        )
 
     except ImportError:
         logger.warning("[QueuePopulator] data_events not available, running without event bus")
