@@ -69,7 +69,7 @@ def get_all_providers() -> list["CloudProvider"]:
             provider = get_provider(provider_type)
             if provider.is_configured():
                 providers.append(provider)
-        except Exception:
+        except (ImportError, ModuleNotFoundError, ValueError, AttributeError):
             pass  # Provider not available
     return providers
 

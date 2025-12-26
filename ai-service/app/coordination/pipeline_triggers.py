@@ -173,7 +173,7 @@ class PipelineTrigger:
                             if samples > best_samples:
                                 best_samples = samples
                                 best_npz = npz_path
-                    except Exception:
+                    except (OSError, ValueError, KeyError, IndexError):
                         continue
 
             if best_npz is None:
@@ -202,7 +202,7 @@ class PipelineTrigger:
                     "samples": best_samples,
                 },
             )
-        except Exception as e:
+        except (FileNotFoundError, OSError, PermissionError, ValueError) as e:
             return PrerequisiteResult(
                 passed=False,
                 message=f"Error checking NPZ: {e}",

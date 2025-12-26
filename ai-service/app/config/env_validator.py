@@ -116,7 +116,7 @@ def is_valid_path(value: str) -> bool:
             return True
         parent = path.parent
         return parent.exists() or parent == path
-    except Exception:
+    except (ValueError, TypeError):
         return False
 
 

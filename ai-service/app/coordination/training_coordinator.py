@@ -53,6 +53,7 @@ import logging
 import os
 import socket
 import sqlite3
+import subprocess
 import threading
 import time
 from collections.abc import Generator
@@ -255,7 +256,6 @@ class TrainingCoordinator:
         """Get the Tailscale IP of this node."""
         try:
             # Try to get Tailscale IP
-            import subprocess
             result = subprocess.run(
                 ["tailscale", "ip", "-4"],
                 capture_output=True,
@@ -264,13 +264,13 @@ class TrainingCoordinator:
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except Exception:
+        except (subprocess.SubprocessError, FileNotFoundError, OSError, subprocess.TimeoutExpired):
             pass
 
         # Fallback to hostname-based IP
         try:
             return socket.gethostbyname(socket.gethostname())
-        except Exception:
+        except (socket.gaierror, OSError):
             return "127.0.0.1"
 
     def _get_connection(self) -> sqlite3.Connection:

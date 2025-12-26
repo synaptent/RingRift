@@ -501,7 +501,7 @@ class HybridTransport:
 
         except ImportError:
             pass
-        except Exception:
+        except (AttributeError, ValueError, TypeError):
             pass
 
         # Legacy: Always enable SSH for Vast nodes

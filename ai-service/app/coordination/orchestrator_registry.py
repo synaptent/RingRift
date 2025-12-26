@@ -1410,7 +1410,7 @@ def get_registered_coordinators() -> dict[str, dict[str, Any]]:
             if entry.get("health_callback"):
                 try:
                     is_healthy = entry["health_callback"]()
-                except Exception:
+                except (TypeError, AttributeError):
                     is_healthy = False
 
             result[name] = {

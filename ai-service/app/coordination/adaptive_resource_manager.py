@@ -311,7 +311,7 @@ class AdaptiveResourceManager:
                         file_age = now - file_path.stat().st_mtime
                         if file_age >= min_age_seconds:
                             files_to_delete.append(file_path)
-                    except Exception:
+                    except (FileNotFoundError, OSError):
                         continue
 
             # Sort by age (oldest first) and limit

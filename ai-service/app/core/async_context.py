@@ -327,7 +327,7 @@ class ResourcePool(Generic[T]):
                         if not await self._validate(resource):
                             await self._destroy_resource(resource)
                             continue
-                    except Exception:
+                    except (ValueError, TypeError, RuntimeError, ConnectionError, TimeoutError):
                         await self._destroy_resource(resource)
                         continue
 

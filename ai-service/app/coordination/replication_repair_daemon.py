@@ -372,7 +372,7 @@ class ReplicationRepairDaemon:
                 ]
                 if stable_candidates:
                     candidates = stable_candidates
-            except Exception:
+            except ImportError:
                 pass
 
         # Calculate how many more copies we need

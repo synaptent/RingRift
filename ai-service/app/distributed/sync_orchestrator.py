@@ -927,7 +927,7 @@ class SyncOrchestrator:
                     "avg_quality": quality_status.get("avg_quality_across_configs", 0.0),
                 }
                 status["quality_priority_order"] = self.get_quality_driven_sync_priority()
-            except Exception:
+            except (AttributeError, TypeError, KeyError, ValueError):
                 pass
 
         return status

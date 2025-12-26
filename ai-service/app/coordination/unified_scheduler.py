@@ -1025,7 +1025,7 @@ class UnifiedScheduler:
                 get_p2p_backend_with_registry,
                 get_p2p_leader_from_registry,
             )
-        except Exception:
+        except (ImportError, ModuleNotFoundError):
             return None
 
         if not HAS_AIOHTTP:

@@ -342,7 +342,7 @@ class ResourceTargetManager:
                     "memory_gb": row["memory_gb"] or 0,
                     "has_gpu": bool(row["has_gpu"]),
                 }
-        except Exception:
+        except (sqlite3.Error, OSError, KeyError):
             pass
         return None
 
@@ -622,7 +622,7 @@ class ResourceTargetManager:
         try:
             from app.coordination.queue_monitor import QueueType, get_throttle_factor
             self._backpressure_factor = get_throttle_factor(QueueType.TRAINING_DATA)
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
             self._backpressure_factor = 1.0
 
         # Invalidate cached host targets to pick up new backpressure

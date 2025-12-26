@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -454,13 +455,12 @@ class P2PFallbackSync:
                 games = 0
                 for db_file in local_dir.glob("*.db"):
                     try:
-                        import sqlite3
                         conn = sqlite3.connect(db_file)
                         cursor = conn.cursor()
                         cursor.execute("SELECT COUNT(*) FROM games")
                         games += cursor.fetchone()[0]
                         conn.close()
-                    except Exception:
+                    except (sqlite3.Error, OSError):
                         pass
                 return True, games, "ssh"
 
@@ -485,13 +485,12 @@ class P2PFallbackSync:
                 games = 0
                 for db_file in local_dir.glob("*.db"):
                     try:
-                        import sqlite3
                         conn = sqlite3.connect(db_file)
                         cursor = conn.cursor()
                         cursor.execute("SELECT COUNT(*) FROM games")
                         games += cursor.fetchone()[0]
                         conn.close()
-                    except Exception:
+                    except (sqlite3.Error, OSError):
                         pass
                 return True, games, "p2p_http"
             else:

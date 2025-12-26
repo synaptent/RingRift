@@ -509,7 +509,7 @@ def _deserialize_to_type(data: Any, target_type: type[T]) -> T:
                 if arg is not type(None):
                     try:
                         return _deserialize_to_type(data, arg)
-                    except Exception:
+                    except (ValueError, TypeError, AttributeError, KeyError, SerializationError):
                         continue
 
     # Primitives
@@ -564,7 +564,7 @@ def _deserialize_dataclass(data: dict[str, Any], cls: type[T]) -> T:
 
     try:
         hints = get_type_hints(cls)
-    except Exception:
+    except (NameError, AttributeError, TypeError, RecursionError):
         hints = {}
 
     kwargs = {}

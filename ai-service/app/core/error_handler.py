@@ -413,9 +413,11 @@ class RetryPolicy:
         for attempt in range(policy.max_attempts):
             try:
                 return do_work()
-            except Exception:
+            except (ConnectionError, TimeoutError, OSError) as e:
                 if attempt < policy.max_attempts - 1:
                     time.sleep(policy.get_delay(attempt))
+                else:
+                    raise
     """
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL
     max_attempts: int = 3

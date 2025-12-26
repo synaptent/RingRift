@@ -214,7 +214,7 @@ class NodeRecoveryDaemon:
         # Unregister coordinator
         try:
             unregister_coordinator("node_recovery")
-        except Exception:
+        except (KeyError, RuntimeError, AttributeError):
             pass
 
         self._coordinator_status = CoordinatorStatus.STOPPED

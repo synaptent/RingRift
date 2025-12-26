@@ -273,7 +273,7 @@ def _deserialize_state(json_str: str) -> GameState:
     # "completed" (mirroring the shared TS engine and canonical rules doc).
     try:
         data = json.loads(json_str)
-    except Exception:
+    except json.JSONDecodeError:
         # Fall back to the raw path if JSON is unexpectedly malformed; this
         # preserves previous behaviour for debugging while surfacing an error.
         return GameState.model_validate_json(json_str)
@@ -658,7 +658,7 @@ class GameReplayDB:
         try:
             yield conn
             conn.commit()
-        except Exception:
+        except (sqlite3.Error, OSError):
             conn.rollback()
             raise
         finally:

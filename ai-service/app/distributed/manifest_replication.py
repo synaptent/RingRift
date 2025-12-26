@@ -506,7 +506,7 @@ class ManifestReplicator:
                 cursor.execute("SELECT COUNT(*) FROM synced_games")
                 local_game_count = cursor.fetchone()[0]
                 conn.close()
-            except Exception:
+            except (sqlite3.DatabaseError, OSError):
                 local_game_count = 0
 
         # Get info from all replicas

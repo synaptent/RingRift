@@ -189,7 +189,7 @@ class SerfClient:
             self._writer.close()
             try:
                 await self._writer.wait_closed()
-            except Exception:
+            except (OSError, asyncio.CancelledError):
                 pass
         self._connected = False
         self._reader = None

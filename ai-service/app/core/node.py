@@ -694,7 +694,7 @@ class NodeInfo:
                         memory_used_gb=float(parts[2]) / 1024,
                         memory_total_gb=float(parts[3]) / 1024,
                     )
-        except Exception:
+        except (FileNotFoundError, OSError, ValueError, IndexError, TypeError):
             pass
 
         return cls(

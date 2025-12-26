@@ -277,8 +277,8 @@ class OrphanDetectionDaemon:
                 with sqlite3.connect(str(db_path)) as conn:
                     cursor = conn.execute("SELECT COUNT(*) FROM games")
                     game_count = cursor.fetchone()[0]
-            except Exception:
-                # Not a valid game database
+            except (sqlite3.Error, TypeError):
+                # Not a valid game database (sqlite3.Error for DB issues, TypeError if fetchone() is None)
                 return None
 
             # Parse board type and num_players from filename

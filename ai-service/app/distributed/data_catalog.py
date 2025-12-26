@@ -919,7 +919,7 @@ class DataCatalog:
                             sample_count = len(data["policy"])
                         elif "states" in data:
                             sample_count = len(data["states"])
-                except Exception:
+                except (OSError, ValueError, KeyError):
                     pass  # Use estimate
 
             return NPZDataSource(

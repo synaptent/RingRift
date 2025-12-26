@@ -263,7 +263,7 @@ class ClusterCoordinator:
                 fcntl.flock(fd, fcntl.LOCK_UN)
                 os.close(fd)
 
-        except Exception:
+        except (OSError, IOError):
             os.close(fd)
             raise
 
@@ -415,7 +415,7 @@ class ClusterCoordinator:
                 try:
                     lock_file.unlink()
                     cleaned.append(str(lock_file))
-                except Exception:
+                except (OSError, PermissionError):
                     pass
         return cleaned
 

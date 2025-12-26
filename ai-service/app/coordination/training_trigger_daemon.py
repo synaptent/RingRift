@@ -922,7 +922,7 @@ class TrainingTriggerDaemon:
                                 import numpy as np
                                 with np.load(npz_path, allow_pickle=True) as data:
                                     state.npz_sample_count = len(data.get("values", []))
-                            except Exception:
+                            except (FileNotFoundError, OSError, ValueError, ImportError):
                                 pass
 
                             await self._maybe_trigger_training(config_key)

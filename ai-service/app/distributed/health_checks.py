@@ -255,7 +255,7 @@ class HealthChecker:
                 success = report.get("success", False)
                 status = "ok" if success else "warning"
                 message = f"Last run: {latest_run.name} ({'success' if success else 'failed'})"
-            except Exception:
+            except (json.JSONDecodeError, OSError, ValueError):
                 status = "warning"
                 message = f"Last run: {latest_run.name} (report unreadable)"
         else:

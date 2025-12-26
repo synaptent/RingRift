@@ -83,7 +83,7 @@ def load_curriculum_weights(max_age_seconds: float = CURRICULUM_WEIGHTS_STALE_SE
         if time.time() - updated_at > max_age_seconds:
             return {}  # Stale weights
         return data.get("weights", {})
-    except Exception:
+    except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError):
         return {}
 
 

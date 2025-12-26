@@ -1188,7 +1188,7 @@ def is_large_board(board_type: str) -> bool:
     try:
         from app.utils.canonical_naming import normalize_board_type
         canonical = normalize_board_type(board_type)
-    except Exception:
+    except (ImportError, ValueError, TypeError):
         canonical = board_type.lower()
 
     config = _load_large_board_config()

@@ -639,7 +639,7 @@ class WorkQueue:
             try:
                 conn.rollback()
                 conn.close()
-            except Exception:
+            except (sqlite3.Error, OSError):
                 pass
             return False
 

@@ -252,7 +252,7 @@ class QualityMonitorDaemon:
                             total_moves=game["total_moves"] or 0,
                         )
                         quality_scores.append(quality.quality_score)
-                    except Exception:
+                    except (KeyError, ValueError, TypeError, AttributeError):
                         continue
 
                 if not quality_scores:

@@ -354,7 +354,7 @@ class GossipSyncDaemon:
                 for row in cursor:
                     games.append(dict(zip(columns, row, strict=False)))
                 conn.close()
-            except Exception:
+            except (sqlite3.Error, OSError):
                 pass
         return games
 
@@ -387,7 +387,7 @@ class GossipSyncDaemon:
                 if game.get("game_id"):
                     self.state.known_game_ids.add(game["game_id"])
                 stored += 1
-            except Exception:
+            except (sqlite3.Error, KeyError, TypeError):
                 pass
 
         conn.commit()

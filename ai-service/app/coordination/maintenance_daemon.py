@@ -605,7 +605,7 @@ class MaintenanceDaemon:
                     with sqlite3.connect(str(db_path), timeout=5.0) as conn:
                         cursor = conn.execute("SELECT COUNT(*) FROM games")
                         game_count = cursor.fetchone()[0]
-                except Exception:
+                except (sqlite3.Error, OSError, IndexError):
                     # If we can't read the database, skip it
                     logger.debug(f"[Maintenance] Couldn't read orphan DB {db_path}, skipping")
                     continue

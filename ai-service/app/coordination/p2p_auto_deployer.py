@@ -370,7 +370,7 @@ fi
                 try:
                     is_healthy = await self.check_p2p_health(host_id, host_info)
                     return (host_id, "healthy" if is_healthy else "missing")
-                except Exception:
+                except (asyncio.TimeoutError, OSError):
                     return (host_id, "unreachable")
 
         tasks = [

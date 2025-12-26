@@ -696,7 +696,7 @@ class SSHClient:
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
-            except Exception:
+            except (subprocess.SubprocessError, OSError, ValueError):
                 pass
 
 

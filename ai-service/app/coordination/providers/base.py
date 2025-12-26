@@ -273,5 +273,5 @@ class CloudProvider(ABC):
                 )
             )
             return result.returncode == 0
-        except Exception:
+        except (FileNotFoundError, OSError, PermissionError, TimeoutError, ConnectionError, RuntimeError):
             return False

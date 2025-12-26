@@ -29,6 +29,11 @@ from pathlib import Path
 from typing import Any
 
 
+class DatabaseIntegrityError(Exception):
+    """Base exception for database integrity issues."""
+    pass
+
+
 def check_database_integrity(db_path: Path) -> tuple[bool, str]:
     """Check SQLite database integrity using PRAGMA integrity_check.
 
@@ -234,11 +239,11 @@ def get_database_stats(db_path: Path) -> dict[str, Any] | None:
                 cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 count = cursor.fetchone()[0]
                 stats["tables"][table] = count
-            except Exception:
+            except (sqlite3.Error, OSError) as e:
                 stats["tables"][table] = -1  # Error reading table
 
         conn.close()
         return stats
 
-    except Exception:
+    except (sqlite3.Error, OSError) as e:
         return None
