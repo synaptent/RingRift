@@ -329,6 +329,7 @@ class FeedbackLoopController:
         """
         try:
             from app.coordination.event_router import get_event_bus
+            from app.distributed.data_events import DataEventType
 
             bus = get_event_bus()
             if bus is None:
@@ -358,7 +359,8 @@ class FeedbackLoopController:
                 except Exception as e:
                     logger.debug(f"[FeedbackLoopController] Lazy wiring failed: {e}")
 
-            bus.subscribe("SCHEDULER_REGISTERED", on_scheduler_registered)
+            # P0.6 Dec 2025: Use DataEventType enum for type-safe subscription
+            bus.subscribe(DataEventType.SCHEDULER_REGISTERED, on_scheduler_registered)
             logger.debug("[FeedbackLoopController] Subscribed to SCHEDULER_REGISTERED")
 
         except Exception as e:

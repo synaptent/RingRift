@@ -304,10 +304,11 @@ Think times by difficulty:
 |------------|---------|------------|
 | D1 | Random | ~50ms |
 | D2 | Heuristic | ~200ms |
-| D3 | Minimax | ~1.8s |
+| D3 | Heuristic (tuned) | ~2.8s |
 | D4 | Minimax+NNUE | ~2.8s |
-| D5–6 | Descent+Neural | 4-5.5s |
-| D7 | MCTS (heuristic) | ~7.5s |
+| D5 | Minimax+NNUE (higher) | ~5.5s |
+| D6 | Descent+Neural | ~5.5s |
+| D7 | MCTS (heuristic) | ~9.6s |
 | D8 | MCTS+Neural | ~9.6s |
 | D9–10 | Gumbel MCTS+Neural | 12-16s |
 

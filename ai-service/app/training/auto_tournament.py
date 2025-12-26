@@ -561,9 +561,9 @@ class AutoTournamentPipeline:
                         )
                     )
 
-                # Aggregate victory reasons
+                # Aggregate victory reasons (tolerate legacy/new keys)
                 for reason, count in tournament.victory_reasons.items():
-                    victory_reasons[reason] += count
+                    victory_reasons[reason] = victory_reasons.get(reason, 0) + count
 
                 # Update Elo ratings
                 model_a.elo_rating = tournament.ratings["A"]
@@ -934,7 +934,7 @@ class AutoTournamentPipeline:
         total_reasons: dict[str, int] = dict.fromkeys(VICTORY_REASONS, 0)
         for t in self._tournament_history:
             for reason, count in t.victory_reasons.items():
-                total_reasons[reason] += count
+                total_reasons[reason] = total_reasons.get(reason, 0) + count
 
         for reason, count in sorted(
             total_reasons.items(), key=lambda x: x[1], reverse=True

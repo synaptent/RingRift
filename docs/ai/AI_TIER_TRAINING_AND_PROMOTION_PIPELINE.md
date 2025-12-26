@@ -96,7 +96,7 @@ The FastAPI service endpoint [`python.get_ai_move`](../../ai-service/app/main.py
   - `heuristic_profile_id` from ladder or difficulty profile.
   - `nn_model_id` from ladder `model_id` when `ai_type` is MCTS or DESCENT.
 
-Neural-net-backed AIs (MCTS/Descent) resolve `nn_model_id` to a checkpoint under `ai-service/models` via [`python.NeuralNetAI`](../../ai-service/app/ai/neural_net/__init__.py:1049).
+Neural-net-backed AIs (Minimax/MCTS/Descent) resolve `nn_model_id` to a checkpoint under `ai-service/models` via [`python.NeuralNetAI`](../../ai-service/app/ai/neural_net/__init__.py:1049).
 
 Heuristic tiers use profiles in [`python.HEURISTIC_WEIGHT_PROFILES`](../../ai-service/app/ai/heuristic_weights.py:1). If `RINGRIFT_TRAINED_HEURISTIC_PROFILES` points at a JSON bundle, trained profiles are loaded at startup and merged into the registry.
 
@@ -788,7 +788,7 @@ This section provides concrete commands for running full AI ladder calibration o
 
 ### A.1 Prerequisites
 
-1. **GPU Access**: D5–D10 neural tiers require GPU (D5, D6, D8–D10). D7 is heuristic MCTS but still CPU-intensive. Available hosts in `config/distributed_hosts.yaml`:
+1. **GPU Access**: D6–D10 neural tiers require GPU (D6, D8–D10). D5 is minimax+NNUE (CPU OK for sq8), and D7 is heuristic MCTS but still CPU-intensive. Available hosts in `config/distributed_hosts.yaml`:
    - Lambda Cloud: GH200 (96GB), H100 (80GB), A10 (23GB)
    - Vast.ai: Various RTX cards for selfplay
 
@@ -877,7 +877,7 @@ python scripts/apply_tier_promotion_plan.py \
 
 ### A.4 Board-Specific Notes
 
-| Board     | D3/D4 AI | Notes                              |
+| Board     | D4/D5 AI | Notes                              |
 | --------- | -------- | ---------------------------------- |
 | square8   | MINIMAX  | Standard pipeline                  |
 | square19  | MCTS     | Minimax too slow (commit 44bf4400) |

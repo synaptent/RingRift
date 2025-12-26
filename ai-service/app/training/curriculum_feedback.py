@@ -2486,10 +2486,12 @@ class QualityFeedbackWatcher:
         """Emit quality feedback adjusted event."""
         try:
             from app.coordination.event_router import get_router, RouterEvent, EventSource
+            from app.distributed.data_events import DataEventType
 
             router = get_router()
+            # P0.6 Dec 2025: Use DataEventType enum for type-safe event emission
             event = RouterEvent(
-                event_type="QUALITY_FEEDBACK_ADJUSTED",
+                event_type=DataEventType.QUALITY_FEEDBACK_ADJUSTED,
                 payload={
                     "config_key": config_key,
                     "budget_multiplier": multiplier,
@@ -2499,7 +2501,7 @@ class QualityFeedbackWatcher:
                 source="quality_feedback_watcher",
                 origin=EventSource.ROUTER,
             )
-            router.publish_sync("QUALITY_FEEDBACK_ADJUSTED", event.payload, "quality_feedback_watcher")
+            router.publish_sync(DataEventType.QUALITY_FEEDBACK_ADJUSTED, event.payload, "quality_feedback_watcher")
             logger.debug(f"Emitted QUALITY_FEEDBACK_ADJUSTED for {config_key}")
         except Exception as e:
             logger.debug(f"Failed to emit quality feedback event: {e}")

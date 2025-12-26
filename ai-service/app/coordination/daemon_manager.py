@@ -655,6 +655,67 @@ class DaemonManager:
             max_restarts=max_restarts,
         )
 
+    def _update_daemon_state(
+        self,
+        info: DaemonInfo,
+        new_state: DaemonState,
+        reason: str = "",
+        error: str | None = None,
+    ) -> None:
+        """Update daemon state and emit status changed event.
+
+        P0.5 Dec 2025: Centralizes state transitions and emits DAEMON_STATUS_CHANGED
+        events for watchdog integration.
+
+        Args:
+            info: Daemon info to update
+            new_state: New state to set
+            reason: Why the state changed (timeout, exception, signal, restart)
+            error: Error message if applicable
+        """
+        import socket
+        old_state = info.state
+        info.state = new_state
+
+        # Skip event emission for minor transitions
+        if old_state == new_state:
+            return
+
+        # Only emit for significant transitions
+        significant_transitions = {
+            (DaemonState.RUNNING, DaemonState.FAILED),
+            (DaemonState.RUNNING, DaemonState.RESTARTING),
+            (DaemonState.RESTARTING, DaemonState.RUNNING),
+            (DaemonState.STARTING, DaemonState.FAILED),
+            (DaemonState.STOPPED, DaemonState.RUNNING),
+            (DaemonState.RUNNING, DaemonState.STOPPED),
+            (DaemonState.RUNNING, DaemonState.IMPORT_FAILED),
+        }
+
+        if (old_state, new_state) not in significant_transitions:
+            return
+
+        try:
+            from app.distributed.data_events import emit_daemon_status_changed
+            hostname = socket.gethostname()
+
+            # Fire and forget - don't block state transitions on event emission
+            fire_and_forget(
+                emit_daemon_status_changed(
+                    daemon_name=info.daemon_type.value,
+                    hostname=hostname,
+                    old_status=old_state.value,
+                    new_status=new_state.value,
+                    reason=reason,
+                    error=error,
+                    source="daemon_manager",
+                ),
+                name=f"emit_daemon_status_{info.daemon_type.value}",
+            )
+        except Exception as e:
+            # Don't fail state transition if event emission fails
+            logger.debug(f"Failed to emit daemon status event: {e}")
+
     async def start(self, daemon_type: DaemonType) -> bool:
         """Start a specific daemon.
 
@@ -756,7 +817,11 @@ class DaemonManager:
                 # Import errors are permanent - require code/environment fix
                 info.last_error = str(e)
                 info.import_error = str(e)
-                info.state = DaemonState.IMPORT_FAILED
+                # P0.5: Use helper for event emission
+                self._update_daemon_state(
+                    info, DaemonState.IMPORT_FAILED,
+                    reason="import_error", error=str(e)
+                )
                 info.last_failure_time = time.time()
                 logger.error(
                     f"{daemon_type.value} import failed permanently: {e}. "
@@ -771,21 +836,37 @@ class DaemonManager:
                 logger.error(f"{daemon_type.value} failed: {e}")
 
                 if not info.auto_restart:
-                    info.state = DaemonState.FAILED
+                    # P0.5: Use helper for event emission
+                    self._update_daemon_state(
+                        info, DaemonState.FAILED,
+                        reason="exception", error=str(e)
+                    )
                     break
 
                 if info.restart_count >= info.max_restarts:
                     logger.error(f"{daemon_type.value} exceeded max restarts, stopping")
-                    info.state = DaemonState.FAILED
+                    # P0.5: Use helper for event emission
+                    self._update_daemon_state(
+                        info, DaemonState.FAILED,
+                        reason="max_restarts_exceeded", error=str(e)
+                    )
                     break
 
                 # Restart with exponential backoff
                 info.restart_count += 1
-                info.state = DaemonState.RESTARTING
+                # P0.5: Use helper for event emission
+                self._update_daemon_state(
+                    info, DaemonState.RESTARTING,
+                    reason="auto_restart", error=str(e)
+                )
                 delay = min(info.restart_delay * (2 ** (info.restart_count - 1)), MAX_RESTART_DELAY)
                 logger.info(f"Restarting {daemon_type.value} (attempt {info.restart_count}) in {delay:.1f}s")
                 await asyncio.sleep(delay)
-                info.state = DaemonState.RUNNING
+                # P0.5: Use helper for event emission
+                self._update_daemon_state(
+                    info, DaemonState.RUNNING,
+                    reason="restart_complete"
+                )
                 info.start_time = time.time()
 
         if info.state not in (DaemonState.FAILED, DaemonState.IMPORT_FAILED):

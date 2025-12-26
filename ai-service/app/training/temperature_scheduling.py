@@ -953,13 +953,15 @@ def _emit_scheduler_registered(config_key: str) -> None:
     """
     try:
         from app.coordination.event_router import get_event_bus, RouterEvent, EventSource
+        from app.distributed.data_events import DataEventType
 
         bus = get_event_bus()
         if bus is None:
             return
 
+        # P0.6 Dec 2025: Use DataEventType enum for type-safe event emission
         event = RouterEvent(
-            event_type="SCHEDULER_REGISTERED",
+            event_type=DataEventType.SCHEDULER_REGISTERED,
             payload={
                 "config_key": config_key,
                 "timestamp": time.time(),

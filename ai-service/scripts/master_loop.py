@@ -483,6 +483,8 @@ class MasterLoopController:
             DaemonType.CLUSTER_MONITOR,      # Track cluster utilization
             DaemonType.NODE_RECOVERY,        # Auto-recover failed nodes
             DaemonType.CURRICULUM_INTEGRATION,  # Feedback-driven curriculum
+            # Data sync daemons (December 2025 - close data silos)
+            DaemonType.ELO_SYNC,             # Sync Elo ratings across cluster
         ]
 
         logger.info(f"[MasterLoop] Starting {len(essential_daemons)} essential daemons")

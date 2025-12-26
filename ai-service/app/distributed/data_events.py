@@ -151,6 +151,9 @@ class DataEventType(Enum):
     QUALITY_DEGRADED = "quality_degraded"  # Phase 5: Quality dropped below threshold
     LOW_QUALITY_DATA_WARNING = "low_quality_data_warning"  # Below threshold
     TRAINING_BLOCKED_BY_QUALITY = "training_blocked_by_quality"  # Quality too low to train
+    # P0.6 Dec 2025: Added missing event types to enable type-safe subscriptions
+    QUALITY_FEEDBACK_ADJUSTED = "quality_feedback_adjusted"  # Quality feedback updated for config
+    SCHEDULER_REGISTERED = "scheduler_registered"  # Temperature scheduler registered for config
     QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
 
     # Registry & metrics events

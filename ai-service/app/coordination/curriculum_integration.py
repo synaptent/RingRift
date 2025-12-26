@@ -538,10 +538,12 @@ class QualityToTemperatureWatcher:
 
         try:
             from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
             router = get_router()
-            router.subscribe("QUALITY_FEEDBACK_ADJUSTED", self._on_quality_adjusted)
-            router.subscribe("QUALITY_SCORE_UPDATED", self._on_quality_updated)
+            # P0.6 Dec 2025: Use DataEventType enum for type-safe subscriptions
+            router.subscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
+            router.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
             self._subscribed = True
             logger.info("[QualityToTemperatureWatcher] Subscribed to quality events")
             return True
@@ -556,10 +558,12 @@ class QualityToTemperatureWatcher:
 
         try:
             from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
 
             router = get_router()
-            router.unsubscribe("QUALITY_FEEDBACK_ADJUSTED", self._on_quality_adjusted)
-            router.unsubscribe("QUALITY_SCORE_UPDATED", self._on_quality_updated)
+            # P0.6 Dec 2025: Use DataEventType enum for type-safe unsubscriptions
+            router.unsubscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
+            router.unsubscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
             self._subscribed = False
         except Exception:
             pass

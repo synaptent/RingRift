@@ -319,14 +319,14 @@ class AutoPromotionDaemon:
             logger.error(f"[AutoPromotion] Promotion error for {config_key}: {e}")
 
     async def _emit_promotion_event(self, candidate: PromotionCandidate) -> None:
-        """Emit MODEL_PROMOTED event.
+        """Emit MODEL_PROMOTED event and CURRICULUM_ADVANCED if applicable.
 
         Args:
             candidate: PromotionCandidate that was promoted
         """
         try:
             from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.distributed.data_events import DataEventType, emit_curriculum_advanced
 
             router = get_router()
             if router:
@@ -345,6 +345,26 @@ class AutoPromotionDaemon:
                 logger.info(
                     f"[AutoPromotion] Emitted MODEL_PROMOTED for {candidate.config_key}"
                 )
+
+                # P0.5 Dec 2025: Emit CURRICULUM_ADVANCED when consecutive promotions
+                # indicate curriculum tier progression readiness
+                if candidate.consecutive_passes >= 2:
+                    # Determine tier from consecutive pass count
+                    old_tier = f"TIER_{candidate.consecutive_passes - 1}"
+                    new_tier = f"TIER_{candidate.consecutive_passes}"
+                    await emit_curriculum_advanced(
+                        config=candidate.config_key,
+                        old_tier=old_tier,
+                        new_tier=new_tier,
+                        trigger_reason="consecutive_promotions",
+                        win_rate=candidate.evaluation_results.get("HEURISTIC", 0.0),
+                        games_at_tier=candidate.evaluation_games,
+                        source="auto_promotion_daemon",
+                    )
+                    logger.info(
+                        f"[AutoPromotion] Emitted CURRICULUM_ADVANCED for {candidate.config_key}: "
+                        f"{old_tier} → {new_tier}"
+                    )
         except Exception as e:
             logger.error(f"[AutoPromotion] Failed to emit promotion event: {e}")
 

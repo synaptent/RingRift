@@ -23,13 +23,13 @@ pip install -r requirements.txt
 | ------- | -------------------- | -------------------- | ---------------------------------------------------- |
 | D1      | —                    | —                    | Baseline only (no training)                          |
 | D2–D3   | ~30s                 | 5-20 min             | Heuristic CMA-ES optimization                        |
-| D4      | ~30s                 | 10-30 min            | Minimax persona + NNUE (CPU OK for Square-8)         |
-| D5–D6   | ~30s                 | 1-4 hours            | Neural Descent training (GPU required)               |
+| D4–D5   | ~30s                 | 10-30 min            | Minimax persona + NNUE (CPU OK for Square-8)         |
+| D6      | ~30s                 | 1-4 hours            | Neural Descent training (GPU required)               |
 | D7      | ~30s                 | 10-30 min            | Heuristic-only MCTS persona (CPU heavy at full eval) |
 | D8      | ~30s                 | 2-8 hours            | MCTS + NN training (GPU required)                    |
 | D9–D10  | ~30s                 | 4-12 hours           | Gumbel MCTS + NN (GPU required)                      |
 
-Full training runs require GPU for D5–D10 neural tiers. Demo mode runs on CPU.
+Full training runs require GPU for D6–D10 neural tiers (plus D5 if retraining NNUE checkpoints). Demo mode runs on CPU.
 
 ### Required Files
 
@@ -173,7 +173,15 @@ PYTHONPATH=. python scripts/run_full_tier_gating.py \
   --tier D2 --candidate-id "$CANDIDATE_ID" --run-dir "$RUN_DIR" --no-perf
 ```
 
-### D5/D6 (Neural Descent)
+### D5 (Minimax + NNUE)
+
+```bash
+# CPU OK for sq8; use GPU only if retraining NNUE checkpoints
+PYTHONPATH=. python scripts/run_tier_training_pipeline.py \
+  --tier D5 --board square8 --num-players 2 --output-dir "$OUTPUT_DIR"
+```
+
+### D6 (Neural Descent)
 
 ```bash
 # Requires GPU for full training
