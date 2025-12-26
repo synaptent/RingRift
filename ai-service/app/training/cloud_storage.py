@@ -196,6 +196,14 @@ class LocalFileStorage(StorageBackend):
         self._file.close()
         logger.info(f"LocalFileStorage: Closed {self._path} with {self._samples_written} samples ({self._bytes_written} bytes)")
 
+    def __enter__(self) -> "LocalFileStorage":
+        """Context manager entry - returns self."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Context manager exit - ensures file is closed."""
+        self.close()
+
     def get_stats(self) -> dict[str, Any]:
         """Get write statistics."""
         return {
