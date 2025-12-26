@@ -722,8 +722,10 @@ class SelfplayScheduler:
                 bus.subscribe(DataEventType.CURRICULUM_REBALANCED, self._on_curriculum_rebalanced)
                 # P0.1 (Dec 2025): Subscribe to SELFPLAY_RATE_CHANGED from FeedbackAccelerator
                 bus.subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
+                # P1.1 (Dec 2025): Subscribe to TRAINING_BLOCKED_BY_QUALITY for selfplay acceleration
+                bus.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY, self._on_training_blocked_by_quality)
                 self._subscribed = True
-                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including SELFPLAY_RATE_CHANGED)")
+                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including TRAINING_BLOCKED_BY_QUALITY)")
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Failed to subscribe: {e}")
@@ -901,6 +903,60 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling selfplay rate changed: {e}")
+
+    def _on_training_blocked_by_quality(self, event: Any) -> None:
+        """Handle training blocked by quality event.
+
+        P1.1 (Dec 2025): Strategic Improvement Plan Gap 1.1 fix.
+        When training is blocked due to stale/low-quality data, boost selfplay
+        allocation by 1.5x to accelerate data generation for that config.
+
+        This closes the critical feedback loop:
+        TRAINING_BLOCKED_BY_QUALITY → Selfplay acceleration → Fresh data → Training resumes
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "") or payload.get("config", "")
+            reason = payload.get("reason", "unknown")
+            data_age_hours = payload.get("data_age_hours", 0.0)
+
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+
+                # Boost selfplay allocation by 1.5x for this config
+                old_boost = priority.exploration_boost
+                priority.exploration_boost = max(1.5, old_boost * 1.5)
+                priority.training_pending = True
+
+                # Log the quality block
+                logger.warning(
+                    f"[SelfplayScheduler] Training blocked for {config_key} "
+                    f"(reason: {reason}, age: {data_age_hours:.1f}h). "
+                    f"Boosted selfplay: exploration {old_boost:.2f} → {priority.exploration_boost:.2f}"
+                )
+
+                # Emit a target update event to propagate the boost
+                try:
+                    from app.distributed.data_events import DataEventType
+                    from app.coordination.event_router import get_event_bus
+
+                    bus = get_event_bus()
+                    if bus:
+                        bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                            "config_key": config_key,
+                            "priority": "high",
+                            "reason": f"training_blocked:{reason}",
+                            "exploration_boost": priority.exploration_boost,
+                        })
+                except Exception as emit_err:
+                    logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
+            else:
+                logger.debug(
+                    f"[SelfplayScheduler] Received training blocked for unknown config: {config_key}"
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling training blocked by quality: {e}")
 
     # =========================================================================
     # Status & Metrics

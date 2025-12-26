@@ -495,7 +495,8 @@ class TransportConfig:
     p2p_timeout: int = 300
 
     # Gossip settings
-    enable_gossip: bool = False
+    # Phase 9 (Dec 2025): Enabled by default for better data resilience
+    enable_gossip: bool = True
     gossip_port: int = 8771
     gossip_sync_interval: int = 60
 

@@ -70,13 +70,13 @@ STALE_DATA_HOURS = 12  # Alert if no new data in this time
 MIN_WIN_RATE = 0.35  # Alert if win rate drops below this
 
 
-# HealthStatus is imported from app.monitoring.base when available
-# For backwards compatibility, define a fallback if monitoring framework not available
+# Phase 9 (Dec 2025): HealthStatus canonical source is app.monitoring.base
+# Fallback retained for edge cases where monitoring framework fails to import
 if HAS_MONITORING_FRAMEWORK:
     from app.monitoring.base import HealthStatus
 else:
     class HealthStatus(Enum):  # type: ignore
-        """Overall health status (fallback when monitoring framework unavailable)."""
+        """Fallback health status when monitoring framework unavailable."""
         HEALTHY = "healthy"
         DEGRADED = "degraded"
         UNHEALTHY = "unhealthy"

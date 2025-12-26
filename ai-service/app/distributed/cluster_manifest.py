@@ -234,7 +234,8 @@ class DiskCleanupPolicy:
     trigger_usage_percent: float = MAX_DISK_USAGE_PERCENT  # Trigger at 70%
     target_usage_percent: float = 60.0  # Clean down to 60%
     min_age_days: int = 7  # Don't delete data newer than this
-    min_replicas_before_delete: int = 2  # Only delete if replicated elsewhere
+    # Phase 9 (Dec 2025): Increased from 2 to 3 for better data safety
+    min_replicas_before_delete: int = 3  # Only delete if replicated to 3+ places
     prefer_low_quality: bool = True  # Prefer deleting low-quality games
     prefer_old_schema: bool = True  # Prefer deleting games with old schema
     preserve_canonical: bool = True  # Never delete canonical databases

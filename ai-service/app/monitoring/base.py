@@ -23,7 +23,14 @@ from app.config.thresholds import AlertLevel
 
 
 class HealthStatus(str, Enum):
-    """Overall health status."""
+    """Overall health status.
+
+    Phase 9 (Dec 2025): This is the CANONICAL source for HealthStatus enum.
+    Other modules should import from here:
+        from app.monitoring.base import HealthStatus
+
+    Inherits from str for JSON serialization compatibility.
+    """
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"

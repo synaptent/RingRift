@@ -65,7 +65,8 @@ class EphemeralSyncConfig:
     sync_timeout_seconds: int = 30
     # December 2025: Write-through mode for zero data loss
     write_through_enabled: bool = True  # Wait for push confirmation
-    write_through_timeout_seconds: int = 30  # Max wait for confirmation (increased from 10s)
+    # P1.3 Dec 2025: Increased from 30s to 60s for Vast.ai high-latency nodes (50-500ms)
+    write_through_timeout_seconds: int = 60  # Max wait for confirmation
     # Phase 8 Dec 2025: Write-ahead log for pending games
     wal_enabled: bool = True  # Persist pending games to survive crashes
     wal_path: Path = field(default_factory=lambda: Path("data/ephemeral_sync_wal.jsonl"))

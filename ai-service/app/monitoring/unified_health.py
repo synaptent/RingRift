@@ -28,18 +28,13 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-
-class HealthStatus(Enum):
-    """Health status levels."""
-    HEALTHY = "healthy"
-    DEGRADED = "degraded"
-    UNHEALTHY = "unhealthy"
-    UNKNOWN = "unknown"
+# Phase 9 (Dec 2025): Import from canonical source in monitoring.base
+# Keep local alias for backward compatibility
+from app.monitoring.base import HealthStatus
 
 
 @dataclass

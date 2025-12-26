@@ -194,6 +194,9 @@ class DaemonType(Enum):
     # Stops CPU selfplay on GPU nodes, spawns appropriate workloads by provider
     UTILIZATION_OPTIMIZER = "utilization_optimizer"
 
+    # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
+    LAMBDA_IDLE = "lambda_idle"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -627,6 +630,13 @@ class DaemonManager:
             depends_on=[DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE],
         )
 
+        # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
+        self.register_factory(
+            DaemonType.LAMBDA_IDLE,
+            self._create_lambda_idle,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
+        )
+
     def register_factory(
         self,
         daemon_type: DaemonType,
@@ -759,7 +769,11 @@ class DaemonManager:
                 logger.error(f"No factory registered for {daemon_type.value}")
                 return False
 
-            # P0.3: Create readiness event for this daemon
+            # P0.3: Create readiness event for this daemon.
+            #
+            # NOTE: Most daemon factories in this codebase do not explicitly call
+            # mark_daemon_ready(). To avoid deadlocking dependency start order,
+            # we treat "task created" as "ready" by default.
             info.ready_event = asyncio.Event()
 
             # Start daemon
@@ -767,10 +781,14 @@ class DaemonManager:
             try:
                 info.task = safe_create_task(
                     self._run_daemon(daemon_type, factory),
-                    name=f"daemon_{daemon_type.value}"
+                    name=f"daemon_{daemon_type.value}",
                 )
                 info.start_time = time.time()
                 info.state = DaemonState.RUNNING
+
+                # Default readiness: started ⇒ ready (dependency ordering).
+                info.ready_event.set()
+
                 logger.info(f"Started daemon: {daemon_type.value}")
                 return True
 
@@ -2871,6 +2889,39 @@ class DaemonManager:
     # Use TRAINING_NODE_WATCHER from cluster_data_sync instead, which provides
     # more comprehensive monitoring including priority sync for fresh data.
 
+    async def _create_lambda_idle(self) -> None:
+        """Create and run Lambda idle shutdown daemon (December 2025).
+
+        Monitors Lambda Labs GPU nodes for idle detection and automatically
+        terminates them to reduce costs. Features:
+        - 30-minute idle threshold
+        - Pending work check before termination
+        - Minimum node retention
+        - Graceful shutdown with drain period
+
+        This daemon should only run on the coordinator node.
+        """
+        try:
+            from app.coordination.lambda_idle_daemon import (
+                LambdaIdleDaemon,
+                LambdaIdleConfig,
+            )
+
+            config = LambdaIdleConfig.from_env()
+            daemon = LambdaIdleDaemon(config=config)
+            await daemon.start()
+
+            logger.info("[LambdaIdleDaemon] Started, monitoring for idle nodes")
+
+            # Keep daemon running until cancelled
+            while True:
+                await asyncio.sleep(3600)
+
+        except ImportError as e:
+            logger.warning(f"LambdaIdleDaemon dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"LambdaIdleDaemon failed: {e}")
+
     async def _create_selfplay_coordinator(self) -> None:
         """Create and run selfplay coordinator daemon.
 
@@ -2925,6 +2976,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.JOB_SCHEDULER,  # Phase 3: Centralized job scheduling with PID-based allocation
         DaemonType.IDLE_RESOURCE,  # Phase 20: Monitor idle GPUs and spawn selfplay
         DaemonType.NODE_RECOVERY,  # Phase 21: Auto-recover terminated nodes
+        DaemonType.LAMBDA_IDLE,  # Dec 2025: Auto-terminate idle Lambda nodes for cost savings
         DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met

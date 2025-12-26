@@ -282,7 +282,8 @@ class SyncConfig:
     # Manifest replication
     enable_manifest_replication: bool = True
     manifest_replication_interval: int = 300
-    min_replicas: int = 2
+    # Phase 9 (Dec 2025): Increased from 2 to 3 for better data safety
+    min_replicas: int = 3
 
     # Thresholds
     min_games_per_sync: int = 5
@@ -316,7 +317,8 @@ class SyncConfig:
     dead_letter_enabled: bool = True
 
     # Gossip sync (P2P data replication)
-    enable_gossip_sync: bool = False  # Disabled by default, enable for P2P replication
+    # Phase 9 (Dec 2025): Enabled by default for better data resilience
+    enable_gossip_sync: bool = True  # P2P replication for eventual consistency
     gossip_port: int = 8771
 
     # Aria2 transport (high-performance multi-connection downloads)
