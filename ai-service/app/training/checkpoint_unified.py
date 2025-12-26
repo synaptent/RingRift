@@ -1,10 +1,38 @@
 """Unified Checkpoint Manager for RingRift AI.
 
+**CANONICAL IMPLEMENTATION (December 2025)**
+
+This is the canonical checkpoint manager. All new code should use this module.
+Other checkpoint implementations should gradually migrate to use this.
+
 Consolidates checkpoint management from:
 - fault_tolerance.py: Comprehensive metadata, hash verification, checkpoint types
 - advanced_training.py SmartCheckpointManager: Adaptive frequency based on loss improvement
 
-This provides a single checkpoint manager with all advanced features.
+Features:
+- Comprehensive metadata tracking (epoch, step, metrics, config, architecture version)
+- SHA256 hash verification for integrity
+- Multiple checkpoint types (REGULAR, EPOCH, BEST, EMERGENCY, RECOVERY)
+- Adaptive checkpoint frequency based on training progress
+- Safe loading with pickling attack prevention
+- Event emission for observability
+
+Deprecated implementations to migrate from:
+- train_checkpointing.py: save_checkpoint() → Use UnifiedCheckpointManager
+- checkpointing.py: save_checkpoint() → Use UnifiedCheckpointManager
+- distributed.py: DistributedTrainer.save_checkpoint() → Use UnifiedCheckpointManager
+
+Usage:
+    from app.training.checkpoint_unified import UnifiedCheckpointManager
+
+    manager = UnifiedCheckpointManager(checkpoint_dir="checkpoints/")
+    manager.save_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        epoch=epoch,
+        step=step,
+        metrics={"loss": 0.05, "accuracy": 0.95},
+    )
 """
 
 from __future__ import annotations

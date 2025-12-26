@@ -218,7 +218,7 @@ python scripts/auto_deploy_models.py \
     --target production
 
 # Sync models across cluster
-python scripts/p2p_model_sync.py --direction push
+python scripts/sync_models.py --distribute
 ```
 
 ---
