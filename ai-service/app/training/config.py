@@ -381,7 +381,7 @@ class TrainConfig:
     # This is validated in __post_init__ and used for model config validation.
     num_players: int = 2
     episodes_per_iter: int = 4
-    epochs_per_iter: int = 4
+    epochs_per_iter: int = 50  # Increased from 4 for stronger models (Dec 2025)
     # Number of self-play + training + evaluation cycles to run in the
     # high-level training loop. This was previously hard-coded; exposing it
     # here makes iterative retraining a first-class configuration parameter.

@@ -241,8 +241,12 @@ class IdleResourceDaemon:
         December 2025 - Phase 2B.2: Scale job spawning proportionally
         to idle capacity instead of fixed 4.
 
+        December 2025 - Backpressure integration: Reduce spawns when
+        any node is experiencing resource pressure.
+
         Returns:
-            Max spawns: base * (idle_nodes / 4), capped at max_spawns_cap
+            Max spawns: base * (idle_nodes / 4), capped at max_spawns_cap,
+            reduced by backpressure factor
         """
         # Count idle nodes
         idle_nodes = sum(
@@ -259,6 +263,16 @@ class IdleResourceDaemon:
             self.config.max_concurrent_spawns,
             min(idle_nodes * 2, self.config.max_spawns_cap)
         )
+
+        # Apply backpressure reduction (December 2025)
+        reduction = getattr(self, "_backpressure_spawn_reduction", 1.0)
+        if reduction < 1.0:
+            reduced = int(scaled * reduction)
+            if reduced < scaled:
+                logger.debug(
+                    f"[IdleResourceDaemon] Backpressure reducing spawns: {scaled} → {reduced}"
+                )
+            scaled = max(1, reduced)  # Always allow at least 1 spawn
 
         return scaled
 
@@ -435,11 +449,78 @@ class IdleResourceDaemon:
         except Exception as e:
             logger.debug(f"Failed to register coordinator: {e}")
 
+        # December 2025: Subscribe to backpressure events
+        self._wire_backpressure_events()
+
         # Start monitoring loop
         self._monitor_task = safe_create_task(
             self._monitor_loop(),
             name="idle_resource_monitor"
         )
+
+    def _wire_backpressure_events(self) -> None:
+        """Subscribe to backpressure events for cluster-wide coordination.
+
+        December 2025: When any node experiences resource pressure, we should
+        reduce spawning cluster-wide to avoid overwhelming the pipeline.
+        """
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_router()
+
+            def _on_backpressure_activated(event: Any) -> None:
+                """Handle BACKPRESSURE_ACTIVATED - reduce spawn rate."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                node_id = payload.get("node_id", "unknown")
+                resource_type = payload.get("resource_type", "unknown")
+                usage_pct = payload.get("usage_pct", 0)
+
+                logger.info(
+                    f"[IdleResourceDaemon] Backpressure activated on {node_id}: "
+                    f"{resource_type} at {usage_pct:.1f}%"
+                )
+
+                # Reduce max concurrent spawns temporarily
+                if not hasattr(self, "_backpressure_active"):
+                    self._backpressure_active = set()
+                self._backpressure_active.add(node_id)
+
+                # Apply global backoff when any node is under pressure
+                if len(self._backpressure_active) > 0:
+                    self._backpressure_spawn_reduction = 0.5  # 50% reduction
+
+            def _on_backpressure_released(event: Any) -> None:
+                """Handle BACKPRESSURE_RELEASED - resume normal rate."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                node_id = payload.get("node_id", "unknown")
+
+                logger.info(f"[IdleResourceDaemon] Backpressure released on {node_id}")
+
+                if hasattr(self, "_backpressure_active") and node_id in self._backpressure_active:
+                    self._backpressure_active.discard(node_id)
+
+                # Resume normal spawning when all nodes are clear
+                if hasattr(self, "_backpressure_active") and len(self._backpressure_active) == 0:
+                    self._backpressure_spawn_reduction = 1.0  # No reduction
+
+            router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, _on_backpressure_activated)
+            router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, _on_backpressure_released)
+
+            # Initialize backpressure state
+            self._backpressure_active: set[str] = set()
+            self._backpressure_spawn_reduction: float = 1.0
+
+            logger.info(
+                "[IdleResourceDaemon] Subscribed to backpressure events "
+                "(BACKPRESSURE_ACTIVATED, BACKPRESSURE_RELEASED)"
+            )
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] Event router not available, backpressure handling disabled")
+        except Exception as e:
+            logger.warning(f"[IdleResourceDaemon] Failed to wire backpressure events: {e}")
 
     async def stop(self) -> None:
         """Stop the idle resource daemon."""

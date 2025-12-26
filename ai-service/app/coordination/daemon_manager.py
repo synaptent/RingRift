@@ -1020,6 +1020,9 @@ class DaemonManager:
 
         Phase 5 (December 2025): Centralized handling of critical events
         that require daemon-level coordination response.
+
+        Phase 7 (December 2025): Also wires AutoRollbackHandler to actually
+        perform rollbacks when REGRESSION_CRITICAL events are received.
         """
         try:
             from app.coordination.event_router import get_router
@@ -1034,6 +1037,21 @@ class DaemonManager:
             router.subscribe(DataEventType.REGRESSION_CRITICAL.value, self._on_regression_critical)
 
             logger.info("[DaemonManager] Subscribed to REGRESSION_CRITICAL events (Phase 5)")
+
+            # Phase 7: Wire AutoRollbackHandler to actually perform model rollbacks
+            # Without this, REGRESSION_CRITICAL events are logged but no rollback happens
+            try:
+                from app.training.model_registry import get_model_registry
+                from app.training.rollback_manager import wire_regression_to_rollback
+
+                registry = get_model_registry()
+                handler = wire_regression_to_rollback(registry)
+                if handler:
+                    logger.info("[DaemonManager] Wired AutoRollbackHandler for automatic model rollback (Phase 7)")
+                else:
+                    logger.warning("[DaemonManager] Failed to wire AutoRollbackHandler")
+            except Exception as rollback_err:
+                logger.warning(f"[DaemonManager] Could not wire AutoRollbackHandler: {rollback_err}")
 
         except Exception as e:
             logger.warning(f"[DaemonManager] Failed to subscribe to critical events: {e}")
