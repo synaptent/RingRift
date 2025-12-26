@@ -1,7 +1,7 @@
 # Codebase Quality Assessment Report
 
 **Generated**: December 26, 2025
-**Last Updated**: December 26, 2025 (7 of 10 issues resolved)
+**Last Updated**: December 26, 2025 (8 of 10 issues resolved)
 **Scope**: RingRift AI Service (`ai-service/`)
 **Analysis Coverage**: 350+ Python files, 1.3M lines of code
 
@@ -9,18 +9,18 @@
 
 ## Executive Summary: Top 10 Highest-Impact Improvements
 
-| #   | Issue                                            | Impact          | Effort | Status                                                    |
-| --- | ------------------------------------------------ | --------------- | ------ | --------------------------------------------------------- |
-| 1   | **P2P port 8770 hardcoded in 20+ files**         | High            | Small  | ✅ `app/config/constants.py` created                      |
-| 2   | **torch.load migration**                         | Security        | Medium | ✅ Complete - all use safe_load_checkpoint                |
-| 3   | **Large files >3000 lines need decomposition**   | Maintainability | Large  | Pending - `train.py`, `gpu_parallel_games.py`             |
-| 4   | **File handle leaks**                            | Reliability     | Small  | ✅ Fixed - cloud_storage.py, distributed_lock.py          |
-| 5   | **Blocking time.sleep() in async code**          | Performance     | Medium | ✅ Verified clean - no issues found                       |
-| 6   | **Multiple SSH helper implementations**          | Complexity      | Medium | Pending - 3 files with SSH classes                        |
-| 7   | **Testing gap: coordination module (111 files)** | Quality         | Large  | ✅ 49 tests added (IdleResourceDaemon, SelfplayScheduler) |
-| 8   | **Events defined but never subscribed**          | Dead code       | Small  | 4 unused (API placeholders)                               |
-| 9   | **366 .item() GPU sync calls**                   | Performance     | Large  | Pending - `app/ai/*.py`                                   |
-| 10  | **Timeout constants scattered**                  | Maintainability | Small  | ✅ Centralized in `app/config/constants.py`               |
+| #   | Issue                                            | Impact          | Effort | Status                                                       |
+| --- | ------------------------------------------------ | --------------- | ------ | ------------------------------------------------------------ |
+| 1   | **P2P port 8770 hardcoded in 20+ files**         | High            | Small  | ✅ `app/config/constants.py` created                         |
+| 2   | **torch.load migration**                         | Security        | Medium | ✅ Complete - all use safe_load_checkpoint                   |
+| 3   | **Large files >3000 lines need decomposition**   | Maintainability | Large  | Pending - `train.py`, `gpu_parallel_games.py`                |
+| 4   | **File handle leaks**                            | Reliability     | Small  | ✅ Fixed - cloud_storage.py, distributed_lock.py             |
+| 5   | **Blocking time.sleep() in async code**          | Performance     | Medium | ✅ Verified clean - no issues found                          |
+| 6   | **Multiple SSH helper implementations**          | Complexity      | Medium | ✅ Consolidated - core/ssh.py canonical, conn_mgr deprecated |
+| 7   | **Testing gap: coordination module (111 files)** | Quality         | Large  | ✅ 49 tests added (IdleResourceDaemon, SelfplayScheduler)    |
+| 8   | **Events defined but never subscribed**          | Dead code       | Small  | 4 unused (API placeholders)                                  |
+| 9   | **366 .item() GPU sync calls**                   | Performance     | Large  | Pending - `app/ai/*.py`                                      |
+| 10  | **Timeout constants scattered**                  | Maintainability | Small  | ✅ Centralized in `app/config/constants.py`                  |
 
 ---
 
@@ -28,21 +28,22 @@
 
 ### Critical Issues
 
-| Issue                             | Location        | Impact       | Fix                                                    |
-| --------------------------------- | --------------- | ------------ | ------------------------------------------------------ |
-| P2P port hardcoded                | 20+ files       | Config drift | Create `P2P_DEFAULT_PORT` in `app/config/constants.py` |
-| Multiple SSH implementations      | 3 files         | Duplication  | Consolidate to `app/execution/executor.py`             |
-| Events defined but not subscribed | `DataEventType` | Dead code    | Remove or implement handlers                           |
+| Issue                             | Location        | Impact       | Fix                                                         |
+| --------------------------------- | --------------- | ------------ | ----------------------------------------------------------- |
+| P2P port hardcoded                | 20+ files       | Config drift | Create `P2P_DEFAULT_PORT` in `app/config/constants.py`      |
+| Multiple SSH implementations      | 3 files         | Duplication  | ✅ ssh_connection_manager deprecated, core/ssh.py canonical |
+| Events defined but not subscribed | `DataEventType` | Dead code    | Remove or implement handlers                                |
 
-### SSH Helper Implementations (Consolidation Needed)
+### SSH Helper Implementations (Consolidation In Progress)
 
-```
-app/distributed/ssh_transport.py        - 1,200 lines
-app/distributed/ssh_connection_manager.py - 400 lines
-app/execution/executor.py               - 800 lines (SSHExecutor)
-```
+**Current Architecture (Dec 26)**:
 
-**Recommendation**: Keep `SSHExecutor` as primary, deprecate others.
+- `app/core/ssh.py` - NEW canonical unified SSH helper (Dec 2025)
+- `app/distributed/ssh_transport.py` - Async P2P SSH transport (canonical)
+- `app/distributed/ssh_connection_manager.py` - ✅ DEPRECATED with migration guide
+- `app/execution/executor.py` - SSHExecutor for orchestration
+
+Migration: Use `app/core/ssh` for new code, SSHTransport for P2P.
 
 ### Daemon Types: Defined vs Used
 
