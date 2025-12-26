@@ -128,6 +128,9 @@ class DaemonType(Enum):
     # Auto-evaluation (December 2025) - trigger evaluation after training completes
     EVALUATION = "evaluation"
 
+    # Auto-promotion (December 2025) - auto-promote models based on evaluation results
+    AUTO_PROMOTION = "auto_promotion"
+
     # Quality monitor (December 2025) - continuous selfplay quality monitoring
     QUALITY_MONITOR = "quality_monitor"
 
@@ -384,6 +387,14 @@ class DaemonManager:
             DaemonType.EVALUATION,
             self._create_evaluation_daemon,
             depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Auto-promotion daemon (December 2025) - auto-promotes models based on evaluation results
+        # Subscribes to EVALUATION_COMPLETED, promotes if thresholds met, emits MODEL_PROMOTED
+        self.register_factory(
+            DaemonType.AUTO_PROMOTION,
+            self._create_auto_promotion,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.EVALUATION],
         )
 
         # Quality monitor daemon (December 2025) - continuous quality monitoring
@@ -1730,6 +1741,36 @@ class DaemonManager:
 
         except ImportError as e:
             logger.error(f"EvaluationDaemon not available: {e}")
+            raise
+
+    async def _create_auto_promotion(self) -> None:
+        """Create and run auto-promotion daemon (December 2025).
+
+        Automatically promotes models that pass evaluation thresholds.
+        Closes the feedback loop gap by removing manual promotion steps.
+
+        Subscribes to:
+            - EVALUATION_COMPLETED: Triggered after gauntlet evaluation
+
+        Checks promotion thresholds (from app/config/thresholds.py):
+            - vs_random: 85% win rate required
+            - vs_heuristic: 60% win rate required
+
+        Emits:
+            - MODEL_PROMOTED: Model passed thresholds and was promoted
+        """
+        try:
+            from app.coordination.auto_promotion_daemon import get_auto_promotion_daemon
+
+            daemon = get_auto_promotion_daemon()
+            await daemon.start()
+
+            # Keep running while daemon is active
+            while daemon._running:
+                await asyncio.sleep(10)
+
+        except ImportError as e:
+            logger.error(f"AutoPromotionDaemon not available: {e}")
             raise
 
     async def _create_quality_monitor(self) -> None:

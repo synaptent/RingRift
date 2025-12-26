@@ -461,13 +461,37 @@ class RegressionDetector:
             try:
                 from app.utils.async_utils import fire_and_forget
                 asyncio.get_running_loop()
-                fire_and_forget(self._event_bus.publish(general_event), name="regression_general")
-                fire_and_forget(self._event_bus.publish(specific_event), name="regression_specific")
+                # Publish using (event_type, payload, source) signature for UnifiedEventRouter
+                # The router will bridge to the data event bus for rollback manager subscriptions
+                fire_and_forget(
+                    self._event_bus.publish(
+                        event_type=general_event.event_type,
+                        payload=general_event.payload,
+                        source=general_event.source,
+                    ),
+                    name="regression_general",
+                )
+                fire_and_forget(
+                    self._event_bus.publish(
+                        event_type=specific_event.event_type,
+                        payload=specific_event.payload,
+                        source=specific_event.source,
+                    ),
+                    name="regression_specific",
+                )
             except RuntimeError:
                 # No running event loop - use sync version if available
                 if hasattr(self._event_bus, 'publish_sync'):
-                    self._event_bus.publish_sync(general_event)
-                    self._event_bus.publish_sync(specific_event)
+                    self._event_bus.publish_sync(
+                        event_type=general_event.event_type,
+                        payload=general_event.payload,
+                        source=general_event.source,
+                    )
+                    self._event_bus.publish_sync(
+                        event_type=specific_event.event_type,
+                        payload=specific_event.payload,
+                        source=specific_event.source,
+                    )
 
         except Exception as e:
             logger.error(f"[RegressionDetector] Event bus publish error: {e}")
@@ -492,10 +516,21 @@ class RegressionDetector:
             try:
                 from app.utils.async_utils import fire_and_forget
                 asyncio.get_running_loop()
-                fire_and_forget(self._event_bus.publish(event), name="regression_cleared")
+                fire_and_forget(
+                    self._event_bus.publish(
+                        event_type=event.event_type,
+                        payload=event.payload,
+                        source=event.source,
+                    ),
+                    name="regression_cleared",
+                )
             except RuntimeError:
                 if hasattr(self._event_bus, 'publish_sync'):
-                    self._event_bus.publish_sync(event)
+                    self._event_bus.publish_sync(
+                        event_type=event.event_type,
+                        payload=event.payload,
+                        source=event.source,
+                    )
 
         except Exception as e:
             logger.error(f"[RegressionDetector] Event bus publish error: {e}")

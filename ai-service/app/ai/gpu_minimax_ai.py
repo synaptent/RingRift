@@ -347,7 +347,6 @@ class GPUMinimaxAI(MinimaxAI):
         if move.type in {
             MoveType.OVERTAKING_CAPTURE,
             MoveType.CHAIN_CAPTURE,
-            MoveType.LINE_OVERTAKING_CAPTURE,
         }:
             bonus += 1000.0  # Captures are highest priority
         elif move.type == MoveType.PLACE_RING:
@@ -590,7 +589,7 @@ class GPUMinimaxAI(MinimaxAI):
             # Fall back: evaluate each state individually with CPU heuristic
             for state, state_hash in self._leaf_buffer:
                 # States are immutable GameState, use parent's evaluate method
-                score = self._evaluate_position(state)
+                score = self.evaluate_position(state)
                 self._leaf_results[state_hash] = score
                 self.transposition_table.put(state_hash, {
                     'score': score,

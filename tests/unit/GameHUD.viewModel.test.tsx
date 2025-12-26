@@ -83,9 +83,18 @@ describe('GameHUD (view model path)', () => {
     render(<GameHUD viewModel={hud} timeControl={gameState.timeControl} />);
 
     expect(screen.getByTestId('game-hud')).toBeInTheDocument();
-    expect(screen.getByText('Your Move')).toBeInTheDocument();
+
+    // Assert stable, view-model-driven semantics (phase indicator + current-turn indicator)
+    expect(screen.getByTestId('phase-indicator')).toBeInTheDocument();
+    expect(screen.getByText(hud.phase.label)).toBeInTheDocument();
     expect(screen.getByText(/Connection: Connected/)).toBeInTheDocument();
+
+    // Action hint should surface for the active local player
+    expect(screen.getByTestId('phase-action-hint')).toHaveTextContent(hud.phase.actionHint);
+
+    // Instruction banner is passed through from the view model
     expect(screen.getByText('Select a stack to move.')).toBeInTheDocument();
+
     // Player names appear in both player cards and score summary, so use getAllByText
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Bob').length).toBeGreaterThanOrEqual(1);

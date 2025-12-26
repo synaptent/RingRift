@@ -632,6 +632,38 @@ class SelfplayRunner(ABC):
                         f"(reason: {reason})"
                     )
 
+            def on_selfplay_rate_changed(event):
+                """Handle SELFPLAY_RATE_CHANGED events from FeedbackAccelerator.
+
+                December 2025 (Phase 1.3): Closes the feedback loop from Elo momentum
+                to selfplay generation rate. FeedbackAccelerator emits this when:
+                - Elo is rising fast → increase selfplay to maintain momentum
+                - Elo is plateauing → reduce selfplay to conserve resources
+                - Rate change exceeds 20% threshold
+
+                This provides more context than HYPERPARAMETER_UPDATED's selfplay_rate_multiplier.
+                """
+                payload = event.payload if hasattr(event, "payload") else event
+                event_config = payload.get("config", "")
+
+                if event_config != config_key:
+                    return
+
+                new_rate = payload.get("new_rate", 1.0)
+                old_rate = payload.get("old_rate", 1.0)
+                direction = payload.get("direction", "unchanged")
+                momentum_state = payload.get("momentum_state", "unknown")
+                change_pct = payload.get("change_percent", 0.0)
+
+                # Apply the rate change
+                self._gauntlet_rate_multiplier = float(new_rate)
+
+                logger.info(
+                    f"[FeedbackAccelerator] Selfplay rate {direction} for {config_key}: "
+                    f"{old_rate:.2f}x → {new_rate:.2f}x ({change_pct:+.1f}%) "
+                    f"[momentum: {momentum_state}]"
+                )
+
             # Subscribe to feedback events using DataEventType enums
             subscribe(DataEventType.CURRICULUM_ADVANCED, on_curriculum_advanced)
             subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, on_selfplay_target_updated)
@@ -641,6 +673,7 @@ class SelfplayRunner(ABC):
             subscribe(DataEventType.HYPERPARAMETER_UPDATED, on_hyperparameter_updated)
             subscribe(DataEventType.QUALITY_PENALTY_APPLIED, on_quality_penalty_applied)
             subscribe(DataEventType.ADAPTIVE_PARAMS_CHANGED, on_adaptive_params_changed)  # Phase 5
+            subscribe(DataEventType.SELFPLAY_RATE_CHANGED, on_selfplay_rate_changed)  # Phase 1.3 Dec 2025
 
             logger.debug(f"[SelfplayRunner] Subscribed to feedback events for {config_key}")
 

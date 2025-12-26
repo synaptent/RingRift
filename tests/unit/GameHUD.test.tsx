@@ -464,8 +464,10 @@ describe('GameHUD', () => {
       fireEvent.mouseEnter(trigger);
 
       const tooltip = screen.getByRole('tooltip');
-      expect(tooltip).toHaveTextContent('Add rings to the board to build your stacks');
-      expect(tooltip).toHaveTextContent('Spectators: Placing rings');
+
+      // Assert view-model driven semantics rather than brittle full-string copy.
+      expect(tooltip).toHaveTextContent(hudViewModel.phase.description);
+      expect(tooltip).toHaveTextContent(`Spectators: ${hudViewModel.phase.spectatorHint}`);
     });
 
     it('renders spectator count chip with accessible label for non-spectator viewers', () => {
@@ -1010,9 +1012,9 @@ describe('GameHUD', () => {
       fireEvent.mouseEnter(trigger);
 
       const tooltip = screen.getByRole('tooltip');
-      // Beginner-friendly copy from gameViewModels
-      expect(tooltip).toHaveTextContent('Move one of your stacks or jump to capture');
-      expect(tooltip).toHaveTextContent('On your turn: Tap your stack, then tap where to move it');
+      // Assert view-model driven semantics rather than brittle full-string copy.
+      expect(tooltip).toHaveTextContent(hudViewModel.phase.description);
+      expect(tooltip).toHaveTextContent(`On your turn: ${hudViewModel.phase.actionHint}`);
     });
 
     it('renders structural-stalemate weird-state banner using explanation-driven copy', () => {
@@ -1048,13 +1050,12 @@ describe('GameHUD', () => {
 
       render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
 
-      // Component renders stalemate banner with beginner-friendly copy
-      expect(screen.getByText(/Game Ended: Stalemate/i)).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Nobody can make any more moves\. The winner is decided by who has more territory and eliminated rings/i
-        )
-      ).toBeInTheDocument();
+      const weirdBanner = screen.getByTestId('hud-weird-state-banner');
+      expect(weirdBanner).toBeInTheDocument();
+      expect(weirdBanner).toHaveTextContent(/Structural stalemate/i);
+      expect(weirdBanner).toHaveTextContent(
+        /No legal placements, movements, captures, or forced eliminations/i
+      );
       expect(screen.getByTestId('hud-weird-state-help')).toBeInTheDocument();
     });
 

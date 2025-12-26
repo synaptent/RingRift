@@ -438,15 +438,28 @@ class MasterLoopController:
     # =========================================================================
 
     async def _start_daemons(self) -> None:
-        """Start essential daemons."""
+        """Start essential daemons.
+
+        December 2025 - Phase 3A.1: Expanded from 5 to 12 essential daemons
+        to fully operationalize the automation infrastructure.
+        """
         from app.coordination.daemon_manager import DaemonType
 
         essential_daemons = [
+            # Core infrastructure (already started previously)
             DaemonType.EVENT_ROUTER,
             DaemonType.FEEDBACK_LOOP,
             DaemonType.DATA_PIPELINE,
             DaemonType.AUTO_SYNC,
             DaemonType.MODEL_DISTRIBUTION,
+            # Critical automation (Phase 3A.1 additions)
+            DaemonType.IDLE_RESOURCE,        # Spawn selfplay on idle GPUs
+            DaemonType.QUEUE_POPULATOR,      # Maintain work queue depth
+            DaemonType.AUTO_EXPORT,          # Trigger NPZ export after sync
+            DaemonType.EVALUATION,           # Auto-gauntlet after training
+            DaemonType.CLUSTER_MONITOR,      # Track cluster utilization
+            DaemonType.NODE_RECOVERY,        # Auto-recover failed nodes
+            DaemonType.CURRICULUM_INTEGRATION,  # Feedback-driven curriculum
         ]
 
         logger.info(f"[MasterLoop] Starting {len(essential_daemons)} essential daemons")

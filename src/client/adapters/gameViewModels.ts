@@ -1,4 +1,3 @@
-
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  * Game View Model Adapters
@@ -1685,7 +1684,8 @@ function getVictoryMessage(
     case 'ring_elimination':
       return {
         title: `🏆 ${winnerName} Wins!`,
-        description: 'Victory by eliminating more than half of all rings in play.',
+        // RR-CANON-R060/R061: Ring Elimination is threshold-based (depends on player count).
+        description: 'Victory by Ring Elimination: eliminated rings reached the victory threshold.',
         titleColorClass,
       };
     case 'territory_control':

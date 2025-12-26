@@ -29,6 +29,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -98,6 +99,12 @@ class ModelDistributionDaemon:
         self._last_sync_time: float = 0.0
         self._pending_models: list[dict[str, Any]] = []
         self._sync_lock = asyncio.Lock()
+
+        # December 2025: Thread-safe lock for _pending_models
+        # The event callback (_on_model_promoted) runs from event router context
+        # which may be different from the main loop context, causing race conditions.
+        # This lock protects append and copy+clear operations on the list.
+        self._pending_lock = threading.Lock()
 
         # Phase 5 (Dec 2025): Event-based wake-up for immediate push-on-promotion
         self._pending_event: asyncio.Event | None = None
@@ -289,6 +296,9 @@ class ModelDistributionDaemon:
 
         Phase 5 (Dec 2025): Immediately signals the main loop to process
         the new model, reducing distribution delay from 5s to near-instant.
+
+        December 2025: Uses thread lock to prevent race condition with
+        _process_pending_models which runs in the main async loop.
         """
         model_info = {
             "model_path": event.get("model_path"),
@@ -299,7 +309,10 @@ class ModelDistributionDaemon:
             "timestamp": time.time(),
         }
         logger.info(f"Received MODEL_PROMOTED event: {model_info}")
-        self._pending_models.append(model_info)
+
+        # Thread-safe append to pending list
+        with self._pending_lock:
+            self._pending_models.append(model_info)
         self._events_processed += 1
 
         # Phase 5: Immediate wake-up for push-on-promotion (no 5s wait)
@@ -307,14 +320,19 @@ class ModelDistributionDaemon:
             self._pending_event.set()
 
     async def _process_pending_models(self) -> None:
-        """Process pending model distributions."""
-        async with self._sync_lock:
-            if not self._pending_models:
-                return
+        """Process pending model distributions.
 
-            # Take all pending models
-            models = self._pending_models.copy()
-            self._pending_models.clear()
+        December 2025: Uses thread lock to safely copy+clear pending models,
+        preventing race condition with _on_model_promoted callback.
+        """
+        async with self._sync_lock:
+            # Thread-safe check and extract pending models
+            with self._pending_lock:
+                if not self._pending_models:
+                    return
+                # Atomically copy and clear while holding lock
+                models = self._pending_models.copy()
+                self._pending_models.clear()
 
             logger.info(f"Processing {len(models)} pending model distributions")
 
@@ -535,6 +553,9 @@ class ModelDistributionDaemon:
         Reads from distributed_hosts.yaml to find nodes that should
         receive model updates.
 
+        December 2025: Fixed to use 'status' field (ready/offline/terminated)
+        instead of 'active' field which doesn't exist in the config.
+
         Returns:
             List of node hostnames/IPs
         """
@@ -552,12 +573,18 @@ class ModelDistributionDaemon:
             targets = []
 
             for name, host_config in hosts.items():
-                # Skip inactive hosts
-                if not host_config.get("active", True):
+                # Skip hosts that are not ready (check status field)
+                status = host_config.get("status", "ready")
+                if status not in ("ready", "active"):
                     continue
 
-                # Get IP or hostname
-                host = host_config.get("host") or host_config.get("ip")
+                # Get IP or hostname (check multiple field names)
+                host = (
+                    host_config.get("ssh_host")
+                    or host_config.get("tailscale_ip")
+                    or host_config.get("host")
+                    or host_config.get("ip")
+                )
                 if host:
                     targets.append(host)
 

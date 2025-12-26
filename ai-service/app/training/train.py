@@ -155,6 +155,14 @@ except ImportError:
     DataValidatorConfig = None
     validate_npz_file = None
 
+# Checksum verification for data integrity (December 2025)
+try:
+    from app.training.data_quality import verify_npz_checksums
+    HAS_CHECKSUM_VERIFICATION = True
+except ImportError:
+    verify_npz_checksums = None
+    HAS_CHECKSUM_VERIFICATION = False
+
 # Hot data buffer for priority experience replay (2024-12)
 try:
     from app.training.hot_data_buffer import HotDataBuffer
@@ -975,6 +983,53 @@ def train_model(
     elif validate_data and not HAS_DATA_VALIDATION:
         if not distributed or is_main_process():
             logger.warning("Data validation requested but module not available")
+
+    # ==========================================================================
+    # Checksum Verification (December 2025)
+    # ==========================================================================
+    # Verify embedded checksums to detect file corruption
+    if validate_data and HAS_CHECKSUM_VERIFICATION and not use_streaming:
+        # Compute paths for checksum verification (self-contained)
+        checksum_paths = []
+        if isinstance(data_path, list):
+            checksum_paths = [p for p in data_path if p and os.path.exists(p)]
+        elif data_path and os.path.exists(data_path):
+            checksum_paths = [data_path]
+
+        if checksum_paths:
+            if not distributed or is_main_process():
+                logger.info("Verifying data checksums...")
+
+            checksum_failed = False
+            for path in checksum_paths:
+                all_valid, computed, errors = verify_npz_checksums(path)
+                if not distributed or is_main_process():
+                    if all_valid and not errors:
+                        if computed:
+                            logger.info(f"  ✓ {path}: checksums verified ({len(computed)} arrays)")
+                        else:
+                            logger.debug(f"  ○ {path}: no embedded checksums (legacy file)")
+                    else:
+                        logger.warning(f"  ✗ {path}: checksum verification failed")
+                        for error in errors[:3]:
+                            logger.warning(f"    - {error}")
+                        if len(errors) > 3:
+                            logger.warning(f"    ... and {len(errors) - 3} more errors")
+                        checksum_failed = True
+
+            if checksum_failed:
+                if fail_on_invalid_data:
+                    raise ValueError(
+                        "Checksum verification failed - data may be corrupted. "
+                        "Re-export the training data or set fail_on_invalid_data=False "
+                        "to proceed despite checksum issues (not recommended)."
+                    )
+                else:
+                    if not distributed or is_main_process():
+                        logger.warning(
+                            "Proceeding with training despite checksum issues. "
+                            "Data may be corrupted - consider re-exporting."
+                        )
 
     # Device configuration
     if distributed:
@@ -3149,8 +3204,9 @@ def train_model(
 
             # Phase 2 Feedback Loop: Check improvement optimizer for training adjustments
             # December 2025: Training now responds to evaluation signals (promotion streaks, regressions)
-            if epoch % 5 == 0:  # Check every 5 epochs to minimize overhead
-                # Check for pending gauntlet feedback events (Phase 3, December 2025)
+            # Note: HYPERPARAMETER_UPDATED events are handled in real-time by EvaluationFeedbackHandler
+            # (see subscribe() call above). This polling is a fallback for cross-process updates.
+            if epoch % 5 == 0:  # Check every 5 epochs as fallback for pending updates
                 try:
                     from app.coordination.gauntlet_feedback_controller import get_pending_hyperparameter_updates
                     pending_updates = get_pending_hyperparameter_updates(config_label)

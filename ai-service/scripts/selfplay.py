@@ -138,35 +138,42 @@ def get_runner_for_config(config: SelfplayConfig) -> SelfplayRunner:
 def emit_selfplay_complete_event(config: SelfplayConfig, stats: RunStats) -> None:
     """Emit SELFPLAY_COMPLETE event for pipeline automation.
 
+    December 2025 - Phase 3A.2: Events are now always emitted at selfplay
+    completion to enable automated pipeline triggering.
+
     Args:
         config: Selfplay configuration
         stats: Run statistics
     """
-    try:
-        from app.coordination.event_router import get_router, StageEvent
+    import socket
 
-        router = get_router()
-        router.publish(
+    try:
+        from app.coordination.event_router import publish_sync, StageEvent
+
+        publish_sync(
             event_type=StageEvent.SELFPLAY_COMPLETE,
             payload={
                 "config_key": config.config_key,
                 "board_type": config.board_type,
                 "num_players": config.num_players,
                 "games_completed": stats.games_completed,
+                "games_count": stats.games_completed,  # Alias for compatibility
                 "total_samples": stats.total_samples,
-                "database_path": config.record_db,
+                "database_path": str(config.record_db) if config.record_db else None,
+                "db_path": str(config.record_db) if config.record_db else None,  # Alias
                 "duration_seconds": stats.elapsed_seconds,
+                "node_id": socket.gethostname(),
             },
             source="selfplay_cli",
         )
-        logger.info(f"[Pipeline] Emitted SELFPLAY_COMPLETE event for {config.config_key}")
+        logger.info(f"[Pipeline] Emitted SELFPLAY_COMPLETE for {config.config_key}")
     except ImportError:
-        logger.warning(
-            "[Pipeline] Could not emit SELFPLAY_COMPLETE event - "
+        logger.debug(
+            "[Pipeline] Could not emit SELFPLAY_COMPLETE - "
             "coordination module not available"
         )
     except Exception as e:
-        logger.warning(f"[Pipeline] Failed to emit SELFPLAY_COMPLETE event: {e}")
+        logger.warning(f"[Pipeline] Failed to emit SELFPLAY_COMPLETE: {e}")
 
 
 def main():
@@ -277,8 +284,9 @@ def main():
 
         logger.info("=" * 60)
 
-        # Emit pipeline event if requested
-        if config.emit_pipeline_events and stats.games_completed > 0:
+        # Always emit pipeline event for automation (Phase 3A.2: Dec 2025)
+        # Event emission is now unconditional to enable automated pipeline
+        if stats.games_completed > 0:
             emit_selfplay_complete_event(config, stats)
 
         # Return success if games completed

@@ -8,6 +8,7 @@ through sophisticated temperature schedules.
 import logging
 import math
 import random
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -1123,12 +1124,78 @@ def wire_exploration_boost(
                         f"boost reduced to {new_boost:.2f}"
                     )
 
+        def on_elo_significant_change(event):
+            """Handle ELO_SIGNIFICANT_CHANGE - update Elo-adaptive temperature.
+
+            December 2025: This completes the Elo → Temperature feedback loop.
+            When model Elo changes significantly, we update the temperature
+            scheduler to reflect the new model strength.
+
+            - Elo increase: Reduce temperature (more confident play)
+            - Elo decrease: Increase temperature (more exploration)
+            """
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config", payload.get("config_key", ""))
+
+            if event_config != config_key:
+                return
+
+            new_elo = payload.get("current_elo", payload.get("new_elo"))
+            elo_delta = payload.get("elo_delta", payload.get("delta", 0))
+            elo_velocity = payload.get("velocity", 0)
+
+            if new_elo is None:
+                return
+
+            # Update EloAdaptiveSchedule if that's what we're using
+            if isinstance(scheduler.schedule, EloAdaptiveSchedule):
+                old_elo = scheduler.schedule.model_elo
+                scheduler.schedule.update_elo(new_elo)
+                logger.info(
+                    f"[TemperatureScheduler] Elo updated for {config_key}: "
+                    f"{old_elo:.0f} → {new_elo:.0f} (delta={elo_delta:+.0f})"
+                )
+
+                # Adjust exploration boost based on Elo velocity
+                # High velocity (rapid improvement) = reduce exploration
+                # Low velocity (stagnation) = increase exploration
+                if elo_velocity is not None:
+                    current_boost = scheduler.get_exploration_boost()
+                    if elo_velocity > 2.0:
+                        # Rapid improvement - reduce exploration
+                        new_boost = max(0.7, current_boost * 0.9)
+                        scheduler.set_exploration_boost(new_boost)
+                        logger.info(
+                            f"[TemperatureScheduler] High Elo velocity ({elo_velocity:.1f}/game) "
+                            f"for {config_key}, boost reduced to {new_boost:.2f}"
+                        )
+                    elif elo_velocity < 0.5 and elo_velocity >= 0:
+                        # Stagnation - increase exploration
+                        new_boost = min(1.5, current_boost * 1.1)
+                        scheduler.set_exploration_boost(new_boost)
+                        logger.info(
+                            f"[TemperatureScheduler] Low Elo velocity ({elo_velocity:.1f}/game) "
+                            f"for {config_key}, boost increased to {new_boost:.2f}"
+                        )
+            else:
+                # For non-Elo-adaptive schedules, just adjust exploration boost
+                # based on Elo velocity
+                if elo_velocity is not None and elo_velocity > 2.0:
+                    new_boost = max(0.7, scheduler.get_exploration_boost() * 0.9)
+                    scheduler.set_exploration_boost(new_boost)
+                elif elo_velocity is not None and 0 <= elo_velocity < 0.5:
+                    new_boost = min(1.5, scheduler.get_exploration_boost() * 1.1)
+                    scheduler.set_exploration_boost(new_boost)
+
         # Subscribe to feedback events
         bus.subscribe(DataEventType.PROMOTION_FAILED, on_promotion_failed)
         bus.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
         bus.subscribe(DataEventType.TRAINING_LOSS_TREND, on_training_loss_trend)
+        bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, on_elo_significant_change)
 
-        logger.debug(f"[TemperatureScheduler] Wired exploration boost for {config_key}")
+        logger.debug(
+            f"[TemperatureScheduler] Wired exploration boost and Elo updates for {config_key}"
+        )
         return True
 
     except ImportError as e:
