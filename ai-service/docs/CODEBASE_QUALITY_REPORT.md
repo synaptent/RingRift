@@ -1,7 +1,7 @@
 # Codebase Quality Assessment Report
 
 **Generated**: December 26, 2025
-**Last Updated**: December 26, 2025 (6 of 10 issues resolved)
+**Last Updated**: December 26, 2025 (7 of 10 issues resolved)
 **Scope**: RingRift AI Service (`ai-service/`)
 **Analysis Coverage**: 350+ Python files, 1.3M lines of code
 
@@ -181,18 +181,18 @@ batch_size = 512  # Line 92 - use config
 
 ### Coverage by Module
 
-| Module              | Files | Tests | Coverage       |
-| ------------------- | ----- | ----- | -------------- |
-| `app/ai/`           | 40+   | 15+   | Medium         |
-| `app/training/`     | 35+   | 20+   | Medium         |
-| `app/coordination/` | 111   | 36    | 32% (improved) |
-| `app/distributed/`  | 25+   | 10+   | Low            |
-| `app/db/`           | 8     | 8     | Good           |
-| `app/rules/`        | 10    | 15    | Good           |
-| `app/models/`       | 12    | 5     | Low            |
-| `app/monitoring/`   | 8     | 0     | **NONE**       |
-| `app/routes/`       | 6     | 0     | **NONE**       |
-| `app/evaluation/`   | 10    | 0     | **NONE**       |
+| Module              | Files | Tests | Coverage         |
+| ------------------- | ----- | ----- | ---------------- |
+| `app/ai/`           | 40+   | 15+   | Medium           |
+| `app/training/`     | 35+   | 20+   | Medium           |
+| `app/coordination/` | 111   | 36    | 32% (improved)   |
+| `app/distributed/`  | 25+   | 10+   | Low              |
+| `app/db/`           | 8     | 8     | Good             |
+| `app/rules/`        | 10    | 15    | Good             |
+| `app/models/`       | 12    | 5     | Low              |
+| `app/monitoring/`   | 8     | 0     | **NONE**         |
+| `app/routes/`       | 4     | 59    | ✅ Good (Dec 26) |
+| `app/evaluation/`   | 3     | 27    | ✅ Good (Dec 26) |
 
 ### Critical Paths Lacking Tests
 
@@ -204,12 +204,15 @@ batch_size = 512  # Line 92 - use config
 ### Recommended Test Files to Create
 
 ```
-tests/unit/coordination/test_idle_resource_daemon.py  ✅ CREATED
-tests/unit/coordination/test_selfplay_scheduler.py    ✅ CREATED
-tests/unit/coordination/test_daemon_manager.py
-tests/unit/monitoring/test_cluster_monitor.py
-tests/unit/routes/test_health_routes.py
-tests/integration/test_p2p_cluster.py
+tests/unit/coordination/test_idle_resource_daemon.py  ✅ CREATED (27 tests)
+tests/unit/coordination/test_selfplay_scheduler.py    ✅ CREATED (22 tests)
+tests/unit/routes/test_cluster.py                     ✅ TRACKED (36 tests)
+tests/unit/routes/test_replay.py                      ✅ TRACKED (10 tests)
+tests/unit/routes/test_training.py                    ✅ TRACKED (13 tests)
+tests/unit/evaluation/test_benchmark_suite.py         ✅ TRACKED (27 tests)
+tests/unit/coordination/test_daemon_manager.py        Pending
+tests/unit/monitoring/test_cluster_monitor.py         Pending
+tests/integration/test_p2p_cluster.py                 Pending
 ```
 
 ---
