@@ -363,7 +363,7 @@ python scripts/run_self_play_soak.py \
 
 | Variable                              | Default | Description                             |
 | ------------------------------------- | ------- | --------------------------------------- |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS`      | `false` | Skip contract validation (2-3x speedup) |
+| `RINGRIFT_SKIP_SHADOW_CONTRACTS`      | `true`  | Skip contract validation (2-3x speedup) |
 | `RINGRIFT_USE_MAKE_UNMAKE`            | `false` | Enable incremental state updates        |
 | `RINGRIFT_USE_BATCH_EVAL`             | `false` | Enable batch position evaluation        |
 | `RINGRIFT_BATCH_EVAL_THRESHOLD`       | `50`    | Min moves for batch eval                |

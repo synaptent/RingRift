@@ -147,6 +147,10 @@ Examples:
     action_group.add_argument("--stop-all", action="store_true", help="Stop all daemons")
     action_group.add_argument("--stop", action="append", dest="stop_daemons",
                                help="Stop specific daemon(s)")
+    action_group.add_argument("--diagnostics", action="store_true",
+                               help="Run startup diagnostics without starting daemons")
+    action_group.add_argument("--skip-diagnostics", action="store_true",
+                               help="Skip startup diagnostics (for faster startup)")
 
     # Display options
     display_group = parser.add_argument_group("Display Options")
@@ -285,6 +289,166 @@ async def watch_status(manager: DaemonManager, args: argparse.Namespace) -> None
         print("\nStopped watching.")
 
 
+async def run_startup_diagnostics(daemons: list[DaemonType], verbose: bool = False) -> dict:
+    """Run pre-flight diagnostics before starting daemons.
+
+    Checks:
+    - Python dependencies
+    - GPU availability
+    - Event bus connectivity
+    - Required config files
+    - Node identity
+
+    Args:
+        daemons: List of daemons to be started
+        verbose: Show detailed diagnostic output
+
+    Returns:
+        Dictionary of diagnostic results
+    """
+    results = {
+        "passed": True,
+        "checks": {},
+        "warnings": [],
+        "errors": [],
+    }
+
+    print("=" * 60)
+    print("STARTUP DIAGNOSTICS")
+    print("=" * 60)
+
+    # 1. Check Python environment
+    import sys
+    results["checks"]["python_version"] = {
+        "value": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "ok": sys.version_info >= (3, 10),
+    }
+    print(f"✓ Python: {results['checks']['python_version']['value']}")
+
+    # 2. Check GPU availability
+    try:
+        import torch
+        has_cuda = torch.cuda.is_available()
+        gpu_count = torch.cuda.device_count() if has_cuda else 0
+        gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "None"
+        results["checks"]["gpu"] = {
+            "available": has_cuda,
+            "count": gpu_count,
+            "name": gpu_name,
+            "ok": True,  # GPU is optional
+        }
+        if has_cuda:
+            print(f"✓ GPU: {gpu_count}x {gpu_name}")
+        else:
+            print("○ GPU: Not available (CPU mode)")
+            results["warnings"].append("No GPU available - some daemons may run slower")
+    except ImportError:
+        results["checks"]["gpu"] = {"available": False, "ok": True}
+        print("○ GPU: PyTorch not installed")
+
+    # 3. Check event bus
+    try:
+        from app.coordination.event_router import get_event_bus
+        bus = get_event_bus()
+        if bus:
+            results["checks"]["event_bus"] = {"available": True, "ok": True}
+            print("✓ Event bus: Available")
+        else:
+            results["checks"]["event_bus"] = {"available": False, "ok": False}
+            print("✗ Event bus: Not initialized")
+            results["warnings"].append("Event bus not available - events may not be routed")
+    except Exception as e:
+        results["checks"]["event_bus"] = {"available": False, "error": str(e), "ok": False}
+        print(f"✗ Event bus: Error - {e}")
+        results["warnings"].append(f"Event bus error: {e}")
+
+    # 4. Check node identity
+    try:
+        import socket
+        hostname = socket.gethostname()
+        results["checks"]["hostname"] = {"value": hostname, "ok": True}
+        print(f"✓ Hostname: {hostname}")
+    except Exception:
+        results["checks"]["hostname"] = {"value": "unknown", "ok": True}
+
+    # 5. Check config files
+    config_dir = Path(__file__).parent.parent / "config"
+    critical_configs = [
+        "distributed_hosts.yaml",
+    ]
+    optional_configs = [
+        "training_config.yaml",
+        "selfplay_config.yaml",
+    ]
+
+    for config_name in critical_configs:
+        config_path = config_dir / config_name
+        if config_path.exists():
+            results["checks"][f"config_{config_name}"] = {"exists": True, "ok": True}
+            print(f"✓ Config: {config_name}")
+        else:
+            results["checks"][f"config_{config_name}"] = {"exists": False, "ok": False}
+            print(f"✗ Config: {config_name} MISSING")
+            results["errors"].append(f"Missing critical config: {config_name}")
+            results["passed"] = False
+
+    for config_name in optional_configs:
+        config_path = config_dir / config_name
+        if config_path.exists():
+            if verbose:
+                print(f"✓ Config: {config_name} (optional)")
+        else:
+            if verbose:
+                print(f"○ Config: {config_name} not found (optional)")
+
+    # 6. Check daemon dependencies
+    deps_ok = True
+    daemon_deps = {
+        DaemonType.AUTO_SYNC: ["app.coordination.auto_sync_daemon"],
+        DaemonType.P2P_BACKEND: ["aiohttp"],
+        DaemonType.QUEUE_POPULATOR: ["app.coordination.queue_populator"],
+        DaemonType.IDLE_RESOURCE: ["app.coordination.idle_resource_daemon"],
+    }
+
+    for daemon in daemons:
+        if daemon in daemon_deps:
+            for dep in daemon_deps[daemon]:
+                try:
+                    __import__(dep.split(".")[0])
+                except ImportError as e:
+                    deps_ok = False
+                    results["warnings"].append(f"{daemon.value} requires {dep}: {e}")
+                    if verbose:
+                        print(f"○ {daemon.value}: Missing dependency {dep}")
+
+    if deps_ok:
+        print(f"✓ Dependencies: All required modules available")
+    else:
+        print(f"○ Dependencies: Some optional modules missing (see warnings)")
+
+    # 7. Summary
+    print("")
+    print("-" * 60)
+    print(f"Daemons to start: {len(daemons)}")
+    for daemon in sorted(daemons, key=lambda d: d.value):
+        print(f"  • {daemon.value}")
+    print("-" * 60)
+
+    if results["warnings"]:
+        print(f"\nWarnings ({len(results['warnings'])}):")
+        for w in results["warnings"]:
+            print(f"  ⚠ {w}")
+
+    if results["errors"]:
+        print(f"\nErrors ({len(results['errors'])}):")
+        for e in results["errors"]:
+            print(f"  ✗ {e}")
+
+    print("=" * 60)
+
+    return results
+
+
 async def start_daemons(
     manager: DaemonManager,
     daemons: list[DaemonType],
@@ -294,6 +458,18 @@ async def start_daemons(
     if not daemons:
         logger.info("No daemons specified to start")
         return
+
+    # Run startup diagnostics unless skipped
+    if not getattr(args, "skip_diagnostics", False):
+        diag = await run_startup_diagnostics(daemons, verbose=args.verbose)
+
+        if not diag["passed"]:
+            logger.error("Startup diagnostics failed - cannot start daemons")
+            for err in diag["errors"]:
+                logger.error(f"  {err}")
+            return
+    else:
+        logger.info("Skipping startup diagnostics (--skip-diagnostics)")
 
     logger.info(f"Starting {len(daemons)} daemon(s)...")
 
@@ -388,6 +564,15 @@ async def main() -> int:
         if args.stop_daemons:
             await stop_daemons(manager, args.stop_daemons, args)
             return 0
+
+        # Handle diagnostics-only mode
+        if args.diagnostics:
+            daemons = get_daemons_to_start(args)
+            if not daemons:
+                # Default to all daemons for diagnostics
+                daemons = list(DaemonType)
+            diag = await run_startup_diagnostics(daemons, verbose=args.verbose)
+            return 0 if diag["passed"] else 1
 
         # Determine daemons to start
         daemons = get_daemons_to_start(args)

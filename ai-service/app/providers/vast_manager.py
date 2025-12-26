@@ -350,14 +350,17 @@ class VastManager(ProviderManager):
             """python3 -c "
 import sqlite3
 import glob
+import sys
 total = 0
 for path in glob.glob('/root/ringrift/ai-service/data/games/*.db'):
     try:
-        conn = sqlite3.connect(path)
-        count = conn.execute('SELECT COUNT(*) FROM games').fetchone()[0]
-        conn.close()
-        total += count
-    except: pass
+        with sqlite3.connect(path, timeout=5) as conn:
+            count = conn.execute('SELECT COUNT(*) FROM games').fetchone()[0]
+            total += count
+    except sqlite3.Error as e:
+        print(f'DB error {path}: {e}', file=sys.stderr)
+    except Exception as e:
+        print(f'Error {path}: {e}', file=sys.stderr)
 print(total)
 " """,
             timeout=20,

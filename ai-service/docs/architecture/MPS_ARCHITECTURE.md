@@ -382,11 +382,11 @@ export RINGRIFT_NN_MEMORY_TIER=hybrid
 ```bash
 # Train on 96GB Mac Studio with high-capacity model
 export RINGRIFT_NN_MEMORY_TIER=high
-python scripts/run_selfplay.py --board square19 --ai-type descent
+python scripts/selfplay.py --board square19 --num-players 2 --engine-mode nn-descent
 
 # Train on 48GB system with lite model
 export RINGRIFT_NN_MEMORY_TIER=low
-python scripts/run_selfplay.py --board hexagonal --ai-type descent
+python scripts/selfplay.py --board hexagonal --num-players 2 --engine-mode nn-descent
 ```
 
 ### Critical Bug Fix

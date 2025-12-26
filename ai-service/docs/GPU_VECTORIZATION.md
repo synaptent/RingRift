@@ -116,7 +116,7 @@ GPU self-play is confirmed safe for NN training data generation with full parity
 
 Environment variables:
 
-- `RINGRIFT_PARITY_VALIDATION=active|passive|off` - Enable parity checking
+- `RINGRIFT_PARITY_VALIDATION=off|warn|strict` - Enable parity checking
 - `RINGRIFT_PARITY_DUMP_DIR=<path>` - Directory for parity failure dumps
 
 ## Future Improvements

@@ -37,6 +37,22 @@ from app.core.async_context import safe_create_task
 
 logger = logging.getLogger(__name__)
 
+# Job scheduler integration (Phase 21.2 - Dec 2025)
+try:
+    from app.coordination.job_scheduler import (
+        JobPriority,
+        PriorityJobScheduler,
+        ScheduledJob,
+        get_scheduler,
+    )
+    HAS_JOB_SCHEDULER = True
+except ImportError:
+    HAS_JOB_SCHEDULER = False
+    get_scheduler = None
+    PriorityJobScheduler = None
+    ScheduledJob = None
+    JobPriority = None
+
 
 @dataclass
 class IdleResourceConfig:
@@ -47,7 +63,10 @@ class IdleResourceConfig:
     idle_threshold_percent: float = 10.0  # <10% GPU utilization
     # Reduced from 900s (15min) to 120s (2min) for faster spawning (Dec 2025)
     idle_duration_seconds: int = 120  # 2 minutes before spawning (was 15 minutes)
+    # Base max concurrent spawns (scaled dynamically based on idle nodes)
     max_concurrent_spawns: int = 4
+    # Maximum absolute cap for spawns (Phase 2B.2 - December 2025)
+    max_spawns_cap: int = 40
     # Board size to GPU memory mapping (GB)
     gpu_memory_thresholds: dict[str, int] = field(default_factory=lambda: {
         "hexagonal_4p": 80,   # Largest board, 4 players
@@ -140,6 +159,33 @@ class IdleResourceDaemon:
             f"idle_threshold={self.config.idle_threshold_percent}%"
         )
 
+    def _get_dynamic_max_spawns(self) -> int:
+        """Calculate max concurrent spawns based on idle node count.
+
+        December 2025 - Phase 2B.2: Scale job spawning proportionally
+        to idle capacity instead of fixed 4.
+
+        Returns:
+            Max spawns: base * (idle_nodes / 4), capped at max_spawns_cap
+        """
+        # Count idle nodes
+        idle_nodes = sum(
+            1 for node in self._node_states.values()
+            if node.gpu_utilization < self.config.idle_threshold_percent
+            and node.idle_since > 0
+        )
+
+        if idle_nodes <= 0:
+            return self.config.max_concurrent_spawns
+
+        # Scale: 2 spawns per idle node, minimum of base (4), max of cap (40)
+        scaled = max(
+            self.config.max_concurrent_spawns,
+            min(idle_nodes * 2, self.config.max_spawns_cap)
+        )
+
+        return scaled
+
     def is_running(self) -> bool:
         """Check if the daemon is running."""
         return self._running
@@ -216,7 +262,11 @@ class IdleResourceDaemon:
                 await asyncio.sleep(60)  # Back off on error
 
     async def _check_and_spawn(self) -> None:
-        """Check for idle nodes and spawn selfplay jobs."""
+        """Check for idle nodes and spawn selfplay jobs.
+
+        December 2025 - Phase 2B.2: Dynamically scales spawning based on
+        idle node count instead of fixed max of 4.
+        """
         try:
             # Get cluster status
             nodes = await self._get_cluster_nodes()
@@ -228,10 +278,35 @@ class IdleResourceDaemon:
             # Get queue depth for scaling decisions
             queue_depth = await self._get_queue_depth()
 
-            # Check each node
-            for node in nodes:
-                if self._should_spawn(node, queue_depth):
-                    await self._spawn_selfplay(node)
+            # Get dynamic max spawns based on current idle capacity
+            max_spawns = self._get_dynamic_max_spawns()
+
+            # Collect nodes that need spawning
+            spawn_candidates = [
+                node for node in nodes
+                if self._should_spawn(node, queue_depth)
+            ]
+
+            if not spawn_candidates:
+                return
+
+            # Log scaling decision
+            logger.info(
+                f"[IdleResourceDaemon] Spawn check: {len(spawn_candidates)} candidates, "
+                f"max_spawns={max_spawns} (dynamic), queue_depth={queue_depth}"
+            )
+
+            # Spawn up to max_spawns jobs concurrently
+            spawn_tasks = []
+            for node in spawn_candidates[:max_spawns]:
+                spawn_tasks.append(self._spawn_selfplay(node))
+
+            if spawn_tasks:
+                results = await asyncio.gather(*spawn_tasks, return_exceptions=True)
+                successful = sum(1 for r in results if r is True)
+                logger.info(
+                    f"[IdleResourceDaemon] Spawned {successful}/{len(spawn_tasks)} jobs"
+                )
 
         except Exception as e:
             logger.warning(f"Check and spawn error: {e}")
@@ -392,6 +467,37 @@ class IdleResourceDaemon:
                     f"config={config_key}, games={games}, "
                     f"gpu_memory={node.gpu_memory_total_gb:.0f}GB"
                 )
+
+                # Phase 21.2: Also schedule via PriorityJobScheduler for tracking
+                if HAS_JOB_SCHEDULER and get_scheduler:
+                    try:
+                        scheduler = get_scheduler()
+                        if scheduler:
+                            # Parse config key for job config
+                            parts = config_key.rsplit("_", 1)
+                            board_type = parts[0] if parts else config_key
+                            num_players = int(parts[1].replace("p", "")) if len(parts) > 1 else 2
+
+                            job = ScheduledJob(
+                                job_type="selfplay",
+                                priority=JobPriority.NORMAL,  # Idle-spawned jobs are normal priority
+                                config={
+                                    "board_type": board_type,
+                                    "num_players": num_players,
+                                    "games": games,
+                                    "config_key": config_key,
+                                    "source": "idle_resource_daemon",
+                                },
+                                host_preference=node.node_id,
+                                requires_gpu=True,
+                                estimated_duration_seconds=games * 10.0,  # ~10s per game estimate
+                            )
+                            scheduler.schedule(job)
+                            logger.debug(
+                                f"[IdleResourceDaemon] Scheduled job via JobScheduler: {config_key}"
+                            )
+                    except Exception as e:
+                        logger.debug(f"[IdleResourceDaemon] JobScheduler integration failed: {e}")
 
                 # Spawn via P2P job distribution
                 success = await self._distribute_job(node, config_key, games)

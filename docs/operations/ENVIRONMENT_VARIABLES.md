@@ -35,6 +35,7 @@ This document provides comprehensive documentation for all environment variables
 - [Rate Limiting](#rate-limiting)
 - [Logging](#logging)
 - [CORS](#cors)
+- [Client/Frontend](#clientfrontend)
 - [Feature Flags](#feature-flags)
 - [Game Configuration](#game-configuration)
 - [File Storage](#file-storage)
@@ -607,6 +608,126 @@ Public client URL for redirects.
 | Required | No                                            |
 
 Comma-separated list of allowed CORS origins.
+
+---
+
+## Client/Frontend
+
+These variables are injected into the Vite-built client bundle. **Never**
+store secrets in `VITE_*` variables; they are public.
+
+### `VITE_API_URL`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Optional override for the client API base URL. When unset, the client uses
+same-origin `/api` (with a dev fallback to `http://localhost:3000` when
+running on `localhost:5173`).
+
+### `VITE_WS_URL`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Optional override for the client WebSocket base URL. When unset, the client
+derives a WebSocket origin from `VITE_API_URL` or the browser origin.
+
+### `VITE_ERROR_REPORTING_ENABLED`
+
+| Property | Value     |
+| -------- | --------- |
+| Type     | `boolean` |
+| Default  | `false`   |
+| Required | No        |
+
+Enable lightweight client-side error reporting to the backend.
+
+### `VITE_ERROR_REPORTING_ENDPOINT`
+
+| Property | Value                |
+| -------- | -------------------- |
+| Type     | `string`             |
+| Default  | `/api/client-errors` |
+| Required | No                   |
+
+Endpoint path used for client error reports when enabled.
+
+### `VITE_ERROR_REPORTING_MAX_EVENTS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `50`     |
+| Required | No       |
+
+Maximum client error reports per browser session.
+
+### `VITE_DIFFICULTY_CALIBRATION_TELEMETRY_ENABLED`
+
+| Property | Value     |
+| -------- | --------- |
+| Type     | `boolean` |
+| Default  | `true`    |
+| Required | No        |
+
+Enable AI difficulty calibration telemetry. Set to `false` to disable.
+
+### `VITE_RULES_UX_TELEMETRY_ENABLED`
+
+| Property | Value     |
+| -------- | --------- |
+| Type     | `boolean` |
+| Default  | `true`    |
+| Required | No        |
+
+Enable rules UX telemetry. Set to `false` to disable.
+
+### `VITE_RULES_UX_HELP_OPEN_SAMPLE_RATE`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `1.0`    |
+| Required | No       |
+
+Sampling rate (0.0–1.0) for `rules_help_open` telemetry events.
+
+### `VITE_CLIENT_BUILD`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Optional client build identifier used in telemetry/debugging.
+
+### `VITE_GIT_SHA`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Optional git SHA used in telemetry/debugging.
+
+### `VITE_APP_VERSION`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Optional app version string used in telemetry/debugging.
 
 ---
 

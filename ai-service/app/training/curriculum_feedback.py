@@ -1938,6 +1938,15 @@ def wire_all_curriculum_feedback(
     except Exception as e:
         logger.warning(f"Failed to wire quality to curriculum: {e}")
 
+    # Wire epoch events for mid-training updates (December 2025)
+    try:
+        watchers["epoch"] = wire_epoch_to_curriculum(
+            check_interval_epochs=5,
+            auto_export=auto_export,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to wire epoch to curriculum: {e}")
+
     logger.info(
         f"[wire_all_curriculum_feedback] Wired {len(watchers)} curriculum feedback integrations"
     )
@@ -2245,3 +2254,316 @@ def get_quality_budget_multiplier(config_key: str) -> float:
     if _quality_watcher is None:
         return 1.0
     return _quality_watcher.get_budget_multiplier(config_key)
+
+
+# =============================================================================
+# Training Epoch → Curriculum Updates (December 2025)
+# =============================================================================
+
+class EpochToCurriculumWatcher:
+    """Watches for training epoch completions and updates curriculum mid-training.
+
+    Subscribes to training.epoch.completed events and adjusts curriculum weights
+    based on training progress:
+    - Rapid improvement (>10% loss reduction) → reduce weight (training is working)
+    - Stalled progress (<2% loss reduction over 5 epochs) → boost weight (needs help)
+    - Regression (loss increasing) → significantly boost weight (urgent)
+
+    This enables the system to adapt curriculum weights during long training runs
+    rather than waiting until training completes.
+
+    Usage:
+        from app.training.curriculum_feedback import wire_epoch_to_curriculum
+
+        # Wire epoch events to curriculum
+        watcher = wire_epoch_to_curriculum()
+    """
+
+    # Progress thresholds
+    RAPID_IMPROVEMENT_THRESHOLD = 0.10  # 10% loss reduction
+    STALLED_THRESHOLD = 0.02  # 2% or less improvement
+    REGRESSION_THRESHOLD = 0.05  # 5% loss increase
+
+    # Weight adjustments
+    RAPID_IMPROVEMENT_ADJUSTMENT = -0.1  # Reduce priority (training working)
+    STALLED_ADJUSTMENT = 0.15  # Boost priority (needs more focus)
+    REGRESSION_ADJUSTMENT = 0.25  # Major boost (urgent intervention)
+
+    def __init__(
+        self,
+        feedback: CurriculumFeedback | None = None,
+        check_interval_epochs: int = 5,
+        auto_export: bool = True,
+        export_path: str = "data/curriculum_weights.json",
+    ):
+        """Initialize the epoch-to-curriculum watcher.
+
+        Args:
+            feedback: CurriculumFeedback instance (uses singleton if None)
+            check_interval_epochs: How often to evaluate progress (in epochs)
+            auto_export: Whether to auto-export weights after adjustment
+            export_path: Path to export weights JSON
+        """
+        self.feedback = feedback or get_curriculum_feedback()
+        self.check_interval_epochs = check_interval_epochs
+        self.auto_export = auto_export
+        self.export_path = export_path
+
+        # Track loss history per config
+        self._loss_history: dict[str, list[tuple[int, float]]] = defaultdict(list)
+        self._max_history = 20  # Keep last 20 epochs
+
+        self._subscribed = False
+        self._adjustments_made = 0
+
+    def subscribe_to_epoch_events(self) -> bool:
+        """Subscribe to training.epoch.completed events from the event bus.
+
+        Returns:
+            True if successfully subscribed
+        """
+        try:
+            from app.training.event_integration import TrainingTopics
+            from app.events.bus import get_bus
+
+            bus = get_bus()
+            if bus is None:
+                logger.debug("[EpochToCurriculumWatcher] Event bus not available")
+                return False
+
+            bus.subscribe(TrainingTopics.EPOCH_COMPLETED, self._on_epoch_completed)
+            self._subscribed = True
+            logger.info("[EpochToCurriculumWatcher] Subscribed to EPOCH_COMPLETED events")
+            return True
+        except ImportError as e:
+            logger.debug(f"[EpochToCurriculumWatcher] Import failed: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"[EpochToCurriculumWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from epoch events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.training.event_integration import TrainingTopics
+            from app.events.bus import get_bus
+
+            bus = get_bus()
+            if bus:
+                bus.unsubscribe(TrainingTopics.EPOCH_COMPLETED, self._on_epoch_completed)
+            self._subscribed = False
+        except Exception:
+            pass
+
+    def _on_epoch_completed(self, event: Any) -> None:
+        """Handle training.epoch.completed event.
+
+        Records loss history and potentially adjusts curriculum weights
+        at checkpoint intervals.
+        """
+        # Extract event data
+        if hasattr(event, 'payload'):
+            data = event.payload
+        elif hasattr(event, '__dict__'):
+            data = event.__dict__
+        else:
+            data = event if isinstance(event, dict) else {}
+
+        config_key = data.get("config_key", "")
+        epoch = data.get("epoch", 0)
+        val_loss = data.get("val_loss")
+        train_loss = data.get("train_loss", 0)
+
+        if not config_key or epoch == 0:
+            return
+
+        # Use val_loss if available, otherwise train_loss
+        loss = val_loss if val_loss is not None else train_loss
+
+        # Track loss history
+        history = self._loss_history[config_key]
+        history.append((epoch, loss))
+
+        # Trim to max history
+        if len(history) > self._max_history:
+            self._loss_history[config_key] = history[-self._max_history:]
+
+        # Check progress at interval
+        if epoch % self.check_interval_epochs == 0 and len(history) >= self.check_interval_epochs:
+            self._evaluate_progress(config_key, epoch)
+
+    def _evaluate_progress(self, config_key: str, current_epoch: int) -> None:
+        """Evaluate training progress and potentially adjust curriculum weights.
+
+        Args:
+            config_key: Config identifier
+            current_epoch: Current training epoch
+        """
+        history = self._loss_history.get(config_key, [])
+        if len(history) < self.check_interval_epochs:
+            return
+
+        # Get recent losses
+        recent = history[-self.check_interval_epochs:]
+        older = history[-self.check_interval_epochs * 2:-self.check_interval_epochs] if len(history) >= self.check_interval_epochs * 2 else []
+
+        current_loss = recent[-1][1]
+        start_loss = recent[0][1]
+
+        # Calculate improvement rate
+        if start_loss > 0:
+            improvement_rate = (start_loss - current_loss) / start_loss
+        else:
+            improvement_rate = 0.0
+
+        # Compare to older period if available
+        older_improvement = 0.0
+        if older:
+            older_start = older[0][1]
+            older_end = older[-1][1]
+            if older_start > 0:
+                older_improvement = (older_start - older_end) / older_start
+
+        # Determine adjustment
+        adjustment = 0.0
+        reason = ""
+
+        if improvement_rate > self.RAPID_IMPROVEMENT_THRESHOLD:
+            # Rapid improvement - training is working well
+            adjustment = self.RAPID_IMPROVEMENT_ADJUSTMENT
+            reason = f"rapid_improvement_{improvement_rate:.1%}"
+        elif improvement_rate < -self.REGRESSION_THRESHOLD:
+            # Regression - loss is increasing
+            adjustment = self.REGRESSION_ADJUSTMENT
+            reason = f"regression_{improvement_rate:.1%}"
+        elif abs(improvement_rate) < self.STALLED_THRESHOLD:
+            # Stalled - very little progress
+            # Only boost if we were previously improving
+            if older_improvement > self.STALLED_THRESHOLD:
+                adjustment = self.STALLED_ADJUSTMENT
+                reason = f"stalled_after_progress_{improvement_rate:.1%}"
+
+        if adjustment != 0.0:
+            self._apply_adjustment(config_key, adjustment, reason, current_epoch, improvement_rate)
+
+    def _apply_adjustment(
+        self,
+        config_key: str,
+        adjustment: float,
+        reason: str,
+        epoch: int,
+        improvement_rate: float,
+    ) -> None:
+        """Apply curriculum weight adjustment.
+
+        Args:
+            config_key: Config identifier
+            adjustment: Weight adjustment amount
+            reason: Reason for adjustment
+            epoch: Current epoch
+            improvement_rate: Training improvement rate
+        """
+        # Get current weight
+        weights = self.feedback.get_curriculum_weights()
+        current_weight = weights.get(config_key, 1.0)
+
+        # Apply adjustment with bounds
+        new_weight = max(
+            self.feedback.weight_min,
+            min(self.feedback.weight_max, current_weight + adjustment)
+        )
+
+        # Update weight in feedback
+        self.feedback._current_weights[config_key] = new_weight
+        self._adjustments_made += 1
+
+        logger.info(
+            f"[EpochToCurriculumWatcher] Mid-training curriculum adjustment for {config_key} "
+            f"at epoch {epoch}: weight {current_weight:.2f} -> {new_weight:.2f} "
+            f"(reason: {reason})"
+        )
+
+        # Auto-export if enabled
+        if self.auto_export:
+            try:
+                self.feedback.export_weights_json(self.export_path)
+            except Exception as e:
+                logger.warning(f"Failed to export weights: {e}")
+
+        # Emit curriculum updated event
+        self.feedback._emit_curriculum_updated(config_key, new_weight, f"epoch_{reason}")
+
+    def get_loss_history(self, config_key: str) -> list[tuple[int, float]]:
+        """Get loss history for a config.
+
+        Args:
+            config_key: Config identifier
+
+        Returns:
+            List of (epoch, loss) tuples
+        """
+        return list(self._loss_history.get(config_key, []))
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get watcher statistics.
+
+        Returns:
+            Dict with statistics
+        """
+        return {
+            "subscribed": self._subscribed,
+            "adjustments_made": self._adjustments_made,
+            "configs_tracked": len(self._loss_history),
+            "check_interval_epochs": self.check_interval_epochs,
+            "thresholds": {
+                "rapid_improvement": self.RAPID_IMPROVEMENT_THRESHOLD,
+                "stalled": self.STALLED_THRESHOLD,
+                "regression": self.REGRESSION_THRESHOLD,
+            },
+        }
+
+
+# Singleton epoch watcher
+_epoch_watcher: EpochToCurriculumWatcher | None = None
+
+
+def wire_epoch_to_curriculum(
+    check_interval_epochs: int = 5,
+    auto_export: bool = True,
+) -> EpochToCurriculumWatcher:
+    """Wire training epoch events to curriculum weight adjustments.
+
+    This enables mid-training curriculum updates based on training progress:
+    - Rapid improvement → reduce training priority (training is working)
+    - Stalled progress → boost priority (needs more focus)
+    - Regression → major boost (urgent intervention)
+
+    Args:
+        check_interval_epochs: How often to evaluate progress (in epochs)
+        auto_export: Whether to auto-export weights after adjustment
+
+    Returns:
+        EpochToCurriculumWatcher instance
+    """
+    global _epoch_watcher
+
+    _epoch_watcher = EpochToCurriculumWatcher(
+        check_interval_epochs=check_interval_epochs,
+        auto_export=auto_export,
+    )
+    _epoch_watcher.subscribe_to_epoch_events()
+
+    logger.info(
+        f"[wire_epoch_to_curriculum] EPOCH_COMPLETED events wired to curriculum "
+        f"(check_interval={check_interval_epochs} epochs)"
+    )
+
+    return _epoch_watcher
+
+
+def get_epoch_curriculum_watcher() -> EpochToCurriculumWatcher | None:
+    """Get the global epoch-to-curriculum watcher if configured."""
+    return _epoch_watcher

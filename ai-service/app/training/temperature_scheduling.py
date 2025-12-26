@@ -1005,9 +1005,59 @@ def wire_exploration_boost(
                 f"boost reset to 1.0"
             )
 
+        def on_training_loss_trend(event):
+            """Handle TRAINING_LOSS_TREND - adjust exploration based on training progress.
+
+            Phase 21.2 (Dec 2025): This completes the TRAINING_LOSS → DATA_COLLECTION
+            feedback loop. When training is stalled or degrading, we increase exploration
+            to generate more diverse training games.
+
+            Trend effects:
+            - "improving": Keep current boost (training is working)
+            - "stalled": Increase exploration by 10% (need more diverse data)
+            - "degrading": Increase exploration by 20% (need significantly different data)
+            """
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config_key", "")
+
+            if event_config != config_key:
+                return
+
+            trend = payload.get("trend", "unknown")
+            current_boost = scheduler.get_exploration_boost()
+
+            if trend == "stalled":
+                # Training is stalled - increase exploration to generate diverse games
+                new_boost = min(2.0, current_boost * 1.1)
+                scheduler.set_exploration_boost(new_boost)
+                logger.info(
+                    f"[TemperatureScheduler] Training stalled for {config_key}, "
+                    f"boost increased to {new_boost:.2f}"
+                )
+
+            elif trend == "degrading":
+                # Training is getting worse - significantly increase exploration
+                new_boost = min(2.0, current_boost * 1.2)
+                scheduler.set_exploration_boost(new_boost)
+                logger.warning(
+                    f"[TemperatureScheduler] Training degrading for {config_key}, "
+                    f"boost increased to {new_boost:.2f}"
+                )
+
+            elif trend == "improving":
+                # Training is improving - gradually reduce exploration boost
+                if current_boost > 1.0:
+                    new_boost = max(1.0, current_boost * 0.95)
+                    scheduler.set_exploration_boost(new_boost)
+                    logger.debug(
+                        f"[TemperatureScheduler] Training improving for {config_key}, "
+                        f"boost reduced to {new_boost:.2f}"
+                    )
+
         # Subscribe to feedback events
         bus.subscribe(DataEventType.PROMOTION_FAILED, on_promotion_failed)
         bus.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
+        bus.subscribe(DataEventType.TRAINING_LOSS_TREND, on_training_loss_trend)
 
         logger.debug(f"[TemperatureScheduler] Wired exploration boost for {config_key}")
         return True

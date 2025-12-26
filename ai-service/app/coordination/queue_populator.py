@@ -182,6 +182,9 @@ class QueuePopulator:
         self._work_queue = work_queue
         self._elo_db_path = elo_db_path
 
+        # Scale queue depth to cluster size (Phase 2B.1 - December 2025)
+        self._scale_queue_depth_to_cluster()
+
         # Track configuration targets
         self._targets: dict[str, ConfigTarget] = {}
         self._init_targets()
@@ -192,6 +195,43 @@ class QueuePopulator:
         # Track what we've queued
         self._queued_work_ids: set[str] = set()
         self._last_populate_time: float = 0
+
+    def _scale_queue_depth_to_cluster(self) -> None:
+        """Scale min_queue_depth based on cluster size.
+
+        December 2025 - Phase 2B.1: Dynamic queue scaling to prevent
+        queue starvation with large clusters (43+ nodes).
+
+        Target: 2 items per active node, minimum 50.
+        """
+        try:
+            from app.distributed.cluster_monitor import ClusterMonitor
+
+            monitor = ClusterMonitor()
+            # Quick check without expensive operations
+            status = monitor.get_cluster_status(
+                include_game_counts=False,
+                include_training_status=False,
+                include_disk_usage=False,
+            )
+            active_nodes = status.active_nodes
+
+            if active_nodes > 0:
+                # 2 items per node minimum, floor of 50
+                scaled_depth = max(50, active_nodes * 2)
+                old_depth = self.config.min_queue_depth
+                self.config.min_queue_depth = scaled_depth
+                logger.info(
+                    f"[QueuePopulator] Scaled queue depth: {old_depth} -> {scaled_depth} "
+                    f"(for {active_nodes} active nodes)"
+                )
+            else:
+                logger.debug("[QueuePopulator] No active nodes detected, using default queue depth")
+
+        except ImportError:
+            logger.debug("[QueuePopulator] ClusterMonitor not available, using default queue depth")
+        except Exception as e:
+            logger.warning(f"[QueuePopulator] Failed to scale queue depth: {e}")
 
     def _init_targets(self) -> None:
         """Initialize targets for all board/player configurations."""

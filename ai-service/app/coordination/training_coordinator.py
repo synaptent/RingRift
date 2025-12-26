@@ -363,7 +363,11 @@ class TrainingCoordinator:
             bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
             bus.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
 
-            logger.info("[TrainingCoordinator] Subscribed to cluster health and regression events")
+            # Subscribe to quality events (December 2025 - real-time quality feedback)
+            bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._on_low_quality_warning)
+            bus.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY, self._on_training_blocked_by_quality)
+
+            logger.info("[TrainingCoordinator] Subscribed to cluster health, regression, and quality events")
         except Exception as e:
             logger.warning(f"[TrainingCoordinator] Failed to subscribe to cluster events: {e}")
 
@@ -548,6 +552,99 @@ class TrainingCoordinator:
         )
 
         return True
+
+    def _on_low_quality_warning(self, event: Any) -> None:
+        """Handle LOW_QUALITY_DATA_WARNING event - reduce training intensity.
+
+        December 2025: Real-time quality feedback loop.
+        When data quality drops, we reduce training intensity rather than
+        continuing to train on low-quality data.
+
+        Actions:
+        - Log warning with quality details
+        - Reduce cluster capacity allocation
+        - Emit event for monitoring
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config_key = payload.get("config") or payload.get("config_key", "")
+        quality_score = payload.get("quality_score", 0.0)
+        threshold = payload.get("threshold", 0.0)
+        reason = payload.get("reason", "unknown")
+
+        self._events_processed += 1
+
+        logger.warning(
+            f"[TrainingCoordinator] Low quality data warning for {config_key}: "
+            f"score={quality_score:.2f} (threshold={threshold:.2f}), reason={reason}"
+        )
+
+        # Reduce capacity for configs with quality issues
+        old_capacity = self._cluster_capacity
+        self._cluster_capacity = max(0.3, self._cluster_capacity * 0.7)
+
+        if old_capacity != self._cluster_capacity:
+            logger.info(
+                f"[TrainingCoordinator] Reduced capacity due to quality warning: "
+                f"{old_capacity:.1%} → {self._cluster_capacity:.1%}"
+            )
+
+            self._emit_training_event(
+                "capacity_reduced",
+                job_id="",
+                board_type=config_key.split("_")[0] if "_" in config_key else "",
+                num_players=2,
+                reason="low_quality_data",
+                quality_score=quality_score,
+            )
+
+    def _on_training_blocked_by_quality(self, event: Any) -> None:
+        """Handle TRAINING_BLOCKED_BY_QUALITY event - halt training for this config.
+
+        December 2025: Critical quality gating.
+        When quality gate blocks training, we must halt any active training
+        for this config and prevent new training until quality improves.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config_key = payload.get("config") or payload.get("config_key", "")
+        quality_score = payload.get("quality_score", 0.0)
+        reason = payload.get("reason", "Quality gate blocked")
+
+        if not config_key:
+            logger.debug("[TrainingCoordinator] TRAINING_BLOCKED_BY_QUALITY without config_key")
+            return
+
+        self._events_processed += 1
+        self._errors_count += 1
+        self._last_error = f"Quality gate blocked for {config_key}: {quality_score:.2f}"
+
+        logger.error(
+            f"[TrainingCoordinator] Training blocked by quality for {config_key}: "
+            f"score={quality_score:.2f}, reason={reason}"
+        )
+
+        # Pause training for this config
+        paused = self._pause_training_for_config(
+            config_key,
+            reason=f"quality_gate_blocked_score_{quality_score:.2f}"
+        )
+
+        # Emit event for monitoring
+        self._emit_via_router(
+            "TRAINING_HALTED",
+            {
+                "config_key": config_key,
+                "reason": "quality_gate_blocked",
+                "quality_score": quality_score,
+                "timestamp": time.time(),
+            },
+        )
+
+        if paused:
+            logger.warning(
+                f"[TrainingCoordinator] Halted training for {config_key} due to quality gate"
+            )
 
     @property
     def cluster_healthy(self) -> bool:

@@ -67,10 +67,11 @@ ALL_CONFIGS = [
 ]
 
 # Priority calculation weights
-STALENESS_WEIGHT = 0.4  # Data freshness importance
-ELO_VELOCITY_WEIGHT = 0.3  # ELO improvement velocity
-TRAINING_NEED_WEIGHT = 0.2  # Waiting for training
-EXPLORATION_BOOST_WEIGHT = 0.1  # Feedback loop exploration signal
+STALENESS_WEIGHT = 0.35  # Data freshness importance
+ELO_VELOCITY_WEIGHT = 0.25  # ELO improvement velocity
+TRAINING_NEED_WEIGHT = 0.15  # Waiting for training
+EXPLORATION_BOOST_WEIGHT = 0.10  # Feedback loop exploration signal
+CURRICULUM_WEIGHT = 0.15  # Curriculum-based priority (Phase 2C.3)
 
 # Staleness thresholds (hours)
 FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
@@ -92,6 +93,7 @@ class ConfigPriority:
     elo_velocity: float = 0.0  # ELO points per day
     training_pending: bool = False
     exploration_boost: float = 1.0
+    curriculum_weight: float = 1.0  # Phase 2C.3: Curriculum-based weight
 
     # Computed priority
     priority_score: float = 0.0
@@ -214,6 +216,9 @@ class SelfplayScheduler:
         # Get feedback loop signals
         feedback_data = await self._get_feedback_signals()
 
+        # Get curriculum weights (Phase 2C.3)
+        curriculum_data = await self._get_curriculum_weights()
+
         # Update each config
         for config_key, priority in self._config_priorities.items():
             # Update staleness
@@ -229,6 +234,10 @@ class SelfplayScheduler:
                 priority.exploration_boost = feedback_data[config_key].get("exploration_boost", 1.0)
                 priority.training_pending = feedback_data[config_key].get("training_pending", False)
 
+            # Update curriculum weight (Phase 2C.3)
+            if config_key in curriculum_data:
+                priority.curriculum_weight = curriculum_data[config_key]
+
             # Compute priority score
             priority.priority_score = self._compute_priority_score(priority)
 
@@ -238,6 +247,8 @@ class SelfplayScheduler:
         """Compute overall priority score for a configuration.
 
         Higher score = higher priority for selfplay allocation.
+
+        December 2025 - Phase 2C.3: Now includes curriculum weight factor.
         """
         # Base factors
         staleness = priority.staleness_factor * STALENESS_WEIGHT
@@ -245,8 +256,12 @@ class SelfplayScheduler:
         training = (1.0 if priority.training_pending else 0.0) * TRAINING_NEED_WEIGHT
         exploration = (priority.exploration_boost - 1.0) * EXPLORATION_BOOST_WEIGHT
 
+        # Phase 2C.3: Curriculum weight factor (normalized around 1.0)
+        # Higher curriculum weight = more data needed for this config
+        curriculum = (priority.curriculum_weight - 1.0) * CURRICULUM_WEIGHT
+
         # Combine factors
-        score = staleness + velocity + training + exploration
+        score = staleness + velocity + training + exploration + curriculum
 
         # Apply exploration boost as multiplier
         score *= priority.exploration_boost
@@ -344,6 +359,32 @@ class SelfplayScheduler:
             pass
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error getting feedback signals: {e}")
+
+        return result
+
+    async def _get_curriculum_weights(self) -> dict[str, float]:
+        """Get curriculum weights per config.
+
+        December 2025 - Phase 2C.3: Wire curriculum weights into priority calculation.
+        Higher curriculum weight = config needs more training data.
+
+        Returns:
+            Dict mapping config_key to curriculum weight (default 1.0)
+        """
+        result = {}
+
+        try:
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+            if feedback:
+                # Get current weights from curriculum feedback
+                result = dict(feedback._current_weights)
+
+        except ImportError:
+            logger.debug("[SelfplayScheduler] curriculum_feedback not available")
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error getting curriculum weights: {e}")
 
         return result
 
@@ -550,6 +591,7 @@ class SelfplayScheduler:
                     "staleness_hours": p.staleness_hours,
                     "elo_velocity": p.elo_velocity,
                     "exploration_boost": p.exploration_boost,
+                    "curriculum_weight": p.curriculum_weight,
                     "games_allocated": p.games_allocated,
                 }
                 for cfg, p in self._config_priorities.items()
@@ -570,6 +612,7 @@ class SelfplayScheduler:
                 "staleness_hours": p.staleness_hours,
                 "elo_velocity": p.elo_velocity,
                 "exploration_boost": p.exploration_boost,
+                "curriculum_weight": p.curriculum_weight,
             }
             for p in sorted_configs[:n]
         ]

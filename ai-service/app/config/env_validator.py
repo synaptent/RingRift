@@ -276,8 +276,8 @@ CLUSTER_AUTH_TOKEN = EnvVar(
 SKIP_SHADOW_CONTRACTS = EnvVar(
     name="RINGRIFT_SKIP_SHADOW_CONTRACTS",
     priority=EnvVarPriority.OPTIONAL,
-    default="false",
-    description="Skip shadow contract validation (for testing)",
+    default="true",
+    description="Skip shadow contract validation (performance default)",
     validator=is_boolean,
     validator_error="Must be true or false",
 )
@@ -285,8 +285,8 @@ SKIP_SHADOW_CONTRACTS = EnvVar(
 PARITY_VALIDATION = EnvVar(
     name="RINGRIFT_PARITY_VALIDATION",
     priority=EnvVarPriority.OPTIONAL,
-    default="warn",
-    description="Parity validation mode: strict, warn, skip",
+    default="off",
+    description="Parity validation mode: off, warn, strict",
 )
 
 # Process management

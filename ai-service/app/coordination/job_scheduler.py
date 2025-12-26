@@ -104,6 +104,18 @@ try:
 except ImportError:
     MIN_MEMORY_GB_FOR_TASKS = 64  # Skip nodes with less than this to avoid OOM
 
+# Resource optimizer PID controller integration (Phase 21.2 - Dec 2025)
+try:
+    from app.coordination.resource_optimizer import (
+        get_resource_optimizer,
+        should_scale_down,
+    )
+    _RESOURCE_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    _RESOURCE_OPTIMIZER_AVAILABLE = False
+    get_resource_optimizer = None
+    should_scale_down = None
+
 # Elo curriculum configuration
 ELO_CURRICULUM_ENABLED = True
 
@@ -330,6 +342,17 @@ class PriorityJobScheduler:
                     if not is_available:
                         continue
 
+                # Phase 21.2: Check PID controller for resource saturation
+                # Skip LOW/NORMAL priority jobs if resources are saturated (should_scale_down)
+                if _RESOURCE_OPTIMIZER_AVAILABLE and should_scale_down:
+                    resource_type = "gpu" if job.requires_gpu else "cpu"
+                    if job.priority >= JobPriority.NORMAL and should_scale_down(resource_type):
+                        logger.debug(
+                            f"[JobScheduler] Skipping {job.job_type} on {host_name}: "
+                            f"PID controller recommends scaling down {resource_type}"
+                        )
+                        continue
+
                 # Found a match
                 self._queue.pop(job_idx)
                 job.started_at = time.time()
@@ -404,6 +427,17 @@ class PriorityJobScheduler:
             return True
         except ValueError:
             return False
+
+    def get_queue_depth(self) -> int:
+        """Get total number of pending jobs in the queue.
+
+        Phase 24.2: Simple accessor for queue depth, used by IdleResourceDaemon
+        for queue-aware scaling decisions.
+
+        Returns:
+            Total number of jobs waiting in the queue.
+        """
+        return len(self._queue)
 
     def get_queue_stats(self) -> dict[str, int]:
         """Get statistics about queued jobs by priority."""
@@ -524,6 +558,10 @@ def get_scheduler() -> PriorityJobScheduler:
     if _scheduler is None:
         _scheduler = PriorityJobScheduler()
     return _scheduler
+
+
+# Alias for compatibility (Phase 24.2 - used by IdleResourceDaemon)
+get_job_scheduler = get_scheduler
 
 
 def reset_scheduler() -> None:
@@ -1270,6 +1308,7 @@ __all__ = [
     "get_cpu_rich_hosts",
     "get_gpu_rich_hosts",
     "get_job_migrator",
+    "get_job_scheduler",  # Alias for get_scheduler (Phase 24.2)
     "get_scheduler",
     "get_underserved_configs",
     "reset_job_migrator",

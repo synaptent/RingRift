@@ -121,6 +121,14 @@ except ImportError:
     def update_sync_sources_count(*args, **kwargs):
         return None
 
+# Event emission for sync feedback loops (Phase 21.2 - Dec 2025)
+try:
+    from app.distributed.data_events import emit_sync_stalled
+    HAS_SYNC_EVENTS = True
+except ImportError:
+    emit_sync_stalled = None
+    HAS_SYNC_EVENTS = False
+
 
 class SyncCategory(Enum):
     """Categories of data to sync."""
@@ -1453,6 +1461,19 @@ class SyncCoordinator:
                     f"Background sync timed out after {self._sync_deadline_seconds}s "
                     f"(consecutive failures: {self._consecutive_failures})"
                 )
+                # Emit SYNC_STALLED event for feedback loops (Phase 21.2 - Dec 2025)
+                if HAS_SYNC_EVENTS and emit_sync_stalled:
+                    try:
+                        await emit_sync_stalled(
+                            source_host="cluster",
+                            target_host=socket.gethostname(),
+                            data_type="background_sync",
+                            timeout_seconds=self._sync_deadline_seconds,
+                            retry_count=self._consecutive_failures,
+                            source="sync_coordinator.py",
+                        )
+                    except Exception:
+                        pass  # Best effort event emission
 
             except Exception as e:
                 self._consecutive_failures += 1

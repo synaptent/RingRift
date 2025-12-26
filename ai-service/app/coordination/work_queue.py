@@ -637,6 +637,8 @@ class WorkQueue:
 
         # Notify (outside lock)
         self.notifier.on_work_completed(item)
+        # Emit event to unified coordination (December 2025)
+        self._emit_work_event("WORK_COMPLETED", item, result=result or {})
         return True
 
     def fail_work(self, work_id: str, error: str = "") -> bool:
@@ -666,6 +668,13 @@ class WorkQueue:
                 self._save_stats()
                 logger.error(f"Work {work_id} permanently failed: {error}")
 
+        # Emit event to unified coordination (December 2025)
+        self._emit_work_event(
+            "WORK_FAILED" if permanent else "WORK_RETRY",
+            item,
+            error=error,
+            permanent=permanent,
+        )
         # Notify (outside lock)
         self.notifier.on_work_failed(item, permanent=permanent)
         return True
@@ -1064,10 +1073,24 @@ class WorkQueue:
         """
         try:
             from app.coordination.event_router import get_event_bus
+            from app.distributed.data_events import DataEventType
 
             bus = get_event_bus()
             if bus is None:
                 return
+
+            # Map string event types to DataEventType enum
+            event_type_map = {
+                "WORK_QUEUED": DataEventType.WORK_QUEUED,
+                "WORK_CLAIMED": DataEventType.WORK_CLAIMED,
+                "WORK_STARTED": DataEventType.WORK_STARTED,
+                "WORK_COMPLETED": DataEventType.WORK_COMPLETED,
+                "WORK_FAILED": DataEventType.WORK_FAILED,
+                "WORK_RETRY": DataEventType.WORK_RETRY,
+                "WORK_TIMEOUT": DataEventType.WORK_TIMEOUT,
+                "WORK_CANCELLED": DataEventType.WORK_CANCELLED,
+            }
+            typed_event = event_type_map.get(event_type, event_type)
 
             payload = {
                 "work_id": item.work_id,
@@ -1085,14 +1108,10 @@ class WorkQueue:
             import asyncio
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(bus.publish(event_type, payload))
+                loop.create_task(bus.publish(typed_event, payload))
             except RuntimeError:
-                # No running loop - emit synchronously via thread
-                import threading
-                def emit_async():
-                    asyncio.run(bus.publish(event_type, payload))
-                t = threading.Thread(target=emit_async, daemon=True)
-                t.start()
+                # No running loop - use sync publish
+                bus.publish_sync(typed_event, payload)
 
         except ImportError:
             pass  # Event system not available

@@ -44,6 +44,44 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _handle_task_error(task: asyncio.Task, context: str = "") -> None:
+    """Handle errors from fire-and-forget tasks.
+
+    Call this via: task.add_done_callback(lambda t: _handle_task_error(t, "context"))
+    """
+    try:
+        exc = task.exception()
+        if exc is not None:
+            logger.error(f"[FeedbackLoopController] Task error{' in ' + context if context else ''}: {exc}")
+    except asyncio.CancelledError:
+        pass  # Task was cancelled, not an error
+    except asyncio.InvalidStateError:
+        pass  # Task not done yet
+
+
+def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
+    """Create a task with error handling callback.
+
+    Returns the task if created successfully, None otherwise.
+    """
+    try:
+        task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: _handle_task_error(t, context))
+        return task
+    except RuntimeError as e:
+        logger.debug(f"[FeedbackLoopController] Could not create task for {context}: {e}")
+        return None
+
+
+# Event emission for selfplay feedback loops (Phase 21.2 - Dec 2025)
+try:
+    from app.distributed.data_events import emit_selfplay_target_updated
+    HAS_SELFPLAY_EVENTS = True
+except ImportError:
+    emit_selfplay_target_updated = None
+    HAS_SELFPLAY_EVENTS = False
+
+
 @dataclass
 class FeedbackState:
     """State tracking for a single config's feedback loop."""
@@ -128,6 +166,9 @@ class FeedbackLoopController:
 
         # Wire exploration boost to active temperature schedulers
         self._wire_exploration_boost()
+
+        # Subscribe to lazy scheduler registration for schedulers created after startup
+        self._subscribe_to_lazy_scheduler_registration()
 
         logger.info("[FeedbackLoopController] Started feedback loop orchestration")
 
@@ -254,8 +295,49 @@ class FeedbackLoopController:
             logger.debug(
                 "[FeedbackLoopController] Temperature scheduling not available"
             )
+    def _subscribe_to_lazy_scheduler_registration(self) -> None:
+        """Subscribe to SCHEDULER_REGISTERED for lazy exploration boost wiring.
+
+        December 2025: This enables wiring exploration boost to schedulers that
+        register AFTER FeedbackLoopController has started. Without this, schedulers
+        created by new selfplay processes would miss feedback events.
+        """
+        try:
+            from app.coordination.event_router import get_event_bus
+
+            bus = get_event_bus()
+            if bus is None:
+                return
+
+            def on_scheduler_registered(event) -> None:
+                """Wire exploration boost when new scheduler registers."""
+                payload = event.payload if hasattr(event, "payload") else {}
+                config_key = payload.get("config_key", "")
+
+                if not config_key:
+                    return
+
+                try:
+                    from app.training.temperature_scheduling import (
+                        get_active_schedulers,
+                        wire_exploration_boost,
+                    )
+
+                    schedulers = get_active_schedulers()
+                    if config_key in schedulers:
+                        if wire_exploration_boost(schedulers[config_key], config_key):
+                            logger.info(
+                                f"[FeedbackLoopController] Lazily wired exploration "
+                                f"boost for {config_key}"
+                            )
+                except Exception as e:
+                    logger.debug(f"[FeedbackLoopController] Lazy wiring failed: {e}")
+
+            bus.subscribe("SCHEDULER_REGISTERED", on_scheduler_registered)
+            logger.debug("[FeedbackLoopController] Subscribed to SCHEDULER_REGISTERED")
+
         except Exception as e:
-            logger.debug(f"[FeedbackLoopController] Could not wire exploration boost: {e}")
+            logger.debug(f"[FeedbackLoopController] Failed to subscribe to lazy scheduler: {e}")
 
     # =========================================================================
     # Event Handlers
@@ -300,6 +382,50 @@ class FeedbackLoopController:
 
         except Exception as e:
             logger.error(f"[FeedbackLoopController] Error handling selfplay complete: {e}")
+
+    def _on_selfplay_rate_changed(self, event: Any) -> None:
+        """Handle selfplay rate change events (Phase 23.1).
+
+        Tracks rate changes for monitoring and logs significant adjustments.
+        This enables visibility into how Elo momentum affects selfplay rates.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+
+            config_key = payload.get("config", "")
+            old_rate = payload.get("old_rate", 1.0)
+            new_rate = payload.get("new_rate", 1.0)
+            change_percent = payload.get("change_percent", 0.0)
+            momentum_state = payload.get("momentum_state", "unknown")
+            timestamp = payload.get("timestamp", time.time())
+
+            if not config_key:
+                return
+
+            # Track in rate history
+            if config_key not in self._rate_history:
+                self._rate_history[config_key] = []
+
+            self._rate_history[config_key].append({
+                "rate": new_rate,
+                "old_rate": old_rate,
+                "change_percent": change_percent,
+                "momentum_state": momentum_state,
+                "timestamp": timestamp,
+            })
+
+            # Keep bounded history (last 100 changes per config)
+            if len(self._rate_history[config_key]) > 100:
+                self._rate_history[config_key] = self._rate_history[config_key][-100:]
+
+            logger.info(
+                f"[FeedbackLoopController] Selfplay rate for {config_key}: "
+                f"{old_rate:.2f}x → {new_rate:.2f}x ({change_percent:+.0f}%), "
+                f"momentum={momentum_state}"
+            )
+
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Error handling rate change: {e}")
 
     def _on_training_complete(self, event: Any) -> None:
         """Handle training completion.
@@ -485,8 +611,18 @@ class FeedbackLoopController:
                     f"(streak: {state.consecutive_successes})"
                 )
 
-                # Reduce intensity on success (model is performing well)
-                state.current_training_intensity = "normal"
+                # December 2025 - Phase 2C.4: HOT_PATH after 3+ consecutive successes
+                # The model is performing well consistently - maximize training speed
+                if state.consecutive_successes >= 3:
+                    state.current_training_intensity = "hot_path"
+                    logger.info(
+                        f"[FeedbackLoopController] HOT_PATH activated for {config_key} "
+                        f"(3+ consecutive successes)"
+                    )
+                else:
+                    # Still improving - use accelerated training
+                    state.current_training_intensity = "accelerated"
+
                 state.current_exploration_boost = max(1.0, state.current_exploration_boost - 0.1)
 
             else:
@@ -596,25 +732,65 @@ class FeedbackLoopController:
         else:
             return 0.95
 
+    def _compute_intensity_from_quality(self, quality_score: float) -> str:
+        """Map continuous quality score to intensity level.
+
+        December 2025 - Phase 2C.1: Continuous quality-to-intensity scaling.
+        Replaces binary 0.6/0.8 thresholds with a 5-tier gradient.
+
+        Returns:
+            Intensity level: paused, reduced, normal, accelerated, hot_path
+        """
+        if quality_score >= 0.90:
+            return "hot_path"  # Excellent quality → maximum training speed
+        elif quality_score >= 0.80:
+            return "accelerated"  # Very good quality
+        elif quality_score >= 0.65:
+            return "normal"  # Adequate quality
+        elif quality_score >= 0.50:
+            return "reduced"  # Poor quality → slower training
+        else:
+            return "paused"  # Very poor quality → pause training
+
     def _update_training_intensity(self, config_key: str, quality_score: float) -> None:
-        """Update training intensity based on data quality."""
+        """Update training intensity based on data quality.
+
+        December 2025 - Phase 2C.1: Now uses continuous quality gradient
+        instead of binary thresholds.
+        """
         try:
             from app.training.feedback_accelerator import get_feedback_accelerator
 
             accelerator = get_feedback_accelerator()
 
-            if quality_score >= 0.8:
+            # Compute intensity using continuous gradient
+            intensity = self._compute_intensity_from_quality(quality_score)
+
+            # Map to urgency for accelerator signaling
+            urgency_map = {
+                "hot_path": "critical",
+                "accelerated": "high",
+                "normal": "normal",
+                "reduced": "low",
+                "paused": "none",
+            }
+
+            urgency = urgency_map.get(intensity, "normal")
+
+            if urgency != "none":
                 accelerator.signal_training_needed(
                     config_key=config_key,
-                    urgency="high",
-                    reason="high_quality_selfplay_data",
+                    urgency=urgency,
+                    reason=f"quality_score_{quality_score:.2f}_intensity_{intensity}",
                 )
-            elif quality_score >= 0.6:
-                accelerator.signal_training_needed(
-                    config_key=config_key,
-                    urgency="normal",
-                    reason="adequate_selfplay_data",
-                )
+
+            # Update state with computed intensity
+            state = self._get_or_create_state(config_key)
+            state.current_training_intensity = intensity
+
+            logger.debug(
+                f"[FeedbackLoopController] Quality {quality_score:.2f} → intensity {intensity}"
+            )
 
         except ImportError:
             pass
@@ -746,16 +922,44 @@ class FeedbackLoopController:
 
             if failure_count >= 3:
                 urgency = "critical"
+                priority = 1  # Highest priority
             elif failure_count >= 2:
                 urgency = "high"
+                priority = 3
             else:
                 urgency = "normal"
+                priority = 5
 
             accelerator.signal_training_needed(
                 config_key=config_key,
                 urgency=urgency,
                 reason=f"consecutive_promotion_failures:{failure_count}",
             )
+
+            # Emit SELFPLAY_TARGET_UPDATED to scale selfplay (Phase 21.2 - Dec 2025)
+            # More selfplay games needed when promotion fails to generate better training data
+            if HAS_SELFPLAY_EVENTS and emit_selfplay_target_updated:
+                # Calculate target games: base * (1 + 0.5 * failure_count)
+                base_games = 500
+                target_games = int(base_games * (1 + 0.5 * failure_count))
+
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(emit_selfplay_target_updated(
+                            config_key=config_key,
+                            target_games=target_games,
+                            reason=f"promotion_failure_x{failure_count}",
+                            priority=priority,
+                            source="feedback_loop_controller.py",
+                        ))
+                        logger.info(
+                            f"[FeedbackLoopController] Emitted SELFPLAY_TARGET_UPDATED: "
+                            f"{config_key} -> {target_games} games (priority={priority})"
+                        )
+                except RuntimeError:
+                    pass  # No event loop available
+
         except ImportError:
             pass
 

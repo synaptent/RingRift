@@ -55,6 +55,14 @@ from typing import TYPE_CHECKING, Any
 from app.coordination.coordinator_base import CoordinatorBase, CoordinatorStatus
 from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
 
+# Event emission for node health feedback loops (Phase 21.2 - Dec 2025)
+try:
+    from app.distributed.data_events import emit_node_overloaded
+    HAS_NODE_EVENTS = True
+except ImportError:
+    emit_node_overloaded = None
+    HAS_NODE_EVENTS = False
+
 if TYPE_CHECKING:
     from app.coordination.work_queue import WorkItem
 
@@ -1052,6 +1060,22 @@ class UnifiedHealthManager(CoordinatorBase):
             result=RecoveryResult.ESCALATED,
             reason=reason,
         )
+
+        # Emit NODE_OVERLOADED event for job redistribution (Phase 21.2 - Dec 2025)
+        if HAS_NODE_EVENTS and emit_node_overloaded and target_id in self._node_states:
+            try:
+                state = self._node_states[target_id]
+                await emit_node_overloaded(
+                    host=target_id,
+                    cpu_percent=100.0,  # Assume overloaded when escalated
+                    gpu_percent=0.0,  # No GPU info available from health manager
+                    memory_percent=0.0,
+                    resource_type="consecutive_failures",
+                    source="unified_health_manager.py",
+                )
+                logger.info(f"[UnifiedHealthManager] Emitted NODE_OVERLOADED for {target_id}")
+            except Exception as e:
+                logger.debug(f"[UnifiedHealthManager] Failed to emit NODE_OVERLOADED: {e}")
 
         # Notify escalation callbacks
         for callback in self._escalation_callbacks:

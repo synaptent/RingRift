@@ -701,6 +701,41 @@ class MasterLoopController:
 
         return sorted(priorities, key=lambda x: -x[1])
 
+    async def _emit_selfplay_job(
+        self,
+        node_id: str,
+        config_key: str,
+        num_games: int,
+    ) -> None:
+        """Emit a selfplay job allocation event.
+
+        December 2025 - Phase 2A.2: Emits events for work queue integration.
+        """
+        try:
+            from app.coordination.event_router import emit_event, DataEventType
+
+            # Parse config key
+            parts = config_key.rsplit("_", 1)
+            if len(parts) != 2:
+                return
+
+            board_type = parts[0]
+            num_players = int(parts[1].replace("p", ""))
+
+            await emit_event(
+                DataEventType.REQUEST_SELFPLAY_PRIORITY,
+                {
+                    "node_id": node_id,
+                    "config_key": config_key,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "num_games": num_games,
+                    "source": "master_loop",
+                }
+            )
+        except Exception as e:
+            logger.debug(f"[MasterLoop] Error emitting selfplay job: {e}")
+
     # =========================================================================
     # Evaluation handling
     # =========================================================================

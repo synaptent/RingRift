@@ -86,13 +86,16 @@ export RINGRIFT_ELO_DB=data/elo/custom.db
 The system supports multiple AI types:
 
 ```python
-from app.ai import get_ai_player
+from app.ai import AIFactory, AIType, create_ai_from_difficulty
+from app.models import AIConfig
 
-# Create different AI players
-random_ai = get_ai_player("random")
-heuristic_ai = get_ai_player("heuristic")
-mcts_ai = get_ai_player("mcts", simulations=1000)
-neural_ai = get_ai_player("neural", model_path="models/best.pt")
+# Difficulty-based AIs (recommended for gameplay)
+random_ai = create_ai_from_difficulty(difficulty=1, player_number=1)
+heuristic_ai = create_ai_from_difficulty(difficulty=2, player_number=2)
+
+# Explicit AI type with custom config
+config = AIConfig(difficulty=7, think_time=2000, randomness=0.1)
+mcts_ai = AIFactory.create(AIType.MCTS, player_number=1, config=config)
 ```
 
 ### 2. Game Execution
@@ -100,57 +103,60 @@ neural_ai = get_ai_player("neural", model_path="models/best.pt")
 Run games using the execution framework:
 
 ```python
-from app.execution import GameExecutor, run_quick_game
+from app.execution import run_quick_game, run_selfplay_batch
 
 # Quick single game
-result = await run_quick_game(
-    player1_type="mcts",
-    player2_type="heuristic",
+result = run_quick_game(
+    p1_type="mcts",
+    p2_type="heuristic",
     board_type="square8",
-    num_players=2
 )
 
-# Parallel game execution
-executor = GameExecutor(board_type="square8", num_players=2)
-results = await executor.run_batch(num_games=100)
+# Parallel self-play batch
+results = run_selfplay_batch(
+    num_games=100,
+    ai_type="mcts",
+    difficulty=6,
+    board_type="square8",
+    num_players=2,
+    max_workers=4,
+)
 ```
 
 ### 3. Training Pipeline
 
-Training is triggered automatically when enough games accumulate:
+Training is typically triggered automatically when enough games accumulate.
 
-```python
-from app.training import TrainingOrchestrator
-
-orchestrator = TrainingOrchestrator()
-await orchestrator.check_and_train()  # Trains if threshold met
-```
-
-Manual training:
+Manual training (CLI):
 
 ```bash
-python scripts/run_nn_training_baseline.py \
-    --config square8_2p \
+python -m app.training.train \
+    --data-path data/training/square8_2p.npz \
+    --board-type square8 \
     --epochs 50 \
-    --batch-size 256
+    --batch-size 256 \
+    --save-path models/square8_2p.pth
 ```
+
+For programmatic training control, see `app/training/ORCHESTRATOR_GUIDE.md`.
 
 ### 4. Event System
 
 The system uses an event-driven architecture:
 
 ```python
-from app.coordination import get_event_router
+from app.coordination import StageEvent, get_event_router, publish_event_sync
 
 router = get_event_router()
 
 # Subscribe to events
-@router.subscribe("training.completed")
-async def on_training_complete(event):
-    print(f"Training finished: {event.model_id}")
+def on_training_complete(event):
+    print(f"Training finished: {event.payload.get('model_id')}")
+
+router.subscribe(StageEvent.TRAINING_COMPLETE, on_training_complete)
 
 # Emit events
-await router.emit("training.completed", {"model_id": "v123"})
+publish_event_sync(StageEvent.TRAINING_COMPLETE, {"model_id": "v123"}, source="quick_start")
 ```
 
 ### 5. Model Promotion
@@ -158,17 +164,19 @@ await router.emit("training.completed", {"model_id": "v123"})
 Models are automatically promoted when they show improvement:
 
 ```python
-from app.training.promotion_controller import get_promotion_controller
+from app.training.promotion_controller import PromotionType, get_promotion_controller
 
 controller = get_promotion_controller()
-decision = await controller.evaluate_for_promotion(
+decision = controller.evaluate_promotion(
     model_id="candidate_v5",
-    games_played=100,
-    elo_delta=35.0
+    board_type="square8",
+    num_players=2,
+    promotion_type=PromotionType.PRODUCTION,
+    baseline_model_id="baseline_v4",
 )
 
 if decision.should_promote:
-    await controller.promote(decision)
+    controller.execute_promotion(decision)
 ```
 
 ## Common Tasks
@@ -177,22 +185,32 @@ if decision.should_promote:
 
 ```bash
 # Local self-play
-python scripts/run_selfplay.py --games 100 --config square8_2p
+python scripts/selfplay.py \
+  --board square8 \
+  --num-players 2 \
+  --num-games 100 \
+  --engine-mode heuristic
 
 # GPU-accelerated self-play
-python scripts/run_gpu_selfplay.py --games 1000 --batch-size 64
+python scripts/run_gpu_selfplay.py \
+  --board square8 \
+  --num-players 2 \
+  --num-games 1000 \
+  --batch-size 64
 ```
 
 ### Train a Model
 
 ```bash
 # Export dataset from games
-python scripts/export_replay_dataset.py --output data/training/dataset.pt
+python scripts/export_replay_dataset.py --output data/training/dataset.npz
 
 # Train neural network
-python scripts/run_nn_training_baseline.py \
-    --dataset data/training/dataset.pt \
-    --output models/new_model.pt
+python -m app.training.train \
+    --data-path data/training/dataset.npz \
+    --board-type square8 \
+    --epochs 50 \
+    --save-path models/new_model.pth
 ```
 
 ### Run Tournament
@@ -219,7 +237,7 @@ python scripts/cluster_health_check.py --verbose
 3. Run cluster orchestrator:
 
 ```bash
-python scripts/cluster_orchestrator.py --mode production
+python scripts/p2p_orchestrator.py --node-id mac-studio
 ```
 
 ### Slurm HPC Setup
@@ -232,10 +250,11 @@ slurm:
   partition_training: gpu-train
 ```
 
-2. Submit jobs:
+2. Validate and smoke-test the Slurm setup:
 
 ```bash
-python scripts/submit_slurm_job.py --type training
+python scripts/slurm_preflight_check.py --config config/unified_loop.yaml
+python scripts/slurm_smoke_test.py --work-type training
 ```
 
 ## Debugging

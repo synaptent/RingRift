@@ -203,6 +203,26 @@ except ImportError:
     HAS_CIRCUIT_BREAKER = False
     HAS_EVENT_BUS = False
 
+# Event emission for training feedback loops (Phase 21.2 - Dec 2025)
+try:
+    from app.distributed.data_events import (
+        emit_training_loss_anomaly,
+        emit_training_loss_trend,
+    )
+    HAS_TRAINING_EVENTS = True
+except ImportError:
+    emit_training_loss_anomaly = None
+    emit_training_loss_trend = None
+    HAS_TRAINING_EVENTS = False
+
+# Epoch event emission for curriculum feedback (December 2025)
+try:
+    from app.training.event_integration import publish_epoch_completed
+    HAS_EPOCH_EVENTS = True
+except ImportError:
+    publish_epoch_completed = None
+    HAS_EPOCH_EVENTS = False
+
 # Regression detection for training quality monitoring (2025-12)
 try:
     from app.training.regression_detector import (
@@ -4057,6 +4077,105 @@ def train_model(
                             )
 
             epoch_losses.append(epoch_record)
+
+            # Emit epoch completed event for curriculum feedback (December 2025)
+            # This enables mid-training curriculum updates based on epoch progress
+            if HAS_EPOCH_EVENTS and publish_epoch_completed and (not distributed or is_main_process()):
+                try:
+                    import asyncio
+                    config_key = f"{config.board_type.value}_{num_players}p"
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.ensure_future(publish_epoch_completed(
+                                config_key=config_key,
+                                epoch=epoch + 1,
+                                total_epochs=config.epochs_per_iter,
+                                train_loss=avg_train_loss,
+                                val_loss=avg_val_loss,
+                                learning_rate=optimizer.param_groups[0]['lr'],
+                            ))
+                    except RuntimeError:
+                        # No event loop running - use fire-and-forget
+                        pass
+                except Exception as e:
+                    logger.debug(f"Failed to emit epoch completed event: {e}")
+
+            # Emit training loss events for feedback loops (Phase 21.2 - Dec 2025)
+            # Only emit on main process to avoid duplicates in DDP
+            if HAS_TRAINING_EVENTS and (not distributed or is_main_process()):
+                try:
+                    import asyncio
+                    config_key = f"{config.board_type.value}_{num_players}p"
+
+                    # Calculate average loss over recent epochs (last 5 or all available)
+                    recent_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
+                                     for e in epoch_losses[-5:] if e]
+                    if recent_losses:
+                        avg_recent_loss = sum(recent_losses) / len(recent_losses)
+
+                        # Detect anomaly: current loss > 2x average (significant spike)
+                        if avg_val_loss > avg_recent_loss * 2.0 and len(epoch_losses) > 2:
+                            anomaly_ratio = avg_val_loss / avg_recent_loss if avg_recent_loss > 0 else 0.0
+                            logger.warning(
+                                f"[TRAINING ANOMALY] Loss spike detected: {avg_val_loss:.4f} vs avg {avg_recent_loss:.4f} "
+                                f"(ratio: {anomaly_ratio:.2f}x)"
+                            )
+                            # Fire-and-forget async emission
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.ensure_future(emit_training_loss_anomaly(
+                                        config_key=config_key,
+                                        current_loss=avg_val_loss,
+                                        avg_loss=avg_recent_loss,
+                                        epoch=epoch + 1,
+                                        anomaly_ratio=anomaly_ratio,
+                                        source="train.py",
+                                    ))
+                            except RuntimeError:
+                                # No event loop - skip emission (OK in non-async context)
+                                pass
+
+                        # Emit trend every 5 epochs
+                        if (epoch + 1) % 5 == 0 and len(epoch_losses) >= 5:
+                            # Compare last 5 epochs to previous 5 epochs
+                            current_avg = sum(recent_losses) / len(recent_losses)
+                            older_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
+                                            for e in epoch_losses[-10:-5] if e]
+                            if older_losses:
+                                previous_avg = sum(older_losses) / len(older_losses)
+                                improvement_rate = (previous_avg - current_avg) / previous_avg if previous_avg > 0 else 0.0
+
+                                # Classify trend: >5% improvement = improving, <-5% = degrading, else stalled
+                                if improvement_rate > 0.05:
+                                    trend = "improving"
+                                elif improvement_rate < -0.05:
+                                    trend = "degrading"
+                                else:
+                                    trend = "stalled"
+
+                                logger.info(
+                                    f"[TRAINING TREND] {trend} (epoch {epoch+1}): "
+                                    f"current_avg={current_avg:.4f}, previous_avg={previous_avg:.4f}, "
+                                    f"improvement_rate={improvement_rate:.2%}"
+                                )
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                    if loop.is_running():
+                                        asyncio.ensure_future(emit_training_loss_trend(
+                                            config_key=config_key,
+                                            trend=trend,
+                                            epoch=epoch + 1,
+                                            current_loss=current_avg,
+                                            previous_loss=previous_avg,
+                                            improvement_rate=improvement_rate,
+                                            source="train.py",
+                                        ))
+                                except RuntimeError:
+                                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to emit training events: {e}")
 
             # Update Prometheus metrics (only on main process)
             if HAS_PROMETHEUS and (not distributed or is_main_process()):

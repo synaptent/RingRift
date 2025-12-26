@@ -75,7 +75,6 @@ class DaemonType(Enum):
 
     # Pipeline daemons
     DATA_PIPELINE = "data_pipeline"
-    TRAINING_WATCHER = "training_watcher"
     SELFPLAY_COORDINATOR = "selfplay_coordinator"
 
     # P2P services
@@ -142,6 +141,12 @@ class DaemonType(Enum):
 
     # Node recovery daemon (December 2025 - Phase 21) - auto-recovers terminated nodes
     NODE_RECOVERY = "node_recovery"
+
+    # Queue populator (December 2025 - Phase 4) - auto-populates work queue with selfplay/training jobs
+    QUEUE_POPULATOR = "queue_populator"
+
+    # Curriculum integration (December 2025) - bridges all feedback loops for self-improvement
+    CURRICULUM_INTEGRATION = "curriculum_integration"
 
 
 class DaemonState(Enum):
@@ -306,13 +311,6 @@ class DaemonManager:
             depends_on=[DaemonType.EVENT_ROUTER],
         )
 
-        # Training watcher (December 2025) - monitors training processes and triggers evaluation
-        self.register_factory(
-            DaemonType.TRAINING_WATCHER,
-            self._create_training_watcher,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
         # Selfplay coordinator (December 2025) - distributes selfplay across cluster
         self.register_factory(
             DaemonType.SELFPLAY_COORDINATOR,
@@ -432,6 +430,20 @@ class DaemonManager:
         self.register_factory(
             DaemonType.P2P_AUTO_DEPLOY,
             self._create_p2p_auto_deploy,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Queue populator daemon (Phase 4) - auto-populates work queue with selfplay/training jobs
+        self.register_factory(
+            DaemonType.QUEUE_POPULATOR,
+            self._create_queue_populator,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Curriculum integration - bridges feedback loops for self-improvement (December 2025)
+        self.register_factory(
+            DaemonType.CURRICULUM_INTEGRATION,
+            self._create_curriculum_integration,
             depends_on=[DaemonType.EVENT_ROUTER],
         )
 
@@ -1784,6 +1796,78 @@ class DaemonManager:
         except Exception as e:
             logger.error(f"P2PAutoDeployer failed: {e}")
 
+    async def _create_queue_populator(self) -> None:
+        """Create and run queue populator daemon.
+
+        Continuously monitors cluster state and populates the work queue
+        with selfplay, training, and tournament jobs based on:
+        - Current model ELO and target ELO
+        - Available GPU capacity
+        - Training data freshness
+        - Game count per configuration
+        """
+        try:
+            from app.coordination.queue_populator import QueuePopulator
+
+            populator = QueuePopulator()
+            logger.info("Queue populator daemon started")
+
+            while True:
+                try:
+                    # Populate queue based on cluster needs
+                    added = await populator.populate_queue()
+                    if added:
+                        logger.debug(f"Queue populator added {added} work items")
+                except Exception as e:
+                    logger.error(f"Queue populator error: {e}")
+
+                await asyncio.sleep(30.0)  # Check every 30 seconds
+
+        except ImportError as e:
+            logger.warning(f"QueuePopulator dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"QueuePopulator failed: {e}")
+
+    async def _create_curriculum_integration(self) -> None:
+        """Create and run curriculum integration daemon (December 2025).
+
+        Bridges all feedback loops for AI self-improvement:
+        - FeedbackAccelerator momentum → CurriculumFeedback weights
+        - PFSP weak opponent detection → curriculum weight reduction
+        - Quality score changes → temperature scheduling
+
+        This wires together previously disconnected feedback signals to enable
+        true self-improving training behavior.
+        """
+        try:
+            from app.coordination.curriculum_integration import wire_all_feedback_loops
+
+            components = wire_all_feedback_loops(
+                poll_interval_seconds=60.0,
+                momentum_weight_boost=0.3,
+                min_games_for_mastery=20,
+                mastery_threshold=0.85,
+                quality_poll_interval=30.0,
+                low_quality_threshold=0.4,
+                exploration_boost_factor=1.3,
+            )
+
+            logger.info(
+                f"Curriculum integration started: "
+                f"momentum_bridge={components['momentum_bridge'] is not None}, "
+                f"pfsp_watcher={components['pfsp_watcher'] is not None}, "
+                f"quality_watcher={components['quality_watcher'] is not None}"
+            )
+
+            # Keep daemon alive while watchers run
+            while True:
+                await asyncio.sleep(3600)
+
+        except ImportError as e:
+            logger.warning(f"CurriculumIntegration dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"CurriculumIntegration failed: {e}")
+
     async def _create_dlq_retry(self) -> None:
         """Create and run dead-letter queue retry daemon.
 
@@ -1815,56 +1899,9 @@ class DaemonManager:
         except ImportError as e:
             logger.warning(f"DLQ retry dependencies not available: {e}")
 
-    async def _create_training_watcher(self) -> None:
-        """Create and run training watcher daemon.
-
-        Monitors training processes and triggers evaluation when complete.
-        Emits events for training progress and completion.
-        """
-        try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
-
-            router = get_router()
-            if router is None:
-                logger.warning("Event router not available for training watcher")
-                return
-
-            logger.info("Training watcher daemon started")
-
-            while True:
-                try:
-                    # Monitor training processes
-                    # Check for completed training runs and emit events
-                    training_pids = await self._find_training_processes()
-
-                    if training_pids:
-                        logger.debug(f"Found {len(training_pids)} training processes")
-
-                except Exception as e:
-                    logger.error(f"Training watcher error: {e}")
-
-                await asyncio.sleep(30.0)  # Check every 30 seconds
-
-        except ImportError as e:
-            logger.warning(f"Training watcher dependencies not available: {e}")
-
-    async def _find_training_processes(self) -> list[int]:
-        """Find running training process PIDs."""
-        import subprocess
-
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "train\\.py|app\\.training\\.train"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                return [int(pid) for pid in result.stdout.strip().split("\n") if pid]
-            return []
-        except Exception as e:
-            logger.debug(f"[DaemonManager] Failed to find training PIDs: {e}")
-            return []
+    # Note: TRAINING_WATCHER removed in Phase 21.2 (Dec 2025)
+    # Use TRAINING_NODE_WATCHER from cluster_data_sync instead, which provides
+    # more comprehensive monitoring including priority sync for fresh data.
 
     async def _create_selfplay_coordinator(self) -> None:
         """Create and run selfplay coordinator daemon.
@@ -1917,6 +1954,8 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.JOB_SCHEDULER,  # Phase 3: Centralized job scheduling with PID-based allocation
         DaemonType.IDLE_RESOURCE,  # Phase 20: Monitor idle GPUs and spawn selfplay
         DaemonType.NODE_RECOVERY,  # Phase 21: Auto-recover terminated nodes
+        DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
+        DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
     ],
 
     # Training node profile - runs on GPU nodes
@@ -1932,6 +1971,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.UNIFIED_PROMOTION,  # Phase 18.4: Auto-promote models after evaluation
         DaemonType.P2P_AUTO_DEPLOY,  # Phase 21.2: Ensure P2P runs on recovered nodes
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
+        DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for local self-improvement
     ],
 
     # Ephemeral node profile - runs on Vast.ai/spot instances

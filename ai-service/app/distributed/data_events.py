@@ -191,10 +191,21 @@ class DataEventType(Enum):
     RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished
     RECOVERY_FAILED = "recovery_failed"  # Auto-recovery failed
 
+    # Work Queue events (December 2025 - coordination integration)
+    WORK_QUEUED = "work_queued"  # New work added to queue
+    WORK_CLAIMED = "work_claimed"  # Work claimed by a node
+    WORK_STARTED = "work_started"  # Work execution started
+    WORK_COMPLETED = "work_completed"  # Work completed successfully
+    WORK_FAILED = "work_failed"  # Work failed permanently
+    WORK_RETRY = "work_retry"  # Work failed, will retry
+    WORK_TIMEOUT = "work_timeout"  # Work timed out
+    WORK_CANCELLED = "work_cancelled"  # Work cancelled
+
     # Cluster status events
     CLUSTER_STATUS_CHANGED = "cluster_status_changed"
     NODE_UNHEALTHY = "node_unhealthy"
     NODE_RECOVERED = "node_recovered"
+    NODE_ACTIVATED = "node_activated"  # Node activated by cluster activator
 
     # Lock/Synchronization events (December 2025)
     LOCK_ACQUIRED = "lock_acquired"
@@ -219,6 +230,7 @@ class DataEventType(Enum):
     NODE_CAPACITY_UPDATED = "node_capacity_updated"
     BACKPRESSURE_ACTIVATED = "backpressure_activated"
     BACKPRESSURE_RELEASED = "backpressure_released"
+    IDLE_RESOURCE_DETECTED = "idle_resource_detected"  # Phase 21.2: Idle GPU/CPU detected
 
     # Promotion lifecycle events (December 2025)
     PROMOTION_ROLLED_BACK = "promotion_rolled_back"
@@ -1867,6 +1879,158 @@ async def emit_calibration_completed(
             "old_value": old_value,
             "new_value": new_value,
             "games_analyzed": games_analyzed,
+        },
+        source=source,
+    ))
+
+
+async def emit_training_loss_anomaly(
+    config_key: str,
+    current_loss: float,
+    avg_loss: float,
+    epoch: int,
+    anomaly_ratio: float = 0.0,
+    source: str = "training",
+) -> None:
+    """Emit a TRAINING_LOSS_ANOMALY event when loss spikes above threshold.
+
+    This triggers quality checks and potential data investigation.
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TRAINING_LOSS_ANOMALY,
+        payload={
+            "config_key": config_key,
+            "current_loss": current_loss,
+            "avg_loss": avg_loss,
+            "epoch": epoch,
+            "anomaly_ratio": anomaly_ratio,
+        },
+        source=source,
+    ))
+
+
+async def emit_training_loss_trend(
+    config_key: str,
+    trend: str,  # "improving", "stalled", "degrading"
+    epoch: int,
+    current_loss: float,
+    previous_loss: float,
+    improvement_rate: float = 0.0,
+    source: str = "training",
+) -> None:
+    """Emit a TRAINING_LOSS_TREND event to guide data collection.
+
+    Used by selfplay to adjust exploration/exploitation based on training needs.
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TRAINING_LOSS_TREND,
+        payload={
+            "config_key": config_key,
+            "trend": trend,
+            "epoch": epoch,
+            "current_loss": current_loss,
+            "previous_loss": previous_loss,
+            "improvement_rate": improvement_rate,
+        },
+        source=source,
+    ))
+
+
+async def emit_sync_stalled(
+    source_host: str,
+    target_host: str,
+    data_type: str,
+    timeout_seconds: float,
+    retry_count: int = 0,
+    source: str = "sync_coordinator",
+) -> None:
+    """Emit a SYNC_STALLED event when sync times out.
+
+    This triggers failover to alternative sync sources.
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.SYNC_STALLED,
+        payload={
+            "source_host": source_host,
+            "target_host": target_host,
+            "data_type": data_type,
+            "timeout_seconds": timeout_seconds,
+            "retry_count": retry_count,
+        },
+        source=source,
+    ))
+
+
+async def emit_node_overloaded(
+    host: str,
+    cpu_percent: float,
+    gpu_percent: float = 0.0,
+    memory_percent: float = 0.0,
+    resource_type: str = "cpu",
+    source: str = "health_manager",
+) -> None:
+    """Emit a NODE_OVERLOADED event for job redistribution.
+
+    This triggers the job scheduler to migrate jobs away from overloaded nodes.
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.NODE_OVERLOADED,
+        payload={
+            "host": host,
+            "cpu_percent": cpu_percent,
+            "gpu_percent": gpu_percent,
+            "memory_percent": memory_percent,
+            "resource_type": resource_type,
+        },
+        source=source,
+    ))
+
+
+async def emit_selfplay_target_updated(
+    config_key: str,
+    target_games: int,
+    reason: str,
+    priority: int = 5,
+    source: str = "feedback_controller",
+) -> None:
+    """Emit a SELFPLAY_TARGET_UPDATED event to scale selfplay.
+
+    Used to request more selfplay games when training needs data.
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
+        payload={
+            "config_key": config_key,
+            "target_games": target_games,
+            "reason": reason,
+            "priority": priority,
+        },
+        source=source,
+    ))
+
+
+async def emit_idle_resource_detected(
+    node_id: str,
+    host: str,
+    gpu_utilization: float,
+    gpu_memory_gb: float,
+    idle_duration_seconds: float,
+    recommended_config: str = "",
+    source: str = "idle_resource_daemon",
+) -> None:
+    """Emit an IDLE_RESOURCE_DETECTED event for job scheduling.
+
+    Used by IdleResourceDaemon to signal idle GPU resources that can be used.
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.IDLE_RESOURCE_DETECTED,
+        payload={
+            "node_id": node_id,
+            "host": host,
+            "gpu_utilization": gpu_utilization,
+            "gpu_memory_gb": gpu_memory_gb,
+            "idle_duration_seconds": idle_duration_seconds,
+            "recommended_config": recommended_config,
         },
         source=source,
     ))

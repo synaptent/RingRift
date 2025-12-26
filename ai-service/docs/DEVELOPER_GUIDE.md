@@ -589,7 +589,7 @@ python scripts/quick_benchmark.py
 
 | Variable                         | Effect                                     | Default |
 | -------------------------------- | ------------------------------------------ | ------- |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | Skip validation deep-copies (2-3x speedup) | `false` |
+| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | Skip validation deep-copies (2-3x speedup) | `true`  |
 | `RINGRIFT_USE_MAKE_UNMAKE`       | Use incremental state updates              | `false` |
 | `RINGRIFT_USE_BATCH_EVAL`        | Batch position evaluation                  | `false` |
 | `RINGRIFT_USE_FAST_TERRITORY`    | Fast territory calculation                 | `false` |
