@@ -538,7 +538,7 @@ class DaemonManager:
                 ),
                 name=f"emit_daemon_status_{info.daemon_type.value}",
             )
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             # Don't fail state transition if event emission fails
             logger.debug(f"Failed to emit daemon status event: {e}")
 
@@ -611,7 +611,7 @@ class DaemonManager:
                 logger.info(f"Started daemon: {daemon_type.value}")
                 return True
 
-            except Exception as e:
+            except (RuntimeError, OSError, ImportError) as e:
                 info.state = DaemonState.FAILED
                 info.last_error = str(e)
                 logger.error(f"Failed to start {daemon_type.value}: {e}")
@@ -666,10 +666,12 @@ class DaemonManager:
                 )
                 # Don't retry import failures - they need manual intervention
                 break
-            except Exception as e:
+            except (RuntimeError, OSError, ConnectionError, asyncio.CancelledError) as e:
                 info.last_error = str(e)
                 info.last_failure_time = time.time()
                 info.stable_since = 0.0
+                if isinstance(e, asyncio.CancelledError):
+                    raise  # Re-raise cancellation
                 logger.error(f"{daemon_type.value} failed: {e}")
 
                 if not info.auto_restart:
@@ -823,7 +825,7 @@ class DaemonManager:
             from app.coordination.daemon_watchdog import start_watchdog
             safe_create_task(start_watchdog(), name="daemon_watchdog")
             logger.info("Daemon watchdog started")
-        except Exception as e:
+        except (ImportError, RuntimeError) as e:
             logger.warning(f"Failed to start daemon watchdog: {e}")
 
         # Phase 5: Subscribe to REGRESSION_CRITICAL events for centralized handling
@@ -868,10 +870,10 @@ class DaemonManager:
                     logger.info("[DaemonManager] Wired AutoRollbackHandler for automatic model rollback (Phase 7)")
                 else:
                     logger.warning("[DaemonManager] Failed to wire AutoRollbackHandler")
-            except Exception as rollback_err:
+            except (ImportError, RuntimeError, AttributeError) as rollback_err:
                 logger.warning(f"[DaemonManager] Could not wire AutoRollbackHandler: {rollback_err}")
 
-        except Exception as e:
+        except (ImportError, RuntimeError, ConnectionError) as e:
             logger.warning(f"[DaemonManager] Failed to subscribe to critical events: {e}")
 
     async def _on_regression_critical(self, event) -> None:
@@ -923,7 +925,7 @@ class DaemonManager:
                         source="DaemonManager",
                     )
                     await router.publish_async(DataEventType.HEALTH_ALERT.value, alert_event)
-            except Exception as alert_err:
+            except (RuntimeError, OSError, ConnectionError) as alert_err:
                 logger.debug(f"[DaemonManager] Failed to emit cluster alert: {alert_err}")
 
             # Check if rollback daemon is running and healthy
@@ -935,7 +937,7 @@ class DaemonManager:
                         f"rollback should be handled by RollbackManager"
                     )
 
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError, ImportError) as e:
             logger.error(f"[DaemonManager] Error handling REGRESSION_CRITICAL: {e}")
 
     async def _verify_subscriptions(self) -> None:
@@ -996,7 +998,7 @@ class DaemonManager:
                     f"  {chr(10).join('- ' + a for a in active)}"
                 )
 
-        except Exception as e:
+        except (ImportError, RuntimeError, AttributeError) as e:
             logger.warning(f"[DaemonManager] Subscription verification failed: {e}")
 
     async def stop_all(self) -> dict[DaemonType, bool]:
@@ -1026,7 +1028,7 @@ class DaemonManager:
         try:
             from app.coordination.daemon_watchdog import stop_watchdog
             await stop_watchdog()
-        except Exception as e:
+        except (ImportError, RuntimeError, AttributeError) as e:
             logger.debug(f"Watchdog stop error (expected if not started): {e}")
 
         # Stop health check
@@ -1102,7 +1104,7 @@ class DaemonManager:
                 await asyncio.sleep(self.config.health_check_interval)
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except (RuntimeError, OSError) as e:
                 logger.error(f"Health check error: {e}")
 
     async def _check_health(self) -> None:
@@ -1438,7 +1440,7 @@ class DaemonManager:
                     summary = await checker.get_health_summary()
                     if not summary.get("healthy", True):
                         logger.warning(f"Health check issues: {summary.get('issues', [])}")
-                except Exception as e:
+                except (RuntimeError, OSError, ConnectionError) as e:
                     logger.error(f"Health check failed: {e}")
                 await asyncio.sleep(30)  # Check every 30 seconds
         except ImportError as e:
@@ -2084,7 +2086,7 @@ class DaemonManager:
                             f"recommendation={rec.action.name if rec else 'none'}"
                         )
 
-                except Exception as e:
+                except (RuntimeError, OSError, ConnectionError) as e:
                     logger.debug(f"[JobScheduler] Scheduling cycle error: {e}")
 
                 await asyncio.sleep(30)  # Check every 30 seconds
@@ -2117,7 +2119,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"IdleResourceDaemon dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"IdleResourceDaemon failed: {e}")
 
     async def _create_node_recovery(self) -> None:
@@ -2144,7 +2146,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"NodeRecoveryDaemon dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"NodeRecoveryDaemon failed: {e}")
 
     async def _create_p2p_auto_deploy(self) -> None:
@@ -2164,7 +2166,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"P2PAutoDeployer dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"P2PAutoDeployer failed: {e}")
 
     async def _create_queue_populator(self) -> None:
@@ -2189,14 +2191,14 @@ class DaemonManager:
                     added = populator.populate()  # sync method
                     if added:
                         logger.debug(f"Queue populator added {added} work items")
-                except Exception as e:
+                except (RuntimeError, OSError, ConnectionError) as e:
                     logger.error(f"Queue populator error: {e}")
 
                 await asyncio.sleep(30.0)  # Check every 30 seconds
 
         except ImportError as e:
             logger.warning(f"QueuePopulator dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"QueuePopulator failed: {e}")
 
     async def _create_curriculum_integration(self) -> None:
@@ -2228,7 +2230,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"CurriculumIntegration dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"CurriculumIntegration failed: {e}")
 
     async def _create_auto_export(self) -> None:
@@ -2254,7 +2256,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"AutoExportDaemon dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"AutoExportDaemon failed: {e}")
 
     async def _create_training_trigger(self) -> None:
@@ -2283,7 +2285,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"TrainingTriggerDaemon dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"TrainingTriggerDaemon failed: {e}")
 
     async def _create_gauntlet_feedback(self) -> None:
@@ -2308,7 +2310,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"GauntletFeedbackController dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"GauntletFeedbackController failed: {e}")
 
     async def _create_recovery_orchestrator(self) -> None:
@@ -2330,7 +2332,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"RecoveryOrchestrator dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"RecoveryOrchestrator failed: {e}")
 
     async def _create_cache_coordination(self) -> None:
@@ -2354,7 +2356,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"CacheCoordinationOrchestrator dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"CacheCoordinationOrchestrator failed: {e}")
 
     async def _create_metrics_analysis(self) -> None:
@@ -2378,7 +2380,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"MetricsAnalysisOrchestrator dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"MetricsAnalysisOrchestrator failed: {e}")
 
     async def _create_adaptive_resources(self) -> None:
@@ -2402,7 +2404,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"AdaptiveResourceManager dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"AdaptiveResourceManager failed: {e}")
 
     async def _create_multi_provider(self) -> None:
@@ -2426,7 +2428,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"MultiProviderOrchestrator dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"MultiProviderOrchestrator failed: {e}")
 
     async def _create_health_server(self) -> None:
@@ -2517,7 +2519,7 @@ class DaemonManager:
                 logger.warning(f"Health server port {port} already in use, skipping")
             else:
                 logger.error(f"Health server failed: {e}")
-        except Exception as e:
+        except (RuntimeError, ConnectionError) as e:
             logger.error(f"Health server failed: {e}")
 
     async def _create_system_health_monitor(self) -> None:
@@ -2561,7 +2563,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"SystemHealthMonitor not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"SystemHealthMonitor failed: {e}")
 
     async def _create_dlq_retry(self) -> None:
@@ -2641,7 +2643,7 @@ class DaemonManager:
                         except ImportError:
                             # sync_game not available, just track retry
                             pass
-                        except Exception as e:
+                        except (RuntimeError, OSError, ConnectionError) as e:
                             logger.debug(f"[DLQ] Retry failed for {entry.id}: {e}")
 
                     if retried_count or quarantined_count:
@@ -2663,7 +2665,7 @@ class DaemonManager:
                         if cleaned:
                             logger.info(f"[DLQ] Cleaned up {cleaned} old resolved entries")
 
-                except Exception as e:
+                except (RuntimeError, OSError, ConnectionError, ImportError) as e:
                     logger.error(f"DLQ retry error: {e}")
 
                 await asyncio.sleep(60.0)  # Check every minute
@@ -2690,7 +2692,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"MaintenanceDaemon not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"MaintenanceDaemon failed: {e}")
 
     async def _create_utilization_optimizer(self) -> None:
@@ -2724,14 +2726,14 @@ class DaemonManager:
                             f"[UtilizationOptimizer] Optimization complete: "
                             f"{len(results)} actions taken"
                         )
-                except Exception as e:
+                except (RuntimeError, OSError, ConnectionError) as e:
                     logger.warning(f"[UtilizationOptimizer] Optimization cycle failed: {e}")
 
                 await asyncio.sleep(check_interval)
 
         except ImportError as e:
             logger.warning(f"UtilizationOptimizer not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"UtilizationOptimizer daemon failed: {e}")
 
     # Note: TRAINING_WATCHER removed in Phase 21.2 (Dec 2025)
@@ -2770,7 +2772,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"LambdaIdleDaemon dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"LambdaIdleDaemon failed: {e}")
 
     async def _create_cluster_watchdog(self) -> None:
@@ -2805,7 +2807,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"ClusterWatchdogDaemon dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"ClusterWatchdogDaemon failed: {e}")
 
     async def _create_selfplay_coordinator(self) -> None:
@@ -2830,7 +2832,7 @@ class DaemonManager:
 
         except ImportError as e:
             logger.warning(f"Selfplay coordinator dependencies not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"Selfplay coordinator failed: {e}")
 
 
@@ -2997,7 +2999,7 @@ def setup_signal_handlers() -> None:
     try:
         signal.signal(signal.SIGTERM, handle_signal)
         signal.signal(signal.SIGINT, handle_signal)
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.debug(f"Could not set up signal handlers: {e}")
 
 

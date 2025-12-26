@@ -378,6 +378,7 @@ class TrainingCoordinator:
             # Subscribe to regression events (December 2025 - feedback loop strengthening)
             bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
             bus.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
+            bus.subscribe(DataEventType.REGRESSION_CLEARED, self._on_regression_cleared)
 
             # P0.4 Dec 2025: Subscribe to rollback events (closes rollback feedback loop)
             bus.subscribe(DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
@@ -532,6 +533,51 @@ class TrainingCoordinator:
         # P1.3 (Dec 2025): Trigger actual model rollback via RollbackManager
         # This closes the loop: REGRESSION_CRITICAL → pause + rollback
         self._trigger_model_rollback(config_key, model_id, elo_drop)
+
+    def _on_regression_cleared(self, event: Any) -> None:
+        """Handle REGRESSION_CLEARED event - resume training after recovery.
+
+        Dec 2025: Critical handler for regression recovery feedback loop.
+        When a model recovers from regression (Elo restored), we:
+        1. Resume training for the config
+        2. Restore normal cluster capacity
+        3. Log recovery for monitoring
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config_key = payload.get("config") or payload.get("config_key", "")
+        model_id = payload.get("model_id", "")
+        elo_recovered = payload.get("elo_recovered", 0)
+
+        if not config_key and model_id and "_" in model_id:
+            parts = model_id.split("_")
+            if len(parts) >= 2:
+                config_key = f"{parts[0]}_{parts[1]}"
+
+        if not config_key:
+            logger.warning("[TrainingCoordinator] REGRESSION_CLEARED without config_key")
+            return
+
+        self._events_processed += 1
+
+        logger.info(
+            f"[TrainingCoordinator] Regression cleared for {config_key}: "
+            f"Elo recovered {elo_recovered:.0f}, resuming training"
+        )
+
+        # Resume training if it was paused
+        self._resume_training_for_config(config_key)
+
+        # Emit training resumed event
+        self._emit_via_router(
+            "TRAINING_RESUMED",
+            {
+                "config_key": config_key,
+                "reason": "regression_cleared",
+                "elo_recovered": elo_recovered,
+                "timestamp": time.time(),
+            },
+        )
 
     def _trigger_model_rollback(self, config_key: str, model_id: str, elo_drop: float) -> None:
         """Trigger model rollback via RollbackManager (P1.3).
@@ -762,6 +808,49 @@ class TrainingCoordinator:
 
         logger.warning(
             f"[TrainingCoordinator] Paused training job {job.job_id} for {config_key}: {reason}"
+        )
+
+        return True
+
+    def _resume_training_for_config(self, config_key: str) -> bool:
+        """Resume training for a paused config.
+
+        Dec 2025: Complements _pause_training_for_config for regression recovery.
+        Removes training pause and allows new training to start again.
+
+        Args:
+            config_key: Config identifier (e.g., "hex8_2p")
+
+        Returns:
+            True if successfully resumed, False if not paused
+        """
+        # Parse config_key
+        if "_" not in config_key:
+            logger.warning(f"[TrainingCoordinator] Invalid config_key format: {config_key}")
+            return False
+
+        parts = config_key.split("_")
+        board_type = parts[0]
+        num_players = int(parts[1].replace("p", ""))
+
+        # Resume paused job if exists
+        job = self.get_job(board_type, num_players)
+        if not job or job.status != "paused":
+            logger.debug(f"[TrainingCoordinator] No paused training for {config_key} to resume")
+            return False
+
+        # Mark job as running again
+        conn = self._get_connection()
+        conn.execute(
+            '''UPDATE training_jobs
+               SET status = 'running', metadata = json_set(metadata, '$.resumed_at', ?)
+               WHERE job_id = ? AND status = 'paused' ''',
+            (time.time(), job.job_id)
+        )
+        conn.commit()
+
+        logger.info(
+            f"[TrainingCoordinator] Resumed training job {job.job_id} for {config_key}"
         )
 
         return True

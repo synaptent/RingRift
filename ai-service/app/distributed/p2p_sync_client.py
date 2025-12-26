@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import sqlite3
 import time
@@ -133,7 +134,7 @@ class P2PSyncClient:
                         return is_healthy
                     return False
 
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, json.JSONDecodeError) as e:
             logger.debug(f"Peer health check failed for {peer_host}:{peer_port}: {e}")
             if HAS_CIRCUIT_BREAKER:
                 get_operation_breaker("p2p").record_failure(peer_host, e)
@@ -160,7 +161,7 @@ class P2PSyncClient:
                     return data.get("files", [])
                 return []
 
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to list files on {peer_host}:{peer_port}: {e}")
             return []
 
@@ -228,7 +229,7 @@ class P2PSyncClient:
                     get_operation_breaker("p2p").record_success(peer_host)
                 return True, bytes_written, checksum
 
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, json.JSONDecodeError) as e:
             logger.error(f"Error downloading {remote_path}: {e}")
             if HAS_CIRCUIT_BREAKER:
                 get_operation_breaker("p2p").record_failure(peer_host, e)
@@ -379,7 +380,7 @@ class P2PSyncClient:
                     return data.get("success", False)
                 return False
 
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, json.JSONDecodeError) as e:
             logger.warning(f"Failed to request pull: {e}")
             return False
 
@@ -466,7 +467,7 @@ class P2PFallbackSync:
 
         except asyncio.TimeoutError:
             logger.warning(f"SSH sync to {host} timed out, trying P2P fallback")
-        except Exception as e:
+        except (OSError, ConnectionError, ConnectionRefusedError, sqlite3.Error) as e:
             logger.warning(f"SSH sync to {host} failed: {e}, trying P2P fallback")
 
         # Fallback to P2P HTTP

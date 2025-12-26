@@ -42,11 +42,12 @@ class TestSyncPriority:
 
     def test_all_priorities_defined(self):
         """All expected priority levels should exist."""
-        assert SyncPriority.CRITICAL.value == "critical"
-        assert SyncPriority.HIGH.value == "high"
-        assert SyncPriority.NORMAL.value == "normal"
-        assert SyncPriority.LOW.value == "low"
-        assert SyncPriority.BACKGROUND.value == "background"
+        # Priority values are integers for queue ordering (higher = more priority)
+        assert SyncPriority.CRITICAL.value == 100
+        assert SyncPriority.HIGH.value == 75
+        assert SyncPriority.NORMAL.value == 50
+        assert SyncPriority.LOW.value == 25
+        assert SyncPriority.BACKGROUND.value == 10
 
     def test_priority_count(self):
         """Should have exactly 5 priority levels."""
@@ -244,7 +245,7 @@ class TestSyncRecommendation:
         data = rec.to_dict()
         assert data["host"] == "test"
         assert data["action"] == "schedule_sync"
-        assert data["priority"] == "normal"
+        assert data["priority"] == 50  # SyncPriority.NORMAL.value
         assert data["reason"] == "Routine sync"
 
 

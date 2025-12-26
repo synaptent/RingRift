@@ -32,8 +32,8 @@ Architecture Overview (December 2025)
      * curriculum.py: Progressive difficulty staging
    - unified_orchestrator.py: UnifiedTrainingOrchestrator
      (combines all components with context manager interface)
-   - orchestrated_training.py: TrainingOrchestrator
-     (unified lifecycle manager for training services)
+   - TrainingOrchestrator: DEPRECATED (archived Dec 2025)
+     Use UnifiedTrainingOrchestrator instead
 
 4. SCHEDULING & CONTROL
    - temperature_scheduling.py: CANONICAL scheduler module
@@ -449,11 +449,12 @@ except ImportError:
     HAS_ORCHESTRATOR = False
 
 # Import training orchestrator (December 2025)
+# ARCHIVED December 26, 2025 - moved to archive/deprecated_training/
 # Suppress deprecation warnings for backwards-compatible re-exports
 try:
     with _w.catch_warnings():
         _w.filterwarnings("ignore", category=DeprecationWarning)
-        from app.training.orchestrated_training import (
+        from archive.deprecated_training.orchestrated_training import (
             TrainingOrchestrator,
             TrainingOrchestratorConfig,
             TrainingOrchestratorState,

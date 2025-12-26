@@ -101,7 +101,7 @@ class AutoSyncConfig:
                 config.min_games_to_sync = auto_sync.get("min_games_to_sync", 10)
                 config.bandwidth_limit_mbps = auto_sync.get("bandwidth_limit_mbps", 20)
 
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.warning(f"Failed to load config from {config_path}: {e}")
 
         # Fallback to unified_loop.yaml
@@ -122,7 +122,7 @@ class AutoSyncConfig:
                     if node not in config.exclude_hosts:
                         config.exclude_hosts.append(node)
 
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.warning(f"Failed to load unified_loop.yaml: {e}")
 
         return config
@@ -200,7 +200,7 @@ class AutoSyncDaemon:
 
         except ImportError as e:
             logger.warning(f"ClusterManifest not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.error(f"Failed to initialize ClusterManifest: {e}")
 
     def _detect_provider(self) -> str:
@@ -324,7 +324,7 @@ class AutoSyncDaemon:
                 logger.info("[AutoSyncDaemon] Subscribed to NEW_GAMES_AVAILABLE (push-on-generate)")
 
             self._subscribed = True
-        except Exception as e:
+        except (ImportError, RuntimeError, AttributeError) as e:
             logger.warning(f"[AutoSyncDaemon] Failed to subscribe to events: {e}")
 
     async def _on_data_stale(self, event) -> None:
@@ -353,7 +353,7 @@ class AutoSyncDaemon:
             # Trigger immediate sync (don't wait for next interval)
             fire_and_forget(self._trigger_urgent_sync(config_key))
 
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             self._errors_count += 1
             self._last_error = str(e)
             logger.error(f"[AutoSyncDaemon] Error handling DATA_STALE: {e}")
@@ -378,7 +378,7 @@ class AutoSyncDaemon:
             else:
                 fire_and_forget(self._sync_all())
 
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             self._errors_count += 1
             self._last_error = str(e)
             logger.error(f"[AutoSyncDaemon] Error handling SYNC_TRIGGERED: {e}")
@@ -415,7 +415,7 @@ class AutoSyncDaemon:
             # Trigger push to neighbors (Layer 1)
             fire_and_forget(self._push_to_neighbors(config_key, new_games))
 
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             self._errors_count += 1
             self._last_error = str(e)
             logger.error(f"[AutoSyncDaemon] Error handling NEW_GAMES_AVAILABLE: {e}")
@@ -445,7 +445,7 @@ class AutoSyncDaemon:
                         logger.debug(
                             f"[AutoSyncDaemon] Pushed {config_key} to {neighbor_id}"
                         )
-                except Exception as e:
+                except (RuntimeError, OSError, ConnectionError) as e:
                     logger.warning(
                         f"[AutoSyncDaemon] Failed to push to {neighbor_id}: {e}"
                     )
@@ -456,7 +456,7 @@ class AutoSyncDaemon:
                     f"pushed to {pushed_count}/{len(neighbors)} neighbors"
                 )
 
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"[AutoSyncDaemon] Push-on-generate failed for {config_key}: {e}")
 
     async def _get_push_neighbors(self, max_neighbors: int = 3) -> list[str]:
@@ -513,7 +513,7 @@ class AutoSyncDaemon:
 
             return neighbors
 
-        except Exception as e:
+        except (RuntimeError, AttributeError, KeyError) as e:
             logger.warning(f"[AutoSyncDaemon] Error getting push neighbors: {e}")
             return []
 
@@ -535,7 +535,7 @@ class AutoSyncDaemon:
 
             logger.info(f"[AutoSyncDaemon] Urgent sync completed for {config_key}")
 
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"[AutoSyncDaemon] Urgent sync failed for {config_key}: {e}")
 
     async def stop(self) -> None:
@@ -596,7 +596,7 @@ class AutoSyncDaemon:
 
         except ImportError as e:
             logger.warning(f"Gossip sync not available: {e}")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"Failed to start gossip sync: {e}")
 
     async def _emit_sync_failed(self, error: str) -> None:
@@ -609,7 +609,7 @@ class AutoSyncDaemon:
                 retry_count=self._stats.failed_syncs,
                 source="AutoSyncDaemon",
             )
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.debug(f"Could not emit DATA_SYNC_FAILED: {e}")
 
     async def _emit_sync_completed(self, games_synced: int, bytes_transferred: int = 0) -> None:
@@ -631,7 +631,7 @@ class AutoSyncDaemon:
                     },
                     source="AutoSyncDaemon",
                 )
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.debug(f"Could not emit DATA_SYNC_COMPLETED: {e}")
 
     async def _sync_loop(self) -> None:
@@ -650,7 +650,7 @@ class AutoSyncDaemon:
                     )
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except (RuntimeError, OSError, ConnectionError) as e:
                 self._stats.failed_syncs += 1
                 self._stats.last_error = str(e)
                 logger.error(f"Sync cycle error: {e}")
@@ -767,7 +767,7 @@ class AutoSyncDaemon:
                     f"({result.databases_deleted} DBs, {result.npz_deleted} NPZ files)"
                 )
 
-        except Exception as e:
+        except (RuntimeError, OSError, ImportError) as e:
             logger.error(f"Disk cleanup failed: {e}")
 
     async def _register_synced_data(self) -> None:
@@ -818,7 +818,7 @@ class AutoSyncDaemon:
                     )
                     registered += count
 
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.debug(f"Failed to register games from {db_path}: {e}")
 
         if registered > 0:
@@ -844,7 +844,7 @@ class AutoSyncDaemon:
                 cursor = conn.execute("SELECT COUNT(*) FROM games")
                 total_games += cursor.fetchone()[0]
                 conn.close()
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.debug(f"Failed to count games in {db_path}: {e}")
 
         return total_games
@@ -883,7 +883,7 @@ class AutoSyncDaemon:
                     "registered_models": inventory.model_count,
                     "registered_npz": inventory.npz_count,
                 }
-            except Exception as e:
+            except (RuntimeError, OSError, AttributeError) as e:
                 manifest_status = {"enabled": True, "error": str(e)}
         else:
             manifest_status = {"enabled": False}

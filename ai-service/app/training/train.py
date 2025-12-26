@@ -424,7 +424,9 @@ def _validate_training_compatibility(
                 if hasattr(policy, 'isnan') and policy.isnan().any():
                     invalid_samples.append((i, "contains NaN"))
 
-        except Exception as e:
+        except (KeyError, IndexError, ValueError, AttributeError) as e:
+            # KeyError: missing data keys, IndexError: array access,
+            # ValueError: data validation, AttributeError: missing methods
             invalid_samples.append((i, f"error: {str(e)[:50]}"))
 
     if invalid_samples:
@@ -693,7 +695,10 @@ def train_model(
                                     f"[DataFreshness] Emitted TRAINING_BLOCKED_BY_QUALITY for {config_key} "
                                     f"(age={freshness_result.data_age_hours:.1f}h)"
                                 )
-                        except Exception as emit_err:
+                        except (ImportError, AttributeError, RuntimeError) as emit_err:
+                            # ImportError: event_router module not available
+                            # AttributeError: missing event bus methods
+                            # RuntimeError: event system errors
                             logger.debug(f"[DataFreshness] Failed to emit training blocked event: {emit_err}")
 
                         # Default: fail on stale data to prevent training on outdated samples
@@ -717,7 +722,11 @@ def train_model(
                         raise ValueError(error_msg)
             except ValueError:
                 raise  # Re-raise stale data errors
-            except Exception as e:
+            except (OSError, ImportError, AttributeError, RuntimeError) as e:
+                # OSError: file/network I/O errors when checking freshness
+                # ImportError: freshness module dependencies missing
+                # AttributeError: API changes in freshness checker
+                # RuntimeError: freshness check logic errors
                 logger.warning(f"[DataFreshness] Check failed with error: {e}")
                 # If freshness check crashes, we allow training to proceed
                 # This prevents transient issues from blocking training entirely
@@ -924,7 +933,11 @@ def train_model(
                 configured = quality_bridge.configure_hot_data_buffer(hot_buffer)
                 if configured > 0:
                     logger.info(f"Hot buffer configured with {configured} quality scores")
-        except Exception as e:
+        except (ImportError, AttributeError, RuntimeError, ValueError) as e:
+            # ImportError: quality bridge module dependencies missing
+            # AttributeError: API changes or missing methods
+            # RuntimeError: quality bridge initialization errors
+            # ValueError: invalid quality score data
             logger.warning(f"Failed to initialize quality bridge: {e}")
 
     # Initialize integrated enhancements if requested
@@ -999,7 +1012,10 @@ def train_model(
         try:
             metrics_collector = MetricsCollector()
             logger.info("Dashboard metrics collector initialized")
-        except Exception as e:
+        except (ImportError, RuntimeError, OSError) as e:
+            # ImportError: metrics collector dependencies missing
+            # RuntimeError: initialization failures
+            # OSError: file/database access errors
             logger.warning(f"Could not initialize metrics collector: {e}")
 
     # Determine canonical spatial board_size for the CNN from config.
@@ -1117,7 +1133,11 @@ def train_model(
                                     max_idx = local_max
                             if max_idx >= 0:
                                 inferred_size = max_idx + 1
-            except Exception as exc:
+            except (OSError, KeyError, ValueError, AttributeError) as exc:
+                # OSError: file I/O errors reading NPZ
+                # KeyError: missing 'policy_indices' in dataset
+                # ValueError: invalid array conversion
+                # AttributeError: array method errors
                 if not distributed or is_main_process():
                     logger.warning(
                         "Failed to infer policy_size from %s: %s",
@@ -1307,7 +1327,11 @@ def train_model(
                                         max_idx = local_max
                                 if max_idx >= 0:
                                     inferred_hex_size = max_idx + 1
-                except Exception as exc:
+                except (OSError, KeyError, ValueError, AttributeError) as exc:
+                    # OSError: file I/O errors reading NPZ
+                    # KeyError: missing 'policy_indices' in dataset
+                    # ValueError: invalid array conversion
+                    # AttributeError: array method errors
                     if not distributed or is_main_process():
                         logger.warning(
                             "Failed to infer hex policy_size from %s: %s",
@@ -1450,7 +1474,11 @@ def train_model(
                                     "Hex policy index validation passed for %s model",
                                     model_version.upper(),
                                 )
-                except Exception as e:
+                except (OSError, KeyError, ValueError, RuntimeError) as e:
+                    # OSError: file I/O errors reading dataset
+                    # KeyError: missing keys in validation data
+                    # ValueError: validation check failures
+                    # RuntimeError: validation logic errors
                     if "validation failed" in str(e):
                         raise
                     logger.warning(f"Could not validate hex policy indices: {e}")
@@ -1507,7 +1535,11 @@ def train_model(
                                     heuristic_mode,
                                     heuristic_check_path,
                                 )
-            except Exception as exc:
+            except (OSError, KeyError, ValueError, AttributeError) as exc:
+                # OSError: file I/O errors reading NPZ
+                # KeyError: missing 'heuristics' in dataset
+                # ValueError: invalid heuristic data
+                # AttributeError: array method errors
                 if not distributed or is_main_process():
                     logger.warning(
                         "Failed to detect heuristic count from %s: %s",
@@ -1529,7 +1561,11 @@ def train_model(
                         feat_shape = d["features"].shape
                         if len(feat_shape) >= 2:
                             inferred_in_channels = feat_shape[1]  # (N, C, H, W)
-            except Exception as exc:
+            except (OSError, KeyError, ValueError, AttributeError) as exc:
+                # OSError: file I/O errors reading NPZ
+                # KeyError: missing 'features' in dataset
+                # ValueError: invalid array shape
+                # AttributeError: shape attribute errors
                 if not distributed or is_main_process():
                     logger.warning(
                         "Failed to infer hex in_channels from %s: %s",
@@ -1839,7 +1875,10 @@ def train_model(
                 max_batch=min(8192, original_batch * 8),
             )
             logger.info(f"Auto-tuned batch size: {config.batch_size} (was {original_batch})")
-        except Exception as e:
+        except (RuntimeError, ValueError, ImportError) as e:
+            # RuntimeError: CUDA/GPU errors during tuning
+            # ValueError: invalid batch size values
+            # ImportError: auto-tuning module missing
             logger.warning(f"Batch size auto-tuning failed: {e}. Using original batch size.")
 
     # Load initial weights for transfer learning (before save_path check)
@@ -1861,7 +1900,11 @@ def train_model(
                         logger.info(f"  Missing keys (will be randomly initialized): {len(load_result['missing_keys'])}")
                     if load_result.get('unexpected_keys'):
                         logger.info(f"  Unexpected keys (ignored): {len(load_result['unexpected_keys'])}")
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError, KeyError) as e:
+                # OSError: file I/O errors reading checkpoint
+                # RuntimeError: PyTorch loading errors, incompatible models
+                # ValueError: invalid checkpoint format
+                # KeyError: missing required checkpoint keys
                 if not distributed or is_main_process():
                     logger.warning(f"Could not load init weights from {init_weights_path}: {e}. Starting fresh.")
         else:
@@ -1880,7 +1923,11 @@ def train_model(
                 model.load_state_dict(checkpoint)
             if not distributed or is_main_process():
                 logger.info(f"Loaded existing model weights from {save_path}")
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError, KeyError) as e:
+            # OSError: file I/O errors reading checkpoint
+            # RuntimeError: PyTorch loading errors, incompatible models
+            # ValueError: invalid checkpoint format
+            # KeyError: missing model_state_dict key
             if not distributed or is_main_process():
                 logger.warning(
                     f"Could not load existing weights: {e}. Starting fresh."
@@ -4739,7 +4786,11 @@ def train_model(
                 # Mark training as completed successfully (for hardened event emission)
                 _training_completed_normally = True
 
-    except Exception as e:
+    except (RuntimeError, ValueError, OSError, KeyError) as e:
+        # RuntimeError: CUDA/tensor operations, training loop errors
+        # ValueError: invalid training parameters or data
+        # OSError: checkpoint save/load failures
+        # KeyError: missing required data or config keys
         # Capture exception for hardened event emission in finally block
         _training_exception = e
         raise  # Re-raise after capturing
@@ -4893,7 +4944,12 @@ def train_from_file(
             "epoch_losses": result.get('epoch_losses', []) if result else [],
         }
 
-    except Exception as e:
+    except (RuntimeError, ValueError, OSError, KeyError, ImportError) as e:
+        # RuntimeError: CUDA/training errors
+        # ValueError: invalid config/parameters
+        # OSError: file I/O failures
+        # KeyError: missing config keys
+        # ImportError: missing dependencies
         logger.error("Training failed: %s", e)
         return {
             "total": float('inf'),

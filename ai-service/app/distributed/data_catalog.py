@@ -230,7 +230,7 @@ class DataCatalog:
             try:
                 self._manifest = DataManifest(self.manifest_path)
                 logger.info(f"DataCatalog initialized with manifest at {self.manifest_path}")
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.warning(f"Could not initialize manifest: {e}")
 
         # Cache for discovered sources
@@ -298,7 +298,7 @@ class DataCatalog:
                 )
                 if source.game_count > 0:
                     self._sources[str(db_info.path)] = source
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.debug(f"Failed to create source from {db_info.path}: {e}")
 
         # Also discover synced data from other hosts
@@ -348,7 +348,7 @@ class DataCatalog:
                 source = self._analyze_database(db_file, source_type, host_origin)
                 if source and source.game_count > 0:
                     self._sources[str(db_file)] = source
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.debug(f"Failed to analyze {db_file}: {e}")
 
     def _analyze_database(
@@ -411,7 +411,7 @@ class DataCatalog:
         except sqlite3.Error as e:
             logger.debug(f"SQLite error analyzing {db_path}: {e}")
             return None
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"Error analyzing {db_path}: {e}")
             return None
 
@@ -564,7 +564,7 @@ class DataCatalog:
                     stats.high_quality_games = int(
                         quality_dist["total_games"] * quality_dist.get("decisive_rate", 0.5)
                     )
-            except Exception as e:
+            except (OSError, sqlite3.Error, KeyError) as e:
                 logger.debug(f"Failed to get quality stats: {e}")
 
         return stats
@@ -865,7 +865,7 @@ class DataCatalog:
 
                     npz_sources.append(source)
 
-                except Exception as e:
+                except (OSError, ValueError) as e:
                     logger.debug(f"Failed to analyze NPZ {npz_path}: {e}")
 
         # Sort by recency (newest first)
@@ -933,7 +933,7 @@ class DataCatalog:
                 is_available=True,
             )
 
-        except Exception as e:
+        except (OSError, ValueError, KeyError) as e:
             logger.debug(f"Error analyzing NPZ {npz_path}: {e}")
             return None
 
@@ -1177,7 +1177,7 @@ class UnifiedDataRegistry:
                     "synced_games": self._manifest.get_synced_count(),
                     "quality_distribution": self._manifest.get_quality_distribution(),
                 }
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.debug(f"Failed to get manifest stats: {e}")
 
         return {

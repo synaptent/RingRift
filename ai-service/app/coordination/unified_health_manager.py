@@ -370,6 +370,9 @@ class UnifiedHealthManager(CoordinatorBase):
             # Coordinator health monitoring (December 2025 - wires ghost event)
             router.subscribe(DataEventType.COORDINATOR_HEALTH_DEGRADED.value, self._on_coordinator_health_degraded)
 
+            # Deadlock detection (December 2025 - critical lock contention handler)
+            router.subscribe(DataEventType.DEADLOCK_DETECTED.value, self._on_deadlock_detected)
+
             self._subscribed = True
             logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
             return True
@@ -887,6 +890,54 @@ class UnifiedHealthManager(CoordinatorBase):
                 coordinator_name,
                 f"Coordinator health critical (score={health_score:.2f}): {reason}",
             )
+
+    async def _on_deadlock_detected(self, event) -> None:
+        """Handle DEADLOCK_DETECTED event - log and trigger recovery.
+
+        Dec 2025: Critical handler for lock contention and deadlocks.
+        When a deadlock is detected between multiple resources/processes, we:
+        1. Log critical error for immediate investigation
+        2. Record involved resources and holders
+        3. Increment error counters for monitoring
+        4. Trigger circuit breaker to prevent cascade
+
+        Note: Actual deadlock resolution (e.g., killing processes) should be
+        handled by specialized recovery mechanisms, not here.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        resources = payload.get("resources", [])
+        holders = payload.get("holders", [])
+
+        logger.critical(
+            f"[UnifiedHealthManager] DEADLOCK DETECTED: "
+            f"Resources: {resources}, Holders: {holders}"
+        )
+
+        # Create error record
+        error = ErrorRecord(
+            error_id=f"deadlock_{int(time.time() * 1000)}",
+            timestamp=time.time(),
+            component="lock_manager",
+            error_type="deadlock",
+            message=f"Deadlock detected involving {len(resources)} resources",
+            severity=ErrorSeverity.CRITICAL,
+            context={
+                "resources": resources,
+                "holders": holders,
+            },
+        )
+        self._record_error(error)
+
+        # Trigger circuit breaker for lock manager
+        for _ in range(3):  # Multiple failures to trip breaker
+            self._on_component_failure("lock_manager")
+
+        # Escalate for manual intervention
+        await self._escalate_to_human(
+            "lock_manager",
+            f"Deadlock detected: {len(resources)} resources involved",
+        )
 
     # =========================================================================
     # Error and Recovery Recording

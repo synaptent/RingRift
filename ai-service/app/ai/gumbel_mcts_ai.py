@@ -144,7 +144,7 @@ class LeafEvaluationBuffer:
 
         try:
             values, _ = self.neural_net.evaluate_batch(states, value_head=value_head)
-        except Exception as e:
+        except (RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"Batch evaluation failed: {e}")
             values = [0.0] * len(states)
 
@@ -278,7 +278,7 @@ class GumbelMCTSAI(BaseAI):
                 f"(model={config.nn_model_id}, m={self.num_sampled_actions}, "
                 f"budget={self.simulation_budget}, gpu_batch={self._gpu_batch_enabled})"
             )
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, OSError, ValueError) as e:
             if not config.allow_fresh_weights:
                 raise RuntimeError(
                     f"GumbelMCTSAI requires a neural network but failed to load: {e}"
@@ -381,7 +381,7 @@ class GumbelMCTSAI(BaseAI):
                     f"GumbelMCTSAI: initialized heuristic evaluator for hybrid eval "
                     f"(blend_alpha={self._heuristic_blend_alpha})"
                 )
-            except Exception as e:
+            except (RuntimeError, ValueError, AttributeError, ImportError) as e:
                 logger.warning(f"GumbelMCTSAI: failed to create heuristic evaluator: {e}")
                 return None
 
@@ -523,7 +523,7 @@ class GumbelMCTSAI(BaseAI):
                 )
                 if values:
                     nn_value = float(values[0])
-            except Exception as e:
+            except (RuntimeError, ValueError, AttributeError) as e:
                 logger.debug(f"GumbelMCTSAI: NN evaluation failed: {e}")
 
         # Compute heuristic value if needed for blending or fallback
@@ -541,7 +541,7 @@ class GumbelMCTSAI(BaseAI):
                     heuristic_ai.player_number = sim_state.current_player
                     raw_score = heuristic_ai.evaluate_position(sim_state)
                     heuristic_value = self._normalize_heuristic_score(raw_score)
-                except Exception as e:
+                except (RuntimeError, ValueError, AttributeError) as e:
                     logger.debug(f"GumbelMCTSAI: heuristic evaluation failed: {e}")
 
         # Compute final value
@@ -617,7 +617,7 @@ class GumbelMCTSAI(BaseAI):
         if self._use_gpu_tree:
             try:
                 return self._gumbel_mcts_search_gpu_tree(game_state, valid_moves)
-            except Exception as e:
+            except (RuntimeError, ValueError, AttributeError) as e:
                 logger.warning(
                     f"GPU tree search failed, falling back to CPU: {e}"
                 )
@@ -773,7 +773,7 @@ class GumbelMCTSAI(BaseAI):
 
             return policy_logits
 
-        except Exception as e:
+        except (RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"GumbelMCTSAI: policy evaluation failed ({e})")
             return np.zeros(len(valid_moves))
 
@@ -860,7 +860,7 @@ class GumbelMCTSAI(BaseAI):
                     f"GumbelMCTSAI: No GPU available (device={self._gpu_device.type}), "
                     "using sequential evaluation"
                 )
-        except Exception as e:
+        except (RuntimeError, ImportError, AttributeError) as e:
             logger.warning(f"GumbelMCTSAI: GPU check failed, using sequential: {e}")
             self._gpu_available = False
 
@@ -947,7 +947,7 @@ class GumbelMCTSAI(BaseAI):
                         batch_states, value_head=value_head
                     )
                     all_values.extend(values if values else [0.0] * len(batch_states))
-                except Exception as e:
+                except (RuntimeError, ValueError, AttributeError) as e:
                     logger.warning(f"GumbelMCTSAI: Batch evaluation failed: {e}")
                     all_values.extend([0.0] * len(batch_states))
 
@@ -1005,7 +1005,7 @@ class GumbelMCTSAI(BaseAI):
                     [state], value_head=value_head
                 )
                 seq_value = seq_values[0] if seq_values else 0.0
-            except Exception as e:
+            except (RuntimeError, ValueError, AttributeError) as e:
                 logger.debug(f"GumbelMCTSAI: Shadow validation NN call failed: {e}")
                 continue
 
@@ -1155,7 +1155,7 @@ class GumbelMCTSAI(BaseAI):
                         f"  CPU policy top-3: {sorted(cpu_policy.items(), key=lambda x: -x[1])[:3]}"
                     )
 
-        except Exception as e:
+        except (RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"GumbelMCTSAI: GPU tree shadow validation error: {e}")
 
         # Periodic stats logging
@@ -1300,7 +1300,7 @@ class GumbelMCTSAI(BaseAI):
         ):
             try:
                 return self._sequential_halving_batched(game_state, actions)
-            except Exception as e:
+            except (RuntimeError, ValueError, AttributeError) as e:
                 logger.warning(
                     f"GPU batched sequential halving failed, falling back to CPU: {e}"
                 )

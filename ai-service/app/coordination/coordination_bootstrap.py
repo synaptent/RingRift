@@ -99,7 +99,7 @@ def _init_resource_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] ResourceMonitoringCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize ResourceMonitoringCoordinator: {e}")
 
@@ -121,7 +121,7 @@ def _init_metrics_orchestrator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] MetricsAnalysisOrchestrator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize MetricsAnalysisOrchestrator: {e}")
 
@@ -143,7 +143,7 @@ def _init_optimization_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] OptimizationCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize OptimizationCoordinator: {e}")
 
@@ -165,7 +165,7 @@ def _init_cache_orchestrator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] CacheCoordinationOrchestrator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize CacheCoordinationOrchestrator: {e}")
 
@@ -187,7 +187,7 @@ def _init_model_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] ModelLifecycleCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize ModelLifecycleCoordinator: {e}")
 
@@ -209,7 +209,7 @@ def _init_health_manager() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] UnifiedHealthManager not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize UnifiedHealthManager: {e}")
 
@@ -237,7 +237,7 @@ def _init_leadership_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] LeadershipCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize LeadershipCoordinator: {e}")
 
@@ -259,7 +259,7 @@ def _init_selfplay_orchestrator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] SelfplayOrchestrator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize SelfplayOrchestrator: {e}")
 
@@ -291,7 +291,7 @@ def _init_pipeline_orchestrator(
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] DataPipelineOrchestrator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize DataPipelineOrchestrator: {e}")
 
@@ -313,7 +313,7 @@ def _init_task_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] TaskLifecycleCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize TaskLifecycleCoordinator: {e}")
 
@@ -335,7 +335,7 @@ def _init_sync_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] SyncCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize SyncCoordinator: {e}")
 
@@ -357,7 +357,7 @@ def _init_training_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] TrainingCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize TrainingCoordinator: {e}")
 
@@ -394,7 +394,7 @@ def _init_transfer_verifier() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] TransferVerifier not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize TransferVerifier: {e}")
 
@@ -416,7 +416,7 @@ def _init_ephemeral_guard() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] EphemeralDataGuard not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize EphemeralDataGuard: {e}")
 
@@ -438,7 +438,7 @@ def _init_queue_populator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] QueuePopulator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize QueuePopulator: {e}")
 
@@ -460,7 +460,7 @@ def _init_multi_provider() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] MultiProviderOrchestrator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize MultiProviderOrchestrator: {e}")
 
@@ -482,7 +482,7 @@ def _init_job_scheduler() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] JobScheduler not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize JobScheduler: {e}")
 
@@ -504,7 +504,7 @@ def _init_global_task_coordinator() -> BootstrapCoordinatorStatus:
     except ImportError as e:
         status.error = f"Import error: {e}"
         logger.warning(f"[Bootstrap] Global TaskCoordinator not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize global TaskCoordinator: {e}")
 
@@ -523,7 +523,7 @@ def _register_coordinators() -> bool:
     except ImportError:
         logger.warning("[Bootstrap] OrchestratorRegistry not available")
         return False
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         logger.error(f"[Bootstrap] Failed to register coordinators: {e}")
         return False
 
@@ -551,7 +551,7 @@ def _wire_integrations() -> bool:
     except ImportError as e:
         logger.debug(f"[Bootstrap] Integration bridge not available: {e}")
         return False
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         logger.error(f"[Bootstrap] Failed to wire integrations: {e}")
         return False
 
@@ -591,7 +591,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["cluster_sync_to_pipeline"] = True
         logger.debug("[Bootstrap] Wired CLUSTER_SYNC_COMPLETE -> DataPipelineOrchestrator")
 
-    except Exception as e:
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["cluster_sync_to_pipeline"] = False
         logger.debug(f"[Bootstrap] Failed to wire cluster sync to pipeline: {e}")
 
@@ -614,7 +614,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["model_sync_to_lifecycle"] = True
         logger.debug("[Bootstrap] Wired MODEL_SYNC_COMPLETE -> ModelLifecycleCoordinator")
 
-    except Exception as e:
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["model_sync_to_lifecycle"] = False
         logger.debug(f"[Bootstrap] Failed to wire model sync to lifecycle: {e}")
 
@@ -658,7 +658,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
                         origin=EventSource.ROUTER,
                     )
                     await bus.publish(low_quality_event)
-                except Exception as emit_err:
+                except (AttributeError, TypeError, RuntimeError) as emit_err:
                     logger.warning(f"[Bootstrap] Failed to emit low-quality event: {emit_err}")
                 return
 
@@ -685,7 +685,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["selfplay_to_sync"] = True
         logger.debug("[Bootstrap] Wired SELFPLAY_COMPLETE -> SyncCoordinator")
 
-    except Exception as e:
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["selfplay_to_sync"] = False
         logger.debug(f"[Bootstrap] Failed to wire selfplay to sync: {e}")
 
@@ -698,7 +698,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["model_selector_events"] = True
         logger.debug("[Bootstrap] Initialized SelfplayModelSelector MODEL_PROMOTED subscription")
 
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         results["model_selector_events"] = False
         logger.debug(f"[Bootstrap] Failed to init model selector events: {e}")
 
@@ -715,7 +715,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         else:
             logger.debug("[Bootstrap] Quality rollback watcher not subscribed")
 
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         results["quality_to_rollback"] = False
         logger.debug(f"[Bootstrap] Failed to wire quality to rollback: {e}")
 
@@ -738,7 +738,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         if handler:
             logger.debug("[Bootstrap] Wired REGRESSION_DETECTED -> RollbackManager (full auto-rollback enabled)")
 
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         results["regression_to_rollback"] = False
         logger.debug(f"[Bootstrap] Failed to wire regression to rollback: {e}")
 
@@ -751,7 +751,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         if watcher:
             logger.debug("[Bootstrap] Wired PLATEAU_DETECTED -> CurriculumFeedback")
 
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         results["plateau_to_curriculum"] = False
         logger.debug(f"[Bootstrap] Failed to wire plateau to curriculum: {e}")
 
@@ -766,7 +766,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         if watcher:
             logger.debug("[Bootstrap] Wired TRAINING_EARLY_STOPPED -> CurriculumFeedback")
 
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         results["early_stop_to_curriculum"] = False
         logger.debug(f"[Bootstrap] Failed to wire early stop to curriculum: {e}")
 
@@ -829,7 +829,7 @@ def _validate_event_wiring() -> dict[str, Any]:
 
     except ImportError as e:
         logger.debug(f"[Bootstrap] validate_event_flow not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["issues"].append(f"Validation failed: {e}")
         logger.warning(f"[Bootstrap] Event flow validation failed: {e}")
 
@@ -1125,7 +1125,7 @@ def shutdown_coordination() -> dict[str, Any]:
 
             shutdown_results[name] = True
 
-        except Exception as e:
+        except (AttributeError, TypeError, RuntimeError, OSError) as e:
             logger.error(f"[Bootstrap] Error shutting down {name}: {e}")
             shutdown_results[name] = False
 
@@ -1258,7 +1258,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,
             details={"subscriber_count": subscriber_count},
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="event_bus_initialized",
             passed=False,
@@ -1290,7 +1290,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,  # Not a failure if module doesn't exist
             error="Module not available",
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="curriculum_feedback_wired",
             passed=False,
@@ -1317,7 +1317,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,
             error="Module not available",
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="quality_rollback_wired",
             passed=False,
@@ -1345,7 +1345,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,
             error="Module not available",
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="regression_detector_available",
             passed=False,
@@ -1373,7 +1373,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,
             error="Module not available",
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="training_coordinator_subscribed",
             passed=False,
@@ -1399,7 +1399,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,
             error="Module not available",
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="selfplay_scheduler_available",
             passed=False,
@@ -1424,7 +1424,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             details={"missing_events": missing} if missing else None,
             error=f"Missing events: {missing}" if missing else None,
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="critical_event_types_defined",
             passed=False,
@@ -1451,7 +1451,7 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
             passed=True,
             error="Module not available",
         ))
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="daemon_manager_available",
             passed=False,

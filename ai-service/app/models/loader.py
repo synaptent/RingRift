@@ -338,7 +338,7 @@ class ModelLoader:
                     info.architecture = sidecar.get("architecture_version", info.architecture)
                     info.version = sidecar.get("version", info.version)
                     logger.debug(f"Loaded sidecar metadata for {path.name}")
-            except Exception as e:
+            except (FileNotFoundError, OSError, ValueError, KeyError) as e:
                 logger.debug(f"Could not read sidecar for {path.name}: {e}")
 
         # Cache model
@@ -387,7 +387,7 @@ class ModelLoader:
                     if (record.board_type == board_type and record.num_players == num_players
                             and record.checkpoint_path and Path(record.checkpoint_path).exists()):
                         return Path(record.checkpoint_path)
-            except Exception as e:
+            except (RuntimeError, ValueError, AttributeError, OSError) as e:
                 logger.debug(f"Registry lookup failed: {e}")
 
         raise FileNotFoundError(

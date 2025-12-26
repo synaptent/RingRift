@@ -151,7 +151,7 @@ class MaintenanceDaemon:
         while self._running:
             try:
                 await self._run_maintenance_cycle()
-            except Exception as e:
+            except (RuntimeError, OSError, ConnectionError) as e:
                 logger.error(f"[Maintenance] Cycle error: {e}")
 
             # Check every 10 minutes
@@ -253,10 +253,10 @@ class MaintenanceDaemon:
                     bytes_saved += file_size
                     logger.info(f"[Maintenance] Rotated {log_file.name} ({file_size / 1024 / 1024:.1f} MB)")
 
-                except Exception as e:
+                except (OSError, RuntimeError) as e:
                     logger.warning(f"[Maintenance] Failed to rotate {log_file}: {e}")
 
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             logger.error(f"[Maintenance] Log rotation error: {e}")
 
         if rotated:
@@ -300,7 +300,7 @@ class MaintenanceDaemon:
                         f"{size_before / 1024 / 1024:.1f} MB → {size_after / 1024 / 1024:.1f} MB"
                     )
 
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.warning(f"[Maintenance] Failed to VACUUM {db_path}: {e}")
 
         self._stats.databases_vacuumed += vacuumed
@@ -344,7 +344,7 @@ class MaintenanceDaemon:
 
         except ImportError:
             pass
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"[Maintenance] Archive check error: {e}")
 
     async def _cleanup_dlq(self) -> None:
@@ -371,7 +371,7 @@ class MaintenanceDaemon:
 
         except ImportError:
             pass
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"[Maintenance] DLQ cleanup error: {e}")
 
     async def _cleanup_stale_queue_items(self) -> None:
@@ -425,7 +425,7 @@ class MaintenanceDaemon:
 
         except ImportError:
             pass
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"[Maintenance] Queue cleanup error: {e}")
 
     async def _detect_orphan_files(self) -> None:
@@ -516,7 +516,7 @@ class MaintenanceDaemon:
             else:
                 logger.debug("[Maintenance] No orphan files detected")
 
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.warning(f"[Maintenance] Orphan detection error: {e}")
 
     async def _cleanup_orphan_files(
@@ -543,7 +543,7 @@ class MaintenanceDaemon:
                 npz_file.unlink()
                 cleaned += 1
                 logger.info(f"[Maintenance] Deleted orphan NPZ: {npz_file}")
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"[Maintenance] Failed to delete {npz_file}: {e}")
 
         if cleaned:
@@ -648,10 +648,10 @@ class MaintenanceDaemon:
                             },
                             source="maintenance_daemon",
                         )
-                    except Exception as emit_err:
+                    except (RuntimeError, OSError, ConnectionError) as emit_err:
                         logger.debug(f"[Maintenance] Event emission failed: {emit_err}")
 
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.warning(f"[Maintenance] Failed to recover orphan DB {db_path}: {e}")
 
         return recovered

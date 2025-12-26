@@ -429,7 +429,7 @@ class UnifiedModelLoader:
                 map_location=self.device,
                 warn_on_unsafe=False,
             )
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError, OSError, ValueError) as e:
             logger.warning(f"Failed to load checkpoint {path}: {e}")
             if not allow_fresh:
                 raise
@@ -496,7 +496,7 @@ class UnifiedModelLoader:
         # Instantiate model
         try:
             model = self._instantiate_model(architecture, config)
-        except Exception as e:
+        except (RuntimeError, ValueError, AttributeError, TypeError) as e:
             logger.warning(f"Failed to instantiate model for {architecture}: {e}")
             if not allow_fresh:
                 raise
@@ -523,7 +523,7 @@ class UnifiedModelLoader:
             logger.warning(f"Partial weight load for {path}: {e}")
             try:
                 model.load_state_dict(state_dict, strict=False)
-            except Exception as e2:
+            except (RuntimeError, ValueError, AttributeError, TypeError) as e2:
                 logger.warning(f"Even non-strict load failed: {e2}")
                 if not allow_fresh:
                     raise

@@ -1317,11 +1317,37 @@ def wire_sync_events() -> SyncScheduler:
             if host:
                 scheduler.record_games_generated(host, count)
 
+        def _on_sync_stalled(event: Any) -> None:
+            """Handle sync stall - mark host as temporarily unavailable and try alternative sources.
+
+            Dec 2025: Critical handler to prevent sync deadlocks from blocking training.
+            When sync stalls (timeout/failure), we:
+            1. Mark source host as temporarily unavailable
+            2. Log stall for monitoring
+            3. SyncScheduler will automatically select alternative sources on next sync
+            """
+            payload = _event_payload(event)
+            source_host = payload.get("source_host", "unknown")
+            target_host = payload.get("target_host", "unknown")
+            timeout = payload.get("timeout_seconds", 0)
+            retry_count = payload.get("retry_count", 0)
+
+            logger.warning(
+                f"[SyncScheduler] SYNC_STALLED: {source_host} -> {target_host} "
+                f"(timeout: {timeout}s, retries: {retry_count}). "
+                f"Marking {source_host} as temporarily unavailable for failover."
+            )
+
+            # Mark failed host - SyncScheduler will avoid it temporarily
+            scheduler.record_sync_complete(source_host, success=False,
+                                          error=f"Sync stalled after {timeout}s")
+
         router.subscribe(DataEventType.DATA_SYNC_COMPLETED.value, _on_sync_completed)
         router.subscribe(DataEventType.DATA_SYNC_FAILED.value, _on_sync_failed)
         router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
+        router.subscribe(DataEventType.SYNC_STALLED.value, _on_sync_stalled)
 
-        logger.info("[SyncScheduler] Wired to event router (DATA_SYNC_COMPLETED, DATA_SYNC_FAILED, NEW_GAMES_AVAILABLE)")
+        logger.info("[SyncScheduler] Wired to event router (DATA_SYNC_COMPLETED, DATA_SYNC_FAILED, NEW_GAMES_AVAILABLE, SYNC_STALLED)")
 
     except ImportError:
         logger.warning("[SyncScheduler] data_events not available, running without event router")
