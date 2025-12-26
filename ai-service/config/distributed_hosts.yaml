@@ -58,12 +58,13 @@ elo_sync:
 # IMPORTANT: This list is the single source of truth for voter nodes.
 # Do NOT set p2p_voter: true on individual nodes - it will be ignored.
 # The p2p_voters list below is the authoritative voter configuration.
+# Dec 26, 2025: Simplified voters to Nebius nodes only
+# RunPod pods don't expose port 8770 externally, causing network segmentation
+# With 3 voters, quorum = 2 (majority)
 p2p_voters:
   - nebius-backbone-1
-  - runpod-h100
-  - runpod-a100-1
-  - runpod-a100-2
-  - vultr-a100-20gb
+  - nebius-l40s-2
+  - nebius-h100-1
 
 hosts:
   # ============================================================
