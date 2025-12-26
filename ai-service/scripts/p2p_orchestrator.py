@@ -1671,6 +1671,15 @@ class P2POrchestrator(
         except (OSError, ValueError, AttributeError):
             return []
 
+        # Priority 1: Check for p2p_voters list (authoritative)
+        p2p_voters_list = data.get("p2p_voters", []) or []
+        if p2p_voters_list and isinstance(p2p_voters_list, list):
+            voters = sorted({str(v).strip() for v in p2p_voters_list if str(v).strip()})
+            if voters:
+                self.voter_config_source = "config"
+                return voters
+
+        # Priority 2: Legacy support - check p2p_voter: true on each host
         hosts = data.get("hosts", {}) or {}
         voters: list[str] = []
         for node_id, cfg in hosts.items():
