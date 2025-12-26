@@ -68,9 +68,9 @@ Analysis of the training pipeline identified 5 critical bottlenecks affecting da
      --output-dir data/selfplay/gpu_hex8_2p
    ```
 
-3. **Cluster Control** (start GPU selfplay on all nodes):
+3. **Cluster Submit** (dispatch GPU selfplay via unified scheduler):
    ```bash
-   python scripts/cluster_control.py selfplay start --board hex8 --games 500
+   python scripts/cluster_submit.py gpu-selfplay --board hex8 --players 2 --games 500
    ```
 
 ### 4. HIGH GAME TIMEOUT RATE (Medium) - FIXED
@@ -113,7 +113,7 @@ Theoretical max_moves by board/players (from `app/training/env.py`):
 1. `app/training/cloud_storage.py` - Data persistence fixes (buffer, fsync, logging)
 2. `scripts/run_distributed_selfplay.py` - Auto-calculate max_moves + neural batching options
 3. `scripts/run_gpu_selfplay.py` - GPU parallel game generation (existing)
-4. `scripts/cluster_control.py` - Cluster selfplay orchestration (existing)
+4. `scripts/cluster_submit.py` - Cluster selfplay orchestration (existing)
 
 ## Verification
 
@@ -173,10 +173,10 @@ ps aux | grep -E "(selfplay|training|unified)" | grep -v grep | head -10
 python scripts/update_cluster_code.py --auto-stash
 
 # Cluster status
-python scripts/cluster_control.py status
+./scripts/cluster_status.sh
 
 # Start cluster selfplay
-python scripts/cluster_control.py selfplay start --board hex8 --games 500
+python scripts/cluster_submit.py gpu-selfplay --board hex8 --players 2 --games 500
 ```
 
 ### 6. UNIFIED LOOP NOT DETECTING GAMES (Critical) - FIXED

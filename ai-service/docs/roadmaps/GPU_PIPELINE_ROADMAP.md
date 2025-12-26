@@ -69,7 +69,7 @@ run_gpu_selfplay.py
     └─ Fully GPU: move gen + apply + evaluate
     └─ RISK: Rule simplifications affect training quality
 
-run_hybrid_selfplay.py
+run_gpu_selfplay.py (quality-tier=hybrid)
  └─ HybridGPUEvaluator (hybrid_gpu.py)
     ├─ CPU: GameEngine for rules (100% parity)
     └─ GPU: GPUHeuristicEvaluator for scoring only

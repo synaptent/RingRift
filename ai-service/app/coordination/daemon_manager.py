@@ -148,6 +148,12 @@ class DaemonType(Enum):
     # Curriculum integration (December 2025) - bridges all feedback loops for self-improvement
     CURRICULUM_INTEGRATION = "curriculum_integration"
 
+    # Auto export (December 2025) - triggers NPZ export when game thresholds met
+    AUTO_EXPORT = "auto_export"
+
+    # Training trigger (December 2025) - decides WHEN to trigger training automatically
+    TRAINING_TRIGGER = "training_trigger"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -445,6 +451,20 @@ class DaemonManager:
             DaemonType.CURRICULUM_INTEGRATION,
             self._create_curriculum_integration,
             depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Auto export - triggers NPZ export when game thresholds met (December 2025)
+        self.register_factory(
+            DaemonType.AUTO_EXPORT,
+            self._create_auto_export,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        # Training trigger - decides WHEN to trigger training automatically (December 2025)
+        self.register_factory(
+            DaemonType.TRAINING_TRIGGER,
+            self._create_training_trigger,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.AUTO_EXPORT],
         )
 
     def register_factory(
@@ -1868,6 +1888,61 @@ class DaemonManager:
         except Exception as e:
             logger.error(f"CurriculumIntegration failed: {e}")
 
+    async def _create_auto_export(self) -> None:
+        """Create and run auto export daemon (December 2025).
+
+        Automatically triggers NPZ export when game thresholds are met.
+        Subscribes to SELFPLAY_COMPLETE events and triggers export when
+        accumulated games exceed threshold (default: 500 games).
+
+        Emits NPZ_EXPORT_COMPLETE events for downstream consumers.
+        """
+        try:
+            from app.coordination.auto_export_daemon import get_auto_export_daemon
+
+            daemon = get_auto_export_daemon()
+            await daemon.start()
+
+            # Keep running while daemon is active
+            while True:
+                await asyncio.sleep(60)
+                if not daemon._running:
+                    break
+
+        except ImportError as e:
+            logger.warning(f"AutoExportDaemon dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"AutoExportDaemon failed: {e}")
+
+    async def _create_training_trigger(self) -> None:
+        """Create and run training trigger daemon (December 2025).
+
+        Decides WHEN to trigger training automatically. Monitors:
+        - Data freshness (NPZ age)
+        - Training not already active
+        - Idle GPU availability
+        - Minimum sample count
+
+        Subscribes to NPZ_EXPORT_COMPLETE events for immediate trigger.
+        Emits TRAINING_STARTED events when triggering training.
+        """
+        try:
+            from app.coordination.training_trigger_daemon import get_training_trigger_daemon
+
+            daemon = get_training_trigger_daemon()
+            await daemon.start()
+
+            # Keep running while daemon is active
+            while True:
+                await asyncio.sleep(60)
+                if not daemon._running:
+                    break
+
+        except ImportError as e:
+            logger.warning(f"TrainingTriggerDaemon dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"TrainingTriggerDaemon failed: {e}")
+
     async def _create_dlq_retry(self) -> None:
         """Create and run dead-letter queue retry daemon.
 
@@ -1956,6 +2031,8 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.NODE_RECOVERY,  # Phase 21: Auto-recover terminated nodes
         DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
+        DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
+        DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
     ],
 
     # Training node profile - runs on GPU nodes
@@ -1972,6 +2049,8 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.P2P_AUTO_DEPLOY,  # Phase 21.2: Ensure P2P runs on recovered nodes
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for local self-improvement
+        DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
+        DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
     ],
 
     # Ephemeral node profile - runs on Vast.ai/spot instances

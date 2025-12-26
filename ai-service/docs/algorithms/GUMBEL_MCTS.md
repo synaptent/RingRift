@@ -145,14 +145,14 @@ moves, probs = gumbel_ai.get_visit_distribution()
 
 ### Using in Selfplay
 
-The `run_hybrid_selfplay.py` script automatically captures visit distributions:
+The `generate_gumbel_selfplay.py` script automatically captures visit distributions:
 
 ```bash
-python scripts/run_hybrid_selfplay.py \
-  --board-type hex8 \
-  --engine-mode gumbel-mcts \
-  --nn-model-id ringrift_hex8_2p_v3_retrained \
-  --num-games 100
+python scripts/generate_gumbel_selfplay.py \
+  --board hex8 \
+  --num-players 2 \
+  --num-games 100 \
+  --model-id ringrift_hex8_2p_v3_retrained
 ```
 
 The captured `mcts_policy_dist` is stored in move records and can be used for training.
@@ -283,12 +283,12 @@ for game_idx in range(num_games):
 
 ```bash
 # Generate gumbel-mcts games with specific model
-python scripts/run_hybrid_selfplay.py \
-  --board-type hex8 \
+python scripts/generate_gumbel_selfplay.py \
+  --board hex8 \
+  --num-players 2 \
   --num-games 200 \
-  --engine-mode gumbel-mcts \
-  --nn-model-id ringrift_hex8_2p_v3_retrained \
-  --output-dir data/selfplay/hex8_gumbel
+  --model-id ringrift_hex8_2p_v3_retrained \
+  --output data/selfplay/hex8_gumbel/games.jsonl
 ```
 
 ---

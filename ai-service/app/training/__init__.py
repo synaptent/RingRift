@@ -95,6 +95,7 @@ __all__ = [
     "HAS_CONFIG_RESOLVER",
     "HAS_CROSSBOARD_STRENGTH",
     "HAS_CURRICULUM",
+    "HAS_UNIFIED_CURRICULUM",
     "HAS_DATA_LOADER_FACTORY",
     "HAS_DATA_LOADERS",
     "HAS_DATASETS",
@@ -135,6 +136,11 @@ __all__ = [
     "CurriculumStage",
     "CurriculumState",
     "create_default_curriculum",
+    # Unified curriculum service
+    "UnifiedCurriculumService",
+    "get_unified_curriculum_service",
+    "get_unified_curriculum_weight",
+    "get_unified_curriculum_weights",
     "DataAugmentor",
     # Knowledge Distillation
     "DistillationConfig",
@@ -713,6 +719,25 @@ try:
     HAS_CURRICULUM = True
 except ImportError:
     HAS_CURRICULUM = False
+
+# =============================================================================
+# Unified Curriculum Service (December 2025 Phase 4)
+# =============================================================================
+# Single source of truth for curriculum weights, consolidating:
+# - CurriculumFeedback: win rate, Elo trend, weak opponents
+# - FeedbackAccelerator: momentum state
+# - ImprovementOptimizer: promotion success/failure
+
+try:
+    from app.training.unified_curriculum_service import (
+        UnifiedCurriculumService,
+        get_unified_curriculum_service,
+        get_unified_curriculum_weight,
+        get_unified_curriculum_weights,
+    )
+    HAS_UNIFIED_CURRICULUM = True
+except ImportError:
+    HAS_UNIFIED_CURRICULUM = False
 
 # =============================================================================
 # Knowledge Distillation (December 2025)

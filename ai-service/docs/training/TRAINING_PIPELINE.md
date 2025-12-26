@@ -54,7 +54,7 @@ This document describes the self-improvement training loop architecture and oper
 
 **Process**:
 
-- Workers generate games via `run_gpu_selfplay.py` or `run_hybrid_selfplay.py`
+- Workers generate games via `run_gpu_selfplay.py` or `selfplay.py`
 - Games are written to JSONL format for efficiency
 - Each worker writes to its own subdirectory
 
@@ -441,11 +441,11 @@ training:
 Generate training data with soft policy targets from visit distributions:
 
 ```bash
-python scripts/run_hybrid_selfplay.py \
-  --board-type hex8 \
-  --engine-mode gumbel-mcts \
-  --nn-model-id ringrift_hex8_2p_v3_retrained \
-  --num-games 200
+python scripts/generate_gumbel_selfplay.py \
+  --board hex8 \
+  --num-players 2 \
+  --num-games 200 \
+  --model-id ringrift_hex8_2p_v3_retrained
 ```
 
 ### Training CLI Arguments
@@ -536,8 +536,11 @@ ssh gpu-node-1 "cd ~/ringrift/ai-service && source venv/bin/activate && \
 **Fix**: Start Gumbel MCTS selfplay
 
 ```bash
-python scripts/run_hybrid_selfplay.py --board-type square8 --engine-mode gumbel-mcts \
-  --mcts-sims 200 --num-games 500
+python scripts/generate_gumbel_selfplay.py \
+  --board square8 \
+  --num-players 2 \
+  --num-games 500 \
+  --simulation-budget 200
 ```
 
 ### Cron Jobs

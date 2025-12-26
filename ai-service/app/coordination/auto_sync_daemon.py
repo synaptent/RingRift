@@ -538,21 +538,20 @@ class AutoSyncDaemon:
                 continue
 
             try:
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
+                with sqlite3.connect(db_path, timeout=5) as conn:
+                    cursor = conn.cursor()
 
-                # Get board type and num_players
-                cursor.execute(
-                    "SELECT board_type, num_players FROM games LIMIT 1"
-                )
-                row = cursor.fetchone()
-                board_type = row[0] if row else None
-                num_players = row[1] if row else None
+                    # Get board type and num_players
+                    cursor.execute(
+                        "SELECT board_type, num_players FROM games LIMIT 1"
+                    )
+                    row = cursor.fetchone()
+                    board_type = row[0] if row else None
+                    num_players = row[1] if row else None
 
-                # Get game IDs
-                cursor.execute("SELECT game_id FROM games")
-                game_ids = [r[0] for r in cursor.fetchall()]
-                conn.close()
+                    # Get game IDs
+                    cursor.execute("SELECT game_id FROM games")
+                    game_ids = [r[0] for r in cursor.fetchall()]
 
                 if game_ids:
                     # Register games in batch

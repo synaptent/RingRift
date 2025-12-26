@@ -49,8 +49,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StreamingConfig:
     """Configuration for streaming pipeline."""
-    # Polling settings
-    poll_interval_seconds: float = 5.0
+    # Polling settings - adaptive interval (Phase 5: Dec 2025)
+    poll_interval_seconds: float = 5.0  # Base/idle interval
+    poll_interval_min: float = 0.5  # Minimum during active generation
+    poll_interval_max: float = 10.0  # Maximum during very low activity
+    adaptive_polling: bool = True  # Enable dynamic interval adjustment
     max_poll_batch: int = 1000
 
     # Buffer settings
@@ -380,6 +383,10 @@ class StreamingDataPipeline:
         self._total_batches_yielded: int = 0
         self._db_queries_async: int = 0
 
+        # Adaptive polling state (Phase 5: Dec 2025)
+        self._recent_game_counts: deque[int] = deque(maxlen=10)  # Track last 10 poll results
+        self._current_poll_interval: float = self.config.poll_interval_seconds
+
     async def start(self):
         """Start the streaming pipeline."""
         if self._running:
@@ -450,6 +457,50 @@ class StreamingDataPipeline:
         self._db_queries_async += 1
         return games
 
+    def _compute_adaptive_interval(self, new_game_count: int) -> float:
+        """Compute adaptive poll interval based on game arrival rate.
+
+        Phase 5 (Dec 2025): Reduces GPU idle time by polling faster during
+        active selfplay (many new games) and slower during idle periods.
+
+        Returns:
+            Adjusted poll interval in seconds
+        """
+        if not self.config.adaptive_polling:
+            return self.config.poll_interval_seconds
+
+        # Track recent poll results
+        self._recent_game_counts.append(new_game_count)
+
+        # Compute average games per poll over recent history
+        avg_games = sum(self._recent_game_counts) / len(self._recent_game_counts)
+
+        # Adaptive interval based on activity level
+        # - High activity (50+ games/poll): use min interval (0.5s)
+        # - Low activity (0-5 games/poll): use max interval (10s)
+        # - Medium activity: interpolate linearly
+        high_threshold = 50
+        low_threshold = 5
+
+        if avg_games >= high_threshold:
+            new_interval = self.config.poll_interval_min
+        elif avg_games <= low_threshold:
+            new_interval = self.config.poll_interval_max
+        else:
+            # Linear interpolation
+            ratio = (avg_games - low_threshold) / (high_threshold - low_threshold)
+            new_interval = self.config.poll_interval_max - (
+                ratio * (self.config.poll_interval_max - self.config.poll_interval_min)
+            )
+
+        # Smooth transition (exponential moving average)
+        alpha = 0.3  # Smoothing factor
+        self._current_poll_interval = (
+            alpha * new_interval + (1 - alpha) * self._current_poll_interval
+        )
+
+        return self._current_poll_interval
+
     async def _poll_loop(self):
         """Background loop to poll database for new games.
 
@@ -515,13 +566,18 @@ class StreamingDataPipeline:
                         self._total_samples_ingested += len(new_samples)
                         logger.debug(f"Ingested {len(new_samples)} samples, buffer size: {len(self.buffer)}")
 
+                # Compute adaptive poll interval based on game arrival rate
+                poll_interval = self._compute_adaptive_interval(len(new_games) if new_games else 0)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in poll loop: {e}")
+                poll_interval = self.config.poll_interval_seconds  # Fallback
 
             # Wait before next poll (prefetch continues in background)
-            await asyncio.sleep(self.config.poll_interval_seconds)
+            # Phase 5: Use adaptive interval based on activity
+            await asyncio.sleep(poll_interval)
 
     def _compute_sample_weights(self, samples: list[GameSample]) -> np.ndarray:
         """Compute sampling weights based on recency, quality, and priority.
@@ -628,6 +684,12 @@ class StreamingDataPipeline:
 
     def get_stats(self) -> dict[str, Any]:
         """Get pipeline statistics."""
+        # Compute average game rate
+        avg_games_per_poll = (
+            sum(self._recent_game_counts) / len(self._recent_game_counts)
+            if self._recent_game_counts else 0
+        )
+
         return {
             "buffer_size": len(self.buffer),
             "buffer_capacity": self.config.buffer_size,
@@ -637,6 +699,10 @@ class StreamingDataPipeline:
             "running": self._running,
             "db_queries_async": self._db_queries_async,
             "prefetch_active": self._prefetch_task is not None and not self._prefetch_task.done(),
+            # Adaptive polling stats (Phase 5)
+            "current_poll_interval": round(self._current_poll_interval, 2),
+            "adaptive_polling_enabled": self.config.adaptive_polling,
+            "avg_games_per_poll": round(avg_games_per_poll, 1),
         }
 
     def update_priorities(self, updates: dict[str, float]):

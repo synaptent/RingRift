@@ -72,6 +72,36 @@ python scripts/run_training_loop.py \
   --skip-selfplay
 ```
 
+### Master Loop Controller (Recommended for Automation)
+
+The unified automation entry point that orchestrates all background daemons and training loop:
+
+```bash
+# Full automation mode (recommended for long-term cluster utilization)
+python scripts/master_loop.py
+
+# Watch mode (show status, don't run loop)
+python scripts/master_loop.py --watch
+
+# Specific configs only
+python scripts/master_loop.py --configs hex8_2p,square8_2p
+
+# Dry run (preview actions without executing)
+python scripts/master_loop.py --dry-run
+
+# Skip daemons (for testing)
+python scripts/master_loop.py --skip-daemons
+```
+
+**What it orchestrates:**
+
+- `SelfplayScheduler` - Priority-based selfplay allocation using curriculum weights, Elo velocities
+- `DaemonManager` - Lifecycle for all background daemons (30+ types)
+- `ClusterMonitor` - Real-time cluster health
+- `FeedbackLoopController` - Training feedback signals
+- `DataPipelineOrchestrator` - Pipeline stage tracking
+- `QueuePopulator` - Work queue maintenance until Elo targets met
+
 ### Transfer Learning (2p to 4p)
 
 ```bash
@@ -235,16 +265,32 @@ stats = run_selfplay(board_type="hex8", num_players=2, num_games=100, engine="he
 
 Unified training pipeline orchestration:
 
-- **`event_router.py`**: Unified event bus bridging in-memory, stage, and cross-process events
+**Core Orchestration:**
+
+- **`selfplay_scheduler.py`**: Priority-based selfplay allocation (curriculum, Elo velocity, feedback signals)
+- **`queue_populator.py`**: Maintains work queue until Elo targets met (60% selfplay, 30% training, 10% tournament)
+- **`idle_resource_daemon.py`**: Spawns selfplay on idle GPUs using SelfplayScheduler priorities
+- **`utilization_optimizer.py`**: Matches GPU capabilities to board sizes, optimizes cluster utilization
+- **`feedback_loop_controller.py`**: Manages training feedback signals and quality thresholds
+
+**Event System:**
+
+- **`event_router.py`**: Unified event bus with content-based deduplication (SHA256)
 - **`pipeline_actions.py`**: Stage invokers with circuit breaker protection
 - **`data_pipeline_orchestrator.py`**: Tracks and triggers pipeline stages
-- **`daemon_manager.py`**: Lifecycle management for all daemons
+
+**Daemon Management:**
+
+- **`daemon_manager.py`**: Lifecycle management for 30+ daemon types
 - **`daemon_adapters.py`**: Wrappers for existing daemons (sync, promotion, distillation)
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
 
 ```bash
-# Launch all daemons under unified management
+# Recommended: Use master_loop.py for full automation
+python scripts/master_loop.py
+
+# Or launch specific daemons
 python scripts/launch_daemons.py --all
 
 # Check daemon status

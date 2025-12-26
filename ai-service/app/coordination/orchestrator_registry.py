@@ -233,43 +233,42 @@ class OrchestratorRegistry:
         """Initialize the SQLite database with schema."""
         REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(str(self._db_path), timeout=float(SQLITE_SHORT_TIMEOUT))
-        conn.execute('PRAGMA journal_mode=WAL')  # Enable WAL for better concurrency
-        conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SHORT_MS}')
+        with sqlite3.connect(str(self._db_path), timeout=float(SQLITE_SHORT_TIMEOUT)) as conn:
+            conn.execute('PRAGMA journal_mode=WAL')  # Enable WAL for better concurrency
+            conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SHORT_MS}')
 
-        conn.executescript('''
-            CREATE TABLE IF NOT EXISTS orchestrators (
-                id TEXT PRIMARY KEY,
-                role TEXT NOT NULL,
-                hostname TEXT NOT NULL,
-                pid INTEGER NOT NULL,
-                state TEXT NOT NULL DEFAULT 'starting',
-                started_at TEXT NOT NULL,
-                last_heartbeat TEXT NOT NULL,
-                metadata TEXT DEFAULT '{}',
-                UNIQUE(role)  -- Only one orchestrator per role
-            );
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS orchestrators (
+                    id TEXT PRIMARY KEY,
+                    role TEXT NOT NULL,
+                    hostname TEXT NOT NULL,
+                    pid INTEGER NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'starting',
+                    started_at TEXT NOT NULL,
+                    last_heartbeat TEXT NOT NULL,
+                    metadata TEXT DEFAULT '{}',
+                    UNIQUE(role)  -- Only one orchestrator per role
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_orchestrators_role ON orchestrators(role);
-            CREATE INDEX IF NOT EXISTS idx_orchestrators_state ON orchestrators(state);
-            CREATE INDEX IF NOT EXISTS idx_orchestrators_heartbeat ON orchestrators(last_heartbeat);
+                CREATE INDEX IF NOT EXISTS idx_orchestrators_role ON orchestrators(role);
+                CREATE INDEX IF NOT EXISTS idx_orchestrators_state ON orchestrators(state);
+                CREATE INDEX IF NOT EXISTS idx_orchestrators_heartbeat ON orchestrators(last_heartbeat);
 
-            -- Event log for debugging coordination issues
-            CREATE TABLE IF NOT EXISTS orchestrator_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                orchestrator_id TEXT,
-                role TEXT,
-                event_type TEXT NOT NULL,
-                message TEXT,
-                metadata TEXT DEFAULT '{}'
-            );
+                -- Event log for debugging coordination issues
+                CREATE TABLE IF NOT EXISTS orchestrator_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    orchestrator_id TEXT,
+                    role TEXT,
+                    event_type TEXT NOT NULL,
+                    message TEXT,
+                    metadata TEXT DEFAULT '{}'
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_events_timestamp ON orchestrator_events(timestamp);
-            CREATE INDEX IF NOT EXISTS idx_events_role ON orchestrator_events(role);
-        ''')
-        conn.commit()
-        conn.close()
+                CREATE INDEX IF NOT EXISTS idx_events_timestamp ON orchestrator_events(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_events_role ON orchestrator_events(role);
+            ''')
+            conn.commit()
 
         # Clean up stale entries on startup
         self._cleanup_stale_orchestrators()

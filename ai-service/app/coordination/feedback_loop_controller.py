@@ -531,7 +531,7 @@ class FeedbackLoopController:
 
             try:
                 loop = asyncio.get_running_loop()
-                asyncio.create_task(bus.publish(event))
+                _safe_create_task(bus.publish(event), "curriculum_event_publish")
             except RuntimeError:
                 asyncio.run(bus.publish(event))
 
@@ -802,15 +802,16 @@ class FeedbackLoopController:
         try:
             from app.coordination.event_emitters import emit_data_quality_assessed
 
-            asyncio.create_task(
+            _safe_create_task(
                 emit_data_quality_assessed(
                     config=config_key,
                     quality_score=quality_score,
                     samples_available=0,  # Unknown here
                     ready_for_training=True,
-                )
+                ),
+                f"emit_data_quality_assessed({config_key})",
             )
-        except (ImportError, RuntimeError):
+        except ImportError:
             pass
 
     def _trigger_evaluation(self, config_key: str, model_path: str) -> None:
@@ -869,12 +870,10 @@ class FeedbackLoopController:
                         f"{result.error or 'unknown error'}"
                     )
 
-            asyncio.create_task(run_gauntlet())
+            _safe_create_task(run_gauntlet(), f"run_gauntlet({config_key})")
 
         except ImportError as e:
             logger.debug(f"[FeedbackLoopController] trigger_evaluation not available: {e}")
-        except RuntimeError as e:
-            logger.debug(f"[FeedbackLoopController] Could not create gauntlet task: {e}")
 
     def _record_training_in_curriculum(self, config_key: str) -> None:
         """Record training completion in curriculum."""
@@ -902,15 +901,16 @@ class FeedbackLoopController:
         try:
             from app.coordination.pipeline_actions import trigger_promotion
 
-            asyncio.create_task(
+            _safe_create_task(
                 trigger_promotion({
                     "config": config_key,
                     "model_path": model_path,
                     "win_rate": win_rate,
                     "elo": elo,
-                })
+                }),
+                f"trigger_promotion({config_key})",
             )
-        except (ImportError, RuntimeError):
+        except ImportError:
             pass
 
     def _signal_urgent_training(self, config_key: str, failure_count: int) -> None:
@@ -946,17 +946,21 @@ class FeedbackLoopController:
                 try:
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
-                        asyncio.ensure_future(emit_selfplay_target_updated(
-                            config_key=config_key,
-                            target_games=target_games,
-                            reason=f"promotion_failure_x{failure_count}",
-                            priority=priority,
-                            source="feedback_loop_controller.py",
-                        ))
-                        logger.info(
-                            f"[FeedbackLoopController] Emitted SELFPLAY_TARGET_UPDATED: "
-                            f"{config_key} -> {target_games} games (priority={priority})"
+                        task = _safe_create_task(
+                            emit_selfplay_target_updated(
+                                config_key=config_key,
+                                target_games=target_games,
+                                reason=f"promotion_failure_x{failure_count}",
+                                priority=priority,
+                                source="feedback_loop_controller.py",
+                            ),
+                            f"emit_selfplay_target_updated({config_key})",
                         )
+                        if task:
+                            logger.info(
+                                f"[FeedbackLoopController] Emitted SELFPLAY_TARGET_UPDATED: "
+                                f"{config_key} -> {target_games} games (priority={priority})"
+                            )
                 except RuntimeError:
                     pass  # No event loop available
 
@@ -1071,7 +1075,7 @@ def reset_feedback_loop_controller() -> None:
     """Reset the singleton (for testing)."""
     global _controller
     if _controller is not None:
-        asyncio.create_task(_controller.stop())
+        _safe_create_task(_controller.stop(), "feedback_loop_controller_stop")
     _controller = None
 
 

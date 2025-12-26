@@ -369,6 +369,9 @@ class AdaptiveController:
         Called when LOW_QUALITY_DATA_WARNING is received. The penalty
         decays over iterations as quality may improve.
 
+        Emits QUALITY_PENALTY_APPLIED event to notify selfplay runners
+        to reduce generation rate.
+
         Args:
             penalty: Penalty value (0.0 to 1.0, higher = worse quality)
             reason: Optional reason for logging
@@ -381,6 +384,41 @@ class AdaptiveController:
                 f"{old_penalty:.2f} -> {self._quality_penalty:.2f}"
                 f"{f' ({reason})' if reason else ''}"
             )
+            # Emit event to notify selfplay runners (December 2025)
+            self._emit_quality_penalty_event(old_penalty, reason)
+
+    def _emit_quality_penalty_event(self, old_penalty: float, reason: str) -> None:
+        """Emit QUALITY_PENALTY_APPLIED event for selfplay throttling."""
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_router()
+            if router is None:
+                return
+
+            # Calculate rate multiplier: 1.0 penalty = 0.7x rate
+            rate_multiplier = 1.0 - (self._quality_penalty * 0.3)
+
+            import asyncio
+            asyncio.get_event_loop().create_task(
+                router.publish(
+                    DataEventType.QUALITY_PENALTY_APPLIED,
+                    {
+                        "config_key": self.config_name,
+                        "old_penalty": old_penalty,
+                        "new_penalty": self._quality_penalty,
+                        "rate_multiplier": rate_multiplier,
+                        "reason": reason,
+                    },
+                )
+            )
+            logger.debug(
+                f"Emitted QUALITY_PENALTY_APPLIED: {self.config_name} "
+                f"rate_multiplier={rate_multiplier:.2f}"
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit quality penalty event: {e}")
 
     def get_statistics(self) -> dict:
         """Get summary statistics of the improvement loop."""
@@ -658,12 +696,56 @@ async def on_plateau_detected(
     except Exception as e:
         logger.debug(f"[PlateauDetection] Failed to signal accelerator: {e}")
 
+    # MANDATORY: Trigger curriculum advance (December 2025)
+    # This ensures plateau detection always leads to concrete action
+    try:
+        await _force_curriculum_advance(config_key, plateau_details)
+    except Exception as e:
+        logger.warning(f"[PlateauDetection] Curriculum advance failed: {e}")
+
     # Emit plateau detected event
     if HAS_EVENT_SYSTEM:
         await emit_plateau_detected(
             config=config_key,
             iterations_without_improvement=plateau_details.get("window_size", 0),
             avg_win_rate=0.0,  # Not available from Elo history
-            recommended_action="Consider hyperparameter search or curriculum adjustment",
+            recommended_action="Curriculum advanced automatically",
             source="elo_plateau_detection",
         )
+
+
+async def _force_curriculum_advance(config_key: str, plateau_details: dict) -> None:
+    """Force curriculum advance when plateau is detected.
+
+    December 2025: Makes plateau → curriculum advance MANDATORY.
+    This ensures the training loop never gets stuck.
+    """
+    try:
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
+
+        router = get_router()
+        if router is None:
+            logger.warning("[PlateauAction] Event router not available")
+            return
+
+        # Emit CURRICULUM_ADVANCED event to notify all listeners
+        await router.publish(
+            DataEventType.CURRICULUM_ADVANCED,
+            {
+                "config": config_key,
+                "reason": "plateau_detected_mandatory_action",
+                "plateau_slope": plateau_details.get("slope", 0),
+                "plateau_confidence": plateau_details.get("confidence", 0),
+                "action": "curriculum_tier_advanced",
+            },
+        )
+        logger.info(
+            f"[PlateauAction] MANDATORY curriculum advance for {config_key}: "
+            f"plateau slope={plateau_details.get('slope', 0):.2f}"
+        )
+
+    except ImportError as e:
+        logger.debug(f"[PlateauAction] Event system not available: {e}")
+    except Exception as e:
+        logger.warning(f"[PlateauAction] Failed to advance curriculum: {e}")

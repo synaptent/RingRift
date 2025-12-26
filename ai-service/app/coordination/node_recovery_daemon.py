@@ -562,17 +562,71 @@ class NodeRecoveryDaemon:
             return False
 
     async def _restart_vast_node(self, node: NodeInfo) -> bool:
-        """Restart a Vast.ai instance."""
-        if not self.config.vast_api_key:
+        """Restart a Vast.ai instance.
+
+        Uses the VastManager to start/stop instances via vastai CLI.
+        The vast_api_key env var is read by vastai CLI directly.
+        """
+        try:
+            from app.providers.vast_manager import VastManager
+
+            manager = VastManager()
+
+            # Extract instance ID from node metadata or node_id
+            instance_id = node.metadata.get("instance_id") or node.node_id
+
+            # Check if it's a valid Vast.ai instance ID (numeric)
+            if not instance_id or not str(instance_id).isdigit():
+                # Try to find by host match
+                instances = await manager.list_instances()
+                for inst in instances:
+                    if node.host in [inst.public_ip, inst.metadata.get("ssh_host", "")]:
+                        instance_id = inst.instance_id
+                        break
+
+            if not instance_id:
+                logger.warning(
+                    f"[NodeRecoveryDaemon] Cannot find Vast instance for {node.node_id}"
+                )
+                return False
+
+            logger.info(
+                f"[NodeRecoveryDaemon] Restarting Vast.ai instance {instance_id} "
+                f"for node {node.node_id}"
+            )
+
+            # Stop then start for full restart
+            stop_success = await manager.stop_instance(str(instance_id))
+            if not stop_success:
+                logger.warning(
+                    f"[NodeRecoveryDaemon] Failed to stop Vast instance {instance_id}, "
+                    "attempting start anyway"
+                )
+
+            # Wait briefly for stop to complete
+            await asyncio.sleep(5)
+
+            # Start the instance
+            start_success = await manager.start_instance(str(instance_id))
+            if start_success:
+                logger.info(
+                    f"[NodeRecoveryDaemon] Successfully restarted Vast instance {instance_id}"
+                )
+                return True
+            else:
+                logger.error(
+                    f"[NodeRecoveryDaemon] Failed to start Vast instance {instance_id}"
+                )
+                return False
+
+        except ImportError:
             logger.warning(
-                f"[NodeRecoveryDaemon] Cannot restart Vast node {node.node_id}: "
-                "VAST_API_KEY not set"
+                "[NodeRecoveryDaemon] VastManager not available for Vast restart"
             )
             return False
-
-        # TODO: Implement Vast.ai API restart
-        logger.info(f"[NodeRecoveryDaemon] Vast restart not yet implemented for {node.node_id}")
-        return False
+        except Exception as e:
+            logger.error(f"[NodeRecoveryDaemon] Vast restart error: {e}")
+            return False
 
     async def _restart_runpod_node(self, node: NodeInfo) -> bool:
         """Restart a RunPod instance."""

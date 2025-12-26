@@ -46,7 +46,7 @@ from typing import Any
 
 from app.config.thresholds import (
     GPU_MEMORY_WEIGHTS,
-    SELFPLAY_GAMES_PER_GPU_TYPE,
+    SELFPLAY_GAMES_PER_NODE,
     is_ephemeral_node,
     get_gpu_weight,
 )
@@ -378,13 +378,25 @@ class SelfplayScheduler:
 
             feedback = get_curriculum_feedback()
             if feedback:
-                # Get current weights from curriculum feedback
-                result = dict(feedback._current_weights)
+                # Use get_curriculum_weights() which computes weights from metrics
+                # (win rates, Elo trends, weak opponent data) instead of accessing
+                # _current_weights directly which may be empty initially
+                computed_weights = feedback.get_curriculum_weights()
+                if computed_weights:
+                    result = computed_weights
+                else:
+                    # Fall back to manually tracked weights if metrics unavailable
+                    result = dict(feedback._current_weights)
 
         except ImportError:
             logger.debug("[SelfplayScheduler] curriculum_feedback not available")
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error getting curriculum weights: {e}")
+
+        # Ensure all configs have a default weight
+        for config_key in ALL_CONFIGS:
+            if config_key not in result:
+                result[config_key] = 1.0
 
         return result
 
@@ -480,7 +492,7 @@ class SelfplayScheduler:
             )
 
             # Adjust based on GPU type
-            gpu_games = SELFPLAY_GAMES_PER_GPU_TYPE.get(node.gpu_type, 500)
+            gpu_games = SELFPLAY_GAMES_PER_NODE.get(node.gpu_type, 500)
             node_games = min(node_games, gpu_games)
 
             # Cap at remaining games
@@ -545,8 +557,8 @@ class SelfplayScheduler:
             if config_key in self._config_priorities:
                 # Reset staleness for this config
                 self._config_priorities[config_key].staleness_hours = 0.0
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling selfplay complete: {e}")
 
     def _on_training_complete(self, event: Any) -> None:
         """Handle training completion event."""
@@ -555,8 +567,8 @@ class SelfplayScheduler:
             if config_key in self._config_priorities:
                 # Clear training pending flag
                 self._config_priorities[config_key].training_pending = False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling training complete: {e}")
 
     def _on_promotion_complete(self, event: Any) -> None:
         """Handle promotion completion event."""

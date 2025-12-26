@@ -149,6 +149,7 @@ class DataEventType(Enum):
     HIGH_QUALITY_DATA_AVAILABLE = "high_quality_data_available"  # Ready for training
     LOW_QUALITY_DATA_WARNING = "low_quality_data_warning"  # Below threshold
     TRAINING_BLOCKED_BY_QUALITY = "training_blocked_by_quality"  # Quality too low to train
+    QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
 
     # Registry & metrics events
     REGISTRY_UPDATED = "registry_updated"

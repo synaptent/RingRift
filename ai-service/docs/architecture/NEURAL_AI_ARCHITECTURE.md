@@ -680,10 +680,11 @@ config = AIConfig(
 **Usage in Selfplay**:
 
 ```bash
-python scripts/run_hybrid_selfplay.py \
-  --board-type hex8 \
-  --engine-mode gumbel-mcts \
-  --nn-model-id ringrift_hex8_2p_v3_retrained
+python scripts/generate_gumbel_selfplay.py \
+  --board hex8 \
+  --num-players 2 \
+  --num-games 100 \
+  --model-id ringrift_hex8_2p_v3_retrained
 ```
 
 ### 9.3 HexStateEncoderV3

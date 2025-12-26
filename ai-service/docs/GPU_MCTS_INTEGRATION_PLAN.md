@@ -385,7 +385,7 @@ Latency improvement: 900ms → 91-178ms (5-10x speedup)
 | `app/training/event_driven_selfplay.py` | GPU MCTS integration                     | ✅ Done     |
 | `app/main.py`                           | Add `/ai/moves_batch` endpoint           | ✅ Done     |
 | `src/client/components/sandbox/`        | AI mode selector                         | ⏳ Deferred |
-| `scripts/run_gpu_mcts_selfplay.py`      | Selfplay script                          | ✅ Done     |
+| `scripts/run_gpu_selfplay.py`           | Selfplay script                          | ✅ Done     |
 
 ## Production Deployment Configuration
 
@@ -399,13 +399,13 @@ export PYTHONPATH=/path/to/ai-service
 export CUDA_VISIBLE_DEVICES=0
 
 # Run GPU-accelerated selfplay
-python scripts/run_gpu_mcts_selfplay.py \
-    --device cuda \
+python scripts/run_gpu_selfplay.py \
+    --board square8 \
+    --num-players 2 \
+    --num-games 1000 \
     --batch-size 64 \
-    --budget 64 \
-    --eval-mode heuristic \
-    --games 1000 \
-    --output data/games/selfplay_gpu.db
+    --quality-tier hybrid \
+    --output-db data/games/selfplay_gpu.db
 ```
 
 Expected throughput: ~50-70 games/sec on GH200.

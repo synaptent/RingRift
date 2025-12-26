@@ -148,6 +148,9 @@ class SelfplayRunner(ABC):
         self._gauntlet_quality_boost = 0.0  # Added to quality threshold
         self._gauntlet_rate_multiplier = 1.0  # Selfplay rate adjustment
 
+        # Quality penalty rate (December 2025 - from AdaptiveController)
+        self._quality_penalty_rate = 1.0  # From QUALITY_PENALTY_APPLIED
+
         # Setup signal handlers - only respond to first signal
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -557,6 +560,29 @@ class SelfplayRunner(ABC):
                         f"(reason: {reason})"
                     )
 
+            def on_quality_penalty_applied(event):
+                """Handle QUALITY_PENALTY_APPLIED events from AdaptiveController.
+
+                December 2025: Reduces selfplay rate when quality penalty is applied.
+                This prevents generating more low-quality data.
+                """
+                payload = event.payload if hasattr(event, "payload") else event
+                event_config = payload.get("config_key", "")
+
+                if event_config != config_key:
+                    return
+
+                rate_multiplier = payload.get("rate_multiplier", 1.0)
+                new_penalty = payload.get("new_penalty", 0.0)
+                reason = payload.get("reason", "")
+
+                # Apply rate reduction
+                self._quality_penalty_rate = rate_multiplier
+                logger.info(
+                    f"[QualityPenalty] Reducing selfplay rate for {config_key}: "
+                    f"{rate_multiplier:.2f}x (penalty={new_penalty:.2f}, reason: {reason})"
+                )
+
             # Subscribe to feedback events using DataEventType enums
             subscribe(DataEventType.CURRICULUM_ADVANCED, on_curriculum_advanced)
             subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, on_selfplay_target_updated)
@@ -564,6 +590,7 @@ class SelfplayRunner(ABC):
             subscribe(DataEventType.MODEL_PROMOTED, on_promotion_success)
             subscribe(DataEventType.PROMOTION_FAILED, on_promotion_failed)
             subscribe(DataEventType.HYPERPARAMETER_UPDATED, on_hyperparameter_updated)
+            subscribe(DataEventType.QUALITY_PENALTY_APPLIED, on_quality_penalty_applied)
 
             logger.debug(f"[SelfplayRunner] Subscribed to feedback events for {config_key}")
 
@@ -896,12 +923,16 @@ class SelfplayRunner(ABC):
             game_idx = 0
             # Include extra games requested via feedback events (December 2025)
             # Apply Gauntlet rate multiplier (weak model → more games, strong model → fewer)
-            base_target = int(self.config.num_games * self._gauntlet_rate_multiplier)
+            # Also apply quality penalty rate (low quality data → fewer games)
+            combined_rate = self._gauntlet_rate_multiplier * self._quality_penalty_rate
+            base_target = int(self.config.num_games * combined_rate)
             target_games = base_target + self._extra_games_requested
-            if self._gauntlet_rate_multiplier != 1.0:
+            if combined_rate != 1.0:
                 logger.info(
-                    f"[GauntletFeedback] Adjusted target games: {self.config.num_games} × "
-                    f"{self._gauntlet_rate_multiplier:.2f} = {base_target}"
+                    f"[FeedbackLoop] Adjusted target games: {self.config.num_games} × "
+                    f"{combined_rate:.2f} = {base_target} "
+                    f"(gauntlet={self._gauntlet_rate_multiplier:.2f}, "
+                    f"quality_penalty={self._quality_penalty_rate:.2f})"
                 )
             while self.running and game_idx < target_games:
                 # Phase 3 Feedback Loop: Check quality throttle before each game

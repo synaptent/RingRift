@@ -1141,6 +1141,7 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
                 - 'phase_emphasis': Weight by game phase
                 - 'combined': Combine late_game and phase_emphasis
                 - 'victory_type': Balance sampling across victory types
+                - 'quality': Weight by game quality score (higher quality = more weight)
             late_game_exponent: Exponent for late-game weighting (default: 2.0)
             phase_weights: Dict mapping phase names to weights
             engine_weights: Dict mapping engine names to weights
@@ -1468,6 +1469,51 @@ class WeightedStreamingDataLoader(StreamingDataLoader):
             else:
                 logger.warning(
                     "victory_types not available; falling back to uniform"
+                )
+
+        if self.sampling_weights == 'quality':
+            # Quality-based weighting: higher quality games get more weight
+            # December 2025: Strengthens self-improvement loop by emphasizing
+            # training data from higher-quality games
+            all_quality_scores: list[np.ndarray] = []
+            quality_found = True
+
+            for handle in self._file_handles:
+                if handle._data is None:
+                    continue
+
+                if 'quality_score' not in handle._data:
+                    quality_found = False
+                    break
+
+                valid_idx = handle._valid_indices
+                all_quality_scores.append(
+                    np.array(handle._data['quality_score'])[valid_idx]
+                )
+
+            if quality_found and all_quality_scores:
+                quality_scores = np.concatenate(all_quality_scores)
+
+                # Use quality scores directly as weights (they're in [0, 1])
+                # Apply a floor to avoid zeroing out low-quality samples entirely
+                quality_weights = np.maximum(quality_scores, 0.1)
+
+                # Normalize to mean 1.0
+                quality_weights = (
+                    quality_weights / np.mean(quality_weights)
+                    if np.mean(quality_weights) > 0
+                    else quality_weights
+                )
+                weights *= quality_weights
+
+                logger.info(
+                    "Quality weighting: min=%.3f, max=%.3f, mean=%.3f (raw scores)",
+                    quality_scores.min(), quality_scores.max(), quality_scores.mean()
+                )
+            else:
+                logger.warning(
+                    "quality_score not available; falling back to uniform. "
+                    "Regenerate data with export_replay_dataset.py to include quality scores."
                 )
 
         # Engine weighting (optional multiplier)

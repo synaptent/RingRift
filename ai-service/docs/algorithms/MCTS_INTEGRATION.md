@@ -130,11 +130,12 @@ game_record = {
 Train policy heads to match MCTS distributions:
 
 ```bash
-# Generate MCTS data
-python scripts/run_hybrid_selfplay.py \
-    --board-type square8 \
-    --engine-mode gumbel-mcts \
-    --mcts-sims 400 \
+# Generate Gumbel MCTS data
+python scripts/generate_gumbel_selfplay.py \
+    --board square8 \
+    --num-players 2 \
+    --num-games 1000 \
+    --simulation-budget 400 \
     --output data/selfplay/mcts_square8/games.jsonl
 
 # Train with KL loss
@@ -148,23 +149,24 @@ See [NNUE_POLICY_TRAINING.md](NNUE_POLICY_TRAINING.md) for full KL loss document
 
 ## Selfplay Data Generation
 
-### GPU Selfplay with MCTS
+### Selfplay with MCTS
 
 ```bash
 # Standard MCTS selfplay
-python scripts/run_gpu_selfplay.py \
+python scripts/selfplay.py \
     --board-type square8 \
     --num-players 2 \
     --num-games 1000 \
-    --mcts-sims 200
+    --engine-mode mcts \
+    --mcts-simulations 200
 
 # Gumbel MCTS for softer policy targets
-python scripts/run_hybrid_selfplay.py \
-    --board-type hex8 \
-    --engine-mode gumbel-mcts \
-    --mcts-sims 200 \
-    --gumbel-top-k 16 \
-    --num-games 500
+python scripts/generate_gumbel_selfplay.py \
+    --board hex8 \
+    --num-players 2 \
+    --num-games 500 \
+    --simulation-budget 200 \
+    --output data/selfplay/hex8_gumbel/games.jsonl
 ```
 
 ### Reanalyze Existing Games
@@ -257,7 +259,7 @@ MCTS is enabled at different difficulty tiers:
 - `app/ai/gumbel_mcts_ai.py` - Gumbel MCTS implementation (21KB)
 - `app/ai/async_nn_eval.py` - Neural network batching
 - `app/ai/bounded_transposition_table.py` - Transposition table
-- `scripts/run_hybrid_selfplay.py` - MCTS selfplay generation
+- `scripts/selfplay.py` - MCTS/Gumbel selfplay generation
 - `scripts/reanalyze_mcts_policy.py` - MCTS policy reanalysis
 
 ## References

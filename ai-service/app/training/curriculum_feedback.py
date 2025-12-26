@@ -111,8 +111,16 @@ class CurriculumFeedback:
         # Updated by record_promotion() and get_curriculum_weights()
         self._current_weights: dict[str, float] = {}
 
+        # Curriculum stage tracking per config (December 2025 Phase 5)
+        # Updated by _on_curriculum_advanced() when CURRICULUM_ADVANCED events received
+        self._curriculum_stages: dict[str, int] = {}
+
         # Last update time for change detection
         self._last_update_time: float = 0
+
+        # Auto-wire to CURRICULUM_ADVANCED events (Phase 5)
+        self._curriculum_advanced_subscribed = False
+        self._auto_wire_curriculum_advanced()
 
     def set_opponent_tracker(self, tracker: Any) -> None:
         """Set the opponent win rate tracker for weak opponent detection.

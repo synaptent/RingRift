@@ -266,8 +266,14 @@ class IdleResourceDaemon:
 
         December 2025 - Phase 2B.2: Dynamically scales spawning based on
         idle node count instead of fixed max of 4.
+
+        December 2025 - Phase 2C.4: Integrates with SelfplayScheduler for
+        priority-based config selection.
         """
         try:
+            # Update SelfplayScheduler priorities before spawning
+            await self._update_scheduler_priorities()
+
             # Get cluster status
             nodes = await self._get_cluster_nodes()
 
@@ -310,6 +316,23 @@ class IdleResourceDaemon:
 
         except Exception as e:
             logger.warning(f"Check and spawn error: {e}")
+
+    async def _update_scheduler_priorities(self) -> None:
+        """Update SelfplayScheduler priorities for informed config selection.
+
+        December 2025 - Phase 2C.4: Ensure scheduler has fresh priorities
+        based on curriculum weights, Elo velocities, and feedback signals.
+        """
+        try:
+            from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+            scheduler = get_selfplay_scheduler()
+            await scheduler._update_priorities()
+
+        except ImportError:
+            pass  # Scheduler not available
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] Failed to update scheduler priorities: {e}")
 
     async def _get_cluster_nodes(self) -> list[NodeStatus]:
         """Get status of all cluster nodes."""
@@ -430,8 +453,48 @@ class IdleResourceDaemon:
         return True
 
     def _select_config_for_gpu(self, gpu_memory_gb: float) -> str:
-        """Select appropriate board config for GPU memory."""
-        # Sort by memory requirement descending
+        """Select appropriate board config for GPU memory.
+
+        December 2025 - Phase 2C.4: Now uses SelfplayScheduler priorities
+        to select the highest-priority config that fits the GPU.
+        """
+        # Get configs that fit this GPU's memory
+        valid_configs = {
+            config_key for config_key, required_memory
+            in self.config.gpu_memory_thresholds.items()
+            if gpu_memory_gb >= required_memory
+        }
+
+        if not valid_configs:
+            return "hex8_2p"  # Smallest config as fallback
+
+        # Try to get priority from SelfplayScheduler
+        try:
+            from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+            scheduler = get_selfplay_scheduler()
+            # Get priority configs synchronously (we're in sync context)
+            # Use the cached priorities if available
+            sorted_priorities = sorted(
+                scheduler._config_priorities.items(),
+                key=lambda x: -x[1].priority_score
+            )
+
+            # Return highest priority config that fits this GPU
+            for config_key, priority in sorted_priorities:
+                if config_key in valid_configs:
+                    logger.debug(
+                        f"[IdleResourceDaemon] Selected {config_key} "
+                        f"(priority={priority.priority_score:.2f}) for {gpu_memory_gb:.0f}GB GPU"
+                    )
+                    return config_key
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] SelfplayScheduler not available, using memory-based selection")
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] SelfplayScheduler query failed: {e}")
+
+        # Fallback: Sort by memory requirement descending, pick largest that fits
         sorted_configs = sorted(
             self.config.gpu_memory_thresholds.items(),
             key=lambda x: x[1],

@@ -331,6 +331,12 @@ class FeedbackAccelerator:
             # Non-fatal - events may not be available in all contexts
             logger.debug(f"[FeedbackAccelerator] Event auto-wiring deferred: {e}")
 
+        # Phase 5: Subscribe to HYPERPARAMETER_UPDATED for closed-loop feedback
+        try:
+            wire_hyperparameter_feedback()
+        except Exception as e:
+            logger.debug(f"[FeedbackAccelerator] Hyperparameter event wiring deferred: {e}")
+
     def _init_db(self) -> None:
         """Initialize the feedback database."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1405,5 +1411,112 @@ def unwire_evaluation_from_feedback() -> None:
         router.unsubscribe(DataEventType.EVALUATION_COMPLETED.value, _on_evaluation_completed)
         _evaluation_watcher_active = False
         logger.info("[FeedbackAccelerator] Unsubscribed from EVALUATION_COMPLETED events")
+    except Exception:
+        pass
+
+
+# =============================================================================
+# Phase 5: HYPERPARAMETER_UPDATED event wiring (December 2025)
+# =============================================================================
+
+_hyperparameter_watcher_active = False
+
+
+def _on_hyperparameter_updated(event) -> None:
+    """Handle HYPERPARAMETER_UPDATED events from GauntletFeedbackController.
+
+    This closes the feedback loop by applying gauntlet-derived adjustments
+    to the FeedbackAccelerator's training recommendations.
+
+    Args:
+        event: Event containing hyperparameter adjustment recommendations
+    """
+    try:
+        payload = event.payload if hasattr(event, "payload") else {}
+
+        config_key = payload.get("config_key", "")
+        if not config_key:
+            return
+
+        # Extract adjustment parameters
+        lr_multiplier = float(payload.get("learning_rate_multiplier", 1.0))
+        batch_multiplier = float(payload.get("batch_size_multiplier", 1.0))
+        epochs_multiplier = float(payload.get("epochs_multiplier", 1.0))
+        reason = payload.get("reason", "gauntlet_feedback")
+
+        # Get the feedback accelerator singleton
+        accelerator = get_feedback_accelerator()
+
+        # Apply adjustments by recording them in the training decisions table
+        with accelerator._db_lock, accelerator._get_connection() as conn:
+            import time
+            conn.execute(
+                """
+                INSERT INTO training_decisions
+                (config_key, should_train, intensity, epochs_multiplier, lr_multiplier, reason, momentum_state, timestamp)
+                VALUES (?, 1, ?, ?, ?, ?, 'feedback_applied', ?)
+                """,
+                (
+                    config_key,
+                    "adjusted" if lr_multiplier != 1.0 else "normal",
+                    epochs_multiplier,
+                    lr_multiplier,
+                    reason,
+                    time.time(),
+                ),
+            )
+
+        logger.info(
+            f"[FeedbackAccelerator] Applied hyperparameter update for {config_key}: "
+            f"LR×{lr_multiplier:.2f}, epochs×{epochs_multiplier:.2f}"
+        )
+
+    except Exception as e:
+        logger.warning(f"[FeedbackAccelerator] Failed to apply hyperparameter update: {e}")
+
+
+def wire_hyperparameter_feedback() -> bool:
+    """Subscribe to HYPERPARAMETER_UPDATED events for closed-loop feedback.
+
+    This enables gauntlet evaluation results to influence training parameters:
+    EVALUATION_COMPLETED → GauntletFeedbackController → HYPERPARAMETER_UPDATED → here
+
+    Returns:
+        True if successfully subscribed
+    """
+    global _hyperparameter_watcher_active
+
+    if _hyperparameter_watcher_active:
+        return True
+
+    try:
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
+
+        router = get_router()
+        router.subscribe(DataEventType.HYPERPARAMETER_UPDATED.value, _on_hyperparameter_updated)
+        _hyperparameter_watcher_active = True
+        logger.info("[FeedbackAccelerator] Subscribed to HYPERPARAMETER_UPDATED events (Phase 5)")
+        return True
+    except Exception as e:
+        logger.warning(f"[FeedbackAccelerator] Failed to subscribe to hyperparameter events: {e}")
+        return False
+
+
+def unwire_hyperparameter_feedback() -> None:
+    """Unsubscribe from HYPERPARAMETER_UPDATED events."""
+    global _hyperparameter_watcher_active
+
+    if not _hyperparameter_watcher_active:
+        return
+
+    try:
+        from app.coordination.event_router import get_router
+        from app.distributed.data_events import DataEventType
+
+        router = get_router()
+        router.unsubscribe(DataEventType.HYPERPARAMETER_UPDATED.value, _on_hyperparameter_updated)
+        _hyperparameter_watcher_active = False
+        logger.info("[FeedbackAccelerator] Unsubscribed from HYPERPARAMETER_UPDATED events")
     except Exception:
         pass

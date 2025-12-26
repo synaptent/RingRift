@@ -186,7 +186,7 @@ This fix builds on previous fixes:
 python scripts/minimal_hex8_debug.py
 
 # Test multiple games
-python scripts/run_hybrid_selfplay.py --board hex8 --num-games 100 \
+python scripts/selfplay.py --board hex8 --num-games 100 \
     --engine-mode random-only --output-dir /tmp/hex8_test
 ```
 
@@ -195,7 +195,7 @@ python scripts/run_hybrid_selfplay.py --board hex8 --num-games 100 \
 ```bash
 # On vast-2060s or vast-3070
 cd /workspace/ringrift/ai-service
-python scripts/run_hybrid_selfplay.py --board hex8 --num-games 200 \
+python scripts/selfplay.py --board hex8 --num-games 200 \
     --engine-mode random-only --output-dir /tmp/hex8_cluster_test
 ```
 
