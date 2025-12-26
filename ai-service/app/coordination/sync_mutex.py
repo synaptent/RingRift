@@ -34,6 +34,8 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import socket
 import sqlite3
@@ -45,6 +47,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Default database location
 DEFAULT_SYNC_DB = Path("/tmp/ringrift_coordination/sync_mutex.db")
@@ -214,6 +218,18 @@ class SyncMutex:
 
                 # Check if wait timeout exceeded
                 if time.time() - start_time > wait_timeout:
+                    # P11-HIGH-1: Emit LOCK_TIMEOUT event for monitoring
+                    wait_duration = time.time() - start_time
+                    logger.warning(
+                        f"[SyncMutex] Lock timeout for {host}/{operation}: "
+                        f"waited {wait_duration:.1f}s (limit={wait_timeout}s)"
+                    )
+                    self._emit_lock_timeout(
+                        host=host,
+                        operation=operation,
+                        wait_duration=wait_duration,
+                        wait_timeout=wait_timeout,
+                    )
                     return False
 
                 # Wait and retry
@@ -272,6 +288,45 @@ class SyncMutex:
             'SELECT 1 FROM sync_locks WHERE host = ?', (host,)
         )
         return cursor.fetchone() is not None
+
+    def _emit_lock_timeout(
+        self,
+        host: str,
+        operation: str,
+        wait_duration: float,
+        wait_timeout: float,
+    ) -> None:
+        """Emit a LOCK_TIMEOUT event for monitoring.
+
+        P11-HIGH-1 (Dec 2025): This allows the feedback system to detect
+        when sync operations are being blocked by contention, potentially
+        indicating cluster bottlenecks or dead locks.
+        """
+        try:
+            from app.distributed.data_events import get_event_bus, DataEvent, DataEventType
+
+            event = DataEvent(
+                event_type=DataEventType.LOCK_TIMEOUT,
+                payload={
+                    "host": host,
+                    "operation": operation,
+                    "wait_duration": wait_duration,
+                    "wait_timeout": wait_timeout,
+                    "holder_hostname": socket.gethostname(),
+                    "holder_pid": os.getpid(),
+                },
+                source="SyncMutex",
+            )
+
+            # Try to emit asynchronously if we have a running event loop
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(get_event_bus().publish(event))
+            except RuntimeError:
+                # No running loop, try sync publish
+                asyncio.run(get_event_bus().publish(event))
+        except Exception as e:
+            logger.debug(f"[SyncMutex] Failed to emit LOCK_TIMEOUT event: {e}")
 
     def get_lock_info(self, host: str) -> SyncLockInfo | None:
         """Get information about a lock."""

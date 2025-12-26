@@ -853,13 +853,13 @@ def main() -> None:
         use_hot_data_buffer=getattr(args, 'use_hot_data_buffer', False),
         hot_buffer_size=getattr(args, 'hot_buffer_size', 10000),
         hot_buffer_mix_ratio=getattr(args, 'hot_buffer_mix_ratio', 0.3),
-        use_integrated_enhancements=getattr(args, 'use_integrated_enhancements', False),
+        use_integrated_enhancements=getattr(args, 'use_integrated_enhancements', True),  # Dec 2025: Enable by default
         enable_curriculum=getattr(args, 'enable_curriculum', False),
         enable_augmentation=getattr(args, 'enable_augmentation', False),
-        enable_elo_weighting=getattr(args, 'enable_elo_weighting', False),
-        enable_auxiliary_tasks=getattr(args, 'enable_auxiliary_tasks', False),
+        enable_elo_weighting=getattr(args, 'enable_elo_weighting', True),  # Dec 2025: Enable for +20-35 Elo
+        enable_auxiliary_tasks=getattr(args, 'enable_auxiliary_tasks', True),  # Dec 2025: Enable for +5-15 Elo
         enable_batch_scheduling=getattr(args, 'enable_batch_scheduling', False),
-        enable_background_eval=getattr(args, 'enable_background_eval', False),
+        enable_background_eval=getattr(args, 'enable_background_eval', True),  # Dec 2025: Enable for feedback loop
         # Fault tolerance (2025-12)
         enable_circuit_breaker=not getattr(args, 'disable_circuit_breaker', False),
         enable_anomaly_detection=not getattr(args, 'disable_anomaly_detection', False),

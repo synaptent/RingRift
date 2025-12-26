@@ -87,6 +87,9 @@ class IdleResourceConfig:
         "square8_2p": 8,
         "hex8_2p": 8,
     })
+    # P11-CRITICAL-2: Minimum free GPU memory buffer (GB) before spawning
+    # This prevents OOM errors when spawning new selfplay processes
+    min_free_gpu_memory_buffer_gb: float = 4.0
     # Default games per spawn
     default_games_per_spawn: int = 100
     # Queue depth thresholds for scaling
@@ -895,6 +898,22 @@ class IdleResourceDaemon:
 
                 config_key = self._select_config_for_gpu(node.gpu_memory_total_gb)
 
+                # P11-CRITICAL-2: Check free GPU memory before spawning
+                # This prevents OOM errors by ensuring adequate VRAM headroom
+                required_memory = self.config.gpu_memory_thresholds.get(config_key, 8)
+                free_memory = node.gpu_memory_total_gb - node.gpu_memory_used_gb
+                min_required = required_memory + self.config.min_free_gpu_memory_buffer_gb
+
+                if free_memory < min_required:
+                    logger.info(
+                        f"[IdleResourceDaemon] Skipping {node.node_id}: insufficient VRAM. "
+                        f"Free={free_memory:.1f}GB, required={min_required:.1f}GB "
+                        f"(config={config_key} needs {required_memory}GB + "
+                        f"{self.config.min_free_gpu_memory_buffer_gb}GB buffer)"
+                    )
+                    self._stats.failed_spawns += 1
+                    return False
+
                 # Get multiplier from FeedbackAccelerator
                 try:
                     from app.training.feedback_accelerator import get_selfplay_multiplier
@@ -906,7 +925,8 @@ class IdleResourceDaemon:
                 logger.info(
                     f"[IdleResourceDaemon] Spawning selfplay on {node.node_id}: "
                     f"config={config_key}, games={games}, "
-                    f"gpu_memory={node.gpu_memory_total_gb:.0f}GB"
+                    f"gpu_memory={node.gpu_memory_total_gb:.0f}GB, "
+                    f"free={free_memory:.1f}GB"
                 )
 
                 # Phase 21.2: Also schedule via PriorityJobScheduler for tracking

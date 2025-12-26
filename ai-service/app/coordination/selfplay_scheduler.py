@@ -67,12 +67,17 @@ ALL_CONFIGS = [
 ]
 
 # Priority calculation weights
-STALENESS_WEIGHT = 0.35  # Data freshness importance
-ELO_VELOCITY_WEIGHT = 0.25  # ELO improvement velocity
-TRAINING_NEED_WEIGHT = 0.15  # Waiting for training
+STALENESS_WEIGHT = 0.30  # Data freshness importance
+ELO_VELOCITY_WEIGHT = 0.20  # ELO improvement velocity
+TRAINING_NEED_WEIGHT = 0.10  # Waiting for training
 EXPLORATION_BOOST_WEIGHT = 0.10  # Feedback loop exploration signal
-CURRICULUM_WEIGHT = 0.15  # Curriculum-based priority (Phase 2C.3)
-IMPROVEMENT_BOOST_WEIGHT = 0.20  # Phase 5: ImprovementOptimizer boost
+CURRICULUM_WEIGHT = 0.10  # Curriculum-based priority (Phase 2C.3)
+IMPROVEMENT_BOOST_WEIGHT = 0.15  # Phase 5: ImprovementOptimizer boost
+DATA_DEFICIT_WEIGHT = 0.25  # Dec 2025: Boost configs with low game counts
+
+# Target games per config for data deficit calculation
+TARGET_GAMES_FOR_2000_ELO = 100000  # Need 100K games for strong AI
+LARGE_BOARD_TARGET_MULTIPLIER = 1.5  # Large boards need more data
 
 # Staleness thresholds (hours)
 FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
@@ -98,6 +103,8 @@ class ConfigPriority:
     improvement_boost: float = 0.0  # Phase 5: From ImprovementOptimizer (-0.10 to +0.15)
     quality_penalty: float = 0.0  # Phase 5: Quality degradation penalty (0.0 to -0.20)
     momentum_multiplier: float = 1.0  # Phase 19: From FeedbackAccelerator (0.5 to 1.5)
+    game_count: int = 0  # Dec 2025: Current game count for this config
+    is_large_board: bool = False  # Dec 2025: True for square19, hexagonal
 
     # Computed priority
     priority_score: float = 0.0
@@ -125,6 +132,26 @@ class ConfigPriority:
             return 0.0
         # Cap at 100 ELO/day for factor calculation
         return min(1.0, self.elo_velocity / 100.0)
+
+    @property
+    def data_deficit_factor(self) -> float:
+        """Compute data deficit factor (0-1, higher = more data needed).
+
+        December 2025: Prioritizes configs with low game counts, especially
+        large boards (square19, hexagonal) which need more training data.
+        """
+        # Target games adjusted for board size
+        target = TARGET_GAMES_FOR_2000_ELO
+        if self.is_large_board:
+            target = int(target * LARGE_BOARD_TARGET_MULTIPLIER)
+
+        # Deficit is how far below target we are
+        if self.game_count >= target:
+            return 0.0  # No deficit
+
+        # Higher factor for configs further from target
+        deficit_ratio = 1.0 - (self.game_count / target)
+        return min(1.0, deficit_ratio)
 
 
 @dataclass

@@ -44,7 +44,7 @@ class GPUMCTSSelfplayConfig:
 
     # MCTS configuration
     num_sampled_actions: int = 16  # K for Gumbel-Top-K
-    simulation_budget: int = 64    # Simulations per move
+    simulation_budget: int = 800   # Simulations per move (increased Dec 2025 for 2000+ Elo)
     max_nodes: int = 1024          # Max tree nodes
 
     # Batch configuration

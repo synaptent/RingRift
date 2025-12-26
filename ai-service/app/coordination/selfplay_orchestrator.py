@@ -1109,7 +1109,9 @@ _DEFAULT_LARGE_BOARDS: set[str] = {"square19", "hexagonal", "full_hex", "fullhex
 _DEFAULT_LARGE_BOARD_ENGINE = "gumbel_mcts"
 
 # Default simulation budget for large boards
-_DEFAULT_LARGE_BOARD_BUDGET = 64  # THROUGHPUT tier
+# CHANGED Dec 2025: Increased from 64 to 800 for 2000+ Elo quality training data
+# 64 sims produces fast but low-quality data; 800 sims produces expert-level moves
+_DEFAULT_LARGE_BOARD_BUDGET = 800  # QUALITY tier for 2000+ Elo target
 
 
 def _load_large_board_config() -> dict:

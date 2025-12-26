@@ -370,10 +370,13 @@ class BandwidthCoordinatedRsync:
         manager: BandwidthManager | None = None,
         rsync_path: str = "rsync",
         default_options: list[str] | None = None,
+        # P11-HIGH-3: Enable checksum verification by default
+        verify_checksum: bool = True,
     ):
         self.manager = manager or BandwidthManager.get_instance()
         self.rsync_path = rsync_path
         self.default_options = default_options or ["-avz", "--progress"]
+        self.verify_checksum = verify_checksum
 
     async def sync(
         self,
@@ -384,6 +387,7 @@ class BandwidthCoordinatedRsync:
         extra_options: list[str] | None = None,
         timeout: float = 3600.0,
         allocation_timeout: float = 60.0,
+        verify_checksum: bool | None = None,
     ) -> SyncResult:
         """Execute bandwidth-coordinated rsync.
 
@@ -395,6 +399,8 @@ class BandwidthCoordinatedRsync:
             extra_options: Additional rsync options
             timeout: Rsync execution timeout
             allocation_timeout: Max time to wait for bandwidth allocation
+            verify_checksum: Use checksum verification (slower but safer).
+                If None, uses instance default. (P11-HIGH-3 Dec 2025)
 
         Returns:
             SyncResult with transfer details
@@ -424,6 +430,11 @@ class BandwidthCoordinatedRsync:
             cmd.extend(self.default_options)
             cmd.append(f"--bwlimit={allocation.bwlimit_kbps}")
 
+            # P11-HIGH-3: Add checksum verification for data integrity
+            use_checksum = verify_checksum if verify_checksum is not None else self.verify_checksum
+            if use_checksum:
+                cmd.append("--checksum")
+
             if extra_options:
                 cmd.extend(extra_options)
 
@@ -431,7 +442,7 @@ class BandwidthCoordinatedRsync:
 
             logger.info(
                 f"[BandwidthCoordinatedRsync] Starting sync: {source} -> {dest} "
-                f"(bwlimit={allocation.bwlimit_kbps} KB/s)"
+                f"(bwlimit={allocation.bwlimit_kbps} KB/s, checksum={use_checksum})"
             )
 
             # Execute rsync

@@ -271,7 +271,7 @@ class OrchestratorConfig:
 
     # Gumbel MCTS engine (default for D7+)
     use_gumbel_engine: bool = False  # Set True for high-tier training
-    gumbel_simulation_budget: int = 150
+    gumbel_simulation_budget: int = 800  # Increased Dec 2025 for 2000+ Elo target
     gumbel_temperature: float = 1.0
 
     # Multi-config training (all 12 board/player configurations)
@@ -1886,7 +1886,7 @@ def create_high_tier_orchestrator(
     # Merge high-tier defaults with user overrides
     high_tier_defaults = {
         "use_gumbel_engine": True,
-        "gumbel_simulation_budget": 150,
+        "gumbel_simulation_budget": 800,  # Quality budget for 2000+ Elo
         "multi_config_training": True,
         "crossboard_promotion": True,
         "target_tier": target_tier,
@@ -1921,7 +1921,7 @@ def get_high_tier_config(
     """
     high_tier_defaults = {
         "use_gumbel_engine": True,
-        "gumbel_simulation_budget": 150,
+        "gumbel_simulation_budget": 800,  # Quality budget for 2000+ Elo
         "multi_config_training": True,
         "crossboard_promotion": True,
         "target_tier": target_tier,

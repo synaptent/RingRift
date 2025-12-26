@@ -129,8 +129,8 @@ class SelfplayRunner(ABC):
         self._curriculum_difficulty = 1.0  # Multiplier for opponent difficulty
         self._extra_games_requested = 0  # Extra games from weak model feedback
         self._regeneration_pending = False  # True when quality blocked training
-        self._base_budget = 150  # Default base budget for curriculum scaling
-        self._current_budget = 150  # Current effective budget
+        self._base_budget = 800  # Default base budget (increased Dec 2025 for 2000+ Elo)
+        self._current_budget = 800  # Current effective budget
 
         # Phase 2 Feedback Loop: Promotion → Selfplay difficulty coupling (December 2025)
         self._promotion_difficulty_boost = 1.0  # Increased on failed promotion

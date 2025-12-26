@@ -293,6 +293,20 @@ class DaemonManagerConfig:
     auto_restart_failed: bool = True  # Auto-restart failed daemons
     max_restart_attempts: int = 5  # Max restart attempts per daemon
     recovery_cooldown: float = 10.0  # Time before attempting to recover FAILED daemons (reduced from 300s for faster recovery)
+    # P11-HIGH-2: Faster health checks for critical daemons
+    critical_daemon_health_interval: float = 15.0  # Health check interval for critical daemons
+
+
+# P11-HIGH-2: Daemons critical for cluster health that need faster failure detection
+CRITICAL_DAEMONS: set[DaemonType] = {
+    DaemonType.SYNC_COORDINATOR,
+    DaemonType.EVENT_ROUTER,
+    DaemonType.AUTO_SYNC,
+    DaemonType.GOSSIP_SYNC,
+    DaemonType.DATA_SERVER,
+    DaemonType.REPLICATION_MONITOR,
+    DaemonType.EPHEMERAL_SYNC,  # Critical for Vast.ai data safety
+}
 
 
 class DaemonManager:
@@ -642,7 +656,7 @@ class DaemonManager:
         daemon_type: DaemonType,
         factory: Callable[[], Coroutine[Any, Any, None]],
         depends_on: list[DaemonType] | None = None,
-        health_check_interval: float = 60.0,
+        health_check_interval: float | None = None,
         auto_restart: bool = True,
         max_restarts: int = 5,
     ) -> None:
@@ -652,10 +666,23 @@ class DaemonManager:
             daemon_type: Type of daemon
             factory: Async function that runs the daemon
             depends_on: List of daemons that must be running first
-            health_check_interval: Health check interval for this daemon
+            health_check_interval: Health check interval for this daemon.
+                If None, uses critical_daemon_health_interval (15s) for critical
+                daemons, or 60s for others. (P11-HIGH-2 Dec 2025)
             auto_restart: Whether to auto-restart on failure
             max_restarts: Maximum restart attempts
         """
+        # P11-HIGH-2: Use faster health check interval for critical daemons
+        if health_check_interval is None:
+            if daemon_type in CRITICAL_DAEMONS:
+                health_check_interval = self.config.critical_daemon_health_interval
+                logger.debug(
+                    f"[DaemonManager] Using critical daemon health interval "
+                    f"({health_check_interval}s) for {daemon_type.value}"
+                )
+            else:
+                health_check_interval = 60.0
+
         self._factories[daemon_type] = factory
         self._daemons[daemon_type] = DaemonInfo(
             daemon_type=daemon_type,
