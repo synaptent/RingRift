@@ -1504,8 +1504,8 @@ def integrate_selfplay_with_training(
 
     # Import event router for publishing events
     try:
-        from app.coordination.event_router import get_router
-        from app.coordination.event_router import DataEventType
+        from app.coordination.event_router import DataEventType, RouterEvent, get_router
+
         event_router = get_router()
         has_event_bus = True
     except ImportError:
@@ -1613,7 +1613,7 @@ def integrate_selfplay_with_training(
 
     # Also subscribe to event bus for external game completion events
     if has_event_bus:
-        async def handle_sync_completed(event: DataEvent):
+        async def handle_sync_completed(event: RouterEvent):
             """Handle data sync completion (games may have been added)."""
             payload = event.payload
             config = payload.get("config")

@@ -866,6 +866,42 @@ class SelfplayScheduler:
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling curriculum rebalanced: {e}")
 
+    def _on_selfplay_rate_changed(self, event: Any) -> None:
+        """Handle selfplay rate change event from FeedbackAccelerator.
+
+        P0.1 (Dec 2025): Closes the Elo momentum → Selfplay rate feedback loop.
+        FeedbackAccelerator emits SELFPLAY_RATE_CHANGED when it detects:
+        - ACCELERATING: 1.5x multiplier (capitalize on positive momentum)
+        - IMPROVING: 1.25x multiplier (boost for continued improvement)
+        - STABLE: 1.0x multiplier (normal rate)
+        - PLATEAU: 1.1x multiplier (slight boost to break plateau)
+        - REGRESSING: 0.75x multiplier (reduce noise, focus on quality)
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "") or payload.get("config", "")
+            new_rate = payload.get("new_rate", 1.0) or payload.get("rate_multiplier", 1.0)
+            momentum_state = payload.get("momentum_state", "unknown")
+
+            if config_key in self._config_priorities:
+                old_rate = self._config_priorities[config_key].momentum_multiplier
+                self._config_priorities[config_key].momentum_multiplier = float(new_rate)
+
+                # Log significant changes
+                if abs(new_rate - old_rate) > 0.1:
+                    logger.info(
+                        f"[SelfplayScheduler] Selfplay rate changed: {config_key} "
+                        f"multiplier {old_rate:.2f} → {new_rate:.2f} "
+                        f"(momentum: {momentum_state})"
+                    )
+            else:
+                logger.debug(
+                    f"[SelfplayScheduler] Received rate change for unknown config: {config_key}"
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling selfplay rate changed: {e}")
+
     # =========================================================================
     # Status & Metrics
     # =========================================================================

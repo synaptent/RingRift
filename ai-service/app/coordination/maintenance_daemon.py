@@ -356,6 +356,60 @@ class MaintenanceDaemon:
         except Exception as e:
             logger.warning(f"[Maintenance] DLQ cleanup error: {e}")
 
+    async def _cleanup_stale_queue_items(self) -> None:
+        """Cleanup stale work queue items (December 2025).
+
+        Removes items that were never executed:
+        - PENDING items older than queue_stale_pending_hours
+        - Resets CLAIMED items older than queue_stale_claimed_hours
+
+        This prevents queue bloat from items that will never execute.
+        """
+        try:
+            from app.coordination.work_queue import get_work_queue
+
+            queue = get_work_queue()
+            if queue is None:
+                return
+
+            if self.config.dry_run:
+                status = queue.get_queue_status()
+                pending_count = status.get("by_status", {}).get("pending", 0)
+                claimed_count = status.get("by_status", {}).get("claimed", 0)
+                logger.info(
+                    f"[Maintenance] DRY RUN: Would cleanup stale queue items "
+                    f"({pending_count} pending, {claimed_count} claimed)"
+                )
+                return
+
+            # Cleanup stale items
+            result = queue.cleanup_stale_items(
+                max_pending_age_hours=self.config.queue_stale_pending_hours,
+                max_claimed_age_hours=self.config.queue_stale_claimed_hours,
+            )
+
+            removed = result.get("removed_stale_pending", 0)
+            reset = result.get("reset_stale_claimed", 0)
+
+            if removed or reset:
+                self._stats.queue_items_cleaned += removed
+                self._stats.queue_items_reset += reset
+                logger.info(
+                    f"[Maintenance] Queue cleanup: removed {removed} stale pending, "
+                    f"reset {reset} stale claimed"
+                )
+
+            # Also cleanup completed items older than 24h
+            old_cleaned = queue.cleanup_old_items(max_age_seconds=86400.0)
+            if old_cleaned:
+                self._stats.queue_items_cleaned += old_cleaned
+                logger.info(f"[Maintenance] Cleaned {old_cleaned} old completed queue items")
+
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"[Maintenance] Queue cleanup error: {e}")
+
     def get_status(self) -> dict[str, Any]:
         """Get daemon status."""
         return {
@@ -368,18 +422,22 @@ class MaintenanceDaemon:
                 "databases_vacuumed": self._stats.databases_vacuumed,
                 "games_archived": self._stats.games_archived,
                 "dlq_entries_cleaned": self._stats.dlq_entries_cleaned,
+                "queue_items_cleaned": self._stats.queue_items_cleaned,  # December 2025
+                "queue_items_reset": self._stats.queue_items_reset,  # December 2025
             },
             "last_runs": {
                 "log_rotation": self._stats.last_log_rotation,
                 "db_vacuum": self._stats.last_db_vacuum,
                 "archive": self._stats.last_archive_run,
                 "dlq_cleanup": self._stats.last_dlq_cleanup,
+                "queue_cleanup": self._stats.last_queue_cleanup,  # December 2025
             },
             "config": {
                 "log_max_size_mb": self.config.log_max_size_mb,
                 "log_backup_count": self.config.log_backup_count,
                 "db_vacuum_interval_hours": self.config.db_vacuum_interval_hours,
                 "archive_days_threshold": self.config.archive_games_older_than_days,
+                "queue_cleanup_interval_hours": self.config.queue_cleanup_interval_hours,  # December 2025
             },
         }
 

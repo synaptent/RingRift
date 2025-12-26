@@ -190,6 +190,10 @@ class DaemonType(Enum):
     # Maintenance daemon (December 2025) - log rotation, DB vacuum, cleanup
     MAINTENANCE = "maintenance"
 
+    # Utilization optimizer (December 2025) - optimizes cluster workloads
+    # Stops CPU selfplay on GPU nodes, spawns appropriate workloads by provider
+    UTILIZATION_OPTIMIZER = "utilization_optimizer"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
