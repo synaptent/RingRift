@@ -698,6 +698,64 @@ class SelfplayScheduler:
             logger.debug(f"[SelfplayScheduler] Error updating node capabilities: {e}")
 
     # =========================================================================
+    # External Boost Interface (December 2025)
+    # =========================================================================
+
+    def boost_config_allocation(self, config_key: str, multiplier: float = 1.5) -> bool:
+        """Boost selfplay allocation for a specific configuration.
+
+        December 2025: Called by TrainingTriggerDaemon when gauntlet evaluation
+        shows poor performance, triggering additional selfplay to generate
+        more training data for struggling configurations.
+
+        Args:
+            config_key: Configuration to boost (e.g., "hex8_2p")
+            multiplier: Boost multiplier (default 1.5x, capped at 2.0)
+
+        Returns:
+            True if boost was applied, False if config not found
+        """
+        if config_key not in self._config_priorities:
+            logger.warning(
+                f"[SelfplayScheduler] Cannot boost unknown config: {config_key}"
+            )
+            return False
+
+        priority = self._config_priorities[config_key]
+
+        # Apply multiplier to exploration boost (capped at 2.0)
+        old_boost = priority.exploration_boost
+        priority.exploration_boost = min(2.0, priority.exploration_boost * multiplier)
+
+        # Also boost momentum multiplier temporarily
+        old_momentum = priority.momentum_multiplier
+        priority.momentum_multiplier = min(1.5, priority.momentum_multiplier * 1.2)
+
+        logger.info(
+            f"[SelfplayScheduler] Boosted {config_key}: "
+            f"exploration {old_boost:.2f}x → {priority.exploration_boost:.2f}x, "
+            f"momentum {old_momentum:.2f}x → {priority.momentum_multiplier:.2f}x"
+        )
+
+        # Force priority recalculation
+        self._last_priority_update = 0.0
+
+        return True
+
+    def get_config_priority(self, config_key: str) -> ConfigPriority | None:
+        """Get current priority state for a configuration.
+
+        December 2025: Useful for monitoring and debugging priority decisions.
+
+        Args:
+            config_key: Configuration to query
+
+        Returns:
+            ConfigPriority object or None if not found
+        """
+        return self._config_priorities.get(config_key)
+
+    # =========================================================================
     # Event Integration
     # =========================================================================
 

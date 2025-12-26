@@ -214,6 +214,7 @@ class MasterLoopController:
         # State persistence (Gap 3 fix: Dec 2025)
         self._db_path = STATE_DB_PATH
         self._last_state_save = 0.0
+        self._loop_iteration = 0  # Heartbeat tracking (Dec 2025)
         self._init_state_db()
 
     # =========================================================================
@@ -278,6 +279,20 @@ class MasterLoopController:
                     updated_at REAL NOT NULL
                 )
             """)
+            # Heartbeat table for health monitoring (Dec 2025)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS heartbeat (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    last_beat REAL NOT NULL,
+                    loop_iteration INTEGER NOT NULL DEFAULT 0,
+                    active_configs INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'running'
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO heartbeat (id, last_beat, loop_iteration, active_configs, status)
+                VALUES (1, ?, 0, 0, 'starting')
+            """, (time.time(),))
             conn.commit()
             conn.close()
             logger.debug(f"[MasterLoop] State DB initialized at {self._db_path}")
@@ -339,6 +354,61 @@ class MasterLoopController:
         """Save state if enough time has passed since last save."""
         if time.time() - self._last_state_save >= STATE_SAVE_INTERVAL_SECONDS:
             self._save_persisted_state()
+
+    def _update_heartbeat(self, status: str = "running") -> None:
+        """Update heartbeat for health monitoring (Dec 2025).
+
+        This allows external monitoring to detect hung loops by checking
+        last_beat timestamp. A healthy loop should update every 30-60 seconds.
+        """
+        try:
+            self._loop_iteration += 1
+            conn = sqlite3.connect(self._db_path)
+            conn.execute("""
+                UPDATE heartbeat
+                SET last_beat = ?, loop_iteration = ?, active_configs = ?, status = ?
+                WHERE id = 1
+            """, (time.time(), self._loop_iteration, len(self.active_configs), status))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.debug(f"[MasterLoop] Failed to update heartbeat: {e}")
+
+    @staticmethod
+    def check_health(db_path: Path | None = None, max_age_seconds: float = 120.0) -> dict[str, Any]:
+        """Check if master loop is healthy by reading heartbeat.
+
+        Returns:
+            Dict with 'healthy' bool, 'last_beat' timestamp, 'age_seconds', 'status'
+        """
+        db_path = db_path or STATE_DB_PATH
+        try:
+            if not db_path.exists():
+                return {"healthy": False, "error": "State DB not found"}
+
+            conn = sqlite3.connect(db_path)
+            row = conn.execute("""
+                SELECT last_beat, loop_iteration, active_configs, status
+                FROM heartbeat WHERE id = 1
+            """).fetchone()
+            conn.close()
+
+            if not row:
+                return {"healthy": False, "error": "No heartbeat record"}
+
+            last_beat, iteration, active_configs, status = row
+            age = time.time() - last_beat
+
+            return {
+                "healthy": age < max_age_seconds and status != "stopped",
+                "last_beat": last_beat,
+                "age_seconds": age,
+                "loop_iteration": iteration,
+                "active_configs": active_configs,
+                "status": status,
+            }
+        except Exception as e:
+            return {"healthy": False, "error": str(e)}
 
     # =========================================================================
     # Lifecycle
