@@ -880,8 +880,14 @@ class IdleResourceDaemon:
         if idle_duration < required_idle_time:
             return False
 
-        # Don't spawn if node already has active jobs
-        if node.active_jobs > 0:
+        # Dec 26 2025: Enforce process limit - don't spawn if node at capacity
+        # Note: active_jobs may be 0 for nodes where P2P tracking isn't perfect,
+        # but this still protects against spawning on nodes that report high counts
+        if node.active_jobs >= self.config.max_selfplay_processes_per_node:
+            logger.debug(
+                f"[IdleResourceDaemon] Node {node.node_id} at process limit "
+                f"({node.active_jobs}/{self.config.max_selfplay_processes_per_node})"
+            )
             return False
 
         return True
