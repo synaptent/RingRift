@@ -782,6 +782,87 @@ class WorkQueue:
             logger.info(f"Cleaned up {removed} old work items")
         return removed
 
+    def cleanup_stale_items(
+        self,
+        max_pending_age_hours: float = 24.0,
+        max_claimed_age_hours: float = 1.0,
+    ) -> dict[str, int]:
+        """Remove stale items that were never executed (December 2025).
+
+        Handles:
+        1. PENDING items older than max_pending_age - never claimed, should be removed
+        2. CLAIMED items older than max_claimed_age - claimer crashed, reset to pending
+
+        This prevents the queue from filling with items that will never execute,
+        which can happen if:
+        - Item config is invalid
+        - All eligible workers are offline
+        - Workers crash after claiming
+
+        Args:
+            max_pending_age_hours: Remove PENDING items older than this
+            max_claimed_age_hours: Reset CLAIMED items older than this
+
+        Returns:
+            Dict with counts: {"removed_stale_pending": N, "reset_stale_claimed": M}
+        """
+        now = time.time()
+        pending_cutoff = now - (max_pending_age_hours * 3600)
+        claimed_cutoff = now - (max_claimed_age_hours * 3600)
+
+        removed_pending = 0
+        reset_claimed = 0
+
+        with self.lock:
+            # Find stale pending items
+            to_remove = []
+            for work_id, item in self.items.items():
+                if (item.status == WorkStatus.PENDING
+                    and item.created_at > 0
+                    and item.created_at < pending_cutoff):
+                    to_remove.append(work_id)
+                    logger.warning(
+                        f"Removing stale PENDING item: {work_id} "
+                        f"(age: {(now - item.created_at) / 3600:.1f}h)"
+                    )
+
+            # Remove stale pending
+            for work_id in to_remove:
+                del self.items[work_id]
+                self._delete_item(work_id)
+                removed_pending += 1
+
+            # Find and reset stale claimed items
+            for item in self.items.values():
+                if (item.status == WorkStatus.CLAIMED
+                    and item.claimed_at > 0
+                    and item.claimed_at < claimed_cutoff
+                    and item.started_at == 0):
+                    # Reset to pending for re-claim
+                    logger.warning(
+                        f"Resetting stale CLAIMED item: {item.work_id} "
+                        f"(claimer: {item.claimed_by}, claimed {(now - item.claimed_at) / 3600:.1f}h ago)"
+                    )
+                    item.status = WorkStatus.PENDING
+                    item.claimed_by = ""
+                    item.claimed_at = 0.0
+                    item.error = "reset_stale_claimed"
+                    self._save_item(item)
+                    reset_claimed += 1
+
+        result = {
+            "removed_stale_pending": removed_pending,
+            "reset_stale_claimed": reset_claimed,
+        }
+
+        if removed_pending or reset_claimed:
+            logger.info(
+                f"Stale item cleanup: removed {removed_pending} pending, "
+                f"reset {reset_claimed} claimed"
+            )
+
+        return result
+
     def get_history(self, limit: int = 50, status_filter: str | None = None) -> list[dict[str, Any]]:
         """Get work history from the database.
 
