@@ -62,8 +62,8 @@ class QueuePopulatorConfig:
     """Configuration for queue populator daemon."""
 
     enabled: bool = True
-    # Scan interval
-    scan_interval_seconds: int = 60  # 1 minute
+    # Scan interval (Dec 2025: Reduced from 60s for faster job allocation)
+    scan_interval_seconds: int = 15  # 15 seconds
     # Maximum pending items in queue before stopping generation
     max_pending_items: int = 50
     # Minimum idle nodes to trigger population

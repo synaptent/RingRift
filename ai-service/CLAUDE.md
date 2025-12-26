@@ -197,6 +197,79 @@ checkpoint = safe_load_checkpoint(external_path, allow_unsafe=False)
 
 See `SECURITY.md` for full details.
 
+### Environment Configuration (`app/config/env.py`)
+
+Centralized typed environment variable configuration:
+
+```python
+from app.config.env import env
+
+# Get values with proper types and defaults
+node_id = env.node_id
+log_level = env.log_level
+is_coordinator = env.is_coordinator
+
+# Check feature flags
+if env.skip_shadow_contracts:
+    # Skip validation
+
+# Resource management
+util_min = env.target_util_min
+util_max = env.target_util_max
+
+# PID controller
+kp, ki, kd = env.pid_kp, env.pid_ki, env.pid_kd
+```
+
+All RINGRIFT\_\* environment variables accessible via typed cached properties.
+
+### Unified SSH (`app/core/ssh.py`)
+
+Canonical SSH utility for all cluster operations:
+
+```python
+from app.core.ssh import (
+    SSHClient,
+    SSHConfig,
+    SSHResult,
+    get_ssh_client,
+    run_ssh_command_async,
+)
+
+# Get cached client for a cluster node
+client = get_ssh_client("runpod-h100")
+result = await client.run_async("nvidia-smi")
+
+# Convenience function
+result = await run_ssh_command_async("runpod-h100", "echo hello")
+
+# Sync usage
+result = client.run("nvidia-smi", timeout=30)
+```
+
+Features: Connection pooling via ControlMaster, multi-transport fallback (Tailscale → Direct), automatic retry.
+
+### Unified NodeInfo (`app/core/node.py`)
+
+Canonical node information dataclass for cluster management:
+
+```python
+from app.core.node import NodeInfo, NodeRole, NodeState
+
+# From P2P status
+node = NodeInfo.from_p2p_status(p2p_response)
+
+# From SSH discovery
+node = NodeInfo.from_ssh_discovery(host, ssh_result)
+
+# Check node properties
+if node.is_healthy and node.is_gpu_node:
+    score = node.gpu_power_score
+    endpoint = node.endpoint
+```
+
+Unified structure for: GPUInfo, ResourceMetrics, ConnectionInfo, HealthStatus, ProviderInfo, JobStatus.
+
 ### GumbelCommon (`app/ai/gumbel_common.py`)
 
 Unified data structures for all Gumbel MCTS variants:

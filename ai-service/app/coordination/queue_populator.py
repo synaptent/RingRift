@@ -210,8 +210,8 @@ class PopulatorConfig:
     # Enabled flag
     enabled: bool = True
 
-    # Check interval
-    check_interval_seconds: int = 60
+    # Check interval (Dec 2025: Reduced from 60s for faster job allocation)
+    check_interval_seconds: int = 15
 
 
 class QueuePopulator:

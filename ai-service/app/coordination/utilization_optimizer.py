@@ -18,6 +18,22 @@ Usage:
 
 from __future__ import annotations
 
+__all__ = [
+    # Enums
+    "BoardType",
+    "WorkloadType",
+    # Data classes
+    "NodeWorkload",
+    "OptimizationResult",
+    "WorkloadConfig",
+    # Constants
+    "BOARD_PRIORITIES",
+    "GPU_CAPABILITIES",
+    # Main class and singleton
+    "UtilizationOptimizer",
+    "get_utilization_optimizer",
+]
+
 import asyncio
 import logging
 import random

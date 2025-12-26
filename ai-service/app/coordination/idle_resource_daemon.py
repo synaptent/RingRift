@@ -19,6 +19,16 @@ Usage:
 
 from __future__ import annotations
 
+__all__ = [
+    "ConfigSpawnHistory",
+    "IdleResourceConfig",
+    "IdleResourceDaemon",
+    "NodeSpawnHistory",
+    "NodeStatus",
+    "SpawnAttempt",
+    "SpawnStats",
+]
+
 import asyncio
 import logging
 import os
@@ -79,8 +89,8 @@ except ImportError:
 class IdleResourceConfig:
     """Configuration for idle resource monitoring."""
     enabled: bool = True
-    # Reduced from 300s (5min) to 60s for faster detection (Dec 2025)
-    check_interval_seconds: int = 60  # 1 minute (was 5 minutes)
+    # Reduced from 300s (5min) to 15s for faster detection (Dec 2025)
+    check_interval_seconds: int = 15  # 15 seconds (was 5 minutes, then 1 minute)
     idle_threshold_percent: float = 10.0  # <10% GPU utilization
     # Reduced from 900s (15min) to 120s (2min) for faster spawning (Dec 2025)
     idle_duration_seconds: int = 120  # 2 minutes before spawning (was 15 minutes)

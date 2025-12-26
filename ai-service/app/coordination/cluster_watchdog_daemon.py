@@ -338,7 +338,7 @@ class ClusterWatchdogDaemon:
         """Query Vast.ai CLI for running instances."""
         nodes = []
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     ["vastai", "show", "instances", "--raw"],
@@ -399,7 +399,7 @@ class ClusterWatchdogDaemon:
         """Query RunPod CLI for running pods."""
         nodes = []
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     ["runpodctl", "get", "pod"],
@@ -448,7 +448,7 @@ class ClusterWatchdogDaemon:
         """Query Vultr CLI for running instances."""
         nodes = []
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     ["vultr-cli", "instance", "list", "--output", "json"],
@@ -505,7 +505,7 @@ class ClusterWatchdogDaemon:
             # Check GPU utilization - use shlex to avoid shell=True
             ssh_parts = shlex.split(node.ssh_cmd)
             gpu_remote_cmd = "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader 2>/dev/null | head -1"
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     ssh_parts + [gpu_remote_cmd],
@@ -524,7 +524,7 @@ class ClusterWatchdogDaemon:
 
             # Check Python processes - use shlex to avoid shell=True
             proc_remote_cmd = "pgrep -c python 2>/dev/null || echo 0"
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     ssh_parts + [proc_remote_cmd],
@@ -580,7 +580,7 @@ class ClusterWatchdogDaemon:
             )
 
             # Run with timeout - but nohup should return quickly
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     ssh_parts + [selfplay_cmd],

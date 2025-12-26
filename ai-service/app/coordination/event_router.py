@@ -1144,15 +1144,14 @@ def emit_training_started_sync(
 ) -> None:
     """Sync version of emit_training_started for non-async contexts."""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            fire_and_forget(
-                emit_training_started(config_key, node_name, **extra_payload),
-                name=f"emit_training_started_{config_key}",
-            )
-        else:
-            loop.run_until_complete(emit_training_started(config_key, node_name, **extra_payload))
+        # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
+        loop = asyncio.get_running_loop()
+        fire_and_forget(
+            emit_training_started(config_key, node_name, **extra_payload),
+            name=f"emit_training_started_{config_key}",
+        )
     except RuntimeError:
+        # No running loop - create one with asyncio.run()
         asyncio.run(emit_training_started(config_key, node_name, **extra_payload))
 
 
@@ -1165,13 +1164,12 @@ def emit_training_completed_sync(
 ) -> None:
     """Sync version of emit_training_completed."""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            fire_and_forget(
-                emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload),
-                name=f"emit_training_completed_{config_key}",
-            )
-        else:
-            loop.run_until_complete(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))
+        # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
+        loop = asyncio.get_running_loop()
+        fire_and_forget(
+            emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload),
+            name=f"emit_training_completed_{config_key}",
+        )
     except RuntimeError:
+        # No running loop - create one with asyncio.run()
         asyncio.run(emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload))

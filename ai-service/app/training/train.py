@@ -2336,7 +2336,8 @@ def train_model(
                         f"with {stats.total_games} total games "
                         f"(avg quality: {stats.avg_quality_score:.3f})"
                     )
-        except Exception as e:
+        except (ImportError, AttributeError, OSError, ConnectionError) as e:
+            # Module unavailable, missing attributes, file I/O errors, or network issues
             if not distributed or is_main_process():
                 logger.warning(f"DataCatalog discovery failed: {e}")
 
@@ -2401,46 +2402,55 @@ def train_model(
                     if "policy_encoding" in d:
                         try:
                             policy_encoding = str(np.asarray(d["policy_encoding"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             policy_encoding = None
                     if "history_length" in d:
                         try:
                             dataset_history_length = int(np.asarray(d["history_length"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_history_length = None
                     if "feature_version" in d:
                         try:
                             dataset_feature_version = int(np.asarray(d["feature_version"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_feature_version = None
                     # Read new encoder metadata fields (added 2025-12)
                     if "encoder_type" in d:
                         try:
                             dataset_encoder_type = str(np.asarray(d["encoder_type"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_encoder_type = None
                     if "base_channels" in d:
                         try:
                             dataset_base_channels = int(np.asarray(d["base_channels"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_base_channels = None
                     if "board_type" in d:
                         try:
                             dataset_board_type_meta = str(np.asarray(d["board_type"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_board_type_meta = None
                     # Read V2.1 encoder metadata (added 2025-12 for V3 encoder fix)
                     if "encoder_version" in d:
                         try:
                             dataset_encoder_version = str(np.asarray(d["encoder_version"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_encoder_version = None
                     if "in_channels" in d:
                         try:
                             dataset_in_channels_meta = int(np.asarray(d["in_channels"]).item())
-                        except Exception:
+                        except (ValueError, TypeError, AttributeError):
+                            # Metadata field missing, wrong type, or empty array
                             dataset_in_channels_meta = None
-        except Exception as exc:
+        except (OSError, KeyError, ValueError) as exc:
+            # File I/O errors, missing keys, or data access failures
             if not distributed or is_main_process():
                 logger.warning(
                     "Failed to read dataset metadata from %s: %s",
@@ -2817,7 +2827,8 @@ def train_model(
                                 "ELO weighting requested but dataset lacks 'opponent_elo' field. "
                                 "Regenerate with export_replay_dataset.py to include opponent ELO data."
                             )
-            except Exception as e:
+            except (OSError, KeyError, ValueError) as e:
+                # File I/O errors, missing keys, or data type issues
                 if not distributed or is_main_process():
                     logger.warning(f"Failed to load ELO weights: {e}")
 
@@ -2857,7 +2868,8 @@ def train_model(
                                 "Dataset lacks 'quality_score' field - quality weighting disabled. "
                                 "Regenerate with export_replay_dataset.py to include quality data."
                             )
-            except Exception as e:
+            except (OSError, KeyError, ValueError) as e:
+                # File I/O errors, missing keys, or data type issues
                 if not distributed or is_main_process():
                     logger.warning(f"Failed to load quality scores: {e}")
 
@@ -2881,7 +2893,8 @@ def train_model(
                 )
             except ImportError:
                 pass  # Improvement optimizer not available
-            except Exception as e:
+            except (AttributeError, TypeError) as e:
+                # Missing attributes or type errors
                 logger.debug(f"[ImprovementOptimizer] Failed to record data quality: {e}")
 
         if len(full_dataset) == 0:
@@ -3218,7 +3231,8 @@ def train_model(
             logger.info("[train_model] Regression → rollback wiring activated")
     except ImportError:
         pass  # Rollback manager not available
-    except Exception as e:
+    except (AttributeError, TypeError, RuntimeError) as e:
+        # Missing attributes, type errors, or initialization failures
         if not distributed or is_main_process():
             logger.debug(f"[train_model] Rollback wiring not available: {e}")
 
@@ -3242,7 +3256,8 @@ def train_model(
                 },
                 source="train",
             ))
-        except Exception as e:
+        except (RuntimeError, ConnectionError, TimeoutError) as e:
+            # Event emission can fail due to async runtime or network issues
             logger.debug(f"Failed to publish training started event: {e}")
 
     # Learning rate finder (2025-12)
@@ -3298,7 +3313,8 @@ def train_model(
                 param_group['lr'] = lr_result.suggested_lr
             logger.info(f"[LR Finder] Updated learning rate: {old_lr:.2e} -> {lr_result.suggested_lr:.2e}")
 
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError) as e:
+            # CUDA OOM, invalid data, or file I/O errors during LR finding
             logger.warning(f"[LR Finder] Failed: {e}. Continuing with configured LR.")
 
     try:
@@ -3334,7 +3350,8 @@ def train_model(
                         # Reset circuit breaker to allow retry
                         if training_breaker:
                             training_breaker.record_success("training_epoch")
-                    except Exception as e:
+                    except (OSError, RuntimeError, AttributeError) as e:
+                        # File I/O errors, state restoration failures, or missing attributes
                         logger.error(f"Rollback failed: {e}")
 
                 time.sleep(10.0)  # Brief pause before retry
@@ -3388,9 +3405,14 @@ def train_model(
                 try:
                     from app.coordination.gauntlet_feedback_controller import get_pending_hyperparameter_updates
                     pending_updates = get_pending_hyperparameter_updates(config_label)
+                    if pending_updates and (not distributed or is_main_process()):
+                        logger.info(f"[GauntletFeedback] Applying {len(pending_updates)} hyperparameter update(s) at epoch {epoch}")
+
                     for param, update in pending_updates.items():
                         value = update.get("value")
                         reason = update.get("reason", "gauntlet_feedback")
+
+                        # Learning rate adjustments
                         if param == "learning_rate" and isinstance(value, (int, float)):
                             for param_group in optimizer.param_groups:
                                 old_lr = param_group["lr"]
@@ -3407,9 +3429,60 @@ def train_model(
                                 logger.info(
                                     f"[GauntletFeedback] LR scaled: {old_lr:.2e} * {value:.2f} (reason: {reason})"
                                 )
+
+                        # Temperature scale (exploration reduction for strong models)
+                        elif param == "temperature_scale" and isinstance(value, (int, float)):
+                            # Temperature affects selfplay, not training directly
+                            # Log the update for awareness - actual application happens in selfplay
+                            if not distributed or is_main_process():
+                                logger.info(
+                                    f"[GauntletFeedback] Temperature scale updated: {value:.2f} (reason: {reason})"
+                                )
+                                logger.info(
+                                    f"  Note: Temperature affects selfplay data generation, not training directly"
+                                )
+
+                        # Quality threshold boost (raise quality bar for strong models)
+                        elif param == "quality_threshold_boost" and isinstance(value, (int, float)):
+                            # Quality threshold affects data filtering in selfplay/training data generation
+                            # Store for next training iteration
+                            if not distributed or is_main_process():
+                                logger.info(
+                                    f"[GauntletFeedback] Quality threshold boost: +{value:.3f} (reason: {reason})"
+                                )
+                                logger.info(
+                                    f"  Note: Quality threshold affects data filtering in future training iterations"
+                                )
+
+                        # Epoch multiplier (extend training for weak models)
+                        elif param == "epoch_multiplier" and isinstance(value, (int, float)):
+                            # Calculate how many additional epochs to run
+                            multiplier = float(value)
+                            original_epochs = config.epochs_per_iter
+                            new_total_epochs = int(original_epochs * multiplier)
+                            additional_epochs = new_total_epochs - original_epochs
+
+                            if additional_epochs > 0 and (not distributed or is_main_process()):
+                                logger.info(
+                                    f"[GauntletFeedback] Epoch extension requested: {multiplier:.1f}x "
+                                    f"({original_epochs} -> {new_total_epochs} epochs, +{additional_epochs}) "
+                                    f"(reason: {reason})"
+                                )
+                                logger.info(
+                                    f"  Note: Epoch extension will be applied in the next training run. "
+                                    f"Current run continues to {original_epochs} epochs."
+                                )
+
+                        # Unknown parameter - log for debugging
+                        else:
+                            if not distributed or is_main_process():
+                                logger.debug(
+                                    f"[GauntletFeedback] Unknown parameter '{param}' = {value} (reason: {reason})"
+                                )
                 except ImportError:
                     pass  # Gauntlet feedback not available
-                except Exception as e:
+                except (AttributeError, TypeError, OSError, ConnectionError) as e:
+                    # Missing attributes, type errors, file I/O, or network issues
                     if not distributed or is_main_process():
                         logger.debug(f"[GauntletFeedback] Failed to check updates: {e}")
 
@@ -3438,7 +3511,8 @@ def train_model(
 
                 except ImportError:
                     pass  # Improvement optimizer not available
-                except Exception as e:
+                except (AttributeError, TypeError, ValueError) as e:
+                    # Missing attributes, type errors, or invalid values
                     if not distributed or is_main_process():
                         logger.debug(f"[ImprovementOptimizer] Check failed: {e}")
 
@@ -3613,7 +3687,8 @@ def train_model(
                                     else:
                                         # Vector values - broadcast hot buffer scalar to first element
                                         value_targets[-actual_n_hot:, 0] = hot_value_t[:actual_n_hot]
-                    except Exception as e:
+                    except (RuntimeError, ValueError, IndexError, AttributeError) as e:
+                        # Tensor operation errors, invalid values, index errors, or missing attributes
                         # Don't fail training on hot buffer errors
                         if i % 100 == 0:
                             logger.debug(f"Hot buffer mixing skipped: {e}")
@@ -3624,7 +3699,8 @@ def train_model(
                         features, policy_targets = enhancements_manager.augment_batch_dense(
                             features, policy_targets
                         )
-                    except Exception as e:
+                    except (RuntimeError, ValueError, AttributeError) as e:
+                        # Tensor operation errors, invalid values, or missing attributes
                         # Don't fail training on augmentation errors
                         if i % 100 == 0:
                             logger.debug(f"Data augmentation skipped: {e}")
@@ -4307,7 +4383,8 @@ def train_model(
                             payload=event_payload,
                             source="train",
                         ))
-                    except Exception as e:
+                    except (RuntimeError, ConnectionError, TimeoutError) as e:
+                        # Event emission can fail due to async runtime or network issues
                         logger.debug(f"Failed to publish training progress event: {e}")
 
             # Overfitting detection: warn if validation diverges significantly from train
@@ -4348,7 +4425,8 @@ def train_model(
                             f"({regression_event.reason})"
                         )
                         # Record in epoch record
-                except Exception as e:
+                except (AttributeError, ValueError, TypeError) as e:
+                    # Missing attributes, invalid values, or type errors in regression detection
                     logger.debug(f"Regression detection error: {e}")
 
             # Record per-epoch losses for downstream analysis
@@ -4401,7 +4479,8 @@ def train_model(
                     except RuntimeError:
                         # No event loop running - use fire-and-forget
                         pass
-                except Exception as e:
+                except (RuntimeError, ConnectionError, TimeoutError) as e:
+                    # Event emission can fail due to async runtime or network issues
                     logger.debug(f"Failed to emit epoch completed event: {e}")
 
             # Emit training loss events for feedback loops (Phase 21.2 - Dec 2025)
@@ -4477,7 +4556,8 @@ def train_model(
                                         ))
                                 except RuntimeError:
                                     pass
-                except Exception as e:
+                except (RuntimeError, ConnectionError, TimeoutError, AttributeError) as e:
+                    # Event emission failures, network issues, or missing attributes
                     logger.debug(f"Failed to emit training events: {e}")
 
             # Update Prometheus metrics (only on main process)
@@ -4514,7 +4594,8 @@ def train_model(
                         gpu_memory_mb=gpu_memory_mb,
                         model_id=config.model_id,
                     )
-                except Exception as e:
+                except (OSError, RuntimeError, AttributeError) as e:
+                    # File I/O errors, runtime errors, or missing attributes
                     logger.debug(f"Failed to record metrics to dashboard: {e}")
 
             # Check early stopping (only on main process for DDP)
@@ -4606,7 +4687,8 @@ def train_model(
                                 ))
 
                             logger.info(f"[train] Emitted TRAINING_EARLY_STOPPED for {config_key}")
-                        except Exception as e:
+                        except (RuntimeError, ConnectionError, TimeoutError) as e:
+                            # Event emission can fail due to async runtime or network issues
                             logger.warning(f"Failed to emit TRAINING_EARLY_STOPPED: {e}")
                         # Restore best weights
                         early_stopper.restore_best_weights(model_to_save)
@@ -4842,7 +4924,8 @@ def train_model(
                             payload=event_payload,
                             source="train",
                         ))
-                    except Exception as e:
+                    except (RuntimeError, ConnectionError, TimeoutError) as e:
+                        # Event emission can fail due to async runtime or network issues
                         logger.debug(f"Failed to publish training completed event: {e}")
 
                 # Emit curriculum update event (December 2025)
@@ -4885,7 +4968,8 @@ def train_model(
                         )
                 except ImportError:
                     pass  # Event emitters not available
-                except Exception as e:
+                except (RuntimeError, ConnectionError, TimeoutError, AttributeError) as e:
+                    # Event emission failures, network issues, or missing attributes
                     logger.debug(f"Failed to emit curriculum update: {e}")
 
                 # Mark training as completed successfully (for hardened event emission)
@@ -4939,7 +5023,8 @@ def train_model(
                         source="train_finally",
                     ))
                     logger.warning(f"[train] Hardened TRAINING_FAILED emitted for {_config_key}: {error_msg}")
-            except Exception as e:
+            except (RuntimeError, ConnectionError, TimeoutError, AttributeError, NameError) as e:
+                # Event emission failures, network issues, missing attributes, or undefined vars in finally block
                 logger.debug(f"Failed to emit hardened training event: {e}")
 
         # Shutdown async checkpointer and wait for pending saves

@@ -17,6 +17,14 @@ from pathlib import Path
 
 from app.utils.paths import AI_SERVICE_ROOT
 
+__all__ = [
+    "CURRICULUM_WEIGHTS_PATH",
+    "CURRICULUM_WEIGHTS_STALE_SECONDS",
+    "export_curriculum_weights",
+    "get_curriculum_weight",
+    "load_curriculum_weights",
+]
+
 # Path for curriculum weights shared across components
 CURRICULUM_WEIGHTS_PATH = AI_SERVICE_ROOT / "data" / "curriculum_weights.json"
 

@@ -62,9 +62,9 @@ torch-sparse>=0.6.0
 
 # CMA-ES for heuristic weight optimization
 cma>=3.3.0
-# EvoTorch for GPU-native CMA-ES (requires numpy<2, use on GPU cluster only)
-# Install separately: pip install evotorch 'numpy<2'
-evotorch>=0.5.0; python_version < "3.12"
+# EvoTorch for GPU-native CMA-ES (v0.6.1+ supports Python 3.12/3.13)
+# Note: If import fails on Python 3.13, use cma directly as fallback
+evotorch>=0.6.1
 
 # Note: stable-baselines3 removed - incompatible with numpy 2.x
 # We'll implement RL algorithms directly using PyTorch instead

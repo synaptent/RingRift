@@ -208,7 +208,7 @@ class SelfplayScheduler:
 
         # Timing
         self._last_priority_update = 0.0
-        self._priority_update_interval = 60.0  # Update every minute
+        self._priority_update_interval = 15.0  # Dec 2025: Update every 15s (was 60s)
 
         # Event subscription
         self._subscribed = False

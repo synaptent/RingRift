@@ -401,7 +401,7 @@ class AdaptiveController:
             rate_multiplier = 1.0 - (self._quality_penalty * 0.3)
 
             import asyncio
-            asyncio.get_event_loop().create_task(
+            asyncio.get_running_loop().create_task(
                 router.publish(
                     DataEventType.QUALITY_PENALTY_APPLIED,
                     {

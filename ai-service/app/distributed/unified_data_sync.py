@@ -1251,7 +1251,7 @@ class UnifiedDataSyncService:
             for db_file in local_dir.glob("*.db"):
                 try:
                     # Compute file checksum
-                    file_checksum = await asyncio.get_event_loop().run_in_executor(
+                    file_checksum = await asyncio.get_running_loop().run_in_executor(
                         None, self._compute_file_checksum, db_file
                     )
                     checksums[db_file.name] = file_checksum

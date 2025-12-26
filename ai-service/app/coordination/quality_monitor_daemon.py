@@ -42,7 +42,7 @@ class QualityState(Enum):
 @dataclass
 class QualityMonitorConfig:
     """Configuration for QualityMonitorDaemon."""
-    check_interval: float = 60.0  # Seconds between quality checks
+    check_interval: float = 15.0  # Dec 2025: Reduced from 60s for faster feedback
     warning_threshold: float = 0.6  # Quality below this triggers warning
     good_threshold: float = 0.8  # Quality above this triggers high quality event
     significant_change: float = 0.1  # Change threshold for update events

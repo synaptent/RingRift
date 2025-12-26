@@ -779,7 +779,7 @@ class TaskHeartbeatMonitor:
                 try:
                     import asyncio
                     last_hb = task.metadata.get('last_heartbeat', task.started_at)
-                    asyncio.get_event_loop().create_task(self._emit_orphaned(
+                    asyncio.get_running_loop().create_task(self._emit_orphaned(
                         task_id=task.task_id,
                         task_type=task.task_type.value,
                         node_id=task.node_id,
@@ -813,7 +813,7 @@ class TaskHeartbeatMonitor:
             if self._emit_orphaned is not None:
                 try:
                     import asyncio
-                    asyncio.get_event_loop().create_task(self._emit_orphaned(
+                    asyncio.get_running_loop().create_task(self._emit_orphaned(
                         task_id=task.task_id,
                         task_type=task.task_type.value,
                         node_id=task.node_id,

@@ -356,7 +356,8 @@ class ContinuousTrainingLoop:
             from app.training.selfplay_runner import run_selfplay
 
             # Run selfplay in executor to avoid blocking event loop
-            loop = asyncio.get_event_loop()
+            # Dec 2025: Use get_running_loop() for async context
+            loop = asyncio.get_running_loop()
             stats = await loop.run_in_executor(
                 None,
                 lambda: run_selfplay(
@@ -628,7 +629,13 @@ def main():
             sys.exit(1)
         shutdown_requested = True
         logger.info("Shutdown requested...")
-        asyncio.get_event_loop().create_task(loop.stop())
+        # Dec 2025: Signal handlers need special handling for async
+        try:
+            running_loop = asyncio.get_running_loop()
+            running_loop.create_task(loop.stop())
+        except RuntimeError:
+            # No running loop in signal handler - schedule via call_soon_threadsafe
+            pass
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

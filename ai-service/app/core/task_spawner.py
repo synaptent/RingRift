@@ -440,8 +440,15 @@ class TaskSpawner:
 
         Creates a task that will run in the event loop.
         """
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self.spawn(coro, **kwargs))
+        try:
+            # Dec 2025: Use get_running_loop() if available
+            loop = asyncio.get_running_loop()
+            # If we're in a running loop, schedule and return a future
+            future = asyncio.ensure_future(self.spawn(coro, **kwargs))
+            return future  # type: ignore
+        except RuntimeError:
+            # No running loop - create a new one
+            return asyncio.run(self.spawn(coro, **kwargs))
 
     def create_group(self, name: str) -> TaskGroup:
         """Create a task group.

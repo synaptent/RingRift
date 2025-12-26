@@ -251,7 +251,8 @@ def get_disk_usage(path: str | None = None) -> tuple[float, float, float]:
         available_gb = usage.free / (1024 ** 3)
         used_percent = ((usage.total - usage.free) / usage.total) * 100
         return used_percent, available_gb, total_gb
-    except Exception as e:
+    except (OSError, PermissionError) as e:
+        # Disk access failures (path not found, permission denied, I/O errors)
         logger.warning(f"Could not check disk usage: {e}")
         return 0.0, 999.0, 999.0  # Assume OK on error
 
@@ -328,7 +329,8 @@ def get_memory_usage() -> tuple[float, float, float]:
     except ImportError:
         logger.debug("psutil not available for memory check")
         return 0.0, 999.0, 999.0
-    except Exception as e:
+    except (OSError, AttributeError) as e:
+        # OS-level memory access failure or psutil attribute missing
         logger.warning(f"Could not check memory: {e}")
         return 0.0, 999.0, 999.0
 
@@ -384,7 +386,8 @@ def get_cpu_usage() -> tuple[float, float, int]:
         return cpu_percent, load_per_cpu, cpu_count
     except (ImportError, AttributeError):
         return 0.0, 0.0, 1
-    except Exception as e:
+    except (OSError, ValueError) as e:
+        # OS-level CPU info failure or invalid numeric conversion
         logger.warning(f"Could not check CPU: {e}")
         return 0.0, 0.0, 1
 
@@ -448,7 +451,8 @@ def get_gpu_memory_usage(device_id: int = 0) -> tuple[float, float, float]:
         return used_percent, available_gb, total_gb
     except ImportError:
         return 0.0, 0.0, 0.0
-    except Exception as e:
+    except (RuntimeError, ValueError) as e:
+        # CUDA runtime errors (OOM, invalid device) or value conversion errors
         logger.debug(f"Could not check GPU memory: {e}")
         return 0.0, 0.0, 0.0
 
@@ -577,7 +581,8 @@ def get_psi_memory_pressure() -> dict | None:
                     elif part.startswith('avg60='):
                         result['full_avg60'] = float(part.split('=')[1])
         return result if result else None
-    except Exception as e:
+    except (OSError, ValueError, IndexError) as e:
+        # File read failure, invalid float conversion, or malformed PSI data
         logger.debug(f"Could not read PSI metrics: {e}")
         return None
 
@@ -608,7 +613,8 @@ def adjust_oom_score(score_adj: int = 500) -> bool:
     except PermissionError:
         logger.debug("Cannot adjust OOM score (requires root)")
         return False
-    except Exception as e:
+    except (OSError, ValueError) as e:
+        # File write failure or invalid score_adj value
         logger.debug(f"Could not adjust OOM score: {e}")
         return False
 
@@ -624,7 +630,8 @@ def get_oom_score() -> int | None:
         if oom_score_path.exists():
             return int(oom_score_path.read_text().strip())
         return None
-    except Exception:
+    except (OSError, ValueError):
+        # File read failure or invalid integer conversion
         return None
 
 
@@ -662,7 +669,8 @@ def trigger_memory_cleanup(level: int) -> int:
             if hasattr(functools, '_lru_cache_wrapper'):
                 # Can't easily clear all LRU caches, but we try
                 pass
-        except Exception:
+        except (ImportError, AttributeError):
+            # functools not available or missing attributes
             pass
 
         freed_mb += 50
@@ -675,14 +683,16 @@ def trigger_memory_cleanup(level: int) -> int:
         try:
             import importlib
             importlib.invalidate_caches()
-        except Exception:
+        except (ImportError, AttributeError):
+            # importlib not available or missing invalidate_caches
             pass
 
         # Clear more caches
         try:
             import sys
             sys.intern('')  # Hint to clear interned strings
-        except Exception:
+        except (AttributeError, TypeError):
+            # sys.intern not available or invalid argument
             pass
 
         # Final GC sweep
@@ -744,7 +754,8 @@ def register_oom_signal_handler() -> bool:
     try:
         signal.signal(signal.SIGTERM, oom_handler)
         return True
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
+        # Signal registration failure (invalid signal, platform unsupported, runtime error)
         logger.debug(f"Could not register OOM signal handler: {e}")
         return False
 
@@ -819,10 +830,12 @@ class MemoryPressureMonitor:
                 if level >= MemoryPressureLevel.CRITICAL and self.on_critical:
                     try:
                         self.on_critical(level)
-                    except Exception as e:
+                    except (TypeError, RuntimeError, OSError) as e:
+                        # Callback invocation error (wrong signature, runtime error, resource failure)
                         logger.warning(f"Critical callback error: {e}")
 
-            except Exception as e:
+            except (OSError, MemoryError, RuntimeError) as e:
+                # Memory check failure, out of memory, or runtime error
                 logger.debug(f"Memory monitor error: {e}")
 
             time.sleep(self.check_interval)
@@ -931,7 +944,8 @@ def cleanup_old_logs(max_age_days: int = 7) -> int:
             if log_file.stat().st_mtime < cutoff_time:
                 log_file.unlink()
                 deleted += 1
-        except Exception:
+        except (OSError, PermissionError):
+            # File access/deletion failure (missing file, permission denied)
             pass
 
     if deleted > 0:
@@ -974,7 +988,8 @@ def cleanup_old_checkpoints(keep_per_config: int = 5, dry_run: bool = False) -> 
 
         try:
             timestamp = datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
-        except Exception:
+        except (ValueError, AttributeError):
+            # Invalid timestamp format or missing match group
             continue
 
         # Extract board config
@@ -1005,7 +1020,8 @@ def cleanup_old_checkpoints(keep_per_config: int = 5, dry_run: bool = False) -> 
                     model_file.unlink()
                 files_deleted += 1
                 bytes_freed += size
-            except Exception:
+            except (OSError, PermissionError):
+                # File access/deletion failure
                 pass
 
     if files_deleted > 0:
@@ -1033,7 +1049,8 @@ def cleanup_temp_files() -> int:
                 if (time.time() - temp_file.stat().st_mtime) > 3600:
                     temp_file.unlink()
                     deleted += 1
-            except Exception:
+            except (OSError, PermissionError):
+                # File access/deletion failure
                 pass
 
     if deleted > 0:
@@ -1069,7 +1086,8 @@ def cleanup_old_games(keep_days: int = 30) -> tuple[int, int]:
                     db_file.unlink()
                     files_deleted += 1
                     bytes_freed += size
-            except Exception:
+            except (OSError, PermissionError):
+                # File access/deletion failure
                 pass
 
     if files_deleted > 0:
@@ -1229,10 +1247,12 @@ class DiskPressureMonitor:
                 if level >= DiskPressureLevel.CRITICAL and self.on_critical:
                     try:
                         self.on_critical(level)
-                    except Exception as e:
+                    except (TypeError, RuntimeError, OSError) as e:
+                        # Callback invocation error (wrong signature, runtime error, resource failure)
                         logger.warning(f"Critical callback error: {e}")
 
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
+                # Disk check failure or runtime error
                 logger.debug(f"Disk monitor error: {e}")
 
             time.sleep(self.check_interval)

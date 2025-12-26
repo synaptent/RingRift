@@ -257,7 +257,8 @@ class CloudProvider(ABC):
 
         try:
             # Quick SSH check
-            result = await asyncio.get_event_loop().run_in_executor(
+            # Dec 2025: Use get_running_loop() in async context
+            result = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     [

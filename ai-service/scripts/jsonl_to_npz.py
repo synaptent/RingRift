@@ -387,17 +387,9 @@ def _process_gpu_selfplay_record(
     correct_sizes = {"hex8": 9, "hexagonal": 25, "square8": 8, "square19": 19}
     expected_size = correct_sizes.get(board_type_str, initial_state.board.size)
     if initial_state.board.size != expected_size:
-        from app.models import BoardState
-        initial_state.board = BoardState(
-            type=initial_state.board.type,
-            size=expected_size,
-            stacks=initial_state.board.stacks,
-            markers=initial_state.board.markers,
-            collapsed_spaces=initial_state.board.collapsed_spaces,
-            eliminated_rings=initial_state.board.eliminated_rings,
-            formed_lines=initial_state.board.formed_lines,
-            territories=initial_state.board.territories,
-        )
+        # Use model_copy to properly update frozen Pydantic models
+        corrected_board = initial_state.board.model_copy(update={"size": expected_size})
+        initial_state = initial_state.model_copy(update={"board": corrected_board})
 
     # Parse moves (keep original dicts for mcts_policy soft targets)
     moves = [parse_move(m) for m in moves_list]
@@ -1348,6 +1340,15 @@ def process_jsonl_file(
                     )
                 else:
                     initial_state = deserialize_game_state(initial_state_dict)
+
+                # Fix board.size if incorrect (common issue with older JSONL files)
+                # Hex boards should have bounding box size (2*radius+1), not radius
+                correct_sizes = {"hex8": 9, "hexagonal": 25, "square8": 8, "square19": 19}
+                expected_size = correct_sizes.get(board_type_str, initial_state.board.size)
+                if initial_state.board.size != expected_size:
+                    # Use model_copy to properly update frozen Pydantic models
+                    corrected_board = initial_state.board.model_copy(update={"size": expected_size})
+                    initial_state = initial_state.model_copy(update={"board": corrected_board})
 
                 # Parse moves (keep original dicts for mcts_policy soft targets)
                 moves = [parse_move(m) for m in moves_list]

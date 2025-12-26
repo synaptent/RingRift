@@ -79,7 +79,7 @@ class HetznerProvider(CloudProvider):
         if self._token:
             env["HCLOUD_TOKEN"] = self._token
 
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: subprocess.run(
                 cmd, capture_output=True, text=True, timeout=60, env=env

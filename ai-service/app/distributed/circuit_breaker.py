@@ -22,7 +22,7 @@ Usage:
         try:
             result = call_remote_host("host1")
             breaker.record_success("host1")
-        except Exception:
+        except (ConnectionError, TimeoutError, OSError, RuntimeError):
             breaker.record_failure("host1")
     else:
         print("Circuit open for host1, skipping")
@@ -269,8 +269,9 @@ class CircuitBreaker:
         if self._on_state_change and old_state != new_state:
             try:
                 self._on_state_change(target, old_state, new_state)
-            except Exception:
-                pass  # Don't let callback errors affect circuit operation
+            except (RuntimeError, ValueError, TypeError, AttributeError):
+                # Catch callback errors - don't let user callback bugs affect circuit operation
+                pass
 
     def _get_or_create_circuit(self, target: str) -> _CircuitData:
         """Get or create circuit data for a target."""
@@ -464,7 +465,8 @@ class CircuitBreaker:
         # Run probe outside lock
         try:
             probe_success = self._active_recovery_probe(target)
-        except Exception:
+        except (ConnectionError, TimeoutError, OSError, RuntimeError):
+            # Network/system failures during health probe - treat as probe failure
             probe_success = False
 
         if probe_success:
@@ -619,7 +621,8 @@ class CircuitBreaker:
         try:
             yield
             self.record_success(target)
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as e:
+            # Network/system failures, runtime errors - record as circuit failure
             self.record_failure(target, e)
             raise
 
@@ -640,7 +643,8 @@ class CircuitBreaker:
         try:
             yield
             self.record_success(target)
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError, asyncio.TimeoutError, asyncio.CancelledError, RuntimeError, ValueError) as e:
+            # Network/async failures, runtime errors - record as circuit failure
             self.record_failure(target, e)
             raise
 
@@ -672,7 +676,8 @@ class CircuitBreaker:
             result = func()
             self.record_success(target)
             return result
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as e:
+            # Network/system failures, runtime errors - record as circuit failure
             self.record_failure(target, e)
             raise
 
@@ -692,7 +697,8 @@ class CircuitBreaker:
             result = await func() if asyncio.iscoroutinefunction(func) else func()
             self.record_success(target)
             return result
-        except Exception as e:
+        except (ConnectionError, TimeoutError, OSError, asyncio.TimeoutError, asyncio.CancelledError, RuntimeError, ValueError) as e:
+            # Network/async failures, runtime errors - record as circuit failure
             self.record_failure(target, e)
             raise
 
@@ -973,7 +979,8 @@ class FallbackChain:
             except asyncio.TimeoutError as e:
                 breaker.record_failure(host, e)
                 last_error = e
-            except Exception as e:
+            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError) as e:
+                # Network/system failures during fallback operation
                 breaker.record_failure(host, e)
                 last_error = e
 
@@ -1044,7 +1051,8 @@ def with_circuit_breaker(
                 result = await func(*args, **kwargs)
                 breaker.record_success(host)
                 return result
-            except Exception:
+            except (ConnectionError, TimeoutError, OSError, asyncio.TimeoutError, asyncio.CancelledError, RuntimeError, ValueError):
+                # Network/async failures - record and propagate
                 breaker.record_failure(host)
                 raise
 
@@ -1072,7 +1080,8 @@ def with_circuit_breaker(
                 result = func(*args, **kwargs)
                 breaker.record_success(host)
                 return result
-            except Exception:
+            except (ConnectionError, TimeoutError, OSError, RuntimeError, ValueError):
+                # Network/system failures - record and propagate
                 breaker.record_failure(host)
                 raise
 

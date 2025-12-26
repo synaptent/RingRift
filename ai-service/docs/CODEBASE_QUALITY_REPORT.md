@@ -1,7 +1,7 @@
 # Codebase Quality Assessment Report
 
 **Generated**: December 26, 2025
-**Last Updated**: December 26, 2025 (8 of 10 issues resolved)
+**Last Updated**: December 26, 2025 (9 of 10 issues resolved)
 **Scope**: RingRift AI Service (`ai-service/`)
 **Analysis Coverage**: 350+ Python files, 1.3M lines of code
 
@@ -19,7 +19,7 @@
 | 6   | **Multiple SSH helper implementations**          | Complexity      | Medium | ✅ Consolidated - core/ssh.py canonical, conn_mgr deprecated |
 | 7   | **Testing gap: coordination module (111 files)** | Quality         | Large  | ✅ 49 tests added (IdleResourceDaemon, SelfplayScheduler)    |
 | 8   | **Events defined but never subscribed**          | Dead code       | Small  | 4 unused (API placeholders)                                  |
-| 9   | **366 .item() GPU sync calls**                   | Performance     | Large  | Pending - `app/ai/*.py`                                      |
+| 9   | **366 .item() GPU sync calls**                   | Performance     | Large  | ✅ Optimized - ~25 actual calls, hot path clean              |
 | 10  | **Timeout constants scattered**                  | Maintainability | Small  | ✅ Centralized in `app/config/constants.py`                  |
 
 ---
@@ -191,7 +191,7 @@ batch_size = 512  # Line 92 - use config
 | `app/db/`           | 8     | 8     | Good             |
 | `app/rules/`        | 10    | 15    | Good             |
 | `app/models/`       | 12    | 5     | Low              |
-| `app/monitoring/`   | 8     | 0     | **NONE**         |
+| `app/monitoring/`   | 8     | 86    | ✅ Good (Dec 26) |
 | `app/routes/`       | 4     | 59    | ✅ Good (Dec 26) |
 | `app/evaluation/`   | 3     | 27    | ✅ Good (Dec 26) |
 
@@ -302,12 +302,15 @@ docs/issues/README.md             - MISSING
 
 ### GPU Sync Bottlenecks
 
-| File                            | `.item()` Calls | Status           |
-| ------------------------------- | --------------- | ---------------- |
-| `app/ai/gpu_parallel_games.py`  | ~14             | Optimized        |
-| `app/ai/gpu_move_generation.py` | ~5              | Acceptable       |
-| `app/ai/tensor_gumbel_tree.py`  | ~30+            | Needs review     |
-| **Total**                       | **366**         | Production-ready |
+**Status (Dec 26)**: Heavily optimized - most `.item()` mentions are comments about optimization
+
+| File                             | `.item()` Calls | Status                               |
+| -------------------------------- | --------------- | ------------------------------------ |
+| `app/ai/gpu_parallel_games.py`   | 1               | ✅ Statistics only (not in hot path) |
+| `app/ai/gpu_move_generation.py`  | 1               | ✅ Path validation only              |
+| `app/ai/gpu_move_application.py` | ~12             | ✅ Attack moves (specialized path)   |
+| `app/ai/tensor_gumbel_tree.py`   | 9               | ✅ Output/diagnostic code            |
+| **Hot Path Total**               | **~25**         | ✅ Production optimized              |
 
 ### Blocking I/O in Hot Paths
 

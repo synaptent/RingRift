@@ -50,6 +50,32 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
+__all__ = [
+    # Data classes and enums
+    "CoordinatorMetrics",
+    "CoordinatorStatus",
+    "HealthCheckResult",
+    # Protocols
+    "ConfigurableProtocol",
+    "CoordinatorProtocol",
+    "DaemonProtocol",
+    "EventDrivenProtocol",
+    # Base classes
+    "BaseCoordinator",
+    "BaseDaemon",
+    # Registry functions
+    "get_all_metrics",
+    "get_coordinator",
+    "get_registered_coordinators",
+    "health_check_all",
+    "is_coordinator",
+    "is_daemon",
+    "is_event_driven",
+    "register_coordinator",
+    "unregister_coordinator",
+    "validate_coordinator",
+]
+
 
 # =============================================================================
 # Enums and Data Classes

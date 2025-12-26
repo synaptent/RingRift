@@ -316,7 +316,7 @@ class TournamentOrchestrator:
             for eval_result in evaluation_results:
                 # Emit Elo update for the candidate vs each baseline
                 try:
-                    asyncio.get_event_loop().create_task(
+                    asyncio.get_running_loop().create_task(
                         emit_elo_updated(
                             model_id=eval_result.candidate_id,
                             new_elo=summary.final_ratings.get(eval_result.candidate_id, 1500),

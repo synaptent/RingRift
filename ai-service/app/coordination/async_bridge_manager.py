@@ -205,7 +205,12 @@ class AsyncBridgeManager:
             self.initialize()
 
         start_time = time.time()
-        loop = asyncio.get_event_loop()
+        # Dec 2025: Use get_running_loop() for proper async context detection
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
         # Track statistics
         with self._lock:

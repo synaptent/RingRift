@@ -378,7 +378,8 @@ class SyncCoordinator:
                 try:
                     rel_path = str(path.relative_to(base_dir))
                     snapshot[rel_path] = path.stat().st_size
-                except Exception:
+                except (OSError, PermissionError, ValueError):
+                    # File I/O errors (disk issues, permissions), or path errors (non-relative paths)
                     continue
         return snapshot
 
@@ -462,7 +463,8 @@ class SyncCoordinator:
         try:
             from app.config.unified_config import get_config
             p2p_port = get_config().distributed.p2p_port
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
+            # Config module missing, config structure mismatch, or type errors
             p2p_port = 8770
 
         hostname = socket.gethostname().lower()
@@ -1472,8 +1474,9 @@ class SyncCoordinator:
                             retry_count=self._consecutive_failures,
                             source="sync_coordinator.py",
                         )
-                    except Exception:
-                        pass  # Best effort event emission
+                    except (OSError, ConnectionError, asyncio.TimeoutError, TypeError, ValueError):
+                        # Best effort event emission: network errors, type/value issues
+                        pass
 
             except Exception as e:
                 self._consecutive_failures += 1
@@ -1495,7 +1498,8 @@ class SyncCoordinator:
                         consecutive_failures=self._consecutive_failures,
                         last_success=self._last_successful_sync,
                     )
-                except Exception:
+                except (ImportError, OSError, ConnectionError, asyncio.TimeoutError, TypeError, ValueError):
+                    # Best effort event emission: import errors, network errors, type/value issues
                     pass
 
             # Check data server health periodically
@@ -1565,8 +1569,8 @@ class SyncCoordinator:
                     timeout=aiohttp.ClientTimeout(total=5)
                 ) as resp:
                     self._data_server_healthy = resp.status == 200
-        except Exception:
-            # Server running but not responding - might be starting up
+        except (ImportError, OSError, ConnectionError, asyncio.TimeoutError, AttributeError):
+            # aiohttp missing, network errors, timeouts, or server startup issues
             self._data_server_healthy = self.is_data_server_running()
 
         return self._data_server_healthy
@@ -1951,7 +1955,8 @@ class HighQualityDataSyncWatcher:
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data)
             self._subscribed = False
-        except Exception:
+        except (ImportError, AttributeError, KeyError):
+            # Event system missing, API mismatch, or subscription key errors
             pass
 
     def _on_high_quality_data(self, event) -> None:
@@ -2059,8 +2064,9 @@ class HighQualityDataSyncWatcher:
                     ),
                     error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
                 )
-            except Exception:
-                pass  # Best effort
+            except (ImportError, OSError, ConnectionError, asyncio.TimeoutError, TypeError, ValueError):
+                # Best effort event emission: import errors, network errors, type/value issues
+                pass
         finally:
             self._sync_in_progress = False
 

@@ -94,7 +94,7 @@ class VultrProvider(CloudProvider):
 
         cmd = [self._cli_path] + list(args) + ["--output", "json"]
 
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         )
