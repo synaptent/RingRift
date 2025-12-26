@@ -1005,11 +1005,12 @@ class SelfplayRunner(ABC):
 
                 state = state_after
 
-            # Finalize with winner
+            # Finalize with winner in metadata
+            finalize_metadata = result.metadata.copy() if result.metadata else {}
+            finalize_metadata["winner"] = result.winner
             writer.finalize(
                 final_state=state,
-                winner=result.winner,
-                metadata=result.metadata,
+                metadata=finalize_metadata,
             )
 
     def on_game_complete(self, callback: Callable[[GameResult], None]) -> None:
