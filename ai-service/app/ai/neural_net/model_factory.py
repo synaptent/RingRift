@@ -67,6 +67,25 @@ __all__ = [
 # Valid memory tier options
 VALID_MEMORY_TIERS = ("high", "low", "v3-high", "v3-low", "v4", "v5", "v5-gnn", "gnn", "hybrid")
 
+# ============================================================================
+# Memory Tier Quick Reference (December 2025)
+# ============================================================================
+#
+# | Tier     | Model Class          | Params  | Features              | Use Case                    |
+# |----------|----------------------|---------|------------------------|----------------------------|
+# | v4       | RingRiftCNN_v4       | ~5.1M   | Attention, spatial     | Default, NAS-optimized     |
+# | v5       | RingRiftCNN_v5_Heavy | ~6.2M   | SE+Attn+FiLM, heuristics| Max strength (21 heuristics)|
+# | v5-gnn   | RingRiftCNN_v5_Heavy | ~6.3M   | v5 + GNN refinement    | Max strength + connectivity|
+# | v3-high  | RingRiftCNN_v3       | ~7.0M   | SE, spatial policy     | Spatial reasoning          |
+# | v3-low   | RingRiftCNN_v3_Lite  | ~1.8M   | SE lite, spatial       | Low memory spatial         |
+# | high     | RingRiftCNN_v2       | ~11M    | SE, global pool        | Legacy high-capacity       |
+# | low      | RingRiftCNN_v2_Lite  | ~3M     | SE lite, global pool   | Legacy low memory          |
+# | gnn      | GNNPolicyNet         | ~0.9M   | Pure GNN               | Graph-based (experimental) |
+# | hybrid   | HybridPolicyNet      | ~17M    | CNN + GNN              | Best of both (experimental)|
+#
+# Set via: RINGRIFT_NN_MEMORY_TIER=v4 (default) or memory_tier param
+# ============================================================================
+
 
 def get_memory_tier() -> str:
     """Get the memory tier configuration from environment variable.
@@ -526,16 +545,16 @@ def _get_tier_config(board_type: BoardType, tier: str) -> dict[str, Any]:
         "v5": {
             "num_res_blocks": 11,  # 6 SE + 5 attention
             "num_filters": 160,
-            "estimated_params_m": 20.0 if is_hex8 else 22.0 if is_hex else 18.0,
+            "estimated_params_m": 6.3 if is_hex8 else 6.5 if is_hex else 6.2,
             "recommended_model": "HexNeuralNet_v5_Heavy" if is_hex else "RingRiftCNN_v5_Heavy",
-            "description": "V5 Heavy: Maximum strength with SE+attention+heuristics (~18-22M params)",
+            "description": "V5 Heavy: Maximum strength with SE+attention+heuristics (~6M params)",
         },
         "v5-gnn": {
             "num_res_blocks": 11,
             "num_filters": 160,
-            "estimated_params_m": 24.0 if is_hex8 else 26.0 if is_hex else 22.0,
+            "estimated_params_m": 6.4 if is_hex8 else 6.6 if is_hex else 6.3,
             "recommended_model": "HexNeuralNet_v5_Heavy" if is_hex else "RingRiftCNN_v5_Heavy",
-            "description": "V5 Heavy + GNN refinement (~22-26M params, requires PyTorch Geometric)",
+            "description": "V5 Heavy + GNN refinement (~6.3-6.6M params, requires PyTorch Geometric)",
             "requires_pyg": True,
         },
         "gnn": {

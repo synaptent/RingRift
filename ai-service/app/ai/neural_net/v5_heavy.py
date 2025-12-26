@@ -900,32 +900,146 @@ class RingRiftCNN_v5_Heavy(nn.Module):
 
 # === Hex V5 Architecture ===
 
-class HexNeuralNet_v5_Heavy(RingRiftCNN_v5_Heavy):
+# Hex policy sizes - import from constants
+from .constants import POLICY_SIZE_HEX8, P_HEX, NUM_HEX_DIRS
+
+
+def _create_hex_mask(radius: int, board_size: int) -> torch.Tensor:
+    """Create a mask for valid hex cells in the bounding square."""
+    mask = torch.zeros(board_size, board_size, dtype=torch.bool)
+    center = board_size // 2
+    for y in range(board_size):
+        for x in range(board_size):
+            # Convert to cube coordinates
+            cx = x - center
+            cy = y - center
+            cz = -cx - cy
+            # Valid hex cell if within radius
+            if abs(cx) <= radius and abs(cy) <= radius and abs(cz) <= radius:
+                mask[y, x] = True
+    return mask
+
+
+class HexNeuralNet_v5_Heavy(nn.Module):
     """V5 Heavy Architecture for hexagonal boards.
 
-    Inherits from RingRiftCNN_v5_Heavy with hex-specific modifications:
+    This is a standalone implementation (not inheriting from square) with:
+    - Same backbone as RingRiftCNN_v5_Heavy (SE + Attention + FiLM)
+    - Hex-specific policy head (global pool → FC)
     - 6-connected edge index for GNN
-    - Hex-specific policy indices
     - Hex mask for valid cell identification
 
-    Note: Currently uses square policy indexing - hex-specific spatial heads
-    would require additional implementation similar to HexNeuralNet_v3.
+    Uses simple FC policy head instead of spatial scatter to avoid
+    complex hex-specific indexing. Still benefits from all V5 features:
+    heuristic conditioning, geometry encoding, GNN refinement.
+
+    Architecture Version:
+        v5.1.0-hex - Hex-specific V5 Heavy with FC policy head.
     """
 
-    ARCHITECTURE_VERSION = "v5.0.0-hex"
+    ARCHITECTURE_VERSION = "v5.1.0-hex"
 
     def __init__(
         self,
         board_size: int = 9,
         hex_radius: int = 4,
-        **kwargs,
+        in_channels: int = 14,
+        global_features: int = 20,
+        num_filters: int = 160,
+        num_se_blocks: int = 6,
+        num_attention_blocks: int = 5,
+        history_length: int = 3,
+        policy_size: int | None = None,
+        num_players: int = 4,
+        se_reduction: int = 16,
+        num_attention_heads: int = 4,
+        dropout: float = 0.1,
+        num_heuristics: int = NUM_HEURISTIC_FEATURES,
+        use_gnn: bool = False,
+        use_geometry_encoding: bool = False,
     ):
-        # Store hex-specific params before calling parent
+        super().__init__()
+        self.board_size = board_size
         self.hex_radius = hex_radius
+        self.num_filters = num_filters
+        self.num_players = num_players
+        self.global_features = global_features
+        self.num_heuristics = num_heuristics
 
-        # For hex, policy size and indices differ
-        # This is a simplified version - full hex spatial heads would need more work
-        super().__init__(board_size=board_size, **kwargs)
+        # Determine policy size for hex
+        if policy_size is not None:
+            self.policy_size = policy_size
+        elif board_size == 9:  # hex8
+            self.policy_size = POLICY_SIZE_HEX8
+        else:  # hexagonal (25x25)
+            self.policy_size = P_HEX
+
+        # Input channels
+        self.base_in_channels = in_channels * (history_length + 1)
+        self.use_geometry_encoding = use_geometry_encoding
+        if use_geometry_encoding:
+            self.geometry_encoder = GeometryEncoder(board_size)
+            self.in_channels = self.base_in_channels + NUM_GEOMETRY_CHANNELS
+        else:
+            self.geometry_encoder = None
+            self.in_channels = self.base_in_channels
+
+        # Hex mask
+        self.register_buffer("hex_mask", _create_hex_mask(hex_radius, board_size))
+
+        # Initial convolution
+        self.conv1 = nn.Conv2d(self.in_channels, num_filters, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+
+        # Heuristic encoder with FiLM conditioning
+        self.heuristic_encoder_output_dim = 128  # Store for FC layer sizing
+        self.heuristic_encoder = HeuristicEncoder(
+            num_heuristics=num_heuristics,
+            num_filters=num_filters,
+            output_dim=self.heuristic_encoder_output_dim,
+        )
+
+        # SE blocks
+        self.se_blocks = nn.ModuleList([
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_se_blocks)
+        ])
+
+        # Attention blocks
+        self.attention_blocks = nn.ModuleList([
+            AttentionResidualBlock(num_filters, num_heads=num_attention_heads, dropout=dropout)
+            for _ in range(num_attention_blocks)
+        ])
+
+        # Optional GNN refinement
+        self.use_gnn = use_gnn
+        if use_gnn:
+            self.gnn_refinement = GNNRefinement(num_filters, num_filters, num_layers=2)
+            self._edge_index = self._build_edge_index()
+        else:
+            self.gnn_refinement = None
+            self._edge_index = None
+
+        # Combined features: pooled + globals + heuristic embedding
+        combined_dim = num_filters + global_features + self.heuristic_encoder_output_dim
+
+        # Value head (same structure as square)
+        self.value_fc1 = nn.Linear(combined_dim, 256)
+        self.value_fc2 = nn.Linear(256, 256)
+        self.value_fc3 = nn.Linear(256, num_players)
+        self.tanh = nn.Tanh()
+        self.dropout = nn.Dropout(dropout)
+
+        # Rank distribution head
+        self.rank_dist_fc1 = nn.Linear(combined_dim, 256)
+        self.rank_dist_fc2 = nn.Linear(256, 256)
+        self.rank_dist_fc3 = nn.Linear(256, num_players * num_players)
+        self.rank_softmax = nn.Softmax(dim=-1)
+
+        # Simple FC policy head for hex (instead of spatial scatter)
+        self.policy_fc1 = nn.Linear(combined_dim, 512)
+        self.policy_fc2 = nn.Linear(512, self.policy_size)
 
     def _build_edge_index(self) -> torch.Tensor:
         """Build edge index for hex board (6-connected)."""
@@ -945,6 +1059,70 @@ class HexNeuralNet_v5_Heavy(RingRiftCNN_v5_Heavy):
                         edges.append([node_idx, neighbor_idx])
 
         return torch.tensor(edges, dtype=torch.long).t().contiguous()
+
+    def forward(
+        self,
+        x: Tensor,
+        globals_: Tensor,
+        heuristics: Tensor | None = None,
+        return_features: bool = False,
+    ) -> tuple[Tensor, Tensor, Tensor] | tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Forward pass for hex V5 Heavy."""
+        # Geometry encoding
+        if self.geometry_encoder is not None:
+            if x.shape[1] == self.base_in_channels:
+                geometry_features = self.geometry_encoder(x)
+                x = torch.cat([x, geometry_features], dim=1)
+
+        # Initial conv
+        out = self.relu(self.bn1(self.conv1(x)))
+
+        # FiLM conditioning from heuristics
+        if heuristics is None:
+            heuristics = torch.zeros(x.size(0), self.num_heuristics, device=x.device, dtype=x.dtype)
+        h_embed, gamma, beta = self.heuristic_encoder(heuristics)
+
+        # SE blocks with FiLM
+        for block in self.se_blocks:
+            out = block(out)
+            out = gamma.unsqueeze(-1).unsqueeze(-1) * out + beta.unsqueeze(-1).unsqueeze(-1)
+
+        # Attention blocks
+        for block in self.attention_blocks:
+            out = block(out)
+
+        # Optional GNN
+        if self.gnn_refinement is not None and self._edge_index is not None:
+            edge_index = self._edge_index.to(out.device)
+            out = self.gnn_refinement(out, edge_index)
+
+        # Global pooling
+        pooled = out.mean(dim=[-2, -1])
+        combined = torch.cat([pooled, globals_, h_embed], dim=1)
+
+        # Value head
+        v = self.relu(self.value_fc1(combined))
+        v = self.dropout(v)
+        v = self.relu(self.value_fc2(v))
+        v = self.dropout(v)
+        value = self.tanh(self.value_fc3(v))
+
+        # Rank distribution head
+        r = self.relu(self.rank_dist_fc1(combined))
+        r = self.dropout(r)
+        r = self.relu(self.rank_dist_fc2(r))
+        r = self.dropout(r)
+        rank_logits = self.rank_dist_fc3(r).view(-1, self.num_players, self.num_players)
+        rank_dist = self.rank_softmax(rank_logits)
+
+        # Policy head (simple FC for hex)
+        p = self.relu(self.policy_fc1(combined))
+        p = self.dropout(p)
+        policy = self.policy_fc2(p)
+
+        if return_features:
+            return value, policy, rank_dist, combined
+        return value, policy, rank_dist
 
 
 def create_v5_heavy_model(

@@ -113,11 +113,15 @@ class P2PConfig:
     RETRY_DEAD_NODE_INTERVAL: int = 300
 
     # Peer management
+    # Dec 2025: Increased from 1h to 24h - nodes were being retired too quickly
+    # during temporary network issues, causing idle GPU waste
     PEER_RETIRE_AFTER_SECONDS: int = field(
-        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "3600") or 3600)
+        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "86400") or 86400)
     )
+    # Dec 2025: Decreased from 1h to 5min - check retired nodes more frequently
+    # to quickly un-retire nodes that come back online
     RETRY_RETIRED_NODE_INTERVAL: int = field(
-        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_RETRY_RETIRED_NODE_INTERVAL", "3600") or 3600)
+        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_RETRY_RETIRED_NODE_INTERVAL", "300") or 300)
     )
 
     # NAT/relay settings

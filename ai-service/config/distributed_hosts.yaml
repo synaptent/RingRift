@@ -480,6 +480,27 @@ hosts:
     p2p_enabled: true
     note: H100 80GB for training
 
+  # New Nebius H100 #2 provisioned Dec 26, 2025 (80GB VRAM!)
+  # NOTE: Internal IP only - requires SSH jump through nebius-backbone-1
+  nebius-h100-2:
+    ssh_host: 10.0.0.8
+    ssh_port: 22
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ssh_proxy: nebius-backbone-1
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 200
+    cpus: 16
+    gpu: H100 SXM
+    gpu_vram_gb: 80
+    role: gpu_training_primary
+    status: ready
+    nebius_id: computeinstance-e00xsba9efvkpvk8wy
+    region: eu-north1
+    p2p_enabled: true
+    note: H100 80GB training (pair with nebius-h100-1)
+
   # Nebius L40S #2 (unstable network - under investigation)
   nebius-l40s-2:
     ssh_host: 89.169.108.182

@@ -97,12 +97,22 @@ def has_turn_material(state: GameState, player: int) -> bool:
 
 
 def has_global_placement_action(state: GameState, player: int) -> bool:
-    """Return True if any legal ring placement exists for ``player``."""
+    """Return True if any legal ring placement exists for ``player``.
 
-    # Delegate to the canonical ring-placement generator, which is
-    # phase-agnostic and enforces caps and no-dead-placement.
-    moves = GameEngine._get_ring_placement_moves(state, player)
-    return bool(moves)
+    This is a boolean predicate used by ANM/global-action checks.
+
+    Important: do **not** enumerate all placement moves here.
+
+    ``GameEngine._get_ring_placement_moves`` is intentionally expensive because
+    it fully enumerates placements and runs no-dead-placement validation for
+    each candidate. Calling that on every post-move ANM check can turn
+    self-play and fitness evaluation into an accidental quadratic/cubic loop.
+
+    ``GameEngine._has_any_valid_placement_fast`` is semantically equivalent for
+    existence checks (same caps + no-dead-placement), but returns early.
+    """
+
+    return GameEngine._has_any_valid_placement_fast(state, player)
 
 
 def has_phase_local_interactive_move(

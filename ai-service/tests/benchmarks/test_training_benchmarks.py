@@ -157,14 +157,15 @@ class TestNeuralNetBenchmarks:
         for _ in range(5):
             policy, _value = model(x)
             loss = criterion(policy, target)
-            optimizer.zero_grad()
+            # set_to_none avoids unnecessary memset and is the recommended fast path.
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
         def training_step():
             policy, _value = model(x)
             loss = criterion(policy, target)
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 

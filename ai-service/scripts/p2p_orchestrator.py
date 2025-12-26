@@ -21452,6 +21452,8 @@ print(json.dumps({{
             peer_port: Target peer port
             scheme: HTTP or HTTPS scheme
             timeout: Request timeout in seconds (default 10, use smaller for voter heartbeats)
+
+        Dec 2025: Added SSH fallback via HybridTransport when HTTP fails.
         """
         target = f"{peer_host}:{peer_port}"
         breaker = self._circuit_registry.get_breaker("p2p")
@@ -21463,15 +21465,17 @@ print(json.dumps({{
                 # Circuit is open - skip this peer temporarily
                 return None
 
-        try:
-            self._update_self_info()
-            payload = self.self_info.to_dict()
-            voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
-            if voter_node_ids:
-                payload["voter_node_ids"] = voter_node_ids
-                payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
-                payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
+        http_failed = False
+        # Prepare payload outside try block so it's available for SSH fallback
+        self._update_self_info()
+        payload = self.self_info.to_dict()
+        voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+        if voter_node_ids:
+            payload["voter_node_ids"] = voter_node_ids
+            payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
+            payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
 
+        try:
             # Adjust timeout based on circuit state (shorter for half-open probing)
             effective_timeout = self._circuit_registry.get_timeout("p2p", target, float(timeout))
             client_timeout = ClientTimeout(total=effective_timeout)
@@ -21517,9 +21521,107 @@ print(json.dumps({{
                     else:
                         # Non-200 response is a failure
                         breaker.record_failure(target)
+                        http_failed = True
         except Exception:
             # Record failure with circuit breaker
             breaker.record_failure(target)
+            http_failed = True
+
+        # Dec 2025: SSH fallback via HybridTransport when HTTP fails
+        if http_failed and self.hybrid_transport:
+            info = await self._send_heartbeat_via_ssh_fallback(peer_host, peer_port, payload)
+            if info:
+                breaker.record_success(target)
+                return info
+
+        return None
+
+    async def _send_heartbeat_via_ssh_fallback(
+        self, peer_host: str, peer_port: int, payload: dict[str, Any]
+    ) -> NodeInfo | None:
+        """Send heartbeat via SSH when HTTP fails.
+
+        Dec 2025: Uses HybridTransport SSH fallback for nodes behind NAT or
+        with unreachable HTTP endpoints.
+
+        Args:
+            peer_host: Target peer hostname or IP
+            peer_port: Target peer port
+            payload: Heartbeat payload dict
+
+        Returns:
+            NodeInfo if successful, None otherwise
+        """
+        if not self.hybrid_transport:
+            return None
+
+        # Try to find node_id for this host
+        node_id = self._find_node_id_for_host(peer_host)
+        if not node_id:
+            return None
+
+        try:
+            success, response = await self.hybrid_transport.send_heartbeat(
+                node_id=node_id,
+                host=peer_host,
+                port=peer_port,
+                self_info=payload,
+            )
+
+            if success and response:
+                info = NodeInfo.from_dict(response)
+                if not info.reported_host:
+                    info.reported_host = info.host
+                if not info.reported_port:
+                    info.reported_port = info.port
+                info.scheme = "http"  # SSH proxied to local HTTP
+                info.host = peer_host
+                info.port = peer_port
+
+                # Cache peer for persistence
+                self._save_peer_to_cache(
+                    info.node_id,
+                    peer_host,
+                    peer_port,
+                    str(getattr(info, "tailscale_ip", "") or "")
+                )
+                self._update_peer_reputation(info.node_id, success=True)
+
+                logger.debug(f"[P2P] SSH fallback heartbeat successful to {node_id}")
+                return info
+
+        except Exception as e:
+            logger.debug(f"[P2P] SSH fallback heartbeat failed for {node_id}: {e}")
+
+        return None
+
+    def _find_node_id_for_host(self, host: str) -> str | None:
+        """Find node_id for a given host address.
+
+        Dec 2025: Looks up node_id from cluster_hosts.yaml or peer cache.
+
+        Args:
+            host: Hostname or IP address
+
+        Returns:
+            node_id if found, None otherwise
+        """
+        # Check peers first
+        with self.peers_lock:
+            for peer in self.peers.values():
+                if peer.host == host or getattr(peer, "tailscale_ip", None) == host:
+                    return peer.node_id
+
+        # Check cluster_hosts.yaml
+        try:
+            from app.sync.cluster_hosts import get_cluster_nodes
+            configured_hosts = get_cluster_nodes()
+            for name, cfg in configured_hosts.items():
+                if cfg.tailscale_ip == host or cfg.ssh_host == host or cfg.best_ip == host:
+                    return name
+        except Exception:
+            pass
+
         return None
 
     async def _bootstrap_from_known_peers(self) -> bool:

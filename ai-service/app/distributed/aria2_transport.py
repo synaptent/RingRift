@@ -34,6 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.utils.checksum_utils import (
+    LARGE_CHUNK_SIZE,
+    compute_file_checksum,
+    verify_file_checksum,
+)
+
 logger = logging.getLogger(__name__)
 
 # Import circuit breaker for fault tolerance
@@ -67,6 +73,16 @@ class Aria2Config:
     allow_overwrite: bool = True
     # Data server port (matches aria2_data_sync.py)
     data_server_port: int = 8766
+    # Checksum verification after download
+    verify_checksum: bool = True
+    # BitTorrent support for P2P swarm downloads
+    enable_bittorrent: bool = True
+    bt_enable_dht: bool = True  # Distributed Hash Table for peer discovery
+    bt_enable_lpd: bool = True  # Local Peer Discovery
+    bt_max_peers: int = 55
+    bt_tracker_timeout: int = 60
+    # Seed ratio for uploaded torrents (0 = no seeding after download)
+    seed_ratio: float = 0.0
 
 
 @dataclass
@@ -280,6 +296,7 @@ class Aria2Transport:
         output_dir: Path,
         url_file: Path | None = None,
         urls: list[str] | None = None,
+        torrent_file: Path | None = None,
     ) -> list[str]:
         """Build aria2c command with optimal settings."""
         cmd = [
@@ -305,7 +322,19 @@ class Aria2Transport:
         if self.config.check_integrity:
             cmd.append("--check-integrity=true")
 
-        if url_file:
+        # BitTorrent options for P2P swarm downloads
+        if self.config.enable_bittorrent:
+            if self.config.bt_enable_dht:
+                cmd.append("--enable-dht=true")
+            if self.config.bt_enable_lpd:
+                cmd.append("--bt-enable-lpd=true")
+            cmd.append(f"--bt-max-peers={self.config.bt_max_peers}")
+            cmd.append(f"--bt-tracker-timeout={self.config.bt_tracker_timeout}")
+            cmd.append(f"--seed-ratio={self.config.seed_ratio}")
+
+        if torrent_file:
+            cmd.append(str(torrent_file))
+        elif url_file:
             cmd.append(f"--input-file={url_file}")
         elif urls:
             cmd.extend(urls)
@@ -330,6 +359,7 @@ class Aria2Transport:
         sources: list[str],
         output_dir: Path,
         filename: str | None = None,
+        expected_checksum: str | None = None,
     ) -> tuple[bool, int, str]:
         """Download a single file from multiple sources using aria2.
 
@@ -337,6 +367,7 @@ class Aria2Transport:
             sources: List of URLs to download from (aria2 will try all)
             output_dir: Directory to save the file
             filename: Optional filename override
+            expected_checksum: Optional SHA256 checksum for verification
 
         Returns:
             Tuple of (success, bytes_downloaded, error_message)
@@ -365,14 +396,30 @@ class Aria2Transport:
             )
 
             if process.returncode == 0:
-                # Get file size
+                # Get file path and size
                 if filename:
                     filepath = output_dir / filename
                 else:
                     # Extract filename from first URL
                     filepath = output_dir / Path(sources[0]).name
 
-                size = filepath.stat().st_size if filepath.exists() else 0
+                if not filepath.exists():
+                    return False, 0, f"Download completed but file not found: {filepath}"
+
+                size = filepath.stat().st_size
+
+                # Verify checksum if provided and verification is enabled
+                if expected_checksum and self.config.verify_checksum:
+                    if not verify_file_checksum(filepath, expected_checksum):
+                        actual = compute_file_checksum(filepath, chunk_size=LARGE_CHUNK_SIZE, truncate=len(expected_checksum))
+                        logger.warning(
+                            f"Checksum mismatch for {filepath.name}: "
+                            f"expected {expected_checksum[:16]}..., got {actual[:16]}..."
+                        )
+                        # Delete corrupted file
+                        filepath.unlink(missing_ok=True)
+                        return False, 0, f"Checksum mismatch: expected {expected_checksum[:16]}, got {actual[:16]}"
+
                 return True, size, ""
             else:
                 error = stderr.decode()[:200] if stderr else "Unknown error"
@@ -388,6 +435,7 @@ class Aria2Transport:
         file_sources: dict[str, list[str]],
         output_dir: Path,
         category: str | None = "games",
+        expected_checksums: dict[str, str] | None = None,
     ) -> SyncResult:
         """Download multiple files using aria2 with a URL list file.
 
@@ -395,6 +443,7 @@ class Aria2Transport:
             file_sources: Dict mapping filenames to list of source URLs
             output_dir: Directory to save files
             category: Category subdirectory (games, models, training, elo)
+            expected_checksums: Optional dict mapping filenames to SHA256 checksums
 
         Returns:
             SyncResult with download statistics
@@ -411,6 +460,7 @@ class Aria2Transport:
         start_time = time.time()
         category_dir = output_dir if not category else output_dir / category
         category_dir.mkdir(parents=True, exist_ok=True)
+        checksums = expected_checksums or {}
 
         # Create URL list file for aria2
         # Format: URL\n  out=filename\n
@@ -446,7 +496,7 @@ class Aria2Transport:
                 timeout=total_timeout,
             )
 
-            # Count successful downloads
+            # Count successful downloads and verify checksums
             files_synced = 0
             files_failed = 0
             bytes_transferred = 0
@@ -455,6 +505,23 @@ class Aria2Transport:
             for filename in file_sources:
                 filepath = category_dir / filename
                 if filepath.exists():
+                    # Verify checksum if provided and verification is enabled
+                    if filename in checksums and self.config.verify_checksum:
+                        expected = checksums[filename]
+                        if not verify_file_checksum(filepath, expected):
+                            actual = compute_file_checksum(
+                                filepath, chunk_size=LARGE_CHUNK_SIZE, truncate=len(expected)
+                            )
+                            logger.warning(
+                                f"Checksum mismatch for {filename}: "
+                                f"expected {expected[:16]}..., got {actual[:16]}..."
+                            )
+                            # Delete corrupted file
+                            filepath.unlink(missing_ok=True)
+                            files_failed += 1
+                            errors.append(f"Checksum mismatch: {filename}")
+                            continue
+
                     files_synced += 1
                     bytes_transferred += filepath.stat().st_size
                 else:

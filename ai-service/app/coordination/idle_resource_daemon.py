@@ -35,6 +35,17 @@ from app.coordination.protocols import (
 )
 from app.core.async_context import safe_create_task
 
+# SSH fallback for node discovery when P2P is unavailable (Dec 2025)
+try:
+    from app.sync.cluster_hosts import get_cluster_nodes as get_configured_hosts, ClusterNode
+    from app.execution.executor import SSHExecutor
+    HAS_SSH_FALLBACK = True
+except ImportError:
+    HAS_SSH_FALLBACK = False
+    get_configured_hosts = None
+    ClusterNode = None
+    SSHExecutor = None
+
 logger = logging.getLogger(__name__)
 
 # Job scheduler integration (Phase 21.2 - Dec 2025)
@@ -650,7 +661,26 @@ class IdleResourceDaemon:
             logger.debug(f"[IdleResourceDaemon] Failed to update scheduler priorities: {e}")
 
     async def _get_cluster_nodes(self) -> list[NodeStatus]:
-        """Get status of all cluster nodes."""
+        """Get status of all cluster nodes.
+
+        Dec 2025: Added SSH fallback for nodes not in P2P. This ensures we can
+        discover and spawn on nodes even if their P2P daemon isn't running.
+        """
+        nodes: list[NodeStatus] = []
+        seen_hosts: set[str] = set()
+
+        # Phase 1: Try P2P first (preferred for nodes with P2P running)
+        nodes.extend(await self._get_p2p_nodes(seen_hosts))
+
+        # Phase 2: SSH fallback for configured nodes not in P2P
+        if HAS_SSH_FALLBACK:
+            ssh_nodes = await self._get_ssh_fallback_nodes(seen_hosts)
+            nodes.extend(ssh_nodes)
+
+        return nodes
+
+    async def _get_p2p_nodes(self, seen_hosts: set[str]) -> list[NodeStatus]:
+        """Get nodes from P2P orchestrator."""
         nodes: list[NodeStatus] = []
 
         try:
@@ -685,13 +715,166 @@ class IdleResourceDaemon:
                     )
                     nodes.append(node)
                     self._update_node_state(node)
+                    # Track by both node_id and host to avoid duplicates
+                    seen_hosts.add(node.node_id)
+                    if node.host:
+                        seen_hosts.add(node.host)
 
         except ImportError:
             logger.debug("P2P orchestrator not available")
         except Exception as e:
-            logger.debug(f"Failed to get cluster nodes: {e}")
+            logger.debug(f"Failed to get cluster nodes from P2P: {e}")
 
         return nodes
+
+    async def _get_ssh_fallback_nodes(self, exclude: set[str]) -> list[NodeStatus]:
+        """Get nodes via SSH for hosts not discovered via P2P.
+
+        Dec 2025: Discovers nodes from distributed_hosts.yaml that aren't
+        in the P2P cluster, checks their GPU status via SSH.
+
+        Args:
+            exclude: Set of node IDs/hosts to skip (already discovered via P2P).
+
+        Returns:
+            List of NodeStatus for SSH-discovered nodes with GPUs.
+        """
+        nodes: list[NodeStatus] = []
+
+        if not HAS_SSH_FALLBACK or get_configured_hosts is None:
+            return nodes
+
+        try:
+            configured_hosts = get_configured_hosts()
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] Failed to load configured hosts: {e}")
+            return nodes
+
+        # Filter to active hosts with GPUs that aren't already discovered
+        candidates = [
+            (name, host) for name, host in configured_hosts.items()
+            if host.is_active
+            and host.gpu  # Has GPU configured
+            and name not in exclude
+            and (host.best_ip is None or host.best_ip not in exclude)
+        ]
+
+        if not candidates:
+            return nodes
+
+        logger.debug(
+            f"[IdleResourceDaemon] SSH fallback: checking {len(candidates)} nodes "
+            f"not in P2P: {[n for n, _ in candidates[:5]]}..."
+        )
+
+        # Check nodes concurrently (limit concurrency to avoid overwhelming)
+        semaphore = asyncio.Semaphore(5)
+
+        async def check_node(name: str, host: ClusterNode) -> NodeStatus | None:
+            async with semaphore:
+                return await self._check_node_via_ssh(name, host)
+
+        tasks = [check_node(name, host) for name, host in candidates]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, NodeStatus):
+                nodes.append(result)
+                self._update_node_state(result)
+            elif isinstance(result, Exception):
+                logger.debug(f"[IdleResourceDaemon] SSH check failed: {result}")
+
+        if nodes:
+            logger.info(
+                f"[IdleResourceDaemon] SSH fallback discovered {len(nodes)} nodes: "
+                f"{[n.node_id for n in nodes]}"
+            )
+
+        return nodes
+
+    async def _check_node_via_ssh(
+        self, name: str, host: ClusterNode
+    ) -> NodeStatus | None:
+        """Check a single node's GPU status via SSH.
+
+        Args:
+            name: Node name from config.
+            host: ClusterNode with SSH connection info.
+
+        Returns:
+            NodeStatus if node is reachable and has GPU, None otherwise.
+        """
+        if SSHExecutor is None or host.best_ip is None:
+            return None
+
+        try:
+            executor = SSHExecutor(
+                host=host.best_ip,
+                user=host.ssh_user,
+                port=host.ssh_port,
+                key_path=host.ssh_key,
+                connect_timeout=5,
+                max_retries=1,
+            )
+
+            # Quick GPU check via nvidia-smi
+            result = await executor.run(
+                "nvidia-smi --query-gpu=utilization.gpu,memory.total,memory.used "
+                "--format=csv,noheader,nounits 2>/dev/null || echo 'no-gpu'",
+                timeout=10,
+            )
+
+            if not result.success or "no-gpu" in result.stdout:
+                return None
+
+            # Parse nvidia-smi output: "util%, mem_total, mem_used"
+            # Example: "5, 24576, 1234"
+            lines = result.stdout.strip().split('\n')
+            if not lines or not lines[0]:
+                return None
+
+            parts = lines[0].split(',')
+            if len(parts) < 3:
+                return None
+
+            try:
+                gpu_util = float(parts[0].strip())
+                mem_total_mb = float(parts[1].strip())
+                mem_used_mb = float(parts[2].strip())
+            except ValueError:
+                return None
+
+            return NodeStatus(
+                node_id=name,
+                host=host.best_ip,
+                gpu_utilization=gpu_util,
+                gpu_memory_total_gb=mem_total_mb / 1024.0,
+                gpu_memory_used_gb=mem_used_mb / 1024.0,
+                last_seen=time.time(),
+                active_jobs=0,  # Unknown via SSH
+                provider=self._detect_provider(name),
+            )
+
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] SSH check failed for {name}: {e}")
+            return None
+
+    def _detect_provider(self, node_name: str) -> str:
+        """Detect provider from node name."""
+        name_lower = node_name.lower()
+        if "vast" in name_lower:
+            return "vast"
+        elif "runpod" in name_lower:
+            return "runpod"
+        elif "nebius" in name_lower:
+            return "nebius"
+        elif "vultr" in name_lower:
+            return "vultr"
+        elif "hetzner" in name_lower:
+            return "hetzner"
+        elif "lambda" in name_lower or name_lower.startswith(("a-", "b-", "c-", "d-", "e-", "f-", "g-", "h-", "i-", "j-", "k-", "l-", "m-", "n-", "o-", "p-", "q-", "r-", "s-", "t-")):
+            return "lambda"
+        return "unknown"
 
     def _update_node_state(self, node: NodeStatus) -> None:
         """Update tracked node state for idle duration tracking."""
@@ -1103,22 +1286,49 @@ class IdleResourceDaemon:
         config_key: str,
         games: int,
     ) -> bool:
-        """Distribute a selfplay job to a node."""
+        """Distribute a selfplay job to a node.
+
+        Dec 2025: Added SSH fallback when P2P is unavailable. This allows
+        spawning jobs on nodes even if their P2P daemon isn't running.
+        """
+        # Parse config key first (needed for both methods)
+        parts = config_key.rsplit("_", 1)
+        if len(parts) != 2:
+            logger.warning(f"Invalid config key: {config_key}")
+            return False
+
+        board_type = parts[0]
+        num_players = int(parts[1].replace("p", ""))
+
+        # Phase 1: Try P2P first (preferred)
+        p2p_success = await self._distribute_job_via_p2p(
+            node, board_type, num_players, games
+        )
+        if p2p_success:
+            return True
+
+        # Phase 2: SSH fallback for nodes discovered via SSH
+        if HAS_SSH_FALLBACK:
+            return await self._distribute_job_via_ssh(
+                node, board_type, num_players, games
+            )
+
+        return False
+
+    async def _distribute_job_via_p2p(
+        self,
+        node: NodeStatus,
+        board_type: str,
+        num_players: int,
+        games: int,
+    ) -> bool:
+        """Distribute job via P2P orchestrator."""
         try:
             from app.distributed.p2p_orchestrator import get_p2p_orchestrator
 
             p2p = get_p2p_orchestrator()
             if p2p is None:
                 return False
-
-            # Parse config key
-            parts = config_key.rsplit("_", 1)
-            if len(parts) != 2:
-                logger.warning(f"Invalid config key: {config_key}")
-                return False
-
-            board_type = parts[0]
-            num_players = int(parts[1].replace("p", ""))
 
             # Submit job via P2P
             # NOTE: Must use "engine_mode" (not "engine") to match P2P orchestrator API
@@ -1138,7 +1348,98 @@ class IdleResourceDaemon:
             logger.debug("P2P orchestrator not available for job distribution")
             return False
         except Exception as e:
-            logger.warning(f"Job distribution failed: {e}")
+            logger.debug(f"P2P job distribution failed: {e}")
+            return False
+
+    async def _distribute_job_via_ssh(
+        self,
+        node: NodeStatus,
+        board_type: str,
+        num_players: int,
+        games: int,
+    ) -> bool:
+        """Distribute job via SSH when P2P is unavailable.
+
+        Dec 2025: SSH-based job spawn for nodes not in P2P cluster.
+        Spawns selfplay as a background process on the remote node.
+
+        Args:
+            node: Target node info.
+            board_type: Board type (e.g., 'hex8', 'square8').
+            num_players: Number of players.
+            games: Number of games to run.
+
+        Returns:
+            True if job was spawned successfully.
+        """
+        if not HAS_SSH_FALLBACK or SSHExecutor is None or get_configured_hosts is None:
+            return False
+
+        try:
+            # Get SSH config for this node
+            configured_hosts = get_configured_hosts()
+            host_config = configured_hosts.get(node.node_id)
+
+            if host_config is None:
+                # Try to find by IP
+                for name, cfg in configured_hosts.items():
+                    if cfg.best_ip == node.host:
+                        host_config = cfg
+                        break
+
+            if host_config is None or host_config.best_ip is None:
+                logger.debug(
+                    f"[IdleResourceDaemon] No SSH config for {node.node_id}, "
+                    "cannot distribute via SSH"
+                )
+                return False
+
+            executor = SSHExecutor(
+                host=host_config.best_ip,
+                user=host_config.ssh_user,
+                port=host_config.ssh_port,
+                key_path=host_config.ssh_key,
+                connect_timeout=10,
+                max_retries=2,
+            )
+
+            # Build selfplay command
+            # Use nohup to detach from SSH session
+            ringrift_path = host_config.ringrift_path or "~/ringrift/ai-service"
+
+            # Expand ~ in path
+            if ringrift_path.startswith("~"):
+                ringrift_path = ringrift_path.replace("~", "$HOME", 1)
+
+            selfplay_cmd = (
+                f"cd {ringrift_path} && "
+                f"PYTHONPATH=. nohup python scripts/selfplay.py "
+                f"--board {board_type} --num-players {num_players} "
+                f"--num-games {games} --engine gumbel "
+                f"> /tmp/selfplay_{board_type}_{num_players}p_{int(time.time())}.log 2>&1 &"
+            )
+
+            logger.info(
+                f"[IdleResourceDaemon] SSH spawn on {node.node_id}: "
+                f"{board_type}_{num_players}p x{games} games"
+            )
+
+            result = await executor.run(selfplay_cmd, timeout=30)
+
+            if result.success:
+                logger.info(
+                    f"[IdleResourceDaemon] SSH spawn successful on {node.node_id}"
+                )
+                return True
+            else:
+                logger.warning(
+                    f"[IdleResourceDaemon] SSH spawn failed on {node.node_id}: "
+                    f"{result.stderr}"
+                )
+                return False
+
+        except Exception as e:
+            logger.warning(f"[IdleResourceDaemon] SSH job distribution failed: {e}")
             return False
 
     def _emit_spawn_event(

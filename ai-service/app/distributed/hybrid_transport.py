@@ -456,22 +456,60 @@ class HybridTransport:
             else:
                 state.record_cloudflare_failure()
 
-        # Try SSH fallback for Vast nodes
-        if node_id.startswith("vast-") and command_type:
-            # Mark SSH as potentially available for Vast nodes
-            state.ssh_available = True
+        # Try SSH fallback for any node with SSH configured
+        # Dec 2025: Extended SSH fallback to all nodes, not just Vast
+        if command_type:
+            # Check if SSH is available for this node
+            ssh_available = await self._check_ssh_available(node_id)
+            if ssh_available:
+                state.ssh_available = True
 
-            success, response = await self._try_ssh(
-                node_id, command_type, payload or {}
-            )
+                success, response = await self._try_ssh(
+                    node_id, command_type, payload or {}
+                )
 
-            if success:
-                state.record_ssh_success()
-                return True, response
-            else:
-                state.record_ssh_failure()
+                if success:
+                    state.record_ssh_success()
+                    return True, response
+                else:
+                    state.record_ssh_failure()
 
         return False, None
+
+    async def _check_ssh_available(self, node_id: str) -> bool:
+        """Check if SSH is available for a node.
+
+        Dec 2025: Checks cluster_hosts.yaml for SSH configuration.
+        """
+        # Check cached state first
+        state = self._get_state(node_id)
+        if state.ssh_available:
+            return True
+
+        # Check cluster_hosts.yaml for SSH config
+        try:
+            from app.sync.cluster_hosts import get_cluster_nodes
+            configured_hosts = get_cluster_nodes()
+            host_config = configured_hosts.get(node_id)
+
+            if host_config:
+                # Node has SSH config if it has ssh_host or tailscale_ip
+                has_ssh = bool(host_config.ssh_host or host_config.tailscale_ip)
+                if has_ssh:
+                    state.ssh_available = True
+                    return True
+
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # Legacy: Always enable SSH for Vast nodes
+        if node_id.startswith("vast-"):
+            state.ssh_available = True
+            return True
+
+        return False
 
     async def send_heartbeat(
         self,

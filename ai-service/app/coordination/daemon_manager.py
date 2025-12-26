@@ -197,6 +197,9 @@ class DaemonType(Enum):
     # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
     LAMBDA_IDLE = "lambda_idle"
 
+    # Cluster watchdog (December 2025) - self-healing cluster utilization monitor
+    CLUSTER_WATCHDOG = "cluster_watchdog"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -649,6 +652,13 @@ class DaemonManager:
             DaemonType.LAMBDA_IDLE,
             self._create_lambda_idle,
             depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
+        )
+
+        # Cluster watchdog (December 2025) - self-healing cluster utilization monitor
+        self.register_factory(
+            DaemonType.CLUSTER_WATCHDOG,
+            self._create_cluster_watchdog,
+            depends_on=[],  # Standalone - runs on coordinator
         )
 
     def register_factory(
@@ -2959,6 +2969,41 @@ class DaemonManager:
         except Exception as e:
             logger.error(f"LambdaIdleDaemon failed: {e}")
 
+    async def _create_cluster_watchdog(self) -> None:
+        """Create and run cluster watchdog daemon (December 2025).
+
+        Self-healing daemon that continuously monitors cluster utilization
+        and automatically activates idle nodes by spawning selfplay.
+
+        Features:
+        - Discovers nodes from provider CLIs (vastai, runpodctl, vultr-cli)
+        - Checks GPU utilization via SSH
+        - Auto-spawns selfplay on underutilized nodes
+        - Tracks failure counts and escalates persistent issues
+
+        This daemon should only run on the coordinator node.
+        """
+        try:
+            from app.coordination.cluster_watchdog_daemon import (
+                ClusterWatchdogDaemon,
+                ClusterWatchdogConfig,
+            )
+
+            config = ClusterWatchdogConfig.from_env()
+            daemon = ClusterWatchdogDaemon(config=config)
+            await daemon.start()
+
+            logger.info("[ClusterWatchdog] Started, monitoring cluster utilization")
+
+            # Keep daemon running until cancelled
+            while daemon.is_running:
+                await asyncio.sleep(60)
+
+        except ImportError as e:
+            logger.warning(f"ClusterWatchdogDaemon dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"ClusterWatchdogDaemon failed: {e}")
+
     async def _create_selfplay_coordinator(self) -> None:
         """Create and run selfplay coordinator daemon.
 
@@ -3022,6 +3067,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.GAUNTLET_FEEDBACK,  # Dec 2025: Process evaluation results → emit REGRESSION_CRITICAL
         DaemonType.AUTO_SYNC,  # Dec 2025: CRITICAL - Pull game data from remote nodes
         DaemonType.CLUSTER_DATA_SYNC,  # Dec 2025: Cluster-wide data distribution
+        DaemonType.CLUSTER_WATCHDOG,  # Dec 2025: Self-healing cluster utilization
     ],
 
     # Training node profile - runs on GPU nodes

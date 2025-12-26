@@ -163,7 +163,10 @@ class SSHTransport:
         return str(self._control_path_dir / f"ctrl_{safe_id}")
 
     def _get_ssh_address(self, node_id: str) -> SSHAddress | None:
-        """Get SSH address for a node, using cache or registry.
+        """Get SSH address for a node, using cache, cluster_hosts, or registry.
+
+        Dec 2025: Enhanced to check cluster_hosts.yaml first for SSH info,
+        which has more complete configuration than the dynamic registry.
 
         Args:
             node_id: Node identifier
@@ -176,7 +179,47 @@ class SSHTransport:
         if cached and not cached.is_stale:
             return cached
 
-        # Try to get from registry
+        # Dec 2025: Try cluster_hosts.yaml first (most complete SSH config)
+        try:
+            from app.sync.cluster_hosts import get_cluster_nodes
+            configured_hosts = get_cluster_nodes()
+            host_config = configured_hosts.get(node_id)
+
+            if host_config:
+                # Get SSH host from config (ssh_host or tailscale_ip)
+                ssh_host = host_config.ssh_host
+                # Parse host:port if embedded in ssh_host (e.g., "ssh5.vast.ai")
+                if ssh_host and "@" in str(ssh_host):
+                    # user@host format - extract host
+                    ssh_host = str(ssh_host).split("@")[-1]
+
+                ssh_port = host_config.ssh_port or 22
+                ssh_user = host_config.ssh_user or VAST_SSH_USER
+
+                # Also try tailscale_ip if ssh_host not available
+                if not ssh_host and host_config.tailscale_ip:
+                    ssh_host = host_config.tailscale_ip
+
+                if ssh_host:
+                    addr = SSHAddress(
+                        node_id=node_id,
+                        ssh_host=ssh_host,
+                        ssh_port=ssh_port,
+                        ssh_user=ssh_user,
+                    )
+                    self._addresses[node_id] = addr
+                    logger.debug(
+                        f"[SSHTransport] Loaded SSH address for {node_id} from cluster_hosts: "
+                        f"{ssh_user}@{ssh_host}:{ssh_port}"
+                    )
+                    return addr
+
+        except ImportError:
+            pass  # cluster_hosts not available
+        except Exception as e:
+            logger.debug(f"Failed to get SSH address from cluster_hosts for {node_id}: {e}")
+
+        # Fallback: Try to get from dynamic registry
         if self._registry:
             try:
                 node_info = self._registry._nodes.get(node_id)
