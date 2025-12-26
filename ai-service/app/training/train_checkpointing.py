@@ -31,12 +31,22 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
 import torch.nn as nn
+
+# December 2025: Runtime deprecation warning
+warnings.warn(
+    "train_checkpointing is deprecated and scheduled for removal in Q2 2026. "
+    "Use checkpoint_unified.UnifiedCheckpointManager instead. "
+    "See app.training.checkpoint_unified for the new API.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

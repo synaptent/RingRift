@@ -514,7 +514,7 @@ cd RingRift/ai-service
 source .venv/bin/activate
 
 # HTTP worker (design sketch; not in repo)
-# python scripts/cluster_worker.py --port 8765
+# cluster_worker.py (not in repo) --port 8765
 
 # Queue-based worker (current implementation)
 QUEUE_BACKEND=redis REDIS_URL=redis://<coordinator-ip>:6379 \

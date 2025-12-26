@@ -66,6 +66,9 @@ class EphemeralSyncConfig:
     # December 2025: Write-through mode for zero data loss
     write_through_enabled: bool = True  # Wait for push confirmation
     write_through_timeout_seconds: int = 10  # Max wait for confirmation
+    # Phase 8 Dec 2025: Write-ahead log for pending games
+    wal_enabled: bool = True  # Persist pending games to survive crashes
+    wal_path: Path = field(default_factory=lambda: Path("data/ephemeral_sync_wal.jsonl"))
 
 
 @dataclass
@@ -112,12 +115,18 @@ class EphemeralSyncDaemon:
         self._pending_games: list[dict[str, Any]] = []
         self._push_lock = asyncio.Lock()
         self._termination_callback = on_termination
+        self._wal_initialized = False
 
         # Detect if we're actually on an ephemeral host
         self._is_ephemeral = self._detect_ephemeral()
 
         # Sync targets (populated on start)
         self._sync_targets: list[str] = []
+
+        # Initialize WAL and recover pending games (Phase 8)
+        if self.config.wal_enabled:
+            self._init_wal()
+            self._load_wal()
 
         if self._is_ephemeral:
             logger.info(f"EphemeralSyncDaemon initialized on {self.node_id}")
@@ -144,6 +153,106 @@ class EphemeralSyncDaemon:
             return True
 
         return False
+
+    # ========== Write-Ahead Log (Phase 8 Dec 2025) ==========
+
+    def _init_wal(self) -> None:
+        """Initialize write-ahead log for pending games.
+
+        Phase 8 Dec 2025: Persists pending game IDs to survive daemon crashes.
+        Uses JSONL format for append-only writes (fast, robust).
+        """
+        import json
+
+        try:
+            wal_path = self.config.wal_path
+            wal_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Create empty WAL if it doesn't exist
+            if not wal_path.exists():
+                wal_path.touch()
+
+            self._wal_initialized = True
+            logger.debug(f"[EphemeralSync] WAL initialized: {wal_path}")
+
+        except Exception as e:
+            logger.error(f"[EphemeralSync] Failed to initialize WAL: {e}")
+            self._wal_initialized = False
+
+    def _load_wal(self) -> None:
+        """Load pending games from WAL on startup.
+
+        Recovers games that were pending when daemon crashed or was terminated.
+        """
+        import json
+
+        if not self._wal_initialized:
+            return
+
+        try:
+            wal_path = self.config.wal_path
+            if not wal_path.exists() or wal_path.stat().st_size == 0:
+                return
+
+            loaded_count = 0
+            with open(wal_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        # Only load entries not marked as synced
+                        if not entry.get("synced", False):
+                            self._pending_games.append(entry)
+                            loaded_count += 1
+                    except json.JSONDecodeError:
+                        continue
+
+            if loaded_count > 0:
+                logger.info(
+                    f"[EphemeralSync] Recovered {loaded_count} pending games from WAL"
+                )
+
+        except Exception as e:
+            logger.error(f"[EphemeralSync] Failed to load WAL: {e}")
+
+    def _append_to_wal(self, game_entry: dict[str, Any]) -> None:
+        """Append pending game to WAL for durability.
+
+        Called when a game is added to pending list, before sync attempt.
+        """
+        import json
+
+        if not self._wal_initialized or not self.config.wal_enabled:
+            return
+
+        try:
+            with open(self.config.wal_path, 'a') as f:
+                f.write(json.dumps(game_entry) + '\n')
+                f.flush()  # Ensure durability
+                os.fsync(f.fileno())  # Force to disk
+
+        except Exception as e:
+            logger.debug(f"[EphemeralSync] Failed to append to WAL: {e}")
+
+    def _clear_wal(self) -> None:
+        """Clear WAL after successful sync of all pending games.
+
+        Called when all pending games have been confirmed synced.
+        """
+        if not self._wal_initialized:
+            return
+
+        try:
+            # Truncate WAL file
+            self.config.wal_path.write_text('')
+            logger.debug("[EphemeralSync] WAL cleared after successful sync")
+
+        except Exception as e:
+            logger.debug(f"[EphemeralSync] Failed to clear WAL: {e}")
+
+    # ========== Host Detection ==========
 
     @property
     def is_ephemeral(self) -> bool:
@@ -341,12 +450,16 @@ class EphemeralSyncDaemon:
         game_id = game_result.get("game_id")
 
         # Add to pending
-        self._pending_games.append({
+        game_entry = {
             "game_id": game_id,
             "db_path": str(db_path) if db_path else None,
             "timestamp": time.time(),
             "synced": False,  # Track sync status
-        })
+        }
+        self._pending_games.append(game_entry)
+
+        # Persist to WAL for durability (Phase 8)
+        self._append_to_wal(game_entry)
 
         # Immediate push if enabled
         if self.config.immediate_push_enabled and len(self._pending_games) >= 1:

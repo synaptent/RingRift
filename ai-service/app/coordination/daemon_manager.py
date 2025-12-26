@@ -211,6 +211,39 @@ DAEMON_RESTART_RESET_AFTER = 3600  # Reset restart count after 1 hour of stabili
 MAX_RESTART_DELAY = 300  # Cap exponential backoff at 5 minutes
 
 
+# =============================================================================
+# P0.3 Dec 2025: Daemon Readiness Signaling
+# =============================================================================
+
+
+def mark_daemon_ready(daemon_type: DaemonType) -> None:
+    """Signal that a daemon has completed initialization and is ready.
+
+    Daemons should call this after completing their initialization to unblock
+    dependent daemons that are waiting to start.
+
+    Usage in daemon factory:
+        async def _create_my_daemon(self) -> None:
+            # ... initialization code ...
+            await some_initialization()
+
+            # Signal readiness so dependent daemons can start
+            mark_daemon_ready(DaemonType.MY_DAEMON)
+
+            # ... main loop ...
+            while True:
+                await asyncio.sleep(60)
+    """
+    manager = get_daemon_manager()
+    if manager is None:
+        return
+
+    info = manager._daemons.get(daemon_type)
+    if info is not None and info.ready_event is not None:
+        info.ready_event.set()
+        logger.debug(f"[DaemonManager] {daemon_type.value} signaled readiness")
+
+
 @dataclass
 class DaemonInfo:
     """Information about a registered daemon."""
@@ -234,6 +267,11 @@ class DaemonInfo:
 
     # Import error tracking
     import_error: str | None = None  # Specific import error message
+
+    # P0.3 Dec 2025: Readiness signal to prevent race conditions
+    # When daemons are started, they set ready_event when initialization completes
+    ready_event: asyncio.Event | None = None
+    ready_timeout: float = 30.0  # Max time to wait for daemon to be ready
 
     @property
     def uptime_seconds(self) -> float:
@@ -620,6 +658,10 @@ class DaemonManager:
     async def start(self, daemon_type: DaemonType) -> bool:
         """Start a specific daemon.
 
+        P0.3 Dec 2025: Now waits for daemon to signal readiness before returning.
+        This prevents race conditions where dependent daemons start before
+        their dependencies have completed initialization.
+
         Args:
             daemon_type: Type of daemon to start
 
@@ -636,11 +678,18 @@ class DaemonManager:
                 logger.debug(f"{daemon_type.value} already running")
                 return True
 
-            # Check dependencies
+            # Check dependencies - wait for them to be READY not just RUNNING
             for dep in info.depends_on:
                 dep_info = self._daemons.get(dep)
                 if dep_info is None or dep_info.state != DaemonState.RUNNING:
                     logger.warning(f"Cannot start {daemon_type.value}: dependency {dep.value} not running")
+                    return False
+                # P0.3: Also check if dependency has signaled readiness
+                if dep_info.ready_event and not dep_info.ready_event.is_set():
+                    logger.warning(
+                        f"Cannot start {daemon_type.value}: dependency {dep.value} "
+                        f"running but not ready"
+                    )
                     return False
 
             # Get factory
@@ -648,6 +697,9 @@ class DaemonManager:
             if factory is None:
                 logger.error(f"No factory registered for {daemon_type.value}")
                 return False
+
+            # P0.3: Create readiness event for this daemon
+            info.ready_event = asyncio.Event()
 
             # Start daemon
             info.state = DaemonState.STARTING
@@ -1401,6 +1453,9 @@ class DaemonManager:
             await start_coordinator()
             router = get_router()
             logger.info("Event router started successfully")
+
+            # P0.3 Dec 2025: Signal readiness so dependent daemons can start
+            mark_daemon_ready(DaemonType.EVENT_ROUTER)
 
             # Keep daemon alive while router is running
             while True:
@@ -2937,6 +2992,7 @@ __all__ = [
     "DAEMON_PROFILES",
     # Functions
     "get_daemon_manager",
+    "mark_daemon_ready",  # P0.3 Dec 2025: Readiness signaling
     "reset_daemon_manager",
     "setup_signal_handlers",
     "start_profile",

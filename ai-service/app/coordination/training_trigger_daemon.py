@@ -40,6 +40,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Circuit breaker integration (Phase 4 - December 2025)
+try:
+    from app.distributed.circuit_breaker import get_training_breaker
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+    get_training_breaker = None
+
 
 @dataclass
 class TrainingTriggerConfig:
@@ -372,6 +380,12 @@ class TrainingTriggerDaemon:
         if state.training_in_progress:
             return False, "training already in progress"
 
+        # Phase 4: Check circuit breaker before triggering training
+        if HAS_CIRCUIT_BREAKER and get_training_breaker:
+            breaker = get_training_breaker()
+            if not breaker.can_execute(config_key):
+                return False, f"circuit open for {config_key}"
+
         # 2. Check training cooldown
         time_since_training = time.time() - state.last_training_time
         cooldown_seconds = self.config.training_cooldown_hours * 3600
@@ -622,6 +636,14 @@ class TrainingTriggerDaemon:
 
     async def _emit_training_complete(self, config_key: str, success: bool) -> None:
         """Emit training completion event."""
+        # Phase 4: Record circuit breaker success/failure
+        if HAS_CIRCUIT_BREAKER and get_training_breaker:
+            breaker = get_training_breaker()
+            if success:
+                breaker.record_success(config_key)
+            else:
+                breaker.record_failure(config_key)
+
         try:
             from app.coordination.stage_events import (
                 StageEvent,

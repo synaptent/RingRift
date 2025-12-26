@@ -16,7 +16,7 @@
   - `app/monitoring/unified_cluster_monitor.py` (importable monitor API)
 - Removal list includes:
   - `scripts/cluster_*` (monitor/control/manager/worker/sync shell + python)
-  - `scripts/monitor_10h_enhanced.sh`
+  - `monitor_10h_enhanced.sh` (removed)
 
 ### 2. Data Validator Consolidation
 
@@ -351,7 +351,7 @@ Added Information-Gain GMO (IG-GMO) research module:
 | File                                 | Notes                                                        |
 | ------------------------------------ | ------------------------------------------------------------ |
 | `scripts/cluster_*`                  | Legacy cluster scripts removed (see `scripts/DEPRECATED.md`) |
-| `scripts/monitor_10h_enhanced.sh`    | Legacy monitoring script removed                             |
+| `monitor_10h_enhanced.sh`            | Legacy monitoring script removed                             |
 | `tests/test_model_registry.py`       | Removed pending consolidation                                |
 | `tests/test_promotion_controller.py` | Removed pending consolidation                                |
 

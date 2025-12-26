@@ -225,7 +225,7 @@ python scripts/cluster_submit.py gpu-selfplay --board hex8 --players 2 --games 5
 **Scripts Added**:
 
 - `scripts/data_aggregator.py` - Primary aggregation service
-- `scripts/start_aggregator.sh` - Mac Studio startup script
+- `scripts/data_aggregator.py` (daemon mode) - Mac Studio startup entry point
 - `scripts/s3_sync_cron.sh` - Hourly S3 sync
 - `config/data_aggregator.yaml` - Aggregator configuration
 

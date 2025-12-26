@@ -1782,8 +1782,12 @@ class PromotionToCurriculumWatcher:
 
             bus = get_event_bus()
             bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+            # P1.2 (Dec 2025): Also subscribe to MODEL_PROMOTED for complete coverage
+            # MODEL_PROMOTED is emitted when a model is actually promoted to production
+            if hasattr(DataEventType, 'MODEL_PROMOTED'):
+                bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._subscribed = True
-            logger.info("[PromotionToCurriculumWatcher] Subscribed to PROMOTION_COMPLETE events")
+            logger.info("[PromotionToCurriculumWatcher] Subscribed to PROMOTION_COMPLETE + MODEL_PROMOTED events")
             return True
         except Exception as e:
             logger.warning(f"[PromotionToCurriculumWatcher] Failed to subscribe: {e}")
@@ -1802,9 +1806,44 @@ class PromotionToCurriculumWatcher:
 
             bus = get_event_bus()
             bus.unsubscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+            # P1.2: Unsubscribe from MODEL_PROMOTED
+            if hasattr(DataEventType, 'MODEL_PROMOTED'):
+                bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._subscribed = False
         except Exception:
             pass
+
+    def _on_model_promoted(self, event: Any) -> None:
+        """Handle MODEL_PROMOTED event (P1.2).
+
+        When a model is promoted to production, reset curriculum weights
+        for that config to give other configs a chance.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config_key = payload.get("config_key", "") or payload.get("config", "")
+        new_elo = payload.get("new_elo", 0) or payload.get("elo", 0)
+
+        if not config_key:
+            return
+
+        logger.info(
+            f"[PromotionToCurriculumWatcher] MODEL_PROMOTED for {config_key}, "
+            f"resetting curriculum weight to 1.0"
+        )
+
+        # Reset curriculum weight to baseline (1.0) after successful promotion
+        # This ensures other configs get fair allocation
+        self.feedback._config_metrics[config_key].model_count += 1
+        old_weight = self.feedback._weights.get(config_key, 1.0)
+        self.feedback._weights[config_key] = 1.0  # Reset to baseline
+
+        # Emit curriculum update
+        self.feedback._emit_curriculum_updated(config_key, 1.0, "model_promoted")
+
+        logger.info(
+            f"[PromotionToCurriculumWatcher] Reset {config_key} weight: {old_weight:.2f} → 1.0"
+        )
 
     def _on_promotion_complete(self, event: Any) -> None:
         """Handle PROMOTION_COMPLETE event.

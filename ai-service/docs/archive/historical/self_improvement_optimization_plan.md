@@ -39,28 +39,28 @@ From game generated → model in production:
 
 #### 1.1 Cached Game Counting
 
-**File**: `scripts/continuous_improvement_daemon.py`
+**File**: `continuous_improvement_daemon.py` (removed)
 **Change**: Cache JSONL line counts in metadata; only recount modified files
 **Impact**: ~80% reduction in threshold-check time
 **Risk**: Low (cache invalidation on file modification)
 
 #### 1.2 Reduce Promotion Interval
 
-**File**: `scripts/continuous_improvement_daemon.py`
+**File**: `continuous_improvement_daemon.py` (removed)
 **Change**: Reduce `AUTO_PROMOTE_INTERVAL` from 3600s to 900s (15 min)
 **Impact**: 4x faster promotion cycles
 **Risk**: Low (more frequent checks, same logic)
 
 #### 1.3 Event-Driven Training Trigger
 
-**File**: `scripts/continuous_improvement_daemon.py`
+**File**: `continuous_improvement_daemon.py` (removed)
 **Change**: Check training threshold immediately after selfplay completes
 **Impact**: Eliminates 0-30 min wait for next cycle
 **Risk**: Low
 
 #### 1.4 Parallel Selfplay Configs
 
-**File**: `scripts/continuous_improvement_daemon.py`
+**File**: `continuous_improvement_daemon.py` (removed)
 **Change**: Run selfplay for multiple board configs concurrently with semaphore
 **Impact**: 3-5x faster data generation
 **Risk**: Medium (resource contention)
