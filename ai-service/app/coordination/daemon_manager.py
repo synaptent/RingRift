@@ -2793,6 +2793,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
+        DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
     ],
 
     # Training node profile - runs on GPU nodes
@@ -2814,6 +2815,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.FEEDBACK_LOOP,  # Phase 21.2: Orchestrate all feedback signals
         DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
+        DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
     ],
 
     # Ephemeral node profile - runs on Vast.ai/spot instances
