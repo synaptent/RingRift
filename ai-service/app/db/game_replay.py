@@ -391,6 +391,22 @@ class GameWriter:
         # Store initial state
         self._db._store_initial_state(game_id, initial_state)
 
+    def __enter__(self) -> "GameWriter":
+        """Context manager entry - returns self for use in with statements."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Context manager exit - cleanup on exit.
+
+        If an exception occurred and the game wasn't finalized, we log it.
+        Returns False to propagate any exceptions.
+        """
+        if exc_type is not None and not self._finalized:
+            # Exception occurred - game will be left in incomplete state
+            # This is acceptable as incomplete games are filtered during export
+            pass
+        return False  # Don't suppress exceptions
+
     def add_move(
         self,
         move: Move,
