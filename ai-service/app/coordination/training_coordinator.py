@@ -509,6 +509,57 @@ class TrainingCoordinator:
             },
         )
 
+        # P1.3 (Dec 2025): Trigger actual model rollback via RollbackManager
+        # This closes the loop: REGRESSION_CRITICAL → pause + rollback
+        self._trigger_model_rollback(config_key, model_id, elo_drop)
+
+    def _trigger_model_rollback(self, config_key: str, model_id: str, elo_drop: float) -> None:
+        """Trigger model rollback via RollbackManager (P1.3).
+
+        Called when REGRESSION_CRITICAL is received to actually rollback
+        the model to a previous known-good checkpoint.
+        """
+        try:
+            from app.training.rollback_manager import get_rollback_manager
+
+            manager = get_rollback_manager()
+            if manager is None:
+                logger.warning("[TrainingCoordinator] RollbackManager not available")
+                return
+
+            # Trigger rollback
+            result = manager.rollback(
+                model_id=model_id,
+                reason=f"Critical regression: {config_key} dropped {elo_drop:.0f} Elo",
+            )
+
+            if result and result.success:
+                logger.info(
+                    f"[TrainingCoordinator] Successfully rolled back {model_id} "
+                    f"to checkpoint {result.rolled_back_to}"
+                )
+                # Emit rollback complete event
+                self._emit_via_router(
+                    "MODEL_ROLLBACK_COMPLETE",
+                    {
+                        "config_key": config_key,
+                        "model_id": model_id,
+                        "rolled_back_to": result.rolled_back_to,
+                        "reason": "critical_regression",
+                        "elo_drop": elo_drop,
+                    },
+                )
+            else:
+                logger.warning(
+                    f"[TrainingCoordinator] Rollback failed for {model_id}: "
+                    f"{result.error if result else 'No result'}"
+                )
+
+        except ImportError:
+            logger.debug("[TrainingCoordinator] RollbackManager not available for import")
+        except Exception as e:
+            logger.error(f"[TrainingCoordinator] Error triggering rollback: {e}")
+
     def _pause_training_for_config(self, config_key: str, reason: str) -> bool:
         """Pause training for a specific config.
 
