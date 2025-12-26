@@ -431,8 +431,8 @@ def _is_tailscale_ip(host: str) -> bool:
         if ip.version != 4:
             return False
         return ip in ipaddress.ip_network("100.64.0.0/10")
-    except Exception:
-        return False
+    except ValueError:
+        return False  # Invalid IP address format
 
 
 async def discover_p2p_leader_url(
@@ -482,11 +482,11 @@ async def discover_p2p_leader_url(
         rh = str(info.get("reported_host") or "").strip()
         try:
             port = int(info.get("port"))
-        except Exception:
+        except (ValueError, TypeError):
             port = None
         try:
             rp = int(info.get("reported_port"))
-        except Exception:
+        except (ValueError, TypeError):
             rp = None
 
         candidates: list[str] = []
@@ -566,7 +566,7 @@ async def discover_p2p_leader_url(
             scheme = (leader_info.get("scheme") or "http").strip() or "http"
             try:
                 port_i = int(leader_info.get("port", None))
-            except Exception:
+            except (ValueError, TypeError):
                 port_i = None
 
             candidates = _candidate_base_urls(leader_info)
