@@ -104,6 +104,7 @@ class DataEventType(Enum):
     ELO_SIGNIFICANT_CHANGE = "elo_significant_change"  # Triggers curriculum rebalance
 
     # Selfplay feedback events
+    SELFPLAY_COMPLETE = "selfplay_complete"  # P0.2 Dec 2025: Selfplay batch finished
     SELFPLAY_TARGET_UPDATED = "selfplay_target_updated"  # Request more/fewer games
     SELFPLAY_RATE_CHANGED = "selfplay_rate_changed"  # Phase 19.3: Rate multiplier changed (>20%)
 
@@ -2083,6 +2084,41 @@ async def emit_selfplay_target_updated(
             "target_games": target_games,
             "reason": reason,
             "priority": priority,
+        },
+        source=source,
+    ))
+
+
+async def emit_selfplay_complete(
+    config_key: str,
+    games_played: int,
+    db_path: str = "",
+    duration_seconds: float = 0.0,
+    engine: str = "unknown",
+    source: str = "selfplay_runner",
+) -> None:
+    """Emit a SELFPLAY_COMPLETE event when a selfplay batch finishes.
+
+    P0.2 Dec 2025: Bridges StageEvent.SELFPLAY_COMPLETE to DataEventBus.
+    This enables components subscribed to DataEventType.SELFPLAY_COMPLETE
+    (e.g., feedback_loop_controller, master_loop) to receive the event.
+
+    Args:
+        config_key: Board config (e.g., "hex8_2p")
+        games_played: Number of games completed
+        db_path: Path to database with games
+        duration_seconds: Total selfplay duration
+        engine: Selfplay engine used (e.g., "gumbel", "heuristic")
+        source: Component that ran selfplay
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.SELFPLAY_COMPLETE,
+        payload={
+            "config_key": config_key,
+            "games_played": games_played,
+            "db_path": db_path,
+            "duration_seconds": duration_seconds,
+            "engine": engine,
         },
         source=source,
     ))

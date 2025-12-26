@@ -46,6 +46,18 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
+# Import event bus for cross-process propagation (P0.1 Dec 2025)
+try:
+    from app.distributed.data_events import (
+        DataEventType,
+        emit_event,
+    )
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
+    DataEventType = None
+    emit_event = None
+
 
 # =============================================================================
 # Signal Types
@@ -89,6 +101,61 @@ class SignalSource(Enum):
     QUALITY_MONITOR = auto()
     CURRICULUM = auto()
     MANUAL = auto()
+
+
+# =============================================================================
+# Signal to Event Mapping (P0.1 Dec 2025)
+# =============================================================================
+
+def _get_event_type_for_signal(signal: "FeedbackSignal") -> "DataEventType | None":
+    """Map a FeedbackSignal to the appropriate DataEventType.
+
+    This bridges the in-process FeedbackSignal system to the cross-process
+    DataEvent system, enabling cluster-wide feedback propagation.
+    """
+    if not HAS_EVENT_BUS or DataEventType is None:
+        return None
+
+    signal_type = signal.signal_type
+    value = signal.value
+
+    # Map signal types to data events
+    if signal_type == SignalType.INTENSITY:
+        # Intensity changes affect selfplay rate
+        if value in ("hot_path", "cool_down"):
+            return DataEventType.SELFPLAY_RATE_CHANGED
+        return None
+
+    elif signal_type == SignalType.QUALITY:
+        # Quality degradation
+        if isinstance(value, (int, float)) and value < 0.5:
+            return DataEventType.QUALITY_DEGRADED
+        return None
+
+    elif signal_type == SignalType.REGRESSION:
+        if value == "detected":
+            return DataEventType.REGRESSION_DETECTED
+        elif value == "recovered":
+            return DataEventType.REGRESSION_CLEARED
+        return None
+
+    elif signal_type == SignalType.PROMOTION:
+        if value == "promoted":
+            return DataEventType.MODEL_PROMOTED
+        elif value == "rejected":
+            return DataEventType.PROMOTION_FAILED
+        return None
+
+    elif signal_type == SignalType.CURRICULUM:
+        return DataEventType.CURRICULUM_REBALANCED
+
+    elif signal_type == SignalType.FRESHNESS:
+        if value == "stale" or value == "critical":
+            return DataEventType.QUALITY_DEGRADED  # Freshness issues = quality concern
+        return None
+
+    # EXPLORATION signals don't have a direct event mapping yet
+    return None
 
 
 # =============================================================================
@@ -177,6 +244,12 @@ def subscribe_to_all_signals(
 def emit_signal(signal: FeedbackSignal) -> None:
     """Emit a feedback signal to all subscribers.
 
+    This function emits to both:
+    1. In-process subscribers (immediate callbacks)
+    2. Cross-process DataEventBus (cluster-wide propagation)
+
+    P0.1 Dec 2025: Added event bus bridging for feedback loop closure.
+
     Args:
         signal: The signal to emit
     """
@@ -196,6 +269,28 @@ def emit_signal(signal: FeedbackSignal) -> None:
             callback(signal)
         except Exception as e:
             logger.error(f"[FeedbackSignals] Subscriber error: {e}")
+
+    # Bridge to event bus for cross-process propagation (P0.1 Dec 2025)
+    if HAS_EVENT_BUS and emit_event is not None:
+        event_type = _get_event_type_for_signal(signal)
+        if event_type is not None:
+            try:
+                # Build payload from signal
+                payload = {
+                    "config_key": signal.config_key,
+                    "value": signal.value,
+                    "reason": signal.reason,
+                    "source": signal.source.name if signal.source else "UNKNOWN",
+                    "signal_type": signal.signal_type.name,
+                    **signal.metadata,
+                }
+                emit_event(event_type, payload)
+                logger.debug(
+                    f"[FeedbackSignals] Bridged to event bus: "
+                    f"{signal.signal_type.name} -> {event_type.name}"
+                )
+            except Exception as e:
+                logger.warning(f"[FeedbackSignals] Event bus bridge error: {e}")
 
     logger.debug(f"[FeedbackSignals] Emitted: {signal}")
 

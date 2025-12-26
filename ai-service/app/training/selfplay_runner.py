@@ -189,6 +189,7 @@ class SelfplayRunner(ABC):
         logger.info(f"  Engine: {self.config.engine_mode.value}")
         self._apply_elo_adaptive_config()  # Set model_elo for Elo-adaptive budget/temperature
         self._apply_selfplay_rate_adjustment()  # Adjust num_games based on Elo momentum
+        self._apply_quality_budget_multiplier()  # Adjust MCTS budget based on quality signals
         logger.info(f"  Target games: {self.config.num_games}")
         self._load_model()
         self._open_database()
@@ -267,6 +268,48 @@ class SelfplayRunner(ABC):
             pass  # FeedbackAccelerator not available
         except Exception as e:
             logger.debug(f"[SelfplayRunner] Selfplay rate adjustment not applied: {e}")
+
+    def _apply_quality_budget_multiplier(self) -> None:
+        """Apply quality-based budget multiplier from SelfplayOrchestrator.
+
+        December 2025 Phase 8: Closes the quality → selfplay budget feedback loop.
+
+        When data quality is low, the orchestrator increases the quality budget
+        multiplier, which increases MCTS simulations per move to generate
+        higher-quality games. Conversely, high quality data allows lower budgets
+        for faster game generation.
+
+        This creates a self-correcting feedback loop:
+        - Low quality games → higher budget → more accurate moves → better games
+        - High quality games → lower budget → faster throughput → more games
+        """
+        try:
+            from app.coordination.selfplay_orchestrator import get_selfplay_orchestrator
+
+            config_key = f"{self.config.board_type}_{self.config.num_players}p"
+            orchestrator = get_selfplay_orchestrator()
+
+            if orchestrator is None:
+                return
+
+            # Get quality-adjusted budget
+            base_budget = self._base_budget or self.config.mcts_simulations
+            effective_budget = orchestrator.get_effective_budget(config_key, base_budget)
+
+            if effective_budget != base_budget:
+                old_budget = self._current_budget or base_budget
+                self._current_budget = effective_budget
+
+                logger.info(
+                    f"  [Quality-Adaptive] Budget adjusted for {config_key}: "
+                    f"{old_budget} -> {effective_budget} sims "
+                    f"(quality multiplier: {orchestrator.get_quality_budget_multiplier(config_key):.2f}x)"
+                )
+
+        except ImportError:
+            pass  # SelfplayOrchestrator not available
+        except Exception as e:
+            logger.debug(f"[SelfplayRunner] Quality budget adjustment not applied: {e}")
 
     def teardown(self) -> None:
         """Called after run loop. Override for custom cleanup."""
