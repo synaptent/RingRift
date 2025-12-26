@@ -1187,14 +1187,53 @@ def wire_exploration_boost(
                     new_boost = min(1.5, scheduler.get_exploration_boost() * 1.1)
                     scheduler.set_exploration_boost(new_boost)
 
+        def on_regression_detected(event):
+            """Handle REGRESSION_DETECTED - significantly increase exploration.
+
+            December 2025: This closes the REGRESSION_DETECTED → EXPLORATION_BOOST
+            feedback loop. When model regression is detected, we increase exploration
+            to generate more diverse training data to help the model recover.
+
+            Severity effects:
+            - MINOR: Increase exploration by 15%
+            - MODERATE: Increase exploration by 25%
+            - SEVERE/CRITICAL: Increase exploration by 40%
+            """
+            payload = event.payload if hasattr(event, "payload") else event
+            event_config = payload.get("config_key", payload.get("config", ""))
+
+            if event_config != config_key:
+                return
+
+            severity = payload.get("severity", "MODERATE")
+            current_boost = scheduler.get_exploration_boost()
+
+            # Determine boost multiplier based on severity
+            severity_multipliers = {
+                "MINOR": 1.15,
+                "MODERATE": 1.25,
+                "SEVERE": 1.40,
+                "CRITICAL": 1.40,
+            }
+            multiplier = severity_multipliers.get(severity.upper(), 1.25)
+
+            new_boost = min(2.0, current_boost * multiplier)
+            scheduler.set_exploration_boost(new_boost)
+            logger.warning(
+                f"[TemperatureScheduler] Regression detected for {config_key} "
+                f"(severity={severity}), boost increased {current_boost:.2f} → {new_boost:.2f}"
+            )
+
         # Subscribe to feedback events
         bus.subscribe(DataEventType.PROMOTION_FAILED, on_promotion_failed)
         bus.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
         bus.subscribe(DataEventType.TRAINING_LOSS_TREND, on_training_loss_trend)
         bus.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, on_elo_significant_change)
+        bus.subscribe(DataEventType.REGRESSION_DETECTED, on_regression_detected)
 
         logger.debug(
-            f"[TemperatureScheduler] Wired exploration boost and Elo updates for {config_key}"
+            f"[TemperatureScheduler] Wired exploration boost, Elo updates, and regression "
+            f"detection for {config_key}"
         )
         return True
 

@@ -86,7 +86,8 @@ class RegistrySyncManager:
     def __init__(
         self,
         registry_path: Path = DEFAULT_REGISTRY_PATH,
-        coordinator_host: str = "lambda-h100",
+        # Default changed from lambda-h100 while Lambda nodes are offline (Dec 2025)
+        coordinator_host: str = "nebius-backbone-1",
         sync_interval: int = 600,  # 10 minutes
         p2p_url: str | None = None,
     ):

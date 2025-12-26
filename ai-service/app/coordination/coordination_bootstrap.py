@@ -719,6 +719,23 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["quality_to_rollback"] = False
         logger.debug(f"[Bootstrap] Failed to wire quality to rollback: {e}")
 
+    # 5b. Wire REGRESSION_DETECTED to automatic model rollback (December 2025)
+    # This completes the feedback loop: evaluation → regression → rollback
+    # Without this, regressions are detected but models aren't recovered
+    try:
+        from app.training.model_registry import get_model_registry
+        from app.training.rollback_manager import wire_regression_to_rollback
+
+        registry = get_model_registry()
+        handler = wire_regression_to_rollback(registry)
+        results["regression_to_rollback"] = handler is not None
+        if handler:
+            logger.debug("[Bootstrap] Wired REGRESSION_DETECTED -> RollbackManager (auto-rollback enabled)")
+
+    except Exception as e:
+        results["regression_to_rollback"] = False
+        logger.debug(f"[Bootstrap] Failed to wire regression to rollback: {e}")
+
     # 6. Wire PLATEAU_DETECTED to curriculum rebalancing (December 2025)
     try:
         from app.training.curriculum_feedback import wire_plateau_to_curriculum

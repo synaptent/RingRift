@@ -261,6 +261,33 @@ class SelfplayScheduler:
 
         logger.debug(f"[SelfplayScheduler] Updated priorities for {len(self._config_priorities)} configs")
 
+        # Phase 6: Record cluster utilization in ImprovementOptimizer
+        # This enables the training loop to adapt based on resource usage
+        try:
+            from app.training.improvement_optimizer import get_improvement_optimizer
+
+            # Get approximate utilization from node count and active configs
+            active_configs = len([p for p in self._config_priorities.values() if p.training_pending])
+            total_configs = len(self._config_priorities)
+
+            # Estimate GPU utilization: assume 50% baseline + (active configs / total) * 50%
+            gpu_util = min(100.0, 50.0 + (active_configs / max(1, total_configs)) * 50.0)
+            cpu_util = gpu_util * 0.6  # CPU typically lower than GPU for selfplay
+
+            optimizer = get_improvement_optimizer()
+            rec = optimizer.record_cluster_utilization(
+                cpu_utilization=cpu_util,
+                gpu_utilization=gpu_util,
+            )
+            logger.debug(
+                f"[SelfplayScheduler] Recorded cluster utilization: CPU={cpu_util:.0f}%, "
+                f"GPU={gpu_util:.0f}% (signal: {rec.signal.name})"
+            )
+        except ImportError:
+            pass  # Improvement optimizer not available
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Failed to record utilization: {e}")
+
     def _compute_priority_score(self, priority: ConfigPriority) -> float:
         """Compute overall priority score for a configuration.
 

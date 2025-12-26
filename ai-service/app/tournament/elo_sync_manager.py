@@ -150,7 +150,8 @@ class EloSyncManager:
     def __init__(
         self,
         db_path: Path = DEFAULT_DB_PATH,
-        coordinator_host: str = "lambda-h100",
+        # Default changed from lambda-h100 while Lambda nodes are offline (Dec 2025)
+        coordinator_host: str = "nebius-backbone-1",
         sync_interval: int = 300,
         p2p_url: str | None = None,
         enable_merge: bool = True,  # Use merge instead of replace
@@ -1083,7 +1084,8 @@ _sync_manager: EloSyncManager | None = None
 
 def get_elo_sync_manager(
     db_path: Path | None = None,
-    coordinator_host: str = "lambda-h100"
+    # Default changed from lambda-h100 while Lambda nodes are offline (Dec 2025)
+    coordinator_host: str = "nebius-backbone-1"
 ) -> EloSyncManager:
     """Get or create the singleton EloSyncManager instance."""
     global _sync_manager

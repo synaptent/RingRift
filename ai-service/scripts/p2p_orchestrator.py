@@ -1156,9 +1156,11 @@ class P2POrchestrator:
         if HAS_ELO_SYNC:
             try:
                 db_path = Path(self.ringrift_path) / "ai-service" / "data" / "unified_elo.db"
+                # Use env var for coordinator, fallback to nebius-backbone-1 (stable backbone node)
+                elo_coordinator = os.environ.get("RINGRIFT_ELO_COORDINATOR", "nebius-backbone-1")
                 self.elo_sync_manager = EloSyncManager(
                     db_path=db_path,
-                    coordinator_host="lambda-h100",  # Default coordinator
+                    coordinator_host=elo_coordinator,
                     sync_interval=300,  # Sync every 5 minutes
                 )
                 logger.info(f"EloSyncManager initialized (db: {db_path})")

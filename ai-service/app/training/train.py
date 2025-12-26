@@ -2721,6 +2721,29 @@ def train_model(
                 if not distributed or is_main_process():
                     logger.warning(f"Failed to load quality scores: {e}")
 
+        # Phase 6: Record data quality in ImprovementOptimizer for feedback loop
+        # This enables the self-improvement loop to adapt training parameters
+        # based on data quality metrics
+        if quality_sample_weights is not None and (not distributed or is_main_process()):
+            try:
+                from app.training.improvement_optimizer import get_improvement_optimizer
+                avg_quality = float(np.mean(quality_sample_weights[quality_sample_weights > 0]))
+                optimizer_instance = get_improvement_optimizer()
+                # Parity rate is assumed 1.0 since we passed validation; could be
+                # enhanced to track actual parity test results
+                rec = optimizer_instance.record_data_quality(
+                    parity_success_rate=1.0,  # Assume passed if we got here
+                    data_quality_score=avg_quality,
+                )
+                logger.info(
+                    f"[ImprovementOptimizer] Recorded data quality: {avg_quality:.3f} "
+                    f"(signal: {rec.signal.name}, threshold_adj: {rec.threshold_adjustment:.2f})"
+                )
+            except ImportError:
+                pass  # Improvement optimizer not available
+            except Exception as e:
+                logger.debug(f"[ImprovementOptimizer] Failed to record data quality: {e}")
+
         if len(full_dataset) == 0:
             if not distributed or is_main_process():
                 logger.warning(

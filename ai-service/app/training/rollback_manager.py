@@ -686,6 +686,78 @@ class AutoRollbackHandler:
 
         self.on_regression(pseudo_event)
 
+        # Phase 21.2 (December 2025): Emit SELFPLAY_TARGET_UPDATED with exploration boost
+        # After rollback, diversify selfplay to recover from regression
+        self._emit_regression_recovery_selfplay(model_id, severity, payload)
+
+    def _emit_regression_recovery_selfplay(
+        self, model_id: str, severity: str, payload: dict[str, Any]
+    ) -> None:
+        """Emit SELFPLAY_TARGET_UPDATED with exploration boost after regression.
+
+        Phase 21.2: When a regression is detected and handled, we need to:
+        1. Increase selfplay target to generate more diverse training data
+        2. Apply exploration boost to temperature scheduling
+        3. Signal the feedback loop to prioritize this config
+
+        This closes the loop: REGRESSION_DETECTED → exploration boost → better data → recovery
+        """
+        try:
+            from app.distributed.data_events import emit_selfplay_target_updated
+
+            config_key = payload.get("config_key", "")
+            if not config_key:
+                # Try to infer from model_id (e.g., "hex8_2p_v15" -> "hex8_2p")
+                parts = model_id.rsplit("_v", 1)
+                config_key = parts[0] if parts else model_id
+
+            # Calculate boost based on severity
+            boost_factor = self._get_exploration_boost_factor(severity)
+            base_target = payload.get("current_target", 1000)
+            new_target = int(base_target * boost_factor)
+
+            logger.info(
+                f"[AutoRollbackHandler] Emitting regression recovery selfplay: "
+                f"{config_key} target={new_target} (boost={boost_factor}x), "
+                f"exploration_boost={boost_factor}"
+            )
+
+            # Emit with exploration boost metadata
+            import asyncio
+            asyncio.create_task(
+                emit_selfplay_target_updated(
+                    config_key=config_key,
+                    target_games=new_target,
+                    reason=f"regression_recovery_{severity}",
+                    priority=1,  # High priority for regression recovery
+                    source="rollback_manager.py",
+                    exploration_boost=boost_factor,
+                    recovery_mode=True,
+                )
+            )
+
+        except ImportError:
+            logger.debug("[AutoRollbackHandler] data_events not available, skipping selfplay emission")
+        except Exception as e:
+            logger.warning(f"[AutoRollbackHandler] Failed to emit regression recovery selfplay: {e}")
+
+    def _get_exploration_boost_factor(self, severity: str) -> float:
+        """Get exploration boost factor based on regression severity.
+
+        Args:
+            severity: One of 'critical', 'major', 'moderate', 'minor'
+
+        Returns:
+            Boost factor for selfplay target and exploration temperature
+        """
+        severity_boosts = {
+            "critical": 2.0,  # Double selfplay, max exploration
+            "major": 1.75,
+            "moderate": 1.5,
+            "minor": 1.25,
+        }
+        return severity_boosts.get(severity, 1.5)
+
     def _on_elo_significant_change(self, event) -> None:
         """Handle ELO_SIGNIFICANT_CHANGE event for early regression detection (December 2025).
 

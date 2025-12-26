@@ -179,7 +179,7 @@ class CurriculumConfig:
 
     # Event-driven rebalancing (new)
     rebalance_on_elo_change: bool = True
-    elo_change_threshold: int = 50  # Trigger rebalance on 50+ Elo change
+    elo_change_threshold: int = 20  # December 2025: Lowered from 50 for faster curriculum adaptation
 
 
 @dataclass
@@ -190,7 +190,8 @@ class SafeguardsConfig:
     max_tournament_processes: int = 1
     max_training_processes: int = 1
     single_orchestrator: bool = True
-    orchestrator_host: str = "lambda-h100"
+    # Default changed from lambda-h100 while Lambda nodes are offline (Dec 2025)
+    orchestrator_host: str = "nebius-backbone-1"
     kill_orphans_on_start: bool = True
     process_watchdog: bool = True
     watchdog_interval_seconds: int = 60
@@ -920,7 +921,7 @@ class UnifiedConfig:
                 max_tournament_processes=safe_data.get("max_tournament_processes", 1),
                 max_training_processes=safe_data.get("max_training_processes", 1),
                 single_orchestrator=safe_data.get("single_orchestrator", True),
-                orchestrator_host=safe_data.get("orchestrator_host", "lambda-h100"),
+                orchestrator_host=safe_data.get("orchestrator_host", "nebius-backbone-1"),
                 kill_orphans_on_start=safe_data.get("kill_orphans_on_start", True),
                 process_watchdog=safe_data.get("process_watchdog", True),
                 watchdog_interval_seconds=safe_data.get("watchdog_interval_seconds", 60),
