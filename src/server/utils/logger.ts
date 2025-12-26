@@ -1,4 +1,5 @@
 import winston from 'winston';
+import fs from 'fs';
 import path from 'path';
 import { AsyncLocalStorage } from 'async_hooks';
 import { config } from '../config';
@@ -194,6 +195,20 @@ export const maskHeaders = (
 // ============================================================================
 
 const logsDir = path.join(process.cwd(), 'logs');
+const configuredLogFile = config.logging.file?.trim();
+const combinedLogPath = configuredLogFile
+  ? path.resolve(configuredLogFile)
+  : path.join(logsDir, 'combined.log');
+
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+if (configuredLogFile) {
+  const logDir = path.dirname(combinedLogPath);
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+}
 
 /**
  * Custom format to add request context from AsyncLocalStorage to log entries.
@@ -297,7 +312,7 @@ const logger = winston.createLogger({
     }),
     // File transport for all logs - always use JSON format
     new winston.transports.File({
-      filename: path.join(logsDir, 'combined.log'),
+      filename: combinedLogPath,
       format: jsonFormat,
       maxsize: 5242880, // 5MB
       maxFiles: 5,
@@ -305,20 +320,13 @@ const logger = winston.createLogger({
   ],
 });
 
-// Console transport: JSON in production, colorized in development
-if (config.isProduction) {
-  logger.add(
-    new winston.transports.Console({
-      format: jsonFormat,
-    })
-  );
-} else {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    })
-  );
-}
+const consoleFormatForEnv = config.logging.format === 'json' ? jsonFormat : consoleFormat;
+
+logger.add(
+  new winston.transports.Console({
+    format: consoleFormatForEnv,
+  })
+);
 
 // ============================================================================
 // Legacy Compatibility Helpers

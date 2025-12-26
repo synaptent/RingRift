@@ -2,47 +2,50 @@ import { Router, Request, Response } from 'express';
 import { HealthCheckService, isServiceReady } from '../services/HealthCheckService';
 import { httpLogger } from '../utils/logger';
 import { internalHealthRateLimiter, alertWebhookRateLimiter } from '../middleware/rateLimiter';
+import { config } from '../config';
 
 const router = Router();
 
-/**
- * @openapi
- * /internal/health/live:
- *   get:
- *     summary: Internal liveness probe
- *     description: |
- *       Lightweight liveness probe intended for internal routing and container health checks.
- *     tags:
- *       - Internal
- *     responses:
- *       200:
- *         description: Service is live
- */
-router.get('/health/live', internalHealthRateLimiter, (_req: Request, res: Response) => {
-  const status = HealthCheckService.getLivenessStatus();
-  res.status(200).json(status);
-});
+if (config.healthChecks.enabled) {
+  /**
+   * @openapi
+   * /internal/health/live:
+   *   get:
+   *     summary: Internal liveness probe
+   *     description: |
+   *       Lightweight liveness probe intended for internal routing and container health checks.
+   *     tags:
+   *       - Internal
+   *     responses:
+   *       200:
+   *         description: Service is live
+   */
+  router.get('/health/live', internalHealthRateLimiter, (_req: Request, res: Response) => {
+    const status = HealthCheckService.getLivenessStatus();
+    res.status(200).json(status);
+  });
 
-/**
- * @openapi
- * /internal/health/ready:
- *   get:
- *     summary: Internal readiness probe
- *     description: |
- *       Readiness probe intended for internal routing and orchestration.
- *     tags:
- *       - Internal
- *     responses:
- *       200:
- *         description: Service is ready
- *       503:
- *         description: Service is not ready
- */
-router.get('/health/ready', internalHealthRateLimiter, async (_req: Request, res: Response) => {
-  const status = await HealthCheckService.getReadinessStatus();
-  const httpStatus = isServiceReady(status) ? 200 : 503;
-  res.status(httpStatus).json(status);
-});
+  /**
+   * @openapi
+   * /internal/health/ready:
+   *   get:
+   *     summary: Internal readiness probe
+   *     description: |
+   *       Readiness probe intended for internal routing and orchestration.
+   *     tags:
+   *       - Internal
+   *     responses:
+   *       200:
+   *         description: Service is ready
+   *       503:
+   *         description: Service is not ready
+   */
+  router.get('/health/ready', internalHealthRateLimiter, async (_req: Request, res: Response) => {
+    const status = await HealthCheckService.getReadinessStatus();
+    const httpStatus = isServiceReady(status) ? 200 : 503;
+    res.status(httpStatus).json(status);
+  });
+}
 
 /**
  * Alertmanager webhook receiver (local/dev convenience).

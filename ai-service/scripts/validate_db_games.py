@@ -184,7 +184,7 @@ def validate_database(db_path: str, max_games: int = 100,
     for game_id, board_type_str, num_players in games:
         try:
             board_type = BoardType[board_type_str.upper()]
-        except:
+        except (KeyError, ValueError, AttributeError):
             board_type = BoardType.HEX8
 
         is_valid, error = validate_game_from_db(

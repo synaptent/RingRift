@@ -2,6 +2,9 @@
 
 Cluster setup, operations, and cloud infrastructure.
 
+> **Note (Dec 2025):** Lambda Labs account terminated. All Lambda-specific docs archived to `docs/archive/lambda/`.
+> Current providers: Nebius, RunPod, Vast.ai, Vultr, Hetzner.
+
 ## Contents
 
 | Document                                                                    | Description                |
@@ -21,4 +24,3 @@ Cluster setup, operations, and cloud infrastructure.
 | [BOTTLENECK_ANALYSIS](BOTTLENECK_ANALYSIS.md)                               | Performance bottlenecks    |
 | [GPU_RULES_PARITY_AUDIT](GPU_RULES_PARITY_AUDIT.md)                         | GPU/CPU parity audit       |
 | [RESOURCE_MANAGEMENT](RESOURCE_MANAGEMENT.md)                               | Resource management        |
-| [LAMBDA_SLURM_SETUP](LAMBDA_SLURM_SETUP.md)                                 | Lambda Slurm setup         |

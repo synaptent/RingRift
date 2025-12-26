@@ -309,8 +309,8 @@ def get_npz_info(npz_path):
                 sample_count = len(data["features"])
             elif "states" in data:
                 sample_count = len(data["states"])
-        except:
-            pass
+        except (OSError, ValueError, KeyError):
+            pass  # File not readable or missing expected keys
 
         return {{
             "path": str(npz_path),

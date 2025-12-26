@@ -21,9 +21,17 @@ import { getServiceStatusManager } from './services/ServiceStatusManager';
 
 const app = express();
 const server = createServer(app);
+let metricsServer: ReturnType<typeof createServer> | null = null;
+
+const metricsEnabled = config.metrics.enabled;
+const metricsExposeOnMain = config.metrics.exposeOnMain;
+const metricsUseSeparateServer = metricsEnabled && !metricsExposeOnMain;
+const healthChecksEnabled = config.healthChecks.enabled;
 
 // Register default Prometheus metrics for the Node.js process.
-client.collectDefaultMetrics();
+if (metricsEnabled) {
+  client.collectDefaultMetrics();
+}
 
 // Initialize MetricsService singleton (registers all custom metrics)
 const metricsService = getMetricsService();
@@ -56,7 +64,9 @@ app.use(apiRequestLogger);
 // HTTP metrics middleware - collects request duration, count, and sizes
 // Placed after requestContext so correlation IDs are available, and after
 // requestLogger so logging completes before metrics are recorded.
-app.use(metricsMiddleware);
+if (metricsEnabled) {
+  app.use(metricsMiddleware);
+}
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -64,30 +74,31 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Health check endpoints - placed BEFORE rate limiter to bypass rate limiting.
 // These endpoints are called frequently by orchestrators (Kubernetes, load balancers)
 // and should not be rate limited or require authentication.
+if (healthChecksEnabled) {
+  /**
+   * Liveness probe endpoint - /health or /healthz
+   * Returns 200 if the process is alive and responding.
+   * Fast response with minimal checks.
+   * Used by orchestrators to restart dead containers.
+   */
+  app.get(['/health', '/healthz'], (_req: Request, res: Response) => {
+    const status = HealthCheckService.getLivenessStatus();
+    res.status(200).json(status);
+  });
 
-/**
- * Liveness probe endpoint - /health or /healthz
- * Returns 200 if the process is alive and responding.
- * Fast response with minimal checks.
- * Used by orchestrators to restart dead containers.
- */
-app.get(['/health', '/healthz'], (_req: Request, res: Response) => {
-  const status = HealthCheckService.getLivenessStatus();
-  res.status(200).json(status);
-});
-
-/**
- * Readiness probe endpoint - /ready or /readyz
- * Returns 200 if the service is ready to serve traffic.
- * Checks database, Redis, and AI service connectivity.
- * Returns 503 if critical dependencies (database) are unavailable.
- * Used by orchestrators to remove instances from service endpoints.
- */
-app.get(['/ready', '/readyz'], async (_req: Request, res: Response) => {
-  const status = await HealthCheckService.getReadinessStatus();
-  const httpStatus = isServiceReady(status) ? 200 : 503;
-  res.status(httpStatus).json(status);
-});
+  /**
+   * Readiness probe endpoint - /ready or /readyz
+   * Returns 200 if the service is ready to serve traffic.
+   * Checks database, Redis, and AI service connectivity.
+   * Returns 503 if critical dependencies (database) are unavailable.
+   * Used by orchestrators to remove instances from service endpoints.
+   */
+  app.get(['/ready', '/readyz'], async (_req: Request, res: Response) => {
+    const status = await HealthCheckService.getReadinessStatus();
+    const httpStatus = isServiceReady(status) ? 200 : 503;
+    res.status(httpStatus).json(status);
+  });
+}
 
 // Rate limiting - placed AFTER health endpoints.
 // Apply the general API limiter only to non-auth, non-game API routes.
@@ -123,7 +134,7 @@ app.use((req, res, next) => {
 //
 // SECURITY: When METRICS_API_KEY is configured, the endpoint requires
 // authentication via Bearer token or X-Metrics-Key header.
-app.get('/metrics', async (req: Request, res: Response) => {
+const metricsHandler = async (req: Request, res: Response) => {
   // Check authentication if API key is configured
   const metricsApiKey = config.metrics.apiKey;
   if (metricsApiKey) {
@@ -162,7 +173,31 @@ app.get('/metrics', async (req: Request, res: Response) => {
     });
     res.status(500).send('metrics_unavailable');
   }
-});
+};
+
+if (metricsEnabled && metricsExposeOnMain) {
+  app.get('/metrics', metricsHandler);
+}
+
+function startMetricsServer(host: string): void {
+  if (!metricsUseSeparateServer) {
+    return;
+  }
+
+  const metricsApp = express();
+  metricsApp.get('/metrics', metricsHandler);
+
+  metricsServer = createServer(metricsApp);
+  metricsServer.on('error', (error) => {
+    logger.error('Failed to start metrics server', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
+  metricsServer.listen(config.metrics.port, host, () => {
+    logger.info(`Metrics server listening on ${host}:${config.metrics.port}`);
+  });
+}
 
 // In production, the server runs from dist/server/server/index.js
 // Client files are in dist/client, so we need to go up two levels
@@ -186,7 +221,8 @@ if (config.isProduction) {
       req.path.startsWith('/api') ||
       req.path.startsWith('/socket.io') ||
       req.path.startsWith('/metrics') ||
-      req.path.startsWith('/health')
+      req.path.startsWith('/health') ||
+      req.path.startsWith('/ready')
     ) {
       return next();
     }
@@ -233,9 +269,11 @@ async function startServer() {
 
     // Start server
     const PORT = config.server.port;
+    const HOST = config.server.host;
 
-    server.listen(PORT, () => {
+    server.listen(PORT, HOST, () => {
       logger.info(`Server running on port ${PORT}`);
+      logger.info(`Server host: ${HOST}`);
       logger.info(`WebSocket server attached to HTTP server on port ${PORT}`);
       logger.info(`Environment: ${config.nodeEnv}`);
 
@@ -266,6 +304,8 @@ async function startServer() {
       // Initialize orchestrator rollout percentage gauge for metrics (100% = permanently enabled)
       getMetricsService().setOrchestratorRolloutPercentage(100);
     });
+
+    startMetricsServer(HOST);
 
     // Graceful shutdown
     process.on('SIGTERM', gracefulShutdown);
@@ -298,6 +338,20 @@ async function gracefulShutdown(signal: string) {
         }
       });
     });
+
+    if (metricsServer) {
+      await new Promise<void>((resolve, reject) => {
+        metricsServer?.close((err) => {
+          if (err) {
+            logger.warn('Error closing metrics server:', err);
+            reject(err);
+          } else {
+            logger.info('Metrics server closed');
+            resolve();
+          }
+        });
+      });
+    }
 
     // 2. Close Redis connection
     try {

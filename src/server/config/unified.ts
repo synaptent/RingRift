@@ -29,6 +29,7 @@ import {
   NodeEnvSchema,
   AppTopologySchema,
   RulesModeSchema,
+  LogFormatSchema,
   parseEnv,
   getEffectiveNodeEnv,
 } from './env';
@@ -177,6 +178,10 @@ const websocketOrigin =
   env.CORS_ORIGIN?.trim() ||
   (allowedOrigins[0] ?? 'http://localhost:5173');
 
+const metricsPortExplicit = Object.prototype.hasOwnProperty.call(process.env, 'METRICS_PORT');
+const metricsPort = env.METRICS_PORT;
+const metricsExposeOnMain = !metricsPortExplicit || metricsPort === env.PORT;
+
 /**
  * Application configuration schema with comprehensive validation.
  */
@@ -191,6 +196,7 @@ const ConfigSchema = z.object({
   }),
   server: z.object({
     port: z.number().int().positive(),
+    host: z.string().min(1),
     corsOrigin: z.string().min(1),
     publicClientUrl: z.string().min(1),
     allowedOrigins: z.array(z.string().min(1)).nonempty(),
@@ -201,6 +207,14 @@ const ConfigSchema = z.object({
     /** API key for securing the /metrics endpoint */
     apiKey: z.string().optional(),
     /** Whether the metrics endpoint is enabled */
+    enabled: z.boolean(),
+    /** Port for the optional dedicated metrics server */
+    port: z.number().int().positive(),
+    /** Whether /metrics should be exposed on the main HTTP server */
+    exposeOnMain: z.boolean(),
+  }),
+  healthChecks: z.object({
+    /** Whether health check endpoints are enabled */
     enabled: z.boolean(),
   }),
   database: z.object({
@@ -229,6 +243,8 @@ const ConfigSchema = z.object({
   }),
   logging: z.object({
     level: z.string().min(1),
+    format: LogFormatSchema,
+    file: z.string().optional(),
   }),
   rules: z.object({
     mode: RulesModeSchema,
@@ -303,6 +319,7 @@ const preliminaryConfig = {
   },
   server: {
     port: env.PORT,
+    host: env.HOST,
     corsOrigin,
     publicClientUrl,
     allowedOrigins,
@@ -312,6 +329,11 @@ const preliminaryConfig = {
   metrics: {
     apiKey: env.METRICS_API_KEY?.trim() || undefined,
     enabled: env.ENABLE_METRICS,
+    port: metricsPort,
+    exposeOnMain: metricsExposeOnMain,
+  },
+  healthChecks: {
+    enabled: env.ENABLE_HEALTH_CHECKS,
   },
   database: {
     url: databaseUrl,
@@ -341,6 +363,8 @@ const preliminaryConfig = {
   },
   logging: {
     level: env.LOG_LEVEL,
+    format: env.LOG_FORMAT,
+    file: env.LOG_FILE,
   },
   rules: {
     mode: getRulesMode(),

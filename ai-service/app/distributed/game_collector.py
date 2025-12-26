@@ -71,9 +71,11 @@ class InMemoryGameCollector:
         initial_state: GameState,
         final_state: GameState,
         moves: list[Move],
+        choices: list[dict] | None = None,
         metadata: dict[str, Any] | None = None,
         store_history_entries: bool = True,
         compress_states: bool = False,  # Not used in memory, but kept for API compat
+        snapshot_interval: int = 20,  # Ignored for in-memory storage
     ) -> str:
         """Store a game in memory.
 
@@ -85,10 +87,12 @@ class InMemoryGameCollector:
             initial_state: Initial game state
             final_state: Final game state
             moves: List of all moves in order
+            choices: Optional list of player choices (ignored for in-memory storage)
             metadata: Optional game metadata
             store_history_entries: If True (default), compute and store history
                                    entries with before/after state snapshots
             compress_states: Ignored for in-memory storage
+            snapshot_interval: Ignored for in-memory storage
         """
         # Import here to avoid circular imports
         from app.game_engine import GameEngine
