@@ -28295,6 +28295,10 @@ print(json.dumps({{
                     "mcts-only",
                     "nn-only",
                     "best-vs-pool",
+                    # GPU-accelerated Gumbel MCTS modes
+                    "gumbel",
+                    "gumbel-mcts",
+                    "gumbel-mcts-only",
                     # Cross-AI asymmetric matches for variety
                     "nn-vs-mcts",
                     "nn-vs-minimax",
@@ -28304,7 +28308,14 @@ print(json.dumps({{
                     "heuristic-vs-mcts",
                     "random-vs-mcts",
                 }
-                engine_mode_norm = engine_mode if engine_mode in supported_engine_modes else "nn-only"
+                # Normalize engine mode - map aliases to what run_self_play_soak.py expects
+                gumbel_aliases = {"gumbel", "gumbel-mcts"}
+                if engine_mode in gumbel_aliases:
+                    engine_mode_norm = "gumbel-mcts-only"  # Actual mode name in run_self_play_soak.py
+                elif engine_mode in supported_engine_modes:
+                    engine_mode_norm = engine_mode
+                else:
+                    engine_mode_norm = "nn-only"
 
                 # Memory-safety defaults for large boards.
                 num_games = 1000

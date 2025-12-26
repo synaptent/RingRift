@@ -99,6 +99,9 @@ class IdleResourceConfig:
     max_queue_depth: int = 100
     # Training backlog threshold in hours - stop spawning if too much unprocessed data
     max_pending_training_hours: float = 24.0
+    # Dec 26 2025: Max selfplay processes per node before skipping spawns
+    # This prevents runaway process accumulation
+    max_selfplay_processes_per_node: int = 50
 
     @classmethod
     def from_env(cls) -> IdleResourceConfig:
@@ -1112,12 +1115,13 @@ class IdleResourceDaemon:
             num_players = int(parts[1].replace("p", ""))
 
             # Submit job via P2P
+            # NOTE: Must use "engine_mode" (not "engine") to match P2P orchestrator API
             job_spec = {
                 "type": "selfplay",
                 "board_type": board_type,
                 "num_players": num_players,
                 "num_games": games,
-                "engine": "gumbel",
+                "engine_mode": "gumbel-mcts",  # GPU-accelerated Gumbel MCTS
                 "target_node": node.node_id,
             }
 
