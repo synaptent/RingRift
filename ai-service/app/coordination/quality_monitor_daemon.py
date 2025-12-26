@@ -70,6 +70,9 @@ class QualityMonitorDaemon:
         self.current_state: QualityState = QualityState.UNKNOWN
         self._last_event_time: float = 0.0
         self._event_cooldown: float = 30.0  # Min seconds between same-type events
+        self._subscribed: bool = False
+        # Phase 9: Track per-config quality for targeted checks
+        self._config_quality: dict[str, float] = {}
 
     async def start(self) -> None:
         """Start the quality monitor daemon."""
@@ -78,9 +81,68 @@ class QualityMonitorDaemon:
             return
 
         self._running = True
+        self._subscribe_to_events()
         self._task = asyncio.create_task(self._monitor_loop())
         self._task.add_done_callback(self._handle_task_error)
         logger.info("QualityMonitorDaemon started")
+
+    def _subscribe_to_events(self) -> None:
+        """Subscribe to quality check request events (Phase 9)."""
+        if self._subscribed:
+            return
+        try:
+            from app.coordination.event_router import DataEventType, get_event_bus
+
+            bus = get_event_bus()
+            if hasattr(DataEventType, 'QUALITY_CHECK_REQUESTED'):
+                bus.subscribe(DataEventType.QUALITY_CHECK_REQUESTED, self._on_quality_check_requested)
+                logger.info("[QualityMonitorDaemon] Subscribed to QUALITY_CHECK_REQUESTED")
+            self._subscribed = True
+        except Exception as e:
+            logger.warning(f"[QualityMonitorDaemon] Failed to subscribe to events: {e}")
+
+    async def _on_quality_check_requested(self, event) -> None:
+        """Handle on-demand quality check requests (Phase 9).
+
+        Triggered by FeedbackLoopController when training loss anomalies
+        or degradation is detected. Performs an immediate quality check
+        for the specific config and emits results.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            reason = payload.get("reason", "unknown")
+            priority = payload.get("priority", "normal")
+
+            logger.info(
+                f"[QualityMonitorDaemon] On-demand quality check requested for {config_key}: "
+                f"reason={reason}, priority={priority}"
+            )
+
+            # Perform immediate quality check
+            quality = await self._get_current_quality()
+
+            # Store per-config quality
+            if config_key:
+                self._config_quality[config_key] = quality
+
+            # Update state and emit events
+            old_state = self.current_state
+            new_state = self._quality_to_state(quality)
+
+            # Always emit for on-demand checks (bypass cooldown)
+            await self._emit_quality_event(quality, new_state, old_state)
+
+            self.last_quality = quality
+            self.current_state = new_state
+
+            logger.info(
+                f"[QualityMonitorDaemon] On-demand check complete for {config_key}: "
+                f"quality={quality:.3f}, state={new_state.value}"
+            )
+
+        except Exception as e:
+            logger.error(f"[QualityMonitorDaemon] Error handling quality check request: {e}")
 
     def _handle_task_error(self, task: asyncio.Task) -> None:
         """Handle errors from the monitor task."""

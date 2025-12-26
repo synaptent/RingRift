@@ -1039,6 +1039,260 @@ class ClusterManifest:
             return locations
 
     # =========================================================================
+    # Checkpoint Location Registry (December 2025)
+    # =========================================================================
+
+    def register_checkpoint(
+        self,
+        checkpoint_path: str,
+        node_id: str,
+        config_key: str | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+        epoch: int = 0,
+        step: int = 0,
+        loss: float = 0.0,
+        file_size: int = 0,
+        is_best: bool = False,
+    ) -> None:
+        """Register a training checkpoint location in the manifest.
+
+        This enables distributed training resume and failover by tracking
+        where checkpoints exist across the cluster.
+
+        Args:
+            checkpoint_path: Relative path to checkpoint file
+            node_id: Node where the checkpoint exists
+            config_key: Configuration key (e.g., "hex8_2p")
+            board_type: Board configuration
+            num_players: Number of players
+            epoch: Training epoch number
+            step: Training step number
+            loss: Training loss at this checkpoint
+            file_size: File size in bytes
+            is_best: Whether this is the best checkpoint for this config
+        """
+        now = time.time()
+
+        # Derive config_key if not provided
+        if config_key is None and board_type and num_players:
+            config_key = f"{board_type}_{num_players}p"
+
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO checkpoint_locations
+                (checkpoint_path, node_id, config_key, board_type, num_players,
+                 epoch, step, loss, file_size, is_best, registered_at, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    COALESCE((SELECT registered_at FROM checkpoint_locations
+                              WHERE checkpoint_path = ? AND node_id = ?), ?),
+                    ?)
+            """, (checkpoint_path, node_id, config_key, board_type, num_players,
+                  epoch, step, loss, file_size, 1 if is_best else 0,
+                  checkpoint_path, node_id, now, now))
+            conn.commit()
+
+        logger.debug(f"Registered checkpoint: {checkpoint_path} on {node_id} (epoch={epoch})")
+
+    def find_checkpoint(self, checkpoint_path: str) -> list[CheckpointLocation]:
+        """Find all locations where a checkpoint exists.
+
+        Args:
+            checkpoint_path: Checkpoint file path
+
+        Returns:
+            List of CheckpointLocation objects
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT checkpoint_path, node_id, config_key, board_type, num_players,
+                       epoch, step, loss, file_size, is_best, registered_at, last_seen
+                FROM checkpoint_locations
+                WHERE checkpoint_path = ?
+            """, (checkpoint_path,))
+
+            locations = []
+            for row in cursor.fetchall():
+                locations.append(CheckpointLocation(
+                    checkpoint_path=row[0],
+                    node_id=row[1],
+                    config_key=row[2],
+                    board_type=row[3],
+                    num_players=row[4],
+                    epoch=row[5],
+                    step=row[6],
+                    loss=row[7],
+                    file_size=row[8],
+                    is_best=bool(row[9]),
+                    registered_at=row[10],
+                    last_seen=row[11],
+                ))
+
+            return locations
+
+    def find_checkpoints_for_config(
+        self,
+        config_key: str,
+        only_best: bool = False,
+    ) -> list[CheckpointLocation]:
+        """Find all checkpoints for a specific configuration.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            only_best: If True, only return best checkpoints
+
+        Returns:
+            List of CheckpointLocation objects, sorted by epoch descending
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+
+            if only_best:
+                cursor.execute("""
+                    SELECT checkpoint_path, node_id, config_key, board_type, num_players,
+                           epoch, step, loss, file_size, is_best, registered_at, last_seen
+                    FROM checkpoint_locations
+                    WHERE config_key = ? AND is_best = 1
+                    ORDER BY epoch DESC, last_seen DESC
+                """, (config_key,))
+            else:
+                cursor.execute("""
+                    SELECT checkpoint_path, node_id, config_key, board_type, num_players,
+                           epoch, step, loss, file_size, is_best, registered_at, last_seen
+                    FROM checkpoint_locations
+                    WHERE config_key = ?
+                    ORDER BY epoch DESC, last_seen DESC
+                """, (config_key,))
+
+            locations = []
+            for row in cursor.fetchall():
+                locations.append(CheckpointLocation(
+                    checkpoint_path=row[0],
+                    node_id=row[1],
+                    config_key=row[2],
+                    board_type=row[3],
+                    num_players=row[4],
+                    epoch=row[5],
+                    step=row[6],
+                    loss=row[7],
+                    file_size=row[8],
+                    is_best=bool(row[9]),
+                    registered_at=row[10],
+                    last_seen=row[11],
+                ))
+
+            return locations
+
+    def get_latest_checkpoint_for_config(
+        self,
+        config_key: str,
+        prefer_best: bool = True,
+    ) -> CheckpointLocation | None:
+        """Get the latest checkpoint for a configuration.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            prefer_best: If True, prefer best checkpoint over latest epoch
+
+        Returns:
+            CheckpointLocation or None if not found
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+
+            if prefer_best:
+                # First try to find best checkpoint
+                cursor.execute("""
+                    SELECT checkpoint_path, node_id, config_key, board_type, num_players,
+                           epoch, step, loss, file_size, is_best, registered_at, last_seen
+                    FROM checkpoint_locations
+                    WHERE config_key = ? AND is_best = 1
+                    ORDER BY epoch DESC, last_seen DESC
+                    LIMIT 1
+                """, (config_key,))
+                row = cursor.fetchone()
+                if row:
+                    return CheckpointLocation(
+                        checkpoint_path=row[0],
+                        node_id=row[1],
+                        config_key=row[2],
+                        board_type=row[3],
+                        num_players=row[4],
+                        epoch=row[5],
+                        step=row[6],
+                        loss=row[7],
+                        file_size=row[8],
+                        is_best=bool(row[9]),
+                        registered_at=row[10],
+                        last_seen=row[11],
+                    )
+
+            # Fall back to latest by epoch
+            cursor.execute("""
+                SELECT checkpoint_path, node_id, config_key, board_type, num_players,
+                       epoch, step, loss, file_size, is_best, registered_at, last_seen
+                FROM checkpoint_locations
+                WHERE config_key = ?
+                ORDER BY epoch DESC, last_seen DESC
+                LIMIT 1
+            """, (config_key,))
+            row = cursor.fetchone()
+            if row:
+                return CheckpointLocation(
+                    checkpoint_path=row[0],
+                    node_id=row[1],
+                    config_key=row[2],
+                    board_type=row[3],
+                    num_players=row[4],
+                    epoch=row[5],
+                    step=row[6],
+                    loss=row[7],
+                    file_size=row[8],
+                    is_best=bool(row[9]),
+                    registered_at=row[10],
+                    last_seen=row[11],
+                )
+
+            return None
+
+    def mark_checkpoint_as_best(
+        self,
+        config_key: str,
+        checkpoint_path: str,
+    ) -> None:
+        """Mark a checkpoint as the best for its configuration.
+
+        This also clears is_best from any other checkpoints for this config.
+
+        Args:
+            config_key: Configuration key
+            checkpoint_path: Path to the checkpoint to mark as best
+        """
+        now = time.time()
+        with self._connection() as conn:
+            cursor = conn.cursor()
+
+            # Clear existing best for this config
+            cursor.execute("""
+                UPDATE checkpoint_locations
+                SET is_best = 0, last_seen = ?
+                WHERE config_key = ? AND is_best = 1
+            """, (now, config_key))
+
+            # Set new best
+            cursor.execute("""
+                UPDATE checkpoint_locations
+                SET is_best = 1, last_seen = ?
+                WHERE config_key = ? AND checkpoint_path = ?
+            """, (now, config_key, checkpoint_path))
+
+            conn.commit()
+
+        logger.info(f"Marked {checkpoint_path} as best for {config_key}")
+
+    # =========================================================================
     # Database Location Registry (Phase 4A.3 - December 2025)
     # =========================================================================
 
