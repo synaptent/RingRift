@@ -654,23 +654,40 @@ class FeedbackLoopController:
             logger.warning(f"[FeedbackLoopController] Error triggering quality check: {e}")
 
     def _boost_exploration_for_anomaly(self, config_key: str, anomaly_count: int) -> None:
-        """Boost exploration in response to loss anomalies."""
+        """Boost exploration in response to loss anomalies.
+
+        December 2025: Now includes fallback to store boost in FeedbackState
+        even if temperature_scheduling module is not available. This ensures
+        SelfplayScheduler can still use the exploration boost signal.
+        """
+        # Calculate boost: 15% per anomaly, up to 2.0x
+        boost = min(2.0, 1.0 + 0.15 * anomaly_count)
+
+        # Always update local state (fallback for when schedulers aren't available)
+        state = self._get_or_create_state(config_key)
+        state.current_exploration_boost = boost
+        logger.info(
+            f"[FeedbackLoopController] Exploration boost set to {boost:.2f}x "
+            f"for {config_key} (anomaly count: {anomaly_count})"
+        )
+
+        # Try to wire to active temperature schedulers (optional, may not be running)
         try:
             from app.training.temperature_scheduling import get_active_schedulers
 
             schedulers = get_active_schedulers()
+            wired = False
             for scheduler in schedulers:
                 if hasattr(scheduler, 'config_key') and scheduler.config_key == config_key:
-                    # Boost by 15% per anomaly, up to 2.0x
-                    boost = min(2.0, 1.0 + 0.15 * anomaly_count)
                     if hasattr(scheduler, 'set_exploration_boost'):
                         scheduler.set_exploration_boost(boost)
-                        logger.info(
-                            f"[FeedbackLoopController] Set exploration boost to {boost:.2f}x "
-                            f"for {config_key} (anomaly count: {anomaly_count})"
-                        )
+                        wired = True
+            if wired:
+                logger.debug(f"[FeedbackLoopController] Wired boost to temperature scheduler")
+        except ImportError:
+            logger.debug("[FeedbackLoopController] Temperature scheduling not available (using fallback)")
         except Exception as e:
-            logger.debug(f"[FeedbackLoopController] Error boosting exploration: {e}")
+            logger.debug(f"[FeedbackLoopController] Could not wire to scheduler: {e}")
 
     def _boost_exploration_for_stall(self, config_key: str, stall_epochs: int) -> None:
         """Boost exploration in response to training stall."""
