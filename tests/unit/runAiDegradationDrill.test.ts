@@ -225,7 +225,7 @@ describe('runAiDegradationDrill (orchestration)', () => {
     expect(recoveryDetails.phase).toBe('recovery');
   });
 
-  it('uses APP_BASE env when computing backend health URL by default', async () => {
+  it('uses BASE_URL env when computing backend health URL by default', async () => {
     const httpHealthCheck = jest.fn(async (_url: string) => ({ statusCode: 200 }));
     const aiHealthCheck = jest.fn(async (_opts: any) => ({
       ok: true,
@@ -236,8 +236,8 @@ describe('runAiDegradationDrill (orchestration)', () => {
       details: { simulated: true },
     }));
 
-    const previousAppBase = process.env.APP_BASE;
-    process.env.APP_BASE = 'http://staging.example.com';
+    const previousBaseUrl = process.env.BASE_URL;
+    process.env.BASE_URL = 'http://staging.example.com';
 
     try {
       const { report } = await DrillHarness.runAiDegradationDrill({
@@ -253,7 +253,7 @@ describe('runAiDegradationDrill (orchestration)', () => {
       const [healthUrl] = httpHealthCheck.mock.calls[0];
       expect(healthUrl).toBe('http://staging.example.com/health');
     } finally {
-      process.env.APP_BASE = previousAppBase;
+      process.env.BASE_URL = previousBaseUrl;
     }
   });
 });

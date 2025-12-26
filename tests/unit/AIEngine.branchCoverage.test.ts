@@ -47,7 +47,7 @@ describe('AIEngine branch coverage', () => {
       expect(AI_DIFFICULTY_PRESETS[2].aiType).toBe(AIType.HEURISTIC);
       expect(AI_DIFFICULTY_PRESETS[3].aiType).toBe(AIType.MINIMAX);
       expect(AI_DIFFICULTY_PRESETS[7].aiType).toBe(AIType.MCTS);
-      expect(AI_DIFFICULTY_PRESETS[9].aiType).toBe(AIType.DESCENT);
+      expect(AI_DIFFICULTY_PRESETS[9].aiType).toBe(AIType.GUMBEL_MCTS);
     });
 
     it('has increasing think times for higher difficulties', () => {
@@ -342,11 +342,11 @@ describe('AIEngine branch coverage', () => {
       expect(config?.randomness).toBe(0);
     });
 
-    it('uses preset for difficulty 10 (descent)', () => {
+    it('uses preset for difficulty 10 (gumbel_mcts)', () => {
       const profile: AIProfile = { difficulty: 10, mode: 'service' };
       aiEngine.createAIFromProfile(1, profile);
       const config = aiEngine.getAIConfig(1);
-      expect(config?.aiType).toBe(AIType.DESCENT);
+      expect(config?.aiType).toBe(AIType.GUMBEL_MCTS);
       expect(config?.thinkTime).toBe(16000);
     });
   });
