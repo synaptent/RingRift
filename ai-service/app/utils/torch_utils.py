@@ -13,12 +13,151 @@ Security Note:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Model Integrity Verification (SHA256)
+# =============================================================================
+
+def compute_model_checksum(path: str | Path) -> str:
+    """Compute SHA256 checksum of a model file.
+
+    Args:
+        path: Path to the model file
+
+    Returns:
+        Hex-encoded SHA256 checksum string
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Model not found: {path}")
+
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as f:
+        # Read in 64KB chunks for memory efficiency
+        for chunk in iter(lambda: f.read(65536), b""):
+            sha256.update(chunk)
+
+    return sha256.hexdigest()
+
+
+def write_checksum_file(model_path: str | Path) -> Path:
+    """Write a SHA256 checksum sidecar file for a model.
+
+    Creates a .sha256 file alongside the model containing the checksum.
+    Format: <checksum>  <filename>
+
+    Args:
+        model_path: Path to the model file
+
+    Returns:
+        Path to the created checksum file
+
+    Example:
+        >>> write_checksum_file("models/my_model.pth")
+        Path('models/my_model.pth.sha256')
+    """
+    model_path = Path(model_path)
+    checksum = compute_model_checksum(model_path)
+
+    checksum_path = model_path.with_suffix(model_path.suffix + ".sha256")
+    with open(checksum_path, "w") as f:
+        f.write(f"{checksum}  {model_path.name}\n")
+
+    logger.info(f"[ModelIntegrity] Wrote checksum to {checksum_path}")
+    return checksum_path
+
+
+def verify_model_checksum(
+    model_path: str | Path,
+    *,
+    expected_checksum: str | None = None,
+    checksum_file: str | Path | None = None,
+    strict: bool = False,
+) -> tuple[bool, str | None]:
+    """Verify model integrity using SHA256 checksum.
+
+    Checks the model file against either:
+    1. An explicitly provided expected_checksum
+    2. A sidecar .sha256 file (if it exists)
+
+    Args:
+        model_path: Path to the model file
+        expected_checksum: If provided, verify against this checksum
+        checksum_file: If provided, read expected checksum from this file
+        strict: If True, raise error on mismatch. If False, just return result.
+
+    Returns:
+        Tuple of (is_valid, computed_checksum)
+        - is_valid: True if checksum matches or no checksum to check against
+        - computed_checksum: The computed SHA256 checksum
+
+    Raises:
+        RuntimeError: If strict=True and checksum mismatch detected
+
+    Example:
+        >>> valid, checksum = verify_model_checksum("model.pth")
+        >>> if not valid:
+        ...     print("Model corrupted!")
+    """
+    model_path = Path(model_path)
+    computed = compute_model_checksum(model_path)
+
+    # Get expected checksum
+    expected = expected_checksum
+
+    if expected is None and checksum_file:
+        checksum_file = Path(checksum_file)
+        if checksum_file.exists():
+            with open(checksum_file) as f:
+                line = f.readline().strip()
+                # Format: <checksum>  <filename>
+                expected = line.split()[0] if line else None
+
+    if expected is None:
+        # Try default sidecar file
+        sidecar = model_path.with_suffix(model_path.suffix + ".sha256")
+        if sidecar.exists():
+            with open(sidecar) as f:
+                line = f.readline().strip()
+                expected = line.split()[0] if line else None
+
+    if expected is None:
+        # No checksum to verify against
+        logger.debug(f"[ModelIntegrity] No checksum file for {model_path.name}")
+        return True, computed
+
+    # Compare checksums
+    is_valid = computed.lower() == expected.lower()
+
+    if not is_valid:
+        msg = (
+            f"Model checksum mismatch for {model_path.name}! "
+            f"Expected: {expected[:16]}..., Got: {computed[:16]}... "
+            "Model may be corrupted or tampered with."
+        )
+        if strict:
+            raise RuntimeError(msg)
+        logger.error(f"[ModelIntegrity] {msg}")
+    else:
+        logger.debug(f"[ModelIntegrity] Checksum verified for {model_path.name}")
+
+    return is_valid, computed
+
+
+class ModelCorruptionError(Exception):
+    """Raised when model checksum verification fails."""
+    pass
 
 # Try to import torch - this module should work even without torch
 skip_torch = os.getenv("RINGRIFT_SKIP_TORCH_IMPORT", "").strip().lower()
@@ -42,18 +181,23 @@ def safe_load_checkpoint(
     map_location: str | None = "cpu",
     allow_unsafe: bool = True,
     warn_on_unsafe: bool = True,
+    verify_checksum: bool = False,
+    strict_checksum: bool = False,
 ) -> dict[str, Any]:
-    """Safely load a PyTorch checkpoint.
+    """Safely load a PyTorch checkpoint with optional integrity verification.
 
     This function attempts to load checkpoints in the safest way possible:
-    1. First tries with weights_only=True (prevents arbitrary code execution)
-    2. If that fails and allow_unsafe=True, falls back to weights_only=False
+    1. Optionally verifies SHA256 checksum against sidecar .sha256 file
+    2. First tries with weights_only=True (prevents arbitrary code execution)
+    3. If that fails and allow_unsafe=True, falls back to weights_only=False
 
     Args:
         path: Path to the checkpoint file
         map_location: Device to map tensors to (default: "cpu")
         allow_unsafe: Whether to allow fallback to unsafe loading
         warn_on_unsafe: Whether to log a warning when using unsafe loading
+        verify_checksum: Whether to verify SHA256 checksum (Dec 2025)
+        strict_checksum: If True, raise error on checksum mismatch
 
     Returns:
         The loaded checkpoint dictionary
@@ -62,6 +206,7 @@ def safe_load_checkpoint(
         ImportError: If PyTorch is not installed
         FileNotFoundError: If the checkpoint file doesn't exist
         RuntimeError: If loading fails and allow_unsafe=False
+        ModelCorruptionError: If verify_checksum=True and checksum mismatch
     """
     if not HAS_TORCH:
         raise ImportError("PyTorch is required for checkpoint loading")
@@ -69,6 +214,15 @@ def safe_load_checkpoint(
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
+
+    # Dec 2025: Optional SHA256 checksum verification
+    if verify_checksum:
+        valid, computed = verify_model_checksum(path, strict=strict_checksum)
+        if not valid:
+            raise ModelCorruptionError(
+                f"Model checksum verification failed for {path}. "
+                "The model file may be corrupted or tampered with."
+            )
 
     # Try safe loading first
     try:

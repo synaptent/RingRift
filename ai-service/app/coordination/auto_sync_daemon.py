@@ -317,6 +317,12 @@ class AutoSyncDaemon:
                 bus.subscribe(DataEventType.SYNC_TRIGGERED, self._on_sync_triggered)
                 logger.info("[AutoSyncDaemon] Subscribed to SYNC_TRIGGERED")
 
+            # Subscribe to NEW_GAMES_AVAILABLE for push-on-generate (Dec 2025)
+            # Layer 1: Immediate push to neighbors when games are generated
+            if hasattr(DataEventType, 'NEW_GAMES_AVAILABLE'):
+                bus.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games_available)
+                logger.info("[AutoSyncDaemon] Subscribed to NEW_GAMES_AVAILABLE (push-on-generate)")
+
             self._subscribed = True
         except Exception as e:
             logger.warning(f"[AutoSyncDaemon] Failed to subscribe to events: {e}")
@@ -376,6 +382,140 @@ class AutoSyncDaemon:
             self._errors_count += 1
             self._last_error = str(e)
             logger.error(f"[AutoSyncDaemon] Error handling SYNC_TRIGGERED: {e}")
+
+    async def _on_new_games_available(self, event) -> None:
+        """Handle NEW_GAMES_AVAILABLE event - push-on-generate (Dec 2025).
+
+        Layer 1 of the sync architecture: When new games are generated,
+        immediately push to up to 3 neighbor nodes for rapid replication.
+        This is especially important for Vast.ai ephemeral nodes.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config", "")
+            new_games = payload.get("new_games", 0)
+            total_games = payload.get("total_games", 0)
+
+            # Only push if we have a meaningful batch (avoid spamming for 1-2 games)
+            min_games = self._config.min_games_to_sync or 5
+            if new_games < min_games:
+                logger.debug(
+                    f"[AutoSyncDaemon] Push-on-generate: skipping for {config_key} "
+                    f"({new_games} < {min_games} min games)"
+                )
+                return
+
+            logger.info(
+                f"[AutoSyncDaemon] Push-on-generate: {config_key} "
+                f"({new_games} new games, {total_games} total) - pushing to neighbors"
+            )
+
+            self._events_processed += 1
+
+            # Trigger push to neighbors (Layer 1)
+            fire_and_forget(self._push_to_neighbors(config_key, new_games))
+
+        except Exception as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[AutoSyncDaemon] Error handling NEW_GAMES_AVAILABLE: {e}")
+
+    async def _push_to_neighbors(self, config_key: str, new_games: int) -> None:
+        """Push data to up to 3 neighbor nodes (Layer 1: push-from-generator).
+
+        Prefers storage nodes with large disk capacity.
+        Skips coordinator nodes and nodes with low disk space.
+        """
+        try:
+            # Get available neighbors
+            neighbors = await self._get_push_neighbors(max_neighbors=3)
+            if not neighbors:
+                logger.debug(
+                    f"[AutoSyncDaemon] Push-on-generate: no eligible neighbors for {config_key}"
+                )
+                return
+
+            # Push to each neighbor
+            pushed_count = 0
+            for neighbor_id in neighbors[:3]:
+                try:
+                    success = await self._sync_to_peer(neighbor_id)
+                    if success:
+                        pushed_count += 1
+                        logger.debug(
+                            f"[AutoSyncDaemon] Pushed {config_key} to {neighbor_id}"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"[AutoSyncDaemon] Failed to push to {neighbor_id}: {e}"
+                    )
+
+            if pushed_count > 0:
+                logger.info(
+                    f"[AutoSyncDaemon] Push-on-generate complete: {config_key} "
+                    f"pushed to {pushed_count}/{len(neighbors)} neighbors"
+                )
+
+        except Exception as e:
+            logger.error(f"[AutoSyncDaemon] Push-on-generate failed for {config_key}: {e}")
+
+    async def _get_push_neighbors(self, max_neighbors: int = 3) -> list[str]:
+        """Get list of neighbor nodes for push-on-generate.
+
+        Returns nodes sorted by priority:
+        1. Storage nodes (large disk)
+        2. Non-ephemeral nodes
+        3. Healthy nodes with low disk usage
+        """
+        try:
+            neighbors = []
+
+            # Get cluster manifest if available
+            if self._manifest:
+                # Get all nodes with their storage capacity
+                all_nodes = self._manifest.get_all_nodes()
+
+                for node_id, node_info in all_nodes.items():
+                    # Skip self
+                    if node_id == self._host:
+                        continue
+
+                    # Skip excluded nodes (coordinators, etc.)
+                    if node_id in self._config.exclude_hosts:
+                        continue
+
+                    # Skip nodes with high disk usage
+                    disk_usage = node_info.get("disk_usage_percent", 0)
+                    if disk_usage > self._config.max_disk_usage_percent:
+                        continue
+
+                    # Compute priority score
+                    priority = 0.0
+                    # Prefer storage nodes
+                    if node_info.get("is_storage_node", False):
+                        priority += 10.0
+                    # Prefer non-ephemeral
+                    if not node_info.get("is_ephemeral", False):
+                        priority += 5.0
+                    # Prefer nodes with more free space
+                    priority += (100 - disk_usage) / 20.0
+
+                    neighbors.append((node_id, priority))
+
+                # Sort by priority (descending) and return top N
+                neighbors.sort(key=lambda x: x[1], reverse=True)
+                return [n[0] for n in neighbors[:max_neighbors]]
+
+            # Fallback: use known peers from sync state
+            for peer_id in list(self._sync_state.keys())[:max_neighbors]:
+                if peer_id != self._host and peer_id not in self._config.exclude_hosts:
+                    neighbors.append(peer_id)
+
+            return neighbors
+
+        except Exception as e:
+            logger.warning(f"[AutoSyncDaemon] Error getting push neighbors: {e}")
+            return []
 
     async def _trigger_urgent_sync(self, config_key: str) -> None:
         """Trigger an urgent sync operation for a specific config (Phase 9)."""

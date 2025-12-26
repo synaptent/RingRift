@@ -136,6 +136,89 @@ def _get_gpu_memory_gb() -> float:
     return 0.0
 
 
+def get_selfplay_batch_size_for_gpu(gpu_type: str | None = None) -> int:
+    """Get selfplay batch size based on GPU type.
+
+    Reads from unified_loop.yaml gpu_batch_overrides if available.
+
+    Args:
+        gpu_type: GPU type string (e.g., 'h100', 'gh200', 'rtx_4090')
+                  If None, auto-detects from torch.cuda.get_device_name()
+
+    Returns:
+        Batch size (number of games to run in parallel)
+
+    December 2025: Added for GPU-specific selfplay optimization.
+    """
+    from pathlib import Path
+    import yaml
+
+    default_batch = 32
+
+    # Auto-detect GPU type if not provided
+    if gpu_type is None:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device_name = torch.cuda.get_device_name(0).lower()
+                # Map device name to config key
+                if 'gh200' in device_name or 'grace hopper' in device_name:
+                    gpu_type = 'gh200'
+                elif 'h100' in device_name:
+                    gpu_type = 'h100'
+                elif 'a100' in device_name:
+                    if torch.cuda.get_device_properties(0).total_memory > 60e9:
+                        gpu_type = 'a100_80gb'
+                    else:
+                        gpu_type = 'a100'
+                elif 'l40s' in device_name:
+                    gpu_type = 'l40s'
+                elif 'a10' in device_name:
+                    gpu_type = 'a10'
+                elif '5090' in device_name:
+                    gpu_type = 'rtx_5090'
+                elif '4090' in device_name:
+                    gpu_type = 'rtx_4090'
+                elif '3090' in device_name:
+                    gpu_type = 'rtx_3090'
+                elif '4060' in device_name:
+                    gpu_type = 'rtx_4060_ti'
+                elif '3060' in device_name:
+                    gpu_type = 'rtx_3060'
+                else:
+                    gpu_type = 'default'
+        except Exception:
+            gpu_type = 'default'
+
+    # Try to load from unified_loop.yaml
+    config_paths = [
+        Path(__file__).parent.parent.parent / "config" / "unified_loop.yaml",
+        Path("config/unified_loop.yaml"),
+    ]
+
+    for config_path in config_paths:
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+
+                gpu_mcts = config.get("selfplay", {}).get("gpu_mcts", {})
+                overrides = gpu_mcts.get("gpu_batch_overrides", {})
+
+                if gpu_type in overrides:
+                    return overrides[gpu_type]
+                if 'default' in overrides:
+                    return overrides['default']
+
+                # Fallback to base batch_size
+                return gpu_mcts.get("batch_size", default_batch)
+
+            except Exception:
+                pass
+
+    return default_batch
+
+
 def _scale_batch_size_for_gpu(
     base_batch: int,
     policy_size: int = 7000,

@@ -555,16 +555,26 @@ class UnifiedEventRouter:
         if event.event_type in self._subscribers:
             callbacks.extend(self._subscribers[event.event_type])
 
-        # Invoke callbacks (sync only)
+        # Invoke callbacks (handle both sync and async)
         for callback in callbacks:
             try:
                 result = callback(event)
-                # Can't await in sync context
+                # Run async callbacks in a new event loop (Dec 2025 fix)
+                # Previously these were silently skipped, causing training events to be dropped!
                 if asyncio.iscoroutine(result):
-                    logger.warning(
-                        f"[EventRouter] Async callback {callback.__name__} "
-                        f"called from sync context - skipping"
-                    )
+                    try:
+                        # Use asyncio.run() to execute async callback in sync context
+                        asyncio.run(result)
+                        logger.debug(
+                            f"[EventRouter] Ran async callback {callback.__name__} "
+                            f"for {event.event_type} via asyncio.run()"
+                        )
+                    except RuntimeError as loop_err:
+                        # If there's a nested loop issue, try run_coroutine_threadsafe
+                        logger.warning(
+                            f"[EventRouter] asyncio.run() failed for {callback.__name__}: {loop_err}. "
+                            f"Event: {event.event_type}"
+                        )
             except Exception as e:
                 logger.error(f"[EventRouter] Callback error for {event.event_type}: {e}")
 

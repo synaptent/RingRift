@@ -42,7 +42,10 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from app.config.thresholds import (
     GPU_MEMORY_WEIGHTS,
@@ -79,6 +82,16 @@ DATA_DEFICIT_WEIGHT = 0.25  # Dec 2025: Boost configs with low game counts
 TARGET_GAMES_FOR_2000_ELO = 100000  # Need 100K games for strong AI
 LARGE_BOARD_TARGET_MULTIPLIER = 1.5  # Large boards need more data
 
+# Priority override multipliers (Dec 2025)
+# Maps priority level (0-3) to score multiplier
+# 0 = CRITICAL, 1 = HIGH, 2 = MEDIUM, 3 = LOW
+PRIORITY_OVERRIDE_MULTIPLIERS = {
+    0: 3.0,  # CRITICAL: 3x boost for critically data-starved configs
+    1: 2.0,  # HIGH: 2x boost
+    2: 1.25,  # MEDIUM: 25% boost
+    3: 1.0,  # LOW: no boost (normal priority)
+}
+
 # Staleness thresholds (hours)
 FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
 STALE_DATA_THRESHOLD = 4.0  # Data > 4hr old is stale
@@ -105,6 +118,7 @@ class ConfigPriority:
     momentum_multiplier: float = 1.0  # Phase 19: From FeedbackAccelerator (0.5 to 1.5)
     game_count: int = 0  # Dec 2025: Current game count for this config
     is_large_board: bool = False  # Dec 2025: True for square19, hexagonal
+    priority_override: int = 3  # Dec 2025: From config (0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW)
 
     # Computed priority
     priority_score: float = 0.0
@@ -204,6 +218,42 @@ class SelfplayScheduler:
         # Lazy dependencies
         self._training_freshness = None
         self._cluster_manifest = None
+
+        # Load priority overrides from config (Dec 2025)
+        self._load_priority_overrides()
+
+    def _load_priority_overrides(self) -> None:
+        """Load board_priority_overrides from unified_loop.yaml.
+
+        Maps priority levels (0-3) to multipliers for the priority score.
+        0 = CRITICAL (3x), 1 = HIGH (2x), 2 = MEDIUM (1.25x), 3 = LOW (1x)
+        """
+        config_paths = [
+            Path(__file__).parent.parent.parent / "config" / "unified_loop.yaml",
+            Path("config/unified_loop.yaml"),
+            Path("/etc/ringrift/unified_loop.yaml"),
+        ]
+
+        for config_path in config_paths:
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        config = yaml.safe_load(f)
+
+                    overrides = config.get("selfplay", {}).get("board_priority_overrides", {})
+                    if overrides:
+                        for config_key, priority_level in overrides.items():
+                            if config_key in self._config_priorities:
+                                self._config_priorities[config_key].priority_override = priority_level
+                                logger.debug(
+                                    f"[SelfplayScheduler] Priority override: {config_key} = {priority_level}"
+                                )
+                        logger.info(
+                            f"[SelfplayScheduler] Loaded {len(overrides)} priority overrides from config"
+                        )
+                    return
+                except Exception as e:
+                    logger.warning(f"[SelfplayScheduler] Failed to load config {config_path}: {e}")
 
     # =========================================================================
     # Priority Calculation
@@ -370,6 +420,12 @@ class SelfplayScheduler:
         # - PLATEAU: 1.1x (slight boost to try to break plateau)
         # - REGRESSING: 0.75x (reduce noise, focus on quality)
         score *= priority.momentum_multiplier
+
+        # Dec 2025: Apply priority override from config
+        # Boosts critically data-starved configs (hexagonal_*, square19_3p/4p)
+        # 0=CRITICAL (3x), 1=HIGH (2x), 2=MEDIUM (1.25x), 3=LOW (1x)
+        override_multiplier = PRIORITY_OVERRIDE_MULTIPLIERS.get(priority.priority_override, 1.0)
+        score *= override_multiplier
 
         return score
 
