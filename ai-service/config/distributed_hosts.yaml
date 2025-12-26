@@ -523,21 +523,21 @@ hosts:
   # ============================================================
   # AWS NODES (proxy only, no GPU)
   # ============================================================
-  # Disabled: aws-proxy has no compute capabilities (selfplay/training/p2p all disabled)
-  # aws-proxy:
-  #   ssh_host: 52.15.114.79
-  #   ssh_port: 22
-  #   ssh_user: ubuntu
-  #   ssh_key: ~/.ssh/id_cluster
-  #   ringrift_path: ~/ringrift/ai-service
-  #   memory_gb: 1
-  #   cpus: 2
-  #   role: proxy
-  #   status: ready
-  #   aws_instance_id: i-0212fa8387ad092b9
-  #   selfplay_enabled: false
-  #   training_enabled: false
-  #   p2p_enabled: false
+  # AWS proxy node - t3.micro for SSH tunneling to internal cloud networks
+  aws-proxy:
+    ssh_host: 3.147.65.95
+    ssh_port: 22
+    ssh_user: ec2-user
+    ssh_key: ~/.ssh/ringrift-proxy-key.pem
+    ringrift_path: ~/ringrift/ai-service
+    memory_gb: 1
+    cpus: 2
+    role: proxy
+    status: ready
+    aws_instance_id: i-07435e263bca683e0
+    selfplay_enabled: false
+    training_enabled: false
+    p2p_enabled: false
 
   # ============================================================
   # HETZNER NODES (3 running - CPU only)
