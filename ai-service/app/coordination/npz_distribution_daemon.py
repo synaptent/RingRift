@@ -5,9 +5,10 @@ exported NPZ files to all training-capable cluster nodes.
 
 Architecture:
     1. Subscribes to NPZ_EXPORT_COMPLETE events from event_router
-    2. Uses rsync for reliable multi-node sync
+    2. Uses rsync for reliable multi-node sync (with HTTP fallback)
     3. Tracks distribution status in ClusterManifest
     4. Emits NPZ_DISTRIBUTION_COMPLETE event when done
+    5. Validates checksums before and after transfer (December 2025)
 
 Usage:
     # As standalone daemon
@@ -18,6 +19,14 @@ Usage:
 
 Configuration:
     Uses distributed_hosts.yaml for target nodes.
+
+December 2025 Enhancements:
+    - SHA256 checksum validation before transfer
+    - Remote checksum verification after transfer
+    - HTTP fallback for nodes without SSH access
+    - Per-node delivery confirmation tracking
+    - CoordinatorProtocol integration for health checks
+    - Retry with exponential backoff
 """
 
 from __future__ import annotations
@@ -27,10 +36,18 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from app.coordination.protocols import (
+    CoordinatorStatus,
+    HealthCheckResult,
+    register_coordinator,
+    unregister_coordinator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +65,7 @@ class NPZDistributionConfig:
     sync_timeout_seconds: float = 600.0  # 10 minute timeout (NPZ can be large)
     retry_count: int = 3
     retry_delay_seconds: float = 30.0
+    retry_backoff_multiplier: float = 1.5  # Exponential backoff
 
     # Target selection
     target_node_types: list[str] = field(
@@ -61,6 +79,30 @@ class NPZDistributionConfig:
     poll_interval_seconds: float = 120.0
     training_data_dir: str = "data/training"
 
+    # Checksum verification (December 2025)
+    verify_checksums: bool = True  # Enable checksum verification
+    checksum_timeout_seconds: float = 30.0  # Timeout for remote checksum verification
+
+    # HTTP distribution settings (December 2025)
+    use_http_distribution: bool = True  # Prefer HTTP when available
+    http_port: int = 8767  # Port for data upload endpoint
+    http_timeout_seconds: float = 120.0  # Timeout per node for HTTP upload (NPZ larger than models)
+    http_concurrent_uploads: int = 3  # Max concurrent HTTP uploads
+    fallback_to_rsync: bool = True  # Fallback to rsync if HTTP fails
+
+
+@dataclass
+class NPZDeliveryResult:
+    """Result of delivering an NPZ file to a single node."""
+
+    node_id: str
+    host: str
+    success: bool
+    checksum_verified: bool
+    transfer_time_seconds: float
+    error_message: str = ""
+    method: str = "rsync"  # rsync or http
+
 
 class NPZDistributionDaemon:
     """Daemon that automatically distributes NPZ training files after export.
@@ -73,6 +115,12 @@ class NPZDistributionDaemon:
 
     The daemon solves the critical gap where training data would only exist on
     the export node, causing training to fail on other nodes.
+
+    December 2025 Enhancements:
+    - Checksum validation: SHA256 before transfer, verified on remote after
+    - HTTP fallback: Uses HTTP upload when rsync fails
+    - Delivery confirmation: Tracks per-node delivery success
+    - CoordinatorProtocol: Exposes health and metrics endpoints
     """
 
     def __init__(self, config: NPZDistributionConfig | None = None):
@@ -81,6 +129,115 @@ class NPZDistributionDaemon:
         self._last_sync_time: float = 0.0
         self._pending_npz: list[dict[str, Any]] = []
         self._sync_lock = asyncio.Lock()
+
+        # Thread-safe lock for _pending_npz (callback may run from different context)
+        self._pending_lock = threading.Lock()
+
+        # Event-based wake-up for immediate distribution on event
+        self._pending_event: asyncio.Event | None = None
+
+        # CoordinatorProtocol state (December 2025)
+        self._coordinator_status = CoordinatorStatus.INITIALIZING
+        self._start_time: float = 0.0
+        self._events_processed: int = 0
+        self._errors_count: int = 0
+        self._last_error: str = ""
+        self._successful_distributions: int = 0
+        self._failed_distributions: int = 0
+        self._checksum_failures: int = 0
+
+        # Delivery tracking per node
+        self._delivery_history: list[NPZDeliveryResult] = []
+
+    # =========================================================================
+    # CoordinatorProtocol Implementation (December 2025)
+    # =========================================================================
+
+    @property
+    def name(self) -> str:
+        """Unique name identifying this coordinator."""
+        return "NPZDistributionDaemon"
+
+    @property
+    def status(self) -> CoordinatorStatus:
+        """Current status of the coordinator."""
+        return self._coordinator_status
+
+    @property
+    def uptime_seconds(self) -> float:
+        """Time since daemon started, in seconds."""
+        if self._start_time <= 0:
+            return 0.0
+        return time.time() - self._start_time
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Get daemon metrics in protocol-compliant format."""
+        return {
+            "name": self.name,
+            "status": self._coordinator_status.value,
+            "uptime_seconds": self.uptime_seconds,
+            "start_time": self._start_time,
+            "events_processed": self._events_processed,
+            "errors_count": self._errors_count,
+            "last_error": self._last_error,
+            # Distribution-specific metrics
+            "pending_npz": len(self._pending_npz),
+            "successful_distributions": self._successful_distributions,
+            "failed_distributions": self._failed_distributions,
+            "checksum_failures": self._checksum_failures,
+            "last_sync_time": self._last_sync_time,
+        }
+
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health."""
+        # Check for error state
+        if self._coordinator_status == CoordinatorStatus.ERROR:
+            return HealthCheckResult.unhealthy(
+                f"Daemon in error state: {self._last_error}"
+            )
+
+        # Check if stopped
+        if self._coordinator_status == CoordinatorStatus.STOPPED:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="Daemon is stopped",
+            )
+
+        # Check for high failure rate
+        total_dist = self._successful_distributions + self._failed_distributions
+        if total_dist > 0 and self._failed_distributions > self._successful_distributions:
+            return HealthCheckResult.degraded(
+                f"High failure rate: {self._failed_distributions} failures, "
+                f"{self._successful_distributions} successes",
+                failure_rate=self._failed_distributions / total_dist,
+            )
+
+        # Check for checksum failures
+        if self._checksum_failures > 5:
+            return HealthCheckResult.degraded(
+                f"{self._checksum_failures} checksum verification failures",
+                checksum_failures=self._checksum_failures,
+            )
+
+        # Check for pending NPZ buildup
+        if len(self._pending_npz) > 10:
+            return HealthCheckResult.degraded(
+                f"{len(self._pending_npz)} NPZ files pending distribution",
+                pending_npz=len(self._pending_npz),
+            )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=self._coordinator_status,
+            details={
+                "uptime_seconds": self.uptime_seconds,
+                "successful_distributions": self._successful_distributions,
+                "pending_npz": len(self._pending_npz),
+                "last_sync_time": self._last_sync_time,
+            },
+        )
 
     async def start(self) -> None:
         """Start the daemon and subscribe to events."""

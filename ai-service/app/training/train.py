@@ -3012,6 +3012,12 @@ def train_model(
     epoch_losses: list[dict[str, float]] = []
     epochs_completed = 0
 
+    # Hardened event emission tracking (December 2025)
+    # These flags ensure TRAINING_COMPLETED or TRAINING_FAILED always fires in finally block
+    _training_completed_normally = False
+    _training_exception: Exception | None = None
+    _training_start_time = time.time()
+
     # Report batch size metric at start of training
     if HAS_PROMETHEUS and (not distributed or is_main_process()):
         config_label = f"{config.board_type.value}_{num_players}p"
@@ -4458,6 +4464,8 @@ def train_model(
                             num_players=num_players,
                         )
                         logger.info("Best model saved to %s", save_path)
+                    # Mark early stopping as successful completion (for hardened event emission)
+                    _training_completed_normally = True
                     break
 
             # Checkpoint at intervals (only on main process)
@@ -4695,7 +4703,61 @@ def train_model(
                     pass  # Event emitters not available
                 except Exception as e:
                     logger.debug(f"Failed to emit curriculum update: {e}")
+
+                # Mark training as completed successfully (for hardened event emission)
+                _training_completed_normally = True
+
+    except Exception as e:
+        # Capture exception for hardened event emission in finally block
+        _training_exception = e
+        raise  # Re-raise after capturing
     finally:
+        # ==========================================================================
+        # Hardened Event Emission (December 2025)
+        # ==========================================================================
+        # ALWAYS emit training completion/failure event, even if training crashed.
+        # This ensures the feedback loop (Training→Evaluation→Curriculum) never breaks.
+        if HAS_EVENT_BUS and get_router is not None and (not distributed or is_main_process()):
+            try:
+                _training_duration = time.time() - _training_start_time
+                _config_key = f"{config.board_type.value}_{num_players}p"
+
+                if _training_completed_normally:
+                    # Training succeeded - emit TRAINING_COMPLETED (may be duplicate, but guaranteed)
+                    router = get_router()
+                    router.publish_sync(DataEvent(
+                        event_type=DataEventType.TRAINING_COMPLETED,
+                        payload={
+                            "epochs_completed": epochs_completed,
+                            "best_val_loss": float(best_val_loss),
+                            "final_train_loss": float(avg_train_loss),
+                            "final_val_loss": float(avg_val_loss),
+                            "config": _config_key,
+                            "duration_seconds": _training_duration,
+                            "hardened_emit": True,  # Flag indicating this came from finally block
+                        },
+                        source="train_finally",
+                    ))
+                    logger.info(f"[train] Hardened TRAINING_COMPLETED emitted for {_config_key}")
+                else:
+                    # Training failed - emit TRAINING_FAILED
+                    router = get_router()
+                    error_msg = str(_training_exception) if _training_exception else "Unknown error"
+                    router.publish_sync(DataEvent(
+                        event_type=DataEventType.TRAINING_FAILED,
+                        payload={
+                            "config": _config_key,
+                            "error": error_msg,
+                            "epochs_completed": epochs_completed,
+                            "duration_seconds": _training_duration,
+                            "best_val_loss": float(best_val_loss) if best_val_loss != float('inf') else None,
+                        },
+                        source="train_finally",
+                    ))
+                    logger.warning(f"[train] Hardened TRAINING_FAILED emitted for {_config_key}: {error_msg}")
+            except Exception as e:
+                logger.debug(f"Failed to emit hardened training event: {e}")
+
         # Shutdown async checkpointer and wait for pending saves
         if async_checkpointer is not None:
             async_checkpointer.shutdown()

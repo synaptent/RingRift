@@ -678,3 +678,68 @@ print(json.dumps(get_utilization_status(), indent=2))
   - `GET /admin/health/full` - Full system health check
   - `GET /admin/sync/status` - Sync coordinator status
   - `POST /admin/sync/trigger` - Trigger a manual sync (games/training/models)
+
+---
+
+## December 2025 Consolidation Status
+
+### Event System - Fully Consolidated
+
+Three event buses unified under a single router:
+
+```
+┌─────────────────────────────────────────┐
+│     UnifiedEventRouter (event_router.py) │
+├─────────────────────────────────────────┤
+│  • SHA256 content deduplication         │
+│  • Cross-process bridging               │
+│  • Automatic type mapping               │
+└─────────────────────────────────────────┘
+        ↓          ↓          ↓
+   DataEventBus  StageEventBus  CrossProcessQueue
+```
+
+### Feedback Loop Wiring - 100% Complete
+
+All 8 critical AI training events fully wired:
+
+| Event                  | Publishers | Subscribers | Status |
+| ---------------------- | ---------- | ----------- | ------ |
+| TRAINING_COMPLETED     | 5          | 16          | ✅     |
+| EVALUATION_COMPLETED   | 4          | 14          | ✅     |
+| SELFPLAY_COMPLETE      | 1          | 5           | ✅     |
+| SELFPLAY_RATE_CHANGED  | 1          | 4           | ✅     |
+| PLATEAU_DETECTED       | 4          | 2           | ✅     |
+| MODEL_PROMOTED         | 7          | 14          | ✅     |
+| HYPERPARAMETER_UPDATED | 4          | 6           | ✅     |
+| NEW_GAMES_AVAILABLE    | 7          | 6           | ✅     |
+
+### Daemon Manager - 100% Factory Coverage
+
+- **53 DaemonType** enum values defined
+- **53 factory methods** implemented (100% coverage)
+- **6 daemon categories**: Sync, Training, Monitoring, Events, P2P, Advanced
+
+### Cluster Infrastructure
+
+- **28 nodes** configured across 6 providers
+- **P2P voter quorum**: 5 stable nodes
+- **Multi-transport sync**: aria2, SSH/rsync, HTTP P2P
+- **Write-ahead logs** for crash recovery
+
+### Quick Reference - New Components (Dec 2025)
+
+| Component                | File                              | Purpose                                |
+| ------------------------ | --------------------------------- | -------------------------------------- |
+| Unified Event Router     | `event_router.py`                 | Single event entry point               |
+| Auto-Promotion Daemon    | `auto_promotion_daemon.py`        | Automatic model promotion              |
+| Ephemeral Sync           | `ephemeral_sync.py`               | 5-second sync for Vast.ai              |
+| Feedback Loop Controller | `feedback_loop_controller.py`     | Training feedback signals              |
+| Gauntlet Feedback        | `gauntlet_feedback_controller.py` | Eval→training bridge                   |
+| Job Scheduler            | `job_scheduler.py`                | Fair allocation, starvation prevention |
+
+### Remaining Consolidation Work
+
+1. **Orchestrator variants** (18 files) → target 3 focused variants
+2. **Checkpoint variants** (4 files) → checkpoint_unified.py is canonical
+3. **Top-level coordination files** (117) → package into core/cluster/training/resources

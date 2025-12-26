@@ -329,6 +329,29 @@ Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
 - [x] Wired EXPLORATION_BOOST → temperature adjustment (temperature_scheduling.py)
 - [x] Wired OPPONENT_MASTERED → curriculum advancement (selfplay_scheduler.py)
 
+### Phase 2 Consolidation Completed (Dec 25, 2025)
+
+- [x] Documented 19 orphaned daemons in `docs/ORPHANED_DAEMONS.md`
+- [x] Verified NPZ tracking already first-class citizen in ClusterManifest
+- [x] Added SyncRouter capacity refresh mechanism (5-min interval with event emission)
+- [x] Documented AUTO_PROMOTION superseded by UNIFIED_PROMOTION
+
+### Cluster Automation Assessment (Dec 25, 2025)
+
+**Current State: 95%+ Automation Coverage**
+
+- IdleResourceDaemon: 2-min idle detection → automatic selfplay spawning
+- QueuePopulator: Dynamic min_queue_depth per cluster size
+- FeedbackLoopController: Central nervous system with 7+ event subscriptions
+- MasterLoopController: 60s loop with quality-gated training triggers
+- ModelDistributionDaemon: Event-driven model sync on MODEL_PROMOTED
+
+**Remaining Optimization Opportunities:**
+
+- Hyperparameter sweep automation (daemon exists, not wired)
+- Cluster-wide sync coordination
+- Automatic model rollback on sustained degradation
+
 ---
 
 ## Files Reference
