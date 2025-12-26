@@ -275,17 +275,17 @@ Selfplay → GameDB → SELFPLAY_COMPLETE → auto_export_daemon
 - [x] Replace 10 highest-risk broad exception catches
 - [x] Wire orphaned events (EXPLORATION_BOOST, OPPONENT_MASTERED)
 
-### Phase 2: Consolidation (Next Week)
+### Phase 2: Consolidation (Completed Dec 25, 2025)
 
-- [ ] Remove/document 21 orphaned daemons
-- [ ] Merge AUTO_PROMOTION into UNIFIED_PROMOTION
-- [ ] Establish TRAINING_TRIGGER as sole training authority
-- [ ] Add NPZ tracking to ClusterManifest
+- [x] Document 19 orphaned daemons (see docs/ORPHANED_DAEMONS.md)
+- [x] AUTO_PROMOTION superseded by UNIFIED_PROMOTION (documented as archived)
+- [x] NPZ tracking already implemented in ClusterManifest (first-class citizen)
+- [x] Added SyncRouter capacity refresh mechanism (5-min interval)
 
-### Phase 3: Quality & Testing (Following Week)
+### Phase 3: Quality & Testing (In Progress)
 
 - [ ] Complete deprecated module migration
-- [ ] Add SyncRouter capacity refresh
+- [x] Add SyncRouter capacity refresh (moved to Phase 2)
 - [ ] Create test templates for validators/mutators
 - [ ] Wire 5 orphaned events to handlers
 

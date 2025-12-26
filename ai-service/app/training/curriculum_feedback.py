@@ -2347,16 +2347,38 @@ class QualityFeedbackWatcher:
         budget = base_budget * multiplier
     """
 
-    # Quality thresholds for budget adjustment
-    LOW_QUALITY_THRESHOLD = 0.4
-    MEDIUM_QUALITY_THRESHOLD = 0.6
-    HIGH_QUALITY_THRESHOLD = 0.8
-
     # Budget multipliers
     LOW_QUALITY_MULTIPLIER = 1.5
     MEDIUM_QUALITY_MULTIPLIER = 1.2
     NORMAL_QUALITY_MULTIPLIER = 1.0
     HIGH_QUALITY_MULTIPLIER = 0.8
+
+    @property
+    def LOW_QUALITY_THRESHOLD(self) -> float:
+        """Get low quality threshold from centralized config."""
+        try:
+            from app.config.thresholds import LOW_QUALITY_THRESHOLD
+            return LOW_QUALITY_THRESHOLD
+        except ImportError:
+            return 0.4
+
+    @property
+    def MEDIUM_QUALITY_THRESHOLD(self) -> float:
+        """Get medium quality threshold from centralized config."""
+        try:
+            from app.config.thresholds import MEDIUM_QUALITY_THRESHOLD
+            return MEDIUM_QUALITY_THRESHOLD
+        except ImportError:
+            return 0.6
+
+    @property
+    def HIGH_QUALITY_THRESHOLD(self) -> float:
+        """Get high quality threshold from centralized config."""
+        try:
+            from app.config.thresholds import HIGH_QUALITY_THRESHOLD
+            return HIGH_QUALITY_THRESHOLD
+        except ImportError:
+            return 0.7
 
     def __init__(
         self,
