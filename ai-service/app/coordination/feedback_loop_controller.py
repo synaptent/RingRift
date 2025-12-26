@@ -365,6 +365,7 @@ class FeedbackLoopController:
             state.last_selfplay_time = time.time()
 
             # Assess data quality
+            previous_quality = state.last_selfplay_quality
             quality_score = self._assess_selfplay_quality(db_path, games_count)
             state.last_selfplay_quality = quality_score
 
@@ -373,8 +374,16 @@ class FeedbackLoopController:
                 f"{games_count} games, quality={quality_score:.2f}"
             )
 
+            # Phase 5 (Dec 2025): Emit QUALITY_DEGRADED event when quality drops below threshold
+            quality_threshold = 0.6
+            if quality_score < quality_threshold:
+                self._emit_quality_degraded(config_key, quality_score, quality_threshold, previous_quality)
+
             # Update training intensity based on quality
             self._update_training_intensity(config_key, quality_score)
+
+            # Gap 4 fix (Dec 2025): Update curriculum weight based on selfplay quality
+            self._update_curriculum_weight_from_selfplay(config_key, quality_score)
 
             # Signal training readiness if quality is good
             if quality_score >= 0.6:
@@ -797,6 +806,55 @@ class FeedbackLoopController:
         except Exception as e:
             logger.warning(f"Failed to update training intensity: {e}")
 
+    def _update_curriculum_weight_from_selfplay(
+        self, config_key: str, quality_score: float
+    ) -> None:
+        """Update curriculum weight based on selfplay quality.
+
+        Gap 4 fix (December 2025): Creates feedback path from selfplay quality
+        to curriculum weights. This ensures configs with quality issues get
+        more training attention (higher weight) while stable configs can
+        have slightly reduced priority.
+
+        Logic:
+        - Low quality (< 0.5): Increase weight by 15% (needs attention)
+        - Medium quality (0.5-0.7): No change
+        - High quality (>= 0.7): Decrease weight by 5% (stable, less urgent)
+        """
+        try:
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+            state = self._get_or_create_state(config_key)
+
+            old_weight = state.current_curriculum_weight
+            new_weight = old_weight
+
+            if quality_score < 0.5:
+                # Low quality - needs more training focus
+                new_weight = min(2.0, old_weight * 1.15)
+            elif quality_score >= 0.7:
+                # High quality - can reduce priority slightly
+                new_weight = max(0.5, old_weight * 0.95)
+            # Medium quality - no change
+
+            if new_weight != old_weight:
+                state.current_curriculum_weight = new_weight
+
+                # Propagate to curriculum feedback system
+                if hasattr(feedback, "_current_weights"):
+                    feedback._current_weights[config_key] = new_weight
+
+                logger.info(
+                    f"[FeedbackLoopController] Curriculum weight for {config_key}: "
+                    f"{old_weight:.2f} → {new_weight:.2f} (quality={quality_score:.2f})"
+                )
+
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"Failed to update curriculum weight: {e}")
+
     def _signal_training_ready(self, config_key: str, quality_score: float) -> None:
         """Signal that training data is ready."""
         try:
@@ -813,6 +871,49 @@ class FeedbackLoopController:
             )
         except ImportError:
             pass
+
+    def _emit_quality_degraded(
+        self,
+        config_key: str,
+        quality_score: float,
+        threshold: float,
+        previous_score: float,
+    ) -> None:
+        """Emit QUALITY_DEGRADED event when quality drops below threshold.
+
+        Phase 5 (Dec 2025): Connects quality monitoring to selfplay scheduling.
+        When quality degrades, SelfplayScheduler can reduce allocation for this
+        config, forcing attention to fixing the underlying issue.
+
+        Args:
+            config_key: Configuration key
+            quality_score: Current quality score
+            threshold: Quality threshold that was crossed
+            previous_score: Previous quality score for delta calculation
+        """
+        try:
+            from app.distributed.data_events import emit_quality_degraded
+
+            _safe_create_task(
+                emit_quality_degraded(
+                    config_key=config_key,
+                    quality_score=quality_score,
+                    threshold=threshold,
+                    previous_score=previous_score,
+                    source="feedback_loop_controller",
+                ),
+                f"emit_quality_degraded({config_key})",
+            )
+
+            logger.warning(
+                f"[FeedbackLoopController] Quality degraded for {config_key}: "
+                f"{quality_score:.2f} < {threshold:.2f} (prev: {previous_score:.2f})"
+            )
+
+        except ImportError:
+            logger.debug("[FeedbackLoopController] emit_quality_degraded not available")
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Error emitting quality degraded: {e}")
 
     def _trigger_evaluation(self, config_key: str, model_path: str) -> None:
         """Trigger gauntlet evaluation automatically after training.

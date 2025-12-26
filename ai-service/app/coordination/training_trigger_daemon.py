@@ -85,6 +85,8 @@ class ConfigTrainingState:
     # Quality tracking
     last_elo: float = 1500.0
     elo_trend: float = 0.0  # positive = improving
+    # Training intensity (set by master_loop or FeedbackLoopController)
+    training_intensity: str = "normal"  # hot_path, accelerated, normal, reduced, paused
     consecutive_failures: int = 0
 
 
@@ -154,6 +156,80 @@ class TrainingTriggerDaemon:
             pass
         except asyncio.InvalidStateError:
             pass
+
+    def _get_training_params_for_intensity(
+        self, intensity: str
+    ) -> tuple[int, int, float]:
+        """Map training intensity to (epochs, batch_size, lr_multiplier).
+
+        December 2025: Fixes Gap 2 - training_intensity was defined but never consumed.
+        The FeedbackLoopController sets intensity based on quality score:
+          - hot_path (quality >= 0.90): Fast iteration, high LR
+          - accelerated (quality >= 0.80): Increased training, moderate LR boost
+          - normal (quality >= 0.65): Default parameters
+          - reduced (quality >= 0.50): More epochs at lower LR for struggling configs
+          - paused: Skip training entirely (handled in _maybe_trigger_training)
+
+        Returns:
+            Tuple of (epochs, batch_size, learning_rate_multiplier)
+        """
+        intensity_params = {
+            # hot_path: Fast iteration with larger batches, higher LR
+            "hot_path": (30, 1024, 1.5),
+            # accelerated: More aggressive training
+            "accelerated": (40, 768, 1.2),
+            # normal: Default parameters
+            "normal": (self.config.default_epochs, self.config.default_batch_size, 1.0),
+            # reduced: Slower, more careful training for struggling configs
+            "reduced": (60, 256, 0.8),
+            # paused: Should not reach here, but use minimal params
+            "paused": (10, 128, 0.5),
+        }
+
+        params = intensity_params.get(intensity)
+        if params is None:
+            logger.warning(
+                f"[TrainingTriggerDaemon] Unknown intensity '{intensity}', using 'normal'"
+            )
+            params = intensity_params["normal"]
+
+        return params
+
+    def _get_dynamic_sample_threshold(self, config_key: str) -> int:
+        """Get dynamically adjusted sample threshold for training.
+
+        Phase 5 (Dec 2025): Uses ImprovementOptimizer to adjust thresholds
+        based on training success patterns:
+        - On promotion streak: Lower threshold → faster iteration
+        - Struggling/regression: Higher threshold → more conservative
+
+        Args:
+            config_key: Configuration identifier
+
+        Returns:
+            Minimum sample count required to trigger training
+        """
+        try:
+            from app.training.improvement_optimizer import get_dynamic_threshold
+
+            dynamic_threshold = get_dynamic_threshold(config_key)
+
+            # Log significant deviations from base threshold
+            if dynamic_threshold != self.config.min_samples_threshold:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Dynamic threshold for {config_key}: "
+                    f"{dynamic_threshold} (base: {self.config.min_samples_threshold})"
+                )
+
+            return dynamic_threshold
+
+        except ImportError:
+            logger.debug("[TrainingTriggerDaemon] improvement_optimizer not available")
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Error getting dynamic threshold: {e}")
+
+        # Fallback to static config threshold
+        return self.config.min_samples_threshold
 
     async def _subscribe_to_events(self) -> None:
         """Subscribe to relevant events."""
@@ -306,8 +382,11 @@ class TrainingTriggerDaemon:
             return False, f"data too old ({data_age_hours:.1f}h)"
 
         # 4. Check minimum samples
-        if state.npz_sample_count < self.config.min_samples_threshold:
-            return False, f"insufficient samples ({state.npz_sample_count})"
+        # Phase 5 (Dec 2025): Use dynamic threshold from ImprovementOptimizer
+        # Lower threshold when on a promotion streak, higher when struggling
+        min_samples = self._get_dynamic_sample_threshold(config_key)
+        if state.npz_sample_count < min_samples:
+            return False, f"insufficient samples ({state.npz_sample_count} < {min_samples})"
 
         # 5. Check if idle GPU available (optional - allow training anyway)
         gpu_available = await self._check_gpu_availability()
@@ -360,13 +439,27 @@ class TrainingTriggerDaemon:
         if not state:
             return False
 
+        # Check for paused intensity - skip training
+        if state.training_intensity == "paused":
+            logger.info(
+                f"[TrainingTriggerDaemon] Skipping training for {config_key}: "
+                "intensity is 'paused' (quality score < 0.50)"
+            )
+            return False
+
         async with self._training_semaphore:
             state.training_in_progress = True
 
             try:
+                # Get intensity-adjusted training parameters
+                epochs, batch_size, lr_mult = self._get_training_params_for_intensity(
+                    state.training_intensity
+                )
+
                 logger.info(
                     f"[TrainingTriggerDaemon] Starting training for {config_key} "
-                    f"({state.npz_sample_count} samples)"
+                    f"({state.npz_sample_count} samples, intensity={state.training_intensity}, "
+                    f"epochs={epochs}, batch={batch_size}, lr_mult={lr_mult:.1f})"
                 )
 
                 # Build training command
@@ -380,9 +473,16 @@ class TrainingTriggerDaemon:
                     "--num-players", str(state.num_players),
                     "--data-path", npz_path,
                     "--model-version", self.config.model_version,
-                    "--epochs", str(self.config.default_epochs),
-                    "--batch-size", str(self.config.default_batch_size),
+                    "--epochs", str(epochs),
+                    "--batch-size", str(batch_size),
                 ]
+
+                # Compute adjusted learning rate (base 1e-3 * multiplier)
+                # The training CLI uses --learning-rate for explicit LR setting
+                if lr_mult != 1.0:
+                    base_lr = 1e-3  # Default from TrainingConfig
+                    adjusted_lr = base_lr * lr_mult
+                    cmd.extend(["--learning-rate", f"{adjusted_lr:.6f}"])
 
                 # Run training subprocess
                 start_time = time.time()
@@ -560,6 +660,7 @@ class TrainingTriggerDaemon:
             "states": {
                 key: {
                     "training_in_progress": state.training_in_progress,
+                    "training_intensity": state.training_intensity,
                     "last_training": state.last_training_time,
                     "npz_samples": state.npz_sample_count,
                     "last_elo": state.last_elo,

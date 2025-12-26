@@ -147,6 +147,7 @@ class DataEventType(Enum):
     QUALITY_SCORE_UPDATED = "quality_score_updated"  # Game quality recalculated
     QUALITY_DISTRIBUTION_CHANGED = "quality_distribution_changed"  # Significant shift
     HIGH_QUALITY_DATA_AVAILABLE = "high_quality_data_available"  # Ready for training
+    QUALITY_DEGRADED = "quality_degraded"  # Phase 5: Quality dropped below threshold
     LOW_QUALITY_DATA_WARNING = "low_quality_data_warning"  # Below threshold
     TRAINING_BLOCKED_BY_QUALITY = "training_blocked_by_quality"  # Quality too low to train
     QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
@@ -268,6 +269,7 @@ class DataEventType(Enum):
     SYNC_STALLED = "sync_stalled"  # Sync operation stalled/timed out
     NODE_OVERLOADED = "node_overloaded"  # Node CPU/GPU utilization critical
     TRAINING_LOSS_TREND = "training_loss_trend"  # Training loss trend (improving/stalled/degrading)
+    TRAINING_EARLY_STOPPED = "training_early_stopped"  # Early stopping triggered (stagnation/regression)
 
 
 @dataclass
@@ -942,6 +944,38 @@ async def emit_quality_score_updated(
             "training_weight": training_weight,
             "game_length": game_length,
             "is_decisive": is_decisive,
+        },
+        source=source,
+    ))
+
+
+async def emit_quality_degraded(
+    config_key: str,
+    quality_score: float,
+    threshold: float = 0.6,
+    previous_score: float = 0.0,
+    source: str = "quality_monitor",
+) -> None:
+    """Emit a QUALITY_DEGRADED event when quality drops below threshold.
+
+    Phase 5 (Dec 2025): Enables feedback loop to reduce selfplay allocation
+    for configs producing low-quality games.
+
+    Args:
+        config_key: Board configuration (e.g., "hex8_2p")
+        quality_score: Current quality score (0-1)
+        threshold: Threshold that was crossed
+        previous_score: Previous quality score for comparison
+        source: Component that detected the degradation
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.QUALITY_DEGRADED,
+        payload={
+            "config_key": config_key,
+            "quality_score": quality_score,
+            "threshold": threshold,
+            "previous_score": previous_score,
+            "degradation_delta": previous_score - quality_score if previous_score else 0.0,
         },
         source=source,
     ))
@@ -1932,6 +1966,46 @@ async def emit_training_loss_trend(
             "current_loss": current_loss,
             "previous_loss": previous_loss,
             "improvement_rate": improvement_rate,
+        },
+        source=source,
+    ))
+
+
+async def emit_training_early_stopped(
+    config_key: str,
+    epoch: int,
+    best_loss: float,
+    final_loss: float,
+    best_elo: float | None = None,
+    reason: str = "loss_stagnation",
+    epochs_without_improvement: int = 0,
+    source: str = "training",
+) -> None:
+    """Emit a TRAINING_EARLY_STOPPED event when training stops early.
+
+    This triggers curriculum boost for the config to accelerate training recovery.
+    The curriculum feedback system should increase training allocation for
+    configs that are stuck.
+
+    Args:
+        config_key: Board/player config (e.g., "hex8_2p")
+        epoch: Epoch at which training stopped
+        best_loss: Best validation loss achieved
+        final_loss: Final validation loss before stopping
+        best_elo: Best Elo achieved (if Elo tracking enabled)
+        reason: Why early stopping triggered ("loss_stagnation", "elo_stagnation", "regression")
+        epochs_without_improvement: How many epochs passed without improvement
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.TRAINING_EARLY_STOPPED,
+        payload={
+            "config_key": config_key,
+            "epoch": epoch,
+            "best_loss": best_loss,
+            "final_loss": final_loss,
+            "best_elo": best_elo,
+            "reason": reason,
+            "epochs_without_improvement": epochs_without_improvement,
         },
         source=source,
     ))

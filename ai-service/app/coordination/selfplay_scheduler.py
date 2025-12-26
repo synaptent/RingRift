@@ -72,6 +72,7 @@ ELO_VELOCITY_WEIGHT = 0.25  # ELO improvement velocity
 TRAINING_NEED_WEIGHT = 0.15  # Waiting for training
 EXPLORATION_BOOST_WEIGHT = 0.10  # Feedback loop exploration signal
 CURRICULUM_WEIGHT = 0.15  # Curriculum-based priority (Phase 2C.3)
+IMPROVEMENT_BOOST_WEIGHT = 0.20  # Phase 5: ImprovementOptimizer boost
 
 # Staleness thresholds (hours)
 FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
@@ -94,6 +95,8 @@ class ConfigPriority:
     training_pending: bool = False
     exploration_boost: float = 1.0
     curriculum_weight: float = 1.0  # Phase 2C.3: Curriculum-based weight
+    improvement_boost: float = 0.0  # Phase 5: From ImprovementOptimizer (-0.10 to +0.15)
+    quality_penalty: float = 0.0  # Phase 5: Quality degradation penalty (0.0 to -0.20)
 
     # Computed priority
     priority_score: float = 0.0
@@ -219,6 +222,9 @@ class SelfplayScheduler:
         # Get curriculum weights (Phase 2C.3)
         curriculum_data = await self._get_curriculum_weights()
 
+        # Get improvement boosts (Phase 5)
+        improvement_data = self._get_improvement_boosts()
+
         # Update each config
         for config_key, priority in self._config_priorities.items():
             # Update staleness
@@ -238,6 +244,10 @@ class SelfplayScheduler:
             if config_key in curriculum_data:
                 priority.curriculum_weight = curriculum_data[config_key]
 
+            # Update improvement boost (Phase 5)
+            if config_key in improvement_data:
+                priority.improvement_boost = improvement_data[config_key]
+
             # Compute priority score
             priority.priority_score = self._compute_priority_score(priority)
 
@@ -249,6 +259,7 @@ class SelfplayScheduler:
         Higher score = higher priority for selfplay allocation.
 
         December 2025 - Phase 2C.3: Now includes curriculum weight factor.
+        December 2025 - Phase 5: Now includes improvement boost and quality penalty.
         """
         # Base factors
         staleness = priority.staleness_factor * STALENESS_WEIGHT
@@ -260,8 +271,16 @@ class SelfplayScheduler:
         # Higher curriculum weight = more data needed for this config
         curriculum = (priority.curriculum_weight - 1.0) * CURRICULUM_WEIGHT
 
+        # Phase 5: Improvement optimizer boost (-0.10 to +0.15)
+        # Positive when config is on a promotion streak
+        improvement = priority.improvement_boost * IMPROVEMENT_BOOST_WEIGHT
+
+        # Phase 5: Quality penalty (0.0 to -0.20)
+        # Applied when quality degrades below threshold
+        quality = priority.quality_penalty
+
         # Combine factors
-        score = staleness + velocity + training + exploration + curriculum
+        score = staleness + velocity + training + exploration + curriculum + improvement + quality
 
         # Apply exploration boost as multiplier
         score *= priority.exploration_boost
@@ -400,6 +419,35 @@ class SelfplayScheduler:
 
         return result
 
+    def _get_improvement_boosts(self) -> dict[str, float]:
+        """Get improvement boosts from ImprovementOptimizer per config.
+
+        Phase 5 (Dec 2025): Connects selfplay scheduling to training success signals.
+        When a config is on a promotion streak, boost its selfplay priority.
+
+        Returns:
+            Dict mapping config_key to boost value (-0.10 to +0.15)
+        """
+        result: dict[str, float] = {}
+
+        try:
+            from app.training.improvement_optimizer import get_selfplay_priority_boost
+
+            for config_key in ALL_CONFIGS:
+                boost = get_selfplay_priority_boost(config_key)
+                if boost != 0.0:
+                    result[config_key] = boost
+                    logger.debug(
+                        f"[SelfplayScheduler] Improvement boost for {config_key}: {boost:+.2f}"
+                    )
+
+        except ImportError:
+            logger.debug("[SelfplayScheduler] improvement_optimizer not available")
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error getting improvement boosts: {e}")
+
+        return result
+
     # =========================================================================
     # Node Allocation
     # =========================================================================
@@ -458,6 +506,10 @@ class SelfplayScheduler:
     ) -> dict[str, int]:
         """Allocate games for a config across available nodes.
 
+        December 2025 - Phase 2B.4: Ephemeral node short-job prioritization.
+        Short jobs (square8, hex8) are boosted for ephemeral nodes.
+        Long jobs (square19, hexagonal) are reduced for ephemeral nodes.
+
         Args:
             config_key: Configuration key
             total_games: Total games to allocate
@@ -477,6 +529,10 @@ class SelfplayScheduler:
         allocation: dict[str, int] = {}
         remaining = total_games
 
+        # Phase 2B.4: Determine if this is a short job (quick selfplay)
+        # Small boards complete in <10 minutes, good for ephemeral nodes
+        is_short_job = config_key.startswith(("square8", "hex8"))
+
         # Calculate total capacity
         total_capacity = sum(n.available_capacity for n in available_nodes)
 
@@ -494,6 +550,23 @@ class SelfplayScheduler:
             # Adjust based on GPU type
             gpu_games = SELFPLAY_GAMES_PER_NODE.get(node.gpu_type, 500)
             node_games = min(node_games, gpu_games)
+
+            # Phase 2B.4: Ephemeral node job-duration matching
+            if node.is_ephemeral:
+                if is_short_job:
+                    # Boost allocation to ephemeral for short jobs
+                    node_games = int(node_games * 1.5)
+                    logger.debug(
+                        f"[SelfplayScheduler] Boosted {node.node_id} (ephemeral) "
+                        f"for short job {config_key}"
+                    )
+                else:
+                    # Reduce for long jobs (risk of termination)
+                    node_games = int(node_games * 0.5)
+                    logger.debug(
+                        f"[SelfplayScheduler] Reduced {node.node_id} (ephemeral) "
+                        f"for long job {config_key}"
+                    )
 
             # Cap at remaining games
             node_games = min(node_games, remaining)
@@ -537,15 +610,19 @@ class SelfplayScheduler:
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_event_bus
 
             bus = get_event_bus()
             if bus:
                 bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
                 bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
                 bus.subscribe(DataEventType.PROMOTION_COMPLETE, self._on_promotion_complete)
+                # Phase 5: Subscribe to feedback events
+                bus.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, self._on_selfplay_target_updated)
+                bus.subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
                 self._subscribed = True
-                logger.info("[SelfplayScheduler] Subscribed to pipeline events")
+                logger.info("[SelfplayScheduler] Subscribed to pipeline events (including Phase 5)")
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Failed to subscribe: {e}")
@@ -586,6 +663,67 @@ class SelfplayScheduler:
                     priority.exploration_boost = min(2.0, priority.exploration_boost * 1.3)
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling promotion complete: {e}")
+
+    def _on_selfplay_target_updated(self, event: Any) -> None:
+        """Handle selfplay target update request.
+
+        Phase 5 (Dec 2025): Responds to requests for more/fewer selfplay games.
+        Typically emitted when training needs more data urgently.
+        """
+        try:
+            config_key = event.payload.get("config_key", "")
+            target_games = event.payload.get("target_games", 0)
+            priority_val = event.payload.get("priority", "normal")
+
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+                # Boost priority based on urgency
+                if priority_val == "high":
+                    priority.training_pending = True
+                    priority.exploration_boost = max(1.2, priority.exploration_boost)
+                    logger.info(
+                        f"[SelfplayScheduler] Boosting {config_key} priority "
+                        f"(target: {target_games} games, priority: {priority_val})"
+                    )
+                elif priority_val == "low":
+                    # Reduce priority for this config
+                    priority.exploration_boost = min(0.8, priority.exploration_boost)
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling selfplay target: {e}")
+
+    def _on_quality_degraded(self, event: Any) -> None:
+        """Handle quality degradation event.
+
+        Phase 5 (Dec 2025): When game quality drops below threshold,
+        apply a penalty to reduce selfplay allocation for this config.
+        """
+        try:
+            config_key = event.payload.get("config_key", "")
+            quality_score = event.payload.get("quality_score", 0.0)
+            threshold = event.payload.get("threshold", 0.6)
+
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+                # Apply quality penalty proportional to how far below threshold
+                # quality_score=0.4, threshold=0.6 → penalty = -0.20 * (0.6-0.4)/0.6 = -0.067
+                if quality_score < threshold:
+                    degradation = (threshold - quality_score) / threshold
+                    priority.quality_penalty = -0.20 * degradation
+                    logger.warning(
+                        f"[SelfplayScheduler] Quality degradation for {config_key}: "
+                        f"score={quality_score:.2f} < {threshold:.2f}, "
+                        f"penalty={priority.quality_penalty:.3f}"
+                    )
+                else:
+                    # Quality recovered, clear penalty
+                    if priority.quality_penalty < 0:
+                        logger.info(
+                            f"[SelfplayScheduler] Quality recovered for {config_key}: "
+                            f"score={quality_score:.2f}, clearing penalty"
+                        )
+                    priority.quality_penalty = 0.0
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling quality degraded: {e}")
 
     # =========================================================================
     # Status & Metrics
