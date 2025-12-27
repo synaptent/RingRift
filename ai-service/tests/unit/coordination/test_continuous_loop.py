@@ -290,6 +290,8 @@ class TestContinuousTrainingLoopHealthCheck:
         loop = ContinuousTrainingLoop()
         loop._running = True
         loop.stats.current_state = LoopState.ERROR
+        # Add last_error attribute that health_check references
+        loop.stats.last_error = "test error"
 
         result = loop.health_check()
         assert result.healthy is False
