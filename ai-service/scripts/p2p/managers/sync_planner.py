@@ -642,6 +642,13 @@ class SyncPlanner:
             "bytes_synced": 0,
         }
 
+        # Emit sync started event
+        self._emit_sync_event(
+            "DATA_SYNC_STARTED",
+            plan_id=plan.plan_id if hasattr(plan, "plan_id") else str(uuid.uuid4()),
+            jobs_total=len(plan.sync_jobs),
+        )
+
         try:
             # Group jobs by target node for efficiency
             jobs_by_target: dict[str, list["DataSyncJob"]] = {}
@@ -682,6 +689,21 @@ class SyncPlanner:
             plan.jobs_completed = results["jobs_completed"]
             plan.jobs_failed = results["jobs_failed"]
             self.stats.last_sync_execution = time.time()
+
+            # Emit sync completion event
+            if results["jobs_failed"] == 0:
+                self._emit_sync_event(
+                    "DATA_SYNC_COMPLETED",
+                    jobs_completed=results["jobs_completed"],
+                    bytes_synced=results["bytes_synced"],
+                )
+            else:
+                self._emit_sync_event(
+                    "DATA_SYNC_FAILED",
+                    jobs_completed=results["jobs_completed"],
+                    jobs_failed=results["jobs_failed"],
+                    error="Some sync jobs failed",
+                )
 
         finally:
             with self._sync_lock:

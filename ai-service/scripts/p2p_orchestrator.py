@@ -1727,6 +1727,9 @@ class P2POrchestrator(
         # December 2025: Subscribe to daemon status events for observability
         self._subscribe_to_daemon_events()
 
+        # December 2025: Subscribe to training feedback signals for dynamic orchestration
+        self._subscribe_to_feedback_signals()
+
         print(
             f"[P2P] Initialized node {node_id} on {host}:{port} "
             f"(advertise {self.advertise_host}:{self.advertise_port})"
@@ -1868,6 +1871,93 @@ class P2POrchestrator(
             return False
         except Exception as e:
             logger.warning(f"Daemon events: failed to subscribe: {e}")
+            return False
+
+    def _subscribe_to_feedback_signals(self) -> bool:
+        """Subscribe to training feedback signals for dynamic orchestration.
+
+        December 2025: Subscribes to key feedback events that should influence
+        cluster orchestration decisions:
+        - ELO_VELOCITY_CHANGED: Adjust selfplay allocation based on training velocity
+        - QUALITY_DEGRADED: Pause/slow selfplay when data quality drops
+        - EVALUATION_COMPLETED: Trigger model promotion decisions
+        - PROMOTION_FAILED: Revert curriculum weights if promotion fails
+        - PLATEAU_DETECTED: Trigger hyperparameter search or curriculum changes
+
+        Returns True if subscription succeeded, False otherwise.
+        """
+        try:
+            from app.coordination.event_router import subscribe
+
+            def handle_quality_degraded(event) -> None:
+                """Handle quality degradation events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    quality_score = payload.get("quality_score", 0)
+                    threshold = payload.get("threshold", 0)
+
+                    logger.warning(
+                        f"Quality degraded for {config_key}: {quality_score:.2f} < {threshold:.2f}"
+                    )
+                    # Could pause selfplay for this config or trigger data cleanup
+                except Exception as e:
+                    logger.debug(f"Error handling quality degraded event: {e}")
+
+            def handle_elo_velocity_changed(event) -> None:
+                """Handle Elo velocity change events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    velocity = payload.get("velocity", 0)
+
+                    if velocity < -50:  # Significant regression
+                        logger.warning(f"Elo regression for {config_key}: velocity={velocity}")
+                    elif velocity > 50:  # Good progress
+                        logger.info(f"Elo progress for {config_key}: velocity={velocity}")
+                except Exception as e:
+                    logger.debug(f"Error handling Elo velocity event: {e}")
+
+            def handle_evaluation_completed(event) -> None:
+                """Handle evaluation completion events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    win_rate = payload.get("win_rate", 0)
+                    opponent = payload.get("opponent", "unknown")
+
+                    logger.info(
+                        f"Evaluation completed for {config_key}: {win_rate:.1%} vs {opponent}"
+                    )
+                except Exception as e:
+                    logger.debug(f"Error handling evaluation completed event: {e}")
+
+            def handle_plateau_detected(event) -> None:
+                """Handle training plateau detection events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    epochs_stalled = payload.get("epochs_stalled", 0)
+
+                    logger.warning(
+                        f"Training plateau for {config_key}: stalled {epochs_stalled} epochs"
+                    )
+                except Exception as e:
+                    logger.debug(f"Error handling plateau detected event: {e}")
+
+            # Subscribe to all feedback signals
+            subscribe("QUALITY_DEGRADED", handle_quality_degraded)
+            subscribe("ELO_VELOCITY_CHANGED", handle_elo_velocity_changed)
+            subscribe("EVALUATION_COMPLETED", handle_evaluation_completed)
+            subscribe("PLATEAU_DETECTED", handle_plateau_detected)
+
+            logger.info("Subscribed to training feedback signals")
+            return True
+        except ImportError as e:
+            logger.debug(f"Feedback signals: event_router not available: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"Feedback signals: failed to subscribe: {e}")
             return False
 
     def _is_leader(self) -> bool:
