@@ -397,7 +397,8 @@ class TestHealthCheck:
 
     def test_health_check_after_successful_syncs(self, facade):
         """Should remain healthy after successful syncs."""
-        # Simulate successful syncs
+        # Simulate successful syncs - need to mark backends as loaded
+        facade._backends_loaded = {SyncBackend.AUTO_SYNC: True}
         facade._stats["total_syncs"] = 10
         facade._stats["total_errors"] = 0
         facade._stats["by_backend"] = {"auto_sync": 10}
@@ -409,6 +410,8 @@ class TestHealthCheck:
 
     def test_health_check_elevated_error_rate(self, facade):
         """Should return degraded with elevated error rate (>20%)."""
+        # Need to mark backends as loaded to check error rate logic
+        facade._backends_loaded = {SyncBackend.AUTO_SYNC: True}
         facade._stats["total_syncs"] = 10
         facade._stats["total_errors"] = 3  # 30% error rate
 
@@ -418,6 +421,8 @@ class TestHealthCheck:
 
     def test_health_check_high_error_rate(self, facade):
         """Should return unhealthy with high error rate (>50%)."""
+        # Need to mark backends as loaded to check error rate logic
+        facade._backends_loaded = {SyncBackend.AUTO_SYNC: True}
         facade._stats["total_syncs"] = 10
         facade._stats["total_errors"] = 6  # 60% error rate
 

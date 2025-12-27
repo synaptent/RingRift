@@ -79,8 +79,77 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+import sqlite3
 
 logger = logging.getLogger(__name__)
+
+
+# Database lock retry configuration
+DB_LOCK_MAX_RETRIES = 5
+DB_LOCK_INITIAL_WAIT = 1.0  # seconds
+DB_LOCK_MAX_WAIT = 30.0  # seconds
+
+
+def _is_db_locked_error(e: Exception) -> bool:
+    """Check if exception is a database lock error."""
+    error_str = str(e).lower()
+    return (
+        "database is locked" in error_str or
+        "database is locked" in error_str or
+        "locked" in error_str and "database" in error_str or
+        isinstance(e, sqlite3.OperationalError) and "locked" in str(e)
+    )
+
+
+def _open_db_with_retry(
+    db_path: str,
+    max_retries: int = DB_LOCK_MAX_RETRIES,
+    initial_wait: float = DB_LOCK_INITIAL_WAIT,
+) -> "GameReplayDB":
+    """Open GameReplayDB with retry logic for database lock errors.
+
+    Uses exponential backoff when the database is locked (e.g., during cluster sync).
+
+    Dec 27, 2025: Added to prevent export failures during cluster data sync.
+
+    Args:
+        db_path: Path to the SQLite database
+        max_retries: Maximum number of retry attempts
+        initial_wait: Initial wait time in seconds (doubles each retry)
+
+    Returns:
+        GameReplayDB instance
+
+    Raises:
+        Exception: If database cannot be opened after all retries
+    """
+    last_error: Exception | None = None
+    wait_time = initial_wait
+
+    for attempt in range(max_retries + 1):
+        try:
+            return GameReplayDB(db_path)
+        except Exception as e:
+            last_error = e
+            if not _is_db_locked_error(e):
+                # Not a lock error - don't retry
+                raise
+
+            if attempt < max_retries:
+                # Calculate wait with exponential backoff, capped at max
+                actual_wait = min(wait_time, DB_LOCK_MAX_WAIT)
+                logger.warning(
+                    f"Database locked, retrying in {actual_wait:.1f}s "
+                    f"(attempt {attempt + 1}/{max_retries}): {db_path}"
+                )
+                time.sleep(actual_wait)
+                wait_time *= 2  # Exponential backoff
+
+    # All retries exhausted
+    logger.error(
+        f"Failed to open database after {max_retries} retries: {db_path}"
+    )
+    raise last_error
 
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.db import GameReplayDB
@@ -474,10 +543,14 @@ def export_replay_dataset_multi(
 
         print(f"  [{db_idx+1}/{len(db_paths)}] Processing: {os.path.basename(db_path)}...")
 
+        # Dec 27, 2025: Use retry logic for database lock errors during cluster sync
         try:
-            db = GameReplayDB(db_path)
+            db = _open_db_with_retry(db_path)
         except Exception as e:
-            print(f"    Error opening database: {e}")
+            if _is_db_locked_error(e):
+                print(f"    SKIPPED (database locked after retries): {e}")
+            else:
+                print(f"    Error opening database: {e}")
             continue
 
         db_games = 0

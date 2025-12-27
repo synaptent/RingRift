@@ -531,3 +531,67 @@ class TestConstants:
         Dec 2025: Set to 75% (below 80% hard cap).
         """
         assert 70 <= MEMORY_WARNING_THRESHOLD <= 80
+
+
+class TestPromotionFailureTracking:
+    """Tests for promotion failure tracking and curriculum feedback.
+
+    December 27, 2025: Added to test PROMOTION_FAILED event handling.
+    """
+
+    def test_record_promotion_failure_first_failure(self):
+        """First promotion failure applies 30-minute penalty."""
+        scheduler = SelfplayScheduler()
+        scheduler.record_promotion_failure("hex8_2p")
+
+        assert "hex8_2p" in scheduler._promotion_failures
+        assert len(scheduler._promotion_failures["hex8_2p"]) == 1
+        assert "hex8_2p" in scheduler._promotion_penalties
+        factor, expiry = scheduler._promotion_penalties["hex8_2p"]
+        assert factor == 0.7  # 70% priority
+        assert expiry > time.time()  # Expires in future
+
+    def test_record_promotion_failure_second_failure(self):
+        """Second promotion failure applies 1-hour penalty."""
+        scheduler = SelfplayScheduler()
+        scheduler.record_promotion_failure("hex8_2p")
+        scheduler.record_promotion_failure("hex8_2p")
+
+        assert len(scheduler._promotion_failures["hex8_2p"]) == 2
+        factor, expiry = scheduler._promotion_penalties["hex8_2p"]
+        assert factor == 0.5  # 50% priority after 2 failures
+
+    def test_record_promotion_failure_three_failures(self):
+        """Three or more failures apply 2-hour penalty."""
+        scheduler = SelfplayScheduler()
+        scheduler.record_promotion_failure("hex8_2p")
+        scheduler.record_promotion_failure("hex8_2p")
+        scheduler.record_promotion_failure("hex8_2p")
+
+        assert len(scheduler._promotion_failures["hex8_2p"]) == 3
+        factor, expiry = scheduler._promotion_penalties["hex8_2p"]
+        assert factor == 0.3  # 30% priority after 3+ failures
+
+    def test_record_promotion_failure_multiple_configs(self):
+        """Track failures independently per config."""
+        scheduler = SelfplayScheduler()
+        scheduler.record_promotion_failure("hex8_2p")
+        scheduler.record_promotion_failure("hex8_2p")
+        scheduler.record_promotion_failure("square8_2p")
+
+        assert len(scheduler._promotion_failures["hex8_2p"]) == 2
+        assert len(scheduler._promotion_failures["square8_2p"]) == 1
+        assert scheduler._promotion_penalties["hex8_2p"][0] == 0.5
+        assert scheduler._promotion_penalties["square8_2p"][0] == 0.7
+
+    def test_old_failures_expire(self):
+        """Failures older than 24 hours are removed."""
+        scheduler = SelfplayScheduler()
+        # Manually add an old failure
+        scheduler._promotion_failures = {
+            "hex8_2p": [time.time() - 90000]  # >24h ago
+        }
+        scheduler.record_promotion_failure("hex8_2p")
+
+        # Old failure should be pruned, only new one remains
+        assert len(scheduler._promotion_failures["hex8_2p"]) == 1

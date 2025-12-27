@@ -210,10 +210,62 @@ async def _create_my_daemon(self) -> None:
 
 ## Key Files
 
-| File                                            | Purpose                           |
-| ----------------------------------------------- | --------------------------------- |
-| `app/coordination/daemon_manager.py`            | Main DaemonManager implementation |
-| `app/coordination/daemon_adapters.py`           | Adapters for existing daemons     |
-| `scripts/launch_daemons.py`                     | CLI for daemon management         |
-| `docs/coordination/EVENT_CATALOG.md`            | Event types reference             |
-| `docs/coordination/RESILIENT_TRANSFER_GUIDE.md` | Transfer daemon guide             |
+| File                                            | Purpose                                                   |
+| ----------------------------------------------- | --------------------------------------------------------- |
+| `app/coordination/daemon_manager.py`            | Main DaemonManager implementation                         |
+| `app/coordination/daemon_runners.py`            | 62 async runner functions for each daemon type (Dec 2025) |
+| `app/coordination/daemon_adapters.py`           | Adapters for existing daemons                             |
+| `app/coordination/event_router.py`              | Unified event bus                                         |
+| `app/coordination/pipeline_triggers.py`         | Pipeline stage triggers with NPZ validation               |
+| `scripts/launch_daemons.py`                     | CLI for daemon management                                 |
+| `docs/coordination/EVENT_CATALOG.md`            | Event types reference                                     |
+| `docs/coordination/RESILIENT_TRANSFER_GUIDE.md` | Transfer daemon guide                                     |
+
+## December 2025 Improvements
+
+### Pipeline Loop Auto-Trigger
+
+The `wire_pipeline_events()` function in `data_pipeline_orchestrator.py` now defaults to `auto_trigger=True`, enabling the full SYNC→EXPORT→TRAIN→EVAL→PROMOTE pipeline loop automatically.
+
+### Enhanced NPZ Validation
+
+`pipeline_triggers.py` now validates NPZ training data for:
+
+- Sample count minimum (10,000 default)
+- File size minimum (100KB)
+- **NaN/Inf detection** in features (max 0.1% NaN ratio)
+- **Policy index bounds** validation for each board type
+
+Configure via `TriggerConfig`:
+
+```python
+config = TriggerConfig(
+    validate_npz_integrity=True,  # Check for NaN/Inf
+    max_nan_ratio=0.001,          # Max 0.1% NaN allowed
+    validate_policy_bounds=True,  # Check policy indices
+)
+```
+
+### Event Handler Pattern
+
+Use `get_event_payload()` in event handlers for safe payload extraction:
+
+```python
+from app.coordination.event_router import get_event_payload
+
+def my_handler(event):
+    payload = get_event_payload(event)  # Works with RouterEvent or dict
+    host = payload.get("host")
+```
+
+### Daemon Runners Extraction
+
+All daemon runner functions have been extracted to `daemon_runners.py` for better testability:
+
+```python
+from app.coordination.daemon_runners import get_runner
+from app.coordination.daemon_types import DaemonType
+
+runner = get_runner(DaemonType.AUTO_SYNC)
+await runner()  # Starts the daemon
+```

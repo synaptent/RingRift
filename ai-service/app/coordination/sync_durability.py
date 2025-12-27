@@ -346,45 +346,45 @@ class SyncWAL:
         """Initialize WAL database schema."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.executescript("""
-            CREATE TABLE IF NOT EXISTS sync_wal (
-                entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                game_id TEXT NOT NULL,
-                source_host TEXT NOT NULL,
-                target_host TEXT NOT NULL,
-                data_json TEXT NOT NULL,
-                data_hash TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                created_at REAL NOT NULL,
-                completed_at REAL,
-                retry_count INTEGER DEFAULT 0,
-                error_message TEXT
-            );
+        # Dec 2025: Use context manager to prevent connection leaks
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.executescript("""
+                CREATE TABLE IF NOT EXISTS sync_wal (
+                    entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id TEXT NOT NULL,
+                    source_host TEXT NOT NULL,
+                    target_host TEXT NOT NULL,
+                    data_json TEXT NOT NULL,
+                    data_hash TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at REAL NOT NULL,
+                    completed_at REAL,
+                    retry_count INTEGER DEFAULT 0,
+                    error_message TEXT
+                );
 
-            -- Indexes for efficient queries
-            CREATE INDEX IF NOT EXISTS idx_sync_wal_status
-            ON sync_wal(status, created_at);
+                -- Indexes for efficient queries
+                CREATE INDEX IF NOT EXISTS idx_sync_wal_status
+                ON sync_wal(status, created_at);
 
-            CREATE INDEX IF NOT EXISTS idx_sync_wal_game_id
-            ON sync_wal(game_id);
+                CREATE INDEX IF NOT EXISTS idx_sync_wal_game_id
+                ON sync_wal(game_id);
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_wal_dedup
-            ON sync_wal(game_id, data_hash);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_wal_dedup
+                ON sync_wal(game_id, data_hash);
 
-            -- Metadata table
-            CREATE TABLE IF NOT EXISTS sync_wal_metadata (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at REAL NOT NULL
-            );
+                -- Metadata table
+                CREATE TABLE IF NOT EXISTS sync_wal_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                );
 
-            INSERT OR IGNORE INTO sync_wal_metadata (key, value, updated_at)
-            VALUES ('schema_version', '1.0', strftime('%s', 'now'));
-        """)
-        conn.commit()
-        conn.close()
+                INSERT OR IGNORE INTO sync_wal_metadata (key, value, updated_at)
+                VALUES ('schema_version', '1.0', strftime('%s', 'now'));
+            """)
+            conn.commit()
         logger.debug(f"Initialized SyncWAL at {self.db_path}")
 
     def _compute_hash(self, content: str) -> str:

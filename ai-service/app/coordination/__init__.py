@@ -1650,6 +1650,9 @@ def is_heartbeat_running() -> bool:
 
 
 __all__ = [
+    # Consolidated modules (December 2025 - Phase 5)
+    "core_utils",  # Consolidated tracing + distributed_lock + optional_imports + yaml_utils
+    # Constants
     "ELO_CURRICULUM_ENABLED",
     "HAS_AIOHTTP",
     "MIN_MEMORY_GB_FOR_TASKS",

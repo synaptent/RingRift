@@ -126,14 +126,20 @@ class S3BackupDaemon:
         """Check if the daemon is currently running."""
         return self._running
 
-    async def health_check(self) -> bool:
-        """Check if the daemon is healthy.
+    def health_check(self) -> "HealthCheckResult":
+        """Check daemon health for CoordinatorProtocol compliance.
 
-        Returns True if the daemon is running and functioning properly.
+        December 2025: Updated to return HealthCheckResult instead of bool.
         Used by DaemonManager for crash detection and auto-restart.
         """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
         if not self._running:
-            return False
+            return HealthCheckResult(
+                healthy=True,  # Stopped is not unhealthy
+                status=CoordinatorStatus.STOPPED,
+                message="S3BackupDaemon not running",
+            )
 
         # Check if we have excessive pending backups (indicates processing stall)
         with self._pending_lock:
@@ -141,23 +147,28 @@ class S3BackupDaemon:
 
         # If we have > 10 pending promotions, something is stuck
         if pending_count > 10:
-            logger.warning(
-                f"S3BackupDaemon health check failed: {pending_count} pending promotions"
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Stalled: {pending_count} pending promotions",
             )
-            return False
 
         # Check if last backup was too long ago (if we have pending items)
         if pending_count > 0 and self._last_backup_time > 0:
             time_since_backup = time.time() - self._last_backup_time
             # If we have pending items and haven't backed up in 30 minutes, unhealthy
             if time_since_backup > 1800:
-                logger.warning(
-                    f"S3BackupDaemon health check failed: "
-                    f"{time_since_backup:.0f}s since last backup with {pending_count} pending"
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Stalled: {time_since_backup:.0f}s since backup, {pending_count} pending",
                 )
-                return False
 
-        return True
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Healthy (backups: {self._successful_backups}, pending: {pending_count})",
+        )
 
     def get_metrics(self) -> dict[str, Any]:
         """Get daemon metrics."""
