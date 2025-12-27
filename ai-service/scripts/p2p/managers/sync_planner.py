@@ -31,20 +31,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Event emission helper - imported lazily to avoid circular imports
-_emit_event: Callable[[str, dict], None] | None = None
+_publish_sync: Callable[[str, dict], None] | None = None
 
 
 def _get_event_emitter() -> Callable[[str, dict], None] | None:
-    """Get the event emitter function, initializing if needed."""
-    global _emit_event
-    if _emit_event is None:
+    """Get the event emitter function, initializing if needed.
+
+    Uses publish_sync from event_router for synchronous event publication.
+    This enables pipeline coordination to react to sync events.
+    """
+    global _publish_sync
+    if _publish_sync is None:
         try:
-            from app.coordination.event_router import emit_sync
-            _emit_event = emit_sync
+            from app.coordination.event_router import publish_sync
+            _publish_sync = publish_sync
         except ImportError:
-            # Event system not available
-            pass
-    return _emit_event
+            # Event system not available - running without coordination
+            logger.debug("Event router not available, sync events will not be emitted")
+    return _publish_sync
 
 
 # Constants (match p2p/constants.py)

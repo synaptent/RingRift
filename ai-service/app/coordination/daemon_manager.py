@@ -765,7 +765,23 @@ class DaemonManager:
             # Subscribe to critical events
             router.subscribe(DataEventType.REGRESSION_CRITICAL.value, self._on_regression_critical)
 
-            logger.info("[DaemonManager] Subscribed to REGRESSION_CRITICAL events (Phase 5)")
+            # P0.3 (December 2025): Subscribe to feedback loop events for daemon coordination
+            # SELFPLAY_TARGET_UPDATED - adjust workload scaling based on priority changes
+            if hasattr(DataEventType, 'SELFPLAY_TARGET_UPDATED'):
+                router.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED.value, self._on_selfplay_target_updated)
+                logger.debug("[DaemonManager] Subscribed to SELFPLAY_TARGET_UPDATED")
+
+            # EXPLORATION_BOOST - coordinate temperature adjustments across daemons
+            if hasattr(DataEventType, 'EXPLORATION_BOOST'):
+                router.subscribe(DataEventType.EXPLORATION_BOOST.value, self._on_exploration_boost)
+                logger.debug("[DaemonManager] Subscribed to EXPLORATION_BOOST")
+
+            # DAEMON_STATUS_CHANGED - self-healing when daemons fail
+            if hasattr(DataEventType, 'DAEMON_STATUS_CHANGED'):
+                router.subscribe(DataEventType.DAEMON_STATUS_CHANGED.value, self._on_daemon_status_changed)
+                logger.debug("[DaemonManager] Subscribed to DAEMON_STATUS_CHANGED")
+
+            logger.info("[DaemonManager] Subscribed to critical events (Phase 5, P0.3)")
 
             # Phase 7: Wire AutoRollbackHandler to actually perform model rollbacks
             # Without this, REGRESSION_CRITICAL events are logged but no rollback happens
@@ -1403,9 +1419,9 @@ class DaemonManager:
 
         # Cluster sync throughput metrics
         try:
-            from app.coordination.cluster_data_sync import get_cluster_data_sync_daemon
+            from app.coordination.auto_sync_daemon import get_auto_sync_daemon
 
-            metrics = get_cluster_data_sync_daemon().get_metrics()
+            metrics = get_auto_sync_daemon().get_metrics()
             lines.extend([
                 "",
                 "# HELP cluster_sync_count_total Total sync cycles executed",
@@ -2190,9 +2206,9 @@ class DaemonManager:
         Coordinates full cluster data synchronization for games, models, and NPZ files.
         """
         try:
-            from app.coordination.cluster_data_sync import ClusterDataSyncDaemon
+            from app.coordination.auto_sync_daemon import AutoSyncDaemon
 
-            daemon = ClusterDataSyncDaemon()
+            daemon = AutoSyncDaemon()
             await daemon.start()
 
         except ImportError as e:

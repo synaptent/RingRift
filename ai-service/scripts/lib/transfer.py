@@ -802,6 +802,364 @@ def verify_transfer(
     return local_checksum == remote_checksum
 
 
+def base64_push(
+    local_path: str | Path,
+    host: str,
+    port: int,
+    remote_path: str,
+    config: TransferConfig,
+) -> TransferResult:
+    """Push a file using base64 encoding through SSH stdin.
+
+    This method encodes the file as base64 and pipes it through SSH,
+    which avoids binary stream handling issues that cause "Connection reset
+    by peer" errors during SCP/rsync transfers.
+
+    **When to use this method:**
+    - SCP/rsync connections are resetting mid-transfer
+    - Firewall or proxy is corrupting binary streams
+    - Connection is unstable but short commands work
+    - You've tried chunked transfer and it still fails
+
+    **How it works:**
+    1. Read local file and encode as base64 (text-safe)
+    2. Pipe through SSH to remote host
+    3. Remote decodes base64 back to binary
+    4. Verify file size matches
+
+    Keywords for searchability:
+    - base64 transfer / base64 push / base64 pull
+    - connection reset workaround
+    - binary stream corruption fix
+    - SSH pipe transfer
+    - text-safe file transfer
+    - flaky connection transfer
+    - SCP alternative
+
+    See also:
+    - chunked_push() - for resumable transfers
+    - app/coordination/cluster_transport.py - async version
+
+    Args:
+        local_path: Local file path
+        host: Remote hostname or IP
+        port: SSH port
+        remote_path: Destination path on remote (file path, not directory)
+        config: Transfer configuration
+
+    Returns:
+        TransferResult with operation details
+
+    Example:
+        # When SCP keeps failing with "Connection reset":
+        result = base64_push(
+            "data/training/hex8_4p.npz",
+            "cluster-node",
+            22,
+            "/home/user/ringrift/ai-service/data/training/hex8_4p.npz",
+            TransferConfig(ssh_key="~/.ssh/id_cluster"),
+        )
+    """
+    import base64
+
+    local_path = Path(local_path)
+    if not local_path.exists():
+        return TransferResult(
+            success=False,
+            error=f"Local file not found: {local_path}",
+            method="base64_push",
+            source=str(local_path),
+            destination=f"{host}:{remote_path}",
+        )
+
+    file_size = local_path.stat().st_size
+    start_time = time.time()
+
+    # For very large files (>100MB), warn about memory usage
+    if file_size > 100 * 1024 * 1024:
+        logger.warning(
+            f"base64_push: Large file ({file_size / 1024 / 1024:.1f}MB) - "
+            "consider chunked_push for better memory efficiency"
+        )
+
+    ssh_opts = config.get_ssh_options()
+    last_error = ""
+    attempts = 0
+
+    for attempt in range(config.max_retries):
+        attempts = attempt + 1
+        try:
+            # Read and encode file
+            with open(local_path, "rb") as f:
+                file_data = f.read()
+            encoded_data = base64.b64encode(file_data).decode("ascii")
+
+            # Ensure remote directory exists and decode file
+            remote_dir = str(Path(remote_path).parent)
+            decode_cmd = f"mkdir -p '{remote_dir}' && base64 -d > '{remote_path}'"
+
+            ssh_cmd = [
+                "ssh",
+                *ssh_opts,
+                "-p", str(port),
+                f"{config.ssh_user}@{host}",
+                decode_cmd,
+            ]
+
+            # Pipe base64 data through SSH
+            result = subprocess.run(
+                ssh_cmd,
+                input=encoded_data,
+                capture_output=True,
+                text=True,
+                timeout=config.transfer_timeout,
+            )
+
+            if result.returncode == 0:
+                # Verify file size on remote
+                verify_cmd = [
+                    "ssh",
+                    *ssh_opts,
+                    "-p", str(port),
+                    f"{config.ssh_user}@{host}",
+                    f"stat -c%s '{remote_path}' 2>/dev/null || stat -f%z '{remote_path}'",
+                ]
+                verify_result = subprocess.run(
+                    verify_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                remote_size = 0
+                try:
+                    remote_size = int(verify_result.stdout.strip())
+                except ValueError:
+                    pass
+
+                size_match = remote_size == file_size
+                if not size_match:
+                    last_error = f"Size mismatch: local={file_size}, remote={remote_size}"
+                    if attempt < config.max_retries - 1:
+                        logger.warning(f"base64_push attempt {attempts} failed: {last_error}, retrying...")
+                        time.sleep(config.retry_delay)
+                        continue
+
+                duration = time.time() - start_time
+                return TransferResult(
+                    success=True,
+                    bytes_transferred=file_size,
+                    duration_seconds=duration,
+                    method="base64_push",
+                    source=str(local_path),
+                    destination=f"{host}:{remote_path}",
+                    checksum_verified=size_match,
+                    attempts=attempts,
+                )
+
+            last_error = result.stderr.strip() or f"Exit code {result.returncode}"
+
+        except subprocess.TimeoutExpired:
+            last_error = "Transfer timed out"
+        except MemoryError:
+            last_error = "File too large for base64 encoding in memory"
+            break  # Don't retry memory errors
+        except Exception as e:
+            last_error = str(e)
+
+        if attempt < config.max_retries - 1:
+            logger.warning(f"base64_push attempt {attempts} failed: {last_error}, retrying...")
+            time.sleep(config.retry_delay)
+
+    return TransferResult(
+        success=False,
+        duration_seconds=time.time() - start_time,
+        method="base64_push",
+        source=str(local_path),
+        destination=f"{host}:{remote_path}",
+        error=last_error,
+        attempts=attempts,
+    )
+
+
+def base64_pull(
+    host: str,
+    port: int,
+    remote_path: str,
+    local_path: str | Path,
+    config: TransferConfig,
+) -> TransferResult:
+    """Pull a file using base64 encoding through SSH stdout.
+
+    This method reads the remote file, encodes as base64, pipes through SSH,
+    and decodes locally. Avoids binary stream issues that cause connection resets.
+
+    Keywords for searchability:
+    - base64 transfer / base64 push / base64 pull
+    - connection reset workaround
+    - binary stream corruption fix
+    - SSH pipe transfer
+
+    Args:
+        host: Remote hostname or IP
+        port: SSH port
+        remote_path: Source path on remote
+        local_path: Local destination path
+        config: Transfer configuration
+
+    Returns:
+        TransferResult with operation details
+    """
+    import base64
+
+    local_path = Path(local_path)
+    start_time = time.time()
+    last_error = ""
+    attempts = 0
+
+    # Ensure parent directory exists
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    ssh_opts = config.get_ssh_options()
+
+    for attempt in range(config.max_retries):
+        attempts = attempt + 1
+        try:
+            # Read file as base64 from remote
+            ssh_cmd = [
+                "ssh",
+                *ssh_opts,
+                "-p", str(port),
+                f"{config.ssh_user}@{host}",
+                f"base64 '{remote_path}'",
+            ]
+
+            result = subprocess.run(
+                ssh_cmd,
+                capture_output=True,
+                text=True,
+                timeout=config.transfer_timeout,
+            )
+
+            if result.returncode == 0:
+                # Decode and write locally
+                file_data = base64.b64decode(result.stdout)
+                with open(local_path, "wb") as f:
+                    f.write(file_data)
+
+                duration = time.time() - start_time
+                file_size = local_path.stat().st_size
+
+                return TransferResult(
+                    success=True,
+                    bytes_transferred=file_size,
+                    duration_seconds=duration,
+                    method="base64_pull",
+                    source=f"{host}:{remote_path}",
+                    destination=str(local_path),
+                    attempts=attempts,
+                )
+
+            last_error = result.stderr.strip() or f"Exit code {result.returncode}"
+
+        except subprocess.TimeoutExpired:
+            last_error = "Transfer timed out"
+        except base64.binascii.Error as e:
+            last_error = f"Base64 decode error: {e}"
+        except Exception as e:
+            last_error = str(e)
+
+        if attempt < config.max_retries - 1:
+            logger.warning(f"base64_pull attempt {attempts} failed: {last_error}, retrying...")
+            time.sleep(config.retry_delay)
+
+    return TransferResult(
+        success=False,
+        duration_seconds=time.time() - start_time,
+        method="base64_pull",
+        source=f"{host}:{remote_path}",
+        destination=str(local_path),
+        error=last_error,
+        attempts=attempts,
+    )
+
+
+def robust_push(
+    local_path: str | Path,
+    host: str,
+    port: int,
+    remote_path: str,
+    config: TransferConfig,
+) -> TransferResult:
+    """Push a file using the most reliable method available.
+
+    Tries transfer methods in order of preference, falling back automatically:
+    1. rsync (fastest, supports resume)
+    2. scp (simpler, widely compatible)
+    3. base64 (works when binary streams fail)
+
+    Keywords for searchability:
+    - robust transfer / reliable transfer / failover transfer
+    - connection reset recovery
+    - automatic fallback
+    - multi-transport transfer
+
+    Args:
+        local_path: Local file path
+        host: Remote hostname or IP
+        port: SSH port
+        remote_path: Destination path on remote
+        config: Transfer configuration
+
+    Returns:
+        TransferResult with operation details (includes method used)
+
+    Example:
+        # Automatically picks best working method:
+        result = robust_push(
+            "models/large_model.pth",
+            "cluster-node",
+            22,
+            "/data/models/large_model.pth",
+            TransferConfig(),
+        )
+        print(f"Transfer succeeded via: {result.method}")
+    """
+    local_path = Path(local_path)
+    if not local_path.exists():
+        return TransferResult(
+            success=False,
+            error=f"Local file not found: {local_path}",
+            method="robust_push",
+            source=str(local_path),
+            destination=f"{host}:{remote_path}",
+        )
+
+    # Try methods in order
+    methods = [
+        ("rsync", lambda: rsync_push(local_path, host, port, remote_path, config)),
+        ("scp", lambda: scp_push(local_path, host, port, remote_path, config)),
+        ("base64", lambda: base64_push(local_path, host, port, remote_path, config)),
+    ]
+
+    for method_name, method_fn in methods:
+        logger.debug(f"robust_push: Trying {method_name}...")
+        result = method_fn()
+        if result.success:
+            logger.info(f"robust_push: Succeeded via {method_name}")
+            return result
+        logger.debug(f"robust_push: {method_name} failed: {result.error}")
+
+    # All methods failed
+    return TransferResult(
+        success=False,
+        error="All transfer methods failed (rsync, scp, base64)",
+        method="robust_push",
+        source=str(local_path),
+        destination=f"{host}:{remote_path}",
+    )
+
+
 def chunked_push(
     local_path: str | Path,
     host: str,

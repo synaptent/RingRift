@@ -308,7 +308,9 @@ class SwimMembershipManager:
 
         try:
             return len(list(self._swim.members))
-        except Exception:
+        except (AttributeError, TypeError, StopIteration) as e:
+            # Dec 2025: SWIM member iteration may fail if not fully initialized
+            logger.debug(f"[SWIMAdapter] Member count failed: {e}")
             return 0
 
     def get_membership_summary(self) -> dict:

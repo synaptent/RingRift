@@ -530,7 +530,9 @@ def get_default_web_seeds(
                 nodes = config.get("hosts", {})
             else:
                 nodes = {}
-        except Exception:
+        except (yaml.YAMLError, OSError, TypeError) as e:
+            # Dec 2025: YAML parse or file read errors
+            logger.debug(f"[TorrentManager] Config load failed, using empty nodes: {e}")
             nodes = {}
 
     web_seeds = []

@@ -172,19 +172,58 @@ class SSHResult:
 
 @dataclass
 class SSHHealth:
-    """SSH connection health tracking."""
+    """SSH connection health tracking with circuit breaker support."""
     last_success: float | None = None
     last_failure: float | None = None
     consecutive_failures: int = 0
     consecutive_successes: int = 0
     total_successes: int = 0
     total_failures: int = 0
+    # Circuit breaker configuration - use centralized defaults
+    failure_threshold: int = 3  # Default, overridden from coordination_defaults
+    recovery_timeout: float = 300.0  # Default, overridden from coordination_defaults
+
+    def __post_init__(self):
+        """Load circuit breaker settings from centralized config."""
+        try:
+            from app.config.coordination_defaults import CircuitBreakerDefaults
+            # Use centralized SSH circuit breaker settings
+            self.failure_threshold = CircuitBreakerDefaults.SSH_FAILURE_THRESHOLD
+            self.recovery_timeout = CircuitBreakerDefaults.SSH_RECOVERY_TIMEOUT
+        except ImportError:
+            pass  # Use defaults if coordination_defaults not available
 
     @property
     def is_healthy(self) -> bool:
         """Check if connection is considered healthy."""
-        # Healthy if we have recent success and < 3 consecutive failures
-        return self.consecutive_failures < 3
+        # Healthy if we have recent success and < threshold consecutive failures
+        return self.consecutive_failures < self.failure_threshold
+
+    @property
+    def is_circuit_open(self) -> bool:
+        """Check if circuit breaker is open (fail-fast mode).
+
+        Circuit is open when:
+        - Consecutive failures >= threshold AND
+        - Not enough time has passed for recovery attempt
+        """
+        if self.consecutive_failures < self.failure_threshold:
+            return False
+
+        # Check if recovery timeout has passed
+        if self.last_failure is None:
+            return False
+
+        time_since_failure = time.time() - self.last_failure
+        return time_since_failure < self.recovery_timeout
+
+    @property
+    def seconds_until_recovery(self) -> float:
+        """Seconds until next recovery attempt is allowed."""
+        if not self.is_circuit_open or self.last_failure is None:
+            return 0.0
+        elapsed = time.time() - self.last_failure
+        return max(0.0, self.recovery_timeout - elapsed)
 
     @property
     def success_rate(self) -> float:
@@ -193,6 +232,10 @@ class SSHHealth:
         if total == 0:
             return 0.0
         return self.total_successes / total
+
+    def reset_circuit(self) -> None:
+        """Manually reset circuit breaker (e.g., after known recovery)."""
+        self.consecutive_failures = 0
 
 
 # =============================================================================
@@ -323,8 +366,36 @@ class SSHClient:
         timeout: int | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
+        bypass_circuit_breaker: bool = False,
     ) -> SSHResult:
-        """Execute command asynchronously."""
+        """Execute command asynchronously.
+
+        Args:
+            command: Command to execute on remote host
+            timeout: Command timeout in seconds (default: config.command_timeout)
+            cwd: Working directory on remote host
+            env: Environment variables to set
+            bypass_circuit_breaker: Skip circuit breaker check (for health checks)
+        """
+        # Circuit breaker check - fail fast for hosts with repeated failures
+        if not bypass_circuit_breaker and self._health.is_circuit_open:
+            recovery_seconds = self._health.seconds_until_recovery
+            logger.warning(
+                f"Circuit breaker OPEN for {self._config.host}: "
+                f"{self._health.consecutive_failures} consecutive failures, "
+                f"recovery in {recovery_seconds:.0f}s"
+            )
+            return SSHResult(
+                success=False,
+                returncode=-1,
+                stdout="",
+                stderr=f"Circuit breaker open: host unavailable, retry in {recovery_seconds:.0f}s",
+                elapsed_ms=0.0,
+                command=command,
+                host=self._config.host,
+                transport_used="circuit_breaker",
+            )
+
         timeout = timeout or self._config.command_timeout
         start_time = time.time()
 

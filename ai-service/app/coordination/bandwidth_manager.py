@@ -45,6 +45,7 @@ import json
 import os
 import socket
 import threading
+import logging
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -59,6 +60,8 @@ from app.coordination.coordinator_base import (
     CoordinatorStatus,
     SQLitePersistenceMixin,
 )
+
+logger = logging.getLogger(__name__)
 
 # Default database location
 DEFAULT_BANDWIDTH_DB = Path("/tmp/ringrift_coordination/bandwidth.db")

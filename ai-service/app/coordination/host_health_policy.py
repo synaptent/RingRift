@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import logging
 import socket
 import subprocess
 import threading
@@ -41,6 +42,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Use centralized defaults (December 2025)
 try:

@@ -255,9 +255,14 @@ def chunked_transfer(
     This is more reliable than SCP/rsync for files >10MB on connections that
     reset during transfer (common with Vast.ai, some cloud providers).
 
+    If chunked transfer still fails with connection resets, try base64 transfer:
+    - scripts/lib/transfer.py:base64_push - encodes as text to avoid binary issues
+    - scripts/lib/transfer.py:robust_push - auto-failover (rsync -> scp -> base64)
+
     See also:
     - scripts/lib/transfer.py:chunked_push - alternative implementation
     - app/distributed/resilient_transfer.py - BitTorrent/aria2 multi-transport
+    - app/coordination/cluster_transport.py - async with auto base64 fallback
     """
     start = time.time()
     chunk_size = config.chunk_size_mb * 1024 * 1024
@@ -544,7 +549,11 @@ def _get_remote_checksum(host: str, port: int, remote_path: str, ssh_key: str) -
             if len(checksum) == 64:  # Valid SHA256 length
                 return checksum
         return None
-    except Exception:
+    except subprocess.TimeoutExpired as e:
+        logger.warning(f"SSH checksum timed out for {remote_path} on {host}:{port} ({e})")
+        return None
+    except Exception as e:
+        logger.error(f"SSH checksum failed for {remote_path} on {host}:{port}: {e}")
         return None
 
 

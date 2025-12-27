@@ -257,7 +257,9 @@ class HybridCoordinator:
         import socket
         try:
             return socket.gethostname()
-        except Exception:
+        except (OSError, socket.error) as e:
+            # Dec 2025: Socket errors rare but possible in containers
+            logger.debug(f"[HybridCoordinator] Could not get hostname: {e}")
             return "unknown"
 
     # ========================================
@@ -621,8 +623,9 @@ class HybridCoordinator:
                     return self._orchestrator.leader_id or ""
                 if hasattr(self._orchestrator, "get_leader_id"):
                     return self._orchestrator.get_leader_id() or ""
-            except Exception:
-                pass
+            except (AttributeError, TypeError, RuntimeError) as e:
+                # Dec 2025: Orchestrator may be in inconsistent state
+                logger.debug(f"[HybridCoordinator] Bully leader lookup failed: {e}")
 
         return ""
 

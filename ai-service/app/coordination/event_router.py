@@ -676,8 +676,9 @@ class UnifiedEventRouter:
                             error=str(e),
                             source="EventRouter.async",
                         )
-                    except Exception:
-                        pass  # DLQ capture is best-effort
+                    except (RuntimeError, AttributeError, ImportError) as dlq_err:
+                        # DLQ capture is best-effort - log at trace level
+                        logger.debug(f"[EventRouter] DLQ capture failed: {dlq_err}")
 
     def _dispatch_sync(
         self,
@@ -779,8 +780,9 @@ class UnifiedEventRouter:
                             error=str(e),
                             source="EventRouter.sync",
                         )
-                    except Exception:
-                        pass  # DLQ capture is best-effort
+                    except (RuntimeError, AttributeError, ImportError) as dlq_err:
+                        # DLQ capture is best-effort - log at trace level
+                        logger.debug(f"[EventRouter] DLQ capture failed: {dlq_err}")
 
     def _handle_dispatch_task_error(self, task: asyncio.Task) -> None:
         """Handle errors from async dispatch tasks (December 2025 hardening).

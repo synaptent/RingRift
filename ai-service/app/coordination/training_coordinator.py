@@ -217,6 +217,11 @@ class TrainingCoordinator:
         self._last_error: str = ""
         self._events_processed: int = 0
 
+        # Data sync state (December 2025 - Phase 7.1.1 integration)
+        self._pending_training_trigger: bool = False
+        self._last_sync_time: float = 0.0
+        self._config_sync_times: dict[str, float] = {}
+
         # Register with coordinator registries
         # 1. Protocol-level registration (for runtime discovery)
         register_coordinator(self)
@@ -388,7 +393,10 @@ class TrainingCoordinator:
             bus.subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._on_low_quality_warning)
             bus.subscribe(DataEventType.TRAINING_BLOCKED_BY_QUALITY, self._on_training_blocked_by_quality)
 
-            logger.info("[TrainingCoordinator] Subscribed to cluster health, regression, rollback, and quality events")
+            # Subscribe to data sync events (December 2025 - Phase 7.1.1 integration)
+            bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_data_sync_completed)
+
+            logger.info("[TrainingCoordinator] Subscribed to cluster health, regression, rollback, quality, and sync events")
         except Exception as e:
             logger.warning(f"[TrainingCoordinator] Failed to subscribe to cluster events: {e}")
 
@@ -1141,6 +1149,47 @@ class TrainingCoordinator:
             logger.debug("[TrainingCoordinator] data_events not available, skipping selfplay acceleration")
         except Exception as e:
             logger.warning(f"[TrainingCoordinator] Failed to emit selfplay acceleration: {e}")
+
+    def _on_data_sync_completed(self, event: Any) -> None:
+        """Handle DATA_SYNC_COMPLETED event - mark fresh data available.
+
+        December 2025 Phase 7.1.1: Closes the P2P sync → training feedback loop.
+        When fresh selfplay data arrives from sync, we:
+        1. Mark fresh data available for the relevant config
+        2. Signal pending training triggers that data is ready
+        3. Log for monitoring and debugging
+
+        This enables training to react to fresh data instead of polling.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        sync_type = payload.get("sync_type", "unknown")
+        data_type = payload.get("data_type", "")
+        config_key = payload.get("config") or payload.get("config_key", "")
+        duration_seconds = payload.get("duration_seconds", 0.0)
+        file_count = payload.get("file_count", 0)
+
+        self._events_processed += 1
+
+        # Only act on selfplay data syncs
+        if sync_type in ("training_sync", "selfplay") or data_type == "selfplay":
+            logger.info(
+                f"[TrainingCoordinator] Fresh data synced: type={sync_type}, "
+                f"config={config_key or 'all'}, files={file_count}, "
+                f"duration={duration_seconds:.1f}s"
+            )
+
+            # Mark that we have pending training data
+            self._pending_training_trigger = True
+            self._last_sync_time = time.time()
+
+            # Store per-config sync info if available
+            if config_key:
+                self._config_sync_times[config_key] = time.time()
+        else:
+            logger.debug(
+                f"[TrainingCoordinator] Ignoring non-selfplay sync: type={sync_type}"
+            )
 
     @property
     def cluster_healthy(self) -> bool:

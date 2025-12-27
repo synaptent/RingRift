@@ -964,7 +964,9 @@ class SelfplayOrchestrator:
                             },
                         ) as resp:
                             return resp.status == 200
-                except Exception:
+                except (OSError, TimeoutError, asyncio.TimeoutError) as e:
+                    # Dec 2025: Narrow to network errors - aiohttp raises these
+                    logger.debug(f"[SelfplayOrchestrator] P2P queue request failed: {e}")
                     return False
 
             # Try to run in existing event loop or create new one
@@ -977,7 +979,9 @@ class SelfplayOrchestrator:
                 # No event loop, try to run synchronously
                 try:
                     return asyncio.run(_send_request())
-                except Exception:
+                except (OSError, TimeoutError, asyncio.TimeoutError, RuntimeError) as e:
+                    # Dec 2025: Narrow to network + asyncio errors
+                    logger.debug(f"[SelfplayOrchestrator] Sync P2P request failed: {e}")
                     return False
 
         except ImportError:

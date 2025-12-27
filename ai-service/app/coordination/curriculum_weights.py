@@ -12,10 +12,13 @@ Weights are stored in a JSON file and read by:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 
 from app.utils.paths import AI_SERVICE_ROOT
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CURRICULUM_WEIGHTS_PATH",

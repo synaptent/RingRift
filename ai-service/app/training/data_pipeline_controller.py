@@ -1296,8 +1296,9 @@ class DataPipelineController:
                 # No running loop - create one
                 try:
                     asyncio.run(self.stop_streaming())
-                except Exception:
-                    pass
+                except (RuntimeError, OSError, asyncio.CancelledError) as e:
+                    # Dec 2025: Cleanup errors during shutdown are non-fatal
+                    logger.debug(f"[DataPipelineController] Cleanup error during close: {e}")
 
         self._streaming_pipeline = None
         logger.info("DataPipelineController closed")

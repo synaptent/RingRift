@@ -601,8 +601,10 @@ class MasterLoopController:
                         {"errors": p2p_errors, "timestamp": time.time()},
                         source="master_loop",
                     )
-                except Exception:
-                    pass  # Event emission is best-effort
+                except ImportError:
+                    pass  # Module not available (optional dependency)
+                except Exception as e:
+                    logger.debug(f"Event emission failed (best-effort): {e}")
         except Exception as e:
             logger.warning(f"[MasterLoop] P2P connectivity check failed: {e}")
 

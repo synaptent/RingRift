@@ -4,11 +4,30 @@ Provides multi-transport communication for cluster synchronization,
 extracted from registry_sync_manager.py for reuse across sync systems.
 
 Features:
-- Multi-transport failover (Tailscale -> SSH -> HTTP)
+- Multi-transport failover (Tailscale -> SSH/rsync -> Base64 -> HTTP)
 - Circuit breaker pattern for fault tolerance
 - Rsync wrapper for file-based transfers
+- Base64 transfer for connections with binary stream issues
 - HTTP wrapper for API-based operations
 - Async-first design with timeout handling
+
+Transport Failover Order:
+1. Tailscale (direct IP, fastest if available)
+2. SSH/rsync (hostname-based, reliable, supports resume)
+3. Base64 (text-safe, works when binary streams fail - see note below)
+4. HTTP (API endpoint, most flexible)
+
+**Base64 Transport (December 2025):**
+When SCP/rsync connections reset with "Connection reset by peer" errors,
+the base64 transport provides a reliable fallback. It encodes files as
+text-safe base64 and pipes through SSH stdin, avoiding binary stream
+corruption issues caused by some firewalls, proxies, or network configs.
+
+Keywords for searchability:
+- connection reset workaround
+- binary stream corruption fix
+- SSH pipe transfer
+- text-safe file transfer
 
 Usage:
     from app.coordination.cluster_transport import (
@@ -20,7 +39,7 @@ Usage:
 
     transport = ClusterTransport()
 
-    # Transfer a file to a node
+    # Transfer a file to a node (automatic failover to base64 if needed)
     result = await transport.transfer_file(
         local_path=Path("data/model.pth"),
         remote_path="ai-service/data/model.pth",
@@ -32,6 +51,10 @@ Usage:
         node=NodeConfig(hostname="runpod-h100"),
         endpoint="/api/status",
     )
+
+See also:
+- scripts/lib/transfer.py:base64_push - sync version for scripts
+- scripts/lib/transfer.py:robust_push - auto-failover wrapper
 
 December 2025 - RingRift AI Service
 """
@@ -252,10 +275,14 @@ class ClusterTransport:
         start_time = time.time()
         full_remote_path = f"{node.base_path}/{remote_path}"
 
-        # Try transports in order
+        # Try transports in order of preference:
+        # 1. Tailscale (direct IP, fastest if available)
+        # 2. SSH/rsync (hostname-based, reliable, supports resume)
+        # 3. Base64 (text-safe, works when binary streams fail)
         transports = [
             ("tailscale", self._transfer_via_tailscale),
             ("ssh", self._transfer_via_ssh),
+            ("base64", self._transfer_via_base64),
         ]
 
         for transport_name, transport_fn in transports:
@@ -317,6 +344,172 @@ class ClusterTransport:
             direction,
             ssh_port=node.ssh_port,
         )
+
+    async def _transfer_via_base64(
+        self,
+        local_path: Path,
+        remote_path: str,
+        node: NodeConfig,
+        direction: str,
+    ) -> TransportResult:
+        """Transfer file via base64 encoding through SSH stdin/stdout.
+
+        This method avoids binary stream handling issues that cause
+        "Connection reset by peer" errors during rsync/scp transfers.
+
+        **When this is useful:**
+        - SSH connections reset during binary transfers
+        - Firewall or proxy is corrupting binary streams
+        - rsync/scp fail but simple SSH commands work
+
+        **How it works:**
+        - Push: cat file | base64 | ssh 'base64 -d > file'
+        - Pull: ssh 'base64 file' | base64 -d > file
+
+        Keywords for searchability:
+        - base64 transfer / base64 push / base64 pull
+        - connection reset workaround
+        - binary stream corruption fix
+        - SSH pipe transfer
+        - text-safe file transfer
+
+        See also:
+        - scripts/lib/transfer.py:base64_push - sync version
+        """
+        import base64
+
+        start_time = time.time()
+
+        if direction == "push":
+            return await self._base64_push(local_path, remote_path, node)
+        else:
+            return await self._base64_pull(local_path, remote_path, node)
+
+    async def _base64_push(
+        self,
+        local_path: Path,
+        remote_path: str,
+        node: NodeConfig,
+    ) -> TransportResult:
+        """Push file to remote using base64 encoding."""
+        import base64
+
+        if not local_path.exists():
+            return TransportResult(success=False, error=f"File not found: {local_path}")
+
+        file_size = local_path.stat().st_size
+
+        # Warn for large files (>100MB)
+        if file_size > 100 * 1024 * 1024:
+            logger.warning(
+                f"base64_push: Large file ({file_size / 1024 / 1024:.1f}MB) - "
+                "consider chunked transfer for better memory efficiency"
+            )
+
+        try:
+            # Read and encode file
+            with open(local_path, "rb") as f:
+                file_data = f.read()
+            encoded_data = base64.b64encode(file_data).decode("ascii")
+
+            # Ensure remote directory exists and decode file
+            remote_dir = str(Path(remote_path).parent)
+            decode_cmd = f"mkdir -p '{remote_dir}' && base64 -d > '{remote_path}'"
+
+            cmd = [
+                "ssh", "-q",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", f"ConnectTimeout={self.connect_timeout}",
+                "-p", str(node.ssh_port),
+                node.ssh_target,
+                decode_cmd,
+            ]
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            _stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=encoded_data.encode("ascii")),
+                timeout=self.operation_timeout,
+            )
+
+            if proc.returncode == 0:
+                return TransportResult(
+                    success=True,
+                    transport_used="base64",
+                    bytes_transferred=file_size,
+                )
+            else:
+                return TransportResult(
+                    success=False,
+                    error=stderr.decode()[:200] if stderr else "base64 push failed",
+                )
+
+        except asyncio.TimeoutError:
+            return TransportResult(success=False, error="Base64 transfer timeout")
+        except MemoryError:
+            return TransportResult(success=False, error="File too large for base64 in memory")
+        except (OSError, IOError) as e:
+            return TransportResult(success=False, error=str(e))
+
+    async def _base64_pull(
+        self,
+        local_path: Path,
+        remote_path: str,
+        node: NodeConfig,
+    ) -> TransportResult:
+        """Pull file from remote using base64 encoding."""
+        import base64
+
+        try:
+            cmd = [
+                "ssh", "-q",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", f"ConnectTimeout={self.connect_timeout}",
+                "-p", str(node.ssh_port),
+                node.ssh_target,
+                f"base64 '{remote_path}'",
+            ]
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=self.operation_timeout,
+            )
+
+            if proc.returncode == 0:
+                # Decode and write locally
+                file_data = base64.b64decode(stdout)
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(local_path, "wb") as f:
+                    f.write(file_data)
+
+                return TransportResult(
+                    success=True,
+                    transport_used="base64",
+                    bytes_transferred=len(file_data),
+                )
+            else:
+                return TransportResult(
+                    success=False,
+                    error=stderr.decode()[:200] if stderr else "base64 pull failed",
+                )
+
+        except asyncio.TimeoutError:
+            return TransportResult(success=False, error="Base64 transfer timeout")
+        except base64.binascii.Error as e:
+            return TransportResult(success=False, error=f"Base64 decode error: {e}")
+        except (OSError, IOError) as e:
+            return TransportResult(success=False, error=str(e))
 
     async def _rsync_transfer(
         self,

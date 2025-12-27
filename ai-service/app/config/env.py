@@ -27,14 +27,16 @@ Migration:
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any
 
-__all__ = ["env", "RingRiftEnv"]
+__all__ = ["RingRiftEnv", "env"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -389,10 +391,22 @@ class RingRiftEnv:
         """Get this node's config from distributed_hosts.yaml."""
         try:
             import yaml
+
+            # Build config paths from environment and standard locations
             config_paths = [
                 self.ai_service_path / "config" / "distributed_hosts.yaml",
-                Path("/Users/armand/Development/RingRift/ai-service/config/distributed_hosts.yaml"),
             ]
+
+            # Add custom config path from environment if set
+            custom_config = os.environ.get("RINGRIFT_CONFIG_PATH")
+            if custom_config:
+                config_paths.insert(0, Path(custom_config) / "distributed_hosts.yaml")
+
+            # Add standard system locations (Unix/Linux)
+            config_paths.extend([
+                Path("/etc/ringrift/distributed_hosts.yaml"),
+                Path.home() / ".config" / "ringrift" / "distributed_hosts.yaml",
+            ])
             for config_path in config_paths:
                 if config_path.exists():
                     with open(config_path) as f:

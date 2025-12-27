@@ -139,7 +139,7 @@ class UnifiedResourceCoordinator:
         """Lazy-load bandwidth manager."""
         if self._bandwidth is None:
             try:
-                from app.coordination.sync_bandwidth import get_bandwidth_manager
+                from app.coordination.bandwidth_manager import get_bandwidth_manager
                 self._bandwidth = get_bandwidth_manager()
             except ImportError:
                 pass

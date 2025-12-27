@@ -1713,8 +1713,9 @@ class DataPipelineOrchestrator:
                             "source": "data_pipeline_orchestrator",
                         },
                     )
-                except Exception:
-                    pass  # Event emission is best-effort
+                except (RuntimeError, AttributeError, ValueError) as emit_err:
+                    # Dec 2025: Event emission is best-effort but log for debugging
+                    logger.debug(f"[DataPipelineOrchestrator] Event emission failed: {emit_err}")
                 return False
         except ImportError:
             pass  # UnifiedHealthManager not available, skip this check

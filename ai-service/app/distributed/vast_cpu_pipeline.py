@@ -204,8 +204,9 @@ class VastCpuPipelineDaemon:
                     )
                     if result.returncode == 0:
                         reachable.append(inst)
-                except Exception:
-                    pass  # Instance not reachable
+                except (OSError, TimeoutError, asyncio.TimeoutError) as e:
+                    # Dec 2025: SSH/network errors when checking instance reachability
+                    logger.debug(f"[VastCPUPipeline] Instance {inst.get('id')} not reachable: {e}")
 
             return reachable
 
