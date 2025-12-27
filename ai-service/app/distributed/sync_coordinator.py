@@ -13,15 +13,23 @@ This module provides a single entry point for all data synchronization operation
 across the RingRift distributed training cluster. It integrates:
 
 1. aria2 transport for high-performance multi-source downloads
-2. SSH/rsync transport for reliable file transfer
-3. P2P HTTP transport as fallback
-4. Gossip sync for eventually-consistent P2P replication
-5. NFS optimization (skip sync when storage is shared)
+2. BitTorrent transport for large files with piece-level verification (December 2025)
+3. SSH/rsync transport for reliable file transfer
+4. P2P HTTP transport as fallback
+5. Gossip sync for eventually-consistent P2P replication
+6. NFS optimization (skip sync when storage is shared)
 
 The coordinator automatically selects the best transport based on:
+- File size (BitTorrent preferred for files >50MB)
 - Storage provider capabilities (NFS, ephemeral, local)
 - Transport availability (aria2c installed, SSH keys configured)
 - Historical success rates (circuit breaker integration)
+
+December 2025 Enhancement:
+    BitTorrent is now preferred for large files (>50MB) because it provides
+    piece-level SHA1 verification. This prevents the corruption issues that
+    can occur with rsync --partial on flaky connections (e.g., the 955MB NPZ
+    corruption incident from Nebius transfers).
 
 Usage:
     coordinator = SyncCoordinator.get_instance()
@@ -781,6 +789,10 @@ class SyncCoordinator:
     ) -> SyncStats:
         """Sync training data from cluster sources.
 
+        December 2025: Training data (NPZ files) are typically large (>50MB)
+        so we use the large file fallback chain which prefers BitTorrent
+        for its piece-level verification.
+
         Args:
             sources: Specific sources to sync from (auto-discovers if None)
             max_age_hours: Only sync files newer than this
@@ -790,6 +802,12 @@ class SyncCoordinator:
         """
         start_time = time.time()
         stats = SyncStats(category="training")
+
+        # Training data is typically large (NPZ files >50MB)
+        # Use large file fallback chain with BitTorrent priority
+        fallback_chain = self._config.get_fallback_chain_for_size(
+            100_000_000  # Assume 100MB for training data
+        )
 
         # Skip if we have shared storage
         if self._provider.has_shared_storage:
@@ -807,7 +825,38 @@ class SyncCoordinator:
             logger.warning("No sources available for training data sync")
             return stats
 
-        for transport in self._config.fallback_chain:
+        # Log if using BitTorrent-first chain
+        if "bittorrent" in fallback_chain and fallback_chain[0] == "bittorrent":
+            logger.info("Using BitTorrent-first fallback chain for training data sync")
+
+        for transport in fallback_chain:
+            # BitTorrent transport (December 2025) - piece-level verification
+            if transport == "bittorrent" and self._config.enable_bittorrent:
+                try:
+                    aria2 = self._init_aria2()
+                    if aria2:
+                        # aria2 has BitTorrent support via download_with_torrent_fallback
+                        result = await aria2.sync_training_data(
+                            sources,
+                            self._provider.training_dir,
+                            max_age_hours=max_age_hours,
+                            prefer_torrent=True,  # Prefer BitTorrent
+                        )
+                        if result.success or result.files_synced > 0:
+                            stats.files_synced = result.files_synced
+                            stats.bytes_transferred = result.bytes_transferred
+                            stats.transport_used = "bittorrent"
+                            stats.duration_seconds = time.time() - start_time
+                            stats.errors.extend(result.errors)
+                            logger.info(
+                                f"Training data sync complete: {stats.files_synced} files, "
+                                f"{stats.bytes_transferred / (1024*1024):.1f}MB via BitTorrent"
+                            )
+                            return stats
+                except Exception as e:
+                    stats.errors.append(f"BitTorrent sync failed: {e}")
+                    logger.warning(f"BitTorrent training sync failed, trying fallback: {e}")
+
             if transport == "aria2" and self._config.enable_aria2:
                 aria2 = self._init_aria2()
                 if aria2:

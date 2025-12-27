@@ -44,6 +44,28 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# December 2025: Provider-specific bandwidth hints (KB/s)
+# These are conservative defaults to avoid triggering rate limits or
+# connection resets on various cloud providers.
+PROVIDER_BANDWIDTH_HINTS = {
+    # High-bandwidth providers
+    "lambda": 100000,  # 100 MB/s - Lambda Labs internal network is fast
+    "runpod": 100000,  # 100 MB/s - RunPod has good connectivity
+    "tailscale": 100000,  # 100 MB/s - Internal Tailscale mesh
+
+    # Medium-bandwidth providers
+    "hetzner": 80000,  # 80 MB/s - Hetzner dedicated servers
+    "vultr": 80000,  # 80 MB/s - Vultr cloud
+
+    # Conservative providers (rate limits or flaky connections)
+    "nebius": 50000,  # 50 MB/s - Has rate limits, can cause connection resets
+    "vast": 50000,  # 50 MB/s - Varies by instance, use conservative default
+
+    # Default fallback
+    "default": 20000,  # 20 MB/s - Conservative default
+}
+
+
 class TransferPriority(Enum):
     """Priority levels for bandwidth allocation."""
 
@@ -137,9 +159,21 @@ def load_host_bandwidth_hints() -> dict[str, int]:
                 elif "lambda" in host_name.lower():
                     # Lambda nodes have fast internal network
                     hints[host_name] = 100000  # 100 MB/s
+                elif "nebius" in host_name.lower():
+                    # December 2025: Nebius has rate limits that can cause
+                    # connection resets if exceeded. Use conservative limit.
+                    # The 955MB NPZ corruption was caused by ~100 connection
+                    # resets during rsync transfer from Nebius.
+                    hints[host_name] = 50000  # 50 MB/s (conservative)
+                elif "runpod" in host_name.lower():
+                    # RunPod has good network
+                    hints[host_name] = 100000  # 100 MB/s
                 elif "vast" in host_name.lower():
                     # Vast.ai varies, use moderate default
                     hints[host_name] = 50000  # 50 MB/s
+                elif "vultr" in host_name.lower():
+                    # Vultr vGPU instances - good network
+                    hints[host_name] = 80000  # 80 MB/s
                 elif "hetzner" in host_name.lower():
                     # Hetzner has good network
                     hints[host_name] = 80000  # 80 MB/s

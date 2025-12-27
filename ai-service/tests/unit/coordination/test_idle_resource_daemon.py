@@ -22,6 +22,7 @@ from app.coordination.idle_resource_daemon import (
     NodeSpawnHistory,
     ConfigSpawnHistory,
 )
+from app.coordination.protocols import CoordinatorStatus
 
 
 class TestIdleResourceConfig:

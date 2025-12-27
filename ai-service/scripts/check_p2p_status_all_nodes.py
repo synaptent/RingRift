@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
-"""
-Check P2P daemon status on all cluster nodes.
+"""Check P2P daemon status on all cluster nodes.
+
+Checks each P2P-enabled node in config/distributed_hosts.yaml for:
+- P2P process running (pgrep for p2p_orchestrator.py)
+- Port 8770 responding with valid JSON
+- Disk usage
+- NAT status and container type
+
+Usage:
+    python scripts/check_p2p_status_all_nodes.py
+
+Output shows node status table with recommendations for deployment/restart.
 """
 
 import json

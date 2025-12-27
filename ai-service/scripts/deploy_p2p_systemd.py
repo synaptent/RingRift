@@ -6,6 +6,14 @@ This script:
 2. Installs ringrift-p2p.service to /etc/systemd/system/
 3. Enables and starts the service
 
+Seed peers are automatically derived from the p2p_voters list in
+config/distributed_hosts.yaml. Override with --seeds if needed.
+
+Permissions handling:
+- Root users: no sudo prefix
+- Non-root users (ubuntu, armand): automatic sudo -n prefix
+- Override with --sudo or --no-sudo flags
+
 Usage:
     python scripts/deploy_p2p_systemd.py                    # Deploy to all p2p_enabled nodes
     python scripts/deploy_p2p_systemd.py --nodes runpod-*   # Deploy to matching nodes
@@ -50,7 +58,7 @@ ExecStart=/bin/bash -c '\\
   exec "$PY" scripts/p2p_orchestrator.py \\
     --node-id "${NODE_ID}" \\
     --port "${P2P_PORT:-8770}" \\
-    --peers "${P2P_SEEDS:-${COORDINATOR_URL:-https://p2p.ringrift.ai}}" \\
+    --peers "${P2P_SEEDS}" \\
     --ringrift-path "$RINGRIFT_PATH"'
 
 Restart=always

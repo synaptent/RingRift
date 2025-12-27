@@ -500,9 +500,40 @@ class TransportConfig:
     gossip_port: int = 8771
     gossip_sync_interval: int = 60
 
+    # BitTorrent settings (December 2025)
+    # BitTorrent provides piece-level verification, making it ideal for large files
+    enable_bittorrent: bool = True
+    bittorrent_threshold_bytes: int = 50_000_000  # 50MB - use BitTorrent above this
+    prefer_bittorrent_for_large: bool = True  # Prefer BitTorrent for files > threshold
+
     # General
     fallback_chain: list[str] = field(default_factory=lambda: ["aria2", "ssh", "p2p"])
+    # Large file fallback chain includes BitTorrent first (December 2025)
+    large_file_fallback_chain: list[str] = field(
+        default_factory=lambda: ["bittorrent", "aria2", "ssh", "p2p"]
+    )
     total_timeout_budget: int = 900  # 15 minutes max for all fallback attempts
+
+    def get_fallback_chain_for_size(self, file_size_bytes: int) -> list[str]:
+        """Get appropriate fallback chain based on file size.
+
+        December 2025: For large files (>50MB), prefer BitTorrent which provides
+        piece-level SHA1 verification, making it immune to the corruption issues
+        that can occur with rsync --partial on flaky connections.
+
+        Args:
+            file_size_bytes: Size of the file to transfer
+
+        Returns:
+            List of transports to try in order
+        """
+        if (
+            self.prefer_bittorrent_for_large
+            and self.enable_bittorrent
+            and file_size_bytes > self.bittorrent_threshold_bytes
+        ):
+            return self.large_file_fallback_chain
+        return self.fallback_chain
 
 
 def get_optimal_transport_config(provider: StorageProvider | None = None) -> TransportConfig:

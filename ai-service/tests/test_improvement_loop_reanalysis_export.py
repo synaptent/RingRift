@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from scripts import run_improvement_loop as loop
@@ -27,7 +28,8 @@ def test_export_training_data_uses_played_export(monkeypatch, tmp_path: Path) ->
     ok, _out_path = loop.export_training_data(config, iteration=0, dry_run=False)
     assert ok
     cmd = captured["cmd"]
-    assert cmd[0] == "python"
+    # Use the running interpreter for reproducibility across envs.
+    assert cmd[0] == sys.executable
     assert "scripts/export_replay_dataset.py" in cmd
     assert "--max-games" in cmd
     assert cmd[cmd.index("--max-games") + 1] == "42"
@@ -63,7 +65,8 @@ def test_export_training_data_uses_reanalysis_when_requested(
     ok, _out_path = loop.export_training_data(config, iteration=0, dry_run=False)
     assert ok
     cmd = captured["cmd"]
-    assert cmd[0] == "python"
+    # Use the running interpreter for reproducibility across envs.
+    assert cmd[0] == sys.executable
     assert "scripts/reanalyze_replay_dataset.py" in cmd
     assert cmd[cmd.index("--policy-target") + 1] == "mcts_visits"
     assert cmd[cmd.index("--policy-search-think-time-ms") + 1] == "25"

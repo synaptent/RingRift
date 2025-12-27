@@ -471,6 +471,8 @@ from scripts.p2p.utils import (
     systemd_notify_ready,
     systemd_notify_watchdog,
 )
+from scripts.p2p.managers import StateManager
+from scripts.p2p.managers.state_manager import PersistedLeaderState
 
 # Unified resource checking utilities (80% max utilization)
 # Includes graceful degradation for dynamic workload management
@@ -1315,10 +1317,11 @@ class P2POrchestrator(
         self.ssh_tournament_lock = threading.RLock()
         self.relay_lock = threading.RLock()
 
-        # State persistence
+        # State persistence (Phase 1 refactoring: delegated to StateManager)
         self.db_path = STATE_DIR / f"{node_id}_state.db"
-        self._init_database()
-        self._load_cluster_epoch()  # Phase 29: Load persisted cluster epoch
+        self.state_manager = StateManager(self.db_path, verbose=self.verbose)
+        self.state_manager.init_database()
+        self._cluster_epoch = self.state_manager.load_cluster_epoch()
 
         # Event flags
         self.running = True
@@ -2480,149 +2483,20 @@ class P2POrchestrator(
         return secrets.compare_digest(token, self.auth_token)
 
     def _init_database(self):
-        """Initialize SQLite database for state persistence."""
-        # December 2025: Add timeout to prevent hangs on locked database
-        # December 2025: Enable WAL mode for better concurrent read/write performance
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-        cursor = conn.cursor()
+        """Initialize SQLite database for state persistence.
 
-        # Enable WAL mode for concurrent readers/writers (critical for P2P stability)
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")  # Good balance of safety vs speed
-        cursor.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
-
-        # Peers table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS peers (
-                node_id TEXT PRIMARY KEY,
-                host TEXT,
-                port INTEGER,
-                last_heartbeat REAL,
-                info_json TEXT
-            )
-        """)
-
-        # Jobs table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS jobs (
-                job_id TEXT PRIMARY KEY,
-                job_type TEXT,
-                node_id TEXT,
-                board_type TEXT,
-                num_players INTEGER,
-                engine_mode TEXT,
-                pid INTEGER,
-                started_at REAL,
-                status TEXT
-            )
-        """)
-
-        # State table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS state (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-
-        # Metrics history table for observability
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS metrics_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp REAL NOT NULL,
-                metric_type TEXT NOT NULL,
-                board_type TEXT,
-                num_players INTEGER,
-                value REAL NOT NULL,
-                metadata TEXT
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_metrics_type_time
-            ON metrics_history(metric_type, timestamp)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_metrics_config
-            ON metrics_history(board_type, num_players, timestamp)
-        """)
-
-        # A/B Testing tables
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ab_tests (
-                test_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                board_type TEXT NOT NULL,
-                num_players INTEGER NOT NULL,
-                model_a TEXT NOT NULL,
-                model_b TEXT NOT NULL,
-                target_games INTEGER DEFAULT 100,
-                confidence_threshold REAL DEFAULT 0.95,
-                status TEXT DEFAULT 'running',
-                winner TEXT,
-                created_at REAL NOT NULL,
-                completed_at REAL,
-                metadata TEXT
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ab_test_games (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                test_id TEXT NOT NULL,
-                game_id TEXT NOT NULL,
-                model_a_result TEXT NOT NULL,
-                model_a_score REAL NOT NULL,
-                model_b_score REAL NOT NULL,
-                game_length INTEGER,
-                played_at REAL NOT NULL,
-                metadata TEXT,
-                FOREIGN KEY (test_id) REFERENCES ab_tests(test_id)
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ab_games_test
-            ON ab_test_games(test_id, played_at)
-        """)
-
-        # Phase 27: Peer cache table for persistent peer storage
-        # Peers are cached with reputation scores for reliable reconnection
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS peer_cache (
-                node_id TEXT PRIMARY KEY,
-                host TEXT NOT NULL,
-                port INTEGER NOT NULL,
-                tailscale_ip TEXT,
-                last_seen REAL,
-                success_count INTEGER DEFAULT 0,
-                failure_count INTEGER DEFAULT 0,
-                reputation_score REAL DEFAULT 0.5,
-                is_bootstrap_seed BOOLEAN DEFAULT FALSE
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_peer_cache_reputation
-            ON peer_cache(reputation_score DESC, last_seen DESC)
-        """)
-
-        # Phase 29: Config table for cluster epoch and other persistent settings
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS config (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-        """)
-
-        conn.commit()
-        conn.close()
+        Phase 1 Refactoring: Delegated to StateManager.
+        Kept for backward compatibility with any external callers.
+        """
+        self.state_manager.init_database()
 
     def _db_connect(self) -> sqlite3.Connection:
         """Create a database connection with proper settings.
 
-        Uses WAL mode for concurrent access and extended timeout for busy handling.
+        Phase 1 Refactoring: Delegated to StateManager.
+        Kept for backward compatibility with other internal methods.
         """
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-        conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        return self.state_manager._db_connect()
 
     def _load_state(self):
         """Load persisted state from database."""

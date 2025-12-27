@@ -1,0 +1,188 @@
+================================================================================
+RINGRIFT CLUSTER P2P STATUS - CRITICAL ISSUES IDENTIFIED
+================================================================================
+Date: 2025-12-26
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ⚠️  CRITICAL VOTER ISSUE  ⚠️                         │
+│                                                                              │
+│  Only 2 out of 5 voters are online with P2P running!                       │
+│  Quorum requires 3 voters minimum - CLUSTER HAS LOST QUORUM                │
+│                                                                              │
+│  Online voters:                                                              │
+│    ✓ nebius-backbone-1  (L40S, Nebius)                                     │
+│    ✓ nebius-h100-3      (H100, Nebius)                                     │
+│                                                                              │
+│  Offline voters:                                                             │
+│    ✗ hetzner-cpu1       (UNREACHABLE)                                      │
+│    ✗ hetzner-cpu2       (UNREACHABLE)                                      │
+│                                                                              │
+│  Missing P2P (but reachable):                                               │
+│    ⚠ vultr-a100-20gb    (DEPLOY P2P IMMEDIATELY)                           │
+│                                                                              │
+│  IMMEDIATE ACTION REQUIRED:                                                  │
+│  Deploy P2P to vultr-a100-20gb to restore quorum (2→3 voters)              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+CLUSTER SUMMARY
+================================================================================
+Total nodes: 31
+
+Status Breakdown:
+  ✓ P2P running:              13 nodes (42%)
+  ⚠ P2P missing (reachable):   9 nodes (29%)
+  ✗ Unreachable:               8 nodes (26%)
+  ○ P2P disabled:              1 node  (3%)
+
+Storage Issues:
+  ⚠ nebius-h100-1:     48GB free (threshold: 50GB)
+  ⚠ runpod-l40s-2:     39GB free (threshold: 50GB)
+
+Idle GPUs (P2P running, 0 jobs):
+  9 nodes ready for selfplay allocation
+
+IMMEDIATE ACTIONS (Priority Order)
+================================================================================
+
+1. CRITICAL - Restore Voter Quorum
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │ Deploy P2P to vultr-a100-20gb to restore 3/5 quorum                     │
+   └──────────────────────────────────────────────────────────────────────────┘
+   
+   Command:
+   $ cd /Users/armand/Development/RingRift/ai-service
+   $ python scripts/deploy_p2p_cluster.py --nodes vultr-a100-20gb
+   
+   This will bring voters online from 2→3, restoring minimum quorum.
+
+2. HIGH PRIORITY - Investigate Unreachable Voters
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │ Both Hetzner CPU nodes (hetzner-cpu1, hetzner-cpu2) are unreachable     │
+   └──────────────────────────────────────────────────────────────────────────┘
+   
+   Actions:
+   - Check Hetzner billing/account status
+   - Verify firewall rules
+   - Check if instances are stopped
+   - Test connectivity: ping 46.62.147.150, ping 135.181.39.239
+
+3. HIGH PRIORITY - Deploy P2P to Multi-GPU Nodes
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │ Deploy P2P to high-value multi-GPU nodes for maximum cluster capacity   │
+   └──────────────────────────────────────────────────────────────────────────┘
+   
+   Command:
+   $ python scripts/deploy_p2p_cluster.py --nodes vast-29128352,vast-29129529
+   
+   Expected impact:
+   - vast-29128352: 2x RTX 5090 (64GB VRAM)
+   - vast-29129529: 8x RTX 4090 (192GB VRAM)
+
+4. MEDIUM PRIORITY - Deploy P2P to Remaining Nodes
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │ Deploy to additional GPU nodes                                          │
+   └──────────────────────────────────────────────────────────────────────────┘
+   
+   Command:
+   $ python scripts/deploy_p2p_cluster.py --nodes \
+       runpod-3090ti-1,vast-28889766,vast-28925166,vast-29128356
+   
+   Skip: runpod-l40s-2 (needs storage cleanup first)
+
+5. MEDIUM PRIORITY - Storage Cleanup
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │ Free up space on nodes below 50GB threshold                             │
+   └──────────────────────────────────────────────────────────────────────────┘
+   
+   nebius-h100-1 (48GB free, 163 jobs running):
+   $ ssh -i ~/.ssh/id_cluster ubuntu@89.169.111.139
+   $ cd ~/ringrift/ai-service
+   $ du -sh data/* | sort -h
+   # Clean old checkpoints, temp files
+   
+   runpod-l40s-2 (39GB free):
+   $ ssh -i ~/.ssh/id_ed25519 -p 1182 root@193.183.22.62
+   # Clean, then deploy P2P
+
+DETAILED NODE STATUS
+================================================================================
+
+P2P RUNNING (13 nodes):
+┌────────────────────────┬──────────────────────┬───────┬────────────┬────────┐
+│ Name                   │ GPU                  │ NAT   │ Jobs       │ Notes  │
+├────────────────────────┼──────────────────────┼───────┼────────────┼────────┤
+│ nebius-backbone-1      │ L40S                 │ NO    │ 2          │ VOTER  │
+│ nebius-h100-3          │ H100 SXM             │ NO    │ 3          │ VOTER  │
+│ nebius-h100-1          │ H100 SXM             │ NO    │ 163        │ 98% ⚠  │
+│ mac-studio             │ M3 Max/Ultra         │ NO    │ 15         │ Coord  │
+│ runpod-a100-1          │ A100 PCIe            │ NO    │ 0          │ Idle   │
+│ runpod-a100-2          │ A100 PCIe            │ NO    │ 0          │ Idle   │
+│ runpod-a100-storage-1  │ A100 PCIe            │ NO    │ 1          │        │
+│ vast-29031159          │ RTX 5080             │ NO    │ 0          │ Idle   │
+│ vast-29046315          │ RTX 3060 Ti          │ NO    │ 0          │ Idle   │
+│ vast-29118471          │ 8x RTX 3090          │ NO    │ 0          │ Idle   │
+│ vast-29118472          │ RTX 5090             │ NO    │ 0          │ Idle   │
+│ vast-29126088          │ RTX 4060 Ti          │ NO    │ 0          │ Idle   │
+│ vultr-a100-20gb-2      │ A100D-20C            │ NO    │ 0          │ Idle   │
+└────────────────────────┴──────────────────────┴───────┴────────────┴────────┘
+
+P2P MISSING - REACHABLE (9 nodes):
+┌────────────────────────┬──────────────────────┬────────────────────────────┐
+│ Name                   │ GPU                  │ Deploy Priority            │
+├────────────────────────┼──────────────────────┼────────────────────────────┤
+│ vultr-a100-20gb        │ A100D-20C            │ CRITICAL (voter!)          │
+│ vast-29128352          │ 2x RTX 5090          │ HIGH (multi-GPU)           │
+│ vast-29129529          │ 8x RTX 4090          │ HIGH (multi-GPU)           │
+│ vast-28925166          │ RTX 5090             │ HIGH                       │
+│ vast-29128356          │ RTX 5090             │ HIGH                       │
+│ runpod-3090ti-1        │ RTX 3090 Ti          │ MEDIUM                     │
+│ vast-28889766          │ RTX 3060 Ti          │ MEDIUM                     │
+│ runpod-l40s-2          │ L40S                 │ LOW (39GB storage)         │
+│ local-mac              │ none                 │ SKIP (coordinator)         │
+└────────────────────────┴──────────────────────┴────────────────────────────┘
+
+UNREACHABLE (8 nodes):
+┌────────────────────────┬──────────────────────┬────────────────────────────┐
+│ Name                   │ GPU                  │ Notes                      │
+├────────────────────────┼──────────────────────┼────────────────────────────┤
+│ hetzner-cpu1           │ CPU                  │ VOTER - SSH timeout        │
+│ hetzner-cpu2           │ CPU                  │ VOTER - SSH timeout        │
+│ hetzner-cpu3           │ CPU                  │ SSH timeout                │
+│ runpod-h100            │ H100 PCIe            │ SSH timeout                │
+│ vast-28890015          │ RTX 2080 Ti          │ SSH timeout                │
+│ vast-28918742          │ A40                  │ SSH timeout                │
+│ vast-29031161          │ RTX 3060             │ SSH timeout                │
+│ vast-29129151          │ RTX 5090             │ SSH timeout                │
+└────────────────────────┴──────────────────────┴────────────────────────────┘
+
+DEPLOYMENT COMMANDS
+================================================================================
+
+# Step 1: Restore quorum (CRITICAL)
+cd /Users/armand/Development/RingRift/ai-service
+python scripts/deploy_p2p_cluster.py --nodes vultr-a100-20gb
+
+# Step 2: Deploy to multi-GPU nodes
+python scripts/deploy_p2p_cluster.py --nodes vast-29128352,vast-29129529
+
+# Step 3: Deploy to remaining high-value nodes
+python scripts/deploy_p2p_cluster.py --nodes \
+  runpod-3090ti-1,vast-28889766,vast-28925166,vast-29128356
+
+# Verify deployment
+python scripts/p2p_cluster_status.py
+
+MONITORING
+================================================================================
+
+Check P2P cluster status:
+$ python scripts/p2p_cluster_status.py
+
+Check specific node:
+$ ssh -i ~/.ssh/id_cluster root@<host> \
+    "curl -s http://localhost:8770/status | python3 -m json.tool"
+
+Monitor cluster in real-time:
+$ python -m app.distributed.cluster_monitor --watch
+
+================================================================================

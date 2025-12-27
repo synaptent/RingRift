@@ -217,6 +217,7 @@ class P2PAutoDeployer:
             "-o", "StrictHostKeyChecking=no",
             "-o", f"ConnectTimeout={int(timeout)}",
             "-o", "BatchMode=yes",
+            "-o", "ControlMaster=no",  # Disable connection sharing to avoid stale connections
             "-p", str(ssh_port),
             "-i", ssh_key_expanded,
             f"{ssh_user}@{ssh_host}",

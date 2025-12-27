@@ -369,6 +369,100 @@ class DataHTTPHandler(http.server.SimpleHTTPRequestHandler):
                 return
         self.send_error(404, f"File not found: {filename}")
 
+    # Checksum cache to avoid recomputing for frequently requested files
+    _checksum_cache: dict[str, tuple[str, int, float]] = {}
+
+    def send_checksum(self, filepath: str):
+        """Send checksum and size for a file (pre-transfer verification).
+
+        December 2025: This endpoint enables pre-transfer checksum exchange,
+        allowing clients to verify file integrity BEFORE downloading.
+
+        Returns JSON with:
+        - checksum: SHA256 hex digest
+        - size: File size in bytes
+        - algorithm: Always "sha256"
+        - cached: Whether the checksum was served from cache
+
+        Path format: /checksum/games/myfile.db or /checksum/training/data.npz
+        """
+        # Determine which directory to look in based on path prefix
+        if filepath.startswith("games/"):
+            base_dirs = GAMES_DIRS
+            filename = filepath[6:]
+        elif filepath.startswith("models/"):
+            base_dirs = [MODELS_DIR]
+            filename = filepath[7:]
+        elif filepath.startswith("training/"):
+            base_dirs = [TRAINING_DIR]
+            filename = filepath[9:]
+        elif filepath.startswith("elo/"):
+            base_dirs = [p.parent for p in ELO_DB_PATHS if p.exists()]
+            filename = filepath[4:]
+        else:
+            # Try all directories
+            base_dirs = GAMES_DIRS + [MODELS_DIR, TRAINING_DIR]
+            filename = filepath
+
+        # Find the file
+        target_path = None
+        for base_dir in base_dirs:
+            candidate = base_dir / filename
+            if candidate.exists() and candidate.is_file():
+                target_path = candidate
+                break
+
+        if not target_path:
+            self.send_error(404, f"File not found: {filepath}")
+            return
+
+        try:
+            stat = target_path.stat()
+            file_size = stat.st_size
+            file_mtime = stat.st_mtime
+
+            # Check cache
+            cache_key = str(target_path)
+            cached = False
+            if cache_key in DataHTTPHandler._checksum_cache:
+                cached_checksum, cached_size, cached_mtime = DataHTTPHandler._checksum_cache[cache_key]
+                if cached_size == file_size and cached_mtime == file_mtime:
+                    checksum = cached_checksum
+                    cached = True
+
+            if not cached:
+                # Compute checksum
+                checksum = self._compute_file_checksum(target_path)
+                # Cache it
+                DataHTTPHandler._checksum_cache[cache_key] = (checksum, file_size, file_mtime)
+
+            response = {
+                "checksum": checksum,
+                "size": file_size,
+                "algorithm": "sha256",
+                "cached": cached,
+                "path": filepath,
+            }
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
+
+        except Exception as e:
+            self.send_error(500, f"Error computing checksum: {e}")
+
+    def _compute_file_checksum(self, path: Path) -> str:
+        """Compute SHA256 checksum of a file using streaming read."""
+        sha256 = hashlib.sha256()
+        chunk_size = 65536  # 64KB chunks for efficiency
+
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(chunk_size), b""):
+                sha256.update(chunk)
+
+        return sha256.hexdigest()
+
     def send_inventory(self):
         """Send JSON inventory of available data."""
         inventory = build_local_inventory()
