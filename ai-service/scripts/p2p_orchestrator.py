@@ -578,6 +578,114 @@ async def _emit_task_abandoned(
         logger.debug(f"[P2P Event] Failed to emit TASK_ABANDONED: {e}")
 
 
+async def _emit_data_sync_started(
+    host: str,
+    sync_type: str = "incremental",
+    source: str = "p2p_orchestrator",
+) -> None:
+    """Safely emit DATA_SYNC_STARTED event when sync begins.
+
+    December 2025: Enables pipeline coordination to track sync progress.
+
+    Args:
+        host: Target host being synced to
+        sync_type: Type of sync (incremental, full)
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.data_events import emit_data_sync_started
+        await emit_data_sync_started(
+            host=host,
+            sync_type=sync_type,
+            source=source,
+        )
+        logger.debug(f"[P2P Event] Emitted DATA_SYNC_STARTED for {host} ({sync_type})")
+    except ImportError:
+        pass  # Data events module not available
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_STARTED: {e}")
+
+
+async def _emit_data_sync_completed(
+    host: str,
+    games_synced: int,
+    duration: float,
+    bytes_transferred: int = 0,
+    source: str = "p2p_orchestrator",
+) -> None:
+    """Safely emit DATA_SYNC_COMPLETED event when sync finishes successfully.
+
+    December 2025: Enables pipeline coordination to track sync completions.
+
+    Args:
+        host: Target host synced to
+        games_synced: Number of games synced
+        duration: Sync duration in seconds
+        bytes_transferred: Bytes transferred (optional)
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.data_events import emit_data_sync_completed
+        await emit_data_sync_completed(
+            host=host,
+            games_synced=games_synced,
+            duration=duration,
+            bytes_transferred=bytes_transferred,
+            source=source,
+        )
+        logger.info(
+            f"[P2P Event] Emitted DATA_SYNC_COMPLETED for {host} "
+            f"({games_synced} games in {duration:.1f}s)"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_COMPLETED: {e}")
+
+
+async def _emit_data_sync_failed(
+    host: str,
+    error: str,
+    retry_count: int = 0,
+    source: str = "p2p_orchestrator",
+) -> None:
+    """Safely emit DATA_SYNC_FAILED event when sync fails.
+
+    December 2025: Enables error tracking and retry coordination.
+
+    Args:
+        host: Target host where sync failed
+        error: Error message
+        retry_count: Number of retries attempted
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.data_events import emit_data_sync_failed
+        await emit_data_sync_failed(
+            host=host,
+            error=error,
+            retry_count=retry_count,
+            source=source,
+        )
+        logger.warning(
+            f"[P2P Event] Emitted DATA_SYNC_FAILED for {host}: {error} "
+            f"(retries: {retry_count})"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_FAILED: {e}")
+
+
 # Add project root to path for scripts.lib imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -5114,11 +5222,39 @@ class P2POrchestrator(
                     continue
 
                 logger.info("Running periodic training node sync...")
+
+                # Emit DATA_SYNC_STARTED event (Dec 2025)
+                sync_start_time = time.time()
+                await _emit_data_sync_started(
+                    host="training_nodes",
+                    sync_type="incremental",
+                    source="p2p_training_sync_loop",
+                )
+
                 result = await self._sync_selfplay_to_training_nodes()
+                sync_duration = time.time() - sync_start_time
+
                 if result.get("success"):
-                    logger.info(f"Training sync completed: {result.get('sync_jobs_created', 0)} jobs created")
+                    sync_jobs = result.get("sync_jobs_created", 0)
+                    logger.info(f"Training sync completed: {sync_jobs} jobs created")
+
+                    # Emit DATA_SYNC_COMPLETED event (Dec 2025)
+                    await _emit_data_sync_completed(
+                        host="training_nodes",
+                        games_synced=sync_jobs,  # Use jobs as proxy for games
+                        duration=sync_duration,
+                        source="p2p_training_sync_loop",
+                    )
                 else:
-                    logger.info(f"Training sync failed: {result.get('error', 'Unknown error')}")
+                    error_msg = result.get("error", "Unknown error")
+                    logger.info(f"Training sync failed: {error_msg}")
+
+                    # Emit DATA_SYNC_FAILED event (Dec 2025)
+                    await _emit_data_sync_failed(
+                        host="training_nodes",
+                        error=error_msg,
+                        source="p2p_training_sync_loop",
+                    )
 
             except asyncio.CancelledError:
                 break

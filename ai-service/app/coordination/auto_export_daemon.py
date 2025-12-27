@@ -90,6 +90,9 @@ class AutoExportDaemon:
         self._export_semaphore = asyncio.Semaphore(self.config.max_concurrent_exports)
         self._event_subscriptions: list[Any] = []
         self._state_db_initialized = False
+        # December 2025: Deduplication guard - when StageEvent subscriptions are active,
+        # skip DataEventType handlers to prevent double-counting games
+        self._stage_events_active = False
 
     async def start(self) -> None:
         """Start the auto export daemon."""
@@ -290,6 +293,10 @@ class AutoExportDaemon:
 
         Phase 3A.3 (Dec 2025): Now subscribes to SYNC_COMPLETE to trigger
         export when games are synced from other nodes.
+
+        December 2025: Added deduplication guard. When StageEvent subscriptions
+        succeed, we set _stage_events_active=True to skip duplicate processing
+        from DataEventType handlers.
         """
         try:
             # P0.5 (December 2025): Use get_router() instead of deprecated get_stage_event_bus()
@@ -298,7 +305,9 @@ class AutoExportDaemon:
             router = get_router()
             unsub = router.subscribe(StageEvent.SELFPLAY_COMPLETE, self._on_selfplay_complete)
             self._event_subscriptions.append(unsub)
-            logger.info("[AutoExportDaemon] Subscribed to SELFPLAY_COMPLETE events")
+            # Mark stage events active to prevent duplicate handling from DataEventType
+            self._stage_events_active = True
+            logger.info("[AutoExportDaemon] Subscribed to SELFPLAY_COMPLETE (StageEvent)")
 
             # Phase 3A.3: Also subscribe to SYNC_COMPLETE for cross-node data
             unsub = router.subscribe(StageEvent.SYNC_COMPLETE, self._on_sync_complete)
@@ -388,7 +397,20 @@ class AutoExportDaemon:
             logger.error(f"[AutoExportDaemon] Error handling new games event: {e}")
 
     async def _on_selfplay_complete_event(self, event: Any) -> None:
-        """Handle SELFPLAY_COMPLETE data events."""
+        """Handle SELFPLAY_COMPLETE data events.
+
+        December 2025: Added deduplication guard. If StageEvent subscription is active,
+        skip this handler to prevent double-counting games (the StageEvent handler
+        already processed this event).
+        """
+        # Deduplication guard: skip if StageEvent already handled this
+        if self._stage_events_active:
+            logger.debug(
+                "[AutoExportDaemon] Skipping DataEventType.SELFPLAY_COMPLETE "
+                "(StageEvent already active)"
+            )
+            return
+
         try:
             payload = getattr(event, "payload", {}) or {}
             config_key = payload.get("config_key") or payload.get("config")

@@ -88,6 +88,7 @@ Engine and system architecture documentation.
 | [PLAYER_MOVE_TRANSPORT_DECISION.md](docs/architecture/PLAYER_MOVE_TRANSPORT_DECISION.md)                   | WebSocket vs HTTP move transport         |
 | [STATE_MACHINES.md](docs/architecture/STATE_MACHINES.md)                                                   | Session/AI/choice state machines         |
 | [TOPOLOGY_MODES.md](docs/architecture/TOPOLOGY_MODES.md)                                                   | Board topology design                    |
+| [SYNC_ARCHITECTURE.md](docs/architecture/SYNC_ARCHITECTURE.md)                                             | Data/model sync architecture             |
 | [ORCHESTRATOR_ROLLOUT_PLAN.md](docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md)                             | Orchestrator migration plan              |
 | [FSM_MIGRATION_STATUS_2025_12.md](docs/architecture/FSM_MIGRATION_STATUS_2025_12.md)                       | Migration status snapshot                |
 | [SHARED_ENGINE_CONSOLIDATION_PLAN.md](docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md)               | Engine consolidation design              |
@@ -353,6 +354,7 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | [ai-service/docs/roadmaps/AI_TRAINING_PLAN.md](ai-service/docs/roadmaps/AI_TRAINING_PLAN.md)                         | **Primary training guide**: CMA-ES, NN, NPZ pipeline |
 | [ai-service/docs/infrastructure/ORCHESTRATOR_SELECTION.md](ai-service/docs/infrastructure/ORCHESTRATOR_SELECTION.md) | **Which script to use** - orchestrator decision tree |
+| [ai-service/docs/sync_architecture.md](ai-service/docs/sync_architecture.md)                                         | Sync stack overview (SyncFacade, AutoSyncDaemon)     |
 | [ai-service/docs/training/UNIFIED_AI_LOOP.md](ai-service/docs/training/UNIFIED_AI_LOOP.md)                           | **Unified AI self-improvement daemon** (canonical)   |
 | [ai-service/docs/infrastructure/PIPELINE_ORCHESTRATOR.md](ai-service/docs/infrastructure/PIPELINE_ORCHESTRATOR.md)   | CI/CD pipeline orchestration (deprecated)            |
 | [ai-service/docs/training/DISTRIBUTED_SELFPLAY.md](ai-service/docs/training/DISTRIBUTED_SELFPLAY.md)                 | Distributed selfplay across GPU clusters             |

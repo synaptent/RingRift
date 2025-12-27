@@ -157,8 +157,17 @@ class CoordinationFacade:
             metadata['timeout_seconds'] = timeout_seconds
             task_id = coordinator.register_task(tt, node_id, metadata=metadata)
             return task_id
+        except ValueError as e:
+            # Invalid task type or validation error - caller may want to know
+            logger.warning(f"Task validation failed for {task_type} on {node_id}: {e}")
+            return None
+        except (ConnectionError, TimeoutError, OSError) as e:
+            # Network/connectivity issues - retryable
+            logger.error(f"Network error spawning task on {node_id}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Failed to spawn task: {e}")
+            # Unexpected error - log with traceback for debugging
+            logger.error(f"Unexpected error spawning task {task_type} on {node_id}: {e}", exc_info=True)
             return None
 
     def get_task_status(self, task_id: str) -> TaskInfo | None:
@@ -271,8 +280,16 @@ class CoordinationFacade:
         try:
             config_key = f"{board_type}_{num_players}p"
             return coordinator.start_training(config_key, **kwargs)
+        except ValueError as e:
+            # Invalid config or parameters
+            logger.warning(f"Invalid training config {board_type}_{num_players}p: {e}")
+            return None
+        except FileNotFoundError as e:
+            # Missing training data or model
+            logger.error(f"Missing training resources for {board_type}_{num_players}p: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Failed to start training: {e}")
+            logger.error(f"Failed to start training for {board_type}_{num_players}p: {e}", exc_info=True)
             return None
 
     def get_training_status(self, board_type: str, num_players: int) -> TrainingStatus:
@@ -319,8 +336,16 @@ class CoordinationFacade:
             config_key = f"{board_type}_{num_players}p"
             coordinator.stop_training(config_key)
             return True
+        except KeyError:
+            # No training running for this config - not an error
+            logger.debug(f"No active training to stop for {board_type}_{num_players}p")
+            return True  # Still success - nothing to stop
+        except (ProcessLookupError, OSError) as e:
+            # Process already terminated
+            logger.debug(f"Training process already stopped for {board_type}_{num_players}p: {e}")
+            return True
         except Exception as e:
-            logger.error(f"Failed to stop training: {e}")
+            logger.error(f"Failed to stop training for {board_type}_{num_players}p: {e}", exc_info=True)
             return False
 
     # =========================================================================

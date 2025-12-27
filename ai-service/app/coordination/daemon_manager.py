@@ -607,6 +607,49 @@ class DaemonManager:
             # Don't fail state transition if event emission fails
             logger.debug(f"Failed to emit daemon status event: {e}")
 
+    def _validate_critical_subsystems(self) -> list[str]:
+        """Validate critical subsystems before starting daemons.
+
+        Returns:
+            List of validation error messages (empty if all OK).
+
+        December 2025: Added as part of Phase 8 startup validation.
+        Critical subsystems that must be importable for daemons to function.
+        """
+        errors = []
+        critical_modules = [
+            ("app.coordination.event_router", "Event routing"),
+            ("app.coordination.sync_facade", "Sync coordination"),
+            ("app.coordination.protocols", "Health check protocols"),
+        ]
+
+        for module_path, description in critical_modules:
+            try:
+                __import__(module_path)
+            except ImportError as e:
+                error_msg = f"Critical subsystem unavailable: {description} ({module_path}): {e}"
+                logger.error(f"[DaemonManager] {error_msg}")
+                errors.append(error_msg)
+
+        # Optional modules - log warning but don't block startup
+        optional_modules = [
+            ("app.coordination.health_facade", "Health monitoring"),
+            ("app.coordination.daemon_watchdog", "Daemon watchdog"),
+        ]
+
+        for module_path, description in optional_modules:
+            try:
+                __import__(module_path)
+            except ImportError as e:
+                logger.warning(f"[DaemonManager] Optional subsystem unavailable: {description} ({module_path}): {e}")
+
+        if errors:
+            logger.error(f"[DaemonManager] {len(errors)} critical subsystem(s) failed validation")
+        else:
+            logger.debug("[DaemonManager] All critical subsystems validated successfully")
+
+        return errors
+
     async def start(self, daemon_type: DaemonType) -> bool:
         """Start a specific daemon.
 
@@ -721,6 +764,14 @@ class DaemonManager:
         Returns:
             Dict mapping daemon type to start success
         """
+        # Phase 8 (Dec 2025): Validate critical subsystems before starting
+        validation_errors = self._validate_critical_subsystems()
+        if validation_errors:
+            logger.warning(
+                f"[DaemonManager] Starting with {len(validation_errors)} subsystem validation error(s). "
+                "Some daemons may fail to start."
+            )
+
         # Define callback for DaemonManager-specific post-start operations
         async def _post_start_callback():
             # Start health check loop (uses centralized helper)

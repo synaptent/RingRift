@@ -674,7 +674,7 @@ class SyncCoordinator:
 
             return [g.game_id for g in games]
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError) as e:
             logger.warning(f"Failed to get high quality game IDs: {e}")
             return []
 
@@ -729,7 +729,7 @@ class SyncCoordinator:
             update_data_server_status(port, True)
             return True
 
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, RuntimeError) as e:
             logger.error(f"Failed to start data server: {e}")
             self._data_server_process = None
             update_data_server_status(port, False)
@@ -789,7 +789,7 @@ class SyncCoordinator:
                         inventory = await aria2.fetch_inventory(source, timeout=5)
                         if inventory and inventory.reachable:
                             valid_sources.append(source)
-                    except Exception as e:
+                    except (OSError, asyncio.TimeoutError, ConnectionError) as e:
                         logger.debug(f"Source {source} not reachable: {e}")
                 sources = valid_sources
 
@@ -874,7 +874,7 @@ class SyncCoordinator:
                                 f"{stats.bytes_transferred / (1024*1024):.1f}MB via BitTorrent"
                             )
                             return stats
-                except Exception as e:
+                except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
                     stats.errors.append(f"BitTorrent sync failed: {e}")
                     logger.warning(f"BitTorrent training sync failed, trying fallback: {e}")
 
@@ -907,7 +907,7 @@ class SyncCoordinator:
                                 f"{stats.bytes_transferred / (1024*1024):.1f}MB via aria2"
                             )
                             return stats
-                    except Exception as e:
+                    except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
                         stats.errors.append(f"aria2 sync failed: {e}")
                         logger.warning(f"aria2 training sync failed, trying fallback: {e}")
                         record_sync_coordinator_op(
@@ -1042,7 +1042,7 @@ class SyncCoordinator:
                                 f"{stats.bytes_transferred / (1024*1024):.1f}MB"
                             )
                             return stats
-                    except Exception as e:
+                    except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
                         stats.errors.append(f"aria2 model sync failed: {e}")
                         logger.warning(f"aria2 model sync failed: {e}")
                         record_sync_coordinator_op(
@@ -1183,7 +1183,7 @@ class SyncCoordinator:
                                 f"{stats.bytes_transferred / (1024*1024):.1f}MB"
                             )
                             return stats
-                    except Exception as e:
+                    except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
                         stats.errors.append(f"aria2 game sync failed: {e}")
                         logger.warning(f"aria2 game sync failed: {e}")
                         record_sync_coordinator_op(
@@ -1369,7 +1369,7 @@ class SyncCoordinator:
                         synced_entry_ids.extend([e.id for e in entries])
                         stats.high_quality_games_synced += len(entries)
 
-                except Exception as e:
+                except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
                     stats.errors.append(f"aria2 sync from {host} failed: {e}")
                     logger.warning(f"High-quality sync from {host} failed: {e}")
 
@@ -1628,7 +1628,7 @@ class SyncCoordinator:
                     await self.start_data_server()
                     self._data_server_healthy = True
                     logger.info("Data server restarted successfully")
-                except Exception as e:
+                except (OSError, asyncio.TimeoutError, RuntimeError) as e:
                     logger.error(f"Failed to restart data server: {e}")
             return self._data_server_healthy
 
@@ -1729,7 +1729,7 @@ class SyncCoordinator:
             try:
                 status["quality"]["distribution"] = self._manifest.get_quality_distribution()
                 status["quality"]["priority_queue"] = self._manifest.get_priority_queue_stats()
-            except Exception as e:
+            except (OSError, ValueError, TypeError, KeyError) as e:
                 logger.debug(f"Failed to get quality stats: {e}")
 
         return status
@@ -1830,7 +1830,7 @@ class HighQualityDataSyncWatcher:
             self._subscribed = True
             logger.info("[HighQualityDataSyncWatcher] Subscribed to HIGH_QUALITY_DATA_AVAILABLE events")
             return True
-        except Exception as e:
+        except (ImportError, AttributeError, KeyError) as e:
             logger.warning(f"[HighQualityDataSyncWatcher] Failed to subscribe: {e}")
             return False
 
@@ -1887,7 +1887,7 @@ class HighQualityDataSyncWatcher:
             )
             return subscribed
 
-        except Exception as e:
+        except (ImportError, AttributeError, KeyError) as e:
             logger.warning(f"[HighQualityDataSyncWatcher] Failed to subscribe to all events: {e}")
             return 0
 
@@ -2168,7 +2168,7 @@ class HighQualityDataSyncWatcher:
             bus = get_event_bus()
             asyncio.create_task(bus.publish(event))
 
-        except Exception as e:
+        except (ImportError, AttributeError, RuntimeError, OSError) as e:
             logger.debug(f"Failed to emit sync completed event: {e}")
 
     def force_sync(self) -> bool:

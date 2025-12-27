@@ -541,7 +541,8 @@ def main() -> None:
                 "[TrainCLI] --enable-pipeline-auto-trigger requires app.coordination module. "
                 "Continuing without pipeline automation."
             )
-        except Exception as e:
+        except (RuntimeError, ValueError, ConnectionError) as e:
+            # Dec 2025: Narrowed from broad Exception to expected error types
             logger.warning(f"[TrainCLI] Failed to enable pipeline auto-trigger: {e}")
 
     # Load config file if provided (overrides individual arguments)
@@ -570,7 +571,12 @@ def main() -> None:
             logger.info(f"  Learning rate: {pipeline_config.train.learning_rate}")
             logger.info(f"  Batch size: {pipeline_config.train.batch_size}")
 
-        except Exception as e:
+        except (FileNotFoundError, ValueError, KeyError, OSError) as e:
+            # Dec 2025: Narrowed from broad Exception to config-specific errors
+            # FileNotFoundError: config file doesn't exist
+            # ValueError: invalid config values
+            # KeyError: missing required config keys
+            # OSError: file access issues
             logger.error(f"Failed to load config from {args.config}: {e}")
             raise
 
@@ -737,7 +743,8 @@ def main() -> None:
     except ImportError:
         # FeedbackAccelerator not available - continue with default intensity
         pass
-    except Exception as e:
+    except (RuntimeError, ValueError, AttributeError) as e:
+        # Dec 2025: Narrowed from broad Exception to FeedbackAccelerator-specific errors
         logger.debug(f"[TrainCLI] Adaptive intensity not applied: {e}")
 
     # ==========================================================================
@@ -783,7 +790,8 @@ def main() -> None:
 
         except ImportError:
             pass  # Event system not available
-        except Exception as e:
+        except (RuntimeError, ConnectionError) as e:
+            # Dec 2025: Narrowed from broad Exception to event-system specific errors
             logger.debug(f"[TrainCLI] Failed to subscribe to hyperparameter events: {e}")
 
     # Build config key and subscribe to feedback events
