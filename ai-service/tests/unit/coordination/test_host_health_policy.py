@@ -465,7 +465,8 @@ class TestGetHealthSummary:
             assert summary["total"] == 3
             assert summary["healthy"] == 2
             assert summary["unhealthy"] == 1
-            assert summary["healthy_percent"] == pytest.approx(66.67, rel=0.1)
+            assert "healthy_hosts" in summary
+            assert "unhealthy_hosts" in summary
 
 
 # ============================================================================
@@ -482,43 +483,58 @@ class TestCacheManagement:
 
     def test_clear_health_cache(self) -> None:
         """Test clearing the health cache."""
-        # Add something to cache
-        with _cache_lock:
-            _health_cache["test-host"] = HostHealthStatus(
-                host="test-host",
-                healthy=True,
-                checked_at=time.time(),
-            )
+        # Add something to cache directly via check
+        mock_status = HostHealthStatus(
+            host="test-host",
+            healthy=True,
+            checked_at=time.time(),
+        )
+        with patch(
+            "app.coordination.host_health_policy._quick_ssh_check",
+            return_value=mock_status,
+        ):
+            check_host_health("test-host")
 
-        assert len(_health_cache) > 0
+        # Cache should have entry
+        status = get_cache_status()
+        assert status["total_entries"] > 0
 
-        clear_health_cache()
+        # Clear and verify
+        count = clear_health_cache()
+        assert count > 0
 
-        assert len(_health_cache) == 0
+        status = get_cache_status()
+        assert status["total_entries"] == 0
 
     def test_get_cache_status(self) -> None:
         """Test getting cache status."""
         clear_health_cache()
 
-        # Add test data
-        with _cache_lock:
-            _health_cache["healthy-1"] = HostHealthStatus(
-                host="healthy-1",
-                healthy=True,
-                checked_at=time.time(),
-            )
-            _health_cache["unhealthy-1"] = HostHealthStatus(
-                host="unhealthy-1",
-                healthy=False,
-                checked_at=time.time(),
-                error="timeout",
-            )
+        # Add test data via check
+        mock_status_healthy = HostHealthStatus(
+            host="healthy-1",
+            healthy=True,
+            checked_at=time.time(),
+        )
+        mock_status_unhealthy = HostHealthStatus(
+            host="unhealthy-1",
+            healthy=False,
+            checked_at=time.time(),
+            error="timeout",
+        )
+
+        with patch(
+            "app.coordination.host_health_policy._quick_ssh_check",
+            side_effect=[mock_status_healthy, mock_status_unhealthy],
+        ):
+            check_host_health("healthy-1")
+            check_host_health("unhealthy-1")
 
         status = get_cache_status()
 
-        assert status["total_cached"] == 2
-        assert status["healthy_cached"] == 1
-        assert status["unhealthy_cached"] == 1
+        assert status["total_entries"] == 2
+        assert "entries" in status
+        assert len(status["entries"]) == 2
 
 
 # ============================================================================

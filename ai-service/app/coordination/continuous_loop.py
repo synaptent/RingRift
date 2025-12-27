@@ -337,6 +337,7 @@ class ContinuousTrainingLoop:
                 break
             except Exception as e:
                 logger.exception(f"Unexpected error in training loop: {e}")
+                self.stats.last_error = str(e)  # December 2025: Record for health_check()
                 self.stats.failed_iterations += 1
                 self.stats.consecutive_failures += 1
                 await self._wait_or_shutdown(60.0)  # Brief wait before retry

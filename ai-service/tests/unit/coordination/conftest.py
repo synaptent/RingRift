@@ -706,3 +706,235 @@ def optimization_coordinator_fresh():
         plateau_threshold=0.001,
         cooldown_seconds=60.0,
     )
+
+
+# =============================================================================
+# DAEMON MANAGER FIXTURES (Phase 1 - Dec 2025)
+# =============================================================================
+
+
+@pytest.fixture
+def mock_health_check_result():
+    """Factory for mock health check results with different formats.
+
+    Supports creating health check results in various formats that DaemonManager
+    should handle: bool, dict, object with .healthy attribute, async callable.
+
+    Usage:
+        def test_health_check(mock_health_check_result):
+            result = mock_health_check_result("bool", healthy=True)
+            assert result() is True
+
+            result = mock_health_check_result("dict", healthy=True, latency_ms=50)
+            assert result()["healthy"] is True
+    """
+    def _create(
+        result_type: str = "bool",
+        healthy: bool = True,
+        **extra_fields
+    ):
+        """Create a health check result factory.
+
+        Args:
+            result_type: One of "bool", "dict", "object", "async"
+            healthy: Whether the result indicates healthy state
+            **extra_fields: Additional fields for dict/object types
+
+        Returns:
+            A callable that returns the health check result
+        """
+        if result_type == "bool":
+            def _result():
+                return healthy
+            return _result
+
+        elif result_type == "dict":
+            def _result():
+                return {"healthy": healthy, **extra_fields}
+            return _result
+
+        elif result_type == "object":
+            class HealthResult:
+                def __init__(self):
+                    self.healthy = healthy
+                    for k, v in extra_fields.items():
+                        setattr(self, k, v)
+            def _result():
+                return HealthResult()
+            return _result
+
+        elif result_type == "async":
+            async def _result():
+                return {"healthy": healthy, **extra_fields}
+            return _result
+
+        else:
+            raise ValueError(f"Unknown result_type: {result_type}")
+
+    return _create
+
+
+@pytest.fixture
+def daemon_with_slow_health_check():
+    """Factory for daemons with configurable slow health checks.
+
+    Creates a daemon factory and corresponding health check function with
+    configurable latency for testing health check timeout handling.
+
+    Usage:
+        def test_slow_health(daemon_with_slow_health_check):
+            factory, health_fn = daemon_with_slow_health_check(
+                health_delay=2.0,
+                factory_name="slow_daemon"
+            )
+    """
+    def _create(
+        health_delay: float = 1.0,
+        factory_name: str = "slow_health_daemon",
+        healthy: bool = True,
+    ):
+        """Create daemon factory with slow health check.
+
+        Args:
+            health_delay: Seconds to sleep in health check
+            factory_name: Name for debugging
+            healthy: Health status to return after delay
+
+        Returns:
+            Tuple of (daemon_factory, health_check_fn)
+        """
+        import asyncio
+
+        async def daemon_factory():
+            """Daemon that runs forever."""
+            while True:
+                await asyncio.sleep(1)
+
+        async def health_check():
+            """Health check with configurable delay."""
+            await asyncio.sleep(health_delay)
+            return healthy
+
+        return daemon_factory, health_check
+
+    return _create
+
+
+@pytest.fixture
+def diamond_dependency_setup():
+    """Factory for diamond dependency pattern daemon setup.
+
+    Creates the classic diamond dependency graph:
+        EVENT_ROUTER
+          /        \\
+    DATA_PIPELINE  AUTO_SYNC
+          \\        /
+        FEEDBACK_LOOP
+
+    Usage:
+        def test_diamond(diamond_dependency_setup, manager):
+            factories, counters = diamond_dependency_setup()
+            for dtype, factory in factories.items():
+                manager.register_factory(dtype, factory, ...)
+    """
+    def _create():
+        """Create diamond dependency factories with start counters.
+
+        Returns:
+            Tuple of (factories_dict, start_counters_dict)
+        """
+        from app.coordination.daemon_types import DaemonType
+        import asyncio
+
+        start_counters = {
+            DaemonType.EVENT_ROUTER: 0,
+            DaemonType.DATA_PIPELINE: 0,
+            DaemonType.AUTO_SYNC: 0,
+            DaemonType.FEEDBACK_LOOP: 0,
+        }
+
+        def make_factory(dtype: DaemonType):
+            async def factory():
+                start_counters[dtype] += 1
+                while True:
+                    await asyncio.sleep(1)
+            return factory
+
+        factories = {
+            dtype: make_factory(dtype) for dtype in start_counters.keys()
+        }
+
+        dependencies = {
+            DaemonType.EVENT_ROUTER: [],
+            DaemonType.DATA_PIPELINE: [DaemonType.EVENT_ROUTER],
+            DaemonType.AUTO_SYNC: [DaemonType.EVENT_ROUTER],
+            DaemonType.FEEDBACK_LOOP: [DaemonType.DATA_PIPELINE, DaemonType.AUTO_SYNC],
+        }
+
+        return factories, start_counters, dependencies
+
+    return _create
+
+
+@pytest.fixture
+def manager_with_import_error_daemon():
+    """Factory for DaemonManager with a daemon in IMPORT_FAILED state.
+
+    Creates a DaemonManager with a pre-configured daemon that has an import
+    error, useful for testing import error handling behavior.
+
+    Usage:
+        def test_import_error(manager_with_import_error_daemon):
+            manager, dtype = manager_with_import_error_daemon(
+                error_message="ModuleNotFoundError: No module named 'missing'"
+            )
+    """
+    def _create(
+        error_message: str = "ModuleNotFoundError: No module named 'test_module'",
+        daemon_type=None,
+    ):
+        """Create manager with import-failed daemon.
+
+        Args:
+            error_message: The import error message
+            daemon_type: DaemonType to use (default: MODEL_SYNC)
+
+        Returns:
+            Tuple of (manager, daemon_type)
+        """
+        from app.coordination.daemon_manager import (
+            DaemonInfo,
+            DaemonManager,
+            DaemonManagerConfig,
+            DaemonState,
+            DaemonType,
+        )
+
+        if daemon_type is None:
+            daemon_type = DaemonType.MODEL_SYNC
+
+        # Reset and create fresh manager
+        DaemonManager.reset_instance()
+        config = DaemonManagerConfig(
+            health_check_interval=0.1,
+            shutdown_timeout=1.0,
+            auto_restart_failed=True,
+        )
+        manager = DaemonManager(config)
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        # Create daemon info with import error
+        info = DaemonInfo(daemon_type=daemon_type)
+        info.state = DaemonState.FAILED
+        info.import_error = error_message
+        info.last_failure_time = 0  # Long ago
+        info.auto_restart = True
+        info.max_restarts = 5
+        info.restart_count = 0
+
+        manager._daemons[daemon_type] = info
+
+        return manager, daemon_type
+
+    return _create

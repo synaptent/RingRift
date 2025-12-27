@@ -39,6 +39,8 @@ from typing import Any, Optional
 
 import psutil
 
+from app.coordination.singleton_mixin import SingletonMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -238,24 +240,14 @@ class ResourceMonitor:
 # Safeguards Manager
 # ============================================
 
-class Safeguards:
+class Safeguards(SingletonMixin):
     """
     Main safeguards manager singleton.
 
     Coordinates all safeguard mechanisms.
+
+    December 27, 2025: Migrated to SingletonMixin (Wave 4 Phase 1).
     """
-
-    _instance: Optional['Safeguards'] = None
-    _lock = threading.RLock()
-
-    @classmethod
-    def get_instance(cls) -> 'Safeguards':
-        """Get or create the singleton instance."""
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = cls()
-        return cls._instance
 
     def __init__(self, config: SafeguardConfig | None = None):
         self.config = config or SafeguardConfig()

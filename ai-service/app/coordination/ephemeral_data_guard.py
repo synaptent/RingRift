@@ -48,11 +48,13 @@ from app.utils.paths import DATA_DIR
 
 DEFAULT_GUARD_DB = DATA_DIR / "coordination" / "ephemeral_guard.db"
 
-# Thresholds
-CHECKPOINT_INTERVAL = 60  # Checkpoint every 60 seconds
-HEARTBEAT_TIMEOUT = 120  # Consider host dead after 2 minutes without heartbeat
-EVACUATION_THRESHOLD = 50  # Trigger evacuation if >50 unsynced games and no heartbeat
-CRITICAL_GAME_THRESHOLD = 10  # Games this important get immediate write-through
+# Thresholds (December 27, 2025: Centralized in coordination_defaults.py)
+from app.config.coordination_defaults import EphemeralGuardDefaults
+
+CHECKPOINT_INTERVAL = EphemeralGuardDefaults.CHECKPOINT_INTERVAL
+HEARTBEAT_TIMEOUT = EphemeralGuardDefaults.HEARTBEAT_TIMEOUT
+EVACUATION_THRESHOLD = EphemeralGuardDefaults.EVACUATION_THRESHOLD
+CRITICAL_GAME_THRESHOLD = EphemeralGuardDefaults.CRITICAL_GAME_THRESHOLD
 
 # Known ephemeral host patterns
 EPHEMERAL_HOST_PATTERNS = [

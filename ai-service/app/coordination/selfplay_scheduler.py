@@ -129,14 +129,16 @@ FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
 STALE_DATA_THRESHOLD = 4.0  # Data > 4hr old is stale
 MAX_STALENESS_HOURS = 24.0  # Cap staleness factor
 
-# Default allocation
-DEFAULT_GAMES_PER_CONFIG = 500
-MIN_GAMES_PER_ALLOCATION = 100
+# Default allocation (December 27, 2025: Centralized in coordination_defaults.py)
+from app.config.coordination_defaults import SelfplayAllocationDefaults
+
+DEFAULT_GAMES_PER_CONFIG = SelfplayAllocationDefaults.GAMES_PER_CONFIG
+MIN_GAMES_PER_ALLOCATION = SelfplayAllocationDefaults.MIN_GAMES_PER_ALLOCATION
 
 # Resource management thresholds (for get_target_jobs_for_node)
-MIN_MEMORY_GB_FOR_TASKS = 8  # Skip nodes with < 8GB RAM
-DISK_WARNING_THRESHOLD = 90  # Reduce jobs when disk > 90%
-MEMORY_WARNING_THRESHOLD = 95  # Reduce jobs when memory > 95%
+MIN_MEMORY_GB_FOR_TASKS = SelfplayAllocationDefaults.MIN_MEMORY_GB
+DISK_WARNING_THRESHOLD = SelfplayAllocationDefaults.DISK_WARNING_THRESHOLD
+MEMORY_WARNING_THRESHOLD = SelfplayAllocationDefaults.MEMORY_WARNING_THRESHOLD
 
 
 @dataclass

@@ -69,11 +69,11 @@ except ImportError:
     SQLITE_BUSY_TIMEOUT_LONG_MS = 30000
     SQLITE_TIMEOUT = 30
 
-# Event retention period (default: 24 hours)
-DEFAULT_RETENTION_HOURS = 24
+# Event retention/timeout (December 27, 2025: Centralized in coordination_defaults.py)
+from app.config.coordination_defaults import CrossProcessDefaults
 
-# Subscriber heartbeat timeout (subscribers not polling for this long are considered dead)
-SUBSCRIBER_TIMEOUT_SECONDS = 300  # 5 minutes
+DEFAULT_RETENTION_HOURS = CrossProcessDefaults.RETENTION_HOURS
+SUBSCRIBER_TIMEOUT_SECONDS = CrossProcessDefaults.SUBSCRIBER_TIMEOUT
 
 # Emit deprecation warning at import time (RR-CONSOLIDATION-2025-12)
 # Only warn if imported directly, not when imported by event_router internally

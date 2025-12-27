@@ -47,7 +47,7 @@ This guide documents how RingRift's cluster components integrate together. After
 │  ┌───────────────────┐  ┌─────────────────────────────────────┐│
 │  │ app/core/         │  │ app/coordination/                   ││
 │  │ - ssh.py          │  │ - event_router.py (unified events)  ││
-│  │ - node.py         │  │ - daemon_manager.py (30+ daemons)   ││
+│  │ - node.py         │  │ - daemon_manager.py (62 daemons)    ││
 │  │                   │  │ - auto_sync_daemon.py               ││
 │  └───────────────────┘  │ - sync_facade.py                    ││
 │                         │ - unified_distribution_daemon.py    ││

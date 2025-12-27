@@ -74,9 +74,11 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-# Chunk sizes for streaming checksum computation
-DEFAULT_CHUNK_SIZE = 8192  # 8KB - standard for most files
-LARGE_CHUNK_SIZE = 65536  # 64KB - better for large files
+# Chunk sizes (December 27, 2025: Centralized in coordination_defaults.py)
+from app.config.coordination_defaults import SyncIntegrityDefaults
+
+DEFAULT_CHUNK_SIZE = SyncIntegrityDefaults.DEFAULT_CHUNK_SIZE
+LARGE_CHUNK_SIZE = SyncIntegrityDefaults.LARGE_CHUNK_SIZE
 
 # Supported hash algorithms
 HashAlgorithm = Literal["sha256", "sha1", "md5", "blake2b"]
