@@ -249,8 +249,8 @@ async def create_daemon_watchdog() -> None:
     try:
         from app.coordination.daemon_watchdog import start_watchdog
 
-        watchdog = start_watchdog()
-        await watchdog.start()
+        # start_watchdog() is async and already calls .start() internally
+        watchdog = await start_watchdog()
         await _wait_for_daemon(watchdog)
     except ImportError as e:
         logger.error(f"DaemonWatchdog not available: {e}")
