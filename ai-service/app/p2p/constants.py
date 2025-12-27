@@ -18,11 +18,18 @@ try:
         BASELINE_ELO_RANDOM,  # Random AI pinned at 400 Elo
         ELO_K_FACTOR,
         INITIAL_ELO_RATING,
+        MIN_MEMORY_GB_FOR_TRAINING as CONFIG_MIN_MEMORY_GB_FOR_TRAINING,
     )
 except ImportError:
     BASELINE_ELO_RANDOM = 400  # Random AI pinned at 400 Elo
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
+    CONFIG_MIN_MEMORY_GB_FOR_TRAINING = 32
+
+try:
+    from app.config.ports import SWIM_PORT
+except ImportError:
+    SWIM_PORT = 7947
 
 # ============================================
 # Network Configuration
@@ -75,6 +82,13 @@ DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD
 MEMORY_CRITICAL_THRESHOLD = min(80, int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "80") or 80))
 MEMORY_WARNING_THRESHOLD = min(75, int(os.environ.get("RINGRIFT_P2P_MEMORY_WARNING_THRESHOLD", "75") or 75))
 MIN_MEMORY_GB_FOR_TASKS = int(os.environ.get("RINGRIFT_P2P_MIN_MEMORY_GB", "64") or 64)
+MIN_MEMORY_GB_FOR_TRAINING = int(
+    os.environ.get(
+        "RINGRIFT_P2P_MIN_MEMORY_GB_TRAINING",
+        str(CONFIG_MIN_MEMORY_GB_FOR_TRAINING),
+    )
+    or CONFIG_MIN_MEMORY_GB_FOR_TRAINING
+)
 
 # Load thresholds - 80% max
 LOAD_MAX_FOR_NEW_JOBS = min(80, int(os.environ.get("RINGRIFT_P2P_LOAD_MAX_FOR_NEW_JOBS", "80") or 80))
@@ -158,6 +172,11 @@ PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_S
 RETRY_RETIRED_NODE_INTERVAL = int(os.environ.get("RINGRIFT_P2P_RETRY_RETIRED_NODE_INTERVAL", "3600") or 3600)
 PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "21600") or 21600)
 
+# Peer cache / reputation settings
+PEER_CACHE_TTL_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_CACHE_TTL_SECONDS", "604800") or 604800)
+PEER_CACHE_MAX_ENTRIES = int(os.environ.get("RINGRIFT_P2P_PEER_CACHE_MAX_ENTRIES", "200") or 200)
+PEER_REPUTATION_ALPHA = float(os.environ.get("RINGRIFT_P2P_PEER_REPUTATION_ALPHA", "0.2") or 0.2)
+
 # ============================================
 # NAT/Relay Settings
 # ============================================
@@ -190,6 +209,7 @@ NAT_EXTERNAL_IP_CACHE_TTL = 300
 # Peer bootstrap
 PEER_BOOTSTRAP_INTERVAL = 60
 PEER_BOOTSTRAP_MIN_PEERS = 3
+VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_P2P_VOTER_MIN_QUORUM", "3") or 3)
 
 # ============================================
 # Safeguards
@@ -206,6 +226,7 @@ LOAD_AVERAGE_MAX_MULTIPLIER = float(os.environ.get("RINGRIFT_P2P_LOAD_AVG_MAX_MU
 SPAWN_RATE_LIMIT_PER_MINUTE = int(os.environ.get("RINGRIFT_P2P_SPAWN_RATE_LIMIT", "5") or 5)
 COORDINATOR_URL = os.environ.get("RINGRIFT_COORDINATOR_URL", "")
 AGENT_MODE_ENABLED = os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"1", "true", "yes", "on"}
+AUTO_UPDATE_ENABLED = os.environ.get("RINGRIFT_P2P_AUTO_UPDATE", "").lower() in {"1", "true", "yes", "on"}
 
 MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
 
@@ -226,6 +247,11 @@ RAFT_AUTO_UNLOCK_TIME = float(os.environ.get("RINGRIFT_RAFT_AUTO_UNLOCK_TIME", "
 # ============================================
 
 SWIM_ENABLED = os.environ.get("RINGRIFT_SWIM_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+SWIM_BIND_PORT = int(os.environ.get("RINGRIFT_SWIM_BIND_PORT", str(SWIM_PORT)) or SWIM_PORT)
+SWIM_FAILURE_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT", "5.0") or 5.0)
+SWIM_SUSPICION_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT", "3.0") or 3.0)
+SWIM_PING_INTERVAL = float(os.environ.get("RINGRIFT_SWIM_PING_INTERVAL", "1.0") or 1.0)
+SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT", "3") or 3)
 
 # ============================================
 # Feature Flags

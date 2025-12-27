@@ -69,7 +69,7 @@ sync_configs() {
     local config_dir="$(dirname "$0")/../config"
 
     local config_files=("$config_dir/unified_loop.yaml" "$config_dir/distributed_hosts.yaml")
-    if [[ -f "$config_dir/remote_hosts.yaml" ]]; then
+    if [[ ! -f "$config_dir/distributed_hosts.yaml" && -f "$config_dir/remote_hosts.yaml" ]]; then
         config_files+=("$config_dir/remote_hosts.yaml")
     fi
 

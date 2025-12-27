@@ -15,6 +15,9 @@ Usage:
     # With custom config
     python scripts/unified_data_sync.py --config config/unified_loop.yaml
 
+    # With custom hosts (SSoT defaults to distributed_hosts.yaml)
+    python scripts/unified_data_sync.py --hosts config/distributed_hosts.yaml
+
     # One-shot sync (replaces sync_all_data.py)
     python scripts/unified_data_sync.py --once
 
@@ -47,6 +50,8 @@ from app.config.ports import UNIFIED_SYNC_API_PORT
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("unified_data_sync")
+DEFAULT_HOSTS_PATH = "config/distributed_hosts.yaml"
+LEGACY_HOSTS_PATH = "config/remote_hosts.yaml"
 
 def run_with_watchdog(service_args: list, check_interval: int = 30, max_restarts: int = 10):
     """Run the service with watchdog monitoring.
@@ -179,7 +184,7 @@ Examples:
         """
     )
     parser.add_argument("--config", type=str, default="config/unified_loop.yaml", help="Config file")
-    parser.add_argument("--hosts", type=str, default="config/remote_hosts.yaml", help="Hosts file")
+    parser.add_argument("--hosts", type=str, default=DEFAULT_HOSTS_PATH, help="Hosts file (SSoT)")
     parser.add_argument("--once", action="store_true", help="Run one cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="Check what would sync")
     parser.add_argument("--interval", type=int, help="Override poll interval")
@@ -202,7 +207,7 @@ Examples:
         service_args = []
         if args.config != "config/unified_loop.yaml":
             service_args.extend(["--config", args.config])
-        if args.hosts != "config/remote_hosts.yaml":
+        if args.hosts != DEFAULT_HOSTS_PATH:
             service_args.extend(["--hosts", args.hosts])
         if args.interval:
             service_args.extend(["--interval", str(args.interval)])
@@ -229,6 +234,10 @@ Examples:
 
     config_path = AI_SERVICE_ROOT / args.config
     hosts_path = AI_SERVICE_ROOT / args.hosts
+    if args.hosts == DEFAULT_HOSTS_PATH and not hosts_path.exists():
+        legacy_hosts = AI_SERVICE_ROOT / LEGACY_HOSTS_PATH
+        if legacy_hosts.exists():
+            hosts_path = legacy_hosts
 
     if not config_path.exists():
         logger.error(f"Config file not found: {config_path}")

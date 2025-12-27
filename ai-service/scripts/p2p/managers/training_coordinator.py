@@ -28,13 +28,11 @@ logger = logging.getLogger(__name__)
 try:
     from scripts.p2p.constants import (
         LEADERLESS_TRAINING_TIMEOUT,
-        MIN_MEMORY_GB_FOR_TRAINING,
+        MIN_MEMORY_GB_FOR_TASKS,
     )
-    # Use training-specific memory constant
-    MIN_MEMORY_GB_FOR_TASKS = MIN_MEMORY_GB_FOR_TRAINING
 except ImportError:
     # Fallback for testing/standalone use
-    MIN_MEMORY_GB_FOR_TASKS = 8
+    MIN_MEMORY_GB_FOR_TASKS = 64  # Dec 2025: GH200 nodes
     LEADERLESS_TRAINING_TIMEOUT = 30  # Match constants.py
 
 

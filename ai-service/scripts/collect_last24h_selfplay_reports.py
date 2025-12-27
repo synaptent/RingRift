@@ -9,7 +9,7 @@ This script is designed for distributed selfplay setups:
 
 By default, hosts are sourced from:
 - `config/distributed_hosts.yaml` (SSH-based cluster nodes; gitignored)
-- `config/remote_hosts.yaml` (legacy AWS extra host; gitignored)
+- `config/remote_hosts.yaml` (legacy fallback; gitignored)
 
 Output layout (local):
   logs/selfplay/collected_last24h/<timestamp>/
@@ -145,7 +145,7 @@ def _load_hosts_from_distributed_config() -> list[HostConfig]:
     for name, cfg in (data.get("hosts", {}) or {}).items():
         if cfg.get("status") != "ready":
             continue
-        ssh_host = str(cfg.get("ssh_host", "")).strip()
+        ssh_host = str(cfg.get("tailscale_ip") or cfg.get("ssh_host", "")).strip()
         if not ssh_host:
             continue
         result.append(

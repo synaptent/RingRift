@@ -3696,7 +3696,11 @@ class P2POrchestrator(
         return result
 
     def _get_diversity_metrics(self) -> dict[str, Any]:
-        """Get diversity tracking metrics for monitoring."""
+        """Get diversity tracking metrics for monitoring.
+
+        .. deprecated:: December 2025
+            Use self.selfplay_scheduler.get_diversity_metrics() instead.
+        """
         metrics = dict(self.diversity_metrics)
         metrics["uptime_seconds"] = time.time() - metrics.get("last_reset", time.time())
 
@@ -3720,7 +3724,11 @@ class P2POrchestrator(
         return metrics
 
     def _track_selfplay_diversity(self, config: dict[str, Any]):
-        """Track diversity metrics for a scheduled selfplay game."""
+        """Track diversity metrics for a scheduled selfplay game.
+
+        .. deprecated:: December 2025
+            Use self.selfplay_scheduler.track_diversity() instead.
+        """
         # Track engine mode
         engine_mode = config.get("engine_mode", "unknown")
         if engine_mode not in self.diversity_metrics["games_by_engine_mode"]:
@@ -7570,6 +7578,10 @@ class P2POrchestrator(
     ):
         """Run selfplay job with appropriate script based on engine mode.
 
+        .. deprecated:: December 2025
+            Use self.job_manager.run_gpu_selfplay_job() instead.
+            Scheduled for removal in Q2 2026.
+
         For simple modes (random, heuristic, nnue-guided): use run_gpu_selfplay.py (GPU-optimized)
         For search modes (maxn, brs, mcts, gumbel-mcts): use run_hybrid_selfplay.py (supports search)
         """
@@ -9285,43 +9297,14 @@ print(wins / total)
     # -------------------------------------------------------------------------
 
     async def _run_distributed_tournament(self, job_id: str):
-        """Main coordinator loop for distributed tournament."""
-        try:
-            state = self.distributed_tournament_state.get(job_id)
-            if not state:
-                return
+        """Main coordinator loop for distributed tournament.
 
-            logger.info(f"Tournament coordinator started for job {job_id}")
-
-            # Distribute matches to workers
-            while state.pending_matches and state.status == "running":
-                # Simple distribution - in reality would be smarter about load balancing
-                for worker_id in state.worker_nodes:
-                    if not state.pending_matches:
-                        break
-                    match = state.pending_matches.pop(0)
-                    match["status"] = "in_progress"
-
-                    # Send match to worker
-                    await self._send_match_to_worker(job_id, worker_id, match)
-
-                await asyncio.sleep(1)
-
-            # Wait for all results
-            while state.completed_matches < state.total_matches and state.status == "running":
-                state.last_update = time.time()
-                await asyncio.sleep(1)
-
-            # Calculate final ratings
-            self._calculate_tournament_ratings(state)
-            state.status = "completed"
-
-            logger.info(f"Tournament {job_id} completed: {state.completed_matches} matches, ratings={state.final_ratings}")
-
-        except Exception as e:
-            logger.info(f"Tournament coordinator error: {e}")
-            if job_id in self.distributed_tournament_state:
-                self.distributed_tournament_state[job_id].status = f"error: {e}"
+        .. deprecated:: December 2025
+            Delegates to JobManager.run_distributed_tournament().
+            This wrapper method will be removed in Q2 2026.
+        """
+        # Delegate to JobManager (December 2025 refactoring)
+        await self.job_manager.run_distributed_tournament(job_id)
 
     async def _send_match_to_worker(self, job_id: str, worker_id: str, match: dict):
         """Send a match to a worker node."""
@@ -10123,85 +10106,12 @@ print(json.dumps(result))
     async def _run_distributed_selfplay(self, job_id: str):
         """Coordinate distributed selfplay for improvement loop.
 
-        Distributes selfplay games across all available workers.
-        Each worker runs selfplay using the current best model and reports
-        progress back to the coordinator.
-
         .. deprecated:: December 2025
-            This method duplicates JobManager.run_distributed_selfplay().
-            Future versions should delegate to self.job_manager.run_distributed_selfplay().
-            Scheduled for removal in Q2 2026.
+            Delegates to JobManager.run_distributed_selfplay().
+            This wrapper method will be removed in Q2 2026.
         """
-
-        state = self.improvement_loop_state.get(job_id)
-        if not state:
-            return
-
-        # Distribute selfplay across workers
-        num_workers = max(len(state.worker_nodes), 1)
-        games_per_worker = state.games_per_iteration // num_workers
-        remainder = state.games_per_iteration % num_workers
-
-        logger.info(f"Starting distributed selfplay: {games_per_worker} games/worker, {num_workers} workers")
-
-        # Create output directory for this iteration
-        iteration_dir = os.path.join(
-            self.ringrift_path, "ai-service", "data", "selfplay",
-            f"improve_{job_id}", f"iter_{state.current_iteration}"
-        )
-        os.makedirs(iteration_dir, exist_ok=True)
-
-        # Send selfplay tasks to workers
-        tasks_sent = 0
-        for idx, worker_id in enumerate(state.worker_nodes):
-            with self.peers_lock:
-                worker = self.peers.get(worker_id)
-            if not worker or not worker.is_healthy():
-                continue
-
-            # Give first worker(s) the remainder games
-            worker_games = games_per_worker + (1 if idx < remainder else 0)
-
-            try:
-                timeout = ClientTimeout(total=10)
-                async with get_client_session(timeout) as session:
-                    url = self._url_for_peer(worker, "/improvement/selfplay")
-                    await session.post(url, json={
-                        "job_id": job_id,
-                        "iteration": state.current_iteration,
-                        "num_games": worker_games,
-                        "board_type": state.board_type,
-                        "num_players": state.num_players,
-                        "model_path": state.best_model_path,
-                        "output_dir": iteration_dir,
-                    }, headers=self._auth_headers())
-                    tasks_sent += 1
-            except Exception as e:
-                logger.error(f"Failed to send selfplay task to {worker_id}: {e}")
-
-        if tasks_sent == 0:
-            # No workers available, run locally
-            logger.info("No workers available, running selfplay locally")
-            await self._run_local_selfplay(
-                job_id, state.games_per_iteration,
-                state.board_type, state.num_players,
-                state.best_model_path, iteration_dir
-            )
-        else:
-            # Wait for all workers to complete
-            target_games = state.games_per_iteration
-            check_interval = 5  # seconds
-            timeout_seconds = 3600  # 1 hour max for selfplay phase
-            elapsed = 0
-
-            while elapsed < timeout_seconds and state.status == "running":
-                total_done = sum(state.selfplay_progress.values())
-                if total_done >= target_games:
-                    break
-                await asyncio.sleep(check_interval)
-                elapsed += check_interval
-
-            logger.info(f"Selfplay phase completed: {sum(state.selfplay_progress.values())} games")
+        # Delegate to JobManager (December 2025 refactoring)
+        await self.job_manager.run_distributed_selfplay(job_id)
 
     async def _run_local_selfplay(
         self, job_id: str, num_games: int, board_type: str,
@@ -10543,6 +10453,11 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         TRAINING CHECKPOINTING: If a failed job with checkpoint exists for this
         config, includes resume info in the dispatch.
+
+        .. deprecated:: December 2025
+            This method duplicates TrainingCoordinator.dispatch_training_job().
+            Future versions should delegate to self.training_coordinator.dispatch_training_job().
+            Scheduled for removal in Q2 2026.
         """
         job_type = job_config["job_type"]
         board_type = job_config["board_type"]
@@ -11152,6 +11067,11 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         2. Archives model if gauntlet fails (< 50% win rate vs median)
         3. Notifies improvement_cycle_manager of training completion
         4. Schedules a model comparison tournament
+
+        .. deprecated:: December 2025
+            This method duplicates TrainingCoordinator.handle_training_job_completion().
+            Future versions should delegate to self.training_coordinator.handle_training_job_completion().
+            Scheduled for removal in Q2 2026.
         """
         if not self.improvement_cycle_manager:
             return
@@ -11188,7 +11108,13 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
             logger.error(f"handling training completion for {job.job_id}: {e}")
 
     async def _schedule_model_comparison_tournament(self, job: TrainingJob) -> None:
-        """Schedule a tournament to compare the new model against baseline."""
+        """Schedule a tournament to compare the new model against baseline.
+
+        .. deprecated:: December 2025
+            This method duplicates TrainingCoordinator._schedule_model_comparison_tournament().
+            Future versions should delegate to self.training_coordinator.
+            Scheduled for removal in Q2 2026.
+        """
         if not job.output_model_path:
             return
 
@@ -11281,6 +11207,12 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
         CPU nodes are available.
 
         Returns True if model passes, False if it should be archived.
+
+        .. deprecated:: December 2025
+            This method duplicates TrainingCoordinator._run_post_training_gauntlet()
+            and JobManager.run_post_training_gauntlet().
+            Future versions should delegate to self.training_coordinator.
+            Scheduled for removal in Q2 2026.
         """
         # Check for skip flag
         if os.environ.get("RINGRIFT_SKIP_POST_TRAINING_GAUNTLET", "0") == "1":
@@ -24849,6 +24781,9 @@ print(json.dumps({{
     async def _cleanup_old_completed_jobs(self):
         """Clean up completed/failed jobs older than 24 hours to prevent memory leaks.
 
+        .. deprecated:: December 2025
+            Use self.job_manager.cleanup_completed_jobs() instead.
+
         Jobs accumulate in self.local_jobs as they complete. This method removes
         old completed/failed jobs that are no longer needed for status tracking.
         """
@@ -24877,6 +24812,10 @@ print(json.dumps({{
 
     def _get_elo_based_priority_boost(self, board_type: str, num_players: int) -> int:
         """Get priority boost based on ELO performance for this config.
+
+        .. deprecated:: December 2025
+            Use self.selfplay_scheduler.get_elo_based_priority_boost() instead.
+            Scheduled for removal in Q2 2026.
 
         PRIORITY-BASED SCHEDULING: Configs with high-performing models get
         priority boost to allocate more resources to promising configurations.
@@ -24919,6 +24858,11 @@ print(json.dumps({{
 
     def _pick_weighted_selfplay_config(self, node) -> dict[str, Any] | None:
         """Pick a selfplay config weighted by priority and node capabilities.
+
+        .. deprecated:: December 2025
+            Use self.selfplay_scheduler.pick_weighted_config() instead.
+            This method is dead code - callers now use selfplay_scheduler directly.
+            Scheduled for removal in Q2 2026.
 
         PRIORITY-BASED SCHEDULING: Combines static priority with dynamic
         ELO-based boosts to allocate more resources to high-performing configs.
@@ -25548,6 +25492,10 @@ print(json.dumps({{
 
     def _get_hybrid_job_targets(self, node: NodeInfo) -> dict[str, int]:
         """Get separate GPU and CPU-only selfplay job targets for hybrid mode.
+
+        .. deprecated:: December 2025
+            Use self.selfplay_scheduler.get_hybrid_job_targets() instead.
+            Scheduled for removal in Q2 2026.
 
         For high-CPU nodes with limited GPU VRAM (like Vast hosts), this enables:
         - Running GPU jobs up to VRAM limit

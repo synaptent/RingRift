@@ -19,7 +19,7 @@ Environment="PYTHONPATH=/home/ubuntu/ringrift/ai-service"
 ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python \
     scripts/unified_data_sync.py \
     --config config/unified_loop.yaml \
-    --hosts config/remote_hosts.yaml \
+    --hosts config/distributed_hosts.yaml \
     --watchdog
 
 # Restart policy

@@ -301,6 +301,39 @@ The managers module is part of the ongoing P2P orchestrator decomposition:
 **Original orchestrator size**: ~30,000+ lines
 **Per-manager size**: 150-750 lines each
 
+---
+
+## Delegation Status (December 2025)
+
+While managers are **extracted** (code exists), not all are **delegated** (called by orchestrator).
+~1,600 LOC of duplicate code remains in `p2p_orchestrator.py`.
+
+| Manager             | Methods Delegated | Methods Available | LOC Savings | Priority |
+| ------------------- | ----------------- | ----------------- | ----------- | -------- |
+| StateManager        | 7/7 (100%)        | 7                 | ~200        | Done     |
+| NodeSelector        | 0/8 (0%)          | 8                 | ~160        | Medium   |
+| SelfplayScheduler   | 2/6 (33%)         | 6                 | ~280        | High     |
+| TrainingCoordinator | 1/8 (12%)         | 8                 | ~350        | Critical |
+| JobManager          | 0/7 (0%)          | 7                 | ~290        | Critical |
+| SyncPlanner         | 0/4 (0%)          | 4                 | ~390        | High     |
+
+**Currently delegated**:
+
+- `SelfplayScheduler.pick_weighted_config()` - used in `_spawn_selfplay_tasks()`
+- `TrainingCoordinator.check_training_readiness()` - used in training loop
+
+**Not delegated** (have deprecation docstrings):
+
+- `_track_selfplay_diversity()` → `SelfplayScheduler.track_diversity()`
+- `_get_diversity_metrics()` → `SelfplayScheduler.get_diversity_metrics()`
+- `_run_distributed_selfplay()` → `JobManager.run_distributed_selfplay()`
+- `_run_local_selfplay()` → `JobManager.run_local_selfplay()`
+- `_run_training()` → `TrainingCoordinator.dispatch_training_job()`
+- `_collect_local_data_manifest()` → `SyncPlanner.collect_local_manifest()`
+- `_plan_data_sync()` → `SyncPlanner.generate_sync_plan()`
+
+**Scheduled for removal**: Q2 2026
+
 ### Migration Path
 
 1. Import managers: `from scripts.p2p.managers import ManagerName`

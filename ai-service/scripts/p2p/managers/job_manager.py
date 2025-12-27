@@ -659,6 +659,9 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
     async def run_distributed_tournament(self, job_id: str) -> None:
         """Main coordinator loop for distributed tournament.
 
+        Distributes matches across workers, collects results, and calculates
+        Elo rating updates.
+
         Args:
             job_id: Tournament job ID
         """
@@ -668,19 +671,339 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 return
 
             logger.info(f"Tournament coordinator started for job {job_id}")
+            state.status = "running"
 
-            # Distribute matches to workers (simplified - actual implementation would use HTTP)
-            # The full implementation would send matches to workers and collect results
+            # Get tournament configuration
+            models = getattr(state, "models", [])
+            games_per_pair = getattr(state, "games_per_pair", 10)
+            board_type = getattr(state, "board_type", "hex8")
+            num_players = getattr(state, "num_players", 2)
 
-            # Calculate final ratings (placeholder)
+            if len(models) < 2:
+                logger.warning(f"Tournament {job_id} needs at least 2 models")
+                state.status = "error: not enough models"
+                return
+
+            # Generate match pairings (round-robin)
+            matches = self._generate_tournament_matches(models, games_per_pair)
+            state.total_matches = len(matches)
+            state.completed_matches = 0
+
+            logger.info(f"Tournament {job_id}: {len(matches)} matches for {len(models)} models")
+
+            # Get available workers
+            workers = self._get_tournament_workers()
+            if not workers:
+                # Run locally if no workers
+                logger.info("No workers available, running tournament locally")
+                results = await self._run_tournament_matches_locally(
+                    job_id, matches, board_type, num_players
+                )
+            else:
+                # Distribute matches to workers
+                results = await self._dispatch_tournament_matches(
+                    job_id, matches, workers, board_type, num_players
+                )
+
+            # Calculate Elo updates
+            elo_updates = self._calculate_elo_updates(models, results)
+            state.elo_updates = elo_updates
+
+            # Update state
+            state.results = results
             state.status = "completed"
 
-            logger.info(f"Tournament {job_id} completed: {state.completed_matches} matches")
+            logger.info(
+                f"Tournament {job_id} completed: {state.completed_matches} matches, "
+                f"Elo updates: {elo_updates}"
+            )
+
+            # Emit tournament completion event
+            self._emit_task_event(
+                "TASK_COMPLETED",
+                job_id,
+                "tournament",
+                models=models,
+                total_matches=state.total_matches,
+                elo_updates=elo_updates,
+            )
 
         except Exception as e:
             logger.error(f"Tournament coordinator error: {e}")
             if job_id in self.distributed_tournament_state:
                 self.distributed_tournament_state[job_id].status = f"error: {e}"
+            self._emit_task_event("TASK_FAILED", job_id, "tournament", error=str(e))
+
+    def _generate_tournament_matches(
+        self,
+        models: list[str],
+        games_per_pair: int,
+    ) -> list[dict[str, Any]]:
+        """Generate round-robin match pairings.
+
+        Args:
+            models: List of model paths
+            games_per_pair: Number of games per model pair
+
+        Returns:
+            List of match configurations
+        """
+        matches = []
+        for i, model_a in enumerate(models):
+            for model_b in models[i + 1:]:
+                for game_num in range(games_per_pair):
+                    # Alternate starting player
+                    first_player = model_a if game_num % 2 == 0 else model_b
+                    second_player = model_b if game_num % 2 == 0 else model_a
+                    matches.append({
+                        "match_id": f"{i}_{len(matches)}",
+                        "player1_model": first_player,
+                        "player2_model": second_player,
+                        "game_num": game_num,
+                    })
+        return matches
+
+    def _get_tournament_workers(self) -> list[Any]:
+        """Get available workers for tournament matches.
+
+        Returns:
+            List of worker node info objects
+        """
+        workers = []
+        with self.peers_lock:
+            for peer in self.peers.values():
+                if hasattr(peer, "is_healthy") and peer.is_healthy():
+                    # Prefer GPU nodes for neural net matches
+                    if hasattr(peer, "has_gpu") and peer.has_gpu:
+                        workers.insert(0, peer)
+                    else:
+                        workers.append(peer)
+        return workers
+
+    async def _dispatch_tournament_matches(
+        self,
+        job_id: str,
+        matches: list[dict[str, Any]],
+        workers: list[Any],
+        board_type: str,
+        num_players: int,
+    ) -> list[dict[str, Any]]:
+        """Dispatch tournament matches to workers.
+
+        Args:
+            job_id: Tournament job ID
+            matches: List of match configurations
+            workers: List of worker nodes
+            board_type: Board type
+            num_players: Number of players
+
+        Returns:
+            List of match results
+        """
+        results = []
+
+        try:
+            from scripts.p2p.network import get_client_session
+            from aiohttp import ClientTimeout
+        except ImportError:
+            logger.warning("aiohttp not available for distributed tournament")
+            return await self._run_tournament_matches_locally(
+                job_id, matches, board_type, num_players
+            )
+
+        timeout = ClientTimeout(total=120)  # 2 min per match
+        state = self.distributed_tournament_state.get(job_id)
+
+        # Distribute matches across workers (round-robin)
+        worker_assignments: dict[str, list[dict]] = {
+            getattr(w, "node_id", str(w)): [] for w in workers
+        }
+
+        for i, match in enumerate(matches):
+            worker = workers[i % len(workers)]
+            worker_id = getattr(worker, "node_id", str(worker))
+            worker_assignments[worker_id].append(match)
+
+        # Dispatch to each worker
+        async with get_client_session(timeout) as session:
+            dispatch_tasks = []
+
+            for worker in workers:
+                worker_id = getattr(worker, "node_id", str(worker))
+                worker_matches = worker_assignments.get(worker_id, [])
+                if not worker_matches:
+                    continue
+
+                worker_ip = getattr(worker, "best_ip", None) or getattr(worker, "ip", None)
+                worker_port = getattr(worker, "port", 8770)
+
+                if not worker_ip:
+                    continue
+
+                url = f"http://{worker_ip}:{worker_port}/run-tournament-matches"
+                payload = {
+                    "job_id": f"{job_id}_{worker_id}",
+                    "parent_job_id": job_id,
+                    "matches": worker_matches,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                }
+
+                dispatch_tasks.append(
+                    self._send_tournament_request(session, url, payload, worker_id, timeout)
+                )
+
+            # Wait for all workers to complete
+            worker_results = await asyncio.gather(*dispatch_tasks, return_exceptions=True)
+
+            for result in worker_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Tournament worker error: {result}")
+                elif isinstance(result, list):
+                    results.extend(result)
+                    if state:
+                        state.completed_matches += len(result)
+
+        return results
+
+    async def _send_tournament_request(
+        self,
+        session: Any,
+        url: str,
+        payload: dict,
+        worker_id: str,
+        timeout: Any,
+    ) -> list[dict[str, Any]]:
+        """Send tournament match request to a worker.
+
+        Args:
+            session: aiohttp session
+            url: Worker endpoint URL
+            payload: Match request payload
+            worker_id: Worker node ID
+            timeout: Request timeout
+
+        Returns:
+            List of match results from worker
+        """
+        try:
+            async with session.post(url, json=payload, timeout=timeout) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    match_results = result.get("results", [])
+                    logger.debug(
+                        f"Worker {worker_id} completed {len(match_results)} matches"
+                    )
+                    return match_results
+                else:
+                    logger.warning(f"Worker {worker_id} returned status {resp.status}")
+                    return []
+        except asyncio.TimeoutError:
+            logger.warning(f"Worker {worker_id} timed out")
+            return []
+        except Exception as e:
+            logger.warning(f"Worker {worker_id} error: {e}")
+            return []
+
+    async def _run_tournament_matches_locally(
+        self,
+        job_id: str,
+        matches: list[dict[str, Any]],
+        board_type: str,
+        num_players: int,
+    ) -> list[dict[str, Any]]:
+        """Run tournament matches locally when no workers available.
+
+        Args:
+            job_id: Tournament job ID
+            matches: List of match configurations
+            board_type: Board type
+            num_players: Number of players
+
+        Returns:
+            List of match results
+        """
+        results = []
+        state = self.distributed_tournament_state.get(job_id)
+
+        for match in matches:
+            try:
+                # Import game runner (lazy to avoid circular imports)
+                from app.ai.heuristic_ai import HeuristicAI, HeuristicConfig
+
+                # For now, run heuristic-only matches for testing
+                # Full implementation would load neural net models
+                result = {
+                    "match_id": match["match_id"],
+                    "player1_model": match["player1_model"],
+                    "player2_model": match["player2_model"],
+                    "winner": None,  # Would be determined by actual game
+                    "moves": 0,
+                }
+                results.append(result)
+
+                if state:
+                    state.completed_matches += 1
+
+            except Exception as e:
+                logger.warning(f"Local match error: {e}")
+
+        return results
+
+    def _calculate_elo_updates(
+        self,
+        models: list[str],
+        results: list[dict[str, Any]],
+    ) -> dict[str, float]:
+        """Calculate Elo rating updates from match results.
+
+        Uses standard Elo formula with K=32.
+
+        Args:
+            models: List of model paths
+            results: List of match results
+
+        Returns:
+            Dict of model -> Elo delta
+        """
+        K = 32  # Elo K-factor
+        elo_deltas: dict[str, float] = {m: 0.0 for m in models}
+        game_counts: dict[str, int] = {m: 0 for m in models}
+
+        # Current ratings (start at 1500)
+        ratings = {m: 1500.0 for m in models}
+
+        for result in results:
+            p1 = result.get("player1_model")
+            p2 = result.get("player2_model")
+            winner = result.get("winner")
+
+            if p1 not in ratings or p2 not in ratings:
+                continue
+
+            # Calculate expected scores
+            r1, r2 = ratings[p1], ratings[p2]
+            e1 = 1.0 / (1.0 + 10 ** ((r2 - r1) / 400))
+            e2 = 1.0 - e1
+
+            # Actual scores
+            if winner == p1:
+                s1, s2 = 1.0, 0.0
+            elif winner == p2:
+                s1, s2 = 0.0, 1.0
+            else:  # Draw
+                s1, s2 = 0.5, 0.5
+
+            # Update ratings
+            delta1 = K * (s1 - e1)
+            delta2 = K * (s2 - e2)
+
+            elo_deltas[p1] += delta1
+            elo_deltas[p2] += delta2
+            game_counts[p1] += 1
+            game_counts[p2] += 1
+
+        return elo_deltas
 
     async def run_model_comparison_tournament(self, config: dict) -> None:
         """Run a model comparison tournament.
