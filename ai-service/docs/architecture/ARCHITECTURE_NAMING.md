@@ -4,18 +4,18 @@ This document establishes naming conventions for modules and classes in the Ring
 
 ## Module Suffix Conventions
 
-| Suffix | Purpose | Examples |
-|--------|---------|----------|
+| Suffix          | Purpose                                                | Examples                                                                   |
+| --------------- | ------------------------------------------------------ | -------------------------------------------------------------------------- |
 | `*Orchestrator` | Cross-module coordination, manages multiple subsystems | `TrainingOrchestrator`, `SelfplayOrchestrator`, `DataPipelineOrchestrator` |
-| `*Scheduler` | Time/priority-based dispatch and allocation | `SelfplayScheduler`, `CurriculumScheduler`, `JobScheduler` |
-| `*Manager` | State and lifecycle management for a single concern | `DaemonManager`, `CheckpointManager`, `ResourceManager` |
-| `*Controller` | Request/response flow, handles specific actions | `PromotionController`, `FeedbackLoopController` |
-| `*Daemon` | Long-running background worker process | `SyncDaemon`, `TournamentDaemon`, `IdleResourceDaemon` |
-| `*Service` | Stateless utility providing operations | `EloService`, `ModelService`, `MetricsService` |
-| `*Handler` | Event or request handler | `ElectionHandler`, `WorkQueueHandler` |
-| `*Monitor` | Observes and reports on system state | `ClusterMonitor`, `QualityMonitor` |
-| `*Runner` | Executes a specific task or workflow | `SelfplayRunner`, `GauntletRunner` |
-| `*Config` | Configuration dataclass | `TrainingConfig`, `SelfplayConfig`, `GauntletConfig` |
+| `*Scheduler`    | Time/priority-based dispatch and allocation            | `SelfplayScheduler`, `CurriculumScheduler`, `JobScheduler`                 |
+| `*Manager`      | State and lifecycle management for a single concern    | `DaemonManager`, `CheckpointManager`, `ResourceManager`                    |
+| `*Controller`   | Request/response flow, handles specific actions        | `PromotionController`, `FeedbackLoopController`                            |
+| `*Daemon`       | Long-running background worker process                 | `SyncDaemon`, `TournamentDaemon`, `IdleResourceDaemon`                     |
+| `*Service`      | Stateless utility providing operations                 | `EloService`, `ModelService`, `MetricsService`                             |
+| `*Handler`      | Event or request handler                               | `ElectionHandler`, `WorkQueueHandler`                                      |
+| `*Monitor`      | Observes and reports on system state                   | `ClusterMonitor`, `QualityMonitor`                                         |
+| `*Runner`       | Executes a specific task or workflow                   | `SelfplayRunner`, `GauntletRunner`                                         |
+| `*Config`       | Configuration dataclass                                | `TrainingConfig`, `SelfplayConfig`, `GauntletConfig`                       |
 
 ## Package Structure
 
@@ -51,24 +51,24 @@ ai-service/
 
 Avoid these patterns:
 
-| Anti-Pattern | Problem | Better Alternative |
-|--------------|---------|-------------------|
-| `*Helper` | Too vague | Use specific suffix based on purpose |
-| `*Util` / `*Utils` | Becomes dumping ground | Split into focused modules |
-| `*Wrapper` | Unclear what it wraps | Name based on abstraction purpose |
-| `*Base` in module names | Implementation detail | Keep in class name only |
-| Abbreviations | Reduces readability | Spell out: `Scheduler` not `Sched` |
+| Anti-Pattern            | Problem                | Better Alternative                   |
+| ----------------------- | ---------------------- | ------------------------------------ |
+| `*Helper`               | Too vague              | Use specific suffix based on purpose |
+| `*Util` / `*Utils`      | Becomes dumping ground | Split into focused modules           |
+| `*Wrapper`              | Unclear what it wraps  | Name based on abstraction purpose    |
+| `*Base` in module names | Implementation detail  | Keep in class name only              |
+| Abbreviations           | Reduces readability    | Spell out: `Scheduler` not `Sched`   |
 
 ## Board Type Naming
 
 Always use canonical board type identifiers:
 
-| Canonical | Avoid |
-|-----------|-------|
-| `hex8` | `h8`, `hex_8`, `hexSmall` |
-| `square8` | `sq8`, `s8`, `squareSmall` |
-| `square19` | `sq19`, `s19`, `squareLarge` |
-| `hexagonal` | `hex`, `hexLarge`, `bigHex` |
+| Canonical   | Avoid                        |
+| ----------- | ---------------------------- |
+| `hex8`      | `h8`, `hex_8`, `hexSmall`    |
+| `square8`   | `sq8`, `s8`, `squareSmall`   |
+| `square19`  | `sq19`, `s19`, `squareLarge` |
+| `hexagonal` | `hex`, `hexLarge`, `bigHex`  |
 
 ## Configuration Key Naming
 
@@ -84,12 +84,12 @@ Configuration keys follow these patterns:
 
 ## File Naming
 
-| Type | Convention | Example |
-|------|------------|---------|
-| Module | snake_case | `selfplay_scheduler.py` |
-| Test file | `test_*.py` | `test_selfplay_scheduler.py` |
-| Config file | snake_case | `training_config.py` |
-| Documentation | UPPER_SNAKE_CASE.md | `ARCHITECTURE_NAMING.md` |
+| Type          | Convention          | Example                      |
+| ------------- | ------------------- | ---------------------------- |
+| Module        | snake_case          | `selfplay_scheduler.py`      |
+| Test file     | `test_*.py`         | `test_selfplay_scheduler.py` |
+| Config file   | snake_case          | `training_config.py`         |
+| Documentation | UPPER_SNAKE_CASE.md | `ARCHITECTURE_NAMING.md`     |
 
 ## Import Path Conventions
 
@@ -97,11 +97,11 @@ Prefer the new package-based import paths:
 
 ```python
 # Preferred (new)
-from app.coordination.cluster.sync import SyncScheduler
-from app.training.temperature import create_scheduler
+from app.coordination.sync_facade import sync
+from app.coordination.auto_sync_daemon import AutoSyncDaemon
 
-# Deprecated (old flat structure)
-from app.coordination.sync_coordinator import SyncScheduler  # DeprecationWarning
+# Legacy (still available, but deprecated for new code)
+from app.coordination.cluster.sync import SyncScheduler  # Deprecated
 ```
 
 ## Version Suffixes
@@ -133,12 +133,12 @@ When deprecating a module:
 
 ## Currently Deprecated Modules
 
-| Module | Replacement | Removal Target |
-|--------|-------------|----------------|
-| `orchestrated_training.py` | `unified_orchestrator.py` | Q1 2026 |
-| `integrated_enhancements.py` | `unified_orchestrator.py` | Q1 2026 |
-| `_game_engine_legacy.py` | `game_engine/` | Q2 2026 |
+| Module                       | Replacement               | Removal Target |
+| ---------------------------- | ------------------------- | -------------- |
+| `orchestrated_training.py`   | `unified_orchestrator.py` | Q1 2026        |
+| `integrated_enhancements.py` | `unified_orchestrator.py` | Q1 2026        |
+| `_game_engine_legacy.py`     | `game_engine/`            | Q2 2026        |
 
 ---
 
-*Last updated: December 2025*
+_Last updated: December 2025_

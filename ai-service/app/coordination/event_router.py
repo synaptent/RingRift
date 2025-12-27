@@ -107,6 +107,7 @@ except ImportError:
     emit_host_online = None
     emit_idle_resource_detected = None
     emit_leader_elected = None
+    emit_leader_lost = None
     emit_node_overloaded = None
     emit_promotion_candidate = None
     emit_quality_check_requested = None
@@ -1114,7 +1115,9 @@ __all__ = [
     "emit_host_offline",
     "emit_host_online",
     "emit_idle_resource_detected",
+    "emit_leader_lost",
     "emit_leader_elected",
+    "emit_leader_lost",
     "emit_node_overloaded",
     "emit_promotion_candidate",
     "emit_quality_check_requested",

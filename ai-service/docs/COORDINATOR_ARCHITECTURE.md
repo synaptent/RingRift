@@ -33,35 +33,36 @@ The codebase has two main coordination layers:
 
 This directory contains modules for **deciding what to do and when**:
 
-| Module                          | Responsibility                          |
-| ------------------------------- | --------------------------------------- |
-| `coordinator_base.py`           | Abstract base class for coordinators    |
-| `coordinator_registry.py`       | Central coordinator dispatch            |
-| `sync_coordinator.py`           | **SyncScheduler** - When/what to sync   |
-| `training_coordinator.py`       | Training job coordination               |
-| `unified_scheduler.py`          | Unified scheduling across concerns      |
-| `leadership_coordinator.py`     | Leader election for distributed systems |
-| `error_recovery_coordinator.py` | Error handling and recovery             |
-| `bandwidth_manager.py`          | Network bandwidth allocation            |
-| `job_scheduler.py`              | Generic job scheduling                  |
-| `lock_manager.py`               | Distributed lock management             |
-| `dynamic_thresholds.py`         | Adaptive threshold configuration        |
+| Module                          | Responsibility                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `coordinator_base.py`           | Abstract base class for coordinators                                              |
+| `coordinator_registry.py`       | Central coordinator dispatch                                                      |
+| `sync_coordinator.py`           | **SyncScheduler** - When/what to sync (deprecated; use AutoSyncDaemon/SyncFacade) |
+| `sync_facade.py`                | **SyncFacade** - Programmatic sync routing entry point                            |
+| `training_coordinator.py`       | Training job coordination                                                         |
+| `unified_scheduler.py`          | Unified scheduling across concerns                                                |
+| `leadership_coordinator.py`     | Leader election for distributed systems                                           |
+| `error_recovery_coordinator.py` | Error handling and recovery                                                       |
+| `bandwidth_manager.py`          | Network bandwidth allocation                                                      |
+| `job_scheduler.py`              | Generic job scheduling                                                            |
+| `lock_manager.py`               | Distributed lock management                                                       |
+| `dynamic_thresholds.py`         | Adaptive threshold configuration                                                  |
 
 ### `app/distributed/` - Execution & Transport
 
 This directory contains modules for **actually performing distributed operations**:
 
-| Module                   | Responsibility                                 |
-| ------------------------ | ---------------------------------------------- |
-| `sync_coordinator.py`    | **DistributedSyncCoordinator** - Execute syncs |
-| `sync_orchestrator.py`   | **SyncOrchestrator** - Unified sync facade     |
-| `cluster_coordinator.py` | Cluster membership and state                   |
-| `aria2_transport.py`     | aria2-based file transfers                     |
-| `ssh_transport.py`       | SSH/rsync transfers                            |
-| `gossip_sync.py`         | P2P gossip protocol                            |
-| `circuit_breaker.py`     | Fault tolerance                                |
-| `host_classification.py` | Host capability detection                      |
-| `health_checks.py`       | Distributed health monitoring                  |
+| Module                   | Responsibility                                                  |
+| ------------------------ | --------------------------------------------------------------- |
+| `sync_coordinator.py`    | **DistributedSyncCoordinator** - Execute syncs                  |
+| `sync_orchestrator.py`   | **SyncOrchestrator** - Legacy sync facade (pending deprecation) |
+| `cluster_coordinator.py` | Cluster membership and state                                    |
+| `aria2_transport.py`     | aria2-based file transfers                                      |
+| `ssh_transport.py`       | SSH/rsync transfers                                             |
+| `gossip_sync.py`         | P2P gossip protocol                                             |
+| `circuit_breaker.py`     | Fault tolerance                                                 |
+| `host_classification.py` | Host capability detection                                       |
+| `health_checks.py`       | Distributed health monitoring                                   |
 
 ## Key Patterns
 
@@ -69,9 +70,8 @@ This directory contains modules for **actually performing distributed operations
 
 ```python
 # Orchestrator (highest level) - use this in most cases
-from app.distributed.sync_orchestrator import get_sync_orchestrator
-orchestrator = get_sync_orchestrator()
-await orchestrator.sync_all()
+from app.coordination.sync_facade import sync
+await sync("all")
 
 # Coordinator (mid level) - for specific operations
 from app.coordination.training_coordinator import get_training_coordinator
@@ -99,20 +99,25 @@ class MyCoordinator(CoordinatorBase):
 
 ### 3. Event Bus Integration
 
-Coordinators emit events via the centralized EventBus:
+Coordinators emit events via the unified EventRouter:
 
 ```python
-from app.events import EventBus, TrainingCompletedEvent
+from app.coordination.event_router import publish
+from app.distributed.data_events import DataEventType
 
-bus = EventBus.get_instance()
-await bus.emit(TrainingCompletedEvent(config_key="square8_2p"))
+await publish(
+    DataEventType.TRAINING_COMPLETED,
+    payload={"config_key": "square8_2p"},
+    source="training_coordinator",
+)
 ```
 
 ## Which Module to Use?
 
 | Task                            | Module                  | Import                                                                       |
 | ------------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
-| Sync data/models across cluster | `SyncOrchestrator`      | `from app.distributed.sync_orchestrator import get_sync_orchestrator`        |
+| Sync data/models across cluster | `SyncFacade`            | `from app.coordination.sync_facade import sync`                              |
+| Continuous/daemon sync          | `AutoSyncDaemon`        | `from app.coordination.auto_sync_daemon import AutoSyncDaemon`               |
 | Check training coordination     | `TrainingCoordinator`   | `from app.coordination.training_coordinator import get_training_coordinator` |
 | Schedule jobs                   | `JobScheduler`          | `from app.coordination.job_scheduler import JobScheduler`                    |
 | Manage distributed locks        | `LockManager`           | `from app.coordination.lock_manager import get_lock_manager`                 |

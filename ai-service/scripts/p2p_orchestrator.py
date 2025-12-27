@@ -400,6 +400,49 @@ async def _emit_p2p_leader_elected(leader_id: str, term: int = 0) -> None:
         logger.debug(f"[P2P Event] Failed to emit LEADER_ELECTED: {e}")
 
 
+async def _emit_p2p_leader_lost(old_leader_id: str, reason: str = "") -> None:
+    """Safely emit LEADER_LOST event when leader becomes unavailable.
+
+    December 2025: Enables LeadershipCoordinator, SyncRouter, and other
+    coordinators to react to leader loss in real-time.
+
+    Args:
+        old_leader_id: The previous leader node ID that is no longer leader
+        reason: Reason for leader loss (e.g., "dead", "ineligible", "expired")
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.coordination.event_router import emit_leader_lost
+        await emit_leader_lost(
+            old_leader_id=old_leader_id,
+            reason=reason,
+            source="p2p_orchestrator",
+        )
+        logger.info(f"[P2P Event] Emitted LEADER_LOST for {old_leader_id} (reason: {reason})")
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit LEADER_LOST: {e}")
+
+
+def _emit_p2p_leader_lost_sync(old_leader_id: str, reason: str = "") -> None:
+    """Synchronous version: emit LEADER_LOST via fire-and-forget task.
+
+    For use in sync code paths where leader becomes ineligible.
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
+        else:
+            pass
+    except RuntimeError:
+        pass
+
+
 def _emit_p2p_host_offline_sync(node_id: str, reason: str = "timeout", last_seen: float | None = None) -> None:
     """Synchronous version: emit HOST_OFFLINE via fire-and-forget task.
 
@@ -20017,11 +20060,14 @@ print(json.dumps({{
                 if not self._is_leader_eligible(leader, conflict_keys):
                     reason = "dead" if not leader.is_alive() else "ineligible"
                     logger.info(f"Leader {self.leader_id} is {reason}, starting election")
+                    # Dec 2025: Emit LEADER_LOST before clearing leader_id
+                    old_leader_id = self.leader_id
                     self.leader_id = None
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
                     self.last_lease_renewal = 0.0
                     self.role = NodeRole.FOLLOWER
+                    asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
                     asyncio.create_task(self._start_election())
 
         # If we're leaderless, periodically retry elections

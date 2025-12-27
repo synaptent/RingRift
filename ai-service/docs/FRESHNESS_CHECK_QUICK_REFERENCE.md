@@ -40,8 +40,7 @@ TRAINING BLOCKED: Training data is STALE for hex8_2p:
 ### Option 1: Get Fresh Data (Recommended)
 
 ```bash
-python scripts/run_training_loop.py --sync-only \
-  --board-type hex8 --num-players 2
+python scripts/unified_data_sync.py --once
 ```
 
 ### Option 2: Allow Stale Data (Not Recommended)

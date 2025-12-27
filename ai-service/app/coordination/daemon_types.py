@@ -70,7 +70,8 @@ class DaemonType(Enum):
     HEALTH_CHECK = "health_check"
     CLUSTER_MONITOR = "cluster_monitor"
     QUEUE_MONITOR = "queue_monitor"
-    NODE_HEALTH_MONITOR = "node_health_monitor"  # Canonical health daemon
+    # DEPRECATED (Dec 2025): Use UnifiedNodeHealthDaemon (health_check_orchestrator) - removal Q2 2026
+    NODE_HEALTH_MONITOR = "node_health_monitor"
 
     # Event processing
     EVENT_ROUTER = "event_router"
@@ -96,7 +97,7 @@ class DaemonType(Enum):
     # Continuous training loop (December 2025)
     CONTINUOUS_TRAINING_LOOP = "continuous_training_loop"
 
-    # Cluster-wide data sync (December 2025)
+    # DEPRECATED (Dec 2025): Use AutoSyncDaemon(strategy="broadcast") - removal Q2 2026
     CLUSTER_DATA_SYNC = "cluster_data_sync"
 
     # Model distribution (December 2025) - auto-distribute models after promotion
@@ -108,7 +109,7 @@ class DaemonType(Enum):
     # Training node watcher (December 2025 - Phase 6)
     TRAINING_NODE_WATCHER = "training_node_watcher"
 
-    # Ephemeral sync for Vast.ai (December 2025 - Phase 4)
+    # DEPRECATED (Dec 2025): Use AutoSyncDaemon(strategy="ephemeral") - removal Q2 2026
     EPHEMERAL_SYNC = "ephemeral_sync"
 
     # P2P auto-deployment (December 2025) - ensure P2P runs on all nodes
@@ -187,7 +188,7 @@ class DaemonType(Enum):
     # Multi-provider orchestrator (December 2025) - coordinates across Lambda/Vast/etc
     MULTI_PROVIDER = "multi_provider"
 
-    # System health monitor (December 2025) - global system health with pipeline pause
+    # DEPRECATED (Dec 2025): Use unified_health_manager.get_system_health_score() - removal Q2 2026
     SYSTEM_HEALTH_MONITOR = "system_health_monitor"
 
     # Health server (December 2025) - exposes /health, /ready, /metrics HTTP endpoints

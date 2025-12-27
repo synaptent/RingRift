@@ -255,27 +255,29 @@ class TrainingTriggerDaemon:
     async def _subscribe_to_events(self) -> None:
         """Subscribe to relevant events."""
         try:
-            from app.coordination.event_router import StageEvent, get_stage_event_bus
+            # P0.5 (December 2025): Use get_router() instead of deprecated get_stage_event_bus()
+            from app.coordination.event_router import StageEvent, get_router
 
-            bus = get_stage_event_bus()
-            unsub = bus.subscribe(StageEvent.NPZ_EXPORT_COMPLETE, self._on_npz_export_complete)
+            router = get_router()
+            unsub = router.subscribe(StageEvent.NPZ_EXPORT_COMPLETE, self._on_npz_export_complete)
             self._event_subscriptions.append(unsub)
             logger.info("[TrainingTriggerDaemon] Subscribed to NPZ_EXPORT_COMPLETE events")
         except ImportError:
             logger.warning("[TrainingTriggerDaemon] Stage events not available")
 
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            # P0.5 (December 2025): Use get_router() instead of deprecated get_event_bus()
+            from app.coordination.event_router import DataEventType, get_router
 
-            bus = get_event_bus()
+            router = get_router()
             # Subscribe to training completion to track state
-            unsub = bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
+            unsub = router.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
             self._event_subscriptions.append(unsub)
             logger.info("[TrainingTriggerDaemon] Subscribed to TRAINING_COMPLETED events")
 
             # Honor master_loop-triggered training requests + intensity hints
             if hasattr(DataEventType, 'TRAINING_THRESHOLD_REACHED'):
-                unsub = bus.subscribe(
+                unsub = router.subscribe(
                     DataEventType.TRAINING_THRESHOLD_REACHED,
                     self._on_training_threshold_reached,
                 )
@@ -284,7 +286,7 @@ class TrainingTriggerDaemon:
 
             # Subscribe to quality updates to keep intensity in sync
             if hasattr(DataEventType, 'QUALITY_SCORE_UPDATED'):
-                unsub = bus.subscribe(
+                unsub = router.subscribe(
                     DataEventType.QUALITY_SCORE_UPDATED,
                     self._on_quality_score_updated,
                 )
@@ -293,7 +295,7 @@ class TrainingTriggerDaemon:
 
             # Subscribe to training blocks to pause intensity
             if hasattr(DataEventType, 'TRAINING_BLOCKED_BY_QUALITY'):
-                unsub = bus.subscribe(
+                unsub = router.subscribe(
                     DataEventType.TRAINING_BLOCKED_BY_QUALITY,
                     self._on_training_blocked_by_quality,
                 )
@@ -303,7 +305,7 @@ class TrainingTriggerDaemon:
             # December 2025: Subscribe to EVALUATION_COMPLETED for gauntlet → training feedback
             # This closes the critical feedback loop: model performance → training parameters
             if hasattr(DataEventType, 'EVALUATION_COMPLETED'):
-                unsub = bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+                unsub = router.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
                 self._event_subscriptions.append(unsub)
                 logger.info("[TrainingTriggerDaemon] Subscribed to EVALUATION_COMPLETED events")
         except ImportError:

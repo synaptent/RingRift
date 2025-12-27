@@ -25,15 +25,13 @@ All loops share the same coordination infrastructure (`event_router`, `pipeline_
 
 The comprehensive all-in-one system with:
 
-- Streaming data collection from all cluster nodes
-- Shadow tournament evaluation (lightweight, frequent)
-- Full tournament evaluation (thorough, periodic)
-- Adaptive curriculum (Elo-weighted training focus)
-- Model promotion on Elo threshold
-- PBT (Population-Based Training)
-- NAS (Neural Architecture Search)
-- Resource pressure monitoring
-- Database integrity checking
+- Selfplay scheduling + idle-resource utilization
+- Data sync + model distribution via daemon manager
+- Evaluation + promotion orchestration (gauntlet/tournament)
+- Feedback loops and curriculum weighting
+- Health monitoring + queue maintenance
+
+Note: optimization hooks (CMA-ES/NAS) are event-driven and remain off by default.
 
 ```bash
 # Start the master loop

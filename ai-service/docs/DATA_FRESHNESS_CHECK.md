@@ -84,8 +84,7 @@ Training blocked to prevent learning from stale data.
 OPTIONS TO PROCEED:
 
   1. Get fresh data (RECOMMENDED):
-     python scripts/run_training_loop.py --sync-only \
-       --board-type hex8 --num-players 2
+     python scripts/unified_data_sync.py --once
 
   2. Allow stale data (NOT RECOMMENDED - may degrade model quality):
      Add --allow-stale-data flag to your training command
@@ -185,8 +184,7 @@ The freshness checker couldn't find any game databases or NPZ files.
 **Solution:** Generate data first:
 
 ```bash
-python scripts/run_training_loop.py --selfplay-only \
-  --board-type hex8 --num-players 2 --selfplay-games 1000
+python scripts/selfplay.py --board hex8 --num-players 2 --engine heuristic --num-games 1000
 ```
 
 ### "Timeout waiting for fresh data"

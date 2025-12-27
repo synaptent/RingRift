@@ -14,8 +14,8 @@ RingRift uses a multi-layer sync architecture to replicate training data (games,
 ## Architecture Diagram
 
 ```
-                              SyncOrchestrator
-                        (Unified Entry Point)
+                                SyncFacade
+                       (Unified Entry Point)
                                    │
           ┌────────────────────────┼────────────────────────┐
           │                        │                        │
@@ -37,14 +37,15 @@ RingRift uses a multi-layer sync architecture to replicate training data (games,
 
 ## Layer Overview
 
-| Layer                          | Module                               | Purpose                              |
-| ------------------------------ | ------------------------------------ | ------------------------------------ |
-| **SyncOrchestrator**           | `sync_orchestrator.py`               | Unified facade, coordinates all sync |
-| **SyncScheduler**              | `sync_coordinator.py` (coordination) | Scheduling: when/what to sync        |
-| **DistributedSyncCoordinator** | `sync_coordinator.py` (distributed)  | Execution: performs actual syncs     |
-| **SyncRouter**                 | `sync_router.py`                     | Routing: which nodes get data        |
-| **ClusterManifest**            | `cluster_manifest.py`                | Registry: tracks where data exists   |
-| **AutoSyncDaemon**             | `auto_sync_daemon.py`                | Background: automated replication    |
+| Layer                          | Module                               | Purpose                                    |
+| ------------------------------ | ------------------------------------ | ------------------------------------------ |
+| **SyncFacade**                 | `sync_facade.py`                     | Unified programmatic sync entry point      |
+| **AutoSyncDaemon**             | `auto_sync_daemon.py`                | Background: automated replication          |
+| **SyncScheduler**              | `sync_coordinator.py` (coordination) | Scheduling: when/what to sync (deprecated) |
+| **DistributedSyncCoordinator** | `sync_coordinator.py` (distributed)  | Execution: performs actual syncs           |
+| **SyncRouter**                 | `sync_router.py`                     | Routing: which nodes get data              |
+| **ClusterManifest**            | `cluster_manifest.py`                | Registry: tracks where data exists         |
+| **SyncOrchestrator**           | `sync_orchestrator.py`               | Legacy facade (pending deprecation)        |
 
 ## Sync Strategies
 
@@ -197,20 +198,11 @@ sync_routing:
 ### Simple Sync (Recommended)
 
 ```python
-from app.distributed.sync_orchestrator import get_sync_orchestrator
-
-orchestrator = get_sync_orchestrator()
-await orchestrator.initialize()
+from app.coordination.sync_facade import sync
 
 # Sync all data types
-result = await orchestrator.sync_all()
-
-# Check status
-status = orchestrator.get_status()
-print(f"Games synced: {status['games_synced']}")
-print(f"Models synced: {status['models_synced']}")
-
-await orchestrator.shutdown()
+result = await sync("all")
+print(f"Nodes synced: {result.nodes_synced}")
 ```
 
 ### Scheduling Layer

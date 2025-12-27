@@ -1141,6 +1141,48 @@ class UnifiedQueuePopulatorDaemon:
                         f"[QueuePopulator] Queued {added} priority selfplay for {config_key}"
                     )
 
+            def _on_work_failed(event: Any) -> None:
+                """Handle WORK_FAILED - decrement pending count for failed work."""
+                payload = _extract_payload(event)
+                work_type = payload.get("work_type")
+                if work_type != "selfplay":
+                    return
+
+                board_type = payload.get("board_type")
+                num_players = payload.get("num_players")
+                reason = payload.get("reason", "unknown")
+                config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+
+                if config_key and config_key in self._populator._targets:
+                    target = self._populator._targets[config_key]
+                    if target.pending_selfplay_count > 0:
+                        target.pending_selfplay_count -= 1
+                        logger.info(
+                            f"[QueuePopulator] Work failed for {config_key} ({reason}), "
+                            f"pending: {target.pending_selfplay_count}"
+                        )
+
+            def _on_work_timeout(event: Any) -> None:
+                """Handle WORK_TIMEOUT - decrement pending count for timed out work."""
+                payload = _extract_payload(event)
+                work_type = payload.get("work_type")
+                if work_type != "selfplay":
+                    return
+
+                board_type = payload.get("board_type")
+                num_players = payload.get("num_players")
+                node_id = payload.get("node_id", "unknown")
+                config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+
+                if config_key and config_key in self._populator._targets:
+                    target = self._populator._targets[config_key]
+                    if target.pending_selfplay_count > 0:
+                        target.pending_selfplay_count -= 1
+                        logger.warning(
+                            f"[QueuePopulator] Work timed out for {config_key} on {node_id}, "
+                            f"pending: {target.pending_selfplay_count}"
+                        )
+
             router.subscribe(DataEventType.ELO_UPDATED.value, _on_elo_updated)
             router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
             router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
@@ -1149,7 +1191,13 @@ class UnifiedQueuePopulatorDaemon:
             if hasattr(DataEventType, 'SELFPLAY_COMPLETE'):
                 router.subscribe(DataEventType.SELFPLAY_COMPLETE.value, _on_selfplay_complete)
 
-            logger.info("[QueuePopulatorDaemon] Subscribed to data events")
+            # Wire WORK_FAILED and WORK_TIMEOUT for accurate pending count tracking
+            if hasattr(DataEventType, 'WORK_FAILED'):
+                router.subscribe(DataEventType.WORK_FAILED.value, _on_work_failed)
+            if hasattr(DataEventType, 'WORK_TIMEOUT'):
+                router.subscribe(DataEventType.WORK_TIMEOUT.value, _on_work_timeout)
+
+            logger.info("[QueuePopulatorDaemon] Subscribed to data events (incl. WORK_FAILED/TIMEOUT)")
 
         except ImportError:
             logger.debug("[QueuePopulatorDaemon] Event router not available")

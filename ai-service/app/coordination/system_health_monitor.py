@@ -68,10 +68,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import warnings
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
 # Emit deprecation warning on import
@@ -82,85 +81,16 @@ warnings.warn(
     stacklevel=2,
 )
 
+# Import canonical definitions from unified_health_manager
+# (Previously duplicated here, now consolidated - Dec 2025)
+from app.coordination.unified_health_manager import (
+    PipelineState,
+    SystemHealthConfig,
+    SystemHealthLevel,
+    SystemHealthScore,
+)
+
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Enums and Data Classes
-# =============================================================================
-
-
-class SystemHealthLevel(Enum):
-    """System health levels."""
-
-    HEALTHY = "healthy"  # 80-100
-    DEGRADED = "degraded"  # 60-79
-    UNHEALTHY = "unhealthy"  # 40-59
-    CRITICAL = "critical"  # 0-39
-
-
-class PipelineState(Enum):
-    """Pipeline operational state."""
-
-    RUNNING = "running"
-    PAUSED = "paused"
-    RECOVERING = "recovering"
-
-
-@dataclass
-class SystemHealthScore:
-    """Aggregate system health score."""
-
-    score: int  # 0-100
-    level: SystemHealthLevel
-    components: dict[str, float] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
-
-    # Component scores (0-100 each)
-    node_availability: float = 100.0
-    circuit_health: float = 100.0
-    error_rate: float = 100.0  # Inverted: 100 = no errors
-    recovery_success: float = 100.0
-
-    # Pause triggers
-    pause_triggers: list[str] = field(default_factory=list)
-
-
-@dataclass
-class SystemHealthConfig:
-    """Configuration for system health monitoring."""
-
-    # Check interval
-    check_interval_seconds: int = 30
-
-    # Health score thresholds
-    healthy_threshold: int = 80
-    degraded_threshold: int = 60
-    unhealthy_threshold: int = 40
-
-    # Pause triggers
-    pause_health_threshold: int = 40
-    pause_node_offline_percent: float = 0.5  # 50%
-    pause_error_burst_count: int = 10
-    pause_error_burst_window: int = 300  # 5 minutes
-
-    # Critical circuits that trigger immediate pause if broken
-    critical_circuits: list[str] = field(
-        default_factory=lambda: ["training", "evaluation", "promotion"]
-    )
-
-    # Resume thresholds (hysteresis)
-    resume_health_threshold: int = 60
-    resume_delay_seconds: int = 120  # Wait 2 min before resuming
-
-    # Expected nodes (0 = auto-discover)
-    expected_nodes: int = 0
-
-    # Component weights for score calculation
-    node_weight: float = 0.40
-    circuit_weight: float = 0.25
-    error_weight: float = 0.20
-    recovery_weight: float = 0.15
 
 
 # =============================================================================

@@ -305,28 +305,26 @@ The managers module is part of the ongoing P2P orchestrator decomposition:
 
 ## Delegation Status (Updated Dec 27, 2025)
 
-~1,231 LOC removed from `p2p_orchestrator.py` during Dec 27 cleanup.
+~1,990 LOC removed from `p2p_orchestrator.py` during Dec 27 cleanup.
 
-| Manager             | Methods Delegated | Status      | LOC Removed | Notes                         |
-| ------------------- | ----------------- | ----------- | ----------- | ----------------------------- |
-| StateManager        | 7/7 (100%)        | ✅ Complete | ~200        | All delegated                 |
-| NodeSelector        | 6/6 (100%)        | ✅ Complete | ~50         | All wrappers removed          |
-| TrainingCoordinator | 5/5 (100%)        | ✅ Complete | ~450        | All wrappers removed          |
-| JobManager          | 7/7 (100%)        | ✅ Complete | ~400        | All wrappers removed          |
-| SelfplayScheduler   | 3/6 (50%)         | ⚠️ Partial  | ~200        | Some targeting methods active |
-| SyncPlanner         | 2/4 (50%)         | ⚠️ Partial  | ~60         | `_execute_sync_plan` active   |
+| Manager             | Methods Delegated | Status      | LOC Removed | Notes                     |
+| ------------------- | ----------------- | ----------- | ----------- | ------------------------- |
+| StateManager        | 7/7 (100%)        | ✅ Complete | ~200        | All delegated             |
+| NodeSelector        | 6/6 (100%)        | ✅ Complete | ~50         | All wrappers removed      |
+| TrainingCoordinator | 5/5 (100%)        | ✅ Complete | ~450        | All wrappers removed      |
+| JobManager          | 7/7 (100%)        | ✅ Complete | ~400        | All wrappers removed      |
+| SelfplayScheduler   | 7/7 (100%)        | ✅ Complete | ~430        | All callbacks wired       |
+| SyncPlanner         | 4/4 (100%)        | ✅ Complete | ~60         | Thin wrapper remains      |
+| LoopManager         | 5/5 (100%)        | ✅ Complete | ~400        | All loops via LoopManager |
 
 **Dec 27 Cleanup Highlights**:
 
 - Removed `_dispatch_training_job`, `_handle_training_job_completion`, `_schedule_model_comparison_tournament`, `_run_post_training_gauntlet` (→ TrainingCoordinator)
 - Removed `_run_gpu_selfplay_job`, `_run_distributed_tournament`, `_run_distributed_selfplay`, `_export_training_data`, `_run_training`, `_cleanup_old_completed_jobs` (→ JobManager)
-- Removed `_get_hybrid_job_targets`, `_pick_weighted_selfplay_config`, `_get_elo_based_priority_boost` (→ SelfplayScheduler)
+- Removed `_target_selfplay_jobs_for_node`, `_get_hybrid_job_targets`, `_should_spawn_cpu_only_jobs`, `_pick_weighted_selfplay_config`, `_get_elo_based_priority_boost`, `_get_diversity_metrics`, `_track_selfplay_diversity` (→ SelfplayScheduler)
 - Migrated 5 background loops to LoopManager (`_elo_sync_loop`, `_idle_detection_loop`, `_auto_scaling_loop`, `_job_reaper_loop`, `_queue_populator_loop`)
 
-**Remaining partial delegation** (scheduled for Q2 2026):
-
-- `_execute_sync_plan()` → `SyncPlanner.execute_sync()`
-- `_get_selfplay_targeting()` → `SelfplayScheduler.get_targeting()`
+**All managers 100% delegated** - no remaining partial delegation.
 
 ### Migration Path
 
