@@ -371,6 +371,49 @@ def create_baseline_ai(
         )
         return HeuristicAI(player, config)
 
+    elif baseline == BaselineOpponent.HEURISTIC_STRONG:
+        # December 2025: Strong heuristic (~1400 Elo)
+        config = AIConfig(
+            ai_type=AIType.HEURISTIC,
+            board_type=board_type,
+            difficulty=difficulty or 8,  # Higher difficulty = deeper search
+            rngSeed=ai_rng_seed,
+        )
+        return HeuristicAI(player, config)
+
+    elif baseline == BaselineOpponent.MCTS_LIGHT:
+        # December 2025: Light MCTS (~1500 Elo) - 32 simulations
+        from app.ai.mcts_ai import MCTSAI
+        config = AIConfig(
+            ai_type=AIType.MCTS,
+            board_type=board_type,
+            difficulty=difficulty or 32,  # 32 simulations
+            rngSeed=ai_rng_seed,
+        )
+        return MCTSAI(player, config)
+
+    elif baseline == BaselineOpponent.MCTS_MEDIUM:
+        # December 2025: Medium MCTS (~1700 Elo) - 128 simulations
+        from app.ai.mcts_ai import MCTSAI
+        config = AIConfig(
+            ai_type=AIType.MCTS,
+            board_type=board_type,
+            difficulty=difficulty or 128,  # 128 simulations
+            rngSeed=ai_rng_seed,
+        )
+        return MCTSAI(player, config)
+
+    elif baseline == BaselineOpponent.MCTS_STRONG:
+        # December 2025: Strong MCTS (~1900 Elo) - 512 simulations
+        from app.ai.mcts_ai import MCTSAI
+        config = AIConfig(
+            ai_type=AIType.MCTS,
+            board_type=board_type,
+            difficulty=difficulty or 512,  # 512 simulations
+            rngSeed=ai_rng_seed,
+        )
+        return MCTSAI(player, config)
+
     else:
         raise ValueError(f"Unknown baseline: {baseline}")
 

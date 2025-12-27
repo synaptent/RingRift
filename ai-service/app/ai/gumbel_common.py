@@ -409,6 +409,59 @@ def get_budget_for_difficulty(difficulty: int) -> int:
         return GUMBEL_BUDGET_ULTIMATE
 
 
+# =============================================================================
+# Board-Specific Budgets (Dec 2025 ML Acceleration)
+# =============================================================================
+# Smaller boards need less search depth, allowing 2x faster selfplay games.
+# This directly increases training throughput for smaller configs.
+
+BUDGET_BY_BOARD_TYPE = {
+    "hex8": 400,       # Small hex - 2x faster (was 800)
+    "square8": 600,    # Small square - 1.3x faster (was 800)
+    "square19": 800,   # Large square - keep full budget
+    "hexagonal": 800,  # Large hex - keep full budget
+}
+
+
+def get_budget_for_board_type(
+    board_type: str,
+    use_elo_scaling: bool = False,
+    model_elo: float = 1600.0,
+    training_epoch: int = 0,
+) -> int:
+    """Get MCTS budget optimized for board size.
+
+    Smaller boards need less search depth for good move quality, allowing
+    faster selfplay and higher training throughput.
+
+    Args:
+        board_type: Board type string (hex8, square8, square19, hexagonal)
+        use_elo_scaling: If True, further scale by model Elo
+        model_elo: Current model Elo for scaling (if enabled)
+        training_epoch: Training epoch for progressive scaling
+
+    Returns:
+        Recommended simulation budget for the board type
+
+    Example:
+        >>> get_budget_for_board_type("hex8")
+        400
+        >>> get_budget_for_board_type("square19")
+        800
+    """
+    # Get base budget for board type
+    base_budget = BUDGET_BY_BOARD_TYPE.get(board_type, GUMBEL_BUDGET_STANDARD)
+
+    if not use_elo_scaling:
+        return base_budget
+
+    # Optionally scale by Elo (for curriculum learning)
+    elo_budget = get_elo_adaptive_budget(model_elo, training_epoch)
+
+    # Use the lower of the two (faster games for weak models on small boards)
+    return min(base_budget, elo_budget)
+
+
 def get_elo_adaptive_budget(
     model_elo: float,
     training_epoch: int = 0,
