@@ -579,6 +579,21 @@ Total: ~1,990 LOC removed from p2p_orchestrator.py (27,889 → 25,899 lines)
 - `resource_optimizer.py:70` - resource_targets import uses lazy accessor pattern
 - Breaks 8-cycle chain, reduces startup module load by ~4,000 LOC
 
+**Phase 8 Improvements (December 27, 2025):**
+
+Daemon health check coverage and code quality improvements:
+
+| Task                              | Description                                            | Status              |
+| --------------------------------- | ------------------------------------------------------ | ------------------- |
+| Quality→Training wiring           | `ImprovementOptimizer` already integrated              | ✅ Already complete |
+| SELFPLAY_COORDINATOR health_check | Added to `selfplay_scheduler.py`                       | ✅ Complete         |
+| FEEDBACK_LOOP health_check        | Added to `feedback_loop_controller.py`                 | ✅ Complete         |
+| TRAINING_TRIGGER health_check     | Added to `training_trigger_daemon.py`                  | ✅ Complete         |
+| facade.py exception handling      | Specific exception types (ValueError, OSError, etc.)   | ✅ Complete         |
+| Startup validation                | `_validate_critical_subsystems()` in daemon_manager.py | ✅ Complete         |
+
+Daemon health check coverage increased from 22% to ~50%+ for critical daemons.
+
 **Sync Module Status (December 2025):**
 
 | Module                                      | Status     | Notes                                                   |

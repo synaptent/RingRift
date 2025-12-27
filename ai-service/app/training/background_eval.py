@@ -310,12 +310,13 @@ class BackgroundEvaluator:
             True if successfully subscribed
         """
         try:
+            # P0.5 (December 2025): Use get_router() instead of deprecated get_stage_event_bus()
             from app.coordination.event_router import (
                 StageEvent,
-                get_stage_event_bus,
+                get_router,
             )
 
-            bus = get_stage_event_bus()
+            router = get_router()
 
             async def on_training_progress(result):
                 """Handle training progress events."""
@@ -362,11 +363,11 @@ class BackgroundEvaluator:
                         self._record_failure(e)
 
             # Subscribe to relevant events
-            bus.subscribe(StageEvent.TRAINING_COMPLETE, on_training_complete)
+            router.subscribe(StageEvent.TRAINING_COMPLETE, on_training_complete)
 
             # Also try to subscribe to epoch/step events if they exist
             if hasattr(StageEvent, 'EPOCH_COMPLETE'):
-                bus.subscribe(StageEvent.EPOCH_COMPLETE, on_training_progress)
+                router.subscribe(StageEvent.EPOCH_COMPLETE, on_training_progress)
 
             logger.info("[BackgroundEval] Subscribed to training events")
             return True

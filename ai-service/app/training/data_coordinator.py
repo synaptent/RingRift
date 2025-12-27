@@ -758,18 +758,19 @@ class TrainingDataCoordinator:
         subscribed = False
 
         try:
+            # P0.5 (December 2025): Use get_router() instead of deprecated get_stage_event_bus()
             from app.coordination.event_router import (
                 StageEvent,
-                get_stage_event_bus,
+                get_router,
             )
 
-            bus = get_stage_event_bus()
+            router = get_router()
 
             async def on_promotion_complete(result):
                 if result.success:
                     await self.handle_promotion_event(result.metadata or {})
 
-            bus.subscribe(StageEvent.PROMOTION_COMPLETE, on_promotion_complete)
+            router.subscribe(StageEvent.PROMOTION_COMPLETE, on_promotion_complete)
             self._event_bus_subscription = on_promotion_complete
             logger.info("Subscribed to PROMOTION_COMPLETE events")
             subscribed = True

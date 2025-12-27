@@ -443,6 +443,10 @@ class UnifiedHealthManager(CoordinatorBase):
             # Coordinator health monitoring (December 2025 - wires ghost event)
             router.subscribe(DataEventType.COORDINATOR_HEALTH_DEGRADED.value, self._on_coordinator_health_degraded)
 
+            # Coordinator lifecycle events (December 2025 - P0 gap fix)
+            router.subscribe(DataEventType.COORDINATOR_SHUTDOWN.value, self._on_coordinator_shutdown)
+            router.subscribe(DataEventType.COORDINATOR_HEARTBEAT.value, self._on_coordinator_heartbeat)
+
             # Deadlock detection (December 2025 - critical lock contention handler)
             router.subscribe(DataEventType.DEADLOCK_DETECTED.value, self._on_deadlock_detected)
 

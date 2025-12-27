@@ -192,7 +192,9 @@ class DataEventType(Enum):
     # P2P/Model sync events
     P2P_MODEL_SYNCED = "p2p_model_synced"
     MODEL_SYNC_REQUESTED = "model_sync_requested"
+    MODEL_DISTRIBUTION_STARTED = "model_distribution_started"  # Dec 2025: Model distribution initiated
     MODEL_DISTRIBUTION_COMPLETE = "model_distribution_complete"  # Dec 2025: Model distributed to cluster
+    MODEL_DISTRIBUTION_FAILED = "model_distribution_failed"  # Dec 2025: Model distribution failed
     P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
     P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
     SYNC_STALLED = "sync_stalled"  # December 2025: Sync operation stalled/timed out

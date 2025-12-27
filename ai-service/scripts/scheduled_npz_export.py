@@ -120,6 +120,8 @@ class ScheduledExportDaemon:
 
     def _find_databases(self, board_type: str, num_players: int) -> list[Path]:
         """Find all databases for a configuration on OWC."""
+        import sqlite3
+
         databases = []
         patterns = [
             f"*{board_type}*{num_players}p*.db",
@@ -138,6 +140,24 @@ class ScheduledExportDaemon:
                 continue
             for pattern in patterns:
                 databases.extend(search_dir.glob(pattern))
+
+        # Also search for jsonl_aggregated.db files which contain all configs
+        jsonl_dbs = list((OWC_DATA_PATH / "selfplay_repository" / "raw").glob("**/jsonl_aggregated.db"))
+        for db_path in jsonl_dbs[:20]:  # Limit to 20 to avoid timeout
+            try:
+                conn = sqlite3.connect(str(db_path))
+                cursor = conn.execute("""
+                    SELECT COUNT(*) FROM games
+                    WHERE board_type = ? AND num_players = ?
+                    AND game_status = 'completed' AND total_moves >= 5
+                """, (board_type, num_players))
+                count = cursor.fetchone()[0]
+                conn.close()
+                if count > 10:  # Only include if it has meaningful data
+                    databases.append(db_path)
+                    logger.info(f"  Found {count} {board_type}_{num_players}p games in {db_path.parent.name}")
+            except Exception:
+                pass
 
         return list(set(databases))
 
