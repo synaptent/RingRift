@@ -572,9 +572,10 @@ class NodeResilience:
             return False
 
     def _python_for_orchestrator(self) -> str:
-        """Select a python executable that can import aiohttp (required by p2p).
+        """Select a python executable that can import P2P dependencies.
 
         Prefer the current interpreter, then ai-service venv, then system python3.
+        Required modules: aiohttp, psutil, yaml (pyyaml).
         """
         candidates: list[str] = []
         if sys.executable:
@@ -584,9 +585,19 @@ class NodeResilience:
             candidates.append(str(venv_py))
         candidates.append("python3")
 
+        # P2P requires aiohttp, psutil, and yaml - check all three
+        required_modules = ["aiohttp", "psutil", "yaml"]
         for cand in candidates:
-            if cand and self._python_can_import(cand, "aiohttp"):
+            if cand and all(self._python_can_import(cand, mod) for mod in required_modules):
                 return cand
+
+        # Log which modules are missing for debugging
+        for cand in candidates:
+            if cand:
+                missing = [mod for mod in required_modules if not self._python_can_import(cand, mod)]
+                if missing:
+                    logger.warning(f"Python {cand} missing modules: {missing}")
+
         return sys.executable or "python3"
 
     def _check_port_available(self, port: int) -> bool:

@@ -200,6 +200,35 @@ from scripts.lib.logging_config import setup_script_logging
 logger = setup_script_logging("p2p_orchestrator")
 
 
+def _validate_p2p_dependencies() -> None:
+    """Pre-flight check for required modules. Exits with code 2 if missing.
+
+    This catches import errors early with a clear message, rather than
+    failing deep in the call stack with confusing tracebacks.
+    """
+    required_modules = [
+        ("aiohttp", "pip install aiohttp"),
+        ("psutil", "pip install psutil"),
+        ("yaml", "pip install pyyaml"),
+    ]
+    missing = []
+    for module_name, install_hint in required_modules:
+        try:
+            __import__(module_name)
+        except ImportError:
+            missing.append(f"{module_name} ({install_hint})")
+
+    if missing:
+        # Use print since logger may not be fully initialized
+        print(f"CRITICAL: Missing required dependencies: {', '.join(missing)}", file=sys.stderr)
+        print("Run: pip install -r requirements.txt", file=sys.stderr)
+        sys.exit(2)  # Exit code 2 = missing dependencies
+
+
+# Validate dependencies before any heavy imports
+_validate_p2p_dependencies()
+
+
 @contextlib.contextmanager
 def db_connection(db_path: str | Path, timeout: float = 30.0) -> Generator[sqlite3.Connection]:
     """Context manager for SQLite connections to prevent leaks.
@@ -2421,8 +2450,14 @@ class P2POrchestrator(
     def _init_database(self):
         """Initialize SQLite database for state persistence."""
         # December 2025: Add timeout to prevent hangs on locked database
-        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+        # December 2025: Enable WAL mode for better concurrent read/write performance
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         cursor = conn.cursor()
+
+        # Enable WAL mode for concurrent readers/writers (critical for P2P stability)
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")  # Good balance of safety vs speed
+        cursor.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
 
         # Peers table
         cursor.execute("""
@@ -2548,11 +2583,20 @@ class P2POrchestrator(
         conn.commit()
         conn.close()
 
+    def _db_connect(self) -> sqlite3.Connection:
+        """Create a database connection with proper settings.
+
+        Uses WAL mode for concurrent access and extended timeout for busy handling.
+        """
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+
     def _load_state(self):
         """Load persisted state from database."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+            conn = self._db_connect()
             cursor = conn.cursor()
 
             # Load peers
@@ -2654,7 +2698,7 @@ class P2POrchestrator(
         """Save current state to database."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+            conn = self._db_connect()
             cursor = conn.cursor()
 
             # Save peers

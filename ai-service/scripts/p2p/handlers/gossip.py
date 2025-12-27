@@ -77,16 +77,27 @@ class GossipHandlersMixin:
                 return web.json_response({"error": "unauthorized"}, status=401)
 
             # GOSSIP COMPRESSION: Handle gzip-compressed requests
+            # Dec 2025: Enhanced to check gzip magic bytes (0x1f 0x8b) before decompression
+            # to handle clients that set Content-Encoding: gzip but send raw JSON
             content_encoding = request.headers.get("Content-Encoding", "")
             if content_encoding == "gzip":
-                compressed_body = await request.read()
-                try:
-                    decompressed = gzip.decompress(compressed_body)
-                    data = json.loads(decompressed.decode("utf-8"))
-                except gzip.BadGzipFile:
-                    # Sender claimed gzip but sent uncompressed - fall back to JSON
-                    logger.debug("Sender claimed gzip but sent uncompressed data, falling back to JSON")
-                    data = json.loads(compressed_body.decode("utf-8"))
+                body = await request.read()
+                # Check for gzip magic bytes before attempting decompression
+                is_gzip = len(body) >= 2 and body[:2] == b"\x1f\x8b"
+                if is_gzip:
+                    try:
+                        decompressed = gzip.decompress(body)
+                        data = json.loads(decompressed.decode("utf-8"))
+                    except (gzip.BadGzipFile, OSError) as e:
+                        # Decompression failed despite magic bytes - treat as raw JSON
+                        logger.warning(f"Gzip decompression failed despite magic bytes: {e}")
+                        data = json.loads(body.decode("utf-8"))
+                else:
+                    # Header claimed gzip but no magic bytes - client sent raw JSON
+                    logger.debug(
+                        f"Sender {request.remote} claimed gzip but sent raw JSON (no magic bytes)"
+                    )
+                    data = json.loads(body.decode("utf-8"))
             else:
                 data = await request.json()
         except (json.JSONDecodeError, AttributeError):
