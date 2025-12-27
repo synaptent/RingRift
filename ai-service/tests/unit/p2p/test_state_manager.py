@@ -764,5 +764,132 @@ class TestDatabaseConnection:
         conn.close()
 
     def test_db_timeout_constant(self):
-        """Test that DB_TIMEOUT constant is set."""
-        assert StateManager.DB_TIMEOUT == 30.0
+        """Test that SQLiteDefaults.WRITE_TIMEOUT is used by StateManager."""
+        # StateManager uses SQLiteDefaults.WRITE_TIMEOUT from coordination_defaults
+        from app.config.coordination_defaults import SQLiteDefaults
+
+        # Verify the default timeout is 30 seconds
+        assert SQLiteDefaults.WRITE_TIMEOUT == 30.0
+
+
+class TestHealthCheck:
+    """Tests for StateManager.health_check() method."""
+
+    def test_health_check_healthy(self, tmp_path):
+        """Test health_check returns healthy status for valid database."""
+        db_path = tmp_path / "test.db"
+        manager = StateManager(db_path)
+        manager.init_database()
+
+        health = manager.health_check()
+
+        assert health["status"] == "healthy"
+        assert health["errors_count"] == 0
+        assert health["last_error"] is None
+        assert health["db_path"] == str(db_path)
+        assert health["cluster_epoch"] == 0  # Default epoch
+
+    def test_health_check_reports_peer_count(self, tmp_path):
+        """Test health_check reports peer count correctly."""
+        db_path = tmp_path / "test.db"
+        manager = StateManager(db_path)
+        manager.init_database()
+
+        # Add some peers directly
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO peers (node_id, host, port, last_heartbeat, info_json) VALUES (?, ?, ?, ?, ?)",
+            ("peer1", "localhost", 8770, time.time(), '{}')
+        )
+        cursor.execute(
+            "INSERT INTO peers (node_id, host, port, last_heartbeat, info_json) VALUES (?, ?, ?, ?, ?)",
+            ("peer2", "localhost", 8771, time.time(), '{}')
+        )
+        conn.commit()
+        conn.close()
+
+        health = manager.health_check()
+
+        assert health["status"] == "healthy"
+        assert health["peer_count"] == 2
+
+    def test_health_check_reports_job_count(self, tmp_path):
+        """Test health_check reports running job count correctly."""
+        db_path = tmp_path / "test.db"
+        manager = StateManager(db_path)
+        manager.init_database()
+
+        # Add some jobs directly
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO jobs (job_id, job_type, node_id, board_type, num_players,
+               engine_mode, pid, started_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("job1", "selfplay", "node1", "hex8", 2, "heuristic", 1234, time.time(), "running")
+        )
+        cursor.execute(
+            """INSERT INTO jobs (job_id, job_type, node_id, board_type, num_players,
+               engine_mode, pid, started_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("job2", "training", "node1", "hex8", 2, "gumbel", 1235, time.time(), "completed")
+        )
+        conn.commit()
+        conn.close()
+
+        health = manager.health_check()
+
+        # Only running jobs should be counted
+        assert health["job_count"] == 1
+
+    def test_health_check_reports_cluster_epoch(self, tmp_path):
+        """Test health_check includes cluster epoch."""
+        db_path = tmp_path / "test.db"
+        manager = StateManager(db_path)
+        manager.init_database()
+        manager.set_cluster_epoch(42)
+
+        health = manager.health_check()
+
+        assert health["cluster_epoch"] == 42
+
+    def test_health_check_unhealthy_missing_db(self, tmp_path):
+        """Test health_check returns unhealthy when database file is missing."""
+        db_path = tmp_path / "missing.db"
+        manager = StateManager(db_path, verbose=False)
+        # Don't call init_database()
+
+        health = manager.health_check()
+
+        # Should still work but report unhealthy
+        assert health["status"] == "unhealthy"
+        assert health["errors_count"] >= 1
+        # Error message varies: "not found" or "no such table"
+        assert health["last_error"] is not None
+        assert any(msg in health["last_error"] for msg in ["not found", "no such table"])
+
+    def test_health_check_operations_count(self, tmp_path):
+        """Test health_check operations_count is sum of peers and jobs."""
+        db_path = tmp_path / "test.db"
+        manager = StateManager(db_path)
+        manager.init_database()
+
+        # Add some peers and jobs
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO peers (node_id, host, port, last_heartbeat, info_json) VALUES (?, ?, ?, ?, ?)",
+            ("peer1", "localhost", 8770, time.time(), '{}')
+        )
+        cursor.execute(
+            """INSERT INTO jobs (job_id, job_type, node_id, board_type, num_players,
+               engine_mode, pid, started_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("job1", "selfplay", "node1", "hex8", 2, "heuristic", 1234, time.time(), "running")
+        )
+        conn.commit()
+        conn.close()
+
+        health = manager.health_check()
+
+        # operations_count = peer_count + job_count
+        assert health["operations_count"] == health["peer_count"] + health["job_count"]
+        assert health["operations_count"] == 2  # 1 peer + 1 running job
