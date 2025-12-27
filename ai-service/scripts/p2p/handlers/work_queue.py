@@ -323,7 +323,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 work_type = work_item.work_type if work_item else None
                 # Copy config dict to avoid stale reference after lock release
                 config = dict(work_item.config) if work_item else {}
-                assigned_to = work_item.assigned_to if work_item else ""
+                assigned_to = work_item.claimed_by if work_item else ""
 
             success = wq.complete_work(work_id, result)
 
@@ -407,7 +407,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 work_type = work_item.work_type.value if work_item and work_item.work_type else "unknown"
                 # Copy config dict to avoid stale reference after lock release
                 config = dict(work_item.config) if work_item else {}
-                node_id = work_item.assigned_to if work_item else ""
+                node_id = work_item.claimed_by if work_item else ""
 
             success = wq.fail_work(work_id, error)
 
