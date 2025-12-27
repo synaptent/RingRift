@@ -208,6 +208,7 @@ class DataEventType(Enum):
     REPAIR_STARTED = "repair_started"  # Repair job started for under-replicated game
     REPAIR_COMPLETED = "repair_completed"  # Repair job succeeded
     REPAIR_FAILED = "repair_failed"  # Repair job failed
+    REPLICATION_ALERT = "replication_alert"  # Replication health alert
 
     # Database lifecycle events (Phase 4A.3 - December 2025)
     DATABASE_CREATED = "database_created"  # New database file created - immediate registration

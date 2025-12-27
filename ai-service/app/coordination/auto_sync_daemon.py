@@ -1463,6 +1463,19 @@ class AutoSyncDaemon:
                 failure_rate=self._stats.failed_syncs / max(self._stats.total_syncs, 1),
             )
 
+        # December 2025 - Gap 4 fix: Check verification health
+        if self._stats.databases_verified > 0:
+            verification_failure_rate = (
+                self._stats.databases_verification_failed /
+                max(self._stats.databases_verified + self._stats.databases_verification_failed, 1)
+            )
+            if verification_failure_rate > 0.1:  # More than 10% failure rate
+                return HealthCheckResult.degraded(
+                    f"High verification failure rate: {self._stats.databases_verification_failed} failed, "
+                    f"{self._stats.databases_verified} passed ({verification_failure_rate*100:.1f}%)",
+                    verification_failure_rate=verification_failure_rate,
+                )
+
         # Check for stale sync
         if self._stats.last_sync_time > 0:
             sync_age = time.time() - self._stats.last_sync_time
@@ -1482,6 +1495,9 @@ class AutoSyncDaemon:
                 "games_synced": self._stats.games_synced,
                 "gossip_active": self._gossip_daemon is not None,
                 "manifest_active": self._cluster_manifest is not None,
+                # December 2025 - Gap 4 fix: Verification stats
+                "databases_verified": self._stats.databases_verified,
+                "databases_verification_failed": self._stats.databases_verification_failed,
             },
         )
 

@@ -2088,6 +2088,7 @@ __all__ = [
     "reset_stage_event_bus",
     "reset_stall_handler",
     "reset_sync_coordinator",
+    "reset_sync_facade",
     "reset_sync_mutex",
     "reset_sync_scheduler",
     "reset_threshold_manager",
