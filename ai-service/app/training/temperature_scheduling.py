@@ -995,8 +995,7 @@ def _emit_scheduler_registered(config_key: str) -> None:
     that are created after FeedbackLoopController initializes.
     """
     try:
-        from app.coordination.event_router import get_event_bus, RouterEvent, EventSource
-        from app.distributed.data_events import DataEventType
+        from app.coordination.event_router import get_event_bus, RouterEvent, EventSource, DataEventType
 
         bus = get_event_bus()
         if bus is None:
@@ -1069,8 +1068,7 @@ def wire_exploration_boost(
         >>> # Now scheduler will automatically adjust exploration based on feedback
     """
     try:
-        from app.coordination.event_router import get_event_bus
-        from app.distributed.data_events import DataEventType
+        from app.coordination.event_router import get_event_bus, DataEventType
 
         bus = get_event_bus()
         if bus is None:

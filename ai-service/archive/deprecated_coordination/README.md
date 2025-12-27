@@ -2,6 +2,64 @@
 
 This directory contains coordination modules that have been superseded by consolidated implementations or are no longer needed.
 
+## lambda_idle_daemon.py & vast_idle_daemon.py
+
+**Archived**: December 26, 2025
+
+**Reason**: Consolidated into `app/coordination/unified_idle_shutdown_daemon.py` (318 LOC saved)
+
+**Superseded By**:
+
+- `app/coordination/unified_idle_shutdown_daemon.py` - Provider-agnostic idle shutdown
+
+**Original Purpose**:
+Provider-specific idle detection and shutdown for cloud GPU instances:
+
+- `lambda_idle_daemon.py`: Lambda Labs GPU idle detection (30 min threshold)
+- `vast_idle_daemon.py`: Vast.ai GPU idle detection (15 min threshold)
+
+**Migration**:
+
+```python
+# OLD - Provider-specific daemons
+from app.coordination.lambda_idle_daemon import LambdaIdleDaemon
+from app.coordination.vast_idle_daemon import VastIdleDaemon
+
+lambda_daemon = LambdaIdleDaemon()
+vast_daemon = VastIdleDaemon()
+
+# NEW - Unified provider-agnostic daemon
+from app.coordination.unified_idle_shutdown_daemon import (
+    create_lambda_idle_daemon,
+    create_vast_idle_daemon,
+    create_runpod_idle_daemon,
+)
+
+lambda_daemon = create_lambda_idle_daemon()
+vast_daemon = create_vast_idle_daemon()
+runpod_daemon = create_runpod_idle_daemon()  # NEW! RunPod support added
+```
+
+**Key improvements in unified daemon**:
+
+- Provider-agnostic design using CloudProvider interface
+- Configurable thresholds per provider (Lambda: 30min, Vast: 15min, RunPod: 20min)
+- Pending work check before termination
+- Minimum node retention to maintain cluster capacity
+- Graceful shutdown with drain period
+- Cost tracking and reporting
+
+**Environment variables (per-provider)**:
+
+- `{PROVIDER}_IDLE_ENABLED` - Enable/disable daemon (default: true)
+- `{PROVIDER}_IDLE_THRESHOLD` - Idle threshold in seconds
+- `{PROVIDER}_IDLE_UTIL_THRESHOLD` - GPU utilization % below which is idle (default: 10)
+- `{PROVIDER}_MIN_NODES` - Minimum nodes to retain
+- `{PROVIDER}_DRAIN_PERIOD` - Drain period before termination
+- `{PROVIDER}_IDLE_DRY_RUN` - Log actions without executing
+
+---
+
 ## sync_coordination_core.py
 
 **Archived**: December 26, 2025

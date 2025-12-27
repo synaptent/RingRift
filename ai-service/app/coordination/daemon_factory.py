@@ -299,12 +299,14 @@ def _build_registry() -> dict[str, DaemonSpec]:
         # Cost Optimization Daemons
         # =================================================================
         DaemonType.LAMBDA_IDLE.name: DaemonSpec(
-            import_path="app.coordination.lambda_idle_daemon",
-            class_name="LambdaIdleDaemon",
+            import_path="app.coordination.unified_idle_shutdown_daemon",
+            class_name="UnifiedIdleShutdownDaemon",
+            factory_fn="create_lambda_idle_daemon",  # Uses provider-specific config
         ),
         DaemonType.VAST_IDLE.name: DaemonSpec(
-            import_path="app.coordination.vast_idle_daemon",
-            class_name="VastIdleDaemon",
+            import_path="app.coordination.unified_idle_shutdown_daemon",
+            class_name="UnifiedIdleShutdownDaemon",
+            factory_fn="create_vast_idle_daemon",  # Uses provider-specific config
         ),
 
         # =================================================================

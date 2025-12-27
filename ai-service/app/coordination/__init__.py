@@ -372,20 +372,17 @@ from app.coordination.daemon_factory import (
     reset_daemon_factory,
 )
 
-# LambdaIdleDaemon - monitors and terminates idle Lambda GPU nodes (December 2025)
-# DEPRECATED: Use UnifiedIdleShutdownDaemon instead
-from app.coordination.lambda_idle_daemon import (
-    LambdaIdleConfig,
-    LambdaIdleDaemon,
-    LambdaNodeStatus,
-)
-
-# VastIdleDaemon - monitors and terminates idle Vast.ai GPU instances (December 2025)
-# DEPRECATED: Use UnifiedIdleShutdownDaemon instead
-from app.coordination.vast_idle_daemon import (
-    VastIdleConfig,
-    VastIdleDaemon,
-    VastNodeStatus,
+# Idle Daemon Backward Compatibility (December 2025)
+# DEPRECATED: LambdaIdleDaemon and VastIdleDaemon are consolidated into UnifiedIdleShutdownDaemon
+# Use create_lambda_idle_daemon() or create_vast_idle_daemon() factory functions instead
+# Legacy classes are aliased to the unified implementation for backward compatibility
+from app.coordination.unified_idle_shutdown_daemon import (
+    IdleShutdownConfig as LambdaIdleConfig,  # Backward compat alias
+    IdleShutdownConfig as VastIdleConfig,    # Backward compat alias
+    NodeIdleStatus as LambdaNodeStatus,      # Backward compat alias
+    NodeIdleStatus as VastNodeStatus,        # Backward compat alias
+    UnifiedIdleShutdownDaemon as LambdaIdleDaemon,  # Backward compat alias
+    UnifiedIdleShutdownDaemon as VastIdleDaemon,    # Backward compat alias
 )
 
 # UnifiedIdleShutdownDaemon - provider-agnostic idle shutdown (December 2025)

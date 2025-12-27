@@ -135,13 +135,27 @@ class TaskType(str, Enum):
     """Types of compute tasks in the cluster.
 
     Used by resource coordinators and job schedulers to categorize work.
+    Consolidated from types.py and task_coordinator.py (December 2025).
     """
 
+    # Core task types
     SELFPLAY = "selfplay"  # Self-play game generation
+    GPU_SELFPLAY = "gpu_selfplay"  # GPU-accelerated self-play
+    HYBRID_SELFPLAY = "hybrid_selfplay"  # Mixed CPU/GPU self-play
     TRAINING = "training"  # Neural network training
     EVALUATION = "evaluation"  # Model evaluation (gauntlet, etc.)
     EXPORT = "export"  # Data export (NPZ generation)
     SYNC = "sync"  # Data synchronization
     TOURNAMENT = "tournament"  # Tournament games
     PARITY = "parity"  # Parity testing
+
+    # Optimization task types
+    CMAES = "cmaes"  # CMA-ES hyperparameter optimization
+
+    # Pipeline/loop task types
+    PIPELINE = "pipeline"  # Full pipeline execution
+    IMPROVEMENT_LOOP = "improvement_loop"  # Continuous improvement loop
+    BACKGROUND_LOOP = "background_loop"  # Background maintenance loop
+
+    # Fallback
     UNKNOWN = "unknown"  # Unknown/other task type

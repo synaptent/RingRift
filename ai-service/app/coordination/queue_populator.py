@@ -149,7 +149,7 @@ class ConfigTarget:
             # Emit event asynchronously
             try:
                 import asyncio
-                from app.distributed.data_events import emit_elo_velocity_changed
+                from app.coordination.event_router import emit_elo_velocity_changed
 
                 async def _emit():
                     await emit_elo_velocity_changed(

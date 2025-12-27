@@ -1644,7 +1644,7 @@ class FeedbackLoopController:
             previous_score: Previous quality score for delta calculation
         """
         try:
-            from app.distributed.data_events import emit_quality_degraded
+            from app.coordination.event_router import emit_quality_degraded
 
             _safe_create_task(
                 emit_quality_degraded(
@@ -2008,7 +2008,7 @@ class FeedbackLoopController:
 
             # Emit exploration boost to escape failure mode
             try:
-                from app.distributed.data_events import emit_exploration_boost
+                from app.coordination.event_router import emit_exploration_boost
                 _safe_create_task(
                     emit_exploration_boost(
                         config_key=config,

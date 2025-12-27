@@ -142,8 +142,7 @@ class CurriculumFeedback:
             return
 
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
 
             router = get_router()
             if router is None:
@@ -2500,8 +2499,7 @@ class QualityFeedbackWatcher:
     ) -> None:
         """Emit quality feedback adjusted event."""
         try:
-            from app.coordination.event_router import get_router, RouterEvent, EventSource
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, RouterEvent, EventSource, DataEventType
 
             router = get_router()
             # P0.6 Dec 2025: Use DataEventType enum for type-safe event emission

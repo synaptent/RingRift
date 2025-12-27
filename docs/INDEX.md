@@ -57,13 +57,14 @@ This index provides navigation and status tracking for all project documentation
 
 ### Primary Docs
 
-| Document                                           | Purpose                | Status |
-| -------------------------------------------------- | ---------------------- | ------ |
-| `ai-service/README.md`                             | AI service overview    | Active |
-| `ai-service/docs/training/TRAINING_FEATURES.md`    | Training feature guide | Active |
-| `ai-service/docs/CONSOLIDATION_ROADMAP.md`         | Consolidation progress | Active |
-| `ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md` | GPU training pipeline  | Active |
-| `ai-service/docs/training/DISTRIBUTED_SELFPLAY.md` | Distributed training   | Active |
+| Document                                           | Purpose                   | Status |
+| -------------------------------------------------- | ------------------------- | ------ |
+| `ai-service/README.md`                             | AI service overview       | Active |
+| `ai-service/docs/README.md`                        | AI service doc hub + SSoT | Active |
+| `ai-service/docs/training/TRAINING_FEATURES.md`    | Training feature guide    | Active |
+| `ai-service/docs/CONSOLIDATION_ROADMAP.md`         | Consolidation progress    | Active |
+| `ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md` | GPU training pipeline     | Active |
+| `ai-service/docs/training/DISTRIBUTED_SELFPLAY.md` | Distributed training      | Active |
 
 ### Human Calibration
 

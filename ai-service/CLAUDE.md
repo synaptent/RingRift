@@ -645,6 +645,64 @@ The P2P orchestrator has been decomposed into modular manager classes at `script
 
 All managers use dependency injection for testability. See `scripts/p2p/managers/README.md` for architecture details.
 
+### P2P SWIM/Raft Transition (December 2025)
+
+The P2P orchestrator is transitioning to battle-tested protocols for improved reliability:
+
+**SWIM Protocol (Membership)**
+
+- Gossip-based membership with 5s failure detection (vs 60-90s HTTP polling)
+- Leaderless architecture - no election required for membership changes
+- O(1) bandwidth per node regardless of cluster size
+- Status: Integration ready, pending `swim-p2p>=1.2.0` installation
+
+**Raft Protocol (Consensus)**
+
+- Replicated work queue with sub-second leader failover
+- Distributed locks for exclusive job claims
+- Automatic state machine replication across voters
+- Status: Integration ready, pending `pysyncobj>=0.3.14` installation
+
+**Feature Flags**
+
+```bash
+# Enable SWIM membership (default: false until deps installed)
+export RINGRIFT_SWIM_ENABLED=true
+export RINGRIFT_MEMBERSHIP_MODE=swim  # Options: http, swim, hybrid
+
+# Enable Raft consensus (default: false until deps installed)
+export RINGRIFT_RAFT_ENABLED=true
+export RINGRIFT_CONSENSUS_MODE=raft  # Options: bully, raft, hybrid
+```
+
+**Current State**: Feature flags are validated at startup. If flags are enabled but dependencies missing, warnings are logged and system falls back to HTTP polling (membership) and Bully election (consensus).
+
+**New Files**:
+
+- `scripts/p2p/membership_mixin.py` - SWIM membership integration
+- `scripts/p2p/consensus_mixin.py` - Raft consensus integration
+- `scripts/p2p/handlers/swim.py` - SWIM status endpoints
+- `scripts/p2p/handlers/raft.py` - Raft status endpoints
+- `app/p2p/hybrid_coordinator.py` - Routes operations based on feature flags
+- `app/p2p/swim_adapter.py` - SWIM protocol adapter
+- `app/p2p/raft_state.py` - Raft state machines
+
+**Status Endpoint**
+
+The `/status` endpoint now includes SWIM/Raft protocol status:
+
+```json
+{
+  "swim_raft": {
+    "membership_mode": "http",
+    "consensus_mode": "bully",
+    "swim": { "enabled": false, "available": false },
+    "raft": { "enabled": false, "available": false },
+    "hybrid_status": { "swim_fallback_active": true, "raft_fallback_active": true }
+  }
+}
+```
+
 ### Cluster Configuration
 
 The cluster is configured via `config/distributed_hosts.yaml`:

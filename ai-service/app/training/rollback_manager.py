@@ -718,7 +718,7 @@ class AutoRollbackHandler:
         This closes the loop: REGRESSION_DETECTED → exploration boost → better data → recovery
         """
         try:
-            from app.distributed.data_events import emit_selfplay_target_updated
+            from app.coordination.event_router import emit_selfplay_target_updated
 
             config_key = payload.get("config_key", "")
             if not config_key:

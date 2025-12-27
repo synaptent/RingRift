@@ -753,8 +753,7 @@ def _evaluate_single_opponent(
 
             # Emit EVALUATION_PROGRESS event for real-time monitoring (December 2025)
             try:
-                from app.distributed.data_events import DataEventType, DataEvent
-                from app.coordination.event_router import get_event_bus
+                from app.coordination.event_router import DataEventType, DataEvent, get_event_bus
 
                 bus = get_event_bus()
                 if bus:

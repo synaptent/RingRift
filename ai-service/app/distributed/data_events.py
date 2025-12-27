@@ -223,6 +223,7 @@ class DataEventType(Enum):
     HEALTH_CHECK_FAILED = "health_check_failed"
     HEALTH_ALERT = "health_alert"  # General health warning
     RESOURCE_CONSTRAINT = "resource_constraint"  # CPU/GPU/Memory/Disk pressure
+    NODE_OVERLOADED = "node_overloaded"  # Node resource overload (job redistribution)
     RECOVERY_INITIATED = "recovery_initiated"  # Auto-recovery started
     RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished
     RECOVERY_FAILED = "recovery_failed"  # Auto-recovery failed

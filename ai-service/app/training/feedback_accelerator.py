@@ -1490,8 +1490,7 @@ def wire_hyperparameter_feedback() -> bool:
         return True
 
     try:
-        from app.coordination.event_router import get_router
-        from app.distributed.data_events import DataEventType
+        from app.coordination.event_router import get_router, DataEventType
 
         router = get_router()
         router.subscribe(DataEventType.HYPERPARAMETER_UPDATED.value, _on_hyperparameter_updated)
@@ -1511,8 +1510,7 @@ def unwire_hyperparameter_feedback() -> None:
         return
 
     try:
-        from app.coordination.event_router import get_router
-        from app.distributed.data_events import DataEventType
+        from app.coordination.event_router import get_router, DataEventType
 
         router = get_router()
         router.unsubscribe(DataEventType.HYPERPARAMETER_UPDATED.value, _on_hyperparameter_updated)

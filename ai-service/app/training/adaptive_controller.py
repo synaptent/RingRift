@@ -390,8 +390,7 @@ class AdaptiveController:
     def _emit_quality_penalty_event(self, old_penalty: float, reason: str) -> None:
         """Emit QUALITY_PENALTY_APPLIED event for selfplay throttling."""
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
 
             router = get_router()
             if router is None:
@@ -735,8 +734,7 @@ async def _force_curriculum_advance(config_key: str, plateau_details: dict) -> N
     This ensures the training loop never gets stuck.
     """
     try:
-        from app.coordination.event_router import get_router
-        from app.distributed.data_events import DataEventType
+        from app.coordination.event_router import get_router, DataEventType
 
         router = get_router()
         if router is None:
@@ -773,8 +771,7 @@ async def _boost_exploration_on_plateau(config_key: str, plateau_details: dict) 
     exploration during selfplay.
     """
     try:
-        from app.coordination.event_router import get_router
-        from app.distributed.data_events import DataEventType
+        from app.coordination.event_router import get_router, DataEventType
 
         router = get_router()
         if router is None:
@@ -815,7 +812,7 @@ async def _request_extra_selfplay(config_key: str, plateau_details: dict) -> Non
     Emits SELFPLAY_TARGET_UPDATED to request additional diverse games.
     """
     try:
-        from app.distributed.data_events import emit_selfplay_target_updated
+        from app.coordination.event_router import emit_selfplay_target_updated
 
         # Calculate extra games based on plateau severity
         plateau_window = plateau_details.get("window_size", 100)

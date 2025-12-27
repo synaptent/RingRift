@@ -119,9 +119,44 @@ models_essential/
 └── ...
 ```
 
-### 4.2 Cluster Sync
+### 4.2 Automated Model Distribution (December 2025)
 
-Models are synced to cluster nodes:
+Models are automatically distributed across the cluster via `ModelDistributionDaemon`:
+
+```
+MODEL_PROMOTED event
+        │
+        ▼
+┌──────────────────────┐
+│ ModelDistributionDaemon │
+│  - Subscribes to EVENT_ROUTER │
+│  - Detects promotion events    │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ Multi-Transport Sync │
+│  1. BitTorrent (>50MB) │
+│  2. aria2 HTTP (multi-source) │
+│  3. rsync --checksum (fallback) │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ Post-Transfer Verification │
+│  - SHA256 checksum match │
+│  - File size validation   │
+│  - Model loadability test │
+└──────────────────────┘
+```
+
+**Key files**:
+
+- `app/coordination/model_distribution_daemon.py` - Automated distribution
+- `app/coordination/npz_distribution_daemon.py` - Training data distribution
+- `app/distributed/resilient_transfer.py` - Unified transfer abstraction
+
+**Manual sync** (legacy):
 
 ```bash
 # Sync to all nodes
@@ -129,6 +164,23 @@ for node in $(cat config/distributed_hosts.yaml | grep 'host:' | awk '{print $2}
   scp models/production_model.pt ubuntu@$node:~/ringrift/ai-service/models/
 done
 ```
+
+### 4.3 NPZ Training Data Distribution
+
+Training data (NPZ files) are distributed using similar infrastructure:
+
+```bash
+# NPZ files are automatically distributed when:
+# 1. EXPORT_COMPLETED event fires
+# 2. NPZDistributionDaemon detects new NPZ files
+# 3. BitTorrent is preferred for large files (>50MB)
+```
+
+**Distribution priorities**:
+
+- GPU nodes (training candidates) receive highest priority
+- Checksum verification is mandatory
+- NPZ structure validation (array shapes, sample counts)
 
 ## 5. Monitoring
 
@@ -198,12 +250,16 @@ python scripts/model_registry_cli.py archive REGRESSED_MODEL_ID --reason "regres
 
 ## Key Files Reference
 
-| File                                   | Purpose                         |
-| -------------------------------------- | ------------------------------- |
-| `app/training/model_versioning.py`     | Checkpoint integrity & metadata |
-| `app/training/model_registry.py`       | SQLite lifecycle tracking       |
-| `app/training/promotion_controller.py` | Promotion decision logic        |
-| `app/config/thresholds.py`             | Centralized threshold values    |
-| `scripts/model_registry_cli.py`        | CLI interface                   |
-| `scripts/auto_promote.py`              | Automated promotion workflow    |
-| `scripts/baseline_gauntlet.py`         | Baseline evaluation             |
+| File                                            | Purpose                              |
+| ----------------------------------------------- | ------------------------------------ |
+| `app/training/model_versioning.py`              | Checkpoint integrity & metadata      |
+| `app/training/model_registry.py`                | SQLite lifecycle tracking            |
+| `app/training/promotion_controller.py`          | Promotion decision logic             |
+| `app/config/thresholds.py`                      | Centralized threshold values         |
+| `app/coordination/model_distribution_daemon.py` | Automated cluster model distribution |
+| `app/coordination/npz_distribution_daemon.py`   | Training data distribution           |
+| `app/distributed/resilient_transfer.py`         | Verified file transfers              |
+| `app/coordination/npz_validation.py`            | NPZ structure validation             |
+| `scripts/model_registry_cli.py`                 | CLI interface                        |
+| `scripts/auto_promote.py`                       | Automated promotion workflow         |
+| `scripts/baseline_gauntlet.py`                  | Baseline evaluation                  |

@@ -58,19 +58,12 @@ from app.coordination.p2p_auto_deployer import P2PAutoDeployer, P2PDeploymentCon
 
 logger = logging.getLogger(__name__)
 
-# Health event emission imports (December 2025 - Phase 21)
-try:
-    from app.distributed.data_events import (
-        emit_p2p_cluster_healthy,
-        emit_p2p_cluster_unhealthy,
-        emit_node_unhealthy,
-    )
-    HAS_HEALTH_EVENTS = True
-except ImportError:
-    HAS_HEALTH_EVENTS = False
-    emit_p2p_cluster_healthy = None
-    emit_p2p_cluster_unhealthy = None
-    emit_node_unhealthy = None
+# Health event emission (uses safe fallbacks internally)
+from app.coordination.event_emitters import (
+    emit_p2p_cluster_healthy,
+    emit_p2p_cluster_unhealthy,
+    emit_node_unhealthy,
+)
 
 
 @dataclass
@@ -377,14 +370,13 @@ class UnifiedNodeHealthDaemon:
         healthy_percent = (summary.healthy + summary.degraded) / active_nodes * 100
         healthy_nodes = summary.healthy + summary.degraded
 
-        # Emit cluster health events (December 2025 - Phase 21)
-        if HAS_HEALTH_EVENTS:
-            await self._emit_cluster_health_events(
-                healthy_percent=healthy_percent,
-                healthy_nodes=healthy_nodes,
-                active_nodes=active_nodes,
-                summary=summary,
-            )
+        # Emit cluster health events
+        await self._emit_cluster_health_events(
+            healthy_percent=healthy_percent,
+            healthy_nodes=healthy_nodes,
+            active_nodes=active_nodes,
+            summary=summary,
+        )
 
         # Alert if below threshold
         if healthy_percent < self.config.min_healthy_percent:

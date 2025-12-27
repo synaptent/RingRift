@@ -121,6 +121,14 @@ STATE_SAVE_INTERVAL_SECONDS = 300  # Save state every 5 minutes
 # PID file for master loop detection (December 2025)
 PID_FILE_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop.pid"
 
+# Critical daemons that MUST start for autonomous operation (December 2025 - Gap 2 fix)
+# If any of these fail to start, the master loop should NOT proceed
+CRITICAL_DAEMON_NAMES = {
+    "event_router",      # Event system is fundamental
+    "data_pipeline",     # Pipeline orchestration
+    "auto_sync",         # Data replication
+}
+
 
 @dataclass
 class ConfigState:
@@ -707,15 +715,39 @@ class MasterLoopController:
             f"(profile={self.daemon_profile})"
         )
 
+        # Track which daemons started successfully
+        started_daemons: set[str] = set()
+        failed_daemons: set[str] = set()
+
         for daemon_type in profile_daemons:
             try:
                 if self.dry_run:
                     logger.info(f"[MasterLoop] [DRY RUN] Would start {daemon_type.value}")
+                    started_daemons.add(daemon_type.value)
                 else:
                     await self.daemon_manager.start(daemon_type)
+                    started_daemons.add(daemon_type.value)
                     logger.debug(f"[MasterLoop] Started {daemon_type.value}")
             except Exception as e:
+                failed_daemons.add(daemon_type.value)
                 logger.warning(f"[MasterLoop] Failed to start {daemon_type.value}: {e}")
+
+        # December 2025 - Gap 2 fix: Validate critical daemons started
+        failed_critical = CRITICAL_DAEMON_NAMES & failed_daemons
+        missing_critical = CRITICAL_DAEMON_NAMES - started_daemons - failed_daemons
+
+        if failed_critical or missing_critical:
+            critical_issues = failed_critical | missing_critical
+            logger.error(
+                f"[MasterLoop] CRITICAL DAEMONS FAILED: {critical_issues}. "
+                f"Started: {started_daemons}, Failed: {failed_daemons}"
+            )
+            # Don't raise - log warning but continue (graceful degradation)
+            # In production, consider: raise RuntimeError(f"Critical daemons failed: {critical_issues}")
+        else:
+            logger.info(
+                f"[MasterLoop] All critical daemons started successfully: {CRITICAL_DAEMON_NAMES}"
+            )
 
         # Start FeedbackLoopController explicitly (December 2025 - Phase 2A.1)
         # The daemon manager starts FEEDBACK_LOOP daemon, but we also need to

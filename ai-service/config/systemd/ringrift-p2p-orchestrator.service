@@ -21,8 +21,11 @@ ExecStart=__RINGRIFT_P2P_PYTHON__ -u scripts/p2p_orchestrator.py \
   --ringrift-path ${RINGRIFT_PATH} \
   --peers ${RINGRIFT_P2P_PEERS}
 
+# December 2025 - Gap 5 fix: Less aggressive restart to avoid masking startup issues
 Restart=always
-RestartSec=3
+RestartSec=15
+StartLimitIntervalSec=300
+StartLimitBurst=5
 TimeoutStopSec=30
 KillSignal=SIGTERM
 LimitNOFILE=65536

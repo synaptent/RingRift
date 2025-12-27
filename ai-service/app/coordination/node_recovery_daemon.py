@@ -775,9 +775,8 @@ class NodeRecoveryDaemon:
         except Exception as e:
             logger.debug(f"Could not publish recovery event: {e}")
 
-        # Emit standard health events (December 2025 - Phase 21)
-        if HAS_HEALTH_EVENTS:
-            self._emit_health_event(node, action, success)
+        # Emit standard health events
+        self._emit_health_event(node, action, success)
 
     def _emit_health_event(
         self,

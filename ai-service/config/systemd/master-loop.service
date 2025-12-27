@@ -1,8 +1,11 @@
 [Unit]
 Description=RingRift Master Loop (Canonical AI Orchestrator)
 Documentation=https://github.com/ringrift/ai-service
-After=network-online.target
-Wants=network-online.target
+# December 2025 - Gap 5 fix: Add P2P dependency to prevent startup race conditions
+After=network-online.target ringrift-p2p-orchestrator.service
+Wants=network-online.target ringrift-p2p-orchestrator.service
+# Restart if P2P restarts
+PartOf=ringrift-p2p-orchestrator.service
 
 [Service]
 Type=simple

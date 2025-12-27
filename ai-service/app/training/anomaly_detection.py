@@ -333,15 +333,7 @@ class TrainingLossAnomalyHandler:
             return True
 
         try:
-            from app.distributed.data_events import DataEventType
-
-            try:
-                from app.coordination.event_router import subscribe
-            except ImportError:
-                from app.distributed.data_events import get_event_bus
-
-                def subscribe(event_type, callback):
-                    get_event_bus().subscribe(event_type, callback)
+            from app.coordination.event_router import DataEventType, subscribe
 
             def on_training_loss_anomaly(event):
                 """Handle TRAINING_LOSS_ANOMALY event."""
@@ -399,7 +391,7 @@ class TrainingLossAnomalyHandler:
         # Emit LOW_QUALITY_DATA_WARNING to trigger quality investigation
         try:
             from app.core.async_context import fire_and_forget
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, get_event_bus
 
             bus = get_event_bus()
 

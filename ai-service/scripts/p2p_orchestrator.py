@@ -3441,7 +3441,8 @@ class P2POrchestrator(
             import shutil
 
             if shutil.which("pgrep"):
-                for pattern in ("run_self_play_soak.py", "run_gpu_selfplay.py", "run_hybrid_selfplay.py"):
+                # December 2025: Added selfplay.py pattern - the current unified selfplay entry point
+                for pattern in ("selfplay.py", "run_self_play_soak.py", "run_gpu_selfplay.py", "run_hybrid_selfplay.py"):
                     out = subprocess.run(
                         ["pgrep", "-f", pattern],
                         capture_output=True,
@@ -3483,9 +3484,11 @@ class P2POrchestrator(
         time.time()
 
         # Map patterns to their max runtimes
+        # December 2025: Added selfplay.py - the current unified selfplay entry point
         pattern_max_runtime = {
             "run_model_elo_tournament.py": MAX_TOURNAMENT_RUNTIME,
             "run_gauntlet.py": MAX_GAUNTLET_RUNTIME,
+            "selfplay.py": MAX_SELFPLAY_RUNTIME,  # Unified selfplay script
             "run_self_play_soak.py": MAX_SELFPLAY_RUNTIME,
             "run_gpu_selfplay.py": MAX_SELFPLAY_RUNTIME,
             "run_hybrid_selfplay.py": MAX_SELFPLAY_RUNTIME,
@@ -25941,7 +25944,9 @@ print(json.dumps({{
 
                 if shutil.which("pgrep"):
                     pids: list[int] = []
+                    # December 2025: Added selfplay.py - unified entry point
                     for pattern in (
+                        "selfplay.py",
                         "run_self_play_soak.py",
                         "run_gpu_selfplay.py",
                         "run_hybrid_selfplay.py",
@@ -26051,7 +26056,9 @@ print(json.dumps({{
                 import shutil
 
                 if shutil.which("pgrep"):
+                    # December 2025: Added selfplay.py - unified entry point
                     for pattern in (
+                        "selfplay.py",
                         "run_self_play_soak.py",
                         "run_gpu_selfplay.py",
                         "run_hybrid_selfplay.py",

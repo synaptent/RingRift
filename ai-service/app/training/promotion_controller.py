@@ -317,7 +317,7 @@ class PromotionController:
                         f"{model_id} with {win_rate_vs_heuristic:.1%} vs heuristic"
                     )
                     # Emit PROMOTION_CANDIDATE for downstream handlers
-                    from app.distributed.data_events import emit_promotion_candidate
+                    from app.coordination.event_router import emit_promotion_candidate
                     from app.core.async_context import fire_and_forget
 
                     fire_and_forget(

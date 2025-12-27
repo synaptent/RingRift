@@ -987,8 +987,7 @@ class SelfplayScheduler:
         if abs(priority.momentum_multiplier - old_momentum) / max(old_momentum, 0.01) > 0.20:
             change_percent = ((priority.momentum_multiplier - old_momentum) / old_momentum) * 100.0
             try:
-                from app.distributed.data_events import DataEventType
-                from app.coordination.event_router import get_event_bus
+                from app.coordination.event_router import DataEventType, get_event_bus
 
                 bus = get_event_bus()
                 if bus:
@@ -1034,8 +1033,7 @@ class SelfplayScheduler:
             return
 
         try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import DataEventType, get_event_bus
 
             bus = get_event_bus()
             if bus:
@@ -1296,8 +1294,7 @@ class SelfplayScheduler:
 
                 # Emit a target update event to propagate the boost
                 try:
-                    from app.distributed.data_events import DataEventType
-                    from app.coordination.event_router import get_event_bus
+                    from app.coordination.event_router import DataEventType, get_event_bus
 
                     bus = get_event_bus()
                     if bus:
@@ -1353,8 +1350,7 @@ class SelfplayScheduler:
 
                 # Emit curriculum rebalanced event
                 try:
-                    from app.distributed.data_events import DataEventType
-                    from app.coordination.event_router import get_event_bus
+                    from app.coordination.event_router import DataEventType, get_event_bus
 
                     bus = get_event_bus()
                     if bus:
@@ -1425,8 +1421,7 @@ class SelfplayScheduler:
 
                 # Emit SELFPLAY_TARGET_UPDATED to trigger immediate selfplay allocation
                 try:
-                    from app.distributed.data_events import DataEventType
-                    from app.coordination.event_router import get_event_bus
+                    from app.coordination.event_router import DataEventType, get_event_bus
 
                     bus = get_event_bus()
                     if bus:
@@ -1518,8 +1513,7 @@ class SelfplayScheduler:
             if abs(priority.momentum_multiplier - old_momentum) / max(old_momentum, 0.01) > 0.20:
                 change_percent = ((priority.momentum_multiplier - old_momentum) / old_momentum) * 100.0
                 try:
-                    from app.distributed.data_events import DataEventType
-                    from app.coordination.event_router import get_event_bus
+                    from app.coordination.event_router import DataEventType, get_event_bus
 
                     bus = get_event_bus()
                     if bus:
@@ -1539,8 +1533,7 @@ class SelfplayScheduler:
 
             # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
             try:
-                from app.distributed.data_events import DataEventType
-                from app.coordination.event_router import get_event_bus
+                from app.coordination.event_router import DataEventType, get_event_bus
 
                 bus = get_event_bus()
                 if bus:
@@ -1599,8 +1592,7 @@ class SelfplayScheduler:
 
             # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
             try:
-                from app.distributed.data_events import DataEventType
-                from app.coordination.event_router import get_event_bus
+                from app.coordination.event_router import DataEventType, get_event_bus
 
                 bus = get_event_bus()
                 if bus:

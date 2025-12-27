@@ -206,8 +206,7 @@ def _emit_training_blocked_event(
 ) -> None:
     """Emit TRAINING_BLOCKED_BY_QUALITY event."""
     try:
-        from app.distributed.data_events import DataEventType
-        from app.coordination.event_router import get_event_bus
+        from app.coordination.event_router import DataEventType, get_event_bus
 
         config_key = f"{board_type}_{num_players}p"
         bus = get_event_bus()

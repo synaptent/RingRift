@@ -1,7 +1,7 @@
 # EVENT_CATALOG.md - RingRift AI Training Event System
 
 **Last Updated:** December 26, 2025
-**Total Event Types:** 159
+**Total Event Types:** 159 (see [Quick Reference](#quick-reference) for complete list)
 **Source Files:**
 
 - `app/distributed/data_events.py` - DataEventType definitions
@@ -1965,6 +1965,335 @@ Events for TypeScript/Python parity validation.
 **Typical Producers**: Parity validation scripts
 
 **Typical Consumers**: `QualityMonitorDaemon`, `ClusterWatchdog`
+
+---
+
+## Quick Reference
+
+Complete list of all 159 event types organized by category:
+
+### Training Pipeline Events
+
+| Event                         | Description                    | Key Fields                         |
+| ----------------------------- | ------------------------------ | ---------------------------------- |
+| `TRAINING_STARTED`            | Training job begins            | config_key, node_name, job_id      |
+| `TRAINING_PROGRESS`           | Periodic training updates      | epoch, train_loss, val_loss        |
+| `TRAINING_COMPLETED`          | Training finished successfully | model_id, model_path, val_loss     |
+| `TRAINING_FAILED`             | Training crashed               | error, error_details               |
+| `TRAINING_THRESHOLD_REACHED`  | Training triggered             | games, threshold, priority         |
+| `TRAINING_EARLY_STOPPED`      | Early stopping triggered       | reason, epochs_completed           |
+| `TRAINING_LOSS_ANOMALY`       | Loss spike detected            | current_loss, expected_loss        |
+| `TRAINING_LOSS_TREND`         | Loss trend analysis            | trend: improving/stalled/degrading |
+| `TRAINING_ROLLBACK_NEEDED`    | Rollback required              | checkpoint_path, severity          |
+| `TRAINING_ROLLBACK_COMPLETED` | Rollback successful            | model_id, rollback_from            |
+
+### Selfplay Events
+
+| Event                     | Description             | Key Fields                              |
+| ------------------------- | ----------------------- | --------------------------------------- |
+| `SELFPLAY_COMPLETE`       | Selfplay batch finished | games_generated, node_id, selfplay_type |
+| `SELFPLAY_TARGET_UPDATED` | Game target changed     | old_target, new_target, reason          |
+| `SELFPLAY_RATE_CHANGED`   | Rate multiplier changed | old_rate, new_rate, change_pct          |
+
+### Evaluation Events
+
+| Event                    | Description                  | Key Fields                   |
+| ------------------------ | ---------------------------- | ---------------------------- |
+| `EVALUATION_STARTED`     | Evaluation begins            | model_id, evaluation_type    |
+| `EVALUATION_PROGRESS`    | Evaluation progress          | games_completed, current_elo |
+| `EVALUATION_COMPLETED`   | Evaluation finished          | elo, win_rate, elo_delta     |
+| `EVALUATION_FAILED`      | Evaluation crashed           | error                        |
+| `ELO_UPDATED`            | Elo rating changed           | old_elo, new_elo, elo_delta  |
+| `ELO_VELOCITY_CHANGED`   | Elo improvement rate changed | old_velocity, new_velocity   |
+| `ELO_SIGNIFICANT_CHANGE` | Large Elo change             | elo_delta, threshold         |
+
+### Sync Events
+
+| Event                 | Description                  | Key Fields                          |
+| --------------------- | ---------------------------- | ----------------------------------- |
+| `DATA_SYNC_STARTED`   | Sync operation started       | sync_type, source, targets          |
+| `DATA_SYNC_COMPLETED` | Sync finished                | items_synced, duration_seconds      |
+| `DATA_SYNC_FAILED`    | Sync failed                  | error, source                       |
+| `SYNC_STALLED`        | Sync timed out               | duration_seconds, timeout_threshold |
+| `SYNC_REQUEST`        | Explicit sync request        | source, target, priority            |
+| `SYNC_TRIGGERED`      | Sync triggered by stale data | config_key, data_age_hours          |
+| `NEW_GAMES_AVAILABLE` | New games ready              | host, new_games, total_games        |
+| `GAME_SYNCED`         | Games synced to targets      | game_ids, source, targets           |
+
+### Model Events
+
+| Event                         | Description                    | Key Fields                |
+| ----------------------------- | ------------------------------ | ------------------------- |
+| `MODEL_PROMOTED`              | Model promoted                 | tier, elo, promotion_type |
+| `MODEL_UPDATED`               | Model metadata updated         | model_id, changes         |
+| `MODEL_CORRUPTED`             | Model corruption detected      | corruption_type           |
+| `MODEL_SYNC_REQUESTED`        | Model sync requested           | model_id, target_nodes    |
+| `MODEL_DISTRIBUTION_COMPLETE` | Model distributed              | model_id, nodes           |
+| `PROMOTION_CANDIDATE`         | Promotion candidate identified | elo, win_rate             |
+| `PROMOTION_STARTED`           | Promotion process started      | model_id                  |
+| `PROMOTION_REJECTED`          | Promotion failed criteria      | reason, required_elo      |
+| `PROMOTION_ROLLED_BACK`       | Promotion rolled back          | reason, rollback_to       |
+
+### Quality Events
+
+| Event                          | Description                  | Key Fields                 |
+| ------------------------------ | ---------------------------- | -------------------------- |
+| `QUALITY_SCORE_UPDATED`        | Quality score calculated     | avg_quality, total_games   |
+| `QUALITY_DEGRADED`             | Quality below threshold      | current_quality, threshold |
+| `QUALITY_DISTRIBUTION_CHANGED` | Quality distribution shifted | old_avg, new_avg           |
+| `HIGH_QUALITY_DATA_AVAILABLE`  | High-quality data ready      | high_quality_count         |
+| `LOW_QUALITY_DATA_WARNING`     | Quality below threshold      | avg_quality, threshold     |
+| `TRAINING_BLOCKED_BY_QUALITY`  | Quality too low              | required_quality           |
+| `QUALITY_FEEDBACK_ADJUSTED`    | Quality feedback updated     | old_weight, new_weight     |
+| `QUALITY_PENALTY_APPLIED`      | Penalty applied              | penalty_factor             |
+| `QUALITY_CHECK_REQUESTED`      | On-demand check requested    | reason                     |
+| `QUALITY_CHECK_FAILED`         | Quality check failed         | error                      |
+
+### Cluster Health Events
+
+| Event                 | Description               | Key Fields                       |
+| --------------------- | ------------------------- | -------------------------------- |
+| `HOST_ONLINE`         | Node came online          | node_id, host_type, capabilities |
+| `HOST_OFFLINE`        | Node went offline         | node_id, reason                  |
+| `NODE_UNHEALTHY`      | Health check failed       | health_score, issues             |
+| `NODE_RECOVERED`      | Node recovered            | recovery_type, offline_duration  |
+| `NODE_ACTIVATED`      | Node activated by cluster | node_id                          |
+| `NODE_TERMINATED`     | Node terminated           | node_id, reason                  |
+| `NODE_OVERLOADED`     | Node overloaded           | cpu_util, gpu_util, memory_util  |
+| `HEALTH_CHECK_PASSED` | Health check succeeded    | health_score                     |
+| `HEALTH_CHECK_FAILED` | Health check failed       | reason, error                    |
+| `HEALTH_ALERT`        | General health warning    | alert_type, severity             |
+
+### Work Queue Events
+
+| Event            | Description                | Key Fields          |
+| ---------------- | -------------------------- | ------------------- |
+| `WORK_QUEUED`    | Work added to queue        | work_type, priority |
+| `WORK_CLAIMED`   | Work claimed by node       | node_id, work_id    |
+| `WORK_STARTED`   | Work execution started     | work_id             |
+| `WORK_COMPLETED` | Work finished successfully | work_id, duration   |
+| `WORK_FAILED`    | Work failed permanently    | work_id, error      |
+| `WORK_RETRY`     | Work will retry            | work_id, attempt    |
+| `WORK_TIMEOUT`   | Work timed out             | work_id             |
+| `WORK_CANCELLED` | Work cancelled             | work_id, reason     |
+| `JOB_PREEMPTED`  | Job preempted              | job_id, reason      |
+
+### Daemon Lifecycle Events
+
+| Event                         | Description                 | Key Fields                     |
+| ----------------------------- | --------------------------- | ------------------------------ |
+| `DAEMON_STARTED`              | Daemon started              | daemon_type, config            |
+| `DAEMON_STOPPED`              | Daemon stopped              | daemon_type, reason            |
+| `DAEMON_STATUS_CHANGED`       | Daemon status changed       | old_status, new_status         |
+| `COORDINATOR_HEARTBEAT`       | Coordinator liveness        | health_score, events_processed |
+| `COORDINATOR_HEALTH_DEGRADED` | Coordinator degraded        | reason, issues                 |
+| `COORDINATOR_SHUTDOWN`        | Coordinator shutting down   | remaining_tasks                |
+| `COORDINATOR_INIT_FAILED`     | Coordinator failed to start | error                          |
+
+### Recovery Events
+
+| Event                 | Description            | Key Fields                      |
+| --------------------- | ---------------------- | ------------------------------- |
+| `RECOVERY_INITIATED`  | Recovery started       | recovery_type, target           |
+| `RECOVERY_COMPLETED`  | Recovery succeeded     | duration_seconds, actions_taken |
+| `RECOVERY_FAILED`     | Recovery failed        | error                           |
+| `REGRESSION_DETECTED` | Performance regression | severity, regression_amount     |
+| `REGRESSION_CLEARED`  | Regression resolved    | model_id                        |
+
+### Resource Events
+
+| Event                      | Description              | Key Fields                   |
+| -------------------------- | ------------------------ | ---------------------------- |
+| `CLUSTER_CAPACITY_CHANGED` | Cluster capacity changed | old_capacity, new_capacity   |
+| `NODE_CAPACITY_UPDATED`    | Node capacity updated    | node_id, resources           |
+| `BACKPRESSURE_ACTIVATED`   | Backpressure activated   | level, resource_type         |
+| `BACKPRESSURE_RELEASED`    | Backpressure released    | previous_level, duration     |
+| `IDLE_RESOURCE_DETECTED`   | Idle resource found      | resource_type, idle_duration |
+| `RESOURCE_CONSTRAINT`      | Resource pressure        | constraint_type, utilization |
+
+### Optimization Events
+
+| Event                     | Description                        | Key Fields                       |
+| ------------------------- | ---------------------------------- | -------------------------------- |
+| `CMAES_TRIGGERED`         | CMA-ES optimization started        | parameters_searched, generations |
+| `CMAES_COMPLETED`         | CMA-ES finished                    | best_params, improvement         |
+| `NAS_TRIGGERED`           | Neural Architecture Search started | search_space                     |
+| `NAS_COMPLETED`           | NAS finished                       | best_architecture                |
+| `PLATEAU_DETECTED`        | Training plateau detected          | epochs_since_improvement         |
+| `HYPERPARAMETER_UPDATED`  | Hyperparameter changed             | param_name, old_value, new_value |
+| `ADAPTIVE_PARAMS_CHANGED` | Adaptive parameters changed        | params_changed, elo_velocity     |
+
+### Curriculum Events
+
+| Event                   | Description                 | Key Fields                 |
+| ----------------------- | --------------------------- | -------------------------- |
+| `CURRICULUM_REBALANCED` | Weights rebalanced          | old_weights, new_weights   |
+| `CURRICULUM_ADVANCED`   | Advanced to harder tier     | old_tier, new_tier         |
+| `WEIGHT_UPDATED`        | Config weight updated       | old_weight, new_weight     |
+| `EXPLORATION_ADJUSTED`  | Exploration changed         | old_strategy, new_strategy |
+| `EXPLORATION_BOOST`     | Exploration boost requested | boost_factor               |
+| `OPPONENT_MASTERED`     | Opponent mastered           | opponent_type              |
+
+### Leader Election Events
+
+| Event             | Description         | Key Fields              |
+| ----------------- | ------------------- | ----------------------- |
+| `LEADER_ELECTED`  | New leader elected  | leader_id, term         |
+| `LEADER_LOST`     | Leader lost         | previous_leader, reason |
+| `LEADER_STEPDOWN` | Leader stepped down | reason                  |
+
+### Task Lifecycle Events
+
+| Event            | Description                  | Key Fields              |
+| ---------------- | ---------------------------- | ----------------------- |
+| `TASK_SPAWNED`   | Task spawned                 | task_id, task_type      |
+| `TASK_HEARTBEAT` | Task heartbeat               | task_id, progress       |
+| `TASK_COMPLETED` | Task completed               | task_id, result         |
+| `TASK_FAILED`    | Task failed                  | task_id, error          |
+| `TASK_ORPHANED`  | Task lost parent worker      | task_id, last_heartbeat |
+| `TASK_CANCELLED` | Task cancelled               | task_id, reason         |
+| `TASK_ABANDONED` | Task intentionally abandoned | task_id, reason         |
+
+### Data Integrity Events
+
+| Event                     | Description              | Key Fields       |
+| ------------------------- | ------------------------ | ---------------- |
+| `ORPHAN_GAMES_DETECTED`   | Unregistered games found | count, databases |
+| `ORPHAN_GAMES_REGISTERED` | Orphans auto-registered  | count            |
+| `REPAIR_STARTED`          | Repair job started       | target           |
+| `REPAIR_COMPLETED`        | Repair succeeded         | target, duration |
+| `REPAIR_FAILED`           | Repair failed            | target, error    |
+| `DATABASE_CREATED`        | New database created     | path, config     |
+
+### Lock Events
+
+| Event               | Description       | Key Fields        |
+| ------------------- | ----------------- | ----------------- |
+| `LOCK_ACQUIRED`     | Lock acquired     | lock_name, holder |
+| `LOCK_RELEASED`     | Lock released     | lock_name         |
+| `LOCK_TIMEOUT`      | Lock timed out    | lock_name         |
+| `DEADLOCK_DETECTED` | Deadlock detected | locks_involved    |
+
+### Checkpoint Events
+
+| Event               | Description       | Key Fields             |
+| ------------------- | ----------------- | ---------------------- |
+| `CHECKPOINT_SAVED`  | Checkpoint saved  | checkpoint_path, epoch |
+| `CHECKPOINT_LOADED` | Checkpoint loaded | checkpoint_path        |
+
+### Parity Events
+
+| Event                         | Description           | Key Fields           |
+| ----------------------------- | --------------------- | -------------------- |
+| `PARITY_VALIDATION_STARTED`   | Parity check started  | games_to_validate    |
+| `PARITY_VALIDATION_COMPLETED` | Parity check finished | success, parity_rate |
+| `PARITY_FAILURE_RATE_CHANGED` | Failure rate changed  | old_rate, new_rate   |
+
+### Cache Events
+
+| Event               | Description       | Key Fields               |
+| ------------------- | ----------------- | ------------------------ |
+| `CACHE_INVALIDATED` | Cache invalidated | invalidation_type, count |
+
+---
+
+## Event Ordering Guarantees
+
+### General Principles
+
+1. **No Global Ordering**: Events from different sources are NOT ordered relative to each other. Don't assume `SELFPLAY_COMPLETE` from node A happens before `SELFPLAY_COMPLETE` from node B.
+
+2. **Local Ordering**: Events emitted by the same producer are delivered in emission order to each subscriber.
+
+3. **At-Most-Once Delivery**: Events are deduplicated by content hash. If the same event payload is emitted twice within the deduplication window (1 hour), the second is dropped.
+
+4. **Eventual Consistency**: Cross-process events via SQLite may be delayed by the poll interval (default: 5 seconds).
+
+### Pipeline Stage Ordering
+
+The training pipeline enforces stage ordering via event dependencies:
+
+```
+SELFPLAY_COMPLETE
+    ↓ (triggers sync)
+NEW_GAMES_AVAILABLE
+    ↓ (triggers export)
+NPZ_EXPORT_COMPLETE
+    ↓ (triggers training if threshold reached)
+TRAINING_THRESHOLD_REACHED
+    ↓
+TRAINING_STARTED
+    ↓
+TRAINING_COMPLETED
+    ↓ (triggers evaluation)
+EVALUATION_COMPLETED
+    ↓ (triggers promotion if criteria met)
+MODEL_PROMOTED
+    ↓ (triggers distribution)
+MODEL_DISTRIBUTION_COMPLETE
+```
+
+### Ordering Guarantees by Category
+
+| Category             | Guarantee                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| Training lifecycle   | `TRAINING_STARTED` → `TRAINING_PROGRESS` (0..N) → `TRAINING_COMPLETED`/`TRAINING_FAILED`         |
+| Evaluation lifecycle | `EVALUATION_STARTED` → `EVALUATION_PROGRESS` (0..N) → `EVALUATION_COMPLETED`/`EVALUATION_FAILED` |
+| Sync lifecycle       | `DATA_SYNC_STARTED` → `DATA_SYNC_COMPLETED`/`DATA_SYNC_FAILED`                                   |
+| Recovery lifecycle   | `RECOVERY_INITIATED` → `RECOVERY_COMPLETED`/`RECOVERY_FAILED`                                    |
+| Work lifecycle       | `WORK_QUEUED` → `WORK_CLAIMED` → `WORK_STARTED` → `WORK_COMPLETED`/`WORK_FAILED`                 |
+
+### Cross-Process Event Ordering
+
+Events that cross process boundaries via `CrossProcessEventQueue`:
+
+1. Events are written to SQLite with monotonic `event_id`
+2. Consumers poll in `event_id` order
+3. Events are marked processed after handler completes
+4. Failed handlers don't block other events (fire-and-forget mode)
+
+```python
+# Poll order is guaranteed
+event_1 (event_id=100) processed before event_2 (event_id=101)
+
+# But handler execution may overlap for async handlers
+handler_1(event_1)  # May not complete before handler_2 starts
+handler_2(event_2)  # Starts after event_2 polled
+```
+
+### Deduplication Behavior
+
+Content-based deduplication uses SHA256 hash of `(event_type, payload)`:
+
+```python
+# These are considered duplicates (same hash):
+await publish(TRAINING_COMPLETED, {"model_id": "abc123", "success": True})
+await publish(TRAINING_COMPLETED, {"model_id": "abc123", "success": True})  # Dropped
+
+# These are NOT duplicates (different payload):
+await publish(TRAINING_COMPLETED, {"model_id": "abc123", "success": True})
+await publish(TRAINING_COMPLETED, {"model_id": "xyz789", "success": True})  # Delivered
+```
+
+### Best Practices for Ordering
+
+1. **Don't rely on timing**: Use event chaining instead of timing assumptions
+2. **Include sequence numbers**: For multi-part operations, include `sequence` in payload
+3. **Use idempotent handlers**: Handlers should tolerate duplicate delivery
+4. **Chain via event subscription**: Trigger next stage by subscribing to previous stage's completion event
+
+```python
+# Good: Event chaining
+async def on_training_complete(event):
+    model_id = event.payload["model_id"]
+    await start_evaluation(model_id)  # Trigger next stage
+
+# Bad: Timing assumption
+async def training_loop():
+    await train_model()
+    await asyncio.sleep(5)  # Hope training event was processed
+    await start_evaluation()  # May race with event handlers
+```
 
 ---
 
