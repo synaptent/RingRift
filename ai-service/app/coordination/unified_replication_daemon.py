@@ -1239,6 +1239,20 @@ class UnifiedReplicationDaemon:
                 details=self.get_status(),
             )
 
+        # December 2025: Check for unreliable nodes (success rate < 80%)
+        unreliable_nodes = [
+            node_id
+            for node_id, stats in self._node_sync_stats.items()
+            if stats.syncs_attempted >= 5 and stats.success_rate < 0.8
+        ]
+        if unreliable_nodes:
+            return HealthCheckResult(
+                healthy=True,  # Still healthy, but with warning
+                status=CoordinatorStatus.RUNNING,
+                message=f"Replication running but {len(unreliable_nodes)} unreliable nodes: {', '.join(unreliable_nodes[:3])}",
+                details=self.get_status(),
+            )
+
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
