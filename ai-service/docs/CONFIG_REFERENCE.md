@@ -616,6 +616,9 @@ Configuration for data ingestion from remote hosts.
 | `elo_replication_enabled`          | bool | True               | Enable Elo database replication             |
 | `elo_replication_interval_seconds` | int  | 60                 | Elo replication interval                    |
 
+Deprecated alias: `sync_interval_seconds` (same as `poll_interval_seconds`) is still accepted for
+backward compatibility and removed during config normalization.
+
 ---
 
 ## TrainingConfig

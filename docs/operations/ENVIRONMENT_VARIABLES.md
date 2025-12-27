@@ -1849,6 +1849,38 @@ Historical behaviour:
 - Implementation: `ai-service/app/training/generate_data.py::create_initial_state`
 - Tests: `ai-service/tests/test_env_interface.py`
 
+### `RINGRIFT_RECORD_SELFPLAY_GAMES`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `true`                    |
+| Required | No                        |
+
+When enabled, selfplay games are recorded to the replay database. When disabled,
+selfplay runs skip DB writes (JSONL/log output can still be emitted).
+
+### `RINGRIFT_SELFPLAY_DB_PATH`
+
+| Property | Value                    |
+| -------- | ------------------------ |
+| Type     | `string` (path)          |
+| Default  | `data/games/selfplay.db` |
+| Required | No                       |
+
+Override path for the selfplay replay database when no explicit DB path is supplied.
+
+### `RINGRIFT_SNAPSHOT_INTERVAL`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `20`     |
+| Required | No       |
+
+Snapshot interval (in moves) for replay DB snapshots.
+
 ### `RINGRIFT_TRAINED_HEURISTIC_PROFILES`
 
 | Property | Value           |

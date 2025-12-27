@@ -1033,6 +1033,165 @@ async def emit_task_complete(
     return await _emit_stage_event(event, result)
 
 
+async def emit_task_spawned(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    config: dict[str, Any] | None = None,
+    **metadata,
+) -> bool:
+    """Emit TASK_SPAWNED event when a task starts execution.
+
+    Args:
+        task_id: Unique task identifier
+        task_type: Type of task (selfplay, training, evaluation, sync)
+        node_id: Node executing the task
+        config: Task configuration
+        **metadata: Additional metadata
+
+    Returns:
+        True if emitted successfully
+    """
+    return await _emit_data_event(
+        DataEventType.TASK_SPAWNED,
+        {
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "config": config or {},
+            "started_at": _get_timestamp(),
+            **metadata,
+        },
+        log_message=f"Emitted task_spawned: {task_id} ({task_type}) on {node_id}",
+        log_level="info",
+    )
+
+
+async def emit_task_cancelled(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    reason: str,
+    requested_by: str = "user",
+    **metadata,
+) -> bool:
+    """Emit TASK_CANCELLED event for user-initiated task cancellations.
+
+    Different from TASK_ABANDONED which is for system-initiated abandonments.
+
+    Args:
+        task_id: Task being cancelled
+        task_type: Type of task
+        node_id: Node running the task
+        reason: Why task is being cancelled
+        requested_by: Who requested cancellation (user, coordinator, etc.)
+        **metadata: Additional metadata
+
+    Returns:
+        True if emitted successfully
+    """
+    return await _emit_data_event(
+        DataEventType.TASK_CANCELLED,
+        {
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "reason": reason,
+            "requested_by": requested_by,
+            "cancelled_at": _get_timestamp(),
+            **metadata,
+        },
+        log_message=f"Emitted task_cancelled: {task_id} ({reason})",
+        log_level="info",
+    )
+
+
+async def emit_task_heartbeat(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    progress_percent: float = 0.0,
+    games_completed: int = 0,
+    samples_generated: int = 0,
+    elapsed_seconds: float = 0.0,
+    **metadata,
+) -> bool:
+    """Emit TASK_HEARTBEAT event for periodic task progress updates.
+
+    Args:
+        task_id: Task identifier
+        task_type: Type of task
+        node_id: Node running the task
+        progress_percent: Estimated completion percentage (0-100)
+        games_completed: Number of games completed (for selfplay)
+        samples_generated: Number of samples generated
+        elapsed_seconds: Time elapsed since task start
+        **metadata: Additional metadata
+
+    Returns:
+        True if emitted successfully
+    """
+    return await _emit_data_event(
+        DataEventType.TASK_HEARTBEAT,
+        {
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "progress_percent": progress_percent,
+            "games_completed": games_completed,
+            "samples_generated": samples_generated,
+            "elapsed_seconds": elapsed_seconds,
+            "heartbeat_at": _get_timestamp(),
+            **metadata,
+        },
+        log_message=f"Emitted task_heartbeat: {task_id} ({progress_percent:.1f}%)",
+        log_level="debug",
+    )
+
+
+async def emit_task_failed(
+    task_id: str,
+    task_type: str,
+    node_id: str,
+    error: str,
+    error_type: str = "unknown",
+    traceback: str = "",
+    retryable: bool = False,
+    **metadata,
+) -> bool:
+    """Emit TASK_FAILED event when a task fails during execution.
+
+    Args:
+        task_id: Failed task identifier
+        task_type: Type of task
+        node_id: Node where task failed
+        error: Error message
+        error_type: Classification of error (timeout, oom, crash, etc.)
+        traceback: Full traceback if available
+        retryable: Whether this task could be retried
+        **metadata: Additional metadata
+
+    Returns:
+        True if emitted successfully
+    """
+    return await _emit_data_event(
+        DataEventType.TASK_FAILED,
+        {
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "error": error,
+            "error_type": error_type,
+            "traceback": traceback,
+            "retryable": retryable,
+            "failed_at": _get_timestamp(),
+            **metadata,
+        },
+        log_message=f"Emitted task_failed: {task_id} ({error_type})",
+        log_level="warning",
+    )
+
+
 # =============================================================================
 # Optimization Events (December 2025)
 # =============================================================================

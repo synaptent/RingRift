@@ -130,6 +130,141 @@ class TrainingCoordinator:
         # Training trigger deduplication cache
         self._training_trigger_cache: dict[str, float] = {}
 
+        # Event subscription state (December 2025)
+        self._subscribed = False
+        self._get_training_jobs = get_training_jobs  # Store for health_check
+
+    # =========================================================================
+    # Event Subscriptions (December 2025)
+    # =========================================================================
+
+    def subscribe_to_events(self) -> None:
+        """Subscribe to training-relevant events.
+
+        Subscribes to:
+        - SELFPLAY_COMPLETE: Check training readiness after selfplay batch
+        - DATA_SYNC_COMPLETED: Check training readiness after data sync
+        - EVALUATION_COMPLETED: Handle model promotion after evaluation
+        - REGRESSION_DETECTED: Pause or rollback training on regression
+        """
+        if self._subscribed:
+            return
+
+        try:
+            from app.coordination.event_router import get_event_bus
+            from app.distributed.data_events import DataEventType
+
+            bus = get_event_bus()
+
+            # Subscribe to SELFPLAY_COMPLETE to check if enough data for training
+            if hasattr(DataEventType, "SELFPLAY_COMPLETE"):
+                bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+                logger.info("[TrainingCoordinator] Subscribed to SELFPLAY_COMPLETE")
+
+            # Subscribe to DATA_SYNC_COMPLETED to check training readiness
+            if hasattr(DataEventType, "DATA_SYNC_COMPLETED"):
+                bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_data_sync_completed)
+                logger.info("[TrainingCoordinator] Subscribed to DATA_SYNC_COMPLETED")
+
+            # Subscribe to EVALUATION_COMPLETED for promotion workflows
+            if hasattr(DataEventType, "EVALUATION_COMPLETED"):
+                bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+                logger.info("[TrainingCoordinator] Subscribed to EVALUATION_COMPLETED")
+
+            # Subscribe to REGRESSION_DETECTED for training adjustments
+            if hasattr(DataEventType, "REGRESSION_DETECTED"):
+                bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+                logger.info("[TrainingCoordinator] Subscribed to REGRESSION_DETECTED")
+
+            self._subscribed = True
+        except ImportError:
+            logger.debug("[TrainingCoordinator] Event router not available")
+        except (RuntimeError, AttributeError) as e:
+            logger.warning(f"[TrainingCoordinator] Failed to subscribe: {e}")
+
+    async def _on_selfplay_complete(self, event) -> None:
+        """Handle SELFPLAY_COMPLETE events - check training readiness."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            game_count = payload.get("game_count", 0)
+
+            logger.debug(
+                f"[TrainingCoordinator] SELFPLAY_COMPLETE: {config_key} with {game_count} games"
+            )
+
+            # Check training readiness - this will emit TRAINING_THRESHOLD_REACHED if ready
+            jobs = self.check_training_readiness()
+            if jobs:
+                logger.info(
+                    f"[TrainingCoordinator] Training ready for {len(jobs)} configs after selfplay"
+                )
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error handling selfplay complete: {e}")
+
+    async def _on_data_sync_completed(self, event) -> None:
+        """Handle DATA_SYNC_COMPLETED events - check training readiness."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            sync_type = payload.get("sync_type", "")
+
+            logger.debug(f"[TrainingCoordinator] DATA_SYNC_COMPLETED: {sync_type}")
+
+            # Check training readiness after data becomes available
+            jobs = self.check_training_readiness()
+            if jobs:
+                logger.info(
+                    f"[TrainingCoordinator] Training ready for {len(jobs)} configs after sync"
+                )
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error handling sync complete: {e}")
+
+    async def _on_evaluation_completed(self, event) -> None:
+        """Handle EVALUATION_COMPLETED events - potential model promotion."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            model_path = payload.get("model_path", "")
+            win_rate = payload.get("win_rate", 0.0)
+            passed = payload.get("passed", False)
+
+            logger.info(
+                f"[TrainingCoordinator] EVALUATION_COMPLETED: {config_key} "
+                f"win_rate={win_rate:.1%}, passed={passed}"
+            )
+
+            # Model promotion is handled by auto_promotion_daemon, but we log here
+            if passed:
+                logger.info(
+                    f"[TrainingCoordinator] Model {model_path} passed evaluation, "
+                    f"promotion will be handled by AutoPromotionDaemon"
+                )
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error handling evaluation complete: {e}")
+
+    async def _on_regression_detected(self, event) -> None:
+        """Handle REGRESSION_DETECTED events - may pause training."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            severity = payload.get("severity", "unknown")
+            elo_drop = payload.get("elo_drop", 0)
+
+            logger.warning(
+                f"[TrainingCoordinator] REGRESSION_DETECTED: {config_key} "
+                f"severity={severity}, elo_drop={elo_drop}"
+            )
+
+            # For severe regressions, we could pause training
+            # The RollbackManager handles actual model rollback
+            if severity in ("severe", "critical"):
+                logger.warning(
+                    f"[TrainingCoordinator] Severe regression on {config_key} - "
+                    f"training may need to be paused"
+                )
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error handling regression: {e}")
+
     # =========================================================================
     # Training Readiness Checking
     # =========================================================================
@@ -818,6 +953,12 @@ class TrainingCoordinator:
                 status = "degraded"
                 last_error = f"Large trigger cache ({cache_size} entries)"
 
+        # Check if subscribed to events
+        if not self._subscribed:
+            if status == "healthy":
+                status = "degraded"
+                last_error = "Not subscribed to events"
+
         return {
             "status": status,
             "operations_count": total_jobs,
@@ -827,4 +968,5 @@ class TrainingCoordinator:
             "failed_jobs": failed_jobs,
             "total_jobs": total_jobs,
             "trigger_cache_size": cache_size,
+            "subscribed": self._subscribed,
         }

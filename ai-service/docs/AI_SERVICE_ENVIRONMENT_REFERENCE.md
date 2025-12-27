@@ -299,6 +299,8 @@ Interval in seconds between idle resource checks.
 | Type     | `float` | `10.0`      |
 
 GPU utilization percentage below which resource is "idle".
+Legacy alias: `RINGRIFT_IDLE_GPU_THRESHOLD` (percent). Not the same as
+`RINGRIFT_GPU_IDLE_THRESHOLD` (seconds before killing stuck processes).
 
 ### `RINGRIFT_IDLE_DURATION`
 
@@ -395,6 +397,15 @@ Enable training on this node.
 | Type     | `boolean` | Auto-detected |
 
 Enable selfplay on this node.
+
+### `RINGRIFT_RECORD_SELFPLAY_GAMES`
+
+| Property | Default   | Description |
+| -------- | --------- | ----------- |
+| Type     | `boolean` | `true`      |
+
+When enabled, selfplay games are recorded to the replay database. When disabled,
+selfplay runs skip DB writes (JSONL/log output can still be emitted).
 
 ### `RINGRIFT_GAUNTLET_ENABLED`
 
@@ -875,6 +886,22 @@ Configuration file path.
 | Type     | `string` | Auto-detected |
 
 Path to Elo database.
+
+### `RINGRIFT_SELFPLAY_DB_PATH`
+
+| Property | Default  | Description              |
+| -------- | -------- | ------------------------ |
+| Type     | `string` | `data/games/selfplay.db` |
+
+Override path for the selfplay replay database when no explicit DB path is supplied.
+
+### `RINGRIFT_SNAPSHOT_INTERVAL`
+
+| Property | Default  | Description |
+| -------- | -------- | ----------- |
+| Type     | `number` | `20`        |
+
+Snapshot interval (in moves) for replay DB snapshots.
 
 ### `RINGRIFT_NFS_PATH`
 

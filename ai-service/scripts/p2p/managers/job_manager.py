@@ -109,6 +109,95 @@ class JobManager:
         self.improvement_loop_state = improvement_loop_state or {}
         self.distributed_tournament_state = distributed_tournament_state or {}
 
+        # Event subscription state (December 2025)
+        self._subscribed = False
+
+    # =========================================================================
+    # Event Subscriptions (December 2025)
+    # =========================================================================
+
+    def subscribe_to_events(self) -> None:
+        """Subscribe to job-relevant events.
+
+        Subscribes to:
+        - HOST_OFFLINE: Cancel jobs on offline hosts
+        - HOST_ONLINE: Potentially reschedule cancelled jobs
+        """
+        if self._subscribed:
+            return
+
+        try:
+            from app.coordination.event_router import get_event_bus
+            from app.distributed.data_events import DataEventType
+
+            bus = get_event_bus()
+
+            # Subscribe to HOST_OFFLINE to cancel jobs on dead nodes
+            if hasattr(DataEventType, "HOST_OFFLINE"):
+                bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+                logger.info("[JobManager] Subscribed to HOST_OFFLINE")
+
+            # Subscribe to HOST_ONLINE for potential job rescheduling
+            if hasattr(DataEventType, "HOST_ONLINE"):
+                bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
+                logger.info("[JobManager] Subscribed to HOST_ONLINE")
+
+            self._subscribed = True
+        except ImportError:
+            logger.debug("[JobManager] Event router not available")
+        except (RuntimeError, AttributeError) as e:
+            logger.warning(f"[JobManager] Failed to subscribe: {e}")
+
+    async def _on_host_offline(self, event) -> None:
+        """Handle HOST_OFFLINE events - cancel jobs on offline host."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            node_id = payload.get("node_id", "")
+
+            if not node_id:
+                return
+
+            logger.info(f"[JobManager] HOST_OFFLINE: {node_id}, cancelling jobs")
+
+            # Cancel all jobs running on offline host
+            cancelled = 0
+            with self.jobs_lock:
+                for job_type, jobs in self.active_jobs.items():
+                    for job_id, job in list(jobs.items()):
+                        job_node = job.get("node_id") if isinstance(job, dict) else getattr(job, "node_id", None)
+                        if job_node == node_id:
+                            job_status = job.get("status") if isinstance(job, dict) else getattr(job, "status", "running")
+                            if job_status == "running":
+                                if isinstance(job, dict):
+                                    job["status"] = "cancelled"
+                                else:
+                                    job.status = "cancelled"
+                                cancelled += 1
+                                logger.info(f"[JobManager] Cancelled {job_type} job {job_id} on offline node {node_id}")
+
+            if cancelled > 0:
+                logger.info(f"[JobManager] Cancelled {cancelled} jobs on offline node {node_id}")
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[JobManager] Error handling host offline: {e}")
+
+    async def _on_host_online(self, event) -> None:
+        """Handle HOST_ONLINE events - log for potential job rescheduling."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            node_id = payload.get("node_id", "")
+
+            if not node_id:
+                return
+
+            logger.info(f"[JobManager] HOST_ONLINE: {node_id}, node available for jobs")
+
+            # Note: Job rescheduling is handled by the scheduler, not the job manager
+            # This is logged for observability
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[JobManager] Error handling host online: {e}")
+
     def _emit_task_event(self, event_type: str, job_id: str, job_type: str, **kwargs) -> None:
         """Emit a task lifecycle event if the event system is available.
 
@@ -1156,6 +1245,12 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 last_error = f"Elevated job failure rate: {failure_rate:.0%}"
                 errors_count = failed_jobs
 
+        # Check if subscribed to events
+        if not self._subscribed:
+            if status == "healthy":
+                status = "degraded"
+                last_error = "Not subscribed to events"
+
         return {
             "status": status,
             "operations_count": total_jobs,
@@ -1164,4 +1259,5 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
             "running_jobs": running_jobs,
             "failed_jobs": failed_jobs,
             "job_types": list(self.active_jobs.keys()),
+            "subscribed": self._subscribed,
         }

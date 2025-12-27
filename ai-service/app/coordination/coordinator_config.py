@@ -453,41 +453,16 @@ def get_exclusion_policy() -> DaemonExclusionConfig:
 
 
 def _load_exclusion_config() -> DaemonExclusionConfig:
-    """Load exclusion configuration from config files.
+    """Load exclusion configuration from cluster config.
 
-    Updated Dec 2025 to use cluster_config helpers instead of inline YAML parsing.
+    December 2025: Removed legacy unified_loop.yaml parsing. All exclusion
+    configuration now comes from distributed_hosts.yaml via cluster_config helpers.
+    The legacy exclude_hosts from unified_loop.yaml (local-macbook, macbook-armand)
+    were not in the cluster config and thus never sync targets anyway.
     """
-    from pathlib import Path
-
     config = DaemonExclusionConfig()
 
-    # Try to find config directory
-    base_dir = Path(__file__).resolve().parents[2]  # ai-service root
-    config_dir = base_dir / "config"
-
-    # Load from unified_loop.yaml (legacy config, may not exist)
-    unified_config_path = config_dir / "unified_loop.yaml"
-    if unified_config_path.exists():
-        try:
-            import yaml
-            with open(unified_config_path) as f:
-                data = yaml.safe_load(f) or {}
-
-            # auto_sync.exclude_hosts
-            auto_sync = data.get("auto_sync", {})
-            for node in auto_sync.get("exclude_hosts", []):
-                config.excluded_nodes.add(node)
-
-            # data_aggregation.excluded_nodes
-            data_agg = data.get("data_aggregation", {})
-            for node in data_agg.get("excluded_nodes", []):
-                config.excluded_nodes.add(node)
-
-        except Exception as e:
-            logger.debug(f"Could not load unified_loop.yaml: {e}")
-
     # Load from distributed_hosts.yaml via cluster_config helpers
-    # (Dec 2025: Replaced inline YAML parsing with consolidated helpers)
     try:
         from app.config.cluster_config import (
             get_auto_sync_config,

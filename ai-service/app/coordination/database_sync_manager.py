@@ -279,16 +279,16 @@ class DatabaseSyncManager(SyncManagerBase):
         transports: list[tuple[str, Callable]] = []
 
         if node_info.tailscale_ip:
-            transports.append(("tailscale", lambda: self._sync_via_tailscale(node_info)))
+            transports.append(("tailscale", lambda _n, ni=node_info: self._sync_via_tailscale(ni)))
 
         if node_info.vast_ssh_host:
-            transports.append(("vast_ssh", lambda: self._sync_via_vast_ssh(node_info)))
+            transports.append(("vast_ssh", lambda _n, ni=node_info: self._sync_via_vast_ssh(ni)))
 
         if node_info.ssh_host:
-            transports.append(("ssh", lambda: self._sync_via_ssh(node_info)))
+            transports.append(("ssh", lambda _n, ni=node_info: self._sync_via_ssh(ni)))
 
         if node_info.http_url:
-            transports.append(("http", lambda: self._sync_via_http(node_info)))
+            transports.append(("http", lambda _n, ni=node_info: self._sync_via_http(ni)))
 
         if not transports:
             logger.warning(f"[{self.db_type}] No transports available for {node}")

@@ -591,30 +591,34 @@ class TestSyncCallbacks:
         """on_sync_complete callback should be invoked."""
         callback_data = {}
 
-        def capture_callback(node, transport):
+        def capture_callback(node, transport, state):
             callback_data["node"] = node
             callback_data["transport"] = transport
+            callback_data["state"] = state
 
         sync_manager.on_sync_complete(capture_callback)
         await sync_manager._notify_sync_complete("test-node", "ssh")
 
         assert callback_data["node"] == "test-node"
         assert callback_data["transport"] == "ssh"
+        assert callback_data["state"] is not None
 
     @pytest.mark.asyncio
     async def test_sync_failed_callback(self, sync_manager):
         """on_sync_failed callback should be invoked."""
         callback_data = {}
 
-        def capture_callback(node, reason):
+        def capture_callback(node, reason, state):
             callback_data["node"] = node
             callback_data["reason"] = reason
+            callback_data["state"] = state
 
         sync_manager.on_sync_failed(capture_callback)
         await sync_manager._notify_sync_failed("test-node", "Connection refused")
 
         assert callback_data["node"] == "test-node"
         assert callback_data["reason"] == "Connection refused"
+        assert callback_data["state"] is not None
 
 
 # =============================================================================
@@ -629,10 +633,14 @@ class TestStatusReporting:
         """get_status should return complete status dict."""
         status = sync_manager.get_status()
 
+        # DatabaseSyncManager-specific fields
         assert "db_type" in status
         assert "db_path" in status
-        assert "state" in status
+        assert "db_state" in status
         assert "nodes" in status
+        # Base class fields
+        assert "running" in status
+        assert "state" in status  # Base class SyncState
 
     def test_get_status_reflects_state(self, sync_manager):
         """get_status should reflect current state."""
@@ -641,8 +649,9 @@ class TestStatusReporting:
 
         status = sync_manager.get_status()
 
-        assert status["state"]["local_record_count"] == 123
-        assert status["state"]["successful_syncs"] == 10
+        # DatabaseSyncManager uses db_state for its specific state
+        assert status["db_state"]["local_record_count"] == 123
+        assert status["db_state"]["successful_syncs"] == 10
 
 
 # =============================================================================
@@ -671,7 +680,7 @@ class TestEnsureLatest:
         """ensure_latest should discover nodes if none known."""
         assert len(sync_manager.nodes) == 0
 
-        with patch.object(sync_manager, "discover_nodes") as mock_discover:
+        with patch.object(sync_manager, "discover_nodes", new_callable=AsyncMock) as mock_discover:
             mock_discover.return_value = None
 
             await sync_manager.ensure_latest()
