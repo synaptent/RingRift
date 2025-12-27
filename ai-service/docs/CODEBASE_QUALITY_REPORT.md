@@ -1,7 +1,7 @@
 # Codebase Quality Assessment Report
 
 **Generated**: December 26, 2025
-**Last Updated**: December 26, 2025 (9 of 10 issues resolved)
+**Last Updated**: December 26, 2025 (9/10 issues resolved, daemon registration audit added)
 **Scope**: RingRift AI Service (`ai-service/`)
 **Analysis Coverage**: 350+ Python files, 1.3M lines of code
 
@@ -45,11 +45,24 @@
 
 Migration: Use `app/core/ssh` for new code, SSHTransport for P2P.
 
-### Daemon Types: Defined vs Used
+### Daemon Types: Defined vs Used (Updated Dec 26, 2025)
 
-- **Defined**: 35+ daemon types in `DaemonType` enum
-- **Started by master_loop.py**: ~15 types
-- **Gap**: 20+ daemon types never started automatically
+| Metric                  | Count    | Status             |
+| ----------------------- | -------- | ------------------ |
+| Total DaemonType values | 61       |                    |
+| Registered in factory   | 49 (80%) | ✅ Good            |
+| Unregistered (orphaned) | 12 (20%) | ⚠️ Needs attention |
+| Deprecated (Q2 2026)    | 2        | Migrated           |
+| Critical daemons        | 5        | ✅ All registered  |
+
+**Profile Startup Risk (Unregistered daemons block startup):**
+
+- `coordinator`: BLOCKED (missing HEALTH_SERVER, CURRICULUM_INTEGRATION, METRICS_ANALYSIS)
+- `training_node`: BLOCKED (missing 4 daemons)
+- `ephemeral`/`selfplay`: BLOCKED (missing HEALTH_SERVER)
+- `minimal`: OK (only EVENT_ROUTER)
+
+**Recommended Fix:** Remove unregistered daemons from profiles or create stub implementations
 
 ### Quick Wins
 
@@ -62,6 +75,22 @@ Migration: Use `app/core/ssh` for new code, SSHTransport for P2P.
 ---
 
 ## 2. Consolidation Opportunities
+
+### Coordination Module Consolidation (Dec 26, 2025)
+
+| Area                                             | Files | Status                                                      |
+| ------------------------------------------------ | ----- | ----------------------------------------------------------- |
+| Sync types (SyncState, SyncPriority, SyncResult) | 1     | ✅ Consolidated in `sync_constants.py`                      |
+| BackpressureLevel/TaskType                       | 1     | ✅ Canonical in `types.py`                                  |
+| Health monitoring                                | 2     | ⚠️ `system_health_monitor.py` deprecated, daemon still used |
+| SSH helpers                                      | 1     | ✅ Consolidated to `core/ssh.py`                            |
+| Base orchestrator classes                        | 2     | Pending unification                                         |
+
+**Health Module Status:**
+
+- `unified_health_manager.py` (2,107 lines) - Canonical utility functions
+- `system_health_monitor.py` (791 lines) - Deprecated but daemon class still used in `daemon_manager.py`
+- Migration: Utility functions migrated, daemon class pending
 
 ### Large Files Needing Decomposition
 
