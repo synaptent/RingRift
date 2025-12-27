@@ -917,6 +917,34 @@ class UnifiedEventRouter:
             "max_seen_events": self._max_seen_events,
         }
 
+    def get_orphaned_events(self) -> dict[str, list[str]]:
+        """Identify events that are emitted but have no subscribers (December 2025).
+
+        This helps detect:
+        - Events that should be wired but aren't
+        - Dead code paths that emit events no one handles
+
+        Returns:
+            Dictionary with:
+            - "emitted_no_subscribers": Events that have been routed but have no subscribers
+            - "subscribed_event_types": All event types that have subscribers
+            - "emitted_event_types": All event types that have been routed
+        """
+        # Get all subscribed event types (from self._subscribers)
+        subscribed_types = set(self._subscribers.keys())
+
+        # Get all emitted event types (from routing stats)
+        emitted_types = set(self._events_routed.keys())
+
+        # Find orphaned: emitted but no subscribers
+        orphaned = emitted_types - subscribed_types
+
+        return {
+            "emitted_no_subscribers": sorted(list(orphaned)),
+            "subscribed_event_types": sorted(list(subscribed_types)),
+            "emitted_event_types": sorted(list(emitted_types)),
+        }
+
     def validate_event_flow(self) -> dict[str, Any]:
         """Validate event flow health and return diagnostics (December 2025).
 
@@ -924,6 +952,7 @@ class UnifiedEventRouter:
         1. Whether events are being routed through all buses
         2. If there are any stuck or missing events
         3. Recent event activity patterns
+        4. Orphaned events (emitted but no subscribers)
 
         Returns:
             Dictionary with validation results and recommendations
@@ -962,6 +991,20 @@ class UnifiedEventRouter:
         recent_events = [e.event_type for e in self._event_history[-20:]] if self._event_history else []
         recent_event_types = list(set(recent_events))
 
+        # Check for orphaned events (December 2025 - semantic validation)
+        orphaned = self.get_orphaned_events()
+        orphaned_events = orphaned["emitted_no_subscribers"]
+        if orphaned_events:
+            # Only warn about events that have been emitted more than 5 times
+            # to reduce noise from one-off events
+            significant_orphans = [
+                ev for ev in orphaned_events
+                if self._events_routed.get(ev, 0) >= 5
+            ]
+            if significant_orphans:
+                issues.append(f"Orphaned events (emitted but no subscribers): {significant_orphans[:5]}")
+                recommendations.append("Wire subscribers for orphaned events or remove emission code")
+
         return {
             "healthy": len(issues) == 0,
             "issues": issues,
@@ -975,6 +1018,7 @@ class UnifiedEventRouter:
                 "cross_process": stats["has_cross_process"],
             },
             "duplicates_prevented": stats["total_duplicates_prevented"],
+            "orphaned_events": orphaned,  # December 2025: Include full orphan analysis
         }
 
     def health_check(self) -> "HealthCheckResult":

@@ -283,6 +283,7 @@ def _build_registry() -> dict[str, DaemonSpec]:
         DaemonType.NODE_RECOVERY.name: DaemonSpec(
             import_path="app.coordination.node_recovery_daemon",
             class_name="NodeRecoveryDaemon",
+            factory_fn="get_node_recovery_daemon",  # Dec 2025: Use singleton factory
         ),
         DaemonType.UTILIZATION_OPTIMIZER.name: DaemonSpec(
             import_path="app.coordination.utilization_optimizer",
@@ -291,6 +292,7 @@ def _build_registry() -> dict[str, DaemonSpec]:
         DaemonType.CLUSTER_WATCHDOG.name: DaemonSpec(
             import_path="app.coordination.cluster_watchdog_daemon",
             class_name="ClusterWatchdogDaemon",
+            factory_fn="get_cluster_watchdog_daemon",  # Dec 2025: Use singleton factory
         ),
 
         # =================================================================

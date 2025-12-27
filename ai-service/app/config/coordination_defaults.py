@@ -445,6 +445,113 @@ class TaskLifecycleDefaults:
 
 
 # =============================================================================
+# Daemon Loop Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class DaemonLoopDefaults:
+    """Default values for daemon main loop operation.
+
+    Used by: app/coordination/base_daemon.py, daemon_manager.py
+    """
+    # Default check interval for daemon loops (seconds)
+    CHECK_INTERVAL: int = _env_int("RINGRIFT_DAEMON_CHECK_INTERVAL", 300)
+
+    # Error backoff base delay (seconds)
+    ERROR_BACKOFF_BASE: float = _env_float("RINGRIFT_DAEMON_ERROR_BACKOFF_BASE", 5.0)
+
+    # Maximum error backoff (seconds)
+    ERROR_BACKOFF_MAX: float = _env_float("RINGRIFT_DAEMON_ERROR_BACKOFF_MAX", 300.0)
+
+    # Maximum consecutive errors before alerting
+    MAX_CONSECUTIVE_ERRORS: int = _env_int("RINGRIFT_DAEMON_MAX_CONSECUTIVE_ERRORS", 5)
+
+    # Shutdown grace period (seconds)
+    SHUTDOWN_GRACE_PERIOD: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_GRACE", 10.0)
+
+    # Health check timeout (seconds)
+    HEALTH_CHECK_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_HEALTH_TIMEOUT", 5.0)
+
+    # Error rate threshold for unhealthy status (fraction)
+    ERROR_RATE_THRESHOLD: float = _env_float("RINGRIFT_DAEMON_ERROR_RATE_THRESHOLD", 0.5)
+
+    # Minimum cycles before error rate check
+    MIN_CYCLES_FOR_ERROR_CHECK: int = _env_int("RINGRIFT_DAEMON_MIN_CYCLES_ERROR_CHECK", 10)
+
+
+# =============================================================================
+# Network Retry Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class NetworkRetryDefaults:
+    """Default values for network operation retries.
+
+    Extends RetryDefaults with network-specific settings.
+
+    Used by: app/coordination/cluster_transport.py, sync operations
+    """
+    # Connection retry settings
+    CONNECT_MAX_RETRIES: int = _env_int("RINGRIFT_CONNECT_MAX_RETRIES", 3)
+    CONNECT_BASE_DELAY: float = _env_float("RINGRIFT_CONNECT_BASE_DELAY", 1.0)
+    CONNECT_MAX_DELAY: float = _env_float("RINGRIFT_CONNECT_MAX_DELAY", 30.0)
+
+    # Transfer retry settings
+    TRANSFER_MAX_RETRIES: int = _env_int("RINGRIFT_TRANSFER_MAX_RETRIES", 3)
+    TRANSFER_BASE_DELAY: float = _env_float("RINGRIFT_TRANSFER_BASE_DELAY", 5.0)
+    TRANSFER_MAX_DELAY: float = _env_float("RINGRIFT_TRANSFER_MAX_DELAY", 60.0)
+
+    # SSH-specific retry settings
+    SSH_MAX_RETRIES: int = _env_int("RINGRIFT_SSH_MAX_RETRIES", 2)
+    SSH_BASE_DELAY: float = _env_float("RINGRIFT_SSH_BASE_DELAY", 2.0)
+    SSH_MAX_DELAY: float = _env_float("RINGRIFT_SSH_MAX_DELAY", 30.0)
+
+    # P2P/HTTP retry settings
+    P2P_MAX_RETRIES: int = _env_int("RINGRIFT_P2P_MAX_RETRIES", 3)
+    P2P_BASE_DELAY: float = _env_float("RINGRIFT_P2P_BASE_DELAY", 1.0)
+    P2P_MAX_DELAY: float = _env_float("RINGRIFT_P2P_MAX_DELAY", 15.0)
+
+    # DNS resolution retry
+    DNS_MAX_RETRIES: int = _env_int("RINGRIFT_DNS_MAX_RETRIES", 2)
+    DNS_TIMEOUT: float = _env_float("RINGRIFT_DNS_TIMEOUT", 5.0)
+
+
+# =============================================================================
+# Monitoring Thresholds (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class MonitoringDefaults:
+    """Default values for system and cluster monitoring.
+
+    Used by: app/coordination/system_health_monitor.py, cluster_monitor.py
+    """
+    # Disk space warning thresholds (%)
+    DISK_WARNING_THRESHOLD: float = _env_float("RINGRIFT_DISK_WARNING_THRESHOLD", 70.0)
+    DISK_CRITICAL_THRESHOLD: float = _env_float("RINGRIFT_DISK_CRITICAL_THRESHOLD", 90.0)
+
+    # Memory usage thresholds (%)
+    MEMORY_WARNING_THRESHOLD: float = _env_float("RINGRIFT_MEMORY_WARNING_THRESHOLD", 80.0)
+    MEMORY_CRITICAL_THRESHOLD: float = _env_float("RINGRIFT_MEMORY_CRITICAL_THRESHOLD", 95.0)
+
+    # GPU memory thresholds (%)
+    GPU_MEMORY_WARNING: float = _env_float("RINGRIFT_GPU_MEMORY_WARNING", 90.0)
+    GPU_MEMORY_CRITICAL: float = _env_float("RINGRIFT_GPU_MEMORY_CRITICAL", 98.0)
+
+    # Node offline detection (seconds)
+    NODE_OFFLINE_THRESHOLD: int = _env_int("RINGRIFT_NODE_OFFLINE_THRESHOLD", 300)
+
+    # Cluster health check interval (seconds)
+    CLUSTER_CHECK_INTERVAL: int = _env_int("RINGRIFT_CLUSTER_CHECK_INTERVAL", 60)
+
+    # Minimum healthy node fraction for cluster health
+    MIN_HEALTHY_FRACTION: float = _env_float("RINGRIFT_MIN_HEALTHY_FRACTION", 0.6)
+
+    # Alert cooldown (seconds) - avoid spam
+    ALERT_COOLDOWN: int = _env_int("RINGRIFT_ALERT_COOLDOWN", 300)
+
+
+# =============================================================================
 # Metrics Analysis Defaults (December 2025)
 # =============================================================================
 
@@ -864,6 +971,30 @@ def get_all_defaults() -> dict:
             "critical_stale_threshold": SyncCoordinatorDefaults.CRITICAL_STALE_THRESHOLD,
             "freshness_check_interval": SyncCoordinatorDefaults.FRESHNESS_CHECK_INTERVAL,
         },
+        # December 27, 2025 additions
+        "daemon_loop": {
+            "check_interval": DaemonLoopDefaults.CHECK_INTERVAL,
+            "error_backoff_base": DaemonLoopDefaults.ERROR_BACKOFF_BASE,
+            "error_backoff_max": DaemonLoopDefaults.ERROR_BACKOFF_MAX,
+            "max_consecutive_errors": DaemonLoopDefaults.MAX_CONSECUTIVE_ERRORS,
+            "shutdown_grace_period": DaemonLoopDefaults.SHUTDOWN_GRACE_PERIOD,
+            "error_rate_threshold": DaemonLoopDefaults.ERROR_RATE_THRESHOLD,
+        },
+        "network_retry": {
+            "connect_max_retries": NetworkRetryDefaults.CONNECT_MAX_RETRIES,
+            "connect_base_delay": NetworkRetryDefaults.CONNECT_BASE_DELAY,
+            "transfer_max_retries": NetworkRetryDefaults.TRANSFER_MAX_RETRIES,
+            "ssh_max_retries": NetworkRetryDefaults.SSH_MAX_RETRIES,
+            "p2p_max_retries": NetworkRetryDefaults.P2P_MAX_RETRIES,
+        },
+        "monitoring": {
+            "disk_warning_threshold": MonitoringDefaults.DISK_WARNING_THRESHOLD,
+            "disk_critical_threshold": MonitoringDefaults.DISK_CRITICAL_THRESHOLD,
+            "memory_warning_threshold": MonitoringDefaults.MEMORY_WARNING_THRESHOLD,
+            "memory_critical_threshold": MonitoringDefaults.MEMORY_CRITICAL_THRESHOLD,
+            "node_offline_threshold": MonitoringDefaults.NODE_OFFLINE_THRESHOLD,
+            "cluster_check_interval": MonitoringDefaults.CLUSTER_CHECK_INTERVAL,
+        },
         "queue": {
             "training_data_soft_limit": QueueDefaults.TRAINING_DATA_SOFT_LIMIT,
             "training_data_hard_limit": QueueDefaults.TRAINING_DATA_HARD_LIMIT,
@@ -889,6 +1020,8 @@ __all__ = [
     "BandwidthDefaults",
     "CacheDefaults",
     "CircuitBreakerDefaults",
+    # December 27, 2025 additions
+    "DaemonLoopDefaults",
     "DurationDefaults",
     "EphemeralDefaults",
     # December 2025 additions
@@ -897,6 +1030,9 @@ __all__ = [
     # Config classes
     "LockDefaults",
     "MetricsAnalysisDefaults",
+    # December 27, 2025 additions
+    "MonitoringDefaults",
+    "NetworkRetryDefaults",
     "OperationTimeouts",
     "OptimizationDefaults",
     "PIDDefaults",

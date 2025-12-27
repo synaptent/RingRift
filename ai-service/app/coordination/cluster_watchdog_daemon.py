@@ -601,6 +601,39 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             logger.error(f"[ClusterWatchdog] Failed to activate {node.node_id}: {e}")
             return False
 
+    async def health_check(self) -> bool:
+        """Check if the daemon is healthy.
+
+        Returns True if the daemon is running and functioning properly.
+        Used by DaemonManager for crash detection and auto-restart.
+
+        Dec 2025: Added for DaemonManager health monitoring integration.
+        """
+        # Check if daemon is running
+        if not self._running:
+            return False
+
+        # Check if we have recent cycle data (within 2x check interval)
+        if self._last_cycle_stats is not None:
+            max_age = self.config.check_interval_seconds * 2
+            age = time.time() - self._last_cycle_stats.cycle_end
+            if age > max_age:
+                logger.warning(
+                    f"[{self._get_daemon_name()}] Health check: stale cycle data "
+                    f"(age={age:.0f}s, max={max_age}s)"
+                )
+                return False
+
+            # Check for excessive errors in last cycle
+            if len(self._last_cycle_stats.errors) > 5:
+                logger.warning(
+                    f"[{self._get_daemon_name()}] Health check: too many errors "
+                    f"({len(self._last_cycle_stats.errors)})"
+                )
+                return False
+
+        return True
+
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for monitoring.
 
@@ -633,3 +666,27 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
         ]
 
         return status
+
+
+# =============================================================================
+# Module-level Singleton Factory (December 2025)
+# =============================================================================
+
+_cluster_watchdog_daemon: ClusterWatchdogDaemon | None = None
+
+
+def get_cluster_watchdog_daemon() -> ClusterWatchdogDaemon:
+    """Get the singleton ClusterWatchdogDaemon instance.
+
+    December 2025: Added for consistency with other daemon factories.
+    """
+    global _cluster_watchdog_daemon
+    if _cluster_watchdog_daemon is None:
+        _cluster_watchdog_daemon = ClusterWatchdogDaemon()
+    return _cluster_watchdog_daemon
+
+
+def reset_cluster_watchdog_daemon() -> None:
+    """Reset the singleton (for testing)."""
+    global _cluster_watchdog_daemon
+    _cluster_watchdog_daemon = None

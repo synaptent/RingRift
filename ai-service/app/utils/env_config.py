@@ -13,7 +13,7 @@ Usage:
     # Or use the getter functions directly
     from app.utils.env_config import get_int, get_bool, get_str
 
-    threshold = get_int("RINGRIFT_CUSTOM_THRESHOLD", default=100)
+    min_games = get_int("RINGRIFT_MIN_TRAINING_GAMES", default=1000)
 """
 
 from __future__ import annotations

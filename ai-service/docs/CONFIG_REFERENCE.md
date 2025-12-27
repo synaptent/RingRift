@@ -326,10 +326,30 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 | `RINGRIFT_DISABLE_LOCAL_TASKS`     | Disable local tasks (coordinator-only) | `false`                 |
 | `RINGRIFT_HEALTH_PORT`             | Health server port (daemon manager)    | `8790`                  |
 | `RINGRIFT_DISCOVERY_INTERVAL`      | Discovery interval (seconds)           | `60`                    |
-| `RINGRIFT_IDLE_CHECK_INTERVAL`     | Idle check interval (seconds)          | `30`                    |
-| `RINGRIFT_IDLE_GPU_THRESHOLD`      | Idle GPU utilization threshold (%)     | `10`                    |
+| `RINGRIFT_IDLE_CHECK_INTERVAL`     | Idle check interval (seconds)          | `60`                    |
+| `RINGRIFT_IDLE_THRESHOLD`          | Idle GPU utilization threshold (%)     | `10.0`                  |
+| `RINGRIFT_IDLE_DURATION`           | Seconds before a resource is idle      | `120`                   |
+| `RINGRIFT_IDLE_RESOURCE_ENABLED`   | Enable idle resource daemon            | `true`                  |
 | `RINGRIFT_AUTO_ASSIGN_ENABLED`     | Auto-assign work to idle nodes         | `true`                  |
 | `RINGRIFT_MAX_DISK_PERCENT`        | Max disk usage percent                 | `70.0`                  |
+
+#### Node role and workload gating
+
+| Variable                    | Description                                                        | Default |
+| --------------------------- | ------------------------------------------------------------------ | ------- |
+| `RINGRIFT_IS_COORDINATOR`   | Force coordinator-only mode (no selfplay/training/gauntlet/export) | `auto`  |
+| `RINGRIFT_SELFPLAY_ENABLED` | Explicit override for selfplay on this node                        | `auto`  |
+| `RINGRIFT_TRAINING_ENABLED` | Explicit override for training on this node                        | `auto`  |
+| `RINGRIFT_GAUNTLET_ENABLED` | Explicit override for gauntlet/evaluation on this node             | `auto`  |
+| `RINGRIFT_EXPORT_ENABLED`   | Explicit override for export jobs on this node                     | `auto`  |
+
+#### Process and idle safeguards
+
+| Variable                                      | Description                                    | Default |
+| --------------------------------------------- | ---------------------------------------------- | ------- |
+| `RINGRIFT_JOB_GRACE_PERIOD`                   | Seconds to wait before SIGKILL after SIGTERM   | `60`    |
+| `RINGRIFT_GPU_IDLE_THRESHOLD`                 | Seconds of GPU idle before killing processes   | `600`   |
+| `RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD` | Max selfplay processes per node before cleanup | `128`   |
 
 #### P2P resource thresholds and behavior
 
@@ -364,6 +384,8 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 | `RINGRIFT_AI_SERVICE_DIR`        | AI service working dir                                         | `.`                                 |
 | `RINGRIFT_AI_SERVICE_PATH`       | AI service root override                                       | `repo auto-detect`                  |
 | `RINGRIFT_P2P_PORT`              | P2P HTTP port                                                  | `8770`                              |
+| `RINGRIFT_SSH_USER`              | Default SSH user                                               | `ubuntu`                            |
+| `RINGRIFT_SSH_KEY`               | Default SSH key path                                           | `unset`                             |
 | `RINGRIFT_VAST_SSH_USER`         | Vast.ai SSH user                                               | `root`                              |
 | `RINGRIFT_STORAGE_PROVIDER`      | Storage provider override (`lambda` legacy, `vast`, `local`)   | `auto`                              |
 | `RINGRIFT_TARGET_UTIL_MIN`       | Utilization target min (%)                                     | `60`                                |
@@ -372,6 +394,18 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 | `RINGRIFT_SCALE_DOWN_THRESHOLD`  | Scale-down threshold (%)                                       | `85`                                |
 | `RINGRIFT_NODE_ID`               | Node id override (default hostname)                            | `auto`                              |
 | `RINGRIFT_ORCHESTRATOR`          | Orchestrator id                                                | `unknown`                           |
+
+#### Provider idle controls (Lambda)
+
+> **Note:** Lambda account is suspended; these remain for eventual restoration.
+
+| Variable                         | Description                              | Default |
+| -------------------------------- | ---------------------------------------- | ------- |
+| `RINGRIFT_LAMBDA_IDLE_ENABLED`   | Enable Lambda idle shutdown daemon       | `true`  |
+| `RINGRIFT_LAMBDA_IDLE_INTERVAL`  | Lambda idle check interval (seconds)     | `300`   |
+| `RINGRIFT_LAMBDA_IDLE_THRESHOLD` | Lambda GPU idle threshold (%)            | `5.0`   |
+| `RINGRIFT_LAMBDA_IDLE_DURATION`  | Lambda idle duration threshold (seconds) | `1800`  |
+| `RINGRIFT_LAMBDA_MIN_NODES`      | Minimum Lambda nodes to keep running     | `1`     |
 
 #### Coordination defaults (advanced)
 
@@ -387,7 +421,7 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 | `RINGRIFT_OPERATION_TIMEOUT`        | Transport operation timeout (seconds) | `180`   |
 | `RINGRIFT_HTTP_TIMEOUT`             | HTTP timeout (seconds)                | `30`    |
 | `RINGRIFT_CIRCUIT_BREAKER_RECOVERY` | Circuit breaker recovery (seconds)    | `300`   |
-| `RINGRIFT_SSH_TIMEOUT`              | SSH timeout (seconds)                 | `30`    |
+| `RINGRIFT_SSH_TIMEOUT`              | SSH timeout (seconds)                 | `60`    |
 | `RINGRIFT_MAX_RETRIES`              | Transport max retries                 | `3`     |
 
 ##### Sync and heartbeat

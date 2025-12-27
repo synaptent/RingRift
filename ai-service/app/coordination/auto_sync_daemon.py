@@ -789,6 +789,14 @@ class AutoSyncDaemon:
                         f"[AutoSyncDaemon] Write-through timeout for game {game_id} "
                         f"(timeout={self.config.ephemeral_write_through_timeout}s)"
                     )
+                    # Emit SYNC_STALLED for failover routing (Dec 2025)
+                    fire_and_forget(
+                        self._emit_sync_stalled(
+                            target_node="write_through_target",
+                            timeout_seconds=self.config.ephemeral_write_through_timeout,
+                            data_type="game",
+                        )
+                    )
                     # Fall back to async push
                     fire_and_forget(self._push_pending_games())
                     return False
@@ -1053,8 +1061,14 @@ class AutoSyncDaemon:
 
         except subprocess.TimeoutExpired:
             logger.warning(f"[AutoSyncDaemon] Rsync timeout to {target_node}")
-            # Emit sync failure event (Dec 2025)
+            # Emit sync stalled event for failover routing (Dec 2025)
             from app.config.thresholds import RSYNC_TIMEOUT
+            await self._emit_sync_stalled(
+                target_node=target_node,
+                timeout_seconds=RSYNC_TIMEOUT,
+                data_type="game",
+            )
+            # Also emit failure for general error tracking
             await self._emit_sync_failure(target_node, db_path, f"Rsync timeout after {RSYNC_TIMEOUT}s")
             return False
         except (OSError, subprocess.SubprocessError, ValueError) as e:
@@ -1114,6 +1128,33 @@ class AutoSyncDaemon:
             )
         except (RuntimeError, AttributeError, ImportError) as e:
             logger.debug(f"[AutoSyncDaemon] Could not emit DATA_SYNC_FAILED event: {e}")
+
+    async def _emit_sync_stalled(
+        self,
+        target_node: str,
+        timeout_seconds: float,
+        data_type: str = "game",
+        retry_count: int = 0,
+    ) -> None:
+        """Emit SYNC_STALLED event when sync operation times out.
+
+        December 2025: Added to trigger failover to alternative sync sources.
+        SYNC_STALLED is distinct from DATA_SYNC_FAILED - it specifically indicates
+        a timeout condition that the SyncRouter can use to route around slow nodes.
+        """
+        try:
+            from app.distributed.data_events import emit_sync_stalled
+
+            await emit_sync_stalled(
+                source_host=self.node_id,
+                target_host=target_node,
+                data_type=data_type,
+                timeout_seconds=timeout_seconds,
+                retry_count=retry_count,
+                source="AutoSyncDaemon",
+            )
+        except (RuntimeError, AttributeError, ImportError) as e:
+            logger.debug(f"[AutoSyncDaemon] Could not emit SYNC_STALLED event: {e}")
 
     # =========================================================================
     # Broadcast Mode Methods (December 2025 - from cluster_data_sync.py)
@@ -1405,6 +1446,15 @@ class AutoSyncDaemon:
 
         except asyncio.TimeoutError:
             logger.error(f"[AutoSyncDaemon] Sync to {target['node_id']} timed out")
+            # Emit SYNC_STALLED for failover routing (Dec 2025)
+            fire_and_forget(
+                self._emit_sync_stalled(
+                    target_node=target["node_id"],
+                    timeout_seconds=dynamic_timeout,
+                    data_type="game",
+                ),
+                error_callback=lambda e: logger.debug(f"Failed to emit SYNC_STALLED: {e}"),
+            )
             return {
                 "source": str(source),
                 "target": target["node_id"],

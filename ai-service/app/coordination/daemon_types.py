@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from app.config.coordination_defaults import DaemonLoopDefaults
+
 if TYPE_CHECKING:
     pass
 
@@ -284,16 +286,33 @@ class DaemonInfo:
 
 @dataclass
 class DaemonManagerConfig:
-    """Configuration for DaemonManager."""
+    """Configuration for DaemonManager.
+
+    Default values sourced from app.config.coordination_defaults.DaemonLoopDefaults
+    for centralized configuration management.
+    """
     auto_start: bool = False  # Auto-start all daemons on init
-    health_check_interval: float = 30.0  # Global health check interval
-    shutdown_timeout: float = 10.0  # Max time to wait for graceful shutdown
-    force_kill_timeout: float = 5.0  # Additional time after shutdown_timeout before giving up
+    # Dec 2025: Use centralized defaults from coordination_defaults.py
+    health_check_interval: float = field(
+        default_factory=lambda: float(DaemonLoopDefaults.CHECK_INTERVAL) / 10.0  # 30s (10% of check interval)
+    )
+    shutdown_timeout: float = field(
+        default_factory=lambda: DaemonLoopDefaults.SHUTDOWN_GRACE_PERIOD
+    )
+    force_kill_timeout: float = field(
+        default_factory=lambda: DaemonLoopDefaults.HEALTH_CHECK_TIMEOUT
+    )
     auto_restart_failed: bool = True  # Auto-restart failed daemons
-    max_restart_attempts: int = 5  # Max restart attempts per daemon
-    recovery_cooldown: float = 10.0  # Time before attempting to recover FAILED daemons (reduced from 300s for faster recovery)
+    max_restart_attempts: int = field(
+        default_factory=lambda: DaemonLoopDefaults.MAX_CONSECUTIVE_ERRORS
+    )
+    recovery_cooldown: float = field(
+        default_factory=lambda: DaemonLoopDefaults.ERROR_BACKOFF_BASE * 2  # 10s (2x base backoff)
+    )
     # P11-HIGH-2: Faster health checks for critical daemons
-    critical_daemon_health_interval: float = 15.0  # Health check interval for critical daemons
+    critical_daemon_health_interval: float = field(
+        default_factory=lambda: DaemonLoopDefaults.HEALTH_CHECK_TIMEOUT * 3  # 15s (3x health timeout)
+    )
 
 
 # P11-HIGH-2: Daemons critical for cluster health that need faster failure detection

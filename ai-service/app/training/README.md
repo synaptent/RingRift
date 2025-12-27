@@ -50,8 +50,8 @@ app/training/
 │   └── model_versioning.py         # Architecture version control
 │
 ├── Orchestration
-│   ├── unified_orchestrator.py     # Low-level training execution
-│   ├── orchestrated_training.py    # High-level service coordination
+│   ├── unified_orchestrator.py     # Unified training orchestration (RECOMMENDED)
+│   ├── orchestrated_training.py    # DEPRECATED - use unified_orchestrator.py
 │   ├── optimization_orchestrator.py # Hyperparameter optimization
 │   └── per_orchestrator.py         # Prioritized experience replay
 │
@@ -839,10 +839,21 @@ learner.record_transition(state, move, player, next_state)
 learner.update_from_game(winner)
 ```
 
+## Deprecated Modules
+
+The following modules are deprecated and will be removed in Q2 2026:
+
+| Deprecated Module                         | Replacement                            | Notes                          |
+| ----------------------------------------- | -------------------------------------- | ------------------------------ |
+| `orchestrated_training.py`                | `unified_orchestrator.py`              | Unified training orchestration |
+| `integrated_enhancements.py`              | `unified_orchestrator.py`              | Consolidated enhancements      |
+| `training_enhancements.DataQualityScorer` | `unified_quality.UnifiedQualityScorer` | See `unified_quality.py`       |
+
 ## Related Documentation
 
 - [Root CLAUDE.md](../../../CLAUDE.md) - Project overview
 - [AI Service CLAUDE.md](../../CLAUDE.md) - AI service context
+- [Cluster Monitor Quickstart](../distributed/CLUSTER_MONITOR_QUICKSTART.md) - Cluster monitor usage
 - [Cluster Connectivity Runbook](../../docs/runbooks/CLUSTER_CONNECTIVITY.md) - Cluster management checks
 
 ---

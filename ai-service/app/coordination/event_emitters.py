@@ -895,48 +895,19 @@ async def emit_quality_updated(
     high_quality_games: int,
     **metadata,
 ) -> bool:
-    """Emit quality score updated event via DataEventBus.
-
-    Args:
-        board_type: Board type
-        num_players: Number of players
-        avg_quality: Average quality score
-        total_games: Total games in dataset
-        high_quality_games: Number of high-quality games
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.QUALITY_SCORE_UPDATED,
-            payload={
-                "board_type": board_type,
-                "num_players": num_players,
-                "avg_quality": avg_quality,
-                "total_games": total_games,
-                "high_quality_games": high_quality_games,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug("Emitted quality_score_updated event")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit quality event: {e}")
-        return False
+    """Emit quality score updated event via DataEventBus."""
+    return await _emit_data_event(
+        DataEventType.QUALITY_SCORE_UPDATED,
+        {
+            "board_type": board_type,
+            "num_players": num_players,
+            "avg_quality": avg_quality,
+            "total_games": total_games,
+            "high_quality_games": high_quality_games,
+            **metadata,
+        },
+        log_message="Emitted quality_score_updated event",
+    )
 
 
 async def emit_game_quality_score(
@@ -949,55 +920,23 @@ async def emit_game_quality_score(
     source: str = "",
     **metadata,
 ) -> bool:
-    """Emit per-game quality score event via DataEventBus.
-
-    Used by UnifiedQualityScorer to publish individual game quality scores
-    for monitoring and coordination.
-
-    Args:
-        game_id: Game identifier
-        quality_score: Quality score (0.0-1.0)
-        quality_category: Quality category (excellent, good, adequate, poor, unusable)
-        training_weight: Computed training weight
-        game_length: Number of moves in game
-        is_decisive: Whether game had a clear winner
-        source: Event source identifier
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.QUALITY_SCORE_UPDATED,
-            payload={
-                "game_id": game_id,
-                "quality_score": quality_score,
-                "quality_category": quality_category,
-                "training_weight": training_weight,
-                "game_length": game_length,
-                "is_decisive": is_decisive,
-                "source": source,
-                "is_per_game": True,  # Distinguish from aggregate quality events
-                **metadata,
-            },
-            source=source or "unified_quality",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted game quality score event for {game_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit game quality event: {e}")
-        return False
+    """Emit per-game quality score event via DataEventBus."""
+    return await _emit_data_event(
+        DataEventType.QUALITY_SCORE_UPDATED,
+        {
+            "game_id": game_id,
+            "quality_score": quality_score,
+            "quality_category": quality_category,
+            "training_weight": training_weight,
+            "game_length": game_length,
+            "is_decisive": is_decisive,
+            "source": source,
+            "is_per_game": True,
+            **metadata,
+        },
+        source=source or "unified_quality",
+        log_message=f"Emitted game quality score event for {game_id}",
+    )
 
 
 # =============================================================================
@@ -1010,46 +949,13 @@ async def emit_new_games(
     total_games: int,
     source: str = "",
 ) -> bool:
-    """Emit NEW_GAMES_AVAILABLE event via DataEventBus.
-
-    Signals that new games have been synced or generated and are available
-    for training. Used by unified_data_sync and other data collection components.
-
-    Args:
-        host: Host/node that generated or synced the games
-        new_games: Number of new games available
-        total_games: Total games now available from this source
-        source: Event source identifier
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.NEW_GAMES_AVAILABLE,
-            payload={
-                "host": host,
-                "new_games": new_games,
-                "total_games": total_games,
-                "timestamp": _get_timestamp(),
-            },
-            source=source or "event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted new_games_available event: {new_games} from {host}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit new_games event: {e}")
-        return False
+    """Emit NEW_GAMES_AVAILABLE event via DataEventBus."""
+    return await _emit_data_event(
+        DataEventType.NEW_GAMES_AVAILABLE,
+        {"host": host, "new_games": new_games, "total_games": total_games},
+        source=source or "event_emitters",
+        log_message=f"Emitted new_games_available event: {new_games} from {host}",
+    )
 
 
 # =============================================================================
@@ -1139,57 +1045,24 @@ async def emit_optimization_triggered(
     population_size: int = 0,
     **metadata,
 ) -> bool:
-    """Emit CMAES_TRIGGERED or NAS_TRIGGERED event.
-
-    Args:
-        optimization_type: Type of optimization ("cmaes" or "nas")
-        run_id: Unique run identifier
-        reason: Reason for triggering optimization
-        parameters_searched: Number of parameters being optimized
-        search_space: Search space configuration
-        generations: Number of generations (for evolutionary methods)
-        population_size: Population size
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event_type = (
-            DataEventType.CMAES_TRIGGERED
-            if optimization_type.lower() == "cmaes"
-            else DataEventType.NAS_TRIGGERED
-        )
-
-        event = DataEvent(
-            event_type=event_type,
-            payload={
-                "run_id": run_id,
-                "reason": reason,
-                "parameters_searched": parameters_searched,
-                "search_space": search_space or {},
-                "generations": generations,
-                "population_size": population_size,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted {event_type.value} event")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit optimization event: {e}")
-        return False
+    """Emit CMAES_TRIGGERED or NAS_TRIGGERED event."""
+    event_type = (
+        DataEventType.CMAES_TRIGGERED
+        if optimization_type.lower() == "cmaes"
+        else DataEventType.NAS_TRIGGERED
+    )
+    return await _emit_data_event(
+        event_type,
+        {
+            "run_id": run_id,
+            "reason": reason,
+            "parameters_searched": parameters_searched,
+            "search_space": search_space or {},
+            "generations": generations,
+            "population_size": population_size,
+            **metadata,
+        },
+    )
 
 
 # =============================================================================
@@ -1204,48 +1077,19 @@ async def emit_plateau_detected(
     plateau_type: str = "metric",  # "loss", "elo", "metric"
     **metadata,
 ) -> bool:
-    """Emit PLATEAU_DETECTED event.
-
-    Args:
-        metric_name: Name of the metric that plateaued
-        current_value: Current metric value
-        best_value: Best value seen
-        epochs_since_improvement: Epochs since last improvement
-        plateau_type: Type of plateau
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.PLATEAU_DETECTED,
-            payload={
-                "metric_name": metric_name,
-                "plateau_type": plateau_type,
-                "current_value": current_value,
-                "best_value": best_value,
-                "epochs_since_improvement": epochs_since_improvement,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug("Emitted plateau_detected event")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit plateau event: {e}")
-        return False
+    """Emit PLATEAU_DETECTED event."""
+    return await _emit_data_event(
+        DataEventType.PLATEAU_DETECTED,
+        {
+            "metric_name": metric_name,
+            "plateau_type": plateau_type,
+            "current_value": current_value,
+            "best_value": best_value,
+            "epochs_since_improvement": epochs_since_improvement,
+            **metadata,
+        },
+        log_message="Emitted plateau_detected event",
+    )
 
 
 async def emit_hyperparameter_updated(
@@ -1256,50 +1100,19 @@ async def emit_hyperparameter_updated(
     optimizer: str = "manual",  # "cmaes", "nas", "manual", "adaptive"
     **metadata,
 ) -> bool:
-    """Emit HYPERPARAMETER_UPDATED event.
-
-    December 2025: Added for adaptive controller integration.
-
-    Args:
-        config: Board configuration
-        param_name: Name of the parameter that changed
-        old_value: Previous value
-        new_value: New value
-        optimizer: What triggered the update
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HYPERPARAMETER_UPDATED,
-            payload={
-                "config": config,
-                "param_name": param_name,
-                "old_value": old_value,
-                "new_value": new_value,
-                "optimizer": optimizer,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted hyperparameter_updated event for {param_name}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit hyperparameter event: {e}")
-        return False
+    """Emit HYPERPARAMETER_UPDATED event."""
+    return await _emit_data_event(
+        DataEventType.HYPERPARAMETER_UPDATED,
+        {
+            "config": config,
+            "param_name": param_name,
+            "old_value": old_value,
+            "new_value": new_value,
+            "optimizer": optimizer,
+            **metadata,
+        },
+        log_message=f"Emitted hyperparameter_updated event for {param_name}",
+    )
 
 
 async def emit_regression_detected(
@@ -1309,47 +1122,19 @@ async def emit_regression_detected(
     severity: str = "minor",  # "minor", "moderate", "severe", "critical"
     **metadata,
 ) -> bool:
-    """Emit REGRESSION_DETECTED event.
-
-    Args:
-        metric_name: Name of the metric that regressed
-        current_value: Current metric value
-        previous_value: Previous/best value
-        severity: Severity level of regression
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.REGRESSION_DETECTED,
-            payload={
-                "metric_name": metric_name,
-                "current_value": current_value,
-                "previous_value": previous_value,
-                "severity": severity,
-                "regression_amount": previous_value - current_value,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted regression_detected event (severity={severity})")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit regression event: {e}")
-        return False
+    """Emit REGRESSION_DETECTED event."""
+    return await _emit_data_event(
+        DataEventType.REGRESSION_DETECTED,
+        {
+            "metric_name": metric_name,
+            "current_value": current_value,
+            "previous_value": previous_value,
+            "severity": severity,
+            "regression_amount": previous_value - current_value,
+            **metadata,
+        },
+        log_message=f"Emitted regression_detected event (severity={severity})",
+    )
 
 
 # =============================================================================
@@ -1364,48 +1149,19 @@ async def emit_backpressure_activated(
     utilization: float = 0.0,
     **metadata,
 ) -> bool:
-    """Emit BACKPRESSURE_ACTIVATED event.
-
-    Args:
-        node_id: Node experiencing backpressure
-        level: Backpressure level
-        reason: Reason for activation
-        resource_type: Resource causing backpressure (gpu, memory, disk)
-        utilization: Current utilization percentage
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.BACKPRESSURE_ACTIVATED,
-            payload={
-                "node_id": node_id,
-                "level": level,
-                "reason": reason,
-                "resource_type": resource_type,
-                "utilization": utilization,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted backpressure_activated event for {node_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit backpressure event: {e}")
-        return False
+    """Emit BACKPRESSURE_ACTIVATED event."""
+    return await _emit_data_event(
+        DataEventType.BACKPRESSURE_ACTIVATED,
+        {
+            "node_id": node_id,
+            "level": level,
+            "reason": reason,
+            "resource_type": resource_type,
+            "utilization": utilization,
+            **metadata,
+        },
+        log_message=f"Emitted backpressure_activated event for {node_id}",
+    )
 
 
 async def emit_backpressure_released(
@@ -1414,44 +1170,17 @@ async def emit_backpressure_released(
     duration_seconds: float = 0.0,
     **metadata,
 ) -> bool:
-    """Emit BACKPRESSURE_RELEASED event.
-
-    Args:
-        node_id: Node where backpressure was released
-        previous_level: Previous backpressure level
-        duration_seconds: How long backpressure was active
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.BACKPRESSURE_RELEASED,
-            payload={
-                "node_id": node_id,
-                "previous_level": previous_level,
-                "duration_seconds": duration_seconds,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted backpressure_released event for {node_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit backpressure release event: {e}")
-        return False
+    """Emit BACKPRESSURE_RELEASED event."""
+    return await _emit_data_event(
+        DataEventType.BACKPRESSURE_RELEASED,
+        {
+            "node_id": node_id,
+            "previous_level": previous_level,
+            "duration_seconds": duration_seconds,
+            **metadata,
+        },
+        log_message=f"Emitted backpressure_released event for {node_id}",
+    )
 
 
 # =============================================================================
@@ -1466,48 +1195,19 @@ async def emit_cache_invalidated(
     affected_models: list | None = None,
     **metadata,
 ) -> bool:
-    """Emit CACHE_INVALIDATED event.
-
-    Args:
-        invalidation_type: Type of invalidation ("model" or "node")
-        target_id: Model ID or node ID invalidated
-        count: Number of cache entries invalidated
-        affected_nodes: List of affected node IDs
-        affected_models: List of affected model IDs
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.CACHE_INVALIDATED,
-            payload={
-                "invalidation_type": invalidation_type,
-                "target_id": target_id,
-                "count": count,
-                "affected_nodes": affected_nodes or [],
-                "affected_models": affected_models or [],
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted cache_invalidated event: {invalidation_type}={target_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit cache invalidation event: {e}")
-        return False
+    """Emit CACHE_INVALIDATED event."""
+    return await _emit_data_event(
+        DataEventType.CACHE_INVALIDATED,
+        {
+            "invalidation_type": invalidation_type,
+            "target_id": target_id,
+            "count": count,
+            "affected_nodes": affected_nodes or [],
+            "affected_models": affected_models or [],
+            **metadata,
+        },
+        log_message=f"Emitted cache_invalidated event: {invalidation_type}={target_id}",
+    )
 
 
 # =============================================================================
@@ -1520,45 +1220,18 @@ async def emit_host_online(
     capabilities: dict[str, Any] | None = None,
     **metadata,
 ) -> bool:
-    """Emit HOST_ONLINE event.
-
-    Args:
-        node_id: Node coming online
-        host_type: Type of host (gh200, cpu, etc.)
-        capabilities: Host capabilities dict
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HOST_ONLINE,
-            payload={
-                "node_id": node_id,
-                "host_id": node_id,  # Alias for compatibility
-                "host_type": host_type,
-                "capabilities": capabilities or {},
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted host_online event for {node_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit host online event: {e}")
-        return False
+    """Emit HOST_ONLINE event."""
+    return await _emit_data_event(
+        DataEventType.HOST_ONLINE,
+        {
+            "node_id": node_id,
+            "host_id": node_id,  # Alias for compatibility
+            "host_type": host_type,
+            "capabilities": capabilities or {},
+            **metadata,
+        },
+        log_message=f"Emitted host_online event for {node_id}",
+    )
 
 
 async def emit_host_offline(
@@ -1566,43 +1239,12 @@ async def emit_host_offline(
     reason: str = "",
     **metadata,
 ) -> bool:
-    """Emit HOST_OFFLINE event.
-
-    Args:
-        node_id: Node going offline
-        reason: Reason for going offline
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HOST_OFFLINE,
-            payload={
-                "node_id": node_id,
-                "host_id": node_id,
-                "reason": reason,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted host_offline event for {node_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit host offline event: {e}")
-        return False
+    """Emit HOST_OFFLINE event."""
+    return await _emit_data_event(
+        DataEventType.HOST_OFFLINE,
+        {"node_id": node_id, "host_id": node_id, "reason": reason, **metadata},
+        log_message=f"Emitted host_offline event for {node_id}",
+    )
 
 
 async def emit_node_recovered(
@@ -1611,45 +1253,18 @@ async def emit_node_recovered(
     offline_duration_seconds: float = 0.0,
     **metadata,
 ) -> bool:
-    """Emit NODE_RECOVERED event.
-
-    Args:
-        node_id: Node that recovered
-        recovery_type: Type of recovery (automatic, manual)
-        offline_duration_seconds: How long node was offline
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.NODE_RECOVERED,
-            payload={
-                "node_id": node_id,
-                "host_id": node_id,
-                "recovery_type": recovery_type,
-                "offline_duration_seconds": offline_duration_seconds,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted node_recovered event for {node_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit node recovered event: {e}")
-        return False
+    """Emit NODE_RECOVERED event."""
+    return await _emit_data_event(
+        DataEventType.NODE_RECOVERED,
+        {
+            "node_id": node_id,
+            "host_id": node_id,
+            "recovery_type": recovery_type,
+            "offline_duration_seconds": offline_duration_seconds,
+            **metadata,
+        },
+        log_message=f"Emitted node_recovered event for {node_id}",
+    )
 
 
 # =============================================================================
@@ -1663,46 +1278,19 @@ async def emit_training_rollback_needed(
     severity: str = "moderate",
     **metadata,
 ) -> bool:
-    """Emit TRAINING_ROLLBACK_NEEDED event.
-
-    Args:
-        model_id: Model that needs rollback
-        reason: Why rollback is needed
-        checkpoint_path: Path to checkpoint to rollback to
-        severity: Severity level (minor, moderate, severe, critical)
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.TRAINING_ROLLBACK_NEEDED,
-            payload={
-                "model_id": model_id,
-                "reason": reason,
-                "checkpoint_path": checkpoint_path,
-                "severity": severity,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.warning(f"Emitted training_rollback_needed for {model_id}: {reason}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit rollback event: {e}")
-        return False
+    """Emit TRAINING_ROLLBACK_NEEDED event."""
+    return await _emit_data_event(
+        DataEventType.TRAINING_ROLLBACK_NEEDED,
+        {
+            "model_id": model_id,
+            "reason": reason,
+            "checkpoint_path": checkpoint_path,
+            "severity": severity,
+            **metadata,
+        },
+        log_message=f"Emitted training_rollback_needed for {model_id}: {reason}",
+        log_level="warning",
+    )
 
 
 async def emit_handler_failed(
@@ -1712,46 +1300,20 @@ async def emit_handler_failed(
     coordinator: str = "",
     **metadata,
 ) -> bool:
-    """Emit HANDLER_FAILED event when an event handler throws an exception.
-
-    Args:
-        handler_name: Name of the failed handler
-        event_type: Event type being handled
-        error: Error message
-        coordinator: Coordinator that owns the handler
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HANDLER_FAILED,
-            payload={
-                "handler_name": handler_name,
-                "event_type": event_type,
-                "error": error,
-                "coordinator": coordinator,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.error(f"Emitted handler_failed: {handler_name} on {event_type}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit handler_failed event: {e}")
-        return False
+    """Emit HANDLER_FAILED event when an event handler throws an exception."""
+    # Note: Using log_level="warning" since error() was too noisy
+    return await _emit_data_event(
+        DataEventType.HANDLER_FAILED,
+        {
+            "handler_name": handler_name,
+            "event_type": event_type,
+            "error": error,
+            "coordinator": coordinator,
+            **metadata,
+        },
+        log_message=f"Emitted handler_failed: {handler_name} on {event_type}",
+        log_level="warning",
+    )
 
 
 async def emit_handler_timeout(
@@ -1761,46 +1323,19 @@ async def emit_handler_timeout(
     coordinator: str = "",
     **metadata,
 ) -> bool:
-    """Emit HANDLER_TIMEOUT event when an event handler times out.
-
-    Args:
-        handler_name: Name of the timed out handler
-        event_type: Event type being handled
-        timeout_seconds: Timeout duration
-        coordinator: Coordinator that owns the handler
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HANDLER_TIMEOUT,
-            payload={
-                "handler_name": handler_name,
-                "event_type": event_type,
-                "timeout_seconds": timeout_seconds,
-                "coordinator": coordinator,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.warning(f"Emitted handler_timeout: {handler_name} after {timeout_seconds}s")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit handler_timeout event: {e}")
-        return False
+    """Emit HANDLER_TIMEOUT event when an event handler times out."""
+    return await _emit_data_event(
+        DataEventType.HANDLER_TIMEOUT,
+        {
+            "handler_name": handler_name,
+            "event_type": event_type,
+            "timeout_seconds": timeout_seconds,
+            "coordinator": coordinator,
+            **metadata,
+        },
+        log_message=f"Emitted handler_timeout: {handler_name} after {timeout_seconds}s",
+        log_level="warning",
+    )
 
 
 async def emit_coordinator_health_degraded(
@@ -1810,46 +1345,19 @@ async def emit_coordinator_health_degraded(
     issues: list | None = None,
     **metadata,
 ) -> bool:
-    """Emit COORDINATOR_HEALTH_DEGRADED event.
-
-    Args:
-        coordinator_name: Name of the degraded coordinator
-        reason: Why health is degraded
-        health_score: Health score 0.0-1.0
-        issues: List of specific issues
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.COORDINATOR_HEALTH_DEGRADED,
-            payload={
-                "coordinator_name": coordinator_name,
-                "reason": reason,
-                "health_score": health_score,
-                "issues": issues or [],
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.warning(f"Emitted coordinator_health_degraded: {coordinator_name}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit health degraded event: {e}")
-        return False
+    """Emit COORDINATOR_HEALTH_DEGRADED event."""
+    return await _emit_data_event(
+        DataEventType.COORDINATOR_HEALTH_DEGRADED,
+        {
+            "coordinator_name": coordinator_name,
+            "reason": reason,
+            "health_score": health_score,
+            "issues": issues or [],
+            **metadata,
+        },
+        log_message=f"Emitted coordinator_health_degraded: {coordinator_name}",
+        log_level="warning",
+    )
 
 
 async def emit_coordinator_shutdown(
@@ -1859,46 +1367,19 @@ async def emit_coordinator_shutdown(
     state_snapshot: dict[str, Any] | None = None,
     **metadata,
 ) -> bool:
-    """Emit COORDINATOR_SHUTDOWN event for graceful shutdown.
-
-    Args:
-        coordinator_name: Name of the shutting down coordinator
-        reason: Shutdown reason (graceful, error, forced)
-        remaining_tasks: Number of tasks still pending
-        state_snapshot: Final state before shutdown
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.COORDINATOR_SHUTDOWN,
-            payload={
-                "coordinator_name": coordinator_name,
-                "reason": reason,
-                "remaining_tasks": remaining_tasks,
-                "state_snapshot": state_snapshot or {},
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted coordinator_shutdown: {coordinator_name}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit shutdown event: {e}")
-        return False
+    """Emit COORDINATOR_SHUTDOWN event for graceful shutdown."""
+    return await _emit_data_event(
+        DataEventType.COORDINATOR_SHUTDOWN,
+        {
+            "coordinator_name": coordinator_name,
+            "reason": reason,
+            "remaining_tasks": remaining_tasks,
+            "state_snapshot": state_snapshot or {},
+            **metadata,
+        },
+        log_message=f"Emitted coordinator_shutdown: {coordinator_name}",
+        log_level="info",
+    )
 
 
 async def emit_coordinator_heartbeat(
@@ -1908,45 +1389,17 @@ async def emit_coordinator_heartbeat(
     events_processed: int = 0,
     **metadata,
 ) -> bool:
-    """Emit COORDINATOR_HEARTBEAT for liveness detection.
-
-    Args:
-        coordinator_name: Name of the coordinator
-        health_score: Current health 0.0-1.0
-        active_handlers: Number of handlers currently running
-        events_processed: Total events processed since startup
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.COORDINATOR_HEARTBEAT,
-            payload={
-                "coordinator_name": coordinator_name,
-                "health_score": health_score,
-                "active_handlers": active_handlers,
-                "events_processed": events_processed,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit heartbeat event: {e}")
-        return False
+    """Emit COORDINATOR_HEARTBEAT for liveness detection."""
+    return await _emit_data_event(
+        DataEventType.COORDINATOR_HEARTBEAT,
+        {
+            "coordinator_name": coordinator_name,
+            "health_score": health_score,
+            "active_handlers": active_handlers,
+            "events_processed": events_processed,
+            **metadata,
+        },
+    )
 
 
 async def emit_task_abandoned(
@@ -1956,46 +1409,19 @@ async def emit_task_abandoned(
     reason: str,
     **metadata,
 ) -> bool:
-    """Emit TASK_ABANDONED event for intentionally abandoned tasks.
-
-    Args:
-        task_id: Abandoned task ID
-        task_type: Type of task
-        node_id: Node where task was running
-        reason: Why task was abandoned
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.TASK_ABANDONED,
-            payload={
-                "task_id": task_id,
-                "task_type": task_type,
-                "node_id": node_id,
-                "reason": reason,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted task_abandoned: {task_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit task_abandoned event: {e}")
-        return False
+    """Emit TASK_ABANDONED event for intentionally abandoned tasks."""
+    return await _emit_data_event(
+        DataEventType.TASK_ABANDONED,
+        {
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "reason": reason,
+            **metadata,
+        },
+        log_message=f"Emitted task_abandoned: {task_id}",
+        log_level="info",
+    )
 
 
 async def emit_task_orphaned(
@@ -2006,51 +1432,20 @@ async def emit_task_orphaned(
     reason: str,
     **metadata,
 ) -> bool:
-    """Emit TASK_ORPHANED event for tasks that lost their parent worker.
-
-    This event enables cross-coordinator cleanup coordination when tasks
-    become orphaned due to worker failure or network issues.
-
-    Args:
-        task_id: Orphaned task ID
-        task_type: Type of task (selfplay, training, etc.)
-        node_id: Last known node where task was running
-        last_heartbeat: Timestamp of last heartbeat
-        reason: Why task is considered orphaned
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.TASK_ORPHANED,
-            payload={
-                "task_id": task_id,
-                "task_type": task_type,
-                "node_id": node_id,
-                "last_heartbeat": last_heartbeat,
-                "reason": reason,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted task_orphaned: {task_id} ({reason})")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit task_orphaned event: {e}")
-        return False
+    """Emit TASK_ORPHANED event for tasks that lost their parent worker."""
+    return await _emit_data_event(
+        DataEventType.TASK_ORPHANED,
+        {
+            "task_id": task_id,
+            "task_type": task_type,
+            "node_id": node_id,
+            "last_heartbeat": last_heartbeat,
+            "reason": reason,
+            **metadata,
+        },
+        log_message=f"Emitted task_orphaned: {task_id} ({reason})",
+        log_level="info",
+    )
 
 
 async def emit_model_corrupted(
@@ -2059,44 +1454,18 @@ async def emit_model_corrupted(
     corruption_type: str,
     **metadata,
 ) -> bool:
-    """Emit MODEL_CORRUPTED event when model file corruption is detected.
-
-    Args:
-        model_id: Corrupted model ID
-        model_path: Path to corrupted model
-        corruption_type: Type of corruption (checksum, format, missing)
-        **metadata: Additional metadata
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.MODEL_CORRUPTED,
-            payload={
-                "model_id": model_id,
-                "model_path": model_path,
-                "corruption_type": corruption_type,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.error(f"Emitted model_corrupted: {model_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit model_corrupted event: {e}")
-        return False
+    """Emit MODEL_CORRUPTED event when model file corruption is detected."""
+    return await _emit_data_event(
+        DataEventType.MODEL_CORRUPTED,
+        {
+            "model_id": model_id,
+            "model_path": model_path,
+            "corruption_type": corruption_type,
+            **metadata,
+        },
+        log_message=f"Emitted model_corrupted: {model_id}",
+        log_level="warning",
+    )
 
 
 async def emit_training_rollback_completed(
@@ -2106,46 +1475,19 @@ async def emit_training_rollback_completed(
     reason: str,
     **metadata,
 ) -> bool:
-    """Emit TRAINING_ROLLBACK_COMPLETED event.
-
-    Args:
-        model_id: Model that was rolled back
-        checkpoint_path: Path to checkpoint that was restored
-        rollback_from: Previous model version that was replaced
-        reason: Why rollback was performed
-        **metadata: Additional event metadata
-
-    Returns:
-        True if event was emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.TRAINING_ROLLBACK_COMPLETED,
-            payload={
-                "model_id": model_id,
-                "checkpoint_path": checkpoint_path,
-                "rollback_from": rollback_from,
-                "reason": reason,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted training_rollback_completed: {model_id} from {rollback_from}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit rollback_completed event: {e}")
-        return False
+    """Emit TRAINING_ROLLBACK_COMPLETED event."""
+    return await _emit_data_event(
+        DataEventType.TRAINING_ROLLBACK_COMPLETED,
+        {
+            "model_id": model_id,
+            "checkpoint_path": checkpoint_path,
+            "rollback_from": rollback_from,
+            "reason": reason,
+            **metadata,
+        },
+        log_message=f"Emitted training_rollback_completed: {model_id} from {rollback_from}",
+        log_level="info",
+    )
 
 
 async def emit_curriculum_updated(
@@ -2196,48 +1538,20 @@ async def emit_curriculum_rebalanced(
     trigger: str = "automatic",
     **metadata,
 ) -> bool:
-    """Emit CURRICULUM_REBALANCED event.
-
-    Args:
-        config: Board configuration that was rebalanced
-        old_weights: Previous curriculum weights
-        new_weights: New curriculum weights
-        reason: Why rebalancing occurred
-        trigger: What triggered rebalancing (automatic, manual, elo_change)
-        **metadata: Additional event metadata
-
-    Returns:
-        True if event was emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.CURRICULUM_REBALANCED,
-            payload={
-                "config": config,
-                "old_weights": old_weights,
-                "new_weights": new_weights,
-                "reason": reason,
-                "trigger": trigger,
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted curriculum_rebalanced for {config}: {reason}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit curriculum_rebalanced event: {e}")
-        return False
+    """Emit CURRICULUM_REBALANCED event."""
+    return await _emit_data_event(
+        DataEventType.CURRICULUM_REBALANCED,
+        {
+            "config": config,
+            "old_weights": old_weights,
+            "new_weights": new_weights,
+            "reason": reason,
+            "trigger": trigger,
+            **metadata,
+        },
+        log_message=f"Emitted curriculum_rebalanced for {config}: {reason}",
+        log_level="info",
+    )
 
 
 async def emit_training_triggered(
@@ -2249,55 +1563,22 @@ async def emit_training_triggered(
     priority: str = "normal",
     **metadata,
 ) -> bool:
-    """Emit event when training is triggered (before it starts).
-
-    This is distinct from TRAINING_STARTED which fires when training actually begins.
-    TRAINING_TRIGGERED fires when the decision to train is made.
-
-    Args:
-        config: Board configuration
-        job_id: Training job ID
-        trigger_reason: Why training was triggered (threshold, manual, scheduled)
-        game_count: Number of games available for training
-        threshold: Threshold that triggered training
-        priority: Job priority (low, normal, high)
-        **metadata: Additional event metadata
-
-    Returns:
-        True if event was emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        # Use TRAINING_THRESHOLD_REACHED as the closest existing event type
-        event = DataEvent(
-            event_type=DataEventType.TRAINING_THRESHOLD_REACHED,
-            payload={
-                "config": config,
-                "job_id": job_id,
-                "trigger_reason": trigger_reason,
-                "games": game_count,
-                "threshold": threshold,
-                "priority": priority,
-                "event_subtype": "training_triggered",
-                "timestamp": _get_timestamp(),
-                **metadata,
-            },
-            source="event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted training_triggered for {config}: {trigger_reason}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit training_triggered event: {e}")
-        return False
+    """Emit event when training is triggered (before it starts)."""
+    return await _emit_data_event(
+        DataEventType.TRAINING_THRESHOLD_REACHED,
+        {
+            "config": config,
+            "job_id": job_id,
+            "trigger_reason": trigger_reason,
+            "games": game_count,
+            "threshold": threshold,
+            "priority": priority,
+            "event_subtype": "training_triggered",
+            **metadata,
+        },
+        log_message=f"Emitted training_triggered for {config}: {trigger_reason}",
+        log_level="info",
+    )
 
 
 # =============================================================================
@@ -2320,49 +1601,21 @@ async def emit_node_unhealthy(
     consecutive_failures: int = 0,
     source: str = "",
 ) -> bool:
-    """Emit NODE_UNHEALTHY event when a node is detected as unhealthy.
-
-    Args:
-        node_id: Identifier for the node
-        reason: Why the node is unhealthy
-        node_ip: Node IP address
-        gpu_utilization: GPU utilization percentage (0-100)
-        disk_used_percent: Disk usage percentage (0-100)
-        consecutive_failures: Number of consecutive health check failures
-        source: Component emitting this event
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.NODE_UNHEALTHY,
-            payload={
-                "node_id": node_id,
-                "reason": reason,
-                "node_ip": node_ip,
-                "gpu_utilization": gpu_utilization,
-                "disk_used_percent": disk_used_percent,
-                "consecutive_failures": consecutive_failures,
-                "timestamp": _get_timestamp(),
-            },
-            source=source or "event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.warning(f"Emitted node_unhealthy for {node_id}: {reason}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit node_unhealthy event: {e}")
-        return False
+    """Emit NODE_UNHEALTHY event when a node is detected as unhealthy."""
+    return await _emit_data_event(
+        DataEventType.NODE_UNHEALTHY,
+        {
+            "node_id": node_id,
+            "reason": reason,
+            "node_ip": node_ip,
+            "gpu_utilization": gpu_utilization,
+            "disk_used_percent": disk_used_percent,
+            "consecutive_failures": consecutive_failures,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted node_unhealthy for {node_id}: {reason}",
+        log_level="warning",
+    )
 
 
 async def emit_health_check_passed(
@@ -2373,45 +1626,18 @@ async def emit_health_check_passed(
     latency_ms: float | None = None,
     source: str = "",
 ) -> bool:
-    """Emit HEALTH_CHECK_PASSED event after successful health check.
-
-    Args:
-        node_id: Identifier for the node
-        node_ip: Node IP address
-        check_type: Type of health check (ssh, p2p, gpu, general)
-        latency_ms: Health check latency in milliseconds
-        source: Component emitting this event
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HEALTH_CHECK_PASSED,
-            payload={
-                "node_id": node_id,
-                "node_ip": node_ip,
-                "check_type": check_type,
-                "latency_ms": latency_ms,
-                "timestamp": _get_timestamp(),
-            },
-            source=source or "event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.debug(f"Emitted health_check_passed for {node_id}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit health_check_passed event: {e}")
-        return False
+    """Emit HEALTH_CHECK_PASSED event after successful health check."""
+    return await _emit_data_event(
+        DataEventType.HEALTH_CHECK_PASSED,
+        {
+            "node_id": node_id,
+            "node_ip": node_ip,
+            "check_type": check_type,
+            "latency_ms": latency_ms,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted health_check_passed for {node_id}",
+    )
 
 
 async def emit_health_check_failed(
@@ -2423,47 +1649,20 @@ async def emit_health_check_failed(
     error: str = "",
     source: str = "",
 ) -> bool:
-    """Emit HEALTH_CHECK_FAILED event after failed health check.
-
-    Args:
-        node_id: Identifier for the node
-        reason: Why the health check failed
-        node_ip: Node IP address
-        check_type: Type of health check (ssh, p2p, gpu, general)
-        error: Error message if any
-        source: Component emitting this event
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.HEALTH_CHECK_FAILED,
-            payload={
-                "node_id": node_id,
-                "reason": reason,
-                "node_ip": node_ip,
-                "check_type": check_type,
-                "error": error,
-                "timestamp": _get_timestamp(),
-            },
-            source=source or "event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.warning(f"Emitted health_check_failed for {node_id}: {reason}")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit health_check_failed event: {e}")
-        return False
+    """Emit HEALTH_CHECK_FAILED event after failed health check."""
+    return await _emit_data_event(
+        DataEventType.HEALTH_CHECK_FAILED,
+        {
+            "node_id": node_id,
+            "reason": reason,
+            "node_ip": node_ip,
+            "check_type": check_type,
+            "error": error,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted health_check_failed for {node_id}: {reason}",
+        log_level="warning",
+    )
 
 
 async def emit_p2p_cluster_healthy(
@@ -2472,42 +1671,14 @@ async def emit_p2p_cluster_healthy(
     *,
     source: str = "",
 ) -> bool:
-    """Emit P2P_CLUSTER_HEALTHY event when cluster becomes healthy.
-
-    Args:
-        healthy_nodes: Number of healthy nodes
-        node_count: Total node count
-        source: Component emitting this event
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.P2P_CLUSTER_HEALTHY,
-            payload={
-                "healthy": True,
-                "healthy_nodes": healthy_nodes,
-                "node_count": node_count,
-                "timestamp": _get_timestamp(),
-            },
-            source=source or "event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.info(f"Emitted p2p_cluster_healthy: {healthy_nodes}/{node_count} nodes")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit p2p_cluster_healthy event: {e}")
-        return False
+    """Emit P2P_CLUSTER_HEALTHY event when cluster becomes healthy."""
+    return await _emit_data_event(
+        DataEventType.P2P_CLUSTER_HEALTHY,
+        {"healthy": True, "healthy_nodes": healthy_nodes, "node_count": node_count},
+        source=source or "event_emitters",
+        log_message=f"Emitted p2p_cluster_healthy: {healthy_nodes}/{node_count} nodes",
+        log_level="info",
+    )
 
 
 async def emit_p2p_cluster_unhealthy(
@@ -2517,44 +1688,19 @@ async def emit_p2p_cluster_unhealthy(
     alerts: list[str] | None = None,
     source: str = "",
 ) -> bool:
-    """Emit P2P_CLUSTER_UNHEALTHY event when cluster becomes unhealthy.
-
-    Args:
-        healthy_nodes: Number of healthy nodes
-        node_count: Total node count
-        alerts: List of alert messages
-        source: Component emitting this event
-
-    Returns:
-        True if emitted successfully
-    """
-    if not HAS_DATA_EVENTS:
-        return False
-
-    try:
-        bus = get_data_bus()
-        if bus is None:
-            return False
-
-        event = DataEvent(
-            event_type=DataEventType.P2P_CLUSTER_UNHEALTHY,
-            payload={
-                "healthy": False,
-                "healthy_nodes": healthy_nodes,
-                "node_count": node_count,
-                "alerts": alerts or [],
-                "timestamp": _get_timestamp(),
-            },
-            source=source or "event_emitters",
-        )
-
-        await bus.publish(event)
-        logger.warning(f"Emitted p2p_cluster_unhealthy: {healthy_nodes}/{node_count} nodes")
-        return True
-
-    except Exception as e:
-        logger.debug(f"Failed to emit p2p_cluster_unhealthy event: {e}")
-        return False
+    """Emit P2P_CLUSTER_UNHEALTHY event when cluster becomes unhealthy."""
+    return await _emit_data_event(
+        DataEventType.P2P_CLUSTER_UNHEALTHY,
+        {
+            "healthy": False,
+            "healthy_nodes": healthy_nodes,
+            "node_count": node_count,
+            "alerts": alerts or [],
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted p2p_cluster_unhealthy: {healthy_nodes}/{node_count} nodes",
+        log_level="warning",
+    )
 
 
 __all__ = [

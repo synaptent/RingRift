@@ -483,6 +483,53 @@ class RingRiftEnv:
         """Training trigger threshold in games."""
         return int(os.environ.get("RINGRIFT_TRAINING_THRESHOLD", "500"))
 
+    @cached_property
+    def min_games_for_training(self) -> int:
+        """Minimum games required before training can begin."""
+        return int(os.environ.get("RINGRIFT_MIN_GAMES_FOR_TRAINING", "100"))
+
+    @cached_property
+    def learning_rate(self) -> float:
+        """Training learning rate."""
+        return float(os.environ.get("RINGRIFT_LEARNING_RATE", "0.001"))
+
+    @cached_property
+    def batch_size(self) -> int:
+        """Training batch size."""
+        return int(os.environ.get("RINGRIFT_BATCH_SIZE", "512"))
+
+    @cached_property
+    def epochs(self) -> int:
+        """Training epochs."""
+        return int(os.environ.get("RINGRIFT_EPOCHS", "20"))
+
+    @cached_property
+    def checkpoint_dir(self) -> Path:
+        """Training checkpoint directory."""
+        return Path(os.environ.get("RINGRIFT_CHECKPOINT_DIR", "checkpoints"))
+
+    # ==========================================================================
+    # PyTorch Distributed Training
+    # ==========================================================================
+
+    @cached_property
+    def master_addr(self) -> str:
+        """Master node address for PyTorch distributed training.
+
+        Used by torch.distributed for multi-node training coordination.
+        Should point to the rank 0 node's IP address.
+        """
+        return os.environ.get("MASTER_ADDR", "127.0.0.1")
+
+    @cached_property
+    def master_port(self) -> int:
+        """Master node port for PyTorch distributed training.
+
+        Used by torch.distributed for multi-node training coordination.
+        Default 29500 is PyTorch's standard port.
+        """
+        return int(os.environ.get("MASTER_PORT", "29500"))
+
     # ==========================================================================
     # Lambda/Provider Specific
     # NOTE: Lambda account currently suspended pending support ticket resolution

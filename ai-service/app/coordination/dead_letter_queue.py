@@ -699,6 +699,40 @@ class DLQRetryDaemon:
             "running": self._running,
         }
 
+    def health_check(self) -> dict:
+        """Health check for DaemonManager integration.
+
+        December 2025: Added for daemon health monitoring.
+
+        Returns:
+            Dictionary with health status including:
+            - healthy: bool indicating if daemon is functioning
+            - running: whether the daemon loop is active
+            - cycles: number of retry cycles completed
+            - total_recovered: total events successfully retried
+            - total_failed: total retry failures
+            - message: human-readable status
+        """
+        metrics = self._metrics.copy()
+        dlq_stats = self.dlq.get_stats() if self.dlq else {}
+
+        # Daemon is healthy if running and DLQ is accessible
+        is_healthy = self._running and self._task is not None
+        if self._task and self._task.done() and not self._task.cancelled():
+            # Task crashed unexpectedly
+            is_healthy = False
+
+        return {
+            "healthy": is_healthy,
+            "running": self._running,
+            "cycles": metrics.get("cycles", 0),
+            "total_recovered": metrics.get("total_recovered", 0),
+            "total_failed": metrics.get("total_failed", 0),
+            "total_abandoned": metrics.get("total_abandoned", 0),
+            "pending_events": dlq_stats.get("pending", 0),
+            "message": "DLQ retry daemon running" if is_healthy else "DLQ retry daemon not running",
+        }
+
 
 # Daemon factory for DaemonManager integration
 def create_dlq_retry_daemon(

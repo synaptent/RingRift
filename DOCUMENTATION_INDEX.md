@@ -339,11 +339,12 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 
 ### Core AI Service
 
-| Document                                                                                                         | Purpose                                               |
-| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| [ai-service/README.md](ai-service/README.md)                                                                     | AI service overview, API endpoints, difficulty ladder |
-| [ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md](ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md) | Neural network architecture (RingRiftCNN)             |
-| [ai-service/docs/architecture/MPS_ARCHITECTURE.md](ai-service/docs/architecture/MPS_ARCHITECTURE.md)             | Apple Silicon MPS-compatible architecture             |
+| Document                                                                                                             | Purpose                                               |
+| -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [ai-service/README.md](ai-service/README.md)                                                                         | AI service overview, API endpoints, difficulty ladder |
+| [ai-service/app/distributed/CLUSTER_MONITOR_QUICKSTART.md](ai-service/app/distributed/CLUSTER_MONITOR_QUICKSTART.md) | Cluster monitor quick reference                       |
+| [ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md](ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md)     | Neural network architecture (RingRiftCNN)             |
+| [ai-service/docs/architecture/MPS_ARCHITECTURE.md](ai-service/docs/architecture/MPS_ARCHITECTURE.md)                 | Apple Silicon MPS-compatible architecture             |
 
 ### Training Pipeline (Active - Dec 2025)
 

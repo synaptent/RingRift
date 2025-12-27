@@ -48,6 +48,12 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _get_default_p2p_port() -> int:
+    """Get default P2P port from centralized config."""
+    from app.config.cluster_config import get_p2p_port
+    return get_p2p_port()
+
+
 @dataclass
 class P2PDeploymentConfig:
     """Configuration for P2P auto-deployment."""
@@ -61,8 +67,8 @@ class P2PDeploymentConfig:
     retry_count: int = 2
     retry_delay_seconds: float = 30.0
 
-    # Health check
-    p2p_port: int = 8770
+    # Health check (December 2025: Use centralized port config)
+    p2p_port: int = field(default_factory=_get_default_p2p_port)
     health_check_timeout_seconds: float = 20.0  # Increased for slow SSH connections
 
     # Paths

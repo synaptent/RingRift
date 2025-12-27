@@ -123,7 +123,7 @@ class EloSyncLoop(BaseLoop):
         if manager is not None and hasattr(manager, "state"):
             try:
                 status["local_match_count"] = getattr(manager.state, "local_match_count", 0)
-            except Exception:
-                pass
+            except AttributeError:
+                pass  # Attribute may not exist on all manager states
 
         return status

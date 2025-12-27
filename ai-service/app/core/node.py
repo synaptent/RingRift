@@ -32,6 +32,7 @@ Migration from existing modules:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
@@ -802,8 +803,14 @@ async def check_p2p_leader_status(timeout: float = 5.0) -> tuple[bool, str | Non
 
                     return False, leader_id
 
-    except Exception:
-        # Assume not leader on any error (safer default)
+    except (
+        aiohttp.ClientError,
+        asyncio.TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+    ):
+        # Network/timeout/parse errors - assume not leader (safer default)
         return False, None
 
 

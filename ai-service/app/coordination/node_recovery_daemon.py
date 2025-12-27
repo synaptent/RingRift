@@ -777,6 +777,48 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             except (OSError, IOError) as e:
                 logger.debug(f"Failed to emit recovery event (I/O error): {e}")
 
+    async def health_check(self) -> bool:
+        """Check if the daemon is healthy.
+
+        Returns True if the daemon is running and functioning properly.
+        Used by DaemonManager for crash detection and auto-restart.
+
+        Dec 2025: Added for DaemonManager health monitoring integration.
+        """
+        # Check if daemon is running
+        if not self._running:
+            return False
+
+        # Check if we have recent check data (within 2x check interval)
+        if self._stats.last_check_time > 0:
+            max_age = self.config.check_interval_seconds * 2
+            age = time.time() - self._stats.last_check_time
+            if age > max_age:
+                logger.warning(
+                    f"[{self._get_daemon_name()}] Health check: stale check data "
+                    f"(age={age:.0f}s, max={max_age}s)"
+                )
+                return False
+
+        # Check for excessive failures
+        if self._stats.recovery_failures > 10:
+            # Allow if we also have successes (not just all failures)
+            if self._stats.nodes_recovered == 0:
+                logger.warning(
+                    f"[{self._get_daemon_name()}] Health check: only failures, no recoveries "
+                    f"(failures={self._stats.recovery_failures})"
+                )
+                return False
+
+        # Check HTTP session health if used
+        if self._http_session is not None and self._http_session.closed:
+            logger.warning(
+                f"[{self._get_daemon_name()}] Health check: HTTP session closed unexpectedly"
+            )
+            return False
+
+        return True
+
     def get_node_states(self) -> dict[str, dict[str, Any]]:
         """Get current node states."""
         return {
@@ -811,3 +853,27 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         status["nodes"] = self.get_node_states()
 
         return status
+
+
+# =============================================================================
+# Module-level Singleton Factory (December 2025)
+# =============================================================================
+
+_node_recovery_daemon: NodeRecoveryDaemon | None = None
+
+
+def get_node_recovery_daemon() -> NodeRecoveryDaemon:
+    """Get the singleton NodeRecoveryDaemon instance.
+
+    December 2025: Added for consistency with other daemon factories.
+    """
+    global _node_recovery_daemon
+    if _node_recovery_daemon is None:
+        _node_recovery_daemon = NodeRecoveryDaemon()
+    return _node_recovery_daemon
+
+
+def reset_node_recovery_daemon() -> None:
+    """Reset the singleton (for testing)."""
+    global _node_recovery_daemon
+    _node_recovery_daemon = None

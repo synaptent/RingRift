@@ -453,6 +453,199 @@ When unset, the AI service generates an ephemeral key at startup.
 When set, the AI service auto-starts the matching daemon profile on boot (see
 `ai-service/app/coordination/daemon_manager.py`).
 
+### `RINGRIFT_IS_COORDINATOR`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `auto`                    |
+| Required | No                        |
+
+Force coordinator-only mode. When enabled, selfplay/training/gauntlet/export are disabled
+by default; when unset, the role is derived from `distributed_hosts.yaml`.
+
+### `RINGRIFT_SELFPLAY_ENABLED`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `auto`                    |
+| Required | No                        |
+
+Explicit override for selfplay on this node. When unset, defaults are resolved from
+`distributed_hosts.yaml` (coordinator nodes default to disabled).
+
+### `RINGRIFT_TRAINING_ENABLED`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `auto`                    |
+| Required | No                        |
+
+Explicit override for training on this node. When unset, defaults are resolved from
+`distributed_hosts.yaml` (coordinator nodes default to disabled).
+
+### `RINGRIFT_GAUNTLET_ENABLED`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `auto`                    |
+| Required | No                        |
+
+Explicit override for gauntlet/evaluation on this node. When unset, defaults are resolved from
+`distributed_hosts.yaml` (coordinator nodes default to disabled).
+
+### `RINGRIFT_EXPORT_ENABLED`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `auto`                    |
+| Required | No                        |
+
+Explicit override for export jobs on this node. When unset, defaults are resolved from
+`distributed_hosts.yaml` (coordinator nodes default to disabled).
+
+### `RINGRIFT_IDLE_RESOURCE_ENABLED`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `true`                    |
+| Required | No                        |
+
+Enable the idle-resource daemon that spawns or scales down selfplay based on GPU idleness.
+
+### `RINGRIFT_IDLE_THRESHOLD`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `10.0`   |
+| Required | No       |
+
+GPU utilization threshold (%) below which a node is considered idle. Legacy alias:
+`RINGRIFT_IDLE_GPU_THRESHOLD`.
+
+### `RINGRIFT_IDLE_DURATION`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `120`    |
+| Required | No       |
+
+Seconds a GPU must remain idle before the node is treated as idle.
+
+### `RINGRIFT_JOB_GRACE_PERIOD`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `60`     |
+| Required | No       |
+
+Seconds to wait before SIGKILL after SIGTERM when shutting down jobs.
+
+### `RINGRIFT_GPU_IDLE_THRESHOLD`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `600`    |
+| Required | No       |
+
+Seconds of GPU idleness before killing stuck processes.
+
+### `RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `128`    |
+| Required | No       |
+
+Max selfplay processes per node before cleanup kicks in.
+
+### `RINGRIFT_SSH_USER`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | `ubuntu` |
+| Required | No       |
+
+Default SSH user for cluster operations.
+
+### `RINGRIFT_SSH_KEY`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `string` |
+| Default  | None     |
+| Required | No       |
+
+Default SSH key path for cluster operations.
+
+### `RINGRIFT_LAMBDA_IDLE_ENABLED`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `true`                    |
+| Required | No                        |
+
+Enable the Lambda idle shutdown daemon. (Lambda account currently suspended; kept for restoration.)
+
+### `RINGRIFT_LAMBDA_IDLE_INTERVAL`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `300`    |
+| Required | No       |
+
+Lambda idle check interval in seconds.
+
+### `RINGRIFT_LAMBDA_IDLE_THRESHOLD`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `5.0`    |
+| Required | No       |
+
+Lambda GPU idle threshold (%).
+
+### `RINGRIFT_LAMBDA_IDLE_DURATION`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `1800`   |
+| Required | No       |
+
+Lambda idle duration threshold in seconds.
+
+### `RINGRIFT_LAMBDA_MIN_NODES`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `1`      |
+| Required | No       |
+
+Minimum Lambda nodes to keep running.
+
 ### `RINGRIFT_START_DAEMONS`
 
 | Property | Value                     |
