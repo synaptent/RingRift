@@ -756,6 +756,39 @@ class DaemonManager:
         if info.state not in (DaemonState.FAILED, DaemonState.IMPORT_FAILED):
             info.state = DaemonState.STOPPED
 
+    def mark_daemon_ready(self, daemon_type: DaemonType) -> bool:
+        """Explicitly mark a daemon as ready for dependent daemons.
+
+        Daemons should call this after completing critical initialization.
+        This is safer than relying on auto-ready (which triggers after 0.5s).
+
+        Dec 2025: Added for explicit readiness signaling to prevent
+        race conditions where dependent daemons start before their
+        dependencies are truly initialized.
+
+        Args:
+            daemon_type: Type of daemon to mark as ready
+
+        Returns:
+            True if successfully marked, False if daemon not found
+        """
+        info = self._daemons.get(daemon_type)
+        if info is None:
+            logger.warning(f"Cannot mark {daemon_type.value} ready: daemon not found")
+            return False
+
+        if info.ready_event is None:
+            logger.warning(f"Cannot mark {daemon_type.value} ready: no ready_event")
+            return False
+
+        if info.ready_event.is_set():
+            logger.debug(f"{daemon_type.value} already marked as ready")
+            return True
+
+        info.ready_event.set()
+        logger.info(f"{daemon_type.value} explicitly marked as ready")
+        return True
+
     async def stop(self, daemon_type: DaemonType) -> bool:
         """Stop a specific daemon with timeout escalation.
 

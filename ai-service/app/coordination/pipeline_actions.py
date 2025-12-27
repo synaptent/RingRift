@@ -100,7 +100,7 @@ class ActionConfig:
     evaluate_script: str = "scripts/quick_gauntlet.py"
     promote_script: str = "scripts/auto_promote.py"
 
-    # Timeouts (seconds)
+    # Default timeouts (seconds) - can be overridden per board type
     sync_timeout: float = 1800.0  # 30 minutes
     export_timeout: float = 3600.0  # 1 hour
     training_timeout: float = 86400.0  # 24 hours
@@ -146,6 +146,66 @@ _MAX_OUTPUT_BYTES = 10 * 1024 * 1024  # 10 MB
 
 # Grace period for SIGTERM before SIGKILL
 _SIGTERM_GRACE_SECONDS = 5.0
+
+# Board-type specific timeout multipliers (relative to default)
+# Larger boards take longer to process
+_BOARD_TYPE_TIMEOUT_MULTIPLIERS: dict[str, dict[str, float]] = {
+    # Small boards - faster processing
+    "hex8": {
+        "export": 0.5,      # 30 min default → 15 min
+        "training": 0.5,    # 24h default → 12h
+        "evaluation": 0.5,  # 2h default → 1h
+    },
+    "square8": {
+        "export": 0.75,     # 30 min default → 22.5 min
+        "training": 0.75,   # 24h default → 18h
+        "evaluation": 0.75, # 2h default → 1.5h
+    },
+    # Large boards - need more time
+    "square19": {
+        "export": 2.0,      # 30 min default → 60 min
+        "training": 1.5,    # 24h default → 36h
+        "evaluation": 2.0,  # 2h default → 4h
+    },
+    "hexagonal": {
+        "export": 2.0,      # 30 min default → 60 min
+        "training": 1.5,    # 24h default → 36h
+        "evaluation": 2.0,  # 2h default → 4h
+    },
+}
+
+
+def get_timeout_for_board(
+    board_type: str,
+    stage: str,
+    default_timeout: float,
+) -> float:
+    """Get timeout adjusted for board type complexity.
+
+    Larger boards (square19, hexagonal) need more time for export/training.
+    Smaller boards (hex8) can use shorter timeouts.
+
+    Args:
+        board_type: Board type (hex8, square8, square19, hexagonal)
+        stage: Pipeline stage (export, training, evaluation, sync, promotion)
+        default_timeout: Default timeout from ActionConfig
+
+    Returns:
+        Adjusted timeout in seconds
+    """
+    multipliers = _BOARD_TYPE_TIMEOUT_MULTIPLIERS.get(board_type, {})
+    multiplier = multipliers.get(stage, 1.0)
+    adjusted = default_timeout * multiplier
+
+    # Also check environment override
+    env_key = f"RINGRIFT_{stage.upper()}_TIMEOUT"
+    if env_val := os.environ.get(env_key):
+        try:
+            adjusted = float(env_val)
+        except ValueError:
+            pass
+
+    return adjusted
 
 
 async def _run_subprocess(
