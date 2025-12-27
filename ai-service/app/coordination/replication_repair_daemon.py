@@ -621,6 +621,43 @@ class ReplicationRepairDaemon:
             },
         }
 
+    async def _emit_repair_event(self, job, success: bool) -> None:
+        """Emit repair event (December 2025: Event-driven coordination).
+
+        Args:
+            job: RepairJob with repair details
+            success: Whether repair succeeded
+        """
+        try:
+            from app.coordination.event_router import get_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_router()
+            if not router:
+                return
+
+            event_type = DataEventType.REPAIR_COMPLETED if success else DataEventType.REPAIR_FAILED
+            await router.publish(
+                event_type=event_type,
+                payload={
+                    "game_id": job.game_id,
+                    "success": success,
+                    "priority": job.priority.name,
+                    "current_copies": job.current_copies,
+                    "target_copies": job.target_copies,
+                    "source_nodes": job.source_nodes,
+                    "target_nodes": job.target_nodes,
+                    "error": job.error,
+                    "duration_seconds": (job.completed_at - job.started_at) if job.completed_at else 0,
+                },
+                source="replication_repair_daemon",
+            )
+
+        except ImportError:
+            pass  # Event router not available
+        except Exception as e:
+            logger.debug(f"Failed to emit repair event: {e}")
+
     def health_check(self):
         """Check daemon health (December 2025: CoordinatorProtocol compliance).
 

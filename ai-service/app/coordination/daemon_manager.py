@@ -998,6 +998,69 @@ class DaemonManager:
         except (RuntimeError, OSError, ConnectionError, ImportError) as e:
             logger.error(f"[DaemonManager] Error handling REGRESSION_CRITICAL: {e}")
 
+    async def _wire_coordination_events(self) -> None:
+        """Wire ALL coordination event subscriptions at startup.
+
+        Phase 8 (December 2025): Ensures critical event subscriptions are wired
+        BEFORE daemons start processing, preventing race conditions where daemons
+        emit events that have no subscribers.
+
+        This calls bootstrap_coordination() with appropriate flags to initialize:
+        - Sync coordinator (DATA_SYNC_COMPLETED, NEW_GAMES_AVAILABLE)
+        - Training coordinator (TRAINING_*, REGRESSION_*)
+        - Pipeline orchestrator (stage events)
+        - Selfplay orchestrator (SELFPLAY_COMPLETE)
+        - And other critical coordinators
+
+        The wiring is idempotent - calling multiple times is safe.
+        """
+        try:
+            from app.coordination.coordination_bootstrap import bootstrap_coordination
+
+            # Wire critical event subscriptions
+            # Use lightweight init - we're called from start_all() which is async
+            result = bootstrap_coordination(
+                # Essential event sources
+                enable_sync=True,           # DATA_SYNC_COMPLETED, NEW_GAMES_AVAILABLE
+                enable_training=True,       # TRAINING_*, REGRESSION_*
+                enable_pipeline=True,       # Stage events
+                enable_selfplay=True,       # SELFPLAY_COMPLETE
+                enable_model=True,          # MODEL_PROMOTED
+                enable_health=True,         # Health events
+                # Disable heavy initializations (already handled by daemons)
+                enable_resources=False,     # ResourceMonitoringCoordinator is heavy
+                enable_metrics=False,       # MetricsAnalysisOrchestrator is heavy
+                enable_optimization=False,  # OptimizationCoordinator is heavy
+                enable_cache=False,         # CacheCoordinator is heavy
+                enable_leadership=False,    # LeadershipCoordinator handled elsewhere
+                # Disable daemons (they're managed by DaemonManager)
+                enable_auto_export=False,
+                enable_auto_evaluation=False,
+                enable_model_distribution=False,
+                enable_idle_resource=False,
+                enable_quality_monitor=False,
+                enable_orphan_detection=False,
+                enable_curriculum_integration=False,
+                # Other settings
+                register_with_registry=False,  # We do this ourselves
+            )
+
+            initialized = result.get("initialized_count", 0)
+            errors = result.get("errors", [])
+
+            if errors:
+                for err in errors[:3]:  # Log first 3 errors
+                    logger.warning(f"[DaemonManager] Coordination wiring error: {err}")
+
+            logger.info(
+                f"[DaemonManager] Wired {initialized} coordination event subscriptions (Phase 8)"
+            )
+
+        except ImportError as e:
+            logger.debug(f"[DaemonManager] coordination_bootstrap not available: {e}")
+        except (RuntimeError, OSError, ConnectionError) as e:
+            logger.warning(f"[DaemonManager] Failed to wire coordination events: {e}")
+
     async def _verify_subscriptions(self) -> None:
         """Verify that critical event subscriptions are active.
 
