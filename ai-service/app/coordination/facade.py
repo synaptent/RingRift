@@ -492,13 +492,11 @@ class CoordinationFacade:
         """
         if self._node_monitor is None:
             try:
-                import warnings
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=DeprecationWarning)
-                    from app.coordination.node_health_monitor import get_node_health_monitor
-                self._node_monitor = get_node_health_monitor()
+                # Dec 2025: Use health_facade (unified interface)
+                from app.coordination.health_facade import get_health_orchestrator
+                self._node_monitor = get_health_orchestrator()
             except Exception as e:
-                logger.debug(f"Could not load node monitor: {e}")
+                logger.debug(f"Could not load health orchestrator: {e}")
         return self._node_monitor
 
     def _get_event_router(self):

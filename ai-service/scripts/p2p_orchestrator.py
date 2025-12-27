@@ -1926,14 +1926,18 @@ class P2POrchestrator(
         # December 2025: Subscribe to training feedback signals for dynamic orchestration
         feedback_signals_ok = self._subscribe_to_feedback_signals()
 
+        # December 2025: Subscribe to manager lifecycle events for coordination
+        manager_events_ok = self._subscribe_to_manager_events()
+
         # Log subscription status for debugging integration issues
-        if daemon_events_ok and feedback_signals_ok:
-            logger.info("[P2P] Event subscriptions: daemon_events=✓, feedback_signals=✓")
+        if daemon_events_ok and feedback_signals_ok and manager_events_ok:
+            logger.info("[P2P] Event subscriptions: daemon=✓, feedback=✓, manager=✓")
         else:
             logger.warning(
                 f"[P2P] Event subscriptions incomplete: "
-                f"daemon_events={'✓' if daemon_events_ok else '✗'}, "
-                f"feedback_signals={'✓' if feedback_signals_ok else '✗'}"
+                f"daemon={'✓' if daemon_events_ok else '✗'}, "
+                f"feedback={'✓' if feedback_signals_ok else '✗'}, "
+                f"manager={'✓' if manager_events_ok else '✗'}"
             )
 
         print(
@@ -2249,6 +2253,134 @@ class P2POrchestrator(
             return False
         except Exception as e:
             logger.warning(f"Feedback signals: failed to subscribe: {e}")
+            return False
+
+    def _subscribe_to_manager_events(self) -> bool:
+        """Subscribe to manager lifecycle events for coordination.
+
+        December 2025: Subscribes to critical manager events that were previously
+        missing from P2P orchestrator integration:
+        - TRAINING_STARTED/COMPLETED: Coordinate training transitions
+        - TASK_SPAWNED/COMPLETED/FAILED: Track job lifecycle
+        - DATA_SYNC_STARTED/COMPLETED: Coordinate data freshness
+
+        Returns True if subscription succeeded, False otherwise.
+        """
+        try:
+            from app.coordination.event_router import subscribe
+
+            def handle_training_started(event) -> None:
+                """Handle training start events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    node_id = payload.get("node_id", "unknown")
+                    logger.info(f"[P2P] Training started: {config_key} on {node_id}")
+                    # Track active training in cluster state
+                    if not hasattr(self, "_active_training"):
+                        self._active_training = {}
+                    self._active_training[config_key] = {
+                        "node_id": node_id,
+                        "started_at": time.time(),
+                    }
+                except Exception as e:
+                    logger.debug(f"Error handling training started event: {e}")
+
+            def handle_training_completed(event) -> None:
+                """Handle training completion events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    model_path = payload.get("model_path", "")
+                    final_loss = payload.get("final_loss", 0)
+                    logger.info(
+                        f"[P2P] Training completed: {config_key} "
+                        f"(loss={final_loss:.4f}, model={model_path})"
+                    )
+                    # Clear from active training
+                    if hasattr(self, "_active_training"):
+                        self._active_training.pop(config_key, None)
+                    # Trigger selfplay allocation refresh
+                    if hasattr(self, "selfplay_scheduler"):
+                        self.selfplay_scheduler.on_training_complete(config_key)
+                except Exception as e:
+                    logger.debug(f"Error handling training completed event: {e}")
+
+            def handle_task_spawned(event) -> None:
+                """Handle task spawn events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    job_id = payload.get("job_id", "unknown")
+                    job_type = payload.get("job_type", "unknown")
+                    node_id = payload.get("node_id", "unknown")
+                    logger.debug(f"[P2P] Task spawned: {job_type} {job_id} on {node_id}")
+                except Exception as e:
+                    logger.debug(f"Error handling task spawned event: {e}")
+
+            def handle_task_completed(event) -> None:
+                """Handle task completion events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    job_id = payload.get("job_id", "unknown")
+                    job_type = payload.get("job_type", "unknown")
+                    duration = payload.get("duration", 0)
+                    logger.debug(f"[P2P] Task completed: {job_type} {job_id} ({duration:.1f}s)")
+                except Exception as e:
+                    logger.debug(f"Error handling task completed event: {e}")
+
+            def handle_task_failed(event) -> None:
+                """Handle task failure events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    job_id = payload.get("job_id", "unknown")
+                    job_type = payload.get("job_type", "unknown")
+                    error = payload.get("error", "unknown error")
+                    logger.warning(f"[P2P] Task failed: {job_type} {job_id} - {error}")
+                    # Could trigger recovery or rebalancing here
+                except Exception as e:
+                    logger.debug(f"Error handling task failed event: {e}")
+
+            def handle_data_sync_started(event) -> None:
+                """Handle data sync start events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    sync_type = payload.get("sync_type", "unknown")
+                    target_count = payload.get("target_nodes", 0)
+                    logger.info(f"[P2P] Data sync started: {sync_type} to {target_count} nodes")
+                except Exception as e:
+                    logger.debug(f"Error handling data sync started event: {e}")
+
+            def handle_data_sync_completed(event) -> None:
+                """Handle data sync completion events."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    sync_type = payload.get("sync_type", "unknown")
+                    duration = payload.get("duration", 0)
+                    files_synced = payload.get("files_synced", 0)
+                    logger.info(
+                        f"[P2P] Data sync completed: {sync_type} "
+                        f"({files_synced} files in {duration:.1f}s)"
+                    )
+                    # Could trigger training readiness check here
+                except Exception as e:
+                    logger.debug(f"Error handling data sync completed event: {e}")
+
+            # Subscribe to all manager events
+            subscribe("TRAINING_STARTED", handle_training_started)
+            subscribe("TRAINING_COMPLETED", handle_training_completed)
+            subscribe("TASK_SPAWNED", handle_task_spawned)
+            subscribe("TASK_COMPLETED", handle_task_completed)
+            subscribe("TASK_FAILED", handle_task_failed)
+            subscribe("DATA_SYNC_STARTED", handle_data_sync_started)
+            subscribe("DATA_SYNC_COMPLETED", handle_data_sync_completed)
+
+            logger.info("Subscribed to manager lifecycle events")
+            return True
+        except ImportError as e:
+            logger.debug(f"Manager events: event_router not available: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"Manager events: failed to subscribe: {e}")
             return False
 
     def _is_leader(self) -> bool:

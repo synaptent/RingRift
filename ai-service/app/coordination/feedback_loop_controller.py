@@ -1701,6 +1701,26 @@ class FeedbackLoopController:
                     f"{old_weight:.2f} → {new_weight:.2f} (quality={quality_score:.2f})"
                 )
 
+                # Dec 2025: Emit CURRICULUM_REBALANCED event for SelfplayScheduler
+                # This closes the feedback loop from selfplay quality -> scheduler priorities
+                try:
+                    from app.coordination.data_events import DataEventType, get_event_bus
+
+                    bus = get_event_bus()
+                    _safe_create_task(
+                        bus.emit(
+                            event_type=DataEventType.CURRICULUM_REBALANCED,
+                            payload={
+                                "config_key": config_key,
+                                "weight": new_weight,
+                                "reason": f"selfplay_quality_{quality_score:.2f}",
+                            },
+                        ),
+                        f"emit_curriculum_from_selfplay({config_key})",
+                    )
+                except (ImportError, AttributeError):
+                    pass  # Event system not available
+
         except ImportError:
             pass
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:

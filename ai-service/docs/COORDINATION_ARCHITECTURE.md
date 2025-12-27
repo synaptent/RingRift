@@ -274,7 +274,7 @@ Single command to launch all daemons:
 python scripts/launch_daemons.py --all
 
 # Launch specific types
-python scripts/launch_daemons.py --sync-only
+python scripts/launch_daemons.py --sync
 python scripts/launch_daemons.py --training-only
 
 # Check status

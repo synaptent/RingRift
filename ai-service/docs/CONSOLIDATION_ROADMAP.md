@@ -190,7 +190,7 @@ scripts/
 
 **Sync/Coordination (4 overlapping)**:
 
-- `SyncOrchestrator` (sync_orchestrator.py)
+- `SyncOrchestrator` (sync_orchestrator.py, legacy; prefer SyncFacade)
 - `SyncCoordinator` (sync_coordinator.py)
 - `SyncScheduler` (sync_coordinator.py)
 - `DistributedSyncCoordinator` (alias in sync_coordinator.py)
@@ -256,7 +256,7 @@ app/coordination/
 
 - `OrchestratorConfig` (unified_orchestrator.py)
 - `TrainingOrchestratorConfig` (orchestrated_training.py)
-- `SyncOrchestratorConfig` (sync_orchestrator.py)
+- `SyncOrchestratorConfig` (sync_orchestrator.py, legacy)
 - `CoordinatorConfig` (coordinator_config.py)
 - `GPUGumbelMCTSConfig` (tensor_gumbel_tree.py)
 - `GMOGumbelConfig` (gmo_gumbel_hybrid.py)

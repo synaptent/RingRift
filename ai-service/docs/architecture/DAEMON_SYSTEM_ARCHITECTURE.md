@@ -15,7 +15,7 @@ python scripts/master_loop.py --watch
 
 # Launch specific daemons
 python scripts/launch_daemons.py --all
-python scripts/launch_daemons.py --sync-only
+python scripts/launch_daemons.py --sync
 python scripts/launch_daemons.py --status
 ```
 
@@ -105,7 +105,7 @@ await manager.stop_daemon(DaemonType.AUTO_SYNC)
 status = manager.get_status(DaemonType.AUTO_SYNC)
 
 # Start all daemons in a profile
-await manager.start_profile("full")  # full, minimal, sync-only
+await manager.start_profile("full")  # coordinator, training_node, ephemeral, selfplay, full, minimal
 ```
 
 ## Daemon Adapters

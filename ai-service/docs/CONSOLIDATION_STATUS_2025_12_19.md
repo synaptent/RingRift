@@ -55,7 +55,7 @@
 ### 7. Event Wiring Helpers
 
 - Added event wiring hooks for coordinators:
-  - `queue_populator`, `sync_scheduler`, `task_coordinator`
+  - `unified_queue_populator` (QueuePopulator), `sync_scheduler` (deprecated), `task_coordinator`
   - `training_coordinator`, `transfer_verification`, `ephemeral_data_guard`
   - `multi_provider_orchestrator`
 

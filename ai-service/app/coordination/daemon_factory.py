@@ -109,6 +109,14 @@ def _build_registry() -> dict[str, DaemonSpec]:
             import_path="app.coordination.cluster_data_sync",
             class_name="ClusterDataSyncDaemon",
         ),
+        DaemonType.HIGH_QUALITY_SYNC.name: DaemonSpec(
+            import_path="app.distributed.sync_coordinator",
+            class_name="HighQualityDataSyncWatcher",
+        ),
+        DaemonType.ELO_SYNC.name: DaemonSpec(
+            import_path="app.tournament.elo_sync_manager",
+            class_name="EloSyncManager",
+        ),
 
         # =================================================================
         # Training & Pipeline Daemons
@@ -133,6 +141,10 @@ def _build_registry() -> dict[str, DaemonSpec]:
         DaemonType.CONTINUOUS_TRAINING_LOOP.name: DaemonSpec(
             import_path="app.coordination.continuous_loop",
             class_name="ContinuousTrainingLoop",
+        ),
+        DaemonType.SELFPLAY_COORDINATOR.name: DaemonSpec(
+            import_path="app.coordination.selfplay_scheduler",
+            class_name="SelfplayScheduler",
         ),
 
         # =================================================================
@@ -192,6 +204,15 @@ def _build_registry() -> dict[str, DaemonSpec]:
         DaemonType.P2P_BACKEND.name: DaemonSpec(
             import_path="app.distributed.p2p",
             class_name="P2PNode",
+        ),
+        DaemonType.P2P_AUTO_DEPLOY.name: DaemonSpec(
+            import_path="app.coordination.p2p_auto_deployer",
+            class_name="P2PAutoDeployer",
+        ),
+        DaemonType.DATA_SERVER.name: DaemonSpec(
+            import_path="app.distributed.sync_coordinator",
+            class_name="SyncCoordinator",
+            factory_fn="get_instance",  # Uses singleton pattern
         ),
         DaemonType.QUEUE_MONITOR.name: DaemonSpec(
             import_path="app.coordination.queue_monitor",

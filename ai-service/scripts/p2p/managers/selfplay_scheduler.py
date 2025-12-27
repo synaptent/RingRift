@@ -581,8 +581,8 @@ class SelfplayScheduler:
             try:
                 if self.is_emergency_active():
                     return 0
-            except Exception:
-                pass  # Ignore errors in safeguards check
+            except (TypeError, AttributeError, RuntimeError, KeyError):
+                pass  # Ignore errors in safeguards callback (non-critical)
 
         # Check backpressure - reduce production when training queue is full
         backpressure_factor = 1.0
@@ -608,7 +608,7 @@ class SelfplayScheduler:
                     if self.get_throttle_factor is not None:
                         backpressure_factor = self.get_throttle_factor(queue_type)
                         logger.info(f"Backpressure throttle: factor={backpressure_factor:.2f}")
-            except Exception as e:
+            except (TypeError, AttributeError, ValueError, RuntimeError) as e:
                 logger.info(f"Backpressure check error: {e}")
 
         # Minimum memory requirement - skip low-memory machines to avoid OOM
@@ -700,7 +700,7 @@ class SelfplayScheduler:
 
                 return final_target
 
-            except Exception as e:
+            except (TypeError, AttributeError, ValueError, KeyError, RuntimeError) as e:
                 logger.info(f"Resource targets error, falling back to hardware-aware: {e}")
 
         # FALLBACK: Use unified hardware-aware limits from resource_optimizer
@@ -846,7 +846,7 @@ class SelfplayScheduler:
                     has_gpu=has_gpu,
                 )
                 return limits
-            except Exception as e:
+            except (TypeError, AttributeError, ValueError, KeyError, RuntimeError) as e:
                 logger.info(f"Hybrid limits error: {e}")
 
         # Fallback: No CPU-only jobs, use standard target

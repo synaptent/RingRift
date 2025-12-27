@@ -795,7 +795,10 @@ class IntegratedEnhancementsConfig:
     """Configuration for integrated training enhancements.
 
     Centralizes all advanced training feature flags and parameters.
-    See app/training/integrated_enhancements.py for implementation.
+    See app/training/unified_orchestrator.py for implementation (unified training system).
+
+    Note: app/training/integrated_enhancements.py is deprecated (Dec 2025).
+    Use unified_orchestrator.py for new code.
 
     This is the CANONICAL location for this config. The scripts/unified_loop/config.py
     version should import from here.
@@ -2007,14 +2010,12 @@ def get_storage_paths(provider: str | None = None) -> StoragePathsConfig:
 
     config = get_config()
 
-    if provider == "lambda":
-        return config.storage.lambda_
-    elif provider == "vast":
-        return config.storage.vast
-    elif provider == "mac":
-        return config.storage.mac
-    else:
-        return config.storage.default
+    storage_map = {
+        "lambda": config.storage.lambda_,
+        "vast": config.storage.vast,
+        "mac": config.storage.mac,
+    }
+    return storage_map.get(provider, config.storage.default)
 
 
 def get_selfplay_dir(provider: str | None = None) -> Path:
