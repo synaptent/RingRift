@@ -812,12 +812,22 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
 
             logger.info(f"Training output: {stdout.decode()}")
             if proc.returncode != 0:
-                logger.warning(f"Training stderr: {stderr.decode()[:500]}")
+                error_msg = stderr.decode()[:500] if stderr else "Unknown error"
+                logger.warning(f"Training stderr: {error_msg}")
+                # Dec 2025: Emit TASK_FAILED for training failures
+                self._emit_task_event(
+                    "TASK_FAILED", job_id, "training",
+                    error=f"returncode={proc.returncode}: {error_msg}",
+                )
 
         except asyncio.TimeoutError:
             logger.warning("Local training timed out")
+            # Dec 2025: Emit TASK_FAILED for timeout
+            self._emit_task_event("TASK_FAILED", job_id, "training", error="timeout")
         except Exception as e:
             logger.error(f"Local training error: {e}")
+            # Dec 2025: Emit TASK_FAILED for exceptions
+            self._emit_task_event("TASK_FAILED", job_id, "training", error=str(e))
 
     # =========================================================================
     # Tournament Job Methods

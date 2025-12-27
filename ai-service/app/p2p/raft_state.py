@@ -40,6 +40,15 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# Dec 2025: Use cluster_config helpers instead of inline YAML parsing
+try:
+    from app.config.cluster_config import get_cluster_nodes, get_p2p_voters
+    HAS_CLUSTER_CONFIG = True
+except ImportError:
+    HAS_CLUSTER_CONFIG = False
+    get_cluster_nodes = None
+    get_p2p_voters = None
+
 # ============================================
 # Import PySyncObj with graceful fallback
 # ============================================

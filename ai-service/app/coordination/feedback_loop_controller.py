@@ -318,6 +318,12 @@ class FeedbackLoopController:
                 bus.subscribe(DataEventType.CPU_PIPELINE_JOB_COMPLETED, self._on_cpu_pipeline_job_completed)
                 event_count += 1
 
+            # Dec 2025: Subscribe to HIGH_QUALITY_DATA_AVAILABLE for quality recovery
+            # Closes feedback loop: quality recovery → reduce exploration, resume normal training
+            if hasattr(DataEventType, 'HIGH_QUALITY_DATA_AVAILABLE'):
+                bus.subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
+                event_count += 1
+
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
 
             self._subscribed = True
@@ -370,6 +376,10 @@ class FeedbackLoopController:
             # Dec 2025: Unsubscribe from REGRESSION_DETECTED
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                 bus.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+
+            # Dec 2025: Unsubscribe from HIGH_QUALITY_DATA_AVAILABLE
+            if hasattr(DataEventType, 'HIGH_QUALITY_DATA_AVAILABLE'):
+                bus.unsubscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
 
         except (AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"[FeedbackLoopController] Error unsubscribing: {e}")
@@ -2326,6 +2336,44 @@ class FeedbackLoopController:
         else:
             # Quality is normal
             state.current_training_intensity = "normal"
+
+    def _on_high_quality_data_available(self, event) -> None:
+        """Handle HIGH_QUALITY_DATA_AVAILABLE - quality recovered above threshold.
+
+        When data quality recovers to "good" levels, this handler:
+        1. Reduces exploration boost (no longer needed)
+        2. Accelerates training intensity
+        3. Updates quality tracking metrics
+
+        Added: December 2025 - Closes quality recovery feedback loop
+        """
+        payload = event.payload if hasattr(event, "payload") else {}
+        config_key = payload.get("config_key", "")
+        quality_score = payload.get("quality_score", 0.0)
+        sample_count = payload.get("sample_count", 0)
+
+        if not config_key:
+            return
+
+        state = self._get_or_create_state(config_key)
+
+        # Update quality tracking
+        prev_quality = state.last_selfplay_quality
+        state.last_selfplay_quality = quality_score
+        state.last_selfplay_time = time.time()
+
+        # Quality recovered - accelerate training
+        state.current_training_intensity = "accelerated"
+
+        logger.info(
+            f"[FeedbackLoopController] High quality data available for {config_key}: "
+            f"score={quality_score:.2f} (prev={prev_quality:.2f}), "
+            f"samples={sample_count} → accelerated training"
+        )
+
+        # Track metrics
+        if hasattr(self, "_metrics") and self._metrics:
+            self._metrics.increment("high_quality_events", {"config_key": config_key})
 
     def signal_selfplay_quality(self, config_key: str, quality_score: float) -> None:
         """Manually signal selfplay quality (for testing/manual intervention)."""

@@ -736,6 +736,83 @@ def get_circuit_breaker_configs() -> dict:
 
 
 # =============================================================================
+# SQLite Database Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class SQLiteDefaults:
+    """Default values for SQLite database connections.
+
+    Consolidates 40+ scattered timeout values across the codebase.
+
+    Used by: app/db/game_replay.py, app/training/model_registry.py,
+             app/coordination/*.py, scripts/p2p_orchestrator.py
+
+    Timeout tiers:
+    - QUICK (2s): Health checks, existence tests, short reads
+    - READ (5s): Standard read operations, game discovery
+    - STANDARD (10s): Normal read/write operations
+    - WRITE (30s): Registry updates, Elo calculations, multi-step writes
+    - HEAVY (60s): Database consolidation, migration, bulk inserts
+    """
+    # Quick timeout for health checks and existence tests (seconds)
+    QUICK_TIMEOUT: float = _env_float("RINGRIFT_SQLITE_QUICK_TIMEOUT", 2.0)
+
+    # Read-only operations timeout (seconds)
+    READ_TIMEOUT: float = _env_float("RINGRIFT_SQLITE_READ_TIMEOUT", 5.0)
+
+    # Standard operations timeout (seconds)
+    STANDARD_TIMEOUT: float = _env_float("RINGRIFT_SQLITE_STANDARD_TIMEOUT", 10.0)
+
+    # Write operations timeout (seconds) - registry, Elo, etc.
+    WRITE_TIMEOUT: float = _env_float("RINGRIFT_SQLITE_WRITE_TIMEOUT", 30.0)
+
+    # Heavy operations timeout (seconds) - consolidation, migration
+    HEAVY_TIMEOUT: float = _env_float("RINGRIFT_SQLITE_HEAVY_TIMEOUT", 60.0)
+
+    # Very long operations (database merge, bulk import)
+    MERGE_TIMEOUT: float = _env_float("RINGRIFT_SQLITE_MERGE_TIMEOUT", 120.0)
+
+    # WAL mode settings
+    WAL_CHECKPOINT_THRESHOLD: int = _env_int("RINGRIFT_SQLITE_WAL_CHECKPOINT", 1000)
+
+    # Busy timeout for lock contention (milliseconds)
+    BUSY_TIMEOUT_MS: int = _env_int("RINGRIFT_SQLITE_BUSY_TIMEOUT_MS", 5000)
+
+
+def get_sqlite_timeout(operation: str) -> float:
+    """Get SQLite timeout for a specific operation type.
+
+    Args:
+        operation: Operation type ("quick", "read", "standard", "write", "heavy", "merge")
+
+    Returns:
+        Timeout in seconds
+
+    Example:
+        timeout = get_sqlite_timeout("read")  # Returns 5.0
+        conn = sqlite3.connect(db_path, timeout=timeout)
+    """
+    timeouts = {
+        "quick": SQLiteDefaults.QUICK_TIMEOUT,
+        "read": SQLiteDefaults.READ_TIMEOUT,
+        "standard": SQLiteDefaults.STANDARD_TIMEOUT,
+        "write": SQLiteDefaults.WRITE_TIMEOUT,
+        "heavy": SQLiteDefaults.HEAVY_TIMEOUT,
+        "merge": SQLiteDefaults.MERGE_TIMEOUT,
+        # Aliases for common use cases
+        "health": SQLiteDefaults.QUICK_TIMEOUT,
+        "discovery": SQLiteDefaults.READ_TIMEOUT,
+        "registry": SQLiteDefaults.WRITE_TIMEOUT,
+        "elo": SQLiteDefaults.WRITE_TIMEOUT,
+        "training": SQLiteDefaults.WRITE_TIMEOUT,
+        "consolidate": SQLiteDefaults.HEAVY_TIMEOUT,
+        "migrate": SQLiteDefaults.MERGE_TIMEOUT,
+    }
+    return timeouts.get(operation, SQLiteDefaults.STANDARD_TIMEOUT)
+
+
+# =============================================================================
 # Operation Timeouts (December 2025)
 # =============================================================================
 
@@ -1013,6 +1090,16 @@ def get_all_defaults() -> dict:
             "peak_hours_start": DurationDefaults.PEAK_HOURS_START,
             "peak_hours_end": DurationDefaults.PEAK_HOURS_END,
         },
+        # December 27, 2025: SQLite database timeouts
+        "sqlite": {
+            "quick_timeout": SQLiteDefaults.QUICK_TIMEOUT,
+            "read_timeout": SQLiteDefaults.READ_TIMEOUT,
+            "standard_timeout": SQLiteDefaults.STANDARD_TIMEOUT,
+            "write_timeout": SQLiteDefaults.WRITE_TIMEOUT,
+            "heavy_timeout": SQLiteDefaults.HEAVY_TIMEOUT,
+            "merge_timeout": SQLiteDefaults.MERGE_TIMEOUT,
+            "busy_timeout_ms": SQLiteDefaults.BUSY_TIMEOUT_MS,
+        },
     }
 
 
@@ -1044,6 +1131,8 @@ __all__ = [
     "RetryDefaults",
     "ScalingDefaults",
     "SchedulerDefaults",
+    # SQLite database defaults (December 27, 2025)
+    "SQLiteDefaults",
     "SyncCoordinatorDefaults",
     "SyncDefaults",
     "TaskLifecycleDefaults",
@@ -1053,5 +1142,6 @@ __all__ = [
     # Utilities
     "get_all_defaults",
     "get_circuit_breaker_configs",
+    "get_sqlite_timeout",
     "get_timeout",
 ]

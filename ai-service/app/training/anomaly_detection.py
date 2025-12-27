@@ -285,7 +285,7 @@ class TrainingAnomalyDetector:
 
             async def emit():
                 await emit_training_rollback_needed(
-                    model_id=getattr(self, "_model_id", "unknown"),
+                    model_id=self._model_id,
                     reason=event.message,
                     severity=severity,
                     anomaly_type=event.anomaly_type,

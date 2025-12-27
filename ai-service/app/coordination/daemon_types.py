@@ -174,6 +174,10 @@ class DaemonType(Enum):
     # Provides queue depth, latency metrics, backpressure signaling, stuck job detection
     WORK_QUEUE_MONITOR = "work_queue_monitor"
 
+    # Coordinator health monitor (December 2025) - tracks COORDINATOR_* lifecycle events
+    # Provides coordinator health state, heartbeat monitoring, cluster health summary
+    COORDINATOR_HEALTH_MONITOR = "coordinator_health_monitor"
+
     # Curriculum integration (December 2025) - bridges all feedback loops for self-improvement
     CURRICULUM_INTEGRATION = "curriculum_integration"
 
@@ -347,8 +351,9 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.AUTO_SYNC,              # 5. Data sync (emits events)
     DaemonType.QUEUE_POPULATOR,        # 6. Work queue maintenance
     DaemonType.WORK_QUEUE_MONITOR,     # 7. Queue visibility (after populator)
-    DaemonType.IDLE_RESOURCE,          # 8. GPU utilization
-    DaemonType.TRAINING_TRIGGER,       # 9. Training trigger (after pipeline)
+    DaemonType.COORDINATOR_HEALTH_MONITOR,  # 8. Coordinator visibility
+    DaemonType.IDLE_RESOURCE,          # 9. GPU utilization
+    DaemonType.TRAINING_TRIGGER,       # 10. Training trigger (after pipeline)
 ]
 
 

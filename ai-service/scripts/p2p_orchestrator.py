@@ -19430,9 +19430,20 @@ print(json.dumps({{
                             logger.debug(f"Follower discovery: trying {node_id} at {host}:{port}")
                             info = await self._send_heartbeat_to_peer(host, port)
                             if info:
+                                # Dec 2025: Track first-contact for HOST_ONLINE emission
                                 with self.peers_lock:
+                                    is_first_contact = info.node_id not in self.peers
                                     self.peers[info.node_id] = info
                                 logger.info(f"Follower discovery: connected to {info.node_id}")
+                                # Dec 2025: Emit HOST_ONLINE for newly discovered peers
+                                if is_first_contact:
+                                    capabilities = []
+                                    if getattr(info, "has_gpu", False):
+                                        gpu_type = getattr(info, "gpu_type", "") or "gpu"
+                                        capabilities.append(gpu_type)
+                                    else:
+                                        capabilities.append("cpu")
+                                    await _emit_p2p_host_online(info.node_id, capabilities)
                         except (KeyError, IndexError, AttributeError):
                             pass
 
@@ -19698,9 +19709,21 @@ print(json.dumps({{
                     if info:
                         if info.node_id == self.node_id:
                             continue
+                        # Dec 2025: Track first-contact for HOST_ONLINE emission
                         async with AsyncLockWrapper(self.peers_lock):
+                            is_first_contact = info.node_id not in self.peers
                             info.last_heartbeat = time.time()
                             self.peers[info.node_id] = info
+                        # Dec 2025: Emit HOST_ONLINE for newly discovered peers
+                        if is_first_contact:
+                            capabilities = []
+                            if getattr(info, "has_gpu", False):
+                                gpu_type = getattr(info, "gpu_type", "") or "gpu"
+                                capabilities.append(gpu_type)
+                            else:
+                                capabilities.append("cpu")
+                            await _emit_p2p_host_online(info.node_id, capabilities)
+                            logger.info(f"First-contact peer via heartbeat loop: {info.node_id}")
                         if info.role == NodeRole.LEADER and info.node_id != self.node_id:
                             async with AsyncLockWrapper(self.peers_lock):
                                 peers_snapshot = list(self.peers.values())

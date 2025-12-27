@@ -229,6 +229,11 @@ def _build_registry() -> dict[str, DaemonSpec]:
             class_name="WorkQueueMonitorDaemon",
             factory_fn="get_work_queue_monitor_sync",
         ),
+        DaemonType.COORDINATOR_HEALTH_MONITOR.name: DaemonSpec(
+            import_path="app.coordination.coordinator_health_monitor_daemon",
+            class_name="CoordinatorHealthMonitorDaemon",
+            factory_fn="get_coordinator_health_monitor_sync",
+        ),
         DaemonType.SYNC_COORDINATOR.name: DaemonSpec(
             import_path="app.distributed.sync_coordinator",
             class_name="SyncCoordinator",

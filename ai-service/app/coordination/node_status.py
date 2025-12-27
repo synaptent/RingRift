@@ -29,6 +29,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from app.config.ports import P2P_DEFAULT_PORT
+
 
 class NodeHealthState(str, Enum):
     """Node health state for cluster monitoring.
@@ -64,7 +66,7 @@ class NodeMonitoringStatus:
 
     # Network (all have host, some have port)
     host: str = ""
-    port: int = 8770  # Default P2P port
+    port: int = P2P_DEFAULT_PORT  # Default from app.config.ports
 
     # Health state
     health_state: NodeHealthState = NodeHealthState.UNKNOWN
@@ -172,7 +174,7 @@ class NodeMonitoringStatus:
         return cls(
             node_id=data.get("node_id", ""),
             host=data.get("host", ""),
-            port=data.get("port", 8770),
+            port=data.get("port", P2P_DEFAULT_PORT),
             health_state=health_state,
             is_reachable=data.get("is_reachable", False),
             response_time_ms=data.get("response_time_ms", 0.0),

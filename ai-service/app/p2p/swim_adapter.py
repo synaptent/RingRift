@@ -150,35 +150,67 @@ class SwimMembershipManager:
         Returns:
             Configured SwimMembershipManager
         """
-        if config_path is None:
-            config_path = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
-
         seeds = []
-        if config_path.exists():
-            try:
-                with open(config_path) as f:
-                    hosts_config = yaml.safe_load(f)
 
+        # Dec 2025: Use cluster_config helpers instead of inline YAML parsing
+        if HAS_CLUSTER_CONFIG and get_p2p_voters is not None:
+            try:
                 # Use voter nodes as SWIM seeds for bootstrap
-                for host_name, host_config in hosts_config.get("hosts", {}).items():
-                    if host_config.get("voter", False) and host_name != node_id:
-                        ssh_host = host_config.get("ssh_host", "")
+                voters = get_p2p_voters()
+                nodes = get_cluster_nodes()
+
+                for voter_name in voters:
+                    if voter_name != node_id and voter_name in nodes:
+                        node = nodes[voter_name]
+                        ssh_host = node.best_ip
                         if ssh_host and ssh_host != "localhost":
                             seeds.append((ssh_host, bind_port))
 
-                # If no voters, use first 3 p2p-enabled nodes as seeds
+                # If no voters, use first 3 active GPU nodes as seeds
                 if not seeds:
-                    for host_name, host_config in hosts_config.get("hosts", {}).items():
-                        if host_config.get("p2p_enabled", False) and host_name != node_id:
-                            ssh_host = host_config.get("ssh_host", "")
+                    for host_name, node in nodes.items():
+                        if host_name != node_id and node.is_active:
+                            ssh_host = node.best_ip
                             if ssh_host and ssh_host != "localhost":
                                 seeds.append((ssh_host, bind_port))
                             if len(seeds) >= 3:
                                 break
 
-                logger.info(f"SWIM seeds from config: {seeds}")
+                logger.info(f"SWIM seeds from cluster_config: {seeds}")
+
             except Exception as e:
-                logger.warning(f"Could not load SWIM seeds from config: {e}")
+                logger.warning(f"Could not load SWIM seeds from cluster_config: {e}")
+
+        # Fallback: Load from YAML directly if cluster_config unavailable
+        if not seeds:
+            if config_path is None:
+                config_path = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
+
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        hosts_config = yaml.safe_load(f)
+
+                    # Use voter nodes as SWIM seeds for bootstrap
+                    for host_name, host_config in hosts_config.get("hosts", {}).items():
+                        if host_config.get("voter", False) and host_name != node_id:
+                            ssh_host = host_config.get("ssh_host", "")
+                            if ssh_host and ssh_host != "localhost":
+                                seeds.append((ssh_host, bind_port))
+
+                    # If no voters, use first 3 p2p-enabled nodes as seeds
+                    if not seeds:
+                        for host_name, host_config in hosts_config.get("hosts", {}).items():
+                            if host_config.get("p2p_enabled", False) and host_name != node_id:
+                                ssh_host = host_config.get("ssh_host", "")
+                                if ssh_host and ssh_host != "localhost":
+                                    seeds.append((ssh_host, bind_port))
+                                if len(seeds) >= 3:
+                                    break
+
+                    logger.info(f"SWIM seeds from YAML fallback: {seeds}")
+                except Exception as e:
+                    logger.warning(f"Could not load SWIM seeds from YAML: {e}")
 
         config = SwimConfig(bind_port=bind_port, seeds=seeds)
         return cls(node_id=node_id, bind_port=bind_port, config=config)
