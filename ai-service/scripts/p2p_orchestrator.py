@@ -4960,6 +4960,23 @@ class P2POrchestrator(
 
         self.last_training_sync_time = time.time()
 
+        # Emit DATA_SYNC_COMPLETED event for pipeline coordination
+        try:
+            from app.distributed.data_events import DataEventType, emit_data_event
+            emit_data_event(
+                event_type=DataEventType.DATA_SYNC_COMPLETED,
+                source="P2POrchestrator",
+                metadata={
+                    "sync_type": "training_sync",
+                    "duration_seconds": time.time() - sync_start_time,
+                    "sync_jobs_created": sync_jobs_created,
+                    "successful_syncs": successful_syncs,
+                    "target_nodes": [n.node_id for n in eligible_training_nodes],
+                },
+            )
+        except Exception:
+            pass  # Event emission is best-effort
+
         return {
             "success": True,
             "training_nodes": [n.node_id for n in eligible_training_nodes],

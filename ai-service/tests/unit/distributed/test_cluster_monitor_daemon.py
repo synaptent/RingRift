@@ -15,6 +15,7 @@ Created: December 2025
 from __future__ import annotations
 
 import subprocess
+from concurrent.futures import Future
 from pathlib import Path
 from subprocess import CompletedProcess
 from typing import Any
@@ -147,38 +148,42 @@ class TestNodeStatusDataclass:
         status = NodeStatus(
             host_name="node1",
             reachable=True,
-            disk_used_gb=450.5,
+            disk_total_gb=1000.0,
             disk_free_gb=549.5,
-            disk_percent=45.05,
+            disk_usage_percent=45.05,
         )
-        assert status.disk_used_gb == 450.5
+        assert status.disk_total_gb == 1000.0
         assert status.disk_free_gb == 549.5
-        assert status.disk_percent == 45.05
+        assert status.disk_usage_percent == 45.05
 
     def test_gpu_metrics(self):
         """Test GPU metric field handling."""
         status = NodeStatus(
             host_name="node1",
             reachable=True,
-            gpu_utilization=85.5,
-            gpu_memory_used_mb=16000,
-            gpu_memory_total_mb=24000,
+            gpu_utilization_percent=85.5,
+            gpu_memory_used_gb=16.0,
+            gpu_memory_total_gb=24.0,
         )
-        assert status.gpu_utilization == 85.5
-        assert status.gpu_memory_used_mb == 16000
-        assert status.gpu_memory_total_mb == 24000
+        assert status.gpu_utilization_percent == 85.5
+        assert status.gpu_memory_used_gb == 16.0
+        assert status.gpu_memory_total_gb == 24.0
 
     def test_sync_tracking_fields(self):
         """Test sync status field handling."""
+        from datetime import datetime
+
+        sync_time = datetime(2024, 1, 1, 12, 0, 0)
         status = NodeStatus(
             host_name="node1",
             reachable=True,
-            sync_status="synced",
             sync_lag_seconds=0.0,
-            last_sync_time=1704067200.0,  # Arbitrary timestamp
+            last_sync_time=sync_time,
+            pending_files=0,
         )
-        assert status.sync_status == "synced"
         assert status.sync_lag_seconds == 0.0
+        assert status.last_sync_time == sync_time
+        assert status.pending_files == 0
 
     def test_error_state(self):
         """Test error state handling."""
@@ -357,8 +362,9 @@ class TestTrainingStatusCheck:
 
     def test_active_training_detected(self, mock_hosts_config):
         """Test detection of active training processes."""
-        ps_output = """ubuntu 12345 99.0 python train.py --board-type hex8
-ubuntu 12346 98.0 python train.py --board-type square8"""
+        # Full ps aux format with 11+ columns
+        ps_output = """ubuntu 12345 99.0 5.0 12345 67890 pts/0 Sl+ 10:00 0:30 python train.py --board-type hex8
+ubuntu 12346 98.0 4.0 12346 67891 pts/1 Sl+ 10:01 0:25 python train.py --board-type square8"""
 
         with patch("yaml.safe_load", return_value=mock_hosts_config), \
              patch.object(Path, "exists", return_value=True), \
@@ -370,7 +376,7 @@ ubuntu 12346 98.0 python train.py --board-type square8"""
             monitor = ClusterMonitor()
             result = monitor._check_training_status("node1")
             assert result["active"] is True
-            assert result["process_count"] >= 1
+            assert len(result["processes"]) >= 1
 
     def test_no_training_active(self, mock_hosts_config):
         """Test detection when no training is running."""
@@ -693,12 +699,24 @@ class TestParallelExecution:
              patch.object(Path, "exists", return_value=True), \
              patch("builtins.open", MagicMock()), \
              patch("subprocess.run") as mock_run, \
-             patch("concurrent.futures.ThreadPoolExecutor") as mock_executor:
+             patch("concurrent.futures.ThreadPoolExecutor") as mock_executor, \
+             patch("concurrent.futures.as_completed") as mock_as_completed:
             mock_run.return_value = CompletedProcess(
                 args=["ssh", "test"], returncode=0, stdout="", stderr=""
             )
-            mock_executor.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mock_executor.return_value.__exit__ = MagicMock(return_value=None)
+            futures: list[Future] = []
+
+            def _submit(_fn, host, **_kwargs):
+                future: Future = Future()
+                future.set_result(NodeStatus(host_name=host, reachable=True))
+                futures.append(future)
+                return future
+
+            executor_instance = MagicMock()
+            executor_instance.submit.side_effect = _submit
+            mock_executor.return_value.__enter__.return_value = executor_instance
+            mock_executor.return_value.__exit__.return_value = None
+            mock_as_completed.side_effect = lambda pending: list(pending)
 
             monitor = ClusterMonitor(parallel=True)
             monitor.game_discovery = MagicMock()
