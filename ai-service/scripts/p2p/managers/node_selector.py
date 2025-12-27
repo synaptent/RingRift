@@ -58,6 +58,9 @@ class NodeSelector:
         self._get_self_info = get_self_info
         self._peers_lock = peers_lock
         self._get_training_jobs = get_training_jobs
+        # Track nodes marked as unhealthy via events (Dec 2025)
+        self._unhealthy_nodes: set[str] = set()
+        self._unhealthy_reasons: dict[str, str] = {}
 
     def _get_all_nodes(self, include_self: bool = True) -> list["NodeInfo"]:
         """Get all nodes including self if requested."""
@@ -328,3 +331,49 @@ class NodeSelector:
             peers = self._get_peers()
 
         return sum(1 for p in peers.values() if p.is_alive())
+
+    # =========================================================================
+    # Health State Management (Dec 2025)
+    # =========================================================================
+
+    def mark_node_unhealthy(self, node_id: str, reason: str = "") -> None:
+        """Mark a node as unhealthy via event notification.
+
+        Args:
+            node_id: The ID of the unhealthy node
+            reason: Optional reason for the unhealthy state
+        """
+        self._unhealthy_nodes.add(node_id)
+        if reason:
+            self._unhealthy_reasons[node_id] = reason
+
+    def mark_node_healthy(self, node_id: str) -> None:
+        """Mark a node as healthy (recovered).
+
+        Args:
+            node_id: The ID of the recovered node
+        """
+        self._unhealthy_nodes.discard(node_id)
+        self._unhealthy_reasons.pop(node_id, None)
+
+    def is_node_healthy(self, node_id: str) -> bool:
+        """Check if a node is marked as healthy.
+
+        Args:
+            node_id: The ID of the node to check
+
+        Returns:
+            True if node is not in the unhealthy set
+        """
+        return node_id not in self._unhealthy_nodes
+
+    def get_unhealthy_nodes(self) -> dict[str, str]:
+        """Get all unhealthy nodes with reasons.
+
+        Returns:
+            Dict mapping node_id to reason
+        """
+        return {
+            node_id: self._unhealthy_reasons.get(node_id, "")
+            for node_id in self._unhealthy_nodes
+        }

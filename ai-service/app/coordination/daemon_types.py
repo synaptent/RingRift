@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CRITICAL_DAEMONS",
+    "DAEMON_STARTUP_ORDER",
     "DaemonInfo",
     "DaemonManagerConfig",
     "DaemonState",
@@ -306,6 +307,20 @@ CRITICAL_DAEMONS: set[DaemonType] = {
     DaemonType.IDLE_RESOURCE,  # Ensures GPUs stay utilized
     DaemonType.FEEDBACK_LOOP,  # Coordinates training feedback signals
 }
+
+# P0 Critical Fix (Dec 2025): Daemon startup order to prevent race conditions
+# DATA_PIPELINE and FEEDBACK_LOOP must start BEFORE AUTO_SYNC to avoid event loss.
+# Events emitted by AUTO_SYNC (DATA_SYNC_COMPLETED) need handlers ready.
+DAEMON_STARTUP_ORDER: list[DaemonType] = [
+    DaemonType.EVENT_ROUTER,           # 1. Event system must be first
+    DaemonType.DAEMON_WATCHDOG,        # 2. Self-healing for daemon crashes
+    DaemonType.DATA_PIPELINE,          # 3. Pipeline processor (before sync!)
+    DaemonType.FEEDBACK_LOOP,          # 4. Training feedback (before sync!)
+    DaemonType.AUTO_SYNC,              # 5. Data sync (emits events)
+    DaemonType.QUEUE_POPULATOR,        # 6. Work queue maintenance
+    DaemonType.IDLE_RESOURCE,          # 7. GPU utilization
+    DaemonType.TRAINING_TRIGGER,       # 8. Training trigger (after pipeline)
+]
 
 
 def mark_daemon_ready(daemon_type: DaemonType) -> None:

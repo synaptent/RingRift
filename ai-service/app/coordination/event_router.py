@@ -977,6 +977,40 @@ class UnifiedEventRouter:
             "duplicates_prevented": stats["total_duplicates_prevented"],
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Perform health check for CoordinatorProtocol compliance (Dec 2025).
+
+        Returns:
+            HealthCheckResult with healthy status and diagnostics
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        validation = self.validate_event_flow()
+        stats = self.get_stats()
+
+        if validation["healthy"]:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="Event router operational",
+                details={
+                    "total_events_routed": stats["total_events_routed"],
+                    "subscriber_count": validation["subscriber_count"],
+                    "recent_event_types": validation["recent_event_types"],
+                },
+            )
+        else:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="; ".join(validation["issues"]),
+                details={
+                    "issues": validation["issues"],
+                    "recommendations": validation["recommendations"],
+                    "buses_available": validation["buses_available"],
+                },
+            )
+
     def stop(self) -> None:
         """Stop the router (cleanup cross-process poller and thread pool)."""
         if self._cp_poller:

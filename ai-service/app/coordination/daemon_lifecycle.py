@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from app.core.async_context import fire_and_forget, safe_create_task
 from app.coordination.daemon_types import (
     DAEMON_RESTART_RESET_AFTER,
+    DAEMON_STARTUP_ORDER,
     MAX_RESTART_DELAY,
     DaemonInfo,
     DaemonManagerConfig,
@@ -129,6 +130,33 @@ class DaemonLifecycleManager:
         self._update_daemon_state = update_daemon_state
         self._get_running = running_flag_getter
         self._set_running = running_flag_setter
+
+    def _emit_daemon_lifecycle_event(
+        self, daemon_type: DaemonType, event_type: str
+    ) -> None:
+        """Emit DAEMON_STARTED or DAEMON_STOPPED event (Dec 2025).
+
+        Uses fire-and-forget pattern since lifecycle events are informational
+        and should not block daemon startup/shutdown.
+
+        Args:
+            daemon_type: The daemon type that changed state
+            event_type: Either "DAEMON_STARTED" or "DAEMON_STOPPED"
+        """
+        try:
+            from app.coordination.event_router import emit_sync
+
+            emit_sync(
+                event_type=event_type,
+                data={
+                    "daemon_type": daemon_type.value,
+                    "timestamp": time.time(),
+                },
+            )
+            logger.debug(f"Emitted {event_type} for {daemon_type.value}")
+        except (ImportError, RuntimeError, TypeError) as e:
+            # Non-critical - don't fail daemon operations for event failures
+            logger.debug(f"Failed to emit {event_type}: {e}")
 
     async def start(self, daemon_type: DaemonType) -> bool:
         """Start a specific daemon.
@@ -224,6 +252,8 @@ class DaemonLifecycleManager:
                 )
 
                 logger.info(f"Started daemon: {daemon_type.value}")
+                # Emit DAEMON_STARTED event (Dec 2025)
+                self._emit_daemon_lifecycle_event(daemon_type, "DAEMON_STARTED")
                 return True
 
             except (RuntimeError, OSError, ImportError) as e:
@@ -384,6 +414,8 @@ class DaemonLifecycleManager:
             info.state = DaemonState.STOPPED
             info.task = None
             logger.info(f"Stopped daemon: {daemon_type.value}")
+            # Emit DAEMON_STOPPED event (Dec 2025)
+            self._emit_daemon_lifecycle_event(daemon_type, "DAEMON_STOPPED")
             return True
 
     async def restart_failed_daemon(
@@ -479,7 +511,13 @@ class DaemonLifecycleManager:
         # Sort by dependencies (topological sort)
         sorted_types = self._sort_by_dependencies(types_to_start)
 
-        for daemon_type in sorted_types:
+        # P0 Critical Fix (Dec 2025): Apply critical startup order
+        # DATA_PIPELINE and FEEDBACK_LOOP must start BEFORE AUTO_SYNC
+        # to ensure event subscribers are ready when emitters start.
+        # This prevents sync events from being lost.
+        ordered_types = self._apply_critical_startup_order(sorted_types)
+
+        for daemon_type in ordered_types:
             results[daemon_type] = await self.start(daemon_type)
 
         # Run callback if provided (for health loop, event wiring, etc.)
@@ -564,6 +602,46 @@ class DaemonLifecycleManager:
             visit(dt)
 
         return result
+
+    def _apply_critical_startup_order(self, types: list[DaemonType]) -> list[DaemonType]:
+        """Reorder daemon list to respect DAEMON_STARTUP_ORDER.
+
+        P0 Critical Fix (Dec 2025): This ensures that event subscribers
+        (DATA_PIPELINE, FEEDBACK_LOOP) start BEFORE event emitters (AUTO_SYNC).
+        Without this ordering, sync completion events would be lost because
+        no handlers are registered when AUTO_SYNC emits them.
+
+        The algorithm:
+        1. Extract daemons that are in DAEMON_STARTUP_ORDER (in that order)
+        2. Append remaining daemons (in their original dependency-sorted order)
+
+        Args:
+            types: Dependency-sorted daemon types
+
+        Returns:
+            Reordered list with critical daemons first
+        """
+        types_set = set(types)
+
+        # 1. First, add daemons in DAEMON_STARTUP_ORDER (preserving that order)
+        ordered: list[DaemonType] = []
+        for critical_daemon in DAEMON_STARTUP_ORDER:
+            if critical_daemon in types_set:
+                ordered.append(critical_daemon)
+
+        # 2. Then add remaining daemons (preserving dependency order)
+        ordered_set = set(ordered)
+        for daemon_type in types:
+            if daemon_type not in ordered_set:
+                ordered.append(daemon_type)
+
+        if ordered != types:
+            logger.debug(
+                f"[DaemonManager] Applied critical startup order: "
+                f"{[d.value for d in ordered[:len(DAEMON_STARTUP_ORDER)]]}"
+            )
+
+        return ordered
 
     def _get_dependents(self, daemon_type: DaemonType) -> list[DaemonType]:
         """Get all daemons that depend on the given daemon type.

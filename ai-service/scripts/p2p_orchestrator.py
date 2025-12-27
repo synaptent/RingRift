@@ -1648,6 +1648,8 @@ class P2POrchestrator(
 
         # Phase 29: Cluster epoch tracking for split-brain resolution
         self._cluster_epoch: int = INITIAL_CLUSTER_EPOCH
+        # P2P Health state tracking (Dec 2025)
+        self._cluster_health_degraded: bool = False
         # Gossip-learned peer endpoints (Phase 28)
         self._gossip_learned_endpoints: dict[str, dict[str, Any]] = {}
 
@@ -2644,6 +2646,53 @@ class P2POrchestrator(
                 except Exception as e:
                     logger.debug(f"Error handling data sync completed event: {e}")
 
+            # P2P Health event handlers (Dec 2025)
+            def handle_node_unhealthy(event) -> None:
+                """Handle NODE_UNHEALTHY events - pause jobs on unhealthy nodes."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    node_id = payload.get("node_id", "unknown")
+                    reason = payload.get("reason", "")
+                    logger.warning(f"[P2P] Node {node_id} unhealthy: {reason}")
+                    # Mark node as unhealthy for job routing
+                    if hasattr(self, "node_selector") and self.node_selector:
+                        self.node_selector.mark_node_unhealthy(node_id, reason)
+                except Exception as e:
+                    logger.debug(f"Error handling node unhealthy event: {e}")
+
+            def handle_node_recovered(event) -> None:
+                """Handle NODE_RECOVERED events - resume jobs on recovered nodes."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    node_id = payload.get("node_id", "unknown")
+                    logger.info(f"[P2P] Node {node_id} recovered")
+                    # Mark node as healthy for job routing
+                    if hasattr(self, "node_selector") and self.node_selector:
+                        self.node_selector.mark_node_healthy(node_id)
+                except Exception as e:
+                    logger.debug(f"Error handling node recovered event: {e}")
+
+            def handle_cluster_healthy(event) -> None:
+                """Handle P2P_CLUSTER_HEALTHY events."""
+                try:
+                    logger.info("[P2P] Cluster is healthy - resuming normal operations")
+                    self._cluster_health_degraded = False
+                except Exception as e:
+                    logger.debug(f"Error handling cluster healthy event: {e}")
+
+            def handle_cluster_unhealthy(event) -> None:
+                """Handle P2P_CLUSTER_UNHEALTHY events - pause non-critical operations."""
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    reason = payload.get("reason", "")
+                    alive_nodes = payload.get("alive_nodes", 0)
+                    logger.warning(
+                        f"[P2P] Cluster unhealthy: {reason} (alive_nodes={alive_nodes})"
+                    )
+                    self._cluster_health_degraded = True
+                except Exception as e:
+                    logger.debug(f"Error handling cluster unhealthy event: {e}")
+
             # Subscribe to all manager events
             subscribe("TRAINING_STARTED", handle_training_started)
             subscribe("TRAINING_COMPLETED", handle_training_completed)
@@ -2653,7 +2702,13 @@ class P2POrchestrator(
             subscribe("DATA_SYNC_STARTED", handle_data_sync_started)
             subscribe("DATA_SYNC_COMPLETED", handle_data_sync_completed)
 
-            logger.info("Subscribed to manager lifecycle events")
+            # Subscribe to health events (Dec 2025)
+            subscribe("NODE_UNHEALTHY", handle_node_unhealthy)
+            subscribe("NODE_RECOVERED", handle_node_recovered)
+            subscribe("P2P_CLUSTER_HEALTHY", handle_cluster_healthy)
+            subscribe("P2P_CLUSTER_UNHEALTHY", handle_cluster_unhealthy)
+
+            logger.info("Subscribed to manager lifecycle and health events")
             return True
         except ImportError as e:
             logger.debug(f"Manager events: event_router not available: {e}")
@@ -6295,8 +6350,9 @@ class P2POrchestrator(
                 try:
                     hosts = load_remote_hosts()
                     estimated_hosts = len(hosts) if hosts else 0
-                except Exception:
-                    pass
+                except (FileNotFoundError, OSError, yaml.YAMLError) as e:
+                    # Dec 2025: Narrowed from bare Exception - config issues are expected
+                    logger.debug(f"[Model Sync] Failed to load remote hosts for estimate: {e}")
 
                 # Emit started event with estimates
                 await _emit_model_distribution_started(

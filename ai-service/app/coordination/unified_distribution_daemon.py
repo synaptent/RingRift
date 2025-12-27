@@ -321,6 +321,8 @@ class UnifiedDistributionDaemon:
 
             # Model events
             subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            subscribe(DataEventType.MODEL_DISTRIBUTION_STARTED, self._on_model_distribution_started)
+            subscribe(DataEventType.MODEL_DISTRIBUTION_FAILED, self._on_model_distribution_failed)
             logger.info("Subscribed to MODEL_PROMOTED events")
 
             # NPZ events
@@ -353,6 +355,24 @@ class UnifiedDistributionDaemon:
         }
         logger.info(f"Received MODEL_PROMOTED: {item.get('path')}")
         self._enqueue_item(item)
+
+    def _on_model_distribution_started(self, event: dict[str, Any] | Any) -> None:
+        """Handle MODEL_DISTRIBUTION_STARTED event (external distribution)."""
+        payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+        total_models = payload.get("total_models")
+        target_hosts = payload.get("target_hosts")
+        logger.info(
+            "MODEL_DISTRIBUTION_STARTED (external): "
+            f"{total_models} models -> {target_hosts} hosts"
+        )
+
+    def _on_model_distribution_failed(self, event: dict[str, Any] | Any) -> None:
+        """Handle MODEL_DISTRIBUTION_FAILED event (external distribution)."""
+        payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+        error = payload.get("error", "unknown_error")
+        self._errors_count += 1
+        self._last_error = str(error)
+        logger.warning(f"MODEL_DISTRIBUTION_FAILED (external): {error}")
 
     def _on_npz_exported(self, event: dict[str, Any] | Any) -> None:
         """Handle NPZ_EXPORT_COMPLETE event."""
@@ -448,6 +468,10 @@ class UnifiedDistributionDaemon:
                 await self._emit_completion_event(DataType.MODEL, items)
         else:
             self._failed_distributions += 1
+            # Emit failure event (Dec 2025)
+            await self._emit_failure_event(
+                DataType.MODEL, items, "Smart distribution failed for models"
+            )
 
     async def _distribute_npz_files(self, items: list[dict[str, Any]]) -> None:
         """Distribute NPZ files to training nodes."""
@@ -471,6 +495,10 @@ class UnifiedDistributionDaemon:
                 if not await self._validate_npz(npz_file):
                     logger.error(f"NPZ validation failed: {npz_path}")
                     self._failed_distributions += 1
+                    # Emit failure event for validation failure (Dec 2025)
+                    await self._emit_failure_event(
+                        DataType.NPZ, [item], f"NPZ validation failed: {npz_path}"
+                    )
                     continue
 
             success = await self._run_smart_distribution(
@@ -486,6 +514,10 @@ class UnifiedDistributionDaemon:
                     await self._emit_completion_event(DataType.NPZ, [item])
             else:
                 self._failed_distributions += 1
+                # Emit failure event (Dec 2025)
+                await self._emit_failure_event(
+                    DataType.NPZ, [item], f"Smart distribution failed for NPZ: {npz_path}"
+                )
 
     async def _run_smart_distribution(
         self,
@@ -917,6 +949,38 @@ class UnifiedDistributionDaemon:
             logger.info(f"Emitted {event_type} event")
         except (ImportError, RuntimeError, TypeError) as e:
             logger.debug(f"Failed to emit completion event: {e}")
+
+    async def _emit_failure_event(
+        self, data_type: DataType, items: list[dict[str, Any]], reason: str = ""
+    ) -> None:
+        """Emit distribution failure event (Dec 2025).
+
+        Args:
+            data_type: Type of data that failed to distribute
+            items: Items that failed to distribute
+            reason: Reason for the failure
+        """
+        try:
+            from app.coordination.event_router import emit
+
+            event_type = (
+                "MODEL_DISTRIBUTION_FAILED"
+                if data_type == DataType.MODEL
+                else "NPZ_DISTRIBUTION_FAILED"
+            )
+
+            await emit(
+                event_type=event_type,
+                data={
+                    "items": items,
+                    "reason": reason,
+                    "timestamp": time.time(),
+                    "node_id": os.environ.get("RINGRIFT_NODE_ID", "unknown"),
+                },
+            )
+            logger.warning(f"Emitted {event_type} event: {reason}")
+        except (ImportError, RuntimeError, TypeError) as e:
+            logger.debug(f"Failed to emit failure event: {e}")
 
     async def _periodic_sync_check(self) -> None:
         """Periodic check for files that need distribution."""
