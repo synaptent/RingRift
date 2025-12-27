@@ -467,90 +467,90 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         """Ensure the canonical database has the correct schema."""
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        # December 27, 2025: Use context manager to prevent connection leaks
+        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            # Main games table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS games (
+                    game_id TEXT PRIMARY KEY,
+                    board_type TEXT NOT NULL,
+                    num_players INTEGER NOT NULL,
+                    rng_seed INTEGER,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    game_status TEXT NOT NULL,
+                    winner INTEGER,
+                    termination_reason TEXT,
+                    total_moves INTEGER NOT NULL,
+                    total_turns INTEGER NOT NULL,
+                    duration_ms INTEGER,
+                    source TEXT,
+                    schema_version INTEGER NOT NULL DEFAULT 5,
+                    time_control_type TEXT DEFAULT 'none',
+                    initial_time_ms INTEGER,
+                    time_increment_ms INTEGER,
+                    metadata_json TEXT,
+                    quality_score REAL,
+                    quality_category TEXT,
+                    consolidated_at REAL
+                )
+            """)
 
-        # Main games table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS games (
-                game_id TEXT PRIMARY KEY,
-                board_type TEXT NOT NULL,
-                num_players INTEGER NOT NULL,
-                rng_seed INTEGER,
-                created_at TEXT NOT NULL,
-                completed_at TEXT,
-                game_status TEXT NOT NULL,
-                winner INTEGER,
-                termination_reason TEXT,
-                total_moves INTEGER NOT NULL,
-                total_turns INTEGER NOT NULL,
-                duration_ms INTEGER,
-                source TEXT,
-                schema_version INTEGER NOT NULL DEFAULT 5,
-                time_control_type TEXT DEFAULT 'none',
-                initial_time_ms INTEGER,
-                time_increment_ms INTEGER,
-                metadata_json TEXT,
-                quality_score REAL,
-                quality_category TEXT,
-                consolidated_at REAL
-            )
-        """)
+            # Moves table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS game_moves (
+                    game_id TEXT NOT NULL,
+                    move_number INTEGER NOT NULL,
+                    player INTEGER NOT NULL,
+                    position_q INTEGER,
+                    position_r INTEGER,
+                    move_type TEXT,
+                    move_probs TEXT,
+                    PRIMARY KEY (game_id, move_number),
+                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                )
+            """)
 
-        # Moves table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS game_moves (
-                game_id TEXT NOT NULL,
-                move_number INTEGER NOT NULL,
-                player INTEGER NOT NULL,
-                position_q INTEGER,
-                position_r INTEGER,
-                move_type TEXT,
-                move_probs TEXT,
-                PRIMARY KEY (game_id, move_number),
-                FOREIGN KEY (game_id) REFERENCES games(game_id)
-            )
-        """)
+            # Initial state table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS game_initial_state (
+                    game_id TEXT PRIMARY KEY,
+                    state_json TEXT NOT NULL,
+                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                )
+            """)
 
-        # Initial state table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS game_initial_state (
-                game_id TEXT PRIMARY KEY,
-                state_json TEXT NOT NULL,
-                FOREIGN KEY (game_id) REFERENCES games(game_id)
-            )
-        """)
+            # State snapshots table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS game_state_snapshots (
+                    game_id TEXT NOT NULL,
+                    move_number INTEGER NOT NULL,
+                    state_json TEXT NOT NULL,
+                    PRIMARY KEY (game_id, move_number),
+                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                )
+            """)
 
-        # State snapshots table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS game_state_snapshots (
-                game_id TEXT NOT NULL,
-                move_number INTEGER NOT NULL,
-                state_json TEXT NOT NULL,
-                PRIMARY KEY (game_id, move_number),
-                FOREIGN KEY (game_id) REFERENCES games(game_id)
-            )
-        """)
+            # Players table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS game_players (
+                    game_id TEXT NOT NULL,
+                    player_index INTEGER NOT NULL,
+                    player_type TEXT,
+                    model_version TEXT,
+                    PRIMARY KEY (game_id, player_index),
+                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                )
+            """)
 
-        # Players table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS game_players (
-                game_id TEXT NOT NULL,
-                player_index INTEGER NOT NULL,
-                player_type TEXT,
-                model_version TEXT,
-                PRIMARY KEY (game_id, player_index),
-                FOREIGN KEY (game_id) REFERENCES games(game_id)
-            )
-        """)
+            # Add consolidated_at column if not exists
+            try:
+                conn.execute("ALTER TABLE games ADD COLUMN consolidated_at REAL")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
-        # Add consolidated_at column if not exists
-        try:
-            conn.execute("ALTER TABLE games ADD COLUMN consolidated_at REAL")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-
-        conn.commit()
-        conn.close()
+            conn.commit()
+            # Note: conn.close() not needed - context manager handles it
 
     async def _merge_database(
         self,

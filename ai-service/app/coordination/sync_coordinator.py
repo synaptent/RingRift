@@ -970,6 +970,71 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
             "reason": "No backpressure",
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check sync scheduler health for CoordinatorProtocol compliance.
+
+        December 2025: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with health status and metrics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            # Check database connectivity
+            db_ok = self._db is not None
+            if not db_ok:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message="Database not initialized",
+                )
+
+            # Check backpressure status
+            backpressure = self.check_sync_backpressure()
+            if backpressure.get("should_stop", False):
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message="Critical backpressure - sync stopped",
+                    details=backpressure,
+                )
+
+            # Get cluster status for health metrics
+            cluster_status = self.get_cluster_status()
+            health_score = cluster_status.cluster_health_score
+
+            # Degraded if health score < 50% or throttling
+            if health_score < 0.5 or backpressure.get("should_throttle", False):
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Health score: {health_score:.1%}, throttle: {backpressure.get('throttle_factor', 1.0):.0%}",
+                    details={
+                        "health_score": health_score,
+                        "backpressure": backpressure,
+                        "unreachable_hosts": len(cluster_status.unreachable_hosts),
+                    },
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Healthy: {len(cluster_status.host_states)} hosts, score {health_score:.1%}",
+                details={
+                    "health_score": health_score,
+                    "host_count": len(cluster_status.host_states),
+                    "syncing_hosts": len(cluster_status.syncing_hosts),
+                },
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check failed: {e}",
+            )
+
     def report_sync_queue_depth(self, depth: int | None = None) -> None:
         """Report the current sync queue depth for backpressure tracking.
 

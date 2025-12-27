@@ -743,6 +743,9 @@ def main():
     if not os.path.exists(args.input):
         print(f"Error: Input file not found: {args.input}", file=sys.stderr)
         sys.exit(1)
+    if os.path.getsize(args.input) == 0:
+        print(f"Error: Input file is empty: {args.input}", file=sys.stderr)
+        sys.exit(1)
 
     # Create output database
     db = GameReplayDB(args.output)
@@ -753,6 +756,7 @@ def main():
     games_imported = 0
     games_failed = 0
 
+    non_empty_lines = 0
     with open(args.input) as f:
         for line_num, line in enumerate(f, 1):
             if args.limit > 0 and games_imported >= args.limit:
@@ -761,6 +765,7 @@ def main():
             line = line.strip()
             if not line:
                 continue
+            non_empty_lines += 1
 
             try:
                 record = json.loads(line)
@@ -784,6 +789,9 @@ def main():
     # Verify the database
     count = db.get_game_count()
     print(f"  Total games in DB: {count}")
+
+    if non_empty_lines == 0:
+        print("Error: No JSONL records found in input file", file=sys.stderr)
 
     sys.exit(0 if games_imported > 0 else 1)
 
