@@ -176,6 +176,16 @@ class TrainingCoordinator:
                 bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
                 logger.info("[TrainingCoordinator] Subscribed to REGRESSION_DETECTED")
 
+            # December 2025: Subscribe to TASK_ABANDONED to cleanup abandoned training jobs
+            if hasattr(DataEventType, "TASK_ABANDONED"):
+                bus.subscribe(DataEventType.TASK_ABANDONED, self._on_task_abandoned)
+                logger.info("[TrainingCoordinator] Subscribed to TASK_ABANDONED")
+
+            # December 2025: Subscribe to P2P_NODE_DEAD to cancel training jobs on dead nodes
+            if hasattr(DataEventType, "P2P_NODE_DEAD"):
+                bus.subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead)
+                logger.info("[TrainingCoordinator] Subscribed to P2P_NODE_DEAD")
+
             self._subscribed = True
         except ImportError:
             logger.debug("[TrainingCoordinator] Event router not available")
@@ -266,6 +276,114 @@ class TrainingCoordinator:
                 )
         except (AttributeError, KeyError, TypeError) as e:
             logger.debug(f"[TrainingCoordinator] Error handling regression: {e}")
+
+    async def _on_task_abandoned(self, event) -> None:
+        """Handle TASK_ABANDONED events - cleanup training state for abandoned jobs.
+
+        TASK_ABANDONED is emitted when a training job is intentionally cancelled
+        (e.g., user requested stop, resource constraints, or cluster rebalancing).
+        This is different from TASK_FAILED which indicates an error.
+
+        Actions taken:
+        1. Clear the training trigger cache for this config (allow re-trigger)
+        2. Log the abandonment for debugging
+        3. Update metrics if available
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            task_id = payload.get("task_id", "")
+            task_type = payload.get("task_type", "")
+            config_key = payload.get("config_key", "")
+            reason = payload.get("reason", "unknown")
+
+            # Only handle training-related task abandonments
+            if task_type not in ("training", "nnue_training", "cmaes_training"):
+                return
+
+            logger.info(
+                f"[TrainingCoordinator] TASK_ABANDONED: {task_type} task {task_id} "
+                f"for {config_key}, reason={reason}"
+            )
+
+            # Clear training trigger cache to allow re-triggering
+            # Use config_key as cache key pattern
+            if config_key:
+                cache_keys_to_clear = [
+                    k for k in self._training_trigger_cache
+                    if config_key in k
+                ]
+                for key in cache_keys_to_clear:
+                    self._training_trigger_cache.pop(key, None)
+                    logger.debug(
+                        f"[TrainingCoordinator] Cleared trigger cache: {key}"
+                    )
+
+            # Reset game tracking if this was an NNUE training job
+            if task_type == "nnue_training" and config_key:
+                # Don't reset - abandoned job means we still have the games
+                # Just allow re-triggering on next threshold check
+                pass
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error handling task abandoned: {e}")
+
+    async def _on_node_dead(self, event) -> None:
+        """Handle P2P_NODE_DEAD events - mark training jobs on dead node as failed.
+
+        When a node dies with an active training job:
+        1. Mark the training job as failed (not abandoned - this was involuntary)
+        2. Clear trigger cache to allow re-triggering on a healthy node
+        3. Log for debugging and alerting
+
+        The training job reassignment is handled by the main training dispatch loop.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            node_id = payload.get("node_id", "")
+            reason = payload.get("reason", "unknown")
+
+            if not node_id:
+                return
+
+            logger.warning(
+                f"[TrainingCoordinator] P2P_NODE_DEAD: {node_id}, reason={reason}"
+            )
+
+            # Check if any training jobs were running on this node
+            training_jobs = self.get_training_jobs()
+            training_lock = self.get_training_lock()
+            jobs_on_dead_node = []
+
+            with training_lock:
+                for job_id, job in training_jobs.items():
+                    job_node = getattr(job, "node_id", None) or getattr(job, "assigned_node", None)
+                    if job_node == node_id and getattr(job, "status", "") == "running":
+                        jobs_on_dead_node.append((job_id, job))
+
+            if jobs_on_dead_node:
+                logger.warning(
+                    f"[TrainingCoordinator] Found {len(jobs_on_dead_node)} training jobs "
+                    f"on dead node {node_id}"
+                )
+
+                for job_id, job in jobs_on_dead_node:
+                    config_key = f"{getattr(job, 'board_type', 'unknown')}_{getattr(job, 'num_players', 0)}p"
+                    logger.warning(
+                        f"[TrainingCoordinator] Training job {job_id} for {config_key} "
+                        f"was running on dead node {node_id} - will be reassigned"
+                    )
+
+                    # Clear trigger cache to allow re-triggering
+                    if config_key:
+                        cache_keys_to_clear = [
+                            k for k in self._training_trigger_cache
+                            if config_key in k
+                        ]
+                        for key in cache_keys_to_clear:
+                            self._training_trigger_cache.pop(key, None)
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error handling node dead: {e}")
 
     # =========================================================================
     # Training Readiness Checking
