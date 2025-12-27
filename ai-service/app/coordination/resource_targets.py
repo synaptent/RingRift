@@ -355,6 +355,9 @@ class ResourceTargetManager(SingletonMixin):
 
     def _get_node_hardware(self, host: str) -> dict[str, Any] | None:
         """Get hardware info for a node from the coordination DB."""
+        # Ensure DB is available (graceful degradation on readonly)
+        if not self._ensure_db():
+            return None
         try:
             # December 27, 2025: Use context manager to prevent connection leaks
             with sqlite3.connect(self._db_path, timeout=5.0) as conn:
@@ -633,6 +636,9 @@ class ResourceTargetManager(SingletonMixin):
 
     def _flush_history_to_db(self) -> None:
         """Flush utilization history to database."""
+        # Skip flush on readonly filesystem
+        if not self._ensure_db():
+            return
         try:
             with sqlite3.connect(str(self._db_path)) as conn:
                 # Delete old records (keep 24 hours)

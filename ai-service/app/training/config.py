@@ -698,7 +698,10 @@ def get_training_config_for_board(
 # Use get_default_config_for_board() for board-specific settings instead.
 
 
-def get_model_version_for_board(board_type: BoardType) -> str:
+def get_model_version_for_board(
+    board_type: BoardType,
+    data_path: str | None = None,
+) -> str:
     """Get the appropriate model version string for a board type.
 
     This centralizes the board-to-model-version mapping used by both
@@ -708,17 +711,25 @@ def get_model_version_for_board(board_type: BoardType) -> str:
     ----------
     board_type : BoardType
         The board type to get model version for.
+    data_path : str | None
+        Optional path to NPZ training data. If provided, auto-detects
+        model version from the channel count in the data.
 
     Returns
     -------
     str
-        Model version string: always 'v4' (NAS-optimized attention architecture)
+        Model version string. Auto-detected from data if available,
+        otherwise defaults to 'v4'.
 
     Notes
     -----
-    As of December 2025, v4 is now the universal default for all board types:
+    **Auto-detection** (December 2025):
+    When data_path is provided, detects version from channel count:
+    - 40 channels → v2 (hex boards only)
+    - 64 channels → v4 (hex v3/v4)
+    - 56 channels → v4 (all square versions)
 
-    **v4 (all boards)**: Best theoretical architecture
+    **v4 (default)**: Best theoretical architecture
     - Multi-head self-attention captures long-range dependencies
     - Spatial policy heads (position-aware, better gradients)
     - NAS-optimized hyperparameters
@@ -728,11 +739,29 @@ def get_model_version_for_board(board_type: BoardType) -> str:
 
     For square boards: 5.1M params (square8/square19)
     For hex boards: 5.5-6.2M params (hex8/hexagonal)
-
-    Both square and hex v4 architectures preserve spatial awareness through
-    Conv1x1 policy heads, providing better gradient flow than v2's
-    global-pooling approach.
     """
+    import os as _os
+    # Try auto-detection from data if path provided
+    if data_path and _os.path.exists(data_path):
+        try:
+            import numpy as np
+            from app.training.encoder_registry import detect_model_version_from_channels
+
+            with np.load(data_path, mmap_mode="r") as data:
+                if "features" in data:
+                    in_channels = data["features"].shape[1]
+                    detected = detect_model_version_from_channels(
+                        in_channels, str(board_type)
+                    )
+                    if detected:
+                        logger.info(
+                            f"Auto-detected model version {detected} from "
+                            f"{in_channels} channels in {data_path}"
+                        )
+                        return detected
+        except Exception as e:
+            logger.debug(f"Model version auto-detection failed: {e}")
+
     return "v4"  # NAS-optimized attention + spatial policy heads (universal default)
 
 

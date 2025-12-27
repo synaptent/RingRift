@@ -1464,6 +1464,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
+    # Check for autonomous mode (December 2025)
+    # In autonomous mode, allow non-canonical sources and pending gate DBs
+    try:
+        from app.config.env import env
+        if env.autonomous_mode:
+            if not args.allow_noncanonical:
+                args.allow_noncanonical = True
+                print("[AUTONOMOUS] Enabled --allow-noncanonical via RINGRIFT_AUTONOMOUS_MODE")
+            if not args.allow_pending_gate:
+                args.allow_pending_gate = True
+                print("[AUTONOMOUS] Enabled --allow-pending-gate via RINGRIFT_AUTONOMOUS_MODE")
+    except ImportError:
+        pass  # env module not available, skip autonomous mode check
+
     board_type = BOARD_TYPE_MAP[args.board_type]
     if args.history_length < 0:
         raise ValueError("--history-length must be >= 0")

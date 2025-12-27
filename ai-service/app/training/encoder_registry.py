@@ -294,3 +294,47 @@ BASE_CHANNEL_COUNTS = {
     "hex_v3": 16,
     "square": 14,
 }
+
+
+def detect_model_version_from_channels(
+    in_channels: int,
+    board_type: str | None = None,
+) -> str | None:
+    """Detect model version from input channel count.
+
+    This enables auto-detection of model version from NPZ training data,
+    removing the need for manual --model-version flags.
+
+    Channel to version mapping:
+        - 40 channels: v2 (only hex v2 uses 40)
+        - 64 channels: v3/v4 (hex v3/v4 uses 64)
+        - 56 channels: v4 default (all square versions use 56)
+
+    Args:
+        in_channels: Number of input channels in the dataset
+        board_type: Optional board type for disambiguation (e.g., "hex8", "square8")
+
+    Returns:
+        Model version string ("v2", "v4") if determinable, None if ambiguous
+
+    Example:
+        >>> detect_model_version_from_channels(40)
+        'v2'
+        >>> detect_model_version_from_channels(64)
+        'v4'
+        >>> detect_model_version_from_channels(56)
+        'v4'
+    """
+    if in_channels == 40:
+        # Only hex v2 uses 40 channels (10 base × 4 frames)
+        return "v2"
+    elif in_channels == 64:
+        # Only hex v3/v4 uses 64 channels (16 base × 4 frames)
+        return "v4"
+    elif in_channels == 56:
+        # All square versions use 56 channels (14 base × 4 frames)
+        # Default to v4 as it's the latest
+        return "v4"
+    else:
+        # Unknown channel count - could be custom history length
+        return None

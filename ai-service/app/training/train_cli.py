@@ -516,6 +516,24 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Path to initial model checkpoint for curriculum training',
     )
 
+    # Autonomous training mode (December 2025)
+    parser.add_argument(
+        '--autonomous', action='store_true',
+        help='Enable autonomous training mode. Treats validation errors as '
+             'warnings (stale data, pending gate DBs, non-canonical sources). '
+             'Equivalent to RINGRIFT_AUTONOMOUS_MODE=1. Use for unattended training.'
+    )
+    parser.add_argument(
+        '--allow-stale-data', action='store_true',
+        help='Allow training on stale data (older than --max-data-age-hours). '
+             'Implicitly enabled in --autonomous mode.'
+    )
+    parser.add_argument(
+        '--max-data-age-hours', type=float, default=1.0,
+        help='Maximum age in hours for training data before it is considered stale. '
+             'Default: 1.0 hour. Only enforced if not in autonomous mode.'
+    )
+
     return parser.parse_args(args)
 
 
@@ -525,6 +543,15 @@ def main() -> None:
     from app.training.train import run_cmaes_heuristic_optimization, train_model
 
     args = parse_args()
+
+    # Handle autonomous mode (December 2025)
+    if getattr(args, 'autonomous', False):
+        os.environ["RINGRIFT_AUTONOMOUS_MODE"] = "1"
+        logger.info("[TrainCLI] Autonomous mode enabled via --autonomous flag")
+
+    # Handle allow-stale-data flag (implicit in autonomous mode)
+    if getattr(args, 'allow_stale_data', False) or getattr(args, 'autonomous', False):
+        os.environ["RINGRIFT_ALLOW_STALE_DATA"] = "1"
 
     # Initialize pipeline auto-trigger if requested (2025-12)
     # This wires up the coordination infrastructure for automatic stage progression
@@ -700,9 +727,10 @@ def main() -> None:
         f"{config.model_id}.pth",
     )
     # Board-aware default model version (centralized in config.py)
+    # Auto-detects from data if data_path provided (Dec 2025)
     model_version = args.model_version
     if model_version is None:
-        model_version = get_model_version_for_board(config.board_type)
+        model_version = get_model_version_for_board(config.board_type, data_path=data_path)
 
     # ==========================================================================
     # Adaptive Training Intensity (2025-12)

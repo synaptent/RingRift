@@ -1,9 +1,18 @@
 #!/bin/bash
 # Unified auto-training trigger for all configs
 # Monitors canonical databases and triggers training when thresholds reached
+#
+# December 2025: Uses RINGRIFT_AUTONOMOUS_MODE for unattended operation
+# - Stale data warnings instead of errors
+# - Auto-detects model version from NPZ channel count
+# - Allows non-canonical and pending-gate databases
 
 cd ~/ringrift/ai-service
 source venv/bin/activate
+
+# Enable autonomous mode for all subprocesses
+export RINGRIFT_AUTONOMOUS_MODE=1
+export RINGRIFT_ALLOW_PENDING_GATE=1
 
 LOG="logs/unified_auto_train.log"
 mkdir -p logs
@@ -85,14 +94,13 @@ except:
     if [ "$count" -ge "$threshold" ]; then
         echo "$(date): *** THRESHOLD REACHED for $config! Starting training... ***" | tee -a $LOG
 
-        # Export training data (--allow-noncanonical bypasses registry check)
+        # Export training data (RINGRIFT_AUTONOMOUS_MODE allows non-canonical sources)
         echo "$(date): Exporting NPZ for $config..." | tee -a $LOG
         rm -f "data/training/${config}.npz"  # Remove any corrupt file first
         PYTHONPATH=. python scripts/export_replay_dataset.py \
             --db "$db" \
             --board-type $board_type --num-players $num_players \
             --output "data/training/${config}.npz" \
-            --allow-noncanonical \
             >> $LOG 2>&1
 
         # Check file exists AND is valid (>10KB to catch corrupt files)
@@ -102,15 +110,14 @@ except:
             return 1
         fi
 
-        # Start training (--allow-stale-data bypasses freshness check)
+        # Start training (--autonomous enables all bypass flags, auto-detects model version)
         echo "$(date): Training $config..." | tee -a $LOG
         PYTHONPATH=. python -m app.training.train \
             --board-type $board_type --num-players $num_players \
             --data-path "data/training/${config}.npz" \
             --save-path "models/${config}_trained.pth" \
             --batch-size 512 --epochs 50 \
-            --model-version v2 \
-            --allow-stale-data \
+            --autonomous \
             >> $LOG 2>&1
 
         if [ -f "models/${config}_trained.pth" ]; then

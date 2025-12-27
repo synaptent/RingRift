@@ -291,6 +291,30 @@ class RingRiftEnv:
         """Whether auto-update is enabled."""
         return os.environ.get("RINGRIFT_P2P_AUTO_UPDATE", "false").strip().lower() in ("1", "true", "yes")
 
+    @cached_property
+    def autonomous_mode(self) -> bool:
+        """Enable autonomous training mode.
+
+        When enabled:
+        - Stale data becomes warning, triggers auto-sync instead of error
+        - Pending gate databases are allowed (TS parity not validated)
+        - Non-canonical data sources are allowed
+        - Training proceeds without manual intervention
+
+        Use for 8+ hour unattended training runs on cluster.
+        Set via RINGRIFT_AUTONOMOUS_MODE=1 or --autonomous CLI flag.
+        """
+        return os.environ.get("RINGRIFT_AUTONOMOUS_MODE", "").lower() in ("1", "true", "yes")
+
+    @cached_property
+    def allow_pending_gate(self) -> bool:
+        """Allow training on databases with pending parity gate.
+
+        Separate from autonomous_mode for fine-grained control.
+        Set via RINGRIFT_ALLOW_PENDING_GATE=1.
+        """
+        return os.environ.get("RINGRIFT_ALLOW_PENDING_GATE", "").lower() in ("1", "true", "yes")
+
     # ==========================================================================
     # Coordinator-Only Mode (Dec 2025)
     # ==========================================================================
