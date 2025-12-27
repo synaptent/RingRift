@@ -66,6 +66,8 @@ __all__ = [
     "emit_p2p_cluster_unhealthy",
     # Task lifecycle emitters (December 2025 Wave 2)
     "emit_task_abandoned",
+    # Disk space management emitters (December 2025)
+    "emit_disk_space_low",
 ]
 
 # Global singleton instance
@@ -87,6 +89,10 @@ class DataEventType(Enum):
     DATA_FRESH = "data_fresh"  # Training data is fresh
     SYNC_TRIGGERED = "sync_triggered"  # Sync triggered due to stale data
     SYNC_REQUEST = "sync_request"  # Explicit sync request (router-driven)
+
+    # Data consolidation events (December 2025 - fix training pipeline)
+    CONSOLIDATION_STARTED = "consolidation_started"  # Consolidation in progress
+    CONSOLIDATION_COMPLETE = "consolidation_complete"  # Games merged to canonical DB
 
     # Training events
     TRAINING_THRESHOLD_REACHED = "training_threshold"
@@ -320,6 +326,10 @@ class DataEventType(Enum):
     # Cluster-wide idle state broadcast events (December 2025)
     IDLE_STATE_BROADCAST = "idle_state_broadcast"  # Node broadcasting its idle state to cluster
     IDLE_STATE_REQUEST = "idle_state_request"  # Request all nodes to broadcast idle state
+
+    # Disk space management events (December 2025)
+    DISK_SPACE_LOW = "disk_space_low"  # Disk usage above threshold (warning/critical)
+    DISK_CLEANUP_TRIGGERED = "disk_cleanup_triggered"  # Proactive cleanup started/completed
 
 
 @dataclass
@@ -2846,6 +2856,40 @@ async def emit_p2p_cluster_unhealthy(
             "healthy_nodes": healthy_nodes,
             "node_count": node_count,
             "alerts": alerts or [],
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Disk Space Events (December 2025)
+# =============================================================================
+
+
+async def emit_disk_space_low(
+    host: str,
+    usage_percent: float,
+    free_gb: float,
+    *,
+    threshold: float = 70.0,
+    source: str = "",
+) -> None:
+    """Emit DISK_SPACE_LOW event when disk usage exceeds threshold.
+
+    Args:
+        host: Hostname/node ID
+        usage_percent: Current disk usage percentage (0-100)
+        free_gb: Free disk space in GB
+        threshold: The threshold that was exceeded
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.DISK_SPACE_LOW,
+        payload={
+            "host": host,
+            "usage_percent": usage_percent,
+            "free_gb": free_gb,
+            "threshold": threshold,
         },
         source=source,
     ))

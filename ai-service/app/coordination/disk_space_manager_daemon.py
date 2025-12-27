@@ -1,0 +1,551 @@
+"""Disk Space Manager Daemon.
+
+Proactive disk space management for training nodes and coordinators.
+Monitors disk usage and triggers cleanup before reaching critical thresholds.
+
+Features:
+- Proactive cleanup at 60% (before 70% warning threshold)
+- Removes old logs, empty databases, old checkpoints
+- Config-aware: prioritizes keeping data for active training configs
+- Event-driven: emits DISK_CLEANUP_TRIGGERED, DISK_SPACE_LOW events
+
+December 2025: Created for permanent disk management solution.
+
+Usage:
+    from app.coordination.disk_space_manager_daemon import (
+        DiskSpaceManagerDaemon,
+        DiskSpaceConfig,
+        get_disk_space_daemon,
+    )
+
+    # Start the daemon
+    daemon = get_disk_space_daemon()
+    await daemon.start()
+
+    # Check current disk status
+    status = daemon.get_disk_status()
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import subprocess
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+
+@dataclass
+class DiskSpaceConfig(DaemonConfig):
+    """Configuration for disk space management."""
+
+    # Check interval (seconds) - default 30 minutes
+    check_interval_seconds: int = 1800
+
+    # Thresholds (percentages)
+    proactive_cleanup_threshold: int = 60  # Start cleanup at 60%
+    warning_threshold: int = 70  # Emit warning at 70%
+    critical_threshold: int = 85  # Emit critical at 85%
+    emergency_threshold: int = 95  # Emergency mode at 95%
+
+    # Target after cleanup
+    target_disk_usage: int = 50  # Clean down to 50%
+
+    # Minimum free space (GB)
+    min_free_gb: int = 50
+
+    # Data paths to manage (relative to ai-service root)
+    logs_dir: str = "logs"
+    games_dir: str = "data/games"
+    training_dir: str = "data/training"
+    checkpoints_dir: str = "data/checkpoints"
+    model_registry_dir: str = "data/model_registry"
+
+    # Retention policies (days)
+    log_retention_days: int = 7
+    checkpoint_retention_days: int = 14
+    empty_db_max_age_days: int = 1
+
+    # Keep at least N newest files per category
+    min_checkpoints_per_config: int = 3
+    min_logs_to_keep: int = 10
+
+    # Cleanup priorities (lower = delete first)
+    cleanup_priorities: list[str] = field(
+        default_factory=lambda: [
+            "logs",  # 1. Old logs first
+            "cache",  # 2. Pip/torch cache
+            "empty_dbs",  # 3. Empty databases
+            "old_checkpoints",  # 4. Old checkpoints (keep N newest)
+            "quarantine",  # 5. Quarantined databases
+        ]
+    )
+
+    # Enable actual cleanup (set False for dry-run)
+    enable_cleanup: bool = True
+
+    # Enable event emission
+    emit_events: bool = True
+
+    @classmethod
+    def from_env(cls, prefix: str = "RINGRIFT_DISK_SPACE") -> "DiskSpaceConfig":
+        """Load configuration from environment variables."""
+        config = super().from_env(prefix)
+
+        # Disk-specific env vars
+        env_vars = {
+            "PROACTIVE_THRESHOLD": ("proactive_cleanup_threshold", int),
+            "WARNING_THRESHOLD": ("warning_threshold", int),
+            "CRITICAL_THRESHOLD": ("critical_threshold", int),
+            "TARGET_USAGE": ("target_disk_usage", int),
+            "MIN_FREE_GB": ("min_free_gb", int),
+            "LOG_RETENTION_DAYS": ("log_retention_days", int),
+            "ENABLE_CLEANUP": ("enable_cleanup", lambda x: x == "1"),
+            "EMIT_EVENTS": ("emit_events", lambda x: x == "1"),
+        }
+
+        for env_suffix, (attr, converter) in env_vars.items():
+            env_key = f"{prefix}_{env_suffix}"
+            if os.environ.get(env_key):
+                try:
+                    setattr(config, attr, converter(os.environ[env_key]))
+                except (ValueError, TypeError):
+                    pass
+
+        return config
+
+
+# =============================================================================
+# Disk Status
+# =============================================================================
+
+
+@dataclass
+class DiskStatus:
+    """Disk usage status."""
+
+    path: str
+    total_gb: float
+    used_gb: float
+    free_gb: float
+    usage_percent: float
+    needs_cleanup: bool
+    is_warning: bool
+    is_critical: bool
+    is_emergency: bool
+
+    @classmethod
+    def from_path(cls, path: str, config: DiskSpaceConfig) -> "DiskStatus":
+        """Get disk status for a path."""
+        try:
+            usage = shutil.disk_usage(path)
+            total_gb = usage.total / (1024**3)
+            used_gb = usage.used / (1024**3)
+            free_gb = usage.free / (1024**3)
+            usage_percent = (usage.used / usage.total) * 100
+
+            return cls(
+                path=path,
+                total_gb=round(total_gb, 2),
+                used_gb=round(used_gb, 2),
+                free_gb=round(free_gb, 2),
+                usage_percent=round(usage_percent, 1),
+                needs_cleanup=usage_percent >= config.proactive_cleanup_threshold,
+                is_warning=usage_percent >= config.warning_threshold,
+                is_critical=usage_percent >= config.critical_threshold,
+                is_emergency=usage_percent >= config.emergency_threshold,
+            )
+        except OSError as e:
+            logger.error(f"Failed to get disk status for {path}: {e}")
+            return cls(
+                path=path,
+                total_gb=0,
+                used_gb=0,
+                free_gb=0,
+                usage_percent=100,  # Assume full on error
+                needs_cleanup=True,
+                is_warning=True,
+                is_critical=True,
+                is_emergency=False,
+            )
+
+
+# =============================================================================
+# Disk Space Manager Daemon
+# =============================================================================
+
+
+class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
+    """Proactive disk space management daemon.
+
+    Monitors disk usage and automatically cleans up when thresholds are exceeded.
+    Emits events for coordination with other daemons.
+    """
+
+    def __init__(self, config: DiskSpaceConfig | None = None):
+        super().__init__(config)
+        self._root_path = self._find_ai_service_root()
+        self._last_cleanup_time: float = 0.0
+        self._bytes_cleaned: int = 0
+        self._cleanups_performed: int = 0
+        self._current_status: DiskStatus | None = None
+
+    def _get_default_config(self) -> DiskSpaceConfig:
+        return DiskSpaceConfig.from_env()
+
+    def _get_daemon_name(self) -> str:
+        return "DiskSpaceManagerDaemon"
+
+    def _find_ai_service_root(self) -> Path:
+        """Find ai-service root directory."""
+        # Try from current file
+        current = Path(__file__).resolve()
+        for parent in current.parents:
+            if (parent / "app" / "coordination").exists():
+                return parent
+
+        # Fallback to environment
+        env_root = os.environ.get("AI_SERVICE_ROOT")
+        if env_root:
+            return Path(env_root)
+
+        # Last resort: current working directory
+        return Path.cwd()
+
+    async def _run_cycle(self) -> None:
+        """Main daemon cycle - check disk and cleanup if needed."""
+        self._current_status = DiskStatus.from_path(str(self._root_path), self.config)
+
+        logger.info(
+            f"[{self._get_daemon_name()}] Disk status: "
+            f"{self._current_status.usage_percent:.1f}% used "
+            f"({self._current_status.free_gb:.1f}GB free)"
+        )
+
+        # Emit events if thresholds exceeded
+        if self.config.emit_events:
+            await self._emit_status_events(self._current_status)
+
+        # Cleanup if needed
+        if self._current_status.needs_cleanup and self.config.enable_cleanup:
+            await self._perform_cleanup(self._current_status)
+
+    async def _emit_status_events(self, status: DiskStatus) -> None:
+        """Emit disk status events."""
+        try:
+            from app.distributed.data_events import (
+                emit_disk_space_low,
+            )
+
+            if status.is_critical or status.is_emergency:
+                await emit_disk_space_low(
+                    host=self.node_id,
+                    usage_percent=status.usage_percent,
+                    free_gb=status.free_gb,
+                    threshold=self.config.critical_threshold,
+                    source=self._get_daemon_name(),
+                )
+        except ImportError:
+            logger.debug("data_events module not available for event emission")
+        except Exception as e:
+            logger.debug(f"Failed to emit disk status event: {e}")
+
+    async def _perform_cleanup(self, status: DiskStatus) -> None:
+        """Perform cleanup operations based on priority."""
+        logger.info(f"[{self._get_daemon_name()}] Starting cleanup (target: {self.config.target_disk_usage}%)")
+
+        bytes_freed = 0
+        for priority in self.config.cleanup_priorities:
+            if status.usage_percent <= self.config.target_disk_usage:
+                break  # Target reached
+
+            if priority == "logs":
+                bytes_freed += self._cleanup_old_logs()
+            elif priority == "cache":
+                bytes_freed += self._cleanup_cache()
+            elif priority == "empty_dbs":
+                bytes_freed += self._cleanup_empty_databases()
+            elif priority == "old_checkpoints":
+                bytes_freed += self._cleanup_old_checkpoints()
+            elif priority == "quarantine":
+                bytes_freed += self._cleanup_quarantine()
+
+            # Refresh status
+            status = DiskStatus.from_path(str(self._root_path), self.config)
+
+        self._bytes_cleaned += bytes_freed
+        self._cleanups_performed += 1
+        self._last_cleanup_time = time.time()
+
+        freed_mb = bytes_freed / (1024 * 1024)
+        logger.info(
+            f"[{self._get_daemon_name()}] Cleanup complete: "
+            f"freed {freed_mb:.1f}MB, now at {status.usage_percent:.1f}%"
+        )
+
+        # Emit cleanup event
+        if self.config.emit_events and bytes_freed > 0:
+            await self._emit_cleanup_event(bytes_freed)
+
+    async def _emit_cleanup_event(self, bytes_freed: int) -> None:
+        """Emit cleanup completed event."""
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+            await router.publish(
+                DataEventType.DISK_CLEANUP_TRIGGERED,
+                {
+                    "host": self.node_id,
+                    "bytes_freed": bytes_freed,
+                    "cleanups_performed": self._cleanups_performed,
+                    "source": self._get_daemon_name(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit cleanup event: {e}")
+
+    def _cleanup_old_logs(self) -> int:
+        """Remove old log files."""
+        bytes_freed = 0
+        logs_path = self._root_path / self.config.logs_dir
+        if not logs_path.exists():
+            return 0
+
+        cutoff = time.time() - (self.config.log_retention_days * 86400)
+        log_files = sorted(logs_path.glob("**/*.log"), key=lambda f: f.stat().st_mtime)
+
+        # Keep at least min_logs_to_keep newest files
+        files_to_check = log_files[:-self.config.min_logs_to_keep] if len(log_files) > self.config.min_logs_to_keep else []
+
+        for log_file in files_to_check:
+            try:
+                if log_file.stat().st_mtime < cutoff:
+                    size = log_file.stat().st_size
+                    log_file.unlink()
+                    bytes_freed += size
+                    logger.debug(f"Removed old log: {log_file.name}")
+            except (OSError, PermissionError) as e:
+                logger.debug(f"Failed to remove log {log_file}: {e}")
+
+        return bytes_freed
+
+    def _cleanup_cache(self) -> int:
+        """Remove pip/torch cache."""
+        bytes_freed = 0
+        cache_dirs = [
+            Path.home() / ".cache" / "pip",
+            Path.home() / ".cache" / "torch",
+            Path.home() / ".cache" / "huggingface",
+        ]
+
+        for cache_dir in cache_dirs:
+            if cache_dir.exists():
+                try:
+                    # Get size before removal
+                    size = sum(f.stat().st_size for f in cache_dir.rglob("*") if f.is_file())
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+                    bytes_freed += size
+                    logger.debug(f"Cleared cache: {cache_dir}")
+                except (OSError, PermissionError) as e:
+                    logger.debug(f"Failed to clear cache {cache_dir}: {e}")
+
+        return bytes_freed
+
+    def _cleanup_empty_databases(self) -> int:
+        """Remove empty or near-empty database files."""
+        bytes_freed = 0
+        games_path = self._root_path / self.config.games_dir
+        if not games_path.exists():
+            return 0
+
+        cutoff = time.time() - (self.config.empty_db_max_age_days * 86400)
+
+        for db_file in games_path.glob("**/*.db"):
+            try:
+                stat = db_file.stat()
+                # Remove if small (<100KB) and old
+                if stat.st_size < 100 * 1024 and stat.st_mtime < cutoff:
+                    # Verify it's actually empty
+                    result = subprocess.run(
+                        ["sqlite3", str(db_file), "SELECT COUNT(*) FROM games;"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        count = int(result.stdout.strip() or "0")
+                        if count == 0:
+                            size = stat.st_size
+                            db_file.unlink()
+                            bytes_freed += size
+                            logger.debug(f"Removed empty database: {db_file.name}")
+            except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+                logger.debug(f"Failed to check/remove database {db_file}: {e}")
+
+        return bytes_freed
+
+    def _cleanup_old_checkpoints(self) -> int:
+        """Remove old model checkpoints, keeping N newest per config."""
+        bytes_freed = 0
+        checkpoints_path = self._root_path / self.config.checkpoints_dir
+        if not checkpoints_path.exists():
+            return 0
+
+        # Group checkpoints by config pattern
+        checkpoint_groups: dict[str, list[Path]] = {}
+        for pth_file in checkpoints_path.glob("**/*.pth"):
+            # Extract config from filename (e.g., "hex8_2p_v5_epoch10.pth" -> "hex8_2p")
+            name = pth_file.stem
+            parts = name.split("_")
+            if len(parts) >= 2:
+                config_key = f"{parts[0]}_{parts[1]}"
+            else:
+                config_key = parts[0]
+
+            if config_key not in checkpoint_groups:
+                checkpoint_groups[config_key] = []
+            checkpoint_groups[config_key].append(pth_file)
+
+        # Keep newest N per config
+        for config_key, files in checkpoint_groups.items():
+            sorted_files = sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
+            to_remove = sorted_files[self.config.min_checkpoints_per_config:]
+
+            for old_file in to_remove:
+                try:
+                    size = old_file.stat().st_size
+                    old_file.unlink()
+                    bytes_freed += size
+                    logger.debug(f"Removed old checkpoint: {old_file.name}")
+                except (OSError, PermissionError) as e:
+                    logger.debug(f"Failed to remove checkpoint {old_file}: {e}")
+
+        return bytes_freed
+
+    def _cleanup_quarantine(self) -> int:
+        """Remove quarantined databases."""
+        bytes_freed = 0
+        quarantine_path = self._root_path / "data" / "quarantine"
+        if not quarantine_path.exists():
+            return 0
+
+        for file in quarantine_path.iterdir():
+            try:
+                size = file.stat().st_size
+                if file.is_file():
+                    file.unlink()
+                elif file.is_dir():
+                    shutil.rmtree(file)
+                bytes_freed += size
+                logger.debug(f"Removed quarantined: {file.name}")
+            except (OSError, PermissionError) as e:
+                logger.debug(f"Failed to remove quarantined {file}: {e}")
+
+        return bytes_freed
+
+    def get_disk_status(self) -> DiskStatus | None:
+        """Get current disk status."""
+        if self._current_status is None:
+            self._current_status = DiskStatus.from_path(str(self._root_path), self.config)
+        return self._current_status
+
+    def health_check(self) -> HealthCheckResult:
+        """Return health check result for daemon protocol."""
+        status = self.get_disk_status()
+        details = {
+            "running": self._running,
+            "disk_usage_percent": status.usage_percent if status else None,
+            "free_gb": status.free_gb if status else None,
+            "bytes_cleaned_total": self._bytes_cleaned,
+            "cleanups_performed": self._cleanups_performed,
+            "last_cleanup_time": self._last_cleanup_time,
+            "uptime_seconds": self.uptime_seconds,
+            "cycles_completed": self._cycles_completed,
+            "errors_count": self._errors_count,
+        }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message=f"{self._get_daemon_name()} is not running",
+                details=details,
+            )
+
+        # Unhealthy if disk is critical
+        if status and status.is_critical:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Disk usage critical: {status.usage_percent:.1f}%",
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"{self._get_daemon_name()} healthy, disk at {status.usage_percent:.1f}%" if status else "Running",
+            details=details,
+        )
+
+    def get_status(self) -> dict[str, Any]:
+        """Get daemon status for monitoring."""
+        health = self.health_check()
+        status = self.get_disk_status()
+        return {
+            "name": self._get_daemon_name(),
+            "running": self._running,
+            "uptime_seconds": self.uptime_seconds,
+            "config": {
+                "proactive_threshold": self.config.proactive_cleanup_threshold,
+                "warning_threshold": self.config.warning_threshold,
+                "target_usage": self.config.target_disk_usage,
+                "enable_cleanup": self.config.enable_cleanup,
+            },
+            "disk": {
+                "usage_percent": status.usage_percent if status else None,
+                "free_gb": status.free_gb if status else None,
+                "needs_cleanup": status.needs_cleanup if status else None,
+            },
+            "health": {
+                "healthy": health.healthy,
+                "status": health.status.value if hasattr(health.status, "value") else str(health.status),
+                "message": health.message,
+            },
+            **health.details,
+        }
+
+
+# =============================================================================
+# Singleton Access
+# =============================================================================
+
+_daemon_instance: DiskSpaceManagerDaemon | None = None
+
+
+def get_disk_space_daemon() -> DiskSpaceManagerDaemon:
+    """Get the singleton DiskSpaceManagerDaemon instance."""
+    global _daemon_instance
+    if _daemon_instance is None:
+        _daemon_instance = DiskSpaceManagerDaemon()
+    return _daemon_instance
+
+
+def reset_disk_space_daemon() -> None:
+    """Reset the singleton (for testing)."""
+    global _daemon_instance
+    _daemon_instance = None

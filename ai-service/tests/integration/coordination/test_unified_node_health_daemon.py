@@ -20,92 +20,20 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
 
 
 # =============================================================================
-# Import with graceful fallbacks for missing providers
+# Fixtures
 # =============================================================================
-
-
-# Mock the provider imports before importing the daemon
-@pytest.fixture(autouse=True)
-def mock_providers():
-    """Mock provider managers to avoid actual cloud API calls."""
-    with patch.dict('sys.modules', {
-        'app.providers': MagicMock(),
-        'app.providers.lambda_manager': MagicMock(),
-        'app.providers.vast_manager': MagicMock(),
-        'app.providers.hetzner_manager': MagicMock(),
-        'app.providers.aws_manager': MagicMock(),
-        'app.providers.tailscale_manager': MagicMock(),
-    }):
-        # Create mock manager classes
-        mock_lambda = MagicMock()
-        mock_lambda.close = AsyncMock()
-
-        mock_vast = MagicMock()
-        mock_hetzner = MagicMock()
-        mock_aws = MagicMock()
-        mock_tailscale = MagicMock()
-
-        # Patch the imports in the module
-        with patch('app.providers.LambdaManager', return_value=mock_lambda), \
-             patch('app.providers.VastManager', return_value=mock_vast), \
-             patch('app.providers.HetznerManager', return_value=mock_hetzner), \
-             patch('app.providers.AWSManager', return_value=mock_aws), \
-             patch('app.providers.TailscaleManager', return_value=mock_tailscale):
-            yield {
-                'lambda': mock_lambda,
-                'vast': mock_vast,
-                'hetzner': mock_hetzner,
-                'aws': mock_aws,
-                'tailscale': mock_tailscale,
-            }
-
-
-@pytest.fixture
-def mock_health_orchestrator():
-    """Mock the HealthCheckOrchestrator."""
-    mock = MagicMock()
-    mock.run_full_health_check = AsyncMock()
-    mock.get_cluster_health = AsyncMock()
-    mock.get_node_health = MagicMock(return_value=None)
-    mock.stop = AsyncMock()
-    return mock
-
-
-@pytest.fixture
-def mock_recovery_orchestrator():
-    """Mock the RecoveryOrchestrator."""
-    mock = MagicMock()
-    mock.recover_all_unhealthy = AsyncMock(return_value=[])
-    mock.slack_webhook_url = None
-    return mock
-
-
-@pytest.fixture
-def mock_utilization_optimizer():
-    """Mock the UtilizationOptimizer."""
-    mock = MagicMock()
-    mock.optimize_cluster = AsyncMock(return_value=[])
-    return mock
-
-
-@pytest.fixture
-def mock_p2p_deployer():
-    """Mock the P2PAutoDeployer."""
-    mock = MagicMock()
-    mock.check_and_deploy = AsyncMock()
-    mock.get_latest_coverage = MagicMock(return_value=None)
-    return mock
 
 
 @pytest.fixture
@@ -130,6 +58,66 @@ def temp_hosts_config():
         f.flush()
         yield Path(f.name)
     os.unlink(f.name)
+
+
+def create_mock_daemon(custom_config=None):
+    """Create a daemon with all dependencies mocked via attribute injection."""
+    from app.coordination.unified_node_health_daemon import DaemonConfig
+
+    # Create mock orchestrators
+    mock_health_orchestrator = MagicMock()
+    mock_health_orchestrator.run_full_health_check = AsyncMock()
+    mock_health_orchestrator.get_cluster_health = AsyncMock()
+    mock_health_orchestrator.get_node_health = MagicMock(return_value=None)
+    mock_health_orchestrator.stop = AsyncMock()
+
+    mock_recovery_orchestrator = MagicMock()
+    mock_recovery_orchestrator.recover_all_unhealthy = AsyncMock(return_value=[])
+    mock_recovery_orchestrator.slack_webhook_url = None
+
+    mock_utilization_optimizer = MagicMock()
+    mock_utilization_optimizer.optimize_cluster = AsyncMock(return_value=[])
+
+    mock_p2p_deployer = MagicMock()
+    mock_p2p_deployer.check_and_deploy = AsyncMock()
+    mock_p2p_deployer.get_latest_coverage = MagicMock(return_value=None)
+
+    # Create daemon with patched __init__ to skip real initialization
+    with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator'), \
+         patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator'), \
+         patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer'), \
+         patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer'), \
+         patch('app.coordination.unified_node_health_daemon.LambdaManager'), \
+         patch('app.coordination.unified_node_health_daemon.VastManager'), \
+         patch('app.coordination.unified_node_health_daemon.HetznerManager'), \
+         patch('app.coordination.unified_node_health_daemon.AWSManager'), \
+         patch('app.coordination.unified_node_health_daemon.TailscaleManager'):
+
+        from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+
+        config = custom_config if custom_config else DaemonConfig()
+        daemon = UnifiedNodeHealthDaemon(config=config)
+
+        # Inject mocks
+        daemon.health_orchestrator = mock_health_orchestrator
+        daemon.recovery_orchestrator = mock_recovery_orchestrator
+        daemon.utilization_optimizer = mock_utilization_optimizer
+        daemon.p2p_auto_deployer = mock_p2p_deployer
+
+        # Also mock provider managers
+        daemon.lambda_mgr = MagicMock()
+        daemon.lambda_mgr.close = AsyncMock()
+        daemon.vast_mgr = MagicMock()
+        daemon.hetzner_mgr = MagicMock()
+        daemon.aws_mgr = MagicMock()
+        daemon.tailscale_mgr = MagicMock()
+
+        return daemon, {
+            'health_orchestrator': mock_health_orchestrator,
+            'recovery_orchestrator': mock_recovery_orchestrator,
+            'utilization_optimizer': mock_utilization_optimizer,
+            'p2p_deployer': mock_p2p_deployer,
+        }
 
 
 # =============================================================================
@@ -186,60 +174,32 @@ class TestDaemonConfig:
 class TestDaemonInitialization:
     """Tests for UnifiedNodeHealthDaemon initialization."""
 
-    def test_initialization_with_default_config(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_initialization_with_default_config(self):
         """Daemon should initialize with default config."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, _ = create_mock_daemon()
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            daemon = UnifiedNodeHealthDaemon()
+        assert daemon.config is not None
+        assert isinstance(daemon.config, DaemonConfig)
+        assert daemon._running is False
+        assert daemon._health_checks_run == 0
+        assert daemon._recoveries_attempted == 0
+        assert daemon._optimizations_run == 0
 
-            assert daemon.config is not None
-            assert isinstance(daemon.config, DaemonConfig)
-            assert daemon._running is False
-            assert daemon._health_checks_run == 0
-            assert daemon._recoveries_attempted == 0
-            assert daemon._optimizations_run == 0
-
-    def test_initialization_with_custom_config(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_initialization_with_custom_config(self):
         """Daemon should accept custom config."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        custom_config = DaemonConfig(
+            health_check_interval=30.0,
+            enable_recovery=False,
+        )
 
-            custom_config = DaemonConfig(
-                health_check_interval=30.0,
-                enable_recovery=False,
-            )
+        daemon, _ = create_mock_daemon(custom_config)
 
-            daemon = UnifiedNodeHealthDaemon(config=custom_config)
-
-            assert daemon.config.health_check_interval == 30.0
-            assert daemon.config.enable_recovery is False
+        assert daemon.config.health_check_interval == 30.0
+        assert daemon.config.enable_recovery is False
 
 
 # =============================================================================
@@ -251,73 +211,44 @@ class TestHealthCheckCycle:
     """Tests for health check cycle execution."""
 
     @pytest.mark.asyncio
-    async def test_run_health_check_calls_orchestrator(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_run_health_check_calls_orchestrator(self):
         """Health check should call orchestrator methods."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
+        mock_health = mocks['health_orchestrator']
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        # Create mock cluster health summary
+        mock_summary = MagicMock()
+        mock_summary.total_nodes = 10
+        mock_summary.healthy = 8
+        mock_summary.degraded = 1
+        mock_summary.unhealthy = 1
+        mock_summary.offline = 0
+        mock_summary.retired = 0
+        mock_health.get_cluster_health.return_value = mock_summary
 
-            # Create mock cluster health summary
-            mock_summary = MagicMock()
-            mock_summary.total_nodes = 10
-            mock_summary.healthy = 8
-            mock_summary.degraded = 1
-            mock_summary.unhealthy = 1
-            mock_summary.offline = 0
-            mock_summary.retired = 0
-            mock_health_orchestrator.get_cluster_health.return_value = mock_summary
+        daemon.config.enable_alerting = False
 
-            config = DaemonConfig(enable_alerting=False)
-            daemon = UnifiedNodeHealthDaemon(config=config)
+        await daemon._run_health_check()
 
-            await daemon._run_health_check()
-
-            mock_health_orchestrator.run_full_health_check.assert_called_once()
-            mock_health_orchestrator.get_cluster_health.assert_called_once()
-            assert daemon._health_checks_run == 1
-            assert daemon._last_health_check > 0
+        mock_health.run_full_health_check.assert_called_once()
+        mock_health.get_cluster_health.assert_called_once()
+        assert daemon._health_checks_run == 1
+        assert daemon._last_health_check > 0
 
     @pytest.mark.asyncio
-    async def test_health_check_handles_orchestrator_error(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_health_check_handles_orchestrator_error(self):
         """Health check should handle orchestrator errors gracefully."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
+        mock_health = mocks['health_orchestrator']
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        mock_health.run_full_health_check.side_effect = RuntimeError("Network error")
+        daemon.config.enable_alerting = False
 
-            mock_health_orchestrator.run_full_health_check.side_effect = RuntimeError("Network error")
+        # Should not raise, should log error
+        await daemon._run_health_check()
 
-            config = DaemonConfig(enable_alerting=False)
-            daemon = UnifiedNodeHealthDaemon(config=config)
-
-            # Should not raise, should log error
-            await daemon._run_health_check()
-
-            # Still updates timestamp and count
-            assert daemon._health_checks_run == 1
+        # Still updates timestamp and count
+        assert daemon._health_checks_run == 1
 
 
 # =============================================================================
@@ -329,63 +260,48 @@ class TestRecoveryCheck:
     """Tests for recovery check execution."""
 
     @pytest.mark.asyncio
-    async def test_run_recovery_check_calls_orchestrator(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_run_recovery_check_calls_orchestrator(self):
         """Recovery check should call recovery orchestrator."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
+        mock_recovery = mocks['recovery_orchestrator']
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-            )
+        # Mock successful recovery
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_recovery.recover_all_unhealthy.return_value = [mock_result]
 
-            # Mock successful recovery
-            mock_result = MagicMock()
-            mock_result.success = True
-            mock_recovery_orchestrator.recover_all_unhealthy.return_value = [mock_result]
+        await daemon._run_recovery_check()
 
-            daemon = UnifiedNodeHealthDaemon()
-
-            await daemon._run_recovery_check()
-
-            mock_recovery_orchestrator.recover_all_unhealthy.assert_called_once()
-            assert daemon._recoveries_attempted == 1
-            assert daemon._last_recovery_check > 0
+        mock_recovery.recover_all_unhealthy.assert_called_once()
+        assert daemon._recoveries_attempted == 1
+        assert daemon._last_recovery_check > 0
 
     @pytest.mark.asyncio
-    async def test_recovery_check_tracks_multiple_recoveries(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_recovery_check_tracks_multiple_recoveries(self):
         """Recovery check should count all recovery attempts."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
+        mock_recovery = mocks['recovery_orchestrator']
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-            )
+        # Mock multiple recovery results
+        results = [MagicMock(success=True), MagicMock(success=False), MagicMock(success=True)]
+        mock_recovery.recover_all_unhealthy.return_value = results
 
-            # Mock multiple recovery results
-            results = [MagicMock(success=True), MagicMock(success=False), MagicMock(success=True)]
-            mock_recovery_orchestrator.recover_all_unhealthy.return_value = results
+        await daemon._run_recovery_check()
 
-            daemon = UnifiedNodeHealthDaemon()
+        assert daemon._recoveries_attempted == 3
 
-            await daemon._run_recovery_check()
+    @pytest.mark.asyncio
+    async def test_recovery_check_handles_error(self):
+        """Recovery check should handle errors gracefully."""
+        daemon, mocks = create_mock_daemon()
+        mock_recovery = mocks['recovery_orchestrator']
 
-            assert daemon._recoveries_attempted == 3
+        mock_recovery.recover_all_unhealthy.side_effect = RuntimeError("API error")
+
+        # Should not raise
+        await daemon._run_recovery_check()
+
+        assert daemon._last_recovery_check > 0
 
 
 # =============================================================================
@@ -397,30 +313,29 @@ class TestOptimization:
     """Tests for utilization optimization."""
 
     @pytest.mark.asyncio
-    async def test_run_optimization_calls_optimizer(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_run_optimization_calls_optimizer(self):
         """Optimization should call utilization optimizer."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
+        mock_optimizer = mocks['utilization_optimizer']
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-            )
+        await daemon._run_optimization()
 
-            daemon = UnifiedNodeHealthDaemon()
+        mock_optimizer.optimize_cluster.assert_called_once()
+        assert daemon._optimizations_run == 1
+        assert daemon._last_optimization > 0
 
-            await daemon._run_optimization()
+    @pytest.mark.asyncio
+    async def test_optimization_handles_error(self):
+        """Optimization should handle errors gracefully."""
+        daemon, mocks = create_mock_daemon()
+        mock_optimizer = mocks['utilization_optimizer']
 
-            mock_utilization_optimizer.optimize_cluster.assert_called_once()
-            assert daemon._optimizations_run == 1
-            assert daemon._last_optimization > 0
+        mock_optimizer.optimize_cluster.side_effect = RuntimeError("Resource error")
+
+        # Should not raise
+        await daemon._run_optimization()
+
+        assert daemon._last_optimization > 0
 
 
 # =============================================================================
@@ -432,56 +347,27 @@ class TestConfigSync:
     """Tests for config file synchronization."""
 
     @pytest.mark.asyncio
-    async def test_run_config_sync_updates_timestamp(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-        temp_hosts_config,
-    ):
+    async def test_run_config_sync_updates_timestamp(self, temp_hosts_config):
         """Config sync should update timestamp."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        config = DaemonConfig(hosts_config_path=str(temp_hosts_config))
+        daemon, _ = create_mock_daemon(config)
 
-            config = DaemonConfig(hosts_config_path=str(temp_hosts_config))
-            daemon = UnifiedNodeHealthDaemon(config=config)
+        await daemon._run_config_sync()
 
-            await daemon._run_config_sync()
-
-            assert daemon._last_config_sync > 0
+        assert daemon._last_config_sync > 0
 
     @pytest.mark.asyncio
-    async def test_config_sync_handles_missing_file(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_config_sync_handles_missing_file(self):
         """Config sync should handle missing config file."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        config = DaemonConfig(hosts_config_path="/nonexistent/path.yaml")
+        daemon, _ = create_mock_daemon(config)
 
-            config = DaemonConfig(hosts_config_path="/nonexistent/path.yaml")
-            daemon = UnifiedNodeHealthDaemon(config=config)
-
-            # Should not raise
-            await daemon._run_config_sync()
+        # Should not raise
+        await daemon._run_config_sync()
 
 
 # =============================================================================
@@ -493,40 +379,39 @@ class TestP2PAutoDeploy:
     """Tests for P2P auto-deployment."""
 
     @pytest.mark.asyncio
-    async def test_run_p2p_deploy_calls_deployer(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_run_p2p_deploy_calls_deployer(self):
         """P2P deploy should call auto-deployer."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
+        mock_deployer = mocks['p2p_deployer']
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        # Mock coverage report
+        mock_report = MagicMock()
+        mock_report.coverage_percent = 95.0
+        mock_report.nodes_with_p2p = 19
+        mock_report.total_nodes = 20
+        mock_report.nodes_needing_deployment = ['test-node']
+        mock_deployer.check_and_deploy.return_value = mock_report
 
-            # Mock coverage report
-            mock_report = MagicMock()
-            mock_report.coverage_percent = 95.0
-            mock_report.nodes_with_p2p = 19
-            mock_report.total_nodes = 20
-            mock_report.nodes_needing_deployment = ['test-node']
-            mock_p2p_deployer.check_and_deploy.return_value = mock_report
+        daemon.config.enable_alerting = False
 
-            config = DaemonConfig(enable_alerting=False)
-            daemon = UnifiedNodeHealthDaemon(config=config)
+        await daemon._run_p2p_deploy()
 
-            await daemon._run_p2p_deploy()
+        mock_deployer.check_and_deploy.assert_called_once()
+        assert daemon._p2p_deploys_run == 1
+        assert daemon._last_p2p_deploy > 0
 
-            mock_p2p_deployer.check_and_deploy.assert_called_once()
-            assert daemon._p2p_deploys_run == 1
-            assert daemon._last_p2p_deploy > 0
+    @pytest.mark.asyncio
+    async def test_p2p_deploy_handles_error(self):
+        """P2P deploy should handle errors gracefully."""
+        daemon, mocks = create_mock_daemon()
+        mock_deployer = mocks['p2p_deployer']
+
+        mock_deployer.check_and_deploy.side_effect = RuntimeError("SSH error")
+
+        # Should not raise
+        await daemon._run_p2p_deploy()
+
+        assert daemon._last_p2p_deploy > 0
 
 
 # =============================================================================
@@ -538,26 +423,12 @@ class TestEventEmission:
     """Tests for cluster health event emission."""
 
     @pytest.mark.asyncio
-    async def test_emits_cluster_healthy_event_above_threshold(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_emits_cluster_healthy_event_above_threshold(self):
         """Should emit cluster healthy event when above threshold."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer), \
-             patch('app.coordination.unified_node_health_daemon.emit_p2p_cluster_healthy') as mock_emit:
-
+        with patch('app.coordination.unified_node_health_daemon.emit_p2p_cluster_healthy') as mock_emit:
             mock_emit.return_value = None
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+            daemon, _ = create_mock_daemon()
 
             # 90% healthy is above 80% threshold
             mock_summary = MagicMock()
@@ -567,9 +438,6 @@ class TestEventEmission:
             mock_summary.unhealthy = 1
             mock_summary.offline = 0
             mock_summary.retired = 0
-
-            config = DaemonConfig(enable_alerting=True)
-            daemon = UnifiedNodeHealthDaemon(config=config)
 
             await daemon._emit_cluster_health_events(
                 healthy_percent=90.0,
@@ -581,26 +449,12 @@ class TestEventEmission:
             mock_emit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_emits_cluster_unhealthy_event_below_threshold(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_emits_cluster_unhealthy_event_below_threshold(self):
         """Should emit cluster unhealthy event when below threshold."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer), \
-             patch('app.coordination.unified_node_health_daemon.emit_p2p_cluster_unhealthy') as mock_emit:
-
+        with patch('app.coordination.unified_node_health_daemon.emit_p2p_cluster_unhealthy') as mock_emit:
             mock_emit.return_value = None
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+            daemon, _ = create_mock_daemon()
 
             # 50% healthy is below 80% threshold
             mock_summary = MagicMock()
@@ -610,9 +464,6 @@ class TestEventEmission:
             mock_summary.unhealthy = 3
             mock_summary.offline = 2
             mock_summary.retired = 0
-
-            config = DaemonConfig(enable_alerting=True)
-            daemon = UnifiedNodeHealthDaemon(config=config)
 
             await daemon._emit_cluster_health_events(
                 healthy_percent=50.0,
@@ -632,84 +483,44 @@ class TestEventEmission:
 class TestHealthCheckProtocol:
     """Tests for CoordinatorProtocol health_check compliance."""
 
-    def test_health_check_when_not_running(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_health_check_when_not_running(self):
         """health_check should return stopped status when not running."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, _ = create_mock_daemon()
 
-            from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+        result = daemon.health_check()
 
-            daemon = UnifiedNodeHealthDaemon()
+        assert result.healthy is False
+        assert result.status.value == "stopped"
+        assert "not running" in result.message
 
-            result = daemon.health_check()
-
-            assert result.healthy is False
-            assert result.status.value == "stopped"
-            assert "not running" in result.message
-
-    def test_health_check_when_running_healthy(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_health_check_when_running_healthy(self):
         """health_check should return healthy when daemon is running normally."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, _ = create_mock_daemon()
+        daemon._running = True
+        daemon._last_health_check = time.time()  # Recent health check
+        daemon._health_checks_run = 5
 
-            from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+        result = daemon.health_check()
 
-            daemon = UnifiedNodeHealthDaemon()
-            daemon._running = True
-            daemon._last_health_check = time.time()  # Recent health check
-            daemon._health_checks_run = 5
+        assert result.healthy is True
+        assert result.status.value == "running"
+        assert "5 checks" in result.message
 
-            result = daemon.health_check()
-
-            assert result.healthy is True
-            assert result.status.value == "running"
-            assert "5 checks" in result.message
-
-    def test_health_check_degraded_when_stale(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_health_check_degraded_when_stale(self):
         """health_check should return degraded when checks are stale."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        config = DaemonConfig(health_check_interval=60.0)
+        daemon, _ = create_mock_daemon(config)
+        daemon._running = True
+        # Set last health check to 4 minutes ago (> 3x interval of 60s)
+        daemon._last_health_check = time.time() - 240
 
-            config = DaemonConfig(health_check_interval=60.0)
-            daemon = UnifiedNodeHealthDaemon(config=config)
-            daemon._running = True
-            # Set last health check to 4 minutes ago (> 3x interval of 60s)
-            daemon._last_health_check = time.time() - 240
+        result = daemon.health_check()
 
-            result = daemon.health_check()
-
-            assert result.healthy is False
-            assert result.status.value == "degraded"
-            assert "stale" in result.message
+        assert result.healthy is False
+        assert result.status.value == "degraded"
+        assert "stale" in result.message
 
 
 # =============================================================================
@@ -721,98 +532,70 @@ class TestDaemonCycle:
     """Tests for daemon main loop cycle."""
 
     @pytest.mark.asyncio
-    async def test_daemon_cycle_respects_intervals(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_daemon_cycle_respects_intervals(self):
         """Daemon cycle should only run tasks when intervals elapsed."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        config = DaemonConfig(
+            health_check_interval=1000.0,  # Very long interval
+            recovery_check_interval=1000.0,
+            optimization_interval=1000.0,
+            config_sync_interval=1000.0,
+            p2p_deploy_interval=1000.0,
+            enable_alerting=False,
+        )
+        daemon, mocks = create_mock_daemon(config)
 
-            config = DaemonConfig(
-                health_check_interval=1000.0,  # Very long interval
-                recovery_check_interval=1000.0,
-                optimization_interval=1000.0,
-                config_sync_interval=1000.0,
-                p2p_deploy_interval=1000.0,
-                enable_alerting=False,
-            )
-            daemon = UnifiedNodeHealthDaemon(config=config)
+        # Set recent timestamps so intervals haven't elapsed
+        now = time.time()
+        daemon._last_health_check = now
+        daemon._last_recovery_check = now
+        daemon._last_optimization = now
+        daemon._last_config_sync = now
+        daemon._last_p2p_deploy = now
 
-            # Set recent timestamps so intervals haven't elapsed
-            now = time.time()
-            daemon._last_health_check = now
-            daemon._last_recovery_check = now
-            daemon._last_optimization = now
-            daemon._last_config_sync = now
-            daemon._last_p2p_deploy = now
+        await daemon._daemon_cycle()
 
-            await daemon._daemon_cycle()
-
-            # Nothing should have run since intervals haven't elapsed
-            mock_health_orchestrator.run_full_health_check.assert_not_called()
-            mock_recovery_orchestrator.recover_all_unhealthy.assert_not_called()
-            mock_utilization_optimizer.optimize_cluster.assert_not_called()
+        # Nothing should have run since intervals haven't elapsed
+        mocks['health_orchestrator'].run_full_health_check.assert_not_called()
+        mocks['recovery_orchestrator'].recover_all_unhealthy.assert_not_called()
+        mocks['utilization_optimizer'].optimize_cluster.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_daemon_cycle_runs_health_check_when_due(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_daemon_cycle_runs_health_check_when_due(self):
         """Daemon cycle should run health check when interval elapsed."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        from app.coordination.unified_node_health_daemon import DaemonConfig
 
-            from app.coordination.unified_node_health_daemon import (
-                UnifiedNodeHealthDaemon,
-                DaemonConfig,
-            )
+        # Mock cluster health summary for alerting
+        mock_summary = MagicMock()
+        mock_summary.total_nodes = 10
+        mock_summary.healthy = 10
+        mock_summary.degraded = 0
+        mock_summary.unhealthy = 0
+        mock_summary.offline = 0
+        mock_summary.retired = 0
 
-            # Mock cluster health summary for alerting
-            mock_summary = MagicMock()
-            mock_summary.total_nodes = 10
-            mock_summary.healthy = 10
-            mock_summary.degraded = 0
-            mock_summary.unhealthy = 0
-            mock_summary.offline = 0
-            mock_summary.retired = 0
-            mock_health_orchestrator.get_cluster_health.return_value = mock_summary
+        config = DaemonConfig(
+            health_check_interval=0.1,  # Very short interval
+            recovery_check_interval=1000.0,
+            optimization_interval=1000.0,
+            config_sync_interval=1000.0,
+            p2p_deploy_interval=1000.0,
+            enable_recovery=False,
+            enable_optimization=False,
+            enable_config_sync=False,
+            enable_p2p_auto_deploy=False,
+            enable_alerting=False,
+        )
+        daemon, mocks = create_mock_daemon(config)
+        mocks['health_orchestrator'].get_cluster_health.return_value = mock_summary
 
-            config = DaemonConfig(
-                health_check_interval=0.1,  # Very short interval
-                recovery_check_interval=1000.0,
-                optimization_interval=1000.0,
-                config_sync_interval=1000.0,
-                p2p_deploy_interval=1000.0,
-                enable_recovery=False,
-                enable_optimization=False,
-                enable_config_sync=False,
-                enable_p2p_auto_deploy=False,
-                enable_alerting=False,
-            )
-            daemon = UnifiedNodeHealthDaemon(config=config)
+        # Set old timestamp so interval has elapsed
+        daemon._last_health_check = time.time() - 1.0
 
-            # Set old timestamp so interval has elapsed
-            daemon._last_health_check = time.time() - 1.0
+        await daemon._daemon_cycle()
 
-            await daemon._daemon_cycle()
-
-            mock_health_orchestrator.run_full_health_check.assert_called_once()
+        mocks['health_orchestrator'].run_full_health_check.assert_called_once()
 
 
 # =============================================================================
@@ -823,69 +606,43 @@ class TestDaemonCycle:
 class TestDaemonStats:
     """Tests for daemon statistics."""
 
-    def test_get_stats_returns_all_fields(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_get_stats_returns_all_fields(self):
         """get_stats should return all expected fields."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, _ = create_mock_daemon()
+        daemon._start_time = time.time() - 100
+        daemon._health_checks_run = 5
+        daemon._recoveries_attempted = 3
+        daemon._optimizations_run = 2
+        daemon._p2p_deploys_run = 1
+        daemon._running = True
 
-            from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+        stats = daemon.get_stats()
 
-            daemon = UnifiedNodeHealthDaemon()
-            daemon._start_time = time.time() - 100
-            daemon._health_checks_run = 5
-            daemon._recoveries_attempted = 3
-            daemon._optimizations_run = 2
-            daemon._p2p_deploys_run = 1
-            daemon._running = True
+        assert 'uptime_seconds' in stats
+        assert stats['uptime_seconds'] >= 100
+        assert stats['health_checks_run'] == 5
+        assert stats['recoveries_attempted'] == 3
+        assert stats['optimizations_run'] == 2
+        assert stats['p2p_deploys_run'] == 1
+        assert stats['running'] is True
 
-            stats = daemon.get_stats()
-
-            assert 'uptime_seconds' in stats
-            assert stats['uptime_seconds'] >= 100
-            assert stats['health_checks_run'] == 5
-            assert stats['recoveries_attempted'] == 3
-            assert stats['optimizations_run'] == 2
-            assert stats['p2p_deploys_run'] == 1
-            assert stats['running'] is True
-
-    def test_get_stats_includes_p2p_coverage(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_get_stats_includes_p2p_coverage(self):
         """get_stats should include P2P coverage when available."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
 
-            from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+        # Mock P2P coverage report
+        mock_report = MagicMock()
+        mock_report.coverage_percent = 95.0
+        mock_report.nodes_with_p2p = 19
+        mock_report.total_nodes = 20
+        mock_report.nodes_needing_deployment = ['test-node']
+        mocks['p2p_deployer'].get_latest_coverage.return_value = mock_report
 
-            # Mock P2P coverage report
-            mock_report = MagicMock()
-            mock_report.coverage_percent = 95.0
-            mock_report.nodes_with_p2p = 19
-            mock_report.total_nodes = 20
-            mock_report.nodes_needing_deployment = ['test-node']
-            mock_p2p_deployer.get_latest_coverage.return_value = mock_report
+        stats = daemon.get_stats()
 
-            daemon = UnifiedNodeHealthDaemon()
-
-            stats = daemon.get_stats()
-
-            assert stats['p2p_coverage'] is not None
-            assert stats['p2p_coverage']['coverage_percent'] == 95.0
-            assert stats['p2p_coverage']['nodes_with_p2p'] == 19
+        assert stats['p2p_coverage'] is not None
+        assert stats['p2p_coverage']['coverage_percent'] == 95.0
+        assert stats['p2p_coverage']['nodes_with_p2p'] == 19
 
 
 # =============================================================================
@@ -896,46 +653,20 @@ class TestDaemonStats:
 class TestShutdown:
     """Tests for daemon shutdown."""
 
-    def test_stop_sets_running_false(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    def test_stop_sets_running_false(self):
         """stop() should set _running to False."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, _ = create_mock_daemon()
+        daemon._running = True
 
-            from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+        daemon.stop()
 
-            daemon = UnifiedNodeHealthDaemon()
-            daemon._running = True
-
-            daemon.stop()
-
-            assert daemon._running is False
+        assert daemon._running is False
 
     @pytest.mark.asyncio
-    async def test_cleanup_stops_orchestrator(
-        self,
-        mock_health_orchestrator,
-        mock_recovery_orchestrator,
-        mock_utilization_optimizer,
-        mock_p2p_deployer,
-    ):
+    async def test_cleanup_stops_orchestrator(self):
         """_cleanup() should stop health orchestrator."""
-        with patch('app.coordination.unified_node_health_daemon.HealthCheckOrchestrator', return_value=mock_health_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.RecoveryOrchestrator', return_value=mock_recovery_orchestrator), \
-             patch('app.coordination.unified_node_health_daemon.UtilizationOptimizer', return_value=mock_utilization_optimizer), \
-             patch('app.coordination.unified_node_health_daemon.P2PAutoDeployer', return_value=mock_p2p_deployer):
+        daemon, mocks = create_mock_daemon()
 
-            from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
+        await daemon._cleanup()
 
-            daemon = UnifiedNodeHealthDaemon()
-
-            await daemon._cleanup()
-
-            mock_health_orchestrator.stop.assert_called_once()
+        mocks['health_orchestrator'].stop.assert_called_once()

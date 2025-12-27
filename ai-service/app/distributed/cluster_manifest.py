@@ -120,7 +120,11 @@ class NodeRole(str, Enum):
 
 @dataclass
 class GameLocation:
-    """Location of a game in the cluster."""
+    """Location of a game in the cluster.
+
+    December 2025: Added is_consolidated and consolidated_at fields to track
+    whether games have been merged into canonical databases.
+    """
     game_id: str
     node_id: str
     db_path: str
@@ -129,6 +133,10 @@ class GameLocation:
     engine_mode: str | None = None
     registered_at: float = 0.0
     last_seen: float = 0.0
+    # December 2025: Track consolidation status for training pipeline
+    is_consolidated: bool = False  # Whether game has been merged into canonical DB
+    consolidated_at: float = 0.0  # When consolidation happened (Unix timestamp)
+    canonical_db: str | None = None  # Path to canonical DB if consolidated
 
 
 @dataclass

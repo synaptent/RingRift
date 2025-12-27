@@ -984,16 +984,19 @@ class UnifiedDataSyncService:
             )
 
             if process.returncode != 0:
-                logger.debug(f"{host.name}: rsync failed for {db_name}: {stderr.decode()[:100]}")
+                # Dec 27, 2025: Promote to WARNING - rsync failures are operational issues
+                logger.warning(f"{host.name}: rsync failed for {db_name}: {stderr.decode()[:100]}")
                 return None
 
             return local_path
 
         except asyncio.TimeoutError:
-            logger.debug(f"{host.name}: rsync timeout for {db_name}")
+            # Dec 27, 2025: Promote to WARNING - timeouts indicate network/host issues
+            logger.warning(f"{host.name}: rsync timeout for {db_name}")
             return None
-        except Exception as e:
-            logger.debug(f"{host.name}: rsync error for {db_name}: {e}")
+        except (OSError, subprocess.SubprocessError) as e:
+            # Dec 27, 2025: Promote to WARNING - rsync errors are operational issues
+            logger.warning(f"{host.name}: rsync error for {db_name}: {e}")
             return None
 
     async def _merge_into_aggregated(self, source_db: Path, host_name: str) -> int:

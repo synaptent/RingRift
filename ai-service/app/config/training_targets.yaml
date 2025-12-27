@@ -1,0 +1,122 @@
+# Training Targets Configuration
+# December 2025: Defines Elo targets and training parameters for each board configuration
+#
+# Usage:
+#   from app.config.training_targets import get_training_targets, is_target_reached
+#
+#   targets = get_training_targets("hex8_2p")
+#   if is_target_reached("hex8_2p", current_elo=1650):
+#       print("Target reached, stop selfplay")
+
+# Global defaults (can be overridden per-config)
+defaults:
+  # Elo targets
+  elo_target: 1800 # Target Elo rating
+  elo_tolerance: 50 # Consider target reached if within this range
+
+  # Selfplay parameters
+  min_games_for_training: 1000 # Minimum new games before training run
+  max_games_per_day: 10000 # Cap daily selfplay to prevent runaway
+
+  # Training parameters
+  training_epochs: 50 # Default epochs per training run
+  early_stopping_patience: 10 # Stop if no improvement for N epochs
+
+  # Evaluation parameters
+  gauntlet_games: 50 # Games per opponent in gauntlet
+  promotion_threshold_random: 0.85 # Must beat RANDOM 85%+
+  promotion_threshold_heuristic: 0.60 # Must beat HEURISTIC 60%+
+
+# Per-configuration targets
+# Smaller boards have lower ceilings, larger boards have higher potential
+configs:
+  # Hex8 (61 cells) - Smallest board, fastest iteration
+  hex8_2p:
+    elo_target: 1600
+    min_games_for_training: 500 # Faster iteration
+    training_epochs: 30
+    priority: high # Train this first
+
+  hex8_3p:
+    elo_target: 1500
+    min_games_for_training: 750
+    training_epochs: 40
+    priority: medium
+
+  hex8_4p:
+    elo_target: 1400
+    min_games_for_training: 1000
+    training_epochs: 50
+    priority: medium
+
+  # Square8 (64 cells) - Standard board
+  square8_2p:
+    elo_target: 1700
+    min_games_for_training: 500
+    training_epochs: 40
+    priority: high
+
+  square8_3p:
+    elo_target: 1550
+    min_games_for_training: 750
+    training_epochs: 50
+    priority: medium
+
+  square8_4p:
+    elo_target: 1450
+    min_games_for_training: 1000
+    training_epochs: 50
+    priority: low
+
+  # Square19 (361 cells) - Large board, slower training
+  square19_2p:
+    elo_target: 1800
+    min_games_for_training: 2000
+    training_epochs: 75
+    gauntlet_games: 30 # Fewer games due to length
+    priority: low
+
+  square19_3p:
+    elo_target: 1650
+    min_games_for_training: 2500
+    training_epochs: 100
+    gauntlet_games: 25
+    priority: low
+
+  square19_4p:
+    elo_target: 1500
+    min_games_for_training: 3000
+    training_epochs: 100
+    gauntlet_games: 20
+    priority: low
+
+  # Hexagonal (469 cells) - Largest board, most compute-intensive
+  hexagonal_2p:
+    elo_target: 1900
+    min_games_for_training: 3000
+    training_epochs: 100
+    gauntlet_games: 25
+    priority: low
+
+  hexagonal_3p:
+    elo_target: 1700
+    min_games_for_training: 4000
+    training_epochs: 125
+    gauntlet_games: 20
+    priority: low
+
+  hexagonal_4p:
+    elo_target: 1550
+    min_games_for_training: 5000
+    training_epochs: 150
+    gauntlet_games: 15
+    priority: low
+
+# Priority levels for selfplay scheduling
+# high: 50% of selfplay allocation
+# medium: 35% of selfplay allocation
+# low: 15% of selfplay allocation
+priority_weights:
+  high: 0.50
+  medium: 0.35
+  low: 0.15

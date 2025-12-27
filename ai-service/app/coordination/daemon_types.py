@@ -237,6 +237,13 @@ class DaemonType(Enum):
     # Data cleanup (December 2025) - auto-quarantine/delete poor quality databases
     DATA_CLEANUP = "data_cleanup"
 
+    # Data consolidation (December 2025) - consolidate scattered selfplay games into canonical DBs
+    DATA_CONSOLIDATION = "data_consolidation"
+
+    # Disk space manager (December 2025) - proactive disk space management
+    # Monitors disk usage and triggers cleanup before reaching critical thresholds
+    DISK_SPACE_MANAGER = "disk_space_manager"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -469,6 +476,9 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.ORPHAN_DETECTION: {DaemonType.EVENT_ROUTER},
     DaemonType.AUTO_EXPORT: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
     DaemonType.DATA_CLEANUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_SYNC},
+
+    # Data consolidation depends on event router and data pipeline
+    DaemonType.DATA_CONSOLIDATION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
     DaemonType.S3_BACKUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
 
     # Job/resource daemons
@@ -487,6 +497,9 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Maintenance daemons
     DaemonType.MAINTENANCE: {DaemonType.EVENT_ROUTER},
+
+    # Disk space management
+    DaemonType.DISK_SPACE_MANAGER: {DaemonType.EVENT_ROUTER},
 
     # Provider-specific idle daemons
     DaemonType.VAST_IDLE: {DaemonType.EVENT_ROUTER},

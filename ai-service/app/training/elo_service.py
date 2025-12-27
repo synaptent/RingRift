@@ -116,6 +116,22 @@ except ImportError:
     HAS_ELO_EVENTS = False
     emit_elo_updated = None
 
+# Event emission for Elo velocity/significant changes (December 2025 - training pipeline fix)
+try:
+    from app.distributed.data_events import emit_data_event, DataEventType
+    HAS_ELO_VELOCITY_EVENTS = True
+except ImportError:
+    HAS_ELO_VELOCITY_EVENTS = False
+    emit_data_event = None  # type: ignore
+    DataEventType = None  # type: ignore
+
+# Elo event thresholds (December 2025)
+# ELO_SIGNIFICANT_CHANGE: Threshold for single-match Elo change to be "significant"
+ELO_SIGNIFICANT_CHANGE_THRESHOLD = 25.0  # More than 25 Elo change in a single match
+
+# ELO_VELOCITY_CHANGE: Minimum Elo change per hour to trigger velocity event
+ELO_VELOCITY_THRESHOLD_PER_HOUR = 50.0  # 50+ Elo/hour indicates significant improvement rate
+
 # Composite event emission (Sprint 5)
 try:
     from app.training.event_integration import publish_composite_elo_updated_sync
@@ -724,6 +740,66 @@ class EloService:
                             )
                     except (RuntimeError, AttributeError, TypeError, ValueError, KeyError):
                         pass  # Don't let event emission break match recording
+
+        # December 2025: Emit ELO_SIGNIFICANT_CHANGE and ELO_VELOCITY_CHANGED events
+        # These events drive training prioritization in SelfplayScheduler and
+        # curriculum rebalancing in CurriculumIntegration
+        if HAS_ELO_VELOCITY_EVENTS and emit_data_event is not None:
+            config_key = f"{board_type}_{num_players}p"
+            try:
+                # Check for significant single-match Elo changes
+                for pid, old_elo, new_elo in [
+                    (participant_a, elo_before[participant_a], elo_after[participant_a]),
+                    (participant_b, elo_before[participant_b], elo_after[participant_b]),
+                ]:
+                    elo_delta = new_elo - old_elo
+                    if abs(elo_delta) > ELO_SIGNIFICANT_CHANGE_THRESHOLD:
+                        try:
+                            asyncio.get_running_loop()
+                            asyncio.ensure_future(emit_data_event(
+                                event_type=DataEventType.ELO_SIGNIFICANT_CHANGE,
+                                payload={
+                                    "config_key": config_key,
+                                    "board_type": board_type,
+                                    "num_players": num_players,
+                                    "participant_id": pid,
+                                    "old_elo": old_elo,
+                                    "new_elo": new_elo,
+                                    "delta": elo_delta,
+                                },
+                            ))
+                        except RuntimeError:
+                            pass  # No event loop - skip in sync context
+
+                # Calculate velocity (Elo per hour) if we have duration
+                if duration_sec and duration_sec > 0:
+                    hours = duration_sec / 3600.0
+                    for pid, old_elo, new_elo in [
+                        (participant_a, elo_before[participant_a], elo_after[participant_a]),
+                        (participant_b, elo_before[participant_b], elo_after[participant_b]),
+                    ]:
+                        elo_delta = new_elo - old_elo
+                        elo_per_hour = elo_delta / hours if hours > 0 else 0.0
+
+                        if abs(elo_per_hour) > ELO_VELOCITY_THRESHOLD_PER_HOUR:
+                            try:
+                                asyncio.get_running_loop()
+                                asyncio.ensure_future(emit_data_event(
+                                    event_type=DataEventType.ELO_VELOCITY_CHANGED,
+                                    payload={
+                                        "config_key": config_key,
+                                        "board_type": board_type,
+                                        "num_players": num_players,
+                                        "participant_id": pid,
+                                        "velocity": elo_per_hour,
+                                        "trend": "improving" if elo_per_hour > 0 else "declining",
+                                    },
+                                ))
+                            except RuntimeError:
+                                pass  # No event loop - skip in sync context
+
+            except (RuntimeError, AttributeError, TypeError, ValueError):
+                pass  # Don't let event emission break match recording
 
         return MatchResult(
             match_id=match_id,

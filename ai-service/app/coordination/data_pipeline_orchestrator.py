@@ -881,6 +881,17 @@ class DataPipelineOrchestrator:
                 self._on_promotion_failed,
             )
 
+            # December 2025: Subscribe to consolidation events for training pipeline fix
+            # Consolidation merges scattered selfplay games into canonical databases
+            router.subscribe(
+                DataEventType.CONSOLIDATION_STARTED.value,
+                self._on_consolidation_started,
+            )
+            router.subscribe(
+                DataEventType.CONSOLIDATION_COMPLETE.value,
+                self._on_consolidation_complete,
+            )
+
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
             return True
 
@@ -1268,6 +1279,72 @@ class DataPipelineOrchestrator:
             pass  # data_events not available
         except Exception as e:
             logger.debug(f"[DataPipelineOrchestrator] Failed to emit new_games_available: {e}")
+
+    async def _on_consolidation_started(self, event: Any) -> None:
+        """Handle CONSOLIDATION_STARTED events - track consolidation progress.
+
+        December 2025: Part of training pipeline fix. Tracks when scattered
+        selfplay games are being merged into canonical databases.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        board_type = payload.get("board_type")
+        num_players = payload.get("num_players")
+        config_key = payload.get("config_key") or f"{board_type}_{num_players}p"
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Consolidation started for {config_key}"
+        )
+
+        # Track consolidation in progress
+        if not hasattr(self, "_consolidations_in_progress"):
+            self._consolidations_in_progress: set[str] = set()
+        self._consolidations_in_progress.add(config_key)
+
+    async def _on_consolidation_complete(self, event: Any) -> None:
+        """Handle CONSOLIDATION_COMPLETE events - trigger export after consolidation.
+
+        December 2025: Part of training pipeline fix. After games are consolidated
+        into canonical databases, we trigger NPZ export for training.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        board_type = payload.get("board_type")
+        num_players = payload.get("num_players")
+        config_key = payload.get("config_key") or f"{board_type}_{num_players}p"
+        games_consolidated = payload.get("games_consolidated", 0)
+        canonical_db = payload.get("canonical_db")
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Consolidation complete for {config_key}: "
+            f"{games_consolidated} games merged into {canonical_db}"
+        )
+
+        # Remove from in-progress set
+        if hasattr(self, "_consolidations_in_progress"):
+            self._consolidations_in_progress.discard(config_key)
+
+        # Emit NEW_GAMES_AVAILABLE to trigger export pipeline
+        if games_consolidated > 0:
+            try:
+                from app.distributed.data_events import emit_data_event, DataEventType
+
+                await emit_data_event(
+                    event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                    payload={
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "games_count": games_consolidated,
+                        "source": "consolidation",
+                        "config_key": config_key,
+                        "canonical_db": canonical_db,
+                    },
+                )
+                logger.info(
+                    f"[DataPipelineOrchestrator] Triggered export pipeline after consolidation"
+                )
+            except ImportError:
+                pass  # data_events not available
+            except Exception as e:
+                logger.debug(f"[DataPipelineOrchestrator] Failed to emit new_games_available: {e}")
 
     async def _on_selfplay_complete(self, result) -> None:
         """Handle selfplay completion."""

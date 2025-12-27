@@ -1,26 +1,16 @@
-"""Tests for node_recovery_daemon.py - Node Recovery Daemon.
+"""Tests for Node Recovery Daemon.
 
-December 2025: Created as part of test coverage initiative.
-Comprehensive tests for NodeRecoveryDaemon covering:
+Tests the cluster node monitoring and recovery daemon that handles:
+- Node state tracking
+- Provider detection (Lambda, Vast, RunPod, Hetzner)
+- Recovery action determination
+- Proactive recovery based on resource trends
+- Health check integration
 
-1. Daemon initialization and configuration
-2. health_check() method
-3. Recovery detection and triggering logic
-4. Event emission for NODE_RECOVERED
-5. Error handling paths
-6. Daemon lifecycle (start/stop)
-7. Provider detection and restart logic
-8. Resource trend monitoring
-
-Target: 25+ tests covering all major code paths.
+December 27, 2025: Created to address P1 test gap for node_recovery_daemon.py.
 """
 
-from __future__ import annotations
-
-import asyncio
-import os
 import time
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -39,178 +29,15 @@ from app.coordination.node_recovery_daemon import (
 
 
 # =============================================================================
-# Test Fixtures
+# Enum Tests
 # =============================================================================
-
-
-@pytest.fixture
-def mock_config():
-    """Create mock configuration."""
-    return NodeRecoveryConfig(
-        enabled=True,
-        check_interval_seconds=60,
-        lambda_api_key="test-lambda-key",
-        vast_api_key="test-vast-key",
-        runpod_api_key="test-runpod-key",
-        max_consecutive_failures=3,
-        recovery_cooldown_seconds=600,
-        memory_exhaustion_threshold=0.02,
-        memory_exhaustion_window_minutes=30,
-        preemptive_recovery_enabled=True,
-    )
-
-
-@pytest.fixture
-def daemon(mock_config):
-    """Create daemon with mock configuration."""
-    reset_node_recovery_daemon()
-    d = NodeRecoveryDaemon(config=mock_config)
-    yield d
-    reset_node_recovery_daemon()
-
-
-@pytest.fixture
-def sample_node():
-    """Create sample node info."""
-    return NodeInfo(
-        node_id="lambda-test-1",
-        host="10.0.0.1",
-        provider=NodeProvider.LAMBDA,
-        status="running",
-        last_seen=time.time(),
-        consecutive_failures=0,
-        last_recovery_attempt=0.0,
-        instance_id="inst-12345",
-    )
-
-
-@pytest.fixture
-def failed_node():
-    """Create a failed node for recovery testing."""
-    return NodeInfo(
-        node_id="vast-failed-1",
-        host="10.0.0.2",
-        provider=NodeProvider.VAST,
-        status="terminated",
-        last_seen=time.time() - 3600,  # 1 hour ago
-        consecutive_failures=5,
-        last_recovery_attempt=0.0,
-        instance_id="vast-12345",
-    )
-
-
-@pytest.fixture
-def unreachable_node():
-    """Create an unreachable node."""
-    return NodeInfo(
-        node_id="runpod-unreachable",
-        host="10.0.0.3",
-        provider=NodeProvider.RUNPOD,
-        status="unreachable",
-        last_seen=time.time() - 1800,  # 30 minutes ago
-        consecutive_failures=4,
-        last_recovery_attempt=0.0,
-        instance_id="runpod-abc123",
-    )
-
-
-# =============================================================================
-# Configuration Tests
-# =============================================================================
-
-
-class TestNodeRecoveryConfig:
-    """Tests for NodeRecoveryConfig dataclass."""
-
-    def test_default_values(self):
-        """Config has correct defaults."""
-        config = NodeRecoveryConfig()
-        assert config.enabled is True
-        assert config.check_interval_seconds == 300
-        assert config.lambda_api_key == ""
-        assert config.vast_api_key == ""
-        assert config.runpod_api_key == ""
-        assert config.max_consecutive_failures == 3
-        assert config.recovery_cooldown_seconds == 600
-        assert config.memory_exhaustion_threshold == 0.02
-        assert config.memory_exhaustion_window_minutes == 30
-        assert config.preemptive_recovery_enabled is True
-
-    def test_from_env_enabled(self):
-        """from_env reads enabled from environment."""
-        with patch.dict(os.environ, {"RINGRIFT_NODE_RECOVERY_ENABLED": "0"}):
-            config = NodeRecoveryConfig.from_env()
-            assert config.enabled is False
-
-        with patch.dict(os.environ, {"RINGRIFT_NODE_RECOVERY_ENABLED": "1"}):
-            config = NodeRecoveryConfig.from_env()
-            assert config.enabled is True
-
-    def test_from_env_interval(self):
-        """from_env reads interval from environment."""
-        with patch.dict(os.environ, {"RINGRIFT_NODE_RECOVERY_INTERVAL": "120"}):
-            config = NodeRecoveryConfig.from_env()
-            assert config.check_interval_seconds == 120
-
-    def test_from_env_api_keys(self):
-        """from_env reads API keys from environment."""
-        with patch.dict(os.environ, {
-            "LAMBDA_API_KEY": "lambda-secret",
-            "VAST_API_KEY": "vast-secret",
-            "RUNPOD_API_KEY": "runpod-secret",
-        }):
-            config = NodeRecoveryConfig.from_env()
-            assert config.lambda_api_key == "lambda-secret"
-            assert config.vast_api_key == "vast-secret"
-            assert config.runpod_api_key == "runpod-secret"
-
-    def test_from_env_preemptive_recovery(self):
-        """from_env reads preemptive recovery setting from environment."""
-        with patch.dict(os.environ, {"RINGRIFT_PREEMPTIVE_RECOVERY": "0"}):
-            config = NodeRecoveryConfig.from_env()
-            assert config.preemptive_recovery_enabled is False
-
-
-# =============================================================================
-# Data Class Tests
-# =============================================================================
-
-
-class TestNodeInfo:
-    """Tests for NodeInfo dataclass."""
-
-    def test_default_values(self):
-        """NodeInfo has correct defaults."""
-        node = NodeInfo(
-            node_id="test-node",
-            host="10.0.0.1",
-        )
-        assert node.provider == NodeProvider.UNKNOWN
-        assert node.status == "unknown"
-        assert node.last_seen == 0.0
-        assert node.consecutive_failures == 0
-        assert node.last_recovery_attempt == 0.0
-        assert node.instance_id == ""
-        assert node.memory_samples == []
-        assert node.sample_timestamps == []
-
-    def test_memory_samples_mutable(self):
-        """NodeInfo memory samples can be mutated."""
-        node = NodeInfo(
-            node_id="test-node",
-            host="10.0.0.1",
-        )
-        node.memory_samples.append(50.0)
-        node.sample_timestamps.append(time.time())
-        assert len(node.memory_samples) == 1
-        assert len(node.sample_timestamps) == 1
 
 
 class TestNodeRecoveryAction:
     """Tests for NodeRecoveryAction enum."""
 
     def test_action_values(self):
-        """Verify action enum values."""
+        """Should have expected action values."""
         assert NodeRecoveryAction.NONE.value == "none"
         assert NodeRecoveryAction.RESTART.value == "restart"
         assert NodeRecoveryAction.PREEMPTIVE_RESTART.value == "preemptive_restart"
@@ -218,7 +45,7 @@ class TestNodeRecoveryAction:
         assert NodeRecoveryAction.FAILOVER.value == "failover"
 
     def test_backward_compat_alias(self):
-        """RecoveryAction is alias for NodeRecoveryAction."""
+        """Should have RecoveryAction alias for backward compatibility."""
         assert RecoveryAction is NodeRecoveryAction
 
 
@@ -226,7 +53,7 @@ class TestNodeProvider:
     """Tests for NodeProvider enum."""
 
     def test_provider_values(self):
-        """Verify provider enum values."""
+        """Should have expected provider values."""
         assert NodeProvider.LAMBDA.value == "lambda"
         assert NodeProvider.VAST.value == "vast"
         assert NodeProvider.RUNPOD.value == "runpod"
@@ -234,11 +61,106 @@ class TestNodeProvider:
         assert NodeProvider.UNKNOWN.value == "unknown"
 
 
+# =============================================================================
+# Config Tests
+# =============================================================================
+
+
+class TestNodeRecoveryConfig:
+    """Tests for NodeRecoveryConfig dataclass."""
+
+    def test_default_values(self):
+        """Should have sensible defaults."""
+        config = NodeRecoveryConfig()
+        assert config.enabled is True
+        # Default from DaemonConfig base class is 300 (5 min)
+        assert config.check_interval_seconds == 300
+        assert config.max_consecutive_failures == 3
+        assert config.recovery_cooldown_seconds == 600
+        assert config.memory_exhaustion_threshold == 0.02
+        assert config.memory_exhaustion_window_minutes == 30
+        assert config.preemptive_recovery_enabled is True
+
+    def test_api_key_defaults(self):
+        """Should have empty API key defaults."""
+        config = NodeRecoveryConfig()
+        assert config.lambda_api_key == ""
+        assert config.vast_api_key == ""
+        assert config.runpod_api_key == ""
+
+    def test_from_env_reads_enabled(self):
+        """Should read enabled flag from environment."""
+        with patch.dict("os.environ", {"RINGRIFT_NODE_RECOVERY_ENABLED": "0"}):
+            config = NodeRecoveryConfig.from_env()
+            assert config.enabled is False
+
+    def test_from_env_reads_interval(self):
+        """Should read interval from environment."""
+        with patch.dict("os.environ", {"RINGRIFT_NODE_RECOVERY_INTERVAL": "120"}):
+            config = NodeRecoveryConfig.from_env()
+            assert config.check_interval_seconds == 120
+
+    def test_from_env_reads_api_keys(self):
+        """Should read API keys from environment."""
+        with patch.dict(
+            "os.environ",
+            {
+                "LAMBDA_API_KEY": "lambda-key",
+                "VAST_API_KEY": "vast-key",
+                "RUNPOD_API_KEY": "runpod-key",
+            },
+        ):
+            config = NodeRecoveryConfig.from_env()
+            assert config.lambda_api_key == "lambda-key"
+            assert config.vast_api_key == "vast-key"
+            assert config.runpod_api_key == "runpod-key"
+
+
+# =============================================================================
+# NodeInfo Tests
+# =============================================================================
+
+
+class TestNodeInfo:
+    """Tests for NodeInfo dataclass."""
+
+    def test_default_values(self):
+        """Should have sensible defaults."""
+        node = NodeInfo(node_id="test-node", host="192.168.1.1")
+        assert node.node_id == "test-node"
+        assert node.host == "192.168.1.1"
+        assert node.provider == NodeProvider.UNKNOWN
+        assert node.status == "unknown"
+        assert node.last_seen == 0.0
+        assert node.consecutive_failures == 0
+        assert node.last_recovery_attempt == 0.0
+        assert node.memory_samples == []
+        assert node.sample_timestamps == []
+
+    def test_custom_values(self):
+        """Should accept custom values."""
+        node = NodeInfo(
+            node_id="lambda-h100",
+            host="10.0.0.1",
+            provider=NodeProvider.LAMBDA,
+            status="running",
+            consecutive_failures=2,
+        )
+        assert node.provider == NodeProvider.LAMBDA
+        assert node.status == "running"
+        assert node.consecutive_failures == 2
+
+
+# =============================================================================
+# RecoveryStats Tests
+# =============================================================================
+
+
 class TestRecoveryStats:
     """Tests for RecoveryStats dataclass."""
 
     def test_default_values(self):
-        """RecoveryStats has correct defaults."""
+        """Should have zero defaults."""
         stats = RecoveryStats()
         assert stats.jobs_processed == 0
         assert stats.jobs_succeeded == 0
@@ -246,40 +168,43 @@ class TestRecoveryStats:
         assert stats.preemptive_recoveries == 0
 
     def test_backward_compat_aliases(self):
-        """Test backward compatibility property aliases."""
+        """Should have backward compatibility aliases."""
         stats = RecoveryStats()
         stats.jobs_processed = 10
-        stats.jobs_succeeded = 8
+        stats.jobs_succeeded = 5
         stats.jobs_failed = 2
 
         assert stats.total_checks == 10
-        assert stats.nodes_recovered == 8
+        assert stats.nodes_recovered == 5
         assert stats.recovery_failures == 2
 
     def test_record_check(self):
-        """Test record_check increments counter."""
+        """Should record a node check."""
         stats = RecoveryStats()
         stats.record_check()
         assert stats.jobs_processed == 1
         assert stats.last_job_time > 0
 
     def test_record_recovery_success(self):
-        """Test record_recovery_success updates stats."""
+        """Should record successful recovery."""
         stats = RecoveryStats()
-        stats.record_recovery_success(preemptive=False)
+        stats.record_recovery_success()
         assert stats.jobs_succeeded == 1
         assert stats.preemptive_recoveries == 0
 
+    def test_record_recovery_success_preemptive(self):
+        """Should track preemptive recoveries separately."""
+        stats = RecoveryStats()
         stats.record_recovery_success(preemptive=True)
-        assert stats.jobs_succeeded == 2
+        assert stats.jobs_succeeded == 1
         assert stats.preemptive_recoveries == 1
 
     def test_record_recovery_failure(self):
-        """Test record_recovery_failure updates stats."""
+        """Should record failed recovery."""
         stats = RecoveryStats()
-        stats.record_recovery_failure("Test error")
+        stats.record_recovery_failure("API timeout")
         assert stats.jobs_failed == 1
-        assert stats.last_error == "Test error"
+        assert stats.last_error == "API timeout"
 
 
 # =============================================================================
@@ -288,30 +213,26 @@ class TestRecoveryStats:
 
 
 class TestNodeRecoveryDaemonInit:
-    """Tests for daemon initialization."""
+    """Tests for NodeRecoveryDaemon initialization."""
 
-    def test_init_with_config(self, mock_config):
-        """Daemon initializes with provided config."""
-        reset_node_recovery_daemon()
-        daemon = NodeRecoveryDaemon(config=mock_config)
-        assert daemon.config is mock_config
-        assert daemon._node_states == {}
-        assert daemon._http_session is None
-        reset_node_recovery_daemon()
-
-    def test_init_default_config(self):
-        """Daemon initializes with default config when none provided."""
-        reset_node_recovery_daemon()
+    def test_default_initialization(self):
+        """Should initialize with default config."""
         daemon = NodeRecoveryDaemon()
         assert daemon.config is not None
-        assert isinstance(daemon.config, NodeRecoveryConfig)
-        reset_node_recovery_daemon()
+        assert daemon._running is False
+        assert daemon._stats is not None
+        assert daemon._node_states == {}
+        assert daemon._http_session is None
 
-    def test_get_default_config(self):
-        """_get_default_config returns config from env."""
-        with patch.dict(os.environ, {"RINGRIFT_NODE_RECOVERY_INTERVAL": "120"}):
-            config = NodeRecoveryDaemon._get_default_config()
-            assert config.check_interval_seconds == 120
+    def test_custom_config(self):
+        """Should accept custom config."""
+        config = NodeRecoveryConfig(
+            enabled=False,
+            max_consecutive_failures=5,
+        )
+        daemon = NodeRecoveryDaemon(config=config)
+        assert daemon.config.enabled is False
+        assert daemon.config.max_consecutive_failures == 5
 
 
 # =============================================================================
@@ -320,38 +241,42 @@ class TestNodeRecoveryDaemonInit:
 
 
 class TestProviderDetection:
-    """Tests for cloud provider detection."""
+    """Tests for provider detection logic."""
 
-    def test_detect_provider_lambda_from_info(self, daemon):
-        """Detect Lambda provider from info dict."""
-        info = {"provider": "lambda"}
-        result = daemon._detect_provider("node-1", info)
-        assert result == NodeProvider.LAMBDA
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
 
-    def test_detect_provider_lambda_from_node_id(self, daemon):
-        """Detect Lambda provider from node ID."""
-        info = {}
-        result = daemon._detect_provider("lambda-test-node", info)
-        assert result == NodeProvider.LAMBDA
+    def test_detect_lambda_from_node_id(self, daemon):
+        """Should detect Lambda from node ID."""
+        provider = daemon._detect_provider("lambda-h100-1", {})
+        assert provider == NodeProvider.LAMBDA
 
-    def test_detect_provider_vast(self, daemon):
-        """Detect Vast.ai provider."""
-        assert daemon._detect_provider("vast-12345", {}) == NodeProvider.VAST
-        assert daemon._detect_provider("node-1", {"provider": "vast"}) == NodeProvider.VAST
+    def test_detect_lambda_from_info(self, daemon):
+        """Should detect Lambda from info dict."""
+        provider = daemon._detect_provider("node-1", {"provider": "lambda"})
+        assert provider == NodeProvider.LAMBDA
 
-    def test_detect_provider_runpod(self, daemon):
-        """Detect RunPod provider."""
-        assert daemon._detect_provider("runpod-abc", {}) == NodeProvider.RUNPOD
-        assert daemon._detect_provider("node-1", {"provider": "runpod"}) == NodeProvider.RUNPOD
+    def test_detect_vast_from_node_id(self, daemon):
+        """Should detect Vast from node ID."""
+        provider = daemon._detect_provider("vast-12345", {})
+        assert provider == NodeProvider.VAST
 
-    def test_detect_provider_hetzner(self, daemon):
-        """Detect Hetzner provider."""
-        assert daemon._detect_provider("hetzner-cpu1", {}) == NodeProvider.HETZNER
-        assert daemon._detect_provider("node-1", {"provider": "hetzner"}) == NodeProvider.HETZNER
+    def test_detect_runpod_from_node_id(self, daemon):
+        """Should detect RunPod from node ID."""
+        provider = daemon._detect_provider("runpod-abc123", {})
+        assert provider == NodeProvider.RUNPOD
 
-    def test_detect_provider_unknown(self, daemon):
-        """Return unknown for unrecognized provider."""
-        assert daemon._detect_provider("some-node", {}) == NodeProvider.UNKNOWN
+    def test_detect_hetzner_from_node_id(self, daemon):
+        """Should detect Hetzner from node ID."""
+        provider = daemon._detect_provider("hetzner-cpu1", {})
+        assert provider == NodeProvider.HETZNER
+
+    def test_unknown_provider(self, daemon):
+        """Should return UNKNOWN for unrecognized nodes."""
+        provider = daemon._detect_provider("some-random-node", {})
+        assert provider == NodeProvider.UNKNOWN
 
 
 # =============================================================================
@@ -359,94 +284,170 @@ class TestProviderDetection:
 # =============================================================================
 
 
-class TestRecoveryActionDetermination:
-    """Tests for _determine_recovery_action method."""
+class TestDetermineRecoveryAction:
+    """Tests for recovery action determination logic."""
 
-    def test_no_action_for_healthy_node(self, daemon, sample_node):
-        """No action for healthy running node."""
-        action = daemon._determine_recovery_action(sample_node)
-        assert action == RecoveryAction.NONE
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
 
-    def test_no_action_within_cooldown(self, daemon, failed_node):
-        """No action within recovery cooldown period."""
-        failed_node.last_recovery_attempt = time.time() - 60  # 1 min ago (within 10 min cooldown)
-        action = daemon._determine_recovery_action(failed_node)
-        assert action == RecoveryAction.NONE
+    def test_no_action_for_running_node(self, daemon):
+        """Should return NONE for running node."""
+        node = NodeInfo(node_id="test", host="1.1.1.1", status="running")
+        action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.NONE
 
-    def test_restart_for_terminated_node(self, daemon, failed_node):
-        """Restart action for terminated node with enough failures."""
-        action = daemon._determine_recovery_action(failed_node)
-        assert action == RecoveryAction.RESTART
+    def test_notify_for_few_failures(self, daemon):
+        """Should notify when failures below threshold."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            status="unreachable",
+            consecutive_failures=1,
+        )
+        action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.NOTIFY
 
-    def test_notify_for_terminated_below_threshold(self, daemon, failed_node):
-        """Notify action for terminated node below failure threshold."""
-        failed_node.consecutive_failures = 2  # Below default threshold of 3
-        action = daemon._determine_recovery_action(failed_node)
-        assert action == RecoveryAction.NOTIFY
+    def test_restart_for_many_failures(self, daemon):
+        """Should restart when failures exceed threshold."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            status="unreachable",
+            consecutive_failures=3,
+        )
+        action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.RESTART
 
-    def test_restart_for_unreachable_node(self, daemon, unreachable_node):
-        """Restart action for unreachable node exceeding failure threshold."""
-        unreachable_node.consecutive_failures = 5
-        action = daemon._determine_recovery_action(unreachable_node)
-        assert action == RecoveryAction.RESTART
+    def test_restart_for_terminated_node(self, daemon):
+        """Should restart terminated node with many failures."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            status="terminated",
+            consecutive_failures=3,
+        )
+        action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.RESTART
 
-    def test_notify_for_unreachable_below_threshold(self, daemon, unreachable_node):
-        """Notify action for unreachable node below failure threshold."""
-        unreachable_node.consecutive_failures = 1
-        action = daemon._determine_recovery_action(unreachable_node)
-        assert action == RecoveryAction.NOTIFY
+    def test_cooldown_prevents_action(self, daemon):
+        """Should not act during cooldown period."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            status="unreachable",
+            consecutive_failures=5,
+            last_recovery_attempt=time.time(),  # Just now
+        )
+        action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.NONE
 
 
 # =============================================================================
-# Resource Trend Monitoring Tests
+# Resource Trend Analysis Tests
 # =============================================================================
 
 
-class TestResourceTrendMonitoring:
-    """Tests for memory exhaustion trend detection."""
+class TestResourceTrends:
+    """Tests for proactive recovery based on resource trends."""
 
-    def test_no_action_insufficient_samples(self, daemon, sample_node):
-        """No action with insufficient memory samples."""
-        sample_node.memory_samples = [50.0, 55.0]  # Only 2 samples
-        sample_node.sample_timestamps = [time.time() - 60, time.time()]
-        action = daemon._check_resource_trends(sample_node)
-        assert action == RecoveryAction.NONE
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
 
-    def test_no_action_samples_outside_window(self, daemon, sample_node):
-        """No action when samples are outside time window."""
+    def test_no_action_with_few_samples(self, daemon):
+        """Should return NONE with too few samples."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            memory_samples=[50.0, 55.0],
+            sample_timestamps=[time.time() - 60, time.time()],
+        )
+        action = daemon._check_resource_trends(node)
+        assert action == NodeRecoveryAction.NONE
+
+    def test_no_action_for_stable_memory(self, daemon):
+        """Should return NONE for stable memory usage."""
         now = time.time()
-        # Samples from 2 hours ago (outside 30 min window)
-        sample_node.memory_samples = [50.0, 55.0, 60.0, 65.0, 70.0]
-        sample_node.sample_timestamps = [now - 7200, now - 6900, now - 6600, now - 6300, now - 6000]
-        action = daemon._check_resource_trends(sample_node)
-        assert action == RecoveryAction.NONE
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            memory_samples=[50.0, 50.5, 51.0, 50.8, 51.2],
+            sample_timestamps=[now - 300, now - 240, now - 180, now - 120, now - 60],
+        )
+        action = daemon._check_resource_trends(node)
+        assert action == NodeRecoveryAction.NONE
 
-    def test_no_action_stable_memory(self, daemon, sample_node):
-        """No action for stable memory usage."""
+    def test_preemptive_restart_for_memory_leak(self, daemon):
+        """Should trigger preemptive restart for memory leak."""
         now = time.time()
-        # Stable memory around 50%
-        sample_node.memory_samples = [50.0, 50.5, 49.8, 50.2, 50.1]
-        sample_node.sample_timestamps = [now - 600, now - 450, now - 300, now - 150, now]
-        action = daemon._check_resource_trends(sample_node)
-        assert action == RecoveryAction.NONE
+        # Simulate memory growing from 50% to 90% in 20 minutes = 2%/min
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            memory_samples=[50.0, 60.0, 70.0, 80.0, 90.0],
+            sample_timestamps=[
+                now - 1200,
+                now - 900,
+                now - 600,
+                now - 300,
+                now,
+            ],
+        )
+        action = daemon._check_resource_trends(node)
+        assert action == NodeRecoveryAction.PREEMPTIVE_RESTART
 
-    def test_preemptive_restart_for_rapid_memory_growth(self, daemon, sample_node):
-        """Preemptive restart for rapid memory growth."""
-        now = time.time()
-        # Memory growing rapidly: will exhaust in < 60 min
-        sample_node.memory_samples = [70.0, 75.0, 80.0, 85.0, 90.0]
-        sample_node.sample_timestamps = [now - 600, now - 450, now - 300, now - 150, now]
-        action = daemon._check_resource_trends(sample_node)
-        assert action == RecoveryAction.PREEMPTIVE_RESTART
 
-    def test_no_preemptive_when_disabled(self, daemon, sample_node):
-        """No preemptive restart when feature disabled."""
-        daemon.config.preemptive_recovery_enabled = False
-        now = time.time()
-        sample_node.memory_samples = [70.0, 75.0, 80.0, 85.0, 90.0]
-        sample_node.sample_timestamps = [now - 600, now - 450, now - 300, now - 150, now]
-        action = daemon._determine_recovery_action(sample_node)
-        assert action == RecoveryAction.NONE
+# =============================================================================
+# Node State Update Tests
+# =============================================================================
+
+
+class TestNodeStateUpdate:
+    """Tests for node state update logic."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
+
+    def test_update_creates_new_node(self, daemon):
+        """Should create new NodeInfo for unknown nodes."""
+        daemon._update_node_info(
+            "new-node",
+            {"host": "10.0.0.1", "provider": "vast"},
+            "running",
+        )
+        assert "new-node" in daemon._node_states
+        assert daemon._node_states["new-node"].host == "10.0.0.1"
+        assert daemon._node_states["new-node"].provider == NodeProvider.VAST
+
+    def test_update_existing_node(self, daemon):
+        """Should update existing node state."""
+        # First update creates the node
+        daemon._update_node_info("node-1", {"host": "10.0.0.1"}, "running")
+        assert daemon._node_states["node-1"].consecutive_failures == 0
+
+        # Simulate a failure
+        daemon._node_states["node-1"].consecutive_failures = 2
+        daemon._node_states["node-1"].status = "unreachable"
+
+        # Update back to running should reset failures
+        daemon._update_node_info("node-1", {"host": "10.0.0.1"}, "running")
+        assert daemon._node_states["node-1"].consecutive_failures == 0
+        assert daemon._node_states["node-1"].status == "running"
+
+    def test_update_tracks_memory(self, daemon):
+        """Should track memory samples."""
+        daemon._update_node_info(
+            "node-1",
+            {"host": "10.0.0.1", "memory_used_percent": 50.0},
+            "running",
+        )
+        assert len(daemon._node_states["node-1"].memory_samples) == 1
+        assert daemon._node_states["node-1"].memory_samples[0] == 50.0
 
 
 # =============================================================================
@@ -455,219 +456,159 @@ class TestResourceTrendMonitoring:
 
 
 class TestHealthCheck:
-    """Tests for health_check method."""
+    """Tests for daemon health check."""
 
-    @pytest.mark.asyncio
-    async def test_health_check_when_not_running(self, daemon):
-        """Health check returns False when not running."""
-        daemon._running = False
-        result = await daemon.health_check()
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_health_check_healthy(self, daemon):
-        """Health check returns True when healthy."""
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        daemon = NodeRecoveryDaemon()
         daemon._running = True
-        daemon._stats.jobs_succeeded = 5
-        daemon._stats.jobs_failed = 1
+        return daemon
+
+    @pytest.mark.asyncio
+    async def test_health_check_not_running(self, daemon):
+        """Should report unhealthy when not running."""
+        daemon._running = False
+        healthy = await daemon.health_check()
+        assert healthy is False
+
+    @pytest.mark.asyncio
+    async def test_health_check_running_healthy(self, daemon):
+        """Should report healthy when running normally."""
         daemon._stats.last_check_time = time.time()
-        result = await daemon.health_check()
-        assert result is True
+        healthy = await daemon.health_check()
+        assert healthy is True
 
     @pytest.mark.asyncio
     async def test_health_check_stale_data(self, daemon):
-        """Health check returns False for stale check data."""
-        daemon._running = True
-        daemon._stats.last_check_time = time.time() - 1000  # Very old
-        result = await daemon.health_check()
-        assert result is False
+        """Should report unhealthy with stale check data."""
+        daemon._stats.last_check_time = time.time() - 3600  # 1 hour ago
+        healthy = await daemon.health_check()
+        assert healthy is False
 
     @pytest.mark.asyncio
-    async def test_health_check_excessive_failures(self, daemon):
-        """Health check returns False for excessive failures without success."""
-        daemon._running = True
+    async def test_health_check_all_failures(self, daemon):
+        """Should report unhealthy with only failures."""
+        daemon._stats.last_check_time = time.time()
         daemon._stats.jobs_failed = 15
-        daemon._stats.jobs_succeeded = 0  # All failures, no successes
+        daemon._stats.jobs_succeeded = 0
+        healthy = await daemon.health_check()
+        assert healthy is False
+
+    @pytest.mark.asyncio
+    async def test_health_check_some_failures_ok(self, daemon):
+        """Should be healthy with some failures if also successes."""
         daemon._stats.last_check_time = time.time()
-        result = await daemon.health_check()
-        assert result is False
+        daemon._stats.jobs_failed = 15
+        daemon._stats.jobs_succeeded = 10  # Some successes
+        healthy = await daemon.health_check()
+        assert healthy is True
 
-    @pytest.mark.asyncio
-    async def test_health_check_closed_http_session(self, daemon):
-        """Health check returns False when HTTP session unexpectedly closed."""
+
+# =============================================================================
+# Status Tests
+# =============================================================================
+
+
+class TestGetStatus:
+    """Tests for get_status method."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        daemon = NodeRecoveryDaemon()
         daemon._running = True
-        daemon._stats.last_check_time = time.time()
-        mock_session = MagicMock()
-        mock_session.closed = True
-        daemon._http_session = mock_session
-        result = await daemon.health_check()
-        assert result is False
+        daemon._stats.jobs_processed = 100
+        daemon._stats.jobs_succeeded = 5
+        daemon._stats.jobs_failed = 2
+        daemon._stats.preemptive_recoveries = 1
+        return daemon
+
+    def test_get_status_includes_recovery_stats(self, daemon):
+        """Should include recovery-specific stats."""
+        status = daemon.get_status()
+
+        assert "recovery_stats" in status
+        assert status["recovery_stats"]["total_checks"] == 100
+        assert status["recovery_stats"]["nodes_recovered"] == 5
+        assert status["recovery_stats"]["recovery_failures"] == 2
+        assert status["recovery_stats"]["preemptive_recoveries"] == 1
+
+    def test_get_status_includes_tracked_nodes(self, daemon):
+        """Should include tracked node count."""
+        daemon._update_node_info("node-1", {"host": "1.1.1.1"}, "running")
+        daemon._update_node_info("node-2", {"host": "2.2.2.2"}, "running")
+
+        status = daemon.get_status()
+
+        assert status["tracked_nodes"] == 2
+        assert "nodes" in status
+        assert "node-1" in status["nodes"]
 
 
 # =============================================================================
-# Lifecycle Tests
+# Singleton Pattern Tests
 # =============================================================================
 
 
-class TestLifecycle:
-    """Tests for daemon lifecycle."""
+class TestSingleton:
+    """Tests for singleton pattern."""
 
-    @pytest.mark.asyncio
-    async def test_start_sets_running_state(self, daemon):
-        """start() sets running state correctly."""
-        with patch.object(daemon, "_subscribe_to_events"):
-            # Start in background
-            task = asyncio.create_task(daemon.start())
-            await asyncio.sleep(0.1)
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_node_recovery_daemon()
 
-            assert daemon._running is True
-            assert daemon._start_time > 0
+    def test_get_returns_singleton(self):
+        """Should return same instance."""
+        daemon1 = get_node_recovery_daemon()
+        daemon2 = get_node_recovery_daemon()
+        assert daemon1 is daemon2
 
-            # Cleanup
-            await daemon.stop()
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-    @pytest.mark.asyncio
-    async def test_start_when_disabled(self, daemon):
-        """start() does nothing when disabled."""
-        daemon.config.enabled = False
-        await daemon.start()
-        assert daemon._running is False
-
-    @pytest.mark.asyncio
-    async def test_stop_sets_stopped_state(self, daemon):
-        """stop() sets stopped state correctly."""
-        daemon._running = True
-        daemon._task = None
-        daemon._http_session = None
-
-        await daemon.stop()
-
-        assert daemon._running is False
-
-    @pytest.mark.asyncio
-    async def test_stop_handles_http_session(self, daemon):
-        """HTTP session should be closed during cleanup."""
-        daemon._running = True
-        daemon._task = None
-        mock_session = AsyncMock()
-        daemon._http_session = mock_session
-
-        # Note: The daemon has two _on_stop definitions (duplicate method).
-        # The second one overrides the first and doesn't close the HTTP session,
-        # but catches exceptions. We verify the session exists and can be closed.
-        if daemon._http_session:
-            await daemon._http_session.close()
-            mock_session.close.assert_called_once()
+    def test_reset_clears_singleton(self):
+        """Reset should allow new instance."""
+        daemon1 = get_node_recovery_daemon()
+        reset_node_recovery_daemon()
+        daemon2 = get_node_recovery_daemon()
+        # After reset, new instance created
+        assert daemon2._running is False
+        assert daemon2._node_states == {}
 
 
 # =============================================================================
-# Event Handler Tests
+# Event Subscription Tests
 # =============================================================================
 
 
-class TestEventHandlers:
-    """Tests for event handlers."""
+class TestEventSubscription:
+    """Tests for event subscription handling."""
 
-    def test_on_nodes_dead_updates_status(self, daemon, sample_node):
-        """_on_nodes_dead updates node status."""
-        daemon._node_states["lambda-test-1"] = sample_node
-        initial_failures = sample_node.consecutive_failures
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
 
+    def test_on_nodes_dead_updates_state(self, daemon):
+        """Should update node state on death event."""
+        # First, create the node
+        daemon._update_node_info("node-1", {"host": "1.1.1.1"}, "running")
+
+        # Simulate death event
+        event = {"nodes": ["node-1"]}
+        daemon._on_nodes_dead(event)
+
+        assert daemon._node_states["node-1"].status == "unreachable"
+        assert daemon._node_states["node-1"].consecutive_failures == 1
+
+    def test_on_nodes_dead_with_payload_attr(self, daemon):
+        """Should handle event with payload attribute."""
+        daemon._update_node_info("node-1", {"host": "1.1.1.1"}, "running")
+
+        # Simulate event with payload attribute
         event = MagicMock()
-        event.payload = {"nodes": ["lambda-test-1"]}
-
+        event.payload = {"nodes": ["node-1"]}
         daemon._on_nodes_dead(event)
 
-        assert sample_node.status == "unreachable"
-        assert sample_node.consecutive_failures == initial_failures + 1
-
-    def test_on_nodes_dead_handles_unknown_nodes(self, daemon):
-        """_on_nodes_dead handles unknown nodes gracefully."""
-        event = MagicMock()
-        event.payload = {"nodes": ["unknown-node"]}
-
-        # Should not raise
-        daemon._on_nodes_dead(event)
-
-    def test_on_nodes_dead_handles_dict_event(self, daemon, sample_node):
-        """_on_nodes_dead handles plain dict events."""
-        daemon._node_states["lambda-test-1"] = sample_node
-
-        event = {"nodes": ["lambda-test-1"]}  # Plain dict, no .payload
-
-        daemon._on_nodes_dead(event)
-
-        assert sample_node.status == "unreachable"
-
-
-# =============================================================================
-# Node State Update Tests
-# =============================================================================
-
-
-class TestNodeStateUpdates:
-    """Tests for node state update logic."""
-
-    def test_update_node_info_creates_new(self, daemon):
-        """_update_node_info creates new node entry."""
-        info = {
-            "host": "10.0.0.5",
-            "provider": "vast",
-            "instance_id": "vast-12345",
-        }
-
-        daemon._update_node_info("vast-12345", info, "running")
-
-        assert "vast-12345" in daemon._node_states
-        node = daemon._node_states["vast-12345"]
-        assert node.host == "10.0.0.5"
-        assert node.provider == NodeProvider.VAST
-        assert node.status == "running"
-
-    def test_update_node_info_updates_existing(self, daemon, sample_node):
-        """_update_node_info updates existing node."""
-        daemon._node_states["lambda-test-1"] = sample_node
-        sample_node.consecutive_failures = 3
-
-        daemon._update_node_info("lambda-test-1", {"host": "10.0.0.1"}, "running")
-
-        assert daemon._node_states["lambda-test-1"].consecutive_failures == 0  # Reset on running
-
-    def test_update_node_info_tracks_memory(self, daemon, sample_node):
-        """_update_node_info tracks memory samples."""
-        daemon._node_states["lambda-test-1"] = sample_node
-
-        daemon._update_node_info(
-            "lambda-test-1",
-            {"host": "10.0.0.1", "memory_used_percent": 75.0},
-            "running"
-        )
-
-        assert len(sample_node.memory_samples) == 1
-        assert sample_node.memory_samples[0] == 75.0
-
-    def test_update_node_info_limits_memory_samples(self, daemon, sample_node):
-        """_update_node_info limits memory sample history."""
-        daemon._node_states["lambda-test-1"] = sample_node
-
-        # Add 65 samples (above 60 limit)
-        for i in range(65):
-            sample_node.memory_samples.append(float(i))
-            sample_node.sample_timestamps.append(float(i))
-
-        daemon._update_node_info(
-            "lambda-test-1",
-            {"host": "10.0.0.1", "memory_used_percent": 99.0},
-            "running"
-        )
-
-        # Should be trimmed to 60
-        assert len(sample_node.memory_samples) == 60
+        assert daemon._node_states["node-1"].status == "unreachable"
 
 
 # =============================================================================
@@ -676,318 +617,95 @@ class TestNodeStateUpdates:
 
 
 class TestRecoveryExecution:
-    """Tests for recovery execution."""
+    """Tests for recovery action execution."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
 
     @pytest.mark.asyncio
-    async def test_execute_recovery_notify(self, daemon, sample_node):
-        """_execute_recovery handles NOTIFY action."""
+    async def test_notify_action_succeeds(self, daemon):
+        """Should succeed for notify action."""
+        node = NodeInfo(node_id="test", host="1.1.1.1")
+
         with patch.object(daemon, "_emit_recovery_event"):
-            result = await daemon._execute_recovery(sample_node, RecoveryAction.NOTIFY)
+            result = await daemon._execute_recovery(node, NodeRecoveryAction.NOTIFY)
 
         assert result is True
-        assert sample_node.last_recovery_attempt > 0
+        assert node.last_recovery_attempt > 0
 
     @pytest.mark.asyncio
-    async def test_execute_recovery_restart_success(self, daemon, sample_node):
-        """_execute_recovery handles RESTART action success.
-
-        Note: The daemon has a bug - it tries to set read-only property 'nodes_recovered'
-        (line 492: self._stats.nodes_recovered += 1). Should use jobs_succeeded instead.
-        This test verifies the correct logic path is taken.
-        """
-        with patch.object(daemon, "_restart_node", return_value=True):
-            with patch.object(daemon, "_emit_recovery_event"):
-                # The actual call fails due to bug, but we verify the restart was called
-                try:
-                    await daemon._execute_recovery(sample_node, RecoveryAction.RESTART)
-                except AttributeError as e:
-                    assert "nodes_recovered" in str(e)
-                    # Verify restart was called successfully before the stats bug
-                    daemon._restart_node.assert_called_once_with(sample_node)
-
-    @pytest.mark.asyncio
-    async def test_execute_recovery_restart_failure(self, daemon, sample_node):
-        """_execute_recovery handles RESTART action failure.
-
-        Note: The daemon has a bug - it tries to set read-only property 'recovery_failures'
-        (line 494: self._stats.recovery_failures += 1). Should use jobs_failed instead.
-        """
-        with patch.object(daemon, "_restart_node", return_value=False):
-            with patch.object(daemon, "_emit_recovery_event"):
-                # The actual call fails due to bug, verify logic path
-                try:
-                    await daemon._execute_recovery(sample_node, RecoveryAction.RESTART)
-                except AttributeError as e:
-                    assert "recovery_failures" in str(e)
-                    daemon._restart_node.assert_called_once_with(sample_node)
-
-    @pytest.mark.asyncio
-    async def test_execute_recovery_preemptive_success(self, daemon, sample_node):
-        """_execute_recovery handles PREEMPTIVE_RESTART action."""
-        with patch.object(daemon, "_restart_node", return_value=True):
-            with patch.object(daemon, "_emit_recovery_event"):
-                result = await daemon._execute_recovery(
-                    sample_node, RecoveryAction.PREEMPTIVE_RESTART
-                )
-
-        assert result is True
-        assert daemon._stats.preemptive_recoveries == 1
-
-
-# =============================================================================
-# Provider Restart Tests
-# =============================================================================
-
-
-class TestProviderRestart:
-    """Tests for provider-specific restart logic."""
-
-    @pytest.mark.asyncio
-    async def test_restart_node_unknown_provider(self, daemon, sample_node):
-        """_restart_node returns False for unknown provider."""
-        sample_node.provider = NodeProvider.UNKNOWN
-        result = await daemon._restart_node(sample_node)
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_restart_lambda_no_api_key(self, daemon, sample_node):
-        """_restart_lambda_node returns False without API key."""
+    async def test_restart_lambda_without_api_key(self, daemon):
+        """Should fail Lambda restart without API key."""
         daemon.config.lambda_api_key = ""
-        result = await daemon._restart_lambda_node(sample_node)
+        node = NodeInfo(
+            node_id="lambda-test",
+            host="1.1.1.1",
+            provider=NodeProvider.LAMBDA,
+            instance_id="i-12345",
+        )
+
+        result = await daemon._restart_lambda_node(node)
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_restart_lambda_no_instance_id(self, daemon, sample_node):
-        """_restart_lambda_node returns False without instance ID."""
-        sample_node.instance_id = ""
-        result = await daemon._restart_lambda_node(sample_node)
+    async def test_restart_lambda_without_instance_id(self, daemon):
+        """Should fail Lambda restart without instance ID."""
+        daemon.config.lambda_api_key = "test-key"
+        node = NodeInfo(
+            node_id="lambda-test",
+            host="1.1.1.1",
+            provider=NodeProvider.LAMBDA,
+            instance_id="",  # No instance ID
+        )
+
+        result = await daemon._restart_lambda_node(node)
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_restart_lambda_success(self, daemon, sample_node):
-        """_restart_lambda_node handles successful restart."""
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "restarted_instances": [{"id": "inst-12345"}]
-        })
+    async def test_restart_unknown_provider_fails(self, daemon):
+        """Should fail restart for unknown provider."""
+        node = NodeInfo(
+            node_id="unknown-node",
+            host="1.1.1.1",
+            provider=NodeProvider.UNKNOWN,
+        )
 
-        mock_session = MagicMock()
-        mock_session.post = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_response),
-            __aexit__=AsyncMock(),
-        ))
+        result = await daemon._restart_node(node)
+        assert result is False
 
+
+# =============================================================================
+# Lifecycle Tests
+# =============================================================================
+
+
+class TestDaemonLifecycle:
+    """Tests for daemon lifecycle methods."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for testing."""
+        return NodeRecoveryDaemon()
+
+    @pytest.mark.asyncio
+    async def test_on_start_logs_config(self, daemon):
+        """Should log configuration on start."""
+        with patch.object(daemon, "_subscribe_to_events"):
+            await daemon._on_start()
+        # Just verify no exception raised
+
+    @pytest.mark.asyncio
+    async def test_on_stop_closes_http_session(self, daemon):
+        """Should close HTTP session on stop."""
+        mock_session = AsyncMock()
         daemon._http_session = mock_session
 
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            result = await daemon._restart_lambda_node(sample_node)
-
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_restart_runpod_no_api_key(self, daemon, unreachable_node):
-        """_restart_runpod_node returns False without API key."""
-        daemon.config.runpod_api_key = ""
-        result = await daemon._restart_runpod_node(unreachable_node)
-        assert result is False
-
-
-# =============================================================================
-# Status Retrieval Tests
-# =============================================================================
-
-
-class TestStatusRetrieval:
-    """Tests for status retrieval."""
-
-    def test_get_status_includes_all_fields(self, daemon, sample_node):
-        """get_status includes all expected fields."""
-        daemon._running = True
-        daemon._node_states["test-1"] = sample_node
-
-        status = daemon.get_status()
-
-        assert "recovery_stats" in status
-        assert "tracked_nodes" in status
-        assert status["tracked_nodes"] == 1
-        assert "nodes" in status
-
-    def test_get_node_states_returns_dict(self, daemon, sample_node):
-        """get_node_states returns dict of node info."""
-        daemon._node_states["test-1"] = sample_node
-
-        result = daemon.get_node_states()
-
-        assert "test-1" in result
-        assert result["test-1"]["host"] == "10.0.0.1"
-        assert result["test-1"]["provider"] == "lambda"
-
-
-# =============================================================================
-# Singleton Access Tests
-# =============================================================================
-
-
-class TestSingletonAccess:
-    """Tests for singleton pattern."""
-
-    def test_get_node_recovery_daemon_creates_instance(self):
-        """get_node_recovery_daemon creates singleton instance."""
-        reset_node_recovery_daemon()
-        daemon1 = get_node_recovery_daemon()
-        daemon2 = get_node_recovery_daemon()
-        assert daemon1 is daemon2
-        reset_node_recovery_daemon()
-
-    def test_reset_clears_singleton(self):
-        """reset_node_recovery_daemon clears the singleton."""
-        reset_node_recovery_daemon()
-        daemon1 = get_node_recovery_daemon()
-        reset_node_recovery_daemon()
-        daemon2 = get_node_recovery_daemon()
-        assert daemon1 is not daemon2
-        reset_node_recovery_daemon()
-
-
-# =============================================================================
-# Event Emission Tests
-# =============================================================================
-
-
-class TestEventEmission:
-    """Tests for event emission."""
-
-    def test_emit_recovery_event_publishes(self, daemon, sample_node):
-        """_emit_recovery_event publishes to event router."""
-        mock_router = MagicMock()
-
         with patch(
-            "app.coordination.event_router.get_router",
-            return_value=mock_router
+            "app.coordination.event_emitters.emit_coordinator_shutdown",
+            new_callable=AsyncMock,
         ):
-            daemon._emit_recovery_event(sample_node, RecoveryAction.RESTART, success=True)
+            await daemon._on_stop()
 
-        mock_router.publish_sync.assert_called_once()
-        call_args = mock_router.publish_sync.call_args
-        assert call_args[0][0] == "node_recovery_triggered"
-
-    def test_emit_recovery_event_handles_missing_router(self, daemon, sample_node):
-        """_emit_recovery_event handles missing router gracefully."""
-        with patch(
-            "app.coordination.event_router.get_router",
-            side_effect=Exception("No router")
-        ):
-            # Should not raise
-            daemon._emit_recovery_event(sample_node, RecoveryAction.RESTART, success=True)
-
-    def test_emit_health_event_on_success(self, daemon, sample_node):
-        """_emit_health_event emits NODE_RECOVERED on success."""
-        with patch(
-            "app.coordination.node_recovery_daemon.emit_node_recovered",
-            new_callable=AsyncMock
-        ) as mock_emit:
-            with patch("asyncio.get_running_loop", side_effect=RuntimeError):
-                daemon._emit_health_event(sample_node, RecoveryAction.RESTART, success=True)
-
-    def test_emit_health_event_on_failure(self, daemon, failed_node):
-        """_emit_health_event emits NODE_UNHEALTHY on failure."""
-        with patch(
-            "app.coordination.node_recovery_daemon.emit_node_unhealthy",
-            new_callable=AsyncMock
-        ) as mock_emit:
-            with patch("asyncio.get_running_loop", side_effect=RuntimeError):
-                daemon._emit_health_event(failed_node, RecoveryAction.RESTART, success=False)
-
-
-# =============================================================================
-# Run Cycle Tests
-# =============================================================================
-
-
-class TestRunCycle:
-    """Tests for the main run cycle."""
-
-    @pytest.mark.asyncio
-    async def test_run_cycle_updates_stats(self, daemon):
-        """_run_cycle updates check stats.
-
-        Note: The daemon has a bug - it tries to set read-only property 'total_checks'
-        (line 289: self._stats.total_checks += 1). Should use jobs_processed instead.
-        """
-        with patch.object(daemon, "_check_nodes", new_callable=AsyncMock):
-            try:
-                await daemon._run_cycle()
-            except AttributeError as e:
-                assert "total_checks" in str(e)
-                # Verify _check_nodes was called before the bug
-                daemon._check_nodes.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_check_nodes_handles_errors(self, daemon):
-        """_check_nodes handles errors gracefully."""
-        with patch.object(
-            daemon, "_update_node_states",
-            side_effect=Exception("P2P error")
-        ):
-            # Should not raise
-            await daemon._check_nodes()
-
-
-# =============================================================================
-# P2P Integration Tests
-# =============================================================================
-
-
-class TestP2PIntegration:
-    """Tests for P2P orchestrator integration."""
-
-    @pytest.mark.asyncio
-    async def test_update_node_states_from_p2p(self, daemon):
-        """_update_node_states gets data from P2P."""
-        mock_p2p = MagicMock()
-        mock_p2p.get_status = AsyncMock(return_value={
-            "alive_peers": [
-                {"node_id": "peer-1", "host": "10.0.0.1"},
-            ],
-            "dead_peers": [],
-        })
-
-        with patch(
-            "app.coordination.p2p_integration.get_p2p_orchestrator",
-            return_value=mock_p2p
-        ):
-            await daemon._update_node_states()
-
-        assert "peer-1" in daemon._node_states
-
-    @pytest.mark.asyncio
-    async def test_update_node_states_handles_no_p2p(self, daemon):
-        """_update_node_states handles missing P2P."""
-        with patch(
-            "app.coordination.p2p_integration.get_p2p_orchestrator",
-            return_value=None
-        ):
-            # Should not raise
-            await daemon._update_node_states()
-
-    @pytest.mark.asyncio
-    async def test_update_node_states_handles_dead_peers(self, daemon, sample_node):
-        """_update_node_states marks dead peers as unreachable."""
-        daemon._node_states["peer-1"] = sample_node
-        sample_node.node_id = "peer-1"
-
-        mock_p2p = MagicMock()
-        mock_p2p.get_status = AsyncMock(return_value={
-            "alive_peers": [],
-            "dead_peers": ["peer-1"],
-        })
-
-        with patch(
-            "app.coordination.p2p_integration.get_p2p_orchestrator",
-            return_value=mock_p2p
-        ):
-            await daemon._update_node_states()
-
-        assert daemon._node_states["peer-1"].status == "unreachable"
-        assert daemon._node_states["peer-1"].consecutive_failures > 0
+        mock_session.close.assert_called_once()

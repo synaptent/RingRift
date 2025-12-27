@@ -667,6 +667,75 @@ class DaemonManager:
 
         return errors
 
+    def _verify_p2p_subscriptions(self) -> dict[str, bool]:
+        """Verify P2P event subscriptions are properly wired.
+
+        Dec 27, 2025: Added as part of P2P integration improvements.
+        Checks that critical P2P cluster events have active subscribers.
+
+        Returns:
+            Dict mapping event name to subscription status (True = subscribed).
+        """
+        results = {}
+
+        try:
+            from app.coordination.event_router import get_event_bus
+            bus = get_event_bus()
+            if bus is None:
+                logger.warning("[DaemonManager] Event bus not available for P2P verification")
+                return {"event_bus": False}
+
+            # Check critical P2P cluster events
+            p2p_events = [
+                "HOST_OFFLINE",
+                "HOST_ONLINE",
+                "LEADER_ELECTED",
+                "NODE_RECOVERED",
+                "P2P_CLUSTER_HEALTHY",
+                "P2P_CLUSTER_UNHEALTHY",
+            ]
+
+            for event_name in p2p_events:
+                # Check if there are subscribers for this event
+                # The bus may store subscribers in different ways depending on implementation
+                has_subscribers = False
+
+                if hasattr(bus, "_subscribers"):
+                    # Check for event value in subscribers dict
+                    event_key = event_name.lower()
+                    has_subscribers = (
+                        event_key in bus._subscribers
+                        and len(bus._subscribers[event_key]) > 0
+                    )
+                elif hasattr(bus, "has_subscribers"):
+                    has_subscribers = bus.has_subscribers(event_name)
+
+                results[event_name] = has_subscribers
+
+            # Log summary
+            subscribed = sum(1 for v in results.values() if v)
+            total = len(results)
+
+            if subscribed == total:
+                logger.debug(f"[DaemonManager] P2P subscriptions verified: {subscribed}/{total} events wired")
+            elif subscribed > 0:
+                missing = [k for k, v in results.items() if not v]
+                logger.warning(
+                    f"[DaemonManager] Partial P2P subscriptions: {subscribed}/{total} events wired, "
+                    f"missing: {', '.join(missing)}"
+                )
+            else:
+                logger.warning(
+                    "[DaemonManager] No P2P event subscriptions detected. "
+                    "Cluster events may not be processed."
+                )
+
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug(f"[DaemonManager] P2P subscription verification skipped: {e}")
+            results["error"] = False
+
+        return results
+
     async def start(self, daemon_type: DaemonType) -> bool:
         """Start a specific daemon.
 
@@ -1404,10 +1473,24 @@ class DaemonManager:
                 (DataEventType.MODEL_PROMOTED, "SelfplayRunner, ModelDistribution"),
             ]
 
+            # Dec 27, 2025: Add P2P cluster events for daemon lifecycle coordination
+            p2p_events = [
+                (DataEventType.HOST_OFFLINE, "DaemonManager"),
+                (DataEventType.HOST_ONLINE, "DaemonManager"),
+                (DataEventType.LEADER_ELECTED, "DaemonManager"),
+                (DataEventType.NEW_GAMES_AVAILABLE, "TrainingCoordinator, DataPipeline"),
+            ]
+
+            # Combine all events to verify
+            all_events = critical_events + [
+                (evt, desc) for evt, desc in p2p_events
+                if hasattr(DataEventType, evt.name if hasattr(evt, 'name') else str(evt).split('.')[-1])
+            ]
+
             missing = []
             active = []
 
-            for event_type, expected_subscribers in critical_events:
+            for event_type, expected_subscribers in all_events:
                 event_key = event_type.value if hasattr(event_type, 'value') else str(event_type)
 
                 # Check if router has subscribers for this event
@@ -1424,12 +1507,13 @@ class DaemonManager:
 
             if missing:
                 logger.warning(
-                    f"[DaemonManager] Missing critical event subscribers:\n"
+                    f"[DaemonManager] Missing event subscribers ({len(missing)}/{len(all_events)}):\n"
                     f"  {chr(10).join('- ' + m for m in missing)}"
                 )
             else:
                 logger.info(
-                    f"[DaemonManager] All {len(critical_events)} critical events have subscribers"
+                    f"[DaemonManager] All {len(all_events)} events have subscribers "
+                    f"({len(critical_events)} critical + {len(p2p_events)} P2P)"
                 )
 
             if active:

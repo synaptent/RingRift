@@ -742,6 +742,9 @@ class MasterLoopController:
             DaemonType.UTILIZATION_OPTIMIZER,
             DaemonType.QUEUE_POPULATOR,
             DaemonType.AUTO_EXPORT,
+            # Dec 2025: DATA_CONSOLIDATION merges scattered selfplay games into canonical DBs
+            # Must run after AUTO_SYNC (games need to be synced first) and before training
+            DaemonType.DATA_CONSOLIDATION,
             DaemonType.EVALUATION,
             DaemonType.AUTO_PROMOTION,
             DaemonType.TOURNAMENT_DAEMON,

@@ -854,6 +854,26 @@ async def create_data_cleanup() -> None:
         raise
 
 
+async def create_disk_space_manager() -> None:
+    """Create and run disk space manager daemon (December 2025).
+
+    Proactive disk space management:
+    - Monitors disk usage across nodes
+    - Triggers cleanup at 60% (before 70% warning)
+    - Removes old logs, empty databases, old checkpoints
+    - Emits DISK_SPACE_LOW and DISK_CLEANUP_TRIGGERED events
+    """
+    try:
+        from app.coordination.disk_space_manager_daemon import DiskSpaceManagerDaemon
+
+        daemon = DiskSpaceManagerDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"DiskSpaceManagerDaemon not available: {e}")
+        raise
+
+
 # =============================================================================
 # Miscellaneous Daemons
 # =============================================================================
@@ -971,6 +991,24 @@ async def create_metrics_analysis() -> None:
         raise
 
 
+async def create_data_consolidation() -> None:
+    """Create and run data consolidation daemon (December 2025).
+
+    Consolidates scattered selfplay games into canonical databases.
+    Subscribes to SELFPLAY_COMPLETE and NEW_GAMES_AVAILABLE events.
+    Emits CONSOLIDATION_COMPLETE event after merging games.
+    """
+    try:
+        from app.coordination.data_consolidation_daemon import get_consolidation_daemon
+
+        daemon = get_consolidation_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"DataConsolidationDaemon not available: {e}")
+        raise
+
+
 # =============================================================================
 # Runner Registry
 # =============================================================================
@@ -1038,6 +1076,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.MAINTENANCE.name: create_maintenance,
         DaemonType.ORPHAN_DETECTION.name: create_orphan_detection,
         DaemonType.DATA_CLEANUP.name: create_data_cleanup,
+        DaemonType.DISK_SPACE_MANAGER.name: create_disk_space_manager,
         DaemonType.S3_BACKUP.name: create_s3_backup,
         DaemonType.DISTILLATION.name: create_distillation,
         DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,
@@ -1046,6 +1085,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.P2P_BACKEND.name: create_p2p_backend,
         DaemonType.P2P_AUTO_DEPLOY.name: create_p2p_auto_deploy,
         DaemonType.METRICS_ANALYSIS.name: create_metrics_analysis,
+        DaemonType.DATA_CONSOLIDATION.name: create_data_consolidation,
     }
 
 
