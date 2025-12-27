@@ -44,6 +44,27 @@ class AutoScalingConfig:
     max_scale_per_cycle: int = 3
     idle_threshold_seconds: float = 900.0  # 15 minutes
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.scale_up_threshold <= 0:
+            raise ValueError("scale_up_threshold must be > 0")
+        if self.scale_down_threshold <= 0:
+            raise ValueError("scale_down_threshold must be > 0")
+        if self.scale_down_threshold > self.scale_up_threshold:
+            raise ValueError("scale_down_threshold must be <= scale_up_threshold")
+        if self.min_nodes < 0:
+            raise ValueError("min_nodes must be >= 0")
+        if self.max_nodes < self.min_nodes:
+            raise ValueError("max_nodes must be >= min_nodes")
+        if self.scale_cooldown_seconds < 0:
+            raise ValueError("scale_cooldown_seconds must be >= 0")
+        if self.max_scale_per_cycle <= 0:
+            raise ValueError("max_scale_per_cycle must be > 0")
+        if self.idle_threshold_seconds <= 0:
+            raise ValueError("idle_threshold_seconds must be > 0")
+
 
 class AutoScalingLoop(BaseLoop):
     """Background loop that manages cluster scaling.
@@ -175,6 +196,17 @@ class HealthAggregationConfig:
     health_timeout_seconds: float = 10.0
     max_nodes_per_cycle: int = 50
     unhealthy_threshold_seconds: float = 120.0  # Mark unhealthy after this
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.health_timeout_seconds <= 0:
+            raise ValueError("health_timeout_seconds must be > 0")
+        if self.max_nodes_per_cycle <= 0:
+            raise ValueError("max_nodes_per_cycle must be > 0")
+        if self.unhealthy_threshold_seconds <= 0:
+            raise ValueError("unhealthy_threshold_seconds must be > 0")
 
 
 class HealthAggregationLoop(BaseLoop):

@@ -127,6 +127,15 @@ class SelfHealingConfig:
     stale_process_check_interval_seconds: float = 300.0
     initial_delay_seconds: float = 45.0
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.healing_interval_seconds <= 0:
+            raise ValueError("healing_interval_seconds must be > 0")
+        if self.stale_process_check_interval_seconds <= 0:
+            raise ValueError("stale_process_check_interval_seconds must be > 0")
+        if self.initial_delay_seconds < 0:
+            raise ValueError("initial_delay_seconds must be >= 0")
+
 
 @dataclass
 class PredictiveMonitoringConfig:
@@ -134,6 +143,13 @@ class PredictiveMonitoringConfig:
 
     monitoring_interval_seconds: float = 300.0
     initial_delay_seconds: float = 90.0
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.monitoring_interval_seconds <= 0:
+            raise ValueError("monitoring_interval_seconds must be > 0")
+        if self.initial_delay_seconds < 0:
+            raise ValueError("initial_delay_seconds must be >= 0")
 
 
 # =============================================================================

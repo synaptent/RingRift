@@ -1129,44 +1129,47 @@ class TestReverseSyncPullStrategy:
     def pull_daemon(self, pull_config, temp_dir):
         """Create a daemon configured for PULL strategy."""
         reset_auto_sync_daemon()
-        with patch("app.coordination.auto_sync_daemon.get_node_id", return_value="coordinator"):
-            daemon = AutoSyncDaemon(config=pull_config)
-            daemon._data_dir = temp_dir
-            return daemon
+        with patch.object(AutoSyncDaemon, "_init_cluster_manifest"):
+            with patch.object(AutoSyncDaemon, "_detect_provider", return_value="test"):
+                with patch.object(AutoSyncDaemon, "_check_nfs_mount", return_value=False):
+                    with patch.object(AutoSyncDaemon, "_is_cluster_leader", return_value=False):
+                        daemon = AutoSyncDaemon(config=pull_config)
+                        daemon._data_dir = temp_dir
+                        yield daemon
+        reset_auto_sync_daemon()
 
     def test_pull_strategy_is_set(self, pull_daemon):
         """Test that PULL strategy is set when configured."""
         assert pull_daemon._resolved_strategy == SyncStrategy.PULL
 
     @pytest.mark.asyncio
-    async def test_pull_from_cluster_nodes_requires_coordinator(self, temp_dir):
+    async def test_pull_from_cluster_nodes_requires_coordinator(self, pull_config, temp_dir):
         """Test that non-coordinators skip PULL sync."""
         reset_auto_sync_daemon()
-        config = AutoSyncConfig(
-            enabled=True,
-            strategy=SyncStrategy.PULL,
-        )
-        with patch("app.coordination.auto_sync_daemon.get_node_id", return_value="worker-1"):
-            daemon = AutoSyncDaemon(config=config)
-            daemon._data_dir = temp_dir
+        with patch.object(AutoSyncDaemon, "_init_cluster_manifest"):
+            with patch.object(AutoSyncDaemon, "_detect_provider", return_value="test"):
+                with patch.object(AutoSyncDaemon, "_check_nfs_mount", return_value=False):
+                    with patch.object(AutoSyncDaemon, "_is_cluster_leader", return_value=False):
+                        daemon = AutoSyncDaemon(config=pull_config)
+                        daemon._data_dir = temp_dir
 
-            # Mock env.is_coordinator to return False
-            with patch("app.config.env.env") as mock_env:
-                mock_env.is_coordinator = False
-
-                result = await daemon._pull_from_cluster_nodes()
-
-                assert result == 0  # Should skip
+                        # Mock env.is_coordinator to return False
+                        mock_env = MagicMock()
+                        mock_env.is_coordinator = False
+                        with patch("app.coordination.auto_sync_daemon.env", mock_env):
+                            result = await daemon._pull_from_cluster_nodes()
+                            assert result == 0  # Should skip
+        reset_auto_sync_daemon()
 
     @pytest.mark.asyncio
     async def test_pull_from_cluster_nodes_no_sources(self, pull_daemon):
         """Test PULL when no sync sources available."""
         # Mock coordinator check to return True
-        with patch("app.config.env.env") as mock_env:
-            mock_env.is_coordinator = True
-
+        mock_env = MagicMock()
+        mock_env.is_coordinator = True
+        with patch("app.coordination.auto_sync_daemon.env", mock_env):
             with patch(
-                "app.coordination.sync_router.get_sync_router"
+                "app.coordination.auto_sync_daemon.get_sync_router"
             ) as mock_get_router:
                 mock_router = MagicMock()
                 mock_router.get_sync_sources.return_value = []
@@ -1186,11 +1189,11 @@ class TestReverseSyncPullStrategy:
         mock_source.node_id = "worker-1"
 
         # Mock coordinator check to return True
-        with patch("app.config.env.env") as mock_env:
-            mock_env.is_coordinator = True
-
+        mock_env = MagicMock()
+        mock_env.is_coordinator = True
+        with patch("app.coordination.auto_sync_daemon.env", mock_env):
             with patch(
-                "app.coordination.sync_router.get_sync_router"
+                "app.coordination.auto_sync_daemon.get_sync_router"
             ) as mock_get_router:
                 mock_router = MagicMock()
                 mock_router.get_sync_sources.return_value = [mock_source]

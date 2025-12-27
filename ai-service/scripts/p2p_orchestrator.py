@@ -2581,13 +2581,18 @@ class P2POrchestrator(
             manager.register(idle_detection)
 
             # AutoScalingLoop - provision/deprovision cloud instances
-            auto_scaling = AutoScalingLoop(
-                get_role=lambda: self.role,
-                get_auto_scaler=get_auto_scaler,
-                get_work_queue=get_work_queue,
-                get_peers=lambda: self.peers,
-            )
-            manager.register(auto_scaling)
+            # December 27, 2025: Disabled until proper adapters are implemented
+            # The current interface mismatch causes LoopManager initialization to fail
+            # TODO: Implement get_pending_work, get_active_nodes, get_idle_nodes,
+            #       scale_up, scale_down adapters for AutoScalingLoop
+            # auto_scaling = AutoScalingLoop(
+            #     get_pending_work=lambda: len(get_work_queue().pending_items()),
+            #     get_active_nodes=lambda: len([p for p in self.peers.values() if p.get("alive")]),
+            #     get_idle_nodes=lambda: [p["node_id"] for p in self.peers.values() if p.get("idle")],
+            #     scale_up=self._provision_nodes,
+            #     scale_down=self._deprovision_nodes,
+            # )
+            # manager.register(auto_scaling)
 
             # WorkQueueMaintenanceLoop - leader cleans up timeouts and old items
             # December 27, 2025: Migrated from inline _work_queue_maintenance_loop
@@ -19434,21 +19439,25 @@ print(json.dumps({{
             self._last_capacity_emit_time = now
             try:
                 from app.coordination.event_router import get_event_bus
-                from app.distributed.data_events import DataEventType
+                from app.distributed.data_events import DataEventType, DataEvent
 
                 bus = get_event_bus()
                 if bus:
-                    bus.emit(DataEventType.NODE_CAPACITY_UPDATED, {
-                        "node_id": self.node_id,
-                        "gpu_utilization": usage["gpu_percent"],
-                        "cpu_utilization": usage["cpu_percent"],
-                        "memory_used_percent": usage["memory_percent"],
-                        "disk_used_percent": usage["disk_percent"],
-                        "gpu_memory_percent": usage["gpu_memory_percent"],
-                        "task_slots_available": max(0, self._get_max_selfplay_jobs() - selfplay - training),
-                        "task_slots_total": self._get_max_selfplay_jobs(),
-                    })
-            except (ImportError, RuntimeError):
+                    event = DataEvent(
+                        event_type=DataEventType.NODE_CAPACITY_UPDATED,
+                        payload={
+                            "node_id": self.node_id,
+                            "gpu_utilization": usage["gpu_percent"],
+                            "cpu_utilization": usage["cpu_percent"],
+                            "memory_used_percent": usage["memory_percent"],
+                            "disk_used_percent": usage["disk_percent"],
+                            "gpu_memory_percent": usage["gpu_memory_percent"],
+                            "task_slots_available": max(0, self._get_max_selfplay_jobs() - selfplay - training),
+                            "task_slots_total": self._get_max_selfplay_jobs(),
+                        },
+                    )
+                    bus.publish_sync(event)
+            except (ImportError, RuntimeError, AttributeError):
                 pass  # Event system not available or no event loop
 
     async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http", timeout: int = 10) -> NodeInfo | None:
@@ -27551,6 +27560,33 @@ print(json.dumps({{
 
 
 def main():
+    # Check for duplicate instance via PID file (December 2025)
+    ai_service_root = Path(__file__).parent.parent
+    pid_file = ai_service_root / "data" / "coordination" / "p2p_orchestrator.pid"
+    if pid_file.exists():
+        try:
+            old_pid = int(pid_file.read_text().strip())
+            # Check if process is still running
+            os.kill(old_pid, 0)  # Signal 0 = check existence
+            logger.error(
+                f"[P2P] Another instance is already running (PID {old_pid}). "
+                f"Kill it first or remove {pid_file}"
+            )
+            sys.exit(1)
+        except (ProcessLookupError, ValueError):
+            # Process doesn't exist, remove stale PID file
+            pid_file.unlink(missing_ok=True)
+        except PermissionError:
+            # Can't check (probably running as different user)
+            pass
+
+    # Write our PID file
+    try:
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()))
+    except OSError as e:
+        logger.warning(f"[P2P] Failed to write PID file: {e}")
+
     parser = argparse.ArgumentParser(description="P2P Orchestrator for RingRift cluster")
     parser.add_argument("--node-id", required=True, help="Unique identifier for this node")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
@@ -27669,6 +27705,16 @@ def main():
             except (RuntimeError, OSError, AttributeError) as e:
                 # Dec 2025: Narrowed from bare Exception; best effort cleanup
                 logger.debug(f"Notifier close failed (best effort): {e}")
+
+            # December 2025: Clean up PID file on shutdown
+            try:
+                ai_service_root = Path(__file__).parent.parent
+                pid_file = ai_service_root / "data" / "coordination" / "p2p_orchestrator.pid"
+                if pid_file.exists():
+                    pid_file.unlink()
+                    logger.debug("[P2P] Removed PID file on shutdown")
+            except OSError as e:
+                logger.debug(f"[P2P] Failed to remove PID file: {e}")
 
 
 if __name__ == "__main__":

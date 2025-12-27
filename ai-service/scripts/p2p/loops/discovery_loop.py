@@ -46,6 +46,17 @@ class UdpDiscoveryConfig:
     listen_timeout_seconds: float = 1.0
     max_message_size: int = 1024
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.discovery_port < 1 or self.discovery_port > 65535:
+            raise ValueError("discovery_port must be between 1 and 65535")
+        if self.broadcast_interval_seconds <= 0:
+            raise ValueError("broadcast_interval_seconds must be > 0")
+        if self.listen_timeout_seconds <= 0:
+            raise ValueError("listen_timeout_seconds must be > 0")
+        if self.max_message_size <= 0:
+            raise ValueError("max_message_size must be > 0")
+
 
 class UdpDiscoveryLoop(BaseLoop):
     """Background loop that broadcasts UDP discovery messages to find peers.
@@ -168,6 +179,15 @@ class FollowerDiscoveryConfig:
     discovery_interval_seconds: float = 60.0
     query_timeout_seconds: float = 10.0
     max_nodes_to_query: int = 5
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.discovery_interval_seconds <= 0:
+            raise ValueError("discovery_interval_seconds must be > 0")
+        if self.query_timeout_seconds <= 0:
+            raise ValueError("query_timeout_seconds must be > 0")
+        if self.max_nodes_to_query <= 0:
+            raise ValueError("max_nodes_to_query must be > 0")
 
 
 class FollowerDiscoveryLoop(BaseLoop):

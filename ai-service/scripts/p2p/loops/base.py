@@ -97,6 +97,17 @@ class BackoffConfig:
     multiplier: float = 2.0  # Exponential multiplier
     jitter: float = 0.1  # Random jitter factor (0.1 = +/-10%)
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.initial_delay <= 0:
+            raise ValueError("initial_delay must be > 0")
+        if self.max_delay < self.initial_delay:
+            raise ValueError("max_delay must be >= initial_delay")
+        if self.multiplier <= 1:
+            raise ValueError("multiplier must be > 1")
+        if self.jitter < 0 or self.jitter > 1:
+            raise ValueError("jitter must be between 0 and 1")
+
     def calculate_delay(self, consecutive_errors: int) -> float:
         """Calculate backoff delay based on consecutive error count.
 

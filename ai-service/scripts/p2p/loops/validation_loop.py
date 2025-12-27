@@ -42,6 +42,19 @@ class ValidationConfig:
     default_games_per_matchup: int = 50
     validation_priority: int = 80
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.initial_delay_seconds < 0:
+            raise ValueError("initial_delay_seconds must be >= 0")
+        if self.max_models_per_cycle <= 0:
+            raise ValueError("max_models_per_cycle must be > 0")
+        if self.max_unvalidated_per_cycle <= 0:
+            raise ValueError("max_unvalidated_per_cycle must be > 0")
+        if self.default_games_per_matchup <= 0:
+            raise ValueError("default_games_per_matchup must be > 0")
+
 
 class ValidationLoop(BaseLoop):
     """Background loop for automatic model validation scheduling.

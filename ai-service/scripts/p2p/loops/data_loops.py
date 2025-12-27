@@ -39,6 +39,15 @@ class ModelSyncConfig:
     sync_timeout_seconds: float = 300.0  # 5 minutes
     priority_configs: list[str] = field(default_factory=lambda: ["hex8_2p", "square8_2p"])
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.max_sync_operations_per_cycle <= 0:
+            raise ValueError("max_sync_operations_per_cycle must be > 0")
+        if self.sync_timeout_seconds <= 0:
+            raise ValueError("sync_timeout_seconds must be > 0")
+
 
 class ModelSyncLoop(BaseLoop):
     """Background loop that synchronizes models across cluster nodes.
@@ -159,6 +168,17 @@ class DataAggregationConfig:
     min_games_to_aggregate: int = 100
     max_nodes_per_cycle: int = 10
     aggregation_timeout_seconds: float = 600.0  # 10 minutes
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.min_games_to_aggregate <= 0:
+            raise ValueError("min_games_to_aggregate must be > 0")
+        if self.max_nodes_per_cycle <= 0:
+            raise ValueError("max_nodes_per_cycle must be > 0")
+        if self.aggregation_timeout_seconds <= 0:
+            raise ValueError("aggregation_timeout_seconds must be > 0")
 
 
 class DataAggregationLoop(BaseLoop):

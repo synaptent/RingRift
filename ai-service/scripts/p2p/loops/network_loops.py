@@ -37,6 +37,15 @@ class IpDiscoveryConfig:
     dns_timeout_seconds: float = 10.0
     max_nodes_per_cycle: int = 20
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.dns_timeout_seconds <= 0:
+            raise ValueError("dns_timeout_seconds must be > 0")
+        if self.max_nodes_per_cycle <= 0:
+            raise ValueError("max_nodes_per_cycle must be > 0")
+
 
 class IpDiscoveryLoop(BaseLoop):
     """Background loop that discovers and updates node IP addresses.
@@ -155,6 +164,17 @@ class TailscaleRecoveryConfig:
     recovery_timeout_seconds: float = 60.0
     max_recovery_attempts: int = 3
     cooldown_after_recovery_seconds: float = 300.0  # 5 minutes
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.recovery_timeout_seconds <= 0:
+            raise ValueError("recovery_timeout_seconds must be > 0")
+        if self.max_recovery_attempts <= 0:
+            raise ValueError("max_recovery_attempts must be > 0")
+        if self.cooldown_after_recovery_seconds < 0:
+            raise ValueError("cooldown_after_recovery_seconds must be >= 0")
 
 
 class TailscaleRecoveryLoop(BaseLoop):
@@ -299,6 +319,13 @@ class NATManagementConfig:
     check_interval_seconds: float = 60.0  # NAT_BLOCKED_PROBE_INTERVAL
     stun_probe_interval_seconds: float = 300.0  # NAT_STUN_LIKE_PROBE_INTERVAL
     symmetric_detection_enabled: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.stun_probe_interval_seconds <= 0:
+            raise ValueError("stun_probe_interval_seconds must be > 0")
 
 
 class NATManagementLoop(BaseLoop):

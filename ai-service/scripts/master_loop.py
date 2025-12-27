@@ -1530,6 +1530,14 @@ async def main() -> None:
     """Main entry point."""
     args = parse_args()
 
+    # Check for duplicate instance (December 2025)
+    if MasterLoopController.is_running():
+        logger.error(
+            "[MasterLoop] Another instance is already running. "
+            f"Check PID file: {PID_FILE_PATH}"
+        )
+        sys.exit(1)
+
     # Parse configs
     configs = None
     if args.configs:

@@ -40,6 +40,19 @@ class JobReaperConfig:
     max_jobs_to_reap_per_cycle: int = 10
     check_interval_seconds: float = 300.0  # 5 minutes
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.stale_job_threshold_seconds <= 0:
+            raise ValueError("stale_job_threshold_seconds must be > 0")
+        if self.stuck_job_threshold_seconds <= 0:
+            raise ValueError("stuck_job_threshold_seconds must be > 0")
+        if self.stale_job_threshold_seconds > self.stuck_job_threshold_seconds:
+            raise ValueError("stale_job_threshold_seconds must be <= stuck_job_threshold_seconds")
+        if self.max_jobs_to_reap_per_cycle <= 0:
+            raise ValueError("max_jobs_to_reap_per_cycle must be > 0")
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+
 
 class JobReaperLoop(BaseLoop):
     """Background loop that cleans up stale and stuck jobs.
@@ -148,6 +161,19 @@ class IdleDetectionConfig:
     idle_duration_threshold_seconds: float = 60.0  # 1 minute (reduced from 15 min for faster dispatch)
     check_interval_seconds: float = 30.0  # Check every 30 seconds
     min_nodes_to_keep: int = 2  # Never flag last N nodes as idle
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.gpu_idle_threshold_percent <= 0:
+            raise ValueError("gpu_idle_threshold_percent must be > 0")
+        if self.gpu_idle_threshold_percent > 100:
+            raise ValueError("gpu_idle_threshold_percent must be <= 100")
+        if self.idle_duration_threshold_seconds <= 0:
+            raise ValueError("idle_duration_threshold_seconds must be > 0")
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.min_nodes_to_keep < 0:
+            raise ValueError("min_nodes_to_keep must be >= 0")
 
 
 class IdleDetectionLoop(BaseLoop):
@@ -310,6 +336,21 @@ class WorkerPullConfig:
     cpu_idle_threshold_percent: float = 30.0
     initial_delay_seconds: float = 30.0
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.pull_interval_seconds <= 0:
+            raise ValueError("pull_interval_seconds must be > 0")
+        if self.gpu_idle_threshold_percent <= 0:
+            raise ValueError("gpu_idle_threshold_percent must be > 0")
+        if self.gpu_idle_threshold_percent > 100:
+            raise ValueError("gpu_idle_threshold_percent must be <= 100")
+        if self.cpu_idle_threshold_percent <= 0:
+            raise ValueError("cpu_idle_threshold_percent must be > 0")
+        if self.cpu_idle_threshold_percent > 100:
+            raise ValueError("cpu_idle_threshold_percent must be <= 100")
+        if self.initial_delay_seconds < 0:
+            raise ValueError("initial_delay_seconds must be >= 0")
+
 
 class WorkerPullLoop(BaseLoop):
     """Background loop for workers to poll leader for work (pull model).
@@ -459,6 +500,15 @@ class WorkQueueMaintenanceConfig:
     maintenance_interval_seconds: float = 300.0  # 5 minutes
     cleanup_age_seconds: float = 86400.0  # 24 hours
     initial_delay_seconds: float = 60.0
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.maintenance_interval_seconds <= 0:
+            raise ValueError("maintenance_interval_seconds must be > 0")
+        if self.cleanup_age_seconds <= 0:
+            raise ValueError("cleanup_age_seconds must be > 0")
+        if self.initial_delay_seconds < 0:
+            raise ValueError("initial_delay_seconds must be >= 0")
 
 
 class WorkQueueMaintenanceLoop(BaseLoop):
