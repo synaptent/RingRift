@@ -55,7 +55,7 @@ class TestExplorationBoostChain:
 
         # Setup: Create a config priority with correct fields
         config_key = "hex8_2p"
-        scheduler._priorities[config_key] = ConfigPriority(
+        scheduler._config_priorities[config_key] = ConfigPriority(
             config_key=config_key,
             exploration_boost=1.0,
         )
@@ -72,7 +72,7 @@ class TestExplorationBoostChain:
         scheduler._on_exploration_boost(event)
 
         # Verify priority updated
-        priority = scheduler._priorities.get(config_key)
+        priority = scheduler._config_priorities.get(config_key)
         assert priority is not None
         assert priority.exploration_boost == 1.5
         assert priority.exploration_boost_expires_at is not None
@@ -91,7 +91,7 @@ class TestExplorationBoostChain:
             scheduler = SelfplayScheduler()
             config_key = "hex8_2p"
 
-            scheduler._priorities[config_key] = ConfigPriority(
+            scheduler._config_priorities[config_key] = ConfigPriority(
                 config_key=config_key,
                 exploration_boost=1.0,
             )
@@ -104,7 +104,7 @@ class TestExplorationBoostChain:
 
             scheduler._on_exploration_boost(event)
 
-            priority = scheduler._priorities[config_key]
+            priority = scheduler._config_priorities[config_key]
             assert priority.exploration_boost_expires_at is not None
 
             # Expiry should be ~1 second from now

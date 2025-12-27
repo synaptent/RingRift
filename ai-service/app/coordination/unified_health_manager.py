@@ -503,36 +503,37 @@ class UnifiedHealthManager(CoordinatorBase):
 
             router = get_router()
 
+            # Use enum directly (router normalizes both enum and .value)
             # Error events (from ErrorRecoveryCoordinator)
-            router.subscribe(DataEventType.ERROR.value, self._on_error)
-            router.subscribe(DataEventType.RECOVERY_INITIATED.value, self._on_recovery_initiated)
-            router.subscribe(DataEventType.RECOVERY_COMPLETED.value, self._on_recovery_completed)
-            router.subscribe(DataEventType.RECOVERY_FAILED.value, self._on_recovery_failed)
-            router.subscribe(DataEventType.TRAINING_FAILED.value, self._on_training_failed)
-            router.subscribe(DataEventType.TASK_FAILED.value, self._on_task_failed)
-            router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
-            router.subscribe(DataEventType.REGRESSION_CRITICAL.value, self._on_regression_critical)
+            router.subscribe(DataEventType.ERROR, self._on_error)
+            router.subscribe(DataEventType.RECOVERY_INITIATED, self._on_recovery_initiated)
+            router.subscribe(DataEventType.RECOVERY_COMPLETED, self._on_recovery_completed)
+            router.subscribe(DataEventType.RECOVERY_FAILED, self._on_recovery_failed)
+            router.subscribe(DataEventType.TRAINING_FAILED, self._on_training_failed)
+            router.subscribe(DataEventType.TASK_FAILED, self._on_task_failed)
+            router.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            router.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
 
             # Node events (from RecoveryManager)
-            router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
-            router.subscribe(DataEventType.NODE_RECOVERED.value, self._on_node_recovered)
+            router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+            router.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
 
             # Parity monitoring (December 2025 - closes parity → alert loop)
-            router.subscribe(DataEventType.PARITY_FAILURE_RATE_CHANGED.value, self._on_parity_failure_rate_changed)
+            router.subscribe(DataEventType.PARITY_FAILURE_RATE_CHANGED, self._on_parity_failure_rate_changed)
 
             # Coordinator health monitoring (December 2025 - wires ghost event)
-            router.subscribe(DataEventType.COORDINATOR_HEALTH_DEGRADED.value, self._on_coordinator_health_degraded)
+            router.subscribe(DataEventType.COORDINATOR_HEALTH_DEGRADED, self._on_coordinator_health_degraded)
 
             # Coordinator lifecycle events (December 2025 - P0 gap fix)
-            router.subscribe(DataEventType.COORDINATOR_SHUTDOWN.value, self._on_coordinator_shutdown)
-            router.subscribe(DataEventType.COORDINATOR_HEARTBEAT.value, self._on_coordinator_heartbeat)
+            router.subscribe(DataEventType.COORDINATOR_SHUTDOWN, self._on_coordinator_shutdown)
+            router.subscribe(DataEventType.COORDINATOR_HEARTBEAT, self._on_coordinator_heartbeat)
 
             # Deadlock detection (December 2025 - critical lock contention handler)
-            router.subscribe(DataEventType.DEADLOCK_DETECTED.value, self._on_deadlock_detected)
+            router.subscribe(DataEventType.DEADLOCK_DETECTED, self._on_deadlock_detected)
 
             # Daemon lifecycle events (December 2025 - wires orphaned events to health monitor)
-            router.subscribe(DataEventType.DAEMON_STARTED.value, self._on_daemon_started)
-            router.subscribe(DataEventType.DAEMON_STOPPED.value, self._on_daemon_stopped)
+            router.subscribe(DataEventType.DAEMON_STARTED, self._on_daemon_started)
+            router.subscribe(DataEventType.DAEMON_STOPPED, self._on_daemon_stopped)
 
             self._subscribed = True
             logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
