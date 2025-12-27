@@ -37,6 +37,8 @@ __all__ = [
     "mark_daemon_ready",
     "register_mark_ready_callback",
     "validate_daemon_dependencies",
+    "validate_startup_order_consistency",
+    "validate_startup_order_or_raise",
 ]
 
 
@@ -243,6 +245,10 @@ class DaemonType(Enum):
     # Disk space manager (December 2025) - proactive disk space management
     # Monitors disk usage and triggers cleanup before reaching critical thresholds
     DISK_SPACE_MANAGER = "disk_space_manager"
+
+    # Coordinator disk manager (December 27, 2025) - disk management for coordinator-only nodes
+    # Syncs data to remote storage (OWC) before cleanup, more aggressive thresholds
+    COORDINATOR_DISK_MANAGER = "coordinator_disk_manager"
 
 
 class DaemonState(Enum):
@@ -546,6 +552,61 @@ def get_daemon_startup_position(daemon_type: DaemonType) -> int:
         return DAEMON_STARTUP_ORDER.index(daemon_type)
     except ValueError:
         return -1
+
+
+def validate_startup_order_consistency() -> tuple[bool, list[str]]:
+    """Validate that DAEMON_STARTUP_ORDER is consistent with DAEMON_DEPENDENCIES.
+
+    For each daemon in DAEMON_STARTUP_ORDER, if it depends on another daemon in
+    the order, that dependency MUST come BEFORE it. Otherwise, the dependency
+    won't be running when the daemon starts.
+
+    Returns:
+        Tuple of (is_consistent, violations).
+        If is_consistent is True, violations will be empty.
+
+    Example violations:
+        - AUTO_SYNC at position 5 depends on DATA_PIPELINE at position 3 ✓ OK
+        - DATA_PIPELINE at position 3 depends on AUTO_SYNC at position 5 ✗ VIOLATION
+
+    December 2025: Added to prevent race conditions from startup order bugs.
+    """
+    violations: list[str] = []
+
+    # Build position lookup for daemons in the startup order
+    positions = {dt: i for i, dt in enumerate(DAEMON_STARTUP_ORDER)}
+
+    for position, daemon_type in enumerate(DAEMON_STARTUP_ORDER):
+        deps = DAEMON_DEPENDENCIES.get(daemon_type, set())
+
+        for dep in deps:
+            if dep in positions:
+                dep_position = positions[dep]
+                if dep_position > position:
+                    # Dependency comes AFTER this daemon - violation!
+                    violations.append(
+                        f"{daemon_type.value} (pos {position}) depends on "
+                        f"{dep.value} (pos {dep_position}), but {dep.value} "
+                        f"starts AFTER {daemon_type.value}"
+                    )
+
+    return (len(violations) == 0, violations)
+
+
+def validate_startup_order_or_raise() -> None:
+    """Validate startup order consistency or raise an error.
+
+    Raises:
+        ValueError: If DAEMON_STARTUP_ORDER is inconsistent with DAEMON_DEPENDENCIES.
+    """
+    is_consistent, violations = validate_startup_order_consistency()
+    if not is_consistent:
+        error_msg = (
+            "DAEMON_STARTUP_ORDER is inconsistent with DAEMON_DEPENDENCIES:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nFix: Either reorder DAEMON_STARTUP_ORDER or update DAEMON_DEPENDENCIES."
+        )
+        raise ValueError(error_msg)
 
 
 # =============================================================================

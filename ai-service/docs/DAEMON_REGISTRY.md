@@ -3,7 +3,7 @@
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
 **Last updated:** December 27, 2025
-**Total Daemon Types:** 67 (63 documented)
+**Total Daemon Types:** 68 (64 documented)
 
 > **Architecture Note (December 2025):** Factory methods have been extracted from `daemon_manager.py` to `daemon_runners.py`. Factory methods named `create_*()` are in `daemon_runners.py`; methods named `_create_*()` remain in `daemon_manager.py` for legacy or special cases.
 
@@ -102,18 +102,32 @@ Data synchronization across the cluster.
 
 Training pipeline orchestration and coordination.
 
-| Daemon Type                | Priority | Description                                                                          | Dependencies             |
-| -------------------------- | -------- | ------------------------------------------------------------------------------------ | ------------------------ |
-| `DATA_PIPELINE`            | HIGH     | Orchestrates pipeline stages: selfplay → sync → export → train → evaluate → promote. | EVENT_ROUTER             |
-| `CONTINUOUS_TRAINING_LOOP` | MEDIUM   | Continuous training loop that runs indefinitely.                                     | EVENT_ROUTER             |
-| `UNIFIED_PROMOTION`        | HIGH     | Auto-promotes models after evaluation. Subscribes to EVALUATION_COMPLETED events.    | EVENT_ROUTER             |
-| `AUTO_PROMOTION`           | HIGH     | Auto-promotes models based on evaluation thresholds. Emits MODEL_PROMOTED.           | EVENT_ROUTER, EVALUATION |
-| `DISTILLATION`             | LOW      | Creates smaller student models from larger teacher models for deployment.            | EVENT_ROUTER             |
-| `SELFPLAY_COORDINATOR`     | MEDIUM   | Distributes selfplay workloads across the cluster.                                   | EVENT_ROUTER             |
+| Daemon Type                | Priority | Description                                                                                 | Dependencies                |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------- | --------------------------- |
+| `DATA_PIPELINE`            | HIGH     | Orchestrates pipeline stages: selfplay → sync → export → train → evaluate → promote.        | EVENT_ROUTER                |
+| `DATA_CONSOLIDATION`       | HIGH     | Merges scattered selfplay games into canonical databases. Runs after sync, before training. | EVENT_ROUTER, DATA_PIPELINE |
+| `CONTINUOUS_TRAINING_LOOP` | MEDIUM   | Continuous training loop that runs indefinitely.                                            | EVENT_ROUTER                |
+| `UNIFIED_PROMOTION`        | HIGH     | Auto-promotes models after evaluation. Subscribes to EVALUATION_COMPLETED events.           | EVENT_ROUTER                |
+| `AUTO_PROMOTION`           | HIGH     | Auto-promotes models based on evaluation thresholds. Emits MODEL_PROMOTED.                  | EVENT_ROUTER, EVALUATION    |
+| `DISTILLATION`             | LOW      | Creates smaller student models from larger teacher models for deployment.                   | EVENT_ROUTER                |
+| `SELFPLAY_COORDINATOR`     | MEDIUM   | Distributes selfplay workloads across the cluster.                                          | EVENT_ROUTER                |
+
+**DATA_CONSOLIDATION Details (December 2025):**
+
+Fixes critical training pipeline gap where selfplay games remain scattered across 30+ cluster nodes.
+
+- **Event Subscriptions:** `NEW_GAMES_AVAILABLE`, `SELFPLAY_COMPLETE`
+- **Event Emissions:** `CONSOLIDATION_STARTED`, `CONSOLIDATION_COMPLETE`
+- **Data Flow:** Scattered DBs → canonical*{board}*{n}p.db → NPZ export → training
+- **Configuration:**
+  - `RINGRIFT_CONSOLIDATION_INTERVAL` - Seconds between consolidation cycles (default: 300)
+  - `RINGRIFT_CONSOLIDATION_MIN_GAMES` - Minimum games to trigger consolidation (default: 50)
+  - `RINGRIFT_CONSOLIDATION_BATCH_SIZE` - Games to process per batch (default: 100)
 
 **Factory Methods:**
 
 - `_create_data_pipeline()` → Creates `DataPipelineOrchestrator`
+- `create_data_consolidation()` → Creates `DataConsolidationDaemon` (in daemon_runners.py)
 - `_create_continuous_training_loop()` → Creates `ContinuousTrainingLoop`
 - `_create_unified_promotion()` → Creates `PromotionController`
 - `_create_auto_promotion()` → Uses `auto_promotion_daemon.get_auto_promotion_daemon()`

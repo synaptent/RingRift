@@ -717,7 +717,10 @@ class DataPipelineOrchestrator:
             # This is a critical failure - orchestrator cannot function without events
             raise RuntimeError(f"EventRouter not available - pipeline cannot function: {e}")
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Failed to subscribe: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Failed to subscribe to stage events: {e}",
+                exc_info=True,
+            )
             return False
 
     def subscribe_to_data_events(self) -> bool:
@@ -899,7 +902,11 @@ class DataPipelineOrchestrator:
             logger.warning("[DataPipelineOrchestrator] data_events not available")
             return False
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Failed to subscribe to data events: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Failed to subscribe to data events "
+                f"(router={router!r}): {e}",
+                exc_info=True,
+            )
             return False
 
     def _transition_to(
@@ -956,7 +963,12 @@ class DataPipelineOrchestrator:
             try:
                 callback(new_stage, iteration)
             except Exception as e:
-                logger.error(f"[DataPipelineOrchestrator] Callback error: {e}")
+                callback_name = getattr(callback, "__name__", repr(callback))
+                logger.error(
+                    f"[DataPipelineOrchestrator] Callback error in {callback_name} "
+                    f"for stage={new_stage.value}, iteration={iteration}: {e}",
+                    exc_info=True,
+                )
 
     def _ensure_iteration_record(self, iteration: int) -> IterationRecord:
         """Ensure an iteration record exists."""
@@ -1399,7 +1411,11 @@ class DataPipelineOrchestrator:
                 self._record_circuit_failure("data_sync", result.error or "Prerequisite check failed")
                 logger.warning(f"[DataPipelineOrchestrator] Sync trigger failed: {result.message}")
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Auto-trigger sync failed: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Auto-trigger sync failed for "
+                f"{board_type}_{num_players}p: {e}",
+                exc_info=True,
+            )
             self._record_circuit_failure("data_sync", str(e))
 
     async def _on_sync_complete(self, result) -> None:
@@ -1451,7 +1467,11 @@ class DataPipelineOrchestrator:
                 self._record_circuit_failure("npz_export", result.error or "Prerequisite check failed")
                 logger.warning(f"[DataPipelineOrchestrator] Export trigger failed: {result.message}")
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Auto-trigger export failed: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Auto-trigger export failed for "
+                f"{board_type}_{num_players}p, iteration={iteration}: {e}",
+                exc_info=True,
+            )
             self._record_circuit_failure("npz_export", str(e))
 
     async def _on_npz_export_complete(self, result) -> None:
@@ -1516,7 +1536,11 @@ class DataPipelineOrchestrator:
                 self._record_circuit_failure("training", result.error or "Prerequisite check failed")
                 logger.warning(f"[DataPipelineOrchestrator] Training trigger failed: {result.message}")
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Auto-trigger training failed: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Auto-trigger training failed for "
+                f"{board_type}_{num_players}p, iteration={iteration}: {e}",
+                exc_info=True,
+            )
             self._record_circuit_failure("training", str(e))
 
     # =========================================================================
@@ -1803,7 +1827,11 @@ class DataPipelineOrchestrator:
             else:
                 self._record_circuit_failure("evaluation", result.error or "Unknown error")
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Auto-trigger evaluation failed: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Auto-trigger evaluation failed for "
+                f"iteration={iteration}, model={model_path}: {e}",
+                exc_info=True,
+            )
             self._record_circuit_failure("evaluation", str(e))
 
     async def _on_training_failed(self, result) -> None:
@@ -1892,7 +1920,11 @@ class DataPipelineOrchestrator:
                 # Promotion failure is not a circuit-breaking event
                 logger.info(f"[DataPipelineOrchestrator] Promotion skipped: {result.metadata.get('reason', 'Unknown')}")
         except Exception as e:
-            logger.error(f"[DataPipelineOrchestrator] Auto-trigger promotion failed: {e}")
+            logger.error(
+                f"[DataPipelineOrchestrator] Auto-trigger promotion failed for "
+                f"{board_type}_{num_players}p, model={model_path}: {e}",
+                exc_info=True,
+            )
             # Don't record as circuit failure - promotion is optional
 
     async def _on_promotion_complete(self, result) -> None:

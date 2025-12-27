@@ -1872,7 +1872,8 @@ class AutoSyncDaemon:
         """
         try:
             payload = event.payload if hasattr(event, "payload") else {}
-            config_key = payload.get("config", "")
+            # Dec 27, 2025: Handle both "config_key" and "config" for compatibility
+            config_key = payload.get("config_key") or payload.get("config", "")
             new_games = payload.get("new_games", 0)
             total_games = payload.get("total_games", 0)
 

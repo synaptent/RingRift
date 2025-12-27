@@ -422,6 +422,9 @@ class TestScanAndCleanup:
         db_path = temp_data_dir / "bad.db"
         create_test_database(db_path, num_games=50)
 
+        # Ensure quarantine directory exists (normally created by _on_start)
+        (temp_data_dir / "quarantine").mkdir(parents=True, exist_ok=True)
+
         with patch.object(daemon, "_assess_database") as mock_assess:
             mock_assess.return_value = DatabaseAssessment(
                 path=str(db_path),

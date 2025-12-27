@@ -285,8 +285,7 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         Called by BaseDaemon's protected main loop.
         """
         await self._check_nodes()
-        self._stats.total_checks += 1
-        self._stats.last_check_time = time.time()
+        self._stats.record_check()  # Updates jobs_processed and last_job_time
 
     async def _check_nodes(self) -> None:
         """Check all known nodes and trigger recovery if needed."""
@@ -488,18 +487,18 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         if action == RecoveryAction.RESTART:
             success = await self._restart_node(node)
             if success:
-                self._stats.nodes_recovered += 1
+                self._stats.record_recovery_success()
             else:
-                self._stats.recovery_failures += 1
+                self._stats.record_recovery_failure(f"restart_failed:{node.node_id}")
             self._emit_recovery_event(node, action, success)
             return success
 
         if action == RecoveryAction.PREEMPTIVE_RESTART:
             success = await self._restart_node(node)
             if success:
-                self._stats.preemptive_recoveries += 1
+                self._stats.record_recovery_success(preemptive=True)
             else:
-                self._stats.recovery_failures += 1
+                self._stats.record_recovery_failure(f"preemptive_restart_failed:{node.node_id}")
             self._emit_recovery_event(node, action, success)
             return success
 
@@ -859,9 +858,9 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             return False
 
         # Check if we have recent check data (within 2x check interval)
-        if self._stats.last_check_time > 0:
+        if self._stats.last_job_time > 0:
             max_age = self.config.check_interval_seconds * 2
-            age = time.time() - self._stats.last_check_time
+            age = time.time() - self._stats.last_job_time
             if age > max_age:
                 logger.warning(
                     f"[{self._get_daemon_name()}] Health check: stale check data "
@@ -915,7 +914,7 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             "nodes_recovered": self._stats.nodes_recovered,
             "recovery_failures": self._stats.recovery_failures,
             "preemptive_recoveries": self._stats.preemptive_recoveries,
-            "last_check_time": self._stats.last_check_time,
+            "last_check_time": self._stats.last_job_time,  # Use underlying field
             "last_error": self._stats.last_error,
         }
         status["tracked_nodes"] = len(self._node_states)

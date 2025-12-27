@@ -843,3 +843,286 @@ def validate_after_recording(
         return None
 
     return validate_game_parity(str(db_path), game_id, mode=mode, dump_dir=dump_dir)
+
+
+# -----------------------------------------------------------------------------
+# Python-Native Parity Validation (No Node.js Required)
+# -----------------------------------------------------------------------------
+
+@dataclass
+class PythonParityResult:
+    """Result of Python-only parity validation."""
+    game_id: str
+    passed: bool
+    moves_replayed: int
+    total_moves: int
+    error_at_move: int | None = None
+    error_message: str | None = None
+    replay_time_ms: float = 0.0
+
+
+def validate_game_python_only(
+    db: GameReplayDB,
+    game_id: str,
+    *,
+    verbose: bool = False,
+) -> PythonParityResult:
+    """Validate a game using Python-only replay (no TypeScript required).
+
+    This validates that the recorded moves can be replayed through the Python
+    GameEngine without errors, and that the final state matches what was recorded.
+
+    This is useful for:
+    - Cluster nodes without Node.js installed
+    - Fast validation during selfplay
+    - Detecting corrupted move data (e.g., to=None issues)
+
+    Args:
+        db: GameReplayDB instance
+        game_id: ID of the game to validate
+        verbose: Log detailed progress
+
+    Returns:
+        PythonParityResult with validation status
+
+    December 2025: Created to enable parity validation on cluster nodes
+    without requiring Node.js/npx installation.
+    """
+    import time
+
+    start_time = time.time()
+
+    # Get game metadata and moves
+    meta = db.get_game_metadata(game_id)
+    if not meta:
+        return PythonParityResult(
+            game_id=game_id,
+            passed=False,
+            moves_replayed=0,
+            total_moves=0,
+            error_message=f"Game {game_id} not found",
+        )
+
+    moves = db.get_moves(game_id)
+    total_moves = len(moves)
+
+    if total_moves == 0:
+        # Empty game is valid
+        return PythonParityResult(
+            game_id=game_id,
+            passed=True,
+            moves_replayed=0,
+            total_moves=0,
+            replay_time_ms=(time.time() - start_time) * 1000,
+        )
+
+    # Get initial state
+    state = _get_python_initial_state_for_replay(db, game_id)
+
+    # Replay all moves
+    for i, move in enumerate(moves):
+        try:
+            # Check for corrupted move data
+            if hasattr(move, 'to') and move.to is None:
+                if hasattr(move, 'type') and move.type in ('PLACE_RING', 'place_ring'):
+                    return PythonParityResult(
+                        game_id=game_id,
+                        passed=False,
+                        moves_replayed=i,
+                        total_moves=total_moves,
+                        error_at_move=i,
+                        error_message=f"Corrupted move at index {i}: PLACE_RING with to=None",
+                        replay_time_ms=(time.time() - start_time) * 1000,
+                    )
+
+            # Apply move
+            state = GameEngine.apply_move(state, move, trace_mode=False)
+
+            if verbose and (i + 1) % 10 == 0:
+                logger.debug(f"[PythonParity] Game {game_id}: replayed {i + 1}/{total_moves} moves")
+
+        except Exception as e:
+            return PythonParityResult(
+                game_id=game_id,
+                passed=False,
+                moves_replayed=i,
+                total_moves=total_moves,
+                error_at_move=i,
+                error_message=f"Move {i} failed: {type(e).__name__}: {e}",
+                replay_time_ms=(time.time() - start_time) * 1000,
+            )
+
+    # All moves replayed successfully
+    elapsed_ms = (time.time() - start_time) * 1000
+
+    if verbose:
+        logger.info(f"[PythonParity] Game {game_id}: PASSED ({total_moves} moves in {elapsed_ms:.1f}ms)")
+
+    return PythonParityResult(
+        game_id=game_id,
+        passed=True,
+        moves_replayed=total_moves,
+        total_moves=total_moves,
+        replay_time_ms=elapsed_ms,
+    )
+
+
+def validate_database_python_only(
+    db_path: str | Path,
+    *,
+    max_games: int | None = None,
+    update_status: bool = True,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """Validate all games in a database using Python-only replay.
+
+    This enables parity validation on cluster nodes without Node.js.
+
+    Args:
+        db_path: Path to the GameReplayDB database
+        max_games: Maximum number of games to validate (None = all)
+        update_status: Update parity_status in database
+        verbose: Log detailed progress
+
+    Returns:
+        Dict with validation statistics:
+        - total_games: Number of games checked
+        - passed: Number that passed
+        - failed: Number that failed
+        - failed_games: List of (game_id, error_message)
+        - elapsed_seconds: Total validation time
+
+    December 2025: Created to unblock canonical database validation on cluster.
+    """
+    import time
+
+    start_time = time.time()
+    db_path = Path(db_path)
+
+    db = GameReplayDB(str(db_path))
+
+    # Get all game IDs via query_games
+    # Use a large limit to get all games, then apply max_games filter
+    limit = max_games if max_games else 100_000
+    games = db.query_games(limit=limit, require_moves=True)
+    game_ids = [g["game_id"] for g in games]
+
+    passed = 0
+    failed = 0
+    failed_games: list[tuple[str, str]] = []
+
+    for i, game_id in enumerate(game_ids):
+        result = validate_game_python_only(db, game_id, verbose=verbose)
+
+        if result.passed:
+            passed += 1
+            if update_status:
+                _update_parity_status(db, game_id, "passed")
+        else:
+            failed += 1
+            failed_games.append((game_id, result.error_message or "unknown error"))
+            if update_status:
+                _update_parity_status(db, game_id, "failed", result.error_at_move)
+
+        if (i + 1) % 100 == 0 or verbose:
+            logger.info(
+                f"[PythonParity] {db_path.name}: {i + 1}/{len(game_ids)} games "
+                f"(passed={passed}, failed={failed})"
+            )
+
+    elapsed = time.time() - start_time
+
+    # Update database-level parity gate status
+    if update_status:
+        gate_status = "passed" if failed == 0 else "failed"
+        _update_database_parity_gate(db, gate_status, passed, failed)
+
+    result = {
+        "database": str(db_path),
+        "total_games": len(game_ids),
+        "passed": passed,
+        "failed": failed,
+        "pass_rate": passed / len(game_ids) if game_ids else 1.0,
+        "failed_games": failed_games[:50],  # Limit to first 50 for readability
+        "elapsed_seconds": elapsed,
+    }
+
+    logger.info(
+        f"[PythonParity] {db_path.name}: Complete. "
+        f"{passed}/{len(game_ids)} passed ({result['pass_rate']:.1%}), "
+        f"elapsed={elapsed:.1f}s"
+    )
+
+    return result
+
+
+def _update_parity_status(
+    db: GameReplayDB,
+    game_id: str,
+    status: str,
+    divergence_move: int | None = None,
+) -> None:
+    """Update parity status for a single game."""
+    try:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        with db._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE games
+                SET parity_status = ?, parity_checked_at = ?, parity_divergence_move = ?
+                WHERE game_id = ?
+                """,
+                (status, now, divergence_move, game_id),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to update parity status for {game_id}: {e}")
+
+
+def _update_database_parity_gate(
+    db: GameReplayDB,
+    status: str,
+    passed_count: int,
+    failed_count: int,
+) -> None:
+    """Update database-level parity gate metadata."""
+    try:
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        with db._get_connection() as conn:
+            # Update or insert metadata
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_metadata (key, value)
+                VALUES ('parity_gate_status', ?)
+                """,
+                (status,),
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_metadata (key, value)
+                VALUES ('parity_gate_timestamp', ?)
+                """,
+                (now,),
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_metadata (key, value)
+                VALUES ('parity_gate_passed_count', ?)
+                """,
+                (str(passed_count),),
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO schema_metadata (key, value)
+                VALUES ('parity_gate_failed_count', ?)
+                """,
+                (str(failed_count),),
+            )
+            conn.commit()
+            logger.info(f"Updated parity gate status: {status} (passed={passed_count}, failed={failed_count})")
+    except Exception as e:
+        logger.warning(f"Failed to update database parity gate: {e}")

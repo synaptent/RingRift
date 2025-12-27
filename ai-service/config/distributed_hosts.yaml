@@ -112,9 +112,23 @@ hosts:
     selfplay_enabled: false
     training_enabled: false
     p2p_enabled: true
+    # Dec 2025: Route ALL data to OWC external drive (7.3TB) to prevent SSD fill-up
+    # This is the canonical backup location for the entire RingRift cluster
+    storage_paths:
+      games: /Volumes/RingRift-Data/selfplay_repository
+      models: /Volumes/RingRift-Data/canonical_models
+      training_data: /Volumes/RingRift-Data/canonical_data
+      checkpoints: /Volumes/RingRift-Data/model_checkpoints
+      logs: /Volumes/RingRift-Data/logs
+      # Keep cluster_games separate for raw incoming syncs
+      sync_incoming: /Volumes/RingRift-Data/cluster_games
+    # Prevent any data accumulation on SSD by routing all sync targets to OWC
+    use_external_storage: true
+    external_storage_path: /Volumes/RingRift-Data
 
   # Dec 26, 2025: Added local-mac as coordinator-only (MacBook Pro)
   # This prevents local machine from being assigned training/selfplay tasks
+  # Dec 27, 2025: Added skip_sync_receive to prevent data accumulation
   local-mac:
     ssh_host: localhost
     ssh_user: armand
@@ -128,6 +142,10 @@ hosts:
     training_enabled: false
     gauntlet_enabled: false
     export_enabled: false
+    # Dec 2025: Prevent any data accumulation on MacBook
+    # All data should go to Mac Studio OWC drive, not this laptop
+    skip_sync_receive: true
+    sync_to_mac_studio_owc: true
     # Coordinator-only: keep P2P disabled to avoid local deployment.
     p2p_enabled: false
 

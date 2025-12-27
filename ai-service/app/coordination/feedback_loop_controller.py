@@ -324,6 +324,18 @@ class FeedbackLoopController:
                 bus.subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
                 event_count += 1
 
+            # Dec 27, 2025: Subscribe to QUALITY_SCORE_UPDATED for quality tracking
+            # Closes feedback loop: quality monitoring → training intensity adjustments
+            if hasattr(DataEventType, 'QUALITY_SCORE_UPDATED'):
+                bus.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
+                event_count += 1
+
+            # Dec 27, 2025: Subscribe to CLUSTER_CAPACITY_CHANGED for resource adjustments
+            # Closes feedback loop: cluster capacity changes → selfplay/training rate adjustments
+            if hasattr(DataEventType, 'CLUSTER_CAPACITY_CHANGED'):
+                bus.subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
+                event_count += 1
+
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
 
             self._subscribed = True
@@ -2381,6 +2393,92 @@ class FeedbackLoopController:
         # Track metrics
         if hasattr(self, "_metrics") and self._metrics:
             self._metrics.increment("high_quality_events", {"config_key": config_key})
+
+    def _on_quality_score_updated(self, event) -> None:
+        """Handle QUALITY_SCORE_UPDATED - game quality recalculated.
+
+        Dec 27, 2025: Closes quality monitoring → training feedback loop.
+        When quality scores are updated, this handler:
+        1. Updates per-config quality tracking
+        2. Adjusts training intensity based on quality trends
+        3. Triggers exploration boost if quality is declining
+
+        Args:
+            event: Event with payload containing config_key, quality_score, trend
+        """
+        payload = event.payload if hasattr(event, "payload") else {}
+        config_key = payload.get("config_key", "")
+        quality_score = payload.get("quality_score", 0.0)
+        trend = payload.get("trend", "stable")  # improving, declining, stable
+        sample_count = payload.get("sample_count", 0)
+
+        if not config_key:
+            return
+
+        state = self._get_or_create_state(config_key)
+
+        # Update quality tracking
+        prev_quality = state.last_selfplay_quality
+        state.last_selfplay_quality = quality_score
+        state.last_selfplay_time = time.time()
+
+        # Adjust training intensity based on trend
+        if trend == "declining" and quality_score < 0.6:
+            state.current_training_intensity = "conservative"
+            logger.warning(
+                f"[FeedbackLoopController] Quality declining for {config_key}: "
+                f"score={quality_score:.2f}, trend={trend} → conservative training"
+            )
+        elif trend == "improving" and quality_score > 0.8:
+            state.current_training_intensity = "accelerated"
+            logger.info(
+                f"[FeedbackLoopController] Quality improving for {config_key}: "
+                f"score={quality_score:.2f} → accelerated training"
+            )
+        else:
+            logger.debug(
+                f"[FeedbackLoopController] Quality update for {config_key}: "
+                f"score={quality_score:.2f} (prev={prev_quality:.2f})"
+            )
+
+    def _on_cluster_capacity_changed(self, event) -> None:
+        """Handle CLUSTER_CAPACITY_CHANGED - cluster resources changed.
+
+        Dec 27, 2025: Closes cluster capacity → workload feedback loop.
+        When cluster capacity changes (nodes added/removed), this handler:
+        1. Adjusts selfplay rate targets
+        2. Updates training batch sizes if needed
+        3. Logs capacity changes for monitoring
+
+        Args:
+            event: Event with payload containing capacity, change_type, node_count
+        """
+        payload = event.payload if hasattr(event, "payload") else {}
+        capacity = payload.get("capacity", 1.0)  # 0.0-1.0
+        change_type = payload.get("change_type", "unknown")  # added, removed, scaled
+        node_count = payload.get("node_count", 0)
+        gpu_count = payload.get("gpu_count", 0)
+
+        # Update cluster capacity tracking
+        prev_capacity = getattr(self, "_cluster_capacity", 1.0)
+        self._cluster_capacity = capacity
+
+        # Log significant capacity changes
+        capacity_delta = capacity - prev_capacity
+        if abs(capacity_delta) > 0.1:
+            logger.info(
+                f"[FeedbackLoopController] Cluster capacity changed: "
+                f"{prev_capacity:.1%} → {capacity:.1%} ({change_type}), "
+                f"nodes={node_count}, gpus={gpu_count}"
+            )
+
+            # If capacity dropped significantly, emit warning
+            if capacity_delta < -0.2:
+                logger.warning(
+                    f"[FeedbackLoopController] Significant capacity drop detected: "
+                    f"{abs(capacity_delta):.1%} reduction. "
+                    "Training/selfplay rates may need adjustment."
+                )
 
     def signal_selfplay_quality(self, config_key: str, quality_score: float) -> None:
         """Manually signal selfplay quality (for testing/manual intervention)."""

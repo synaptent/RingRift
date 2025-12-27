@@ -874,6 +874,26 @@ async def create_disk_space_manager() -> None:
         raise
 
 
+async def create_coordinator_disk_manager() -> None:
+    """Create and run coordinator disk manager daemon (December 27, 2025).
+
+    Specialized disk management for coordinator-only nodes:
+    - Syncs data to remote storage (OWC on mac-studio) before cleanup
+    - More aggressive cleanup thresholds (50% vs 60%)
+    - Removes synced training/game files after 24 hours
+    - Keeps canonical databases locally for quick access
+    """
+    try:
+        from app.coordination.disk_space_manager_daemon import CoordinatorDiskManager
+
+        daemon = CoordinatorDiskManager()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"CoordinatorDiskManager not available: {e}")
+        raise
+
+
 # =============================================================================
 # Miscellaneous Daemons
 # =============================================================================
@@ -1077,6 +1097,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.ORPHAN_DETECTION.name: create_orphan_detection,
         DaemonType.DATA_CLEANUP.name: create_data_cleanup,
         DaemonType.DISK_SPACE_MANAGER.name: create_disk_space_manager,
+        DaemonType.COORDINATOR_DISK_MANAGER.name: create_coordinator_disk_manager,
         DaemonType.S3_BACKUP.name: create_s3_backup,
         DaemonType.DISTILLATION.name: create_distillation,
         DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,

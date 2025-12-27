@@ -549,3 +549,239 @@ def reset_disk_space_daemon() -> None:
     """Reset the singleton (for testing)."""
     global _daemon_instance
     _daemon_instance = None
+
+
+# =============================================================================
+# Coordinator-Specific Configuration (December 27, 2025)
+# =============================================================================
+
+
+@dataclass
+class CoordinatorDiskConfig(DiskSpaceConfig):
+    """More aggressive disk management for coordinator-only nodes.
+
+    Coordinator nodes don't run training/selfplay, so they can:
+    - Sync data to remote storage before cleanup
+    - Be more aggressive about removing local copies
+    - Have lower thresholds for triggering cleanup
+    """
+
+    # More aggressive thresholds for coordinators
+    proactive_cleanup_threshold: int = 50  # Start earlier
+    target_disk_usage: int = 40  # Clean down further
+    min_free_gb: int = 100  # Keep more free space
+
+    # Shorter retention for coordinators
+    log_retention_days: int = 3
+    checkpoint_retention_days: int = 7
+    empty_db_max_age_days: int = 0  # Clean immediately
+
+    # Remote sync configuration
+    remote_sync_enabled: bool = True
+    remote_host: str = "mac-studio"
+    remote_base_path: str = "/Volumes/RingRift-Data"
+    sync_before_cleanup: bool = True
+
+    # Coordinator-specific cleanup priorities
+    cleanup_priorities: list[str] = field(
+        default_factory=lambda: [
+            "logs",  # 1. Old logs first
+            "cache",  # 2. Pip/torch cache
+            "empty_dbs",  # 3. Empty databases
+            "synced_training",  # 4. Training data that's been synced
+            "synced_games",  # 5. Game databases that are synced
+            "old_checkpoints",  # 6. Old checkpoints
+            "quarantine",  # 7. Quarantined databases
+        ]
+    )
+
+    @classmethod
+    def for_coordinator(cls) -> "CoordinatorDiskConfig":
+        """Create config for coordinator nodes."""
+        config = cls()
+        # Override from environment
+        if os.environ.get("RINGRIFT_COORDINATOR_REMOTE_HOST"):
+            config.remote_host = os.environ["RINGRIFT_COORDINATOR_REMOTE_HOST"]
+        if os.environ.get("RINGRIFT_COORDINATOR_REMOTE_PATH"):
+            config.remote_base_path = os.environ["RINGRIFT_COORDINATOR_REMOTE_PATH"]
+        return config
+
+
+class CoordinatorDiskManager(DiskSpaceManagerDaemon):
+    """Disk manager for coordinator-only nodes with remote sync.
+
+    December 27, 2025: Created for permanent coordinator disk management.
+
+    Features beyond base DiskSpaceManager:
+    - Syncs valuable data to remote storage (OWC) before cleanup
+    - Removes local copies of synced data
+    - More aggressive cleanup thresholds
+    """
+
+    def __init__(self, config: CoordinatorDiskConfig | None = None):
+        if config is None:
+            config = CoordinatorDiskConfig.for_coordinator()
+        super().__init__(config)
+        self._sync_stats: dict[str, int] = {
+            "files_synced": 0,
+            "bytes_synced": 0,
+            "sync_errors": 0,
+        }
+
+    def _get_default_config(self) -> DiskSpaceConfig:
+        return CoordinatorDiskConfig.for_coordinator()
+
+    def _get_daemon_name(self) -> str:
+        return "CoordinatorDiskManager"
+
+    async def _perform_cleanup(self, status: DiskStatus) -> None:
+        """Perform cleanup with remote sync first."""
+        config = self.config
+        if not isinstance(config, CoordinatorDiskConfig):
+            return await super()._perform_cleanup(status)
+
+        # Step 1: Sync valuable data to remote before cleanup
+        if config.sync_before_cleanup and config.remote_sync_enabled:
+            logger.info(f"[{self._get_daemon_name()}] Syncing data to {config.remote_host} before cleanup")
+            await self._sync_to_remote()
+
+        # Step 2: Perform regular cleanup
+        await super()._perform_cleanup(status)
+
+        # Step 3: Additional coordinator-specific cleanup
+        for priority in config.cleanup_priorities:
+            if status.usage_percent <= config.target_disk_usage:
+                break
+
+            if priority == "synced_training":
+                self._cleanup_synced_training()
+            elif priority == "synced_games":
+                self._cleanup_synced_games()
+
+            status = DiskStatus.from_path(str(self._root_path), config)
+
+    async def _sync_to_remote(self) -> None:
+        """Sync valuable data to remote storage."""
+        config = self.config
+        if not isinstance(config, CoordinatorDiskConfig):
+            return
+
+        remote_host = config.remote_host
+        remote_base = config.remote_base_path
+
+        sync_dirs = [
+            ("data/games", f"{remote_base}/cluster_games/coordinator_backup"),
+            ("data/training", f"{remote_base}/training_data/coordinator_backup"),
+            ("models", f"{remote_base}/trained_models/coordinator_backup"),
+            ("data/model_registry", f"{remote_base}/model_registry"),
+        ]
+
+        for local_dir, remote_path in sync_dirs:
+            local_path = self._root_path / local_dir
+            if not local_path.exists():
+                continue
+
+            try:
+                # Use rsync with progress for monitoring
+                result = subprocess.run(
+                    [
+                        "rsync",
+                        "-avz",
+                        "--progress",
+                        "--partial",
+                        f"{local_path}/",
+                        f"{remote_host}:{remote_path}/",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=3600,  # 1 hour timeout
+                )
+                if result.returncode == 0:
+                    logger.info(f"Synced {local_dir} to {remote_host}:{remote_path}")
+                    self._sync_stats["files_synced"] += 1
+                else:
+                    logger.warning(f"Sync failed for {local_dir}: {result.stderr[:200]}")
+                    self._sync_stats["sync_errors"] += 1
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Sync timed out for {local_dir}")
+                self._sync_stats["sync_errors"] += 1
+            except Exception as e:
+                logger.warning(f"Sync error for {local_dir}: {e}")
+                self._sync_stats["sync_errors"] += 1
+
+    def _cleanup_synced_training(self) -> int:
+        """Remove training NPZ files that have been synced.
+
+        Only removes files older than 24 hours to ensure sync completed.
+        """
+        bytes_freed = 0
+        training_path = self._root_path / "data" / "training"
+        if not training_path.exists():
+            return 0
+
+        cutoff = time.time() - 86400  # 24 hours
+
+        for npz_file in training_path.glob("*.npz"):
+            try:
+                if npz_file.stat().st_mtime < cutoff:
+                    size = npz_file.stat().st_size
+                    npz_file.unlink()
+                    bytes_freed += size
+                    logger.debug(f"Removed synced training file: {npz_file.name}")
+            except (OSError, PermissionError) as e:
+                logger.debug(f"Failed to remove {npz_file}: {e}")
+
+        return bytes_freed
+
+    def _cleanup_synced_games(self) -> int:
+        """Remove game databases that have been synced.
+
+        Only removes non-canonical databases older than 24 hours.
+        Keeps canonical_*.db files locally for quick access.
+        """
+        bytes_freed = 0
+        games_path = self._root_path / "data" / "games"
+        if not games_path.exists():
+            return 0
+
+        cutoff = time.time() - 86400  # 24 hours
+
+        for db_file in games_path.glob("*.db"):
+            # Never delete canonical databases
+            if db_file.name.startswith("canonical_"):
+                continue
+
+            try:
+                if db_file.stat().st_mtime < cutoff:
+                    size = db_file.stat().st_size
+                    db_file.unlink()
+                    bytes_freed += size
+                    logger.debug(f"Removed synced game database: {db_file.name}")
+            except (OSError, PermissionError) as e:
+                logger.debug(f"Failed to remove {db_file}: {e}")
+
+        return bytes_freed
+
+    def get_status(self) -> dict[str, Any]:
+        """Get daemon status including sync statistics."""
+        status = super().get_status()
+        status["sync_stats"] = self._sync_stats
+        return status
+
+
+# Coordinator daemon singleton
+_coordinator_daemon_instance: CoordinatorDiskManager | None = None
+
+
+def get_coordinator_disk_daemon() -> CoordinatorDiskManager:
+    """Get the singleton CoordinatorDiskManager instance."""
+    global _coordinator_daemon_instance
+    if _coordinator_daemon_instance is None:
+        _coordinator_daemon_instance = CoordinatorDiskManager()
+    return _coordinator_daemon_instance
+
+
+def reset_coordinator_disk_daemon() -> None:
+    """Reset the coordinator singleton (for testing)."""
+    global _coordinator_daemon_instance
+    _coordinator_daemon_instance = None

@@ -149,8 +149,27 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         return ConsolidationConfig.from_env()
 
     async def _on_start(self) -> None:
-        """Called after daemon starts - subscribe to events."""
+        """Called after daemon starts - subscribe to events and trigger initial scan.
+
+        CRITICAL: The initial consolidation scan ensures that games generated
+        before this daemon started are consolidated. Without this, canonical
+        databases remain empty until NEW_GAMES_AVAILABLE or SELFPLAY_COMPLETE
+        events arrive, which may never happen for historical data.
+        """
         await self._subscribe_to_events()
+
+        # CRITICAL: Trigger initial consolidation for all configs
+        # This ensures historical data is consolidated on daemon startup
+        logger.info("[DataConsolidationDaemon] Starting initial consolidation scan...")
+        try:
+            results = await self.trigger_all_consolidations()
+            total_merged = sum(s.games_merged for s in results.values())
+            logger.info(
+                f"[DataConsolidationDaemon] Initial consolidation complete: "
+                f"{total_merged} games merged across {len(results)} configs"
+            )
+        except Exception as e:
+            logger.warning(f"[DataConsolidationDaemon] Initial consolidation failed: {e}")
 
     async def _on_stop(self) -> None:
         """Called before daemon stops - unsubscribe from events."""
@@ -658,9 +677,9 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
     ) -> None:
         """Emit CONSOLIDATION_STARTED event."""
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.distributed.data_events import DataEventType, emit_data_event
 
-            await emit_event(
+            await emit_data_event(
                 event_type=DataEventType.CONSOLIDATION_STARTED,
                 payload={
                     "config_key": config_key,
@@ -686,9 +705,9 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
     ) -> None:
         """Emit CONSOLIDATION_COMPLETE event."""
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.distributed.data_events import DataEventType, emit_data_event
 
-            await emit_event(
+            await emit_data_event(
                 event_type=DataEventType.CONSOLIDATION_COMPLETE,
                 payload={
                     "config_key": config_key,

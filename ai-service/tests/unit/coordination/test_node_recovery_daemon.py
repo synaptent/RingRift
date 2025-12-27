@@ -475,21 +475,21 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_health_check_running_healthy(self, daemon):
         """Should report healthy when running normally."""
-        daemon._stats.last_check_time = time.time()
+        daemon._stats.last_job_time = time.time()
         healthy = await daemon.health_check()
         assert healthy is True
 
     @pytest.mark.asyncio
     async def test_health_check_stale_data(self, daemon):
         """Should report unhealthy with stale check data."""
-        daemon._stats.last_check_time = time.time() - 3600  # 1 hour ago
+        daemon._stats.last_job_time = time.time() - 3600  # 1 hour ago
         healthy = await daemon.health_check()
         assert healthy is False
 
     @pytest.mark.asyncio
     async def test_health_check_all_failures(self, daemon):
         """Should report unhealthy with only failures."""
-        daemon._stats.last_check_time = time.time()
+        daemon._stats.last_job_time = time.time()
         daemon._stats.jobs_failed = 15
         daemon._stats.jobs_succeeded = 0
         healthy = await daemon.health_check()
@@ -498,7 +498,7 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_health_check_some_failures_ok(self, daemon):
         """Should be healthy with some failures if also successes."""
-        daemon._stats.last_check_time = time.time()
+        daemon._stats.last_job_time = time.time()
         daemon._stats.jobs_failed = 15
         daemon._stats.jobs_succeeded = 10  # Some successes
         healthy = await daemon.health_check()

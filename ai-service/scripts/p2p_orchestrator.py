@@ -202,6 +202,7 @@ def get_swim_manager(node_id: str | None = None, bind_port: int = 7947):
 
 # Feature flag for gradual rollout
 EXTRACTED_LOOPS_ENABLED = os.environ.get("RINGRIFT_EXTRACTED_LOOPS", "true").lower() in ("true", "1", "yes")
+JOB_REAPER_FALLBACK_ENABLED = os.environ.get("RINGRIFT_JOB_REAPER_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Lazy import to avoid circular dependencies
 _loop_manager_instance = None
@@ -2576,6 +2577,112 @@ class P2POrchestrator(
                 for job_id, start_time in jobs.items():
                     result[job_id] = start_time
         return result
+
+    async def _inline_job_reaper_fallback_loop(self) -> None:
+        """Inline job reaper fallback loop.
+
+        December 27, 2025: Fallback implementation that runs if the extracted
+        JobReaperLoop fails to start or hits persistent errors. Uses the same
+        callbacks and thresholds as the extracted loop.
+
+        This is NOT a replacement for JobReaperLoop - it's a safety net that
+        ensures job cleanup continues even if the modular loop system fails.
+
+        Thresholds:
+        - STALE: Jobs older than 1 hour without heartbeat
+        - STUCK: Jobs older than 2 hours regardless of heartbeat
+        - INTERVAL: Checks every 5 minutes
+
+        Environment:
+        - RINGRIFT_JOB_REAPER_FALLBACK_ENABLED: Enable/disable (default: true)
+        """
+        STALE_THRESHOLD_SECONDS = 3600.0   # 1 hour
+        STUCK_THRESHOLD_SECONDS = 7200.0   # 2 hours
+        CHECK_INTERVAL_SECONDS = 300.0      # 5 minutes
+        MAX_JOBS_PER_CYCLE = 10             # Limit to avoid overload
+
+        logger.info("[JobReaper Fallback] Started inline fallback loop")
+        stats = {"checks": 0, "reaped": 0, "errors": 0}
+
+        while self.running:
+            try:
+                await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+                if not self.running:
+                    break
+
+                stats["checks"] += 1
+                now = time.time()
+                reaped_this_cycle = 0
+
+                # Get all active jobs
+                try:
+                    active_jobs = self._get_all_active_jobs_for_reaper()
+                except Exception as e:
+                    logger.warning(f"[JobReaper Fallback] Failed to get active jobs: {e}")
+                    stats["errors"] += 1
+                    continue
+
+                if not active_jobs:
+                    continue
+
+                # Get heartbeat info
+                try:
+                    heartbeats = self._get_job_heartbeats_for_reaper()
+                except Exception as e:
+                    logger.debug(f"[JobReaper Fallback] Failed to get heartbeats: {e}")
+                    heartbeats = {}
+
+                # Identify stale and stuck jobs
+                jobs_to_reap: list[tuple[str, str]] = []  # [(job_id, reason), ...]
+
+                for job_id, job_info in active_jobs.items():
+                    if reaped_this_cycle >= MAX_JOBS_PER_CYCLE:
+                        break
+
+                    started_at = job_info.get("started_at", 0)
+                    if not started_at:
+                        continue
+
+                    job_age = now - started_at
+                    last_heartbeat = heartbeats.get(job_id, started_at)
+                    heartbeat_age = now - last_heartbeat
+
+                    # Check for stuck jobs (absolute age threshold)
+                    if job_age > STUCK_THRESHOLD_SECONDS:
+                        jobs_to_reap.append((job_id, "stuck"))
+                        reaped_this_cycle += 1
+                        continue
+
+                    # Check for stale jobs (no recent heartbeat)
+                    if heartbeat_age > STALE_THRESHOLD_SECONDS:
+                        jobs_to_reap.append((job_id, "stale"))
+                        reaped_this_cycle += 1
+
+                # Reap identified jobs
+                for job_id, reason in jobs_to_reap:
+                    try:
+                        success = await self._cancel_job_for_reaper(job_id)
+                        if success:
+                            stats["reaped"] += 1
+                            logger.info(
+                                f"[JobReaper Fallback] Reaped {reason} job {job_id} "
+                                f"(total: {stats['reaped']})"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[JobReaper Fallback] Failed to reap {job_id}: {e}")
+                        stats["errors"] += 1
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[JobReaper Fallback] Unexpected error: {e}")
+                stats["errors"] += 1
+                await asyncio.sleep(60)  # Back off on error
+
+        logger.info(
+            f"[JobReaper Fallback] Stopped after {stats['checks']} checks, "
+            f"{stats['reaped']} reaped, {stats['errors']} errors"
+        )
 
     def _get_sync_router(self) -> SyncRouter | None:
         """Lazy-load SyncRouter singleton for intelligent sync routing."""
@@ -27347,11 +27454,25 @@ print(json.dumps({{
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
         # These 5 loops now ONLY run via LoopManager (inline versions removed):
         # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop
+        loop_manager_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()
             if loop_manager is not None:
                 await loop_manager.start_all()
+                loop_manager_started = True
                 logger.info(f"LoopManager: started {len(loop_manager.loop_names)} extracted loops")
+
+        # Phase 4.1: Inline job reaper fallback (Dec 27, 2025)
+        # If LoopManager failed to start or is disabled, run inline fallback for job cleanup
+        # This ensures stuck jobs get cleaned up even if the modular loop system fails
+        if JOB_REAPER_FALLBACK_ENABLED and not loop_manager_started:
+            logger.info("[JobReaper] LoopManager not available, starting inline fallback")
+            tasks.append(
+                self._create_safe_task(
+                    self._inline_job_reaper_fallback_loop(),
+                    "job_reaper_fallback"
+                )
+            )
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.

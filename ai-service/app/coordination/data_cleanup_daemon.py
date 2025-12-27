@@ -563,8 +563,7 @@ class DataCleanupDaemon:
         # Log to audit file
         self._log_audit_action("quarantine", db_path, assessment, reason)
 
-        self._stats.databases_quarantined += 1
-        self._stats.games_quarantined += assessment.total_games
+        self._stats.record_database_quarantine(databases=1, games=assessment.total_games)
         self._events_processed += 1
 
     async def _delete_database(

@@ -504,6 +504,11 @@ class ClusterNode:
     data_server_port: int = 8766
     data_server_url: str | None = None
     is_coordinator: bool = False  # Whether this is the Elo coordinator
+    # Dec 2025: Storage routing fields
+    use_external_storage: bool = False  # Route data to external storage
+    external_storage_path: str | None = None  # External storage mount point
+    skip_sync_receive: bool = False  # Skip receiving sync data
+    storage_paths: dict[str, str] | None = None  # Custom storage paths per data type
 
     @property
     def best_ip(self) -> str | None:
@@ -585,6 +590,11 @@ def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, Cluste
             data_server_port=cfg.get("data_server_port", default_data_port),
             data_server_url=cfg.get("data_server_url"),
             is_coordinator=(name == elo_coordinator or cfg.get("is_coordinator", False)),
+            # Dec 2025: Storage routing fields
+            use_external_storage=cfg.get("use_external_storage", False),
+            external_storage_path=cfg.get("external_storage_path"),
+            skip_sync_receive=cfg.get("skip_sync_receive", False),
+            storage_paths=cfg.get("storage_paths"),
         )
 
     return nodes

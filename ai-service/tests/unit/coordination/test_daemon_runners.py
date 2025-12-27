@@ -422,3 +422,81 @@ class TestDeprecatedRunners:
 
         assert inspect.iscoroutinefunction(create_sync_coordinator)
         assert inspect.iscoroutinefunction(create_health_check)
+
+
+class TestAllRunnersParametrized:
+    """Parametrized tests covering all 62+ daemon runners.
+
+    Dec 27, 2025: Added to ensure comprehensive coverage of all runner functions.
+    Uses parametrization to test the common pattern that all runners follow.
+    """
+
+    @pytest.fixture
+    def all_runner_configs(self):
+        """Get all registered runner configurations."""
+        return _build_runner_registry()
+
+    def test_all_runners_are_coroutine_functions(self, all_runner_configs):
+        """Test that ALL registered runners are async coroutine functions."""
+        import inspect
+
+        for daemon_name, runner in all_runner_configs.items():
+            assert inspect.iscoroutinefunction(runner), (
+                f"Runner for {daemon_name} is not a coroutine function"
+            )
+
+    def test_all_runners_have_docstrings(self, all_runner_configs):
+        """Test that all runners have docstrings for documentation."""
+        for daemon_name, runner in all_runner_configs.items():
+            assert runner.__doc__ is not None, (
+                f"Runner for {daemon_name} is missing a docstring"
+            )
+
+    def test_all_runners_follow_naming_convention(self, all_runner_configs):
+        """Test that runner function names follow the create_* pattern."""
+        for daemon_name, runner in all_runner_configs.items():
+            # Function name should be create_<daemon_name_lowercase> or similar
+            func_name = runner.__name__
+            assert func_name.startswith("create_"), (
+                f"Runner for {daemon_name} has unexpected name: {func_name}"
+            )
+
+    def test_runner_registry_completeness(self, all_runner_configs):
+        """Test that we have runners for a minimum expected count."""
+        # We expect at least 60 daemon types to have runners
+        assert len(all_runner_configs) >= 60, (
+            f"Registry has only {len(all_runner_configs)} runners, expected >= 60"
+        )
+
+    @pytest.mark.parametrize("daemon_name", [
+        "AUTO_SYNC", "DATA_PIPELINE", "EVENT_ROUTER", "FEEDBACK_LOOP",
+        "SELFPLAY_COORDINATOR", "TRAINING_TRIGGER", "EVALUATION",
+        "MODEL_DISTRIBUTION", "CLUSTER_MONITOR", "DAEMON_WATCHDOG",
+    ])
+    def test_critical_runners_are_registered(self, daemon_name, all_runner_configs):
+        """Test that critical daemon runners are registered."""
+        assert daemon_name in all_runner_configs, (
+            f"Critical runner {daemon_name} is not registered"
+        )
+
+    @pytest.mark.asyncio
+    async def test_wait_for_daemon_with_immediate_stop(self):
+        """Test _wait_for_daemon returns immediately when daemon not running."""
+        mock_daemon = MagicMock()
+        mock_daemon.is_running.return_value = False
+
+        # Should return without waiting
+        await _wait_for_daemon(mock_daemon, check_interval=0.01)
+        mock_daemon.is_running.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_daemon_polls_until_stopped(self):
+        """Test _wait_for_daemon polls until daemon stops."""
+        mock_daemon = MagicMock()
+        # Return True twice, then False to simulate daemon stopping
+        mock_daemon.is_running.side_effect = [True, True, False]
+
+        await _wait_for_daemon(mock_daemon, check_interval=0.01)
+
+        # Should have been called 3 times
+        assert mock_daemon.is_running.call_count == 3
