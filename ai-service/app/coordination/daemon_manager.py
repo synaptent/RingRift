@@ -540,6 +540,76 @@ class DaemonManager:
             )
             logger.info("[DaemonManager] Started health monitoring loop")
 
+    async def _wait_for_dependencies(self, daemon_type: DaemonType) -> None:
+        """Wait for all dependencies of a daemon to be ready before starting.
+
+        December 27, 2025: Added to fix startup order issues where daemons
+        start before their dependencies are ready, causing lost events.
+
+        Args:
+            daemon_type: Type of daemon being started
+        """
+        from app.coordination.daemon_registry import DAEMON_REGISTRY
+
+        spec = DAEMON_REGISTRY.get(daemon_type)
+        if not spec or not spec.depends_on:
+            return  # No dependencies to wait for
+
+        for dep in spec.depends_on:
+            if not await self._wait_for_daemon_ready(dep, timeout=30.0):
+                logger.warning(
+                    f"[DaemonManager] Dependency {dep.name} not ready for {daemon_type.name}, "
+                    "proceeding anyway (may lose early events)"
+                )
+
+    async def _wait_for_daemon_ready(
+        self, daemon_type: DaemonType, timeout: float = 30.0
+    ) -> bool:
+        """Wait for a specific daemon to be running and healthy.
+
+        December 27, 2025: Added to support dependency-based startup ordering.
+        Polls daemon status at 0.5s intervals until ready or timeout.
+
+        Args:
+            daemon_type: Type of daemon to wait for
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if daemon is ready, False if timed out
+        """
+        import time
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.is_running(daemon_type):
+                # Check health if the daemon supports it
+                try:
+                    health = await self.get_daemon_health(daemon_type)
+                    status = health.get("status", "unknown")
+                    if status in ("healthy", "ok", "running"):
+                        logger.debug(
+                            f"[DaemonManager] Dependency {daemon_type.name} is ready"
+                        )
+                        return True
+                    # If health check exists but returns unhealthy, keep waiting
+                    if status == "unhealthy":
+                        await asyncio.sleep(0.5)
+                        continue
+                except Exception:
+                    # No health check available, just check running state
+                    pass
+                # Running but no health check or unknown status - consider ready
+                logger.debug(
+                    f"[DaemonManager] Dependency {daemon_type.name} is running (no health status)"
+                )
+                return True
+            await asyncio.sleep(0.5)
+
+        logger.warning(
+            f"[DaemonManager] Timed out waiting {timeout}s for {daemon_type.name}"
+        )
+        return False
+
     def mark_daemon_ready(self, daemon_type: DaemonType) -> bool:
         """Explicitly mark a daemon as ready for dependent daemons.
 
