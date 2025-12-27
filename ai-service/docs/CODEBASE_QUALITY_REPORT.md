@@ -55,14 +55,14 @@ Migration: Use `app/core/ssh` for new code, SSHTransport for P2P.
 | Deprecated (Q2 2026)    | 2         | Migrated          |
 | Critical daemons        | 5         | ✅ All registered |
 
-**Profile Startup Risk (Unregistered daemons block startup):**
+**Profile Startup Status (Dec 27, 2025):**
 
-- `coordinator`: BLOCKED (missing HEALTH_SERVER, CURRICULUM_INTEGRATION, METRICS_ANALYSIS)
-- `training_node`: BLOCKED (missing 4 daemons)
-- `ephemeral`/`selfplay`: BLOCKED (missing HEALTH_SERVER)
-- `minimal`: OK (only EVENT_ROUTER)
+- `coordinator`: ✅ OK (all daemons registered)
+- `training_node`: ✅ OK (all daemons registered)
+- `ephemeral`/`selfplay`: ✅ OK (all daemons registered)
+- `minimal`: ✅ OK (only EVENT_ROUTER)
 
-**Recommended Fix:** Remove unregistered daemons from profiles or create stub implementations
+All 66 daemon types now have factory implementations in `daemon_runners.py`.
 
 ### Quick Wins
 
