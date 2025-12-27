@@ -1090,7 +1090,17 @@ async def create_vast_cpu_pipeline() -> None:
 
 
 async def create_cluster_data_sync() -> None:
-    """Create and run cluster data sync daemon."""
+    """Create and run cluster data sync daemon.
+
+    DEPRECATED (December 2025): Use AutoSyncDaemon with strategy="broadcast" instead.
+    This runner is retained for backward compatibility and will be removed in Q2 2026.
+    """
+    warnings.warn(
+        "DaemonType.CLUSTER_DATA_SYNC is deprecated. Use AutoSyncDaemon(strategy='broadcast') "
+        "instead. Removal scheduled for Q2 2026.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     try:
         from app.coordination.auto_sync_daemon import (
             AutoSyncConfig,
