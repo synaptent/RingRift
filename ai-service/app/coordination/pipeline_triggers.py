@@ -59,6 +59,9 @@ class TriggerConfig:
     # Minimum games required for sync to be worthwhile
     min_games_for_sync: int = 100
 
+    # Minimum games required before triggering NPZ export (Dec 2025)
+    min_games_for_export: int = 50
+
     # Minimum samples required for training
     min_samples_for_training: int = 10000
 
@@ -111,7 +114,11 @@ class PipelineTrigger:
         board_type: str,
         num_players: int,
     ) -> PrerequisiteResult:
-        """Check if game databases exist for the config."""
+        """Check if game databases exist with sufficient games for export.
+
+        December 2025: Now enforces min_games_for_export threshold to prevent
+        triggering exports on databases with too few games for meaningful training.
+        """
         try:
             from app.utils.game_discovery import GameDiscovery
 
@@ -126,6 +133,22 @@ class PipelineTrigger:
                 )
 
             total_games = sum(db.game_count for db in databases)
+
+            # December 2025: Enforce minimum game threshold
+            if total_games < self.config.min_games_for_export:
+                return PrerequisiteResult(
+                    passed=False,
+                    message=(
+                        f"Insufficient games for export: {total_games:,} < "
+                        f"{self.config.min_games_for_export:,} minimum required"
+                    ),
+                    details={
+                        "databases_found": len(databases),
+                        "total_games": total_games,
+                        "min_required": self.config.min_games_for_export,
+                        "games_needed": self.config.min_games_for_export - total_games,
+                    },
+                )
 
             return PrerequisiteResult(
                 passed=True,

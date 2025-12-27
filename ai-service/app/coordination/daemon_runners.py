@@ -88,7 +88,7 @@ async def create_high_quality_sync() -> None:
 async def create_elo_sync() -> None:
     """Create and run Elo sync manager (Phase 8, December 2025)."""
     try:
-        from app.training.elo_sync_manager import EloSyncManager
+        from app.tournament.elo_sync_manager import EloSyncManager
 
         manager = EloSyncManager()
         await manager.initialize()
@@ -684,15 +684,31 @@ async def create_resource_optimizer() -> None:
 
 
 async def create_utilization_optimizer() -> None:
-    """Create and run utilization optimizer daemon (December 2025)."""
-    try:
-        from app.coordination.utilization_optimizer import UtilizationOptimizerDaemon
+    """Create and run utilization optimizer daemon (December 2025).
 
-        daemon = UtilizationOptimizerDaemon()
-        await daemon.start()
-        await _wait_for_daemon(daemon)
+    UtilizationOptimizer is a utility class without daemon lifecycle methods,
+    so we wrap it in a periodic loop that calls optimize_cluster().
+    """
+    try:
+        import asyncio
+
+        from app.coordination.utilization_optimizer import UtilizationOptimizer
+
+        optimizer = UtilizationOptimizer()
+        logger.info("[UtilizationOptimizer] Starting optimization loop")
+
+        # Run optimization loop every 5 minutes
+        while True:
+            try:
+                results = await optimizer.optimize_cluster()
+                if results:
+                    logger.info(f"[UtilizationOptimizer] Optimized {len(results)} nodes")
+            except Exception as e:
+                logger.error(f"[UtilizationOptimizer] Optimization failed: {e}")
+
+            await asyncio.sleep(300)  # 5 minute interval
     except ImportError as e:
-        logger.error(f"UtilizationOptimizerDaemon not available: {e}")
+        logger.error(f"UtilizationOptimizer not available: {e}")
         raise
 
 
