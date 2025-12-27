@@ -391,6 +391,13 @@ def get_adaptive_thresholds(model_elo: float, num_players: int = 2) -> dict[str,
 BASELINE_ELO_RANDOM = 400
 BASELINE_ELO_HEURISTIC = 1200
 
+# December 2025: Extended baseline Elo ladder for measuring higher Elo models
+# These enable accurate Elo estimation above the previous 1600 ceiling
+BASELINE_ELO_HEURISTIC_STRONG = 1400  # Heuristic at difficulty 8
+BASELINE_ELO_MCTS_LIGHT = 1500        # MCTS with 32 simulations
+BASELINE_ELO_MCTS_MEDIUM = 1700       # MCTS with 128 simulations
+BASELINE_ELO_MCTS_STRONG = 1900       # MCTS with 512 simulations
+
 # =============================================================================
 # Evaluation Thresholds
 # =============================================================================

@@ -66,11 +66,18 @@ BOARD_CONFIGS: list[tuple[str, int]] = [
 LARGE_BOARDS = frozenset({"square19", "hexagonal", "fullhex", "full_hex"})
 
 # Default curriculum weights (priority multipliers)
+# Dec 27, 2025: REBALANCED to prioritize 3p/4p configs which are severely starved
+# Previous weights heavily favored 2p (0.7-1.0) over 3p/4p (0.4-0.6)
+# New weights: 2p reduced, 3p/4p significantly increased to catch up
 DEFAULT_CURRICULUM_WEIGHTS: dict[str, float] = {
-    "square8_2p": 1.0, "square8_3p": 0.7, "square8_4p": 0.5,
-    "square19_2p": 0.8, "square19_3p": 0.5, "square19_4p": 0.4,
-    "hex8_2p": 0.9, "hex8_3p": 0.6, "hex8_4p": 0.5,
-    "hexagonal_2p": 0.7, "hexagonal_3p": 0.5, "hexagonal_4p": 0.4,
+    # Square8: Good 2p data, need more 3p/4p
+    "square8_2p": 0.6, "square8_3p": 1.4, "square8_4p": 1.5,
+    # Square19: All configs need more data
+    "square19_2p": 0.8, "square19_3p": 1.3, "square19_4p": 1.4,
+    # Hex8: 2p has some data, 3p/4p critical (especially 4p at 30% win rate)
+    "hex8_2p": 0.5, "hex8_3p": 1.5, "hex8_4p": 1.6,
+    # Hexagonal: All configs starved
+    "hexagonal_2p": 1.0, "hexagonal_3p": 1.4, "hexagonal_4p": 1.3,
 }
 
 

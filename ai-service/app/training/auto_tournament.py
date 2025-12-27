@@ -31,12 +31,13 @@ try:
     from app.config.thresholds import (
         ELO_K_FACTOR,
         INITIAL_ELO_RATING,
-        PROMOTION_WIN_RATE_THRESHOLD,
+        WIN_RATE_BEAT_BEST,
     )
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
-    PROMOTION_WIN_RATE_THRESHOLD = 0.80  # Dec 2025: raised from 0.60 for 2000+ Elo
+    # Candidate must demonstrate superiority in head-to-head (decisive win rate)
+    WIN_RATE_BEAT_BEST = 0.55
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +288,9 @@ class AutoTournamentPipeline:
     """
 
     # Promotion thresholds - use canonical values from app.config.thresholds
-    WIN_RATE_THRESHOLD = float(PROMOTION_WIN_RATE_THRESHOLD)
+    # NOTE: This tournament pipeline promotes based on head-to-head decisive win rate,
+    # not the broader "production promotion" gates.
+    WIN_RATE_THRESHOLD = float(WIN_RATE_BEAT_BEST)
     PROMOTION_SIGNIFICANCE_LEVEL = 0.05  # p-value threshold
     DEFAULT_ELO = float(INITIAL_ELO_RATING)
     ELO_K = float(ELO_K_FACTOR)  # Renamed to avoid shadowing import
@@ -775,7 +778,7 @@ class AutoTournamentPipeline:
         Determine if challenger should be promoted to champion.
 
         Promotion criteria:
-        - Win rate >= 55%
+        - Win rate >= WIN_RATE_THRESHOLD (head-to-head decisive wins)
         - Result is statistically significant (p < 0.05)
         - Challenger has higher Elo than current champion
 
