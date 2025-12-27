@@ -736,6 +736,9 @@ class ClusterManifest:
                 ON game_locations(node_id);
             CREATE INDEX IF NOT EXISTS idx_game_locations_board
                 ON game_locations(board_type, num_players);
+            -- December 2025: Index for unconsolidated games (training pipeline)
+            CREATE INDEX IF NOT EXISTS idx_game_locations_consolidated
+                ON game_locations(is_consolidated, board_type, num_players);
             CREATE INDEX IF NOT EXISTS idx_model_locations_node
                 ON model_locations(node_id);
             CREATE INDEX IF NOT EXISTS idx_model_locations_board
@@ -850,6 +853,111 @@ class ClusterManifest:
 
         return registered
 
+    def mark_games_consolidated(
+        self,
+        game_ids: list[str],
+        canonical_db: str,
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> int:
+        """Mark games as consolidated into a canonical database.
+
+        December 2025: Part of training pipeline fix. Updates game records
+        to indicate they've been merged into canonical databases.
+
+        Args:
+            game_ids: List of game IDs that were consolidated
+            canonical_db: Path to canonical database they were merged into
+            board_type: Optional board type filter
+            num_players: Optional player count filter
+
+        Returns:
+            Number of games marked as consolidated
+        """
+        if not game_ids:
+            return 0
+
+        now = time.time()
+        marked = 0
+
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            for game_id in game_ids:
+                try:
+                    # Build query with optional filters
+                    query = """
+                        UPDATE game_locations
+                        SET is_consolidated = 1, consolidated_at = ?, canonical_db = ?
+                        WHERE game_id = ?
+                    """
+                    params: list[Any] = [now, canonical_db, game_id]
+
+                    if board_type:
+                        query += " AND board_type = ?"
+                        params.append(board_type)
+                    if num_players:
+                        query += " AND num_players = ?"
+                        params.append(num_players)
+
+                    cursor.execute(query, params)
+                    marked += cursor.rowcount
+                except sqlite3.Error as e:
+                    logger.warning(f"Failed to mark game {game_id} as consolidated: {e}")
+            conn.commit()
+
+        logger.info(f"Marked {marked} games as consolidated into {canonical_db}")
+        return marked
+
+    def get_unconsolidated_games(
+        self,
+        board_type: str,
+        num_players: int,
+        limit: int = 10000,
+    ) -> list[GameLocation]:
+        """Get games that haven't been consolidated yet.
+
+        December 2025: Part of training pipeline fix. Returns games that need
+        to be merged into canonical databases.
+
+        Args:
+            board_type: Board configuration
+            num_players: Number of players
+            limit: Maximum number of games to return
+
+        Returns:
+            List of unconsolidated GameLocation objects
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT game_id, node_id, db_path, board_type, num_players,
+                       engine_mode, registered_at, last_seen,
+                       is_consolidated, consolidated_at, canonical_db
+                FROM game_locations
+                WHERE board_type = ? AND num_players = ?
+                  AND (is_consolidated = 0 OR is_consolidated IS NULL)
+                ORDER BY registered_at DESC
+                LIMIT ?
+            """, (board_type, num_players, limit))
+
+            locations = []
+            for row in cursor.fetchall():
+                locations.append(GameLocation(
+                    game_id=row[0],
+                    node_id=row[1],
+                    db_path=row[2],
+                    board_type=row[3],
+                    num_players=row[4],
+                    engine_mode=row[5],
+                    registered_at=row[6],
+                    last_seen=row[7],
+                    is_consolidated=bool(row[8]) if row[8] is not None else False,
+                    consolidated_at=row[9] or 0.0,
+                    canonical_db=row[10],
+                ))
+
+            return locations
+
     def find_game(self, game_id: str) -> list[GameLocation]:
         """Find all locations where a game exists.
 
@@ -863,7 +971,8 @@ class ClusterManifest:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT game_id, node_id, db_path, board_type, num_players,
-                       engine_mode, registered_at, last_seen
+                       engine_mode, registered_at, last_seen,
+                       is_consolidated, consolidated_at, canonical_db
                 FROM game_locations
                 WHERE game_id = ?
             """, (game_id,))
@@ -879,6 +988,9 @@ class ClusterManifest:
                     engine_mode=row[5],
                     registered_at=row[6],
                     last_seen=row[7],
+                    is_consolidated=bool(row[8]) if row[8] is not None else False,
+                    consolidated_at=row[9] or 0.0,
+                    canonical_db=row[10],
                 ))
 
             return locations

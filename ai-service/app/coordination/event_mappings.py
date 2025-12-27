@@ -1,5 +1,17 @@
 """Centralized event type mappings for the RingRift event system.
 
+.. deprecated:: December 2025
+    This module has been consolidated into ``app.coordination.core_events``.
+    Import from core_events for new code. This module remains for backward
+    compatibility and will be removed in Q2 2026.
+
+    Migration:
+        # Old import (deprecated)
+        from app.coordination.event_mappings import STAGE_TO_DATA_EVENT_MAP
+
+        # New import (preferred)
+        from app.coordination.core_events import STAGE_TO_DATA_EVENT_MAP
+
 This module consolidates all event type mappings between the three event buses:
 1. DataEventBus (data_events.py) - In-memory async event bus
 2. StageEventBus (stage_events.py) - Pipeline stage completion events
@@ -8,7 +20,7 @@ This module consolidates all event type mappings between the three event buses:
 The mappings enable automatic event translation as events flow between buses.
 
 Usage:
-    from app.coordination.event_mappings import (
+    from app.coordination.core_events import (
         STAGE_TO_DATA_EVENT_MAP,
         DATA_TO_CROSS_PROCESS_MAP,
         get_cross_process_event_type,

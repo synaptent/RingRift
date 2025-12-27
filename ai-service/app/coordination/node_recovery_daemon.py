@@ -246,6 +246,17 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
 
         December 2025: Added for clean daemon shutdown with event emission.
         """
+        # Close HTTP session
+        if self._http_session:
+            await self._http_session.close()
+
+        # Log stats
+        logger.info(
+            f"[{self._get_daemon_name()}] Stats: "
+            f"{self._stats.nodes_recovered} recovered, "
+            f"{self._stats.recovery_failures} failures"
+        )
+
         try:
             # Emit shutdown event
             from app.coordination.event_emitters import emit_coordinator_shutdown
@@ -257,8 +268,8 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
                 state_snapshot={
                     "uptime_seconds": self.uptime_seconds,
                     "total_checks": self._stats.total_checks,
-                    "recoveries_attempted": self._stats.recoveries_attempted,
-                    "recoveries_successful": self._stats.recoveries_successful,
+                    "nodes_recovered": self._stats.nodes_recovered,
+                    "recovery_failures": self._stats.recovery_failures,
                     "tracked_nodes": len(self._node_states),
                 },
             )

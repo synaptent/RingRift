@@ -109,14 +109,17 @@ class TestQualityMonitorDaemonInit:
 
     def test_default_initialization(self):
         """Test daemon initializes with default config."""
-        daemon = QualityMonitorDaemon()
+        # Use temp path to avoid loading existing state from disk
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = QualityMonitorConfig(state_path=Path(tmpdir) / "state.json")
+            daemon = QualityMonitorDaemon(config=config)
 
-        assert daemon.config is not None
-        assert daemon._running is False
-        assert daemon._task is None
-        assert daemon.last_quality == 1.0
-        assert daemon.current_state == QualityState.UNKNOWN
-        assert daemon._subscribed is False
+            assert daemon.config is not None
+            assert daemon._running is False
+            assert daemon._task is None
+            assert daemon.last_quality == 1.0
+            assert daemon.current_state == QualityState.UNKNOWN
+            assert daemon._subscribed is False
 
     def test_custom_config(self):
         """Test daemon initializes with custom config."""
@@ -267,10 +270,15 @@ class TestStatePersistence:
 class TestQualityHistory:
     """Tests for quality history tracking."""
 
-    def test_add_to_history(self):
-        """Test adding entries to quality history."""
-        daemon = QualityMonitorDaemon()
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with temp state path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = QualityMonitorConfig(state_path=Path(tmpdir) / "state.json")
+            yield QualityMonitorDaemon(config=config)
 
+    def test_add_to_history(self, daemon):
+        """Test adding entries to quality history."""
         daemon._add_to_history(0.8, QualityState.GOOD)
         daemon._add_to_history(0.7, QualityState.GOOD)
 
@@ -278,9 +286,8 @@ class TestQualityHistory:
         assert daemon._quality_history[0]["quality"] == 0.8
         assert daemon._quality_history[1]["quality"] == 0.7
 
-    def test_history_trimming(self):
+    def test_history_trimming(self, daemon):
         """Test that history is trimmed to max size."""
-        daemon = QualityMonitorDaemon()
         daemon._max_history_size = 5
 
         # Add more than max
@@ -291,19 +298,15 @@ class TestQualityHistory:
         # Should have the last 5 entries
         assert daemon._quality_history[0]["quality"] == 0.55
 
-    def test_get_quality_trend_empty(self):
+    def test_get_quality_trend_empty(self, daemon):
         """Test trend analysis with empty history."""
-        daemon = QualityMonitorDaemon()
-
         trend = daemon.get_quality_trend()
 
         assert trend["trend"] == "unknown"
         assert trend["samples"] == 0
 
-    def test_get_quality_trend_improving(self):
+    def test_get_quality_trend_improving(self, daemon):
         """Test trend analysis detecting improvement."""
-        daemon = QualityMonitorDaemon()
-
         # Add improving quality scores
         scores = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85]
         for score in scores:
@@ -314,10 +317,8 @@ class TestQualityHistory:
         assert trend["trend"] == "improving"
         assert trend["samples"] == 8
 
-    def test_get_quality_trend_degrading(self):
+    def test_get_quality_trend_degrading(self, daemon):
         """Test trend analysis detecting degradation."""
-        daemon = QualityMonitorDaemon()
-
         # Add degrading quality scores
         scores = [0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55]
         for score in scores:
@@ -328,10 +329,8 @@ class TestQualityHistory:
         assert trend["trend"] == "degrading"
         assert trend["samples"] == 8
 
-    def test_get_quality_trend_stable(self):
+    def test_get_quality_trend_stable(self, daemon):
         """Test trend analysis detecting stable quality."""
-        daemon = QualityMonitorDaemon()
-
         # Add stable quality scores (small variation)
         scores = [0.75, 0.76, 0.74, 0.75, 0.76, 0.75, 0.74, 0.75]
         for score in scores:
@@ -341,10 +340,8 @@ class TestQualityHistory:
 
         assert trend["trend"] == "stable"
 
-    def test_get_quality_trend_insufficient_data(self):
+    def test_get_quality_trend_insufficient_data(self, daemon):
         """Test trend analysis with insufficient data."""
-        daemon = QualityMonitorDaemon()
-
         daemon._add_to_history(0.8, QualityState.GOOD)
         daemon._add_to_history(0.75, QualityState.GOOD)
 

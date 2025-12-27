@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon
+from app.coordination.base_daemon import BaseDaemon, DaemonConfig
 from app.coordination.protocols import HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -43,8 +43,14 @@ _consolidation_daemon: "DataConsolidationDaemon | None" = None
 
 
 @dataclass
-class ConsolidationConfig:
-    """Configuration for the consolidation daemon."""
+class ConsolidationConfig(DaemonConfig):
+    """Configuration for the consolidation daemon.
+
+    Inherits from DaemonConfig:
+    - enabled: Whether the daemon should run
+    - check_interval_seconds: How often to run consolidation cycle (default: 300s)
+    - handle_signals: Whether to register SIGTERM/SIGINT handlers
+    """
 
     # Base paths
     data_dir: Path = field(default_factory=lambda: Path("data/games"))
@@ -52,7 +58,6 @@ class ConsolidationConfig:
 
     # Consolidation thresholds
     min_games_for_consolidation: int = 50  # Minimum new games before consolidating
-    consolidation_interval_seconds: float = 300.0  # Check every 5 minutes
 
     # Database settings
     min_moves_for_valid: int = 5  # Minimum moves for a valid game
@@ -68,10 +73,12 @@ class ConsolidationConfig:
         import os
 
         return cls(
+            # DaemonConfig fields
+            check_interval_seconds=int(os.getenv("RINGRIFT_CONSOLIDATION_INTERVAL", "300")),
+            # ConsolidationConfig fields
             data_dir=Path(os.getenv("RINGRIFT_DATA_DIR", "data/games")),
             canonical_dir=Path(os.getenv("RINGRIFT_CANONICAL_DIR", "data/games")),
             min_games_for_consolidation=int(os.getenv("RINGRIFT_CONSOLIDATION_MIN_GAMES", "50")),
-            consolidation_interval_seconds=float(os.getenv("RINGRIFT_CONSOLIDATION_INTERVAL", "300")),
         )
 
 
@@ -106,7 +113,7 @@ ALL_CONFIGS = [
 ]
 
 
-class DataConsolidationDaemon(BaseDaemon):
+class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
     """Daemon that consolidates scattered selfplay games into canonical databases.
 
     Subscribes to:
@@ -124,9 +131,8 @@ class DataConsolidationDaemon(BaseDaemon):
         Args:
             config: Configuration for consolidation behavior
         """
-        super().__init__(name="data_consolidation")
-
-        self.config = config or ConsolidationConfig.from_env()
+        # Pass config to BaseDaemon (will use _get_default_config if None)
+        super().__init__(config=config)
 
         # State tracking
         self._pending_configs: set[str] = set()  # Configs needing consolidation
@@ -136,6 +142,27 @@ class DataConsolidationDaemon(BaseDaemon):
 
         # Lock for thread-safe operations
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _get_default_config() -> ConsolidationConfig:
+        """Return default configuration from environment."""
+        return ConsolidationConfig.from_env()
+
+    async def _on_start(self) -> None:
+        """Called after daemon starts - subscribe to events."""
+        await self._subscribe_to_events()
+
+    async def _on_stop(self) -> None:
+        """Called before daemon stops - unsubscribe from events."""
+        await self._unsubscribe_from_events()
+
+    async def _run_cycle(self) -> None:
+        """Run one consolidation cycle.
+
+        This is called by BaseDaemon's _protected_loop() with proper
+        error handling and interval sleeping.
+        """
+        await self._process_pending_consolidations()
 
     async def _subscribe_to_events(self) -> None:
         """Subscribe to relevant events."""
@@ -209,24 +236,6 @@ class DataConsolidationDaemon(BaseDaemon):
 
         except Exception as e:
             logger.debug(f"[DataConsolidationDaemon] Error handling SELFPLAY_COMPLETE: {e}")
-
-    async def _run_loop(self) -> None:
-        """Main consolidation loop."""
-        await self._subscribe_to_events()
-
-        while self._running:
-            try:
-                # Check for pending consolidations
-                await self._process_pending_consolidations()
-
-                # Wait before next iteration
-                await asyncio.sleep(self.config.consolidation_interval_seconds)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"[DataConsolidationDaemon] Error in run loop: {e}")
-                await asyncio.sleep(30.0)  # Backoff on error
 
     async def _process_pending_consolidations(self) -> None:
         """Process all pending consolidations."""
@@ -361,8 +370,7 @@ class DataConsolidationDaemon(BaseDaemon):
 
     def _find_source_databases(self, board_type: str, num_players: int) -> list[Path]:
         """Find all source databases containing games for a config."""
-        source_dbs = []
-        config_key = f"{board_type}_{num_players}p"
+        source_dbs: set[Path] = set()  # Use set to avoid duplicates
 
         # Search patterns for selfplay databases
         search_dirs = [
@@ -381,11 +389,14 @@ class DataConsolidationDaemon(BaseDaemon):
                 if "canonical" in db_path.name.lower():
                     continue
 
-                # Check if this DB has games for our config
-                if self._has_games_for_config(db_path, board_type, num_players):
-                    source_dbs.append(db_path)
+                # Resolve to absolute path for deduplication
+                resolved_path = db_path.resolve()
 
-        return source_dbs
+                # Check if this DB has games for our config
+                if resolved_path not in source_dbs and self._has_games_for_config(db_path, board_type, num_players):
+                    source_dbs.add(resolved_path)
+
+        return list(source_dbs)
 
     def _has_games_for_config(self, db_path: Path, board_type: str, num_players: int) -> bool:
         """Check if a database has games for the specified config."""
@@ -765,11 +776,6 @@ class DataConsolidationDaemon(BaseDaemon):
                 "recent_consolidations": len(self._stats_history),
             },
         )
-
-    async def stop(self) -> None:
-        """Stop the daemon."""
-        await self._unsubscribe_from_events()
-        await super().stop()
 
 
 def get_consolidation_daemon() -> DataConsolidationDaemon:

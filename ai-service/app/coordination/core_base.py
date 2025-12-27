@@ -77,6 +77,9 @@ from app.coordination.coordinator_base import (
     shutdown_all_coordinators,
 )
 
+# Also re-export HealthCheckResult from protocols (commonly used with health_check())
+from app.coordination.protocols import HealthCheckResult
+
 # =============================================================================
 # Re-exports from coordinator_dependencies.py
 # =============================================================================
@@ -111,6 +114,7 @@ __all__ = [
     # Protocols and enums
     "CoordinatorProtocol",
     "CoordinatorStatus",
+    "HealthCheckResult",
     # Mixins
     "SQLitePersistenceMixin",
     "SingletonMixin",

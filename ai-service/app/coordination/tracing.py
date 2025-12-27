@@ -1,5 +1,17 @@
 """Distributed Tracing for RingRift AI (December 2025).
 
+.. deprecated:: December 2025
+    This module has been consolidated into ``app.coordination.core_utils``.
+    Import from core_utils for new code. This module remains for backward
+    compatibility and will be removed in Q2 2026.
+
+    Migration:
+        # Old import (deprecated)
+        from app.coordination.tracing import TraceContext, new_trace
+
+        # New import (preferred)
+        from app.coordination.core_utils import TraceContext, new_trace
+
 Provides trace_id propagation across the distributed system to enable:
 - Request correlation across services
 - End-to-end latency tracking
@@ -7,7 +19,7 @@ Provides trace_id propagation across the distributed system to enable:
 - Event chain visualization
 
 Usage:
-    from app.coordination.tracing import (
+    from app.coordination.core_utils import (
         get_trace_id,
         set_trace_id,
         new_trace,

@@ -1,5 +1,17 @@
 """Canonical event name normalization for RingRift event system.
 
+.. deprecated:: December 2025
+    This module has been consolidated into ``app.coordination.core_events``.
+    Import from core_events for new code. This module remains for backward
+    compatibility and will be removed in Q2 2026.
+
+    Migration:
+        # Old import (deprecated)
+        from app.coordination.event_normalization import normalize_event_type
+
+        # New import (preferred)
+        from app.coordination.core_events import normalize_event_type
+
 This module provides canonical event naming rules and normalization utilities
 to standardize inconsistent event names across the codebase.
 
@@ -15,7 +27,7 @@ Solution:
     All event types are normalized to their canonical form before routing.
 
 Usage:
-    from app.coordination.event_normalization import normalize_event_type
+    from app.coordination.core_events import normalize_event_type
 
     # Normalize any variant to canonical form
     canonical = normalize_event_type("SYNC_COMPLETE")  # → "DATA_SYNC_COMPLETED"

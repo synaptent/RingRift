@@ -37,7 +37,7 @@ def config(temp_data_dir):
         data_dir=temp_data_dir,
         canonical_dir=temp_data_dir,
         min_games_for_consolidation=5,
-        consolidation_interval_seconds=1.0,
+        check_interval_seconds=1.0,
         min_moves_for_valid=3,
         batch_size=10,
         deduplicate=True,
@@ -115,7 +115,7 @@ class TestConsolidationConfig:
         """Test default configuration values."""
         config = ConsolidationConfig()
         assert config.min_games_for_consolidation == 50
-        assert config.consolidation_interval_seconds == 300.0
+        assert config.check_interval_seconds == 300  # Inherited from DaemonConfig
         assert config.min_moves_for_valid == 5
         assert config.deduplicate is True
 
@@ -129,7 +129,7 @@ class TestConsolidationConfig:
             config = ConsolidationConfig.from_env()
             assert config.data_dir == Path('/custom/data')
             assert config.min_games_for_consolidation == 100
-            assert config.consolidation_interval_seconds == 600.0
+            assert config.check_interval_seconds == 600  # Inherited from DaemonConfig
 
 
 class TestConsolidationStats:

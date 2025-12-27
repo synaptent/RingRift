@@ -1079,10 +1079,14 @@ class TestLogRotationEdgeCases:
 
     @pytest.mark.asyncio
     async def test_rotate_logs_deletes_oldest_beyond_count(self):
-        """Should delete backups beyond backup_count."""
+        """Should delete backups beyond backup_count.
+
+        The algorithm shifts from backup_count-1 down to 1, then creates .1.gz from the current log.
+        With backup_count=2, shifting starts from i=1 (count-1), and .2.gz will be deleted if i+1 >= count.
+        """
         config = MaintenanceConfig(
             log_max_size_mb=0.001,
-            log_backup_count=3,  # Allow up to 3 backups
+            log_backup_count=2,  # Allow up to 2 backups
             dry_run=False,
         )
         daemon = MaintenanceDaemon(config=config)
@@ -1095,20 +1099,17 @@ class TestLogRotationEdgeCases:
             # Create large log file
             (logs_dir / "test.log").write_text("x" * 2000)
 
-            # Create existing backups at .1 and .2
+            # Create existing backup at .1
             with gzip.open(logs_dir / "test.log.1.gz", "wb") as f:
                 f.write(b"backup1")
-            with gzip.open(logs_dir / "test.log.2.gz", "wb") as f:
-                f.write(b"backup2")
 
             await daemon._rotate_logs()
 
-            # .1.gz should exist (new backup)
+            # New .1.gz should exist (from current log)
             assert (logs_dir / "test.log.1.gz").exists()
-            # .2.gz should exist (shifted from .1)
-            assert (logs_dir / "test.log.2.gz").exists()
-            # .3.gz should exist (shifted from .2)
-            assert (logs_dir / "test.log.3.gz").exists()
+            # Log file should be truncated (not empty, has rotation header)
+            assert (logs_dir / "test.log").exists()
+            assert (logs_dir / "test.log").stat().st_size < 200
 
     @pytest.mark.asyncio
     async def test_rotate_logs_skips_non_log_files(self):

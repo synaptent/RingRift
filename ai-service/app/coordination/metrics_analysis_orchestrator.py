@@ -810,10 +810,11 @@ class MetricsAnalysisOrchestrator:
         status = self.get_status()
 
         # Count metrics with anomalies
-        anomaly_count = sum(
-            1 for tracker in self._trackers.values()
-            if tracker.anomaly and tracker.anomaly.confidence > 0.8
-        )
+        anomaly_count = 0
+        for tracker in self._trackers.values():
+            anomaly = tracker.check_anomaly()
+            if anomaly and anomaly.confidence > 0.8:
+                anomaly_count += 1
 
         if anomaly_count > 5:
             return HealthCheckResult(

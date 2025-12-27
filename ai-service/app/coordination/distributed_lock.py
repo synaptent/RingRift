@@ -1,5 +1,17 @@
 """Distributed Locking for Training Coordination.
 
+.. deprecated:: December 2025
+    This module has been consolidated into ``app.coordination.core_utils``.
+    Import from core_utils for new code. This module remains for backward
+    compatibility and will be removed in Q2 2026.
+
+    Migration:
+        # Old import (deprecated)
+        from app.coordination.distributed_lock import DistributedLock
+
+        # New import (preferred)
+        from app.coordination.core_utils import DistributedLock
+
 Provides reliable distributed locks for coordinating training across
 multiple nodes. Uses Redis when available with automatic fallback
 to file-based locking.

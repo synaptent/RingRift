@@ -373,7 +373,7 @@ class DataCleanupDaemon:
         for db_path in databases:
             try:
                 assessment = self._assess_database(db_path)
-                self._stats.databases_scanned += 1
+                self._stats.record_database_scan()
 
                 # Skip canonical databases if configured
                 if self.config.require_canonical_pattern:

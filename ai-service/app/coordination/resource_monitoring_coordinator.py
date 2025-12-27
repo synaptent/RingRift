@@ -49,6 +49,7 @@ from typing import Any
 from app.core.async_context import fire_and_forget
 
 # Canonical types (December 2025 consolidation)
+from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 from app.coordination.types import BackpressureLevel
 
 logger = logging.getLogger(__name__)
@@ -800,11 +801,11 @@ class ResourceMonitoringCoordinator:
             "subscribed": self._subscribed,
         }
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """Perform health check on resource monitoring (December 2025).
 
         Returns:
-            Dict with health status including:
+            HealthCheckResult with health status including:
             - healthy: Overall health status
             - node_health_ratio: Ratio of healthy to total nodes
             - backpressure_active: Whether cluster is under backpressure
@@ -827,18 +828,33 @@ class ResourceMonitoringCoordinator:
             and constrained_ratio < 0.8  # Less than 80% constrained
         )
 
-        return {
-            "healthy": healthy_status,
-            "total_nodes": total,
-            "healthy_nodes": healthy,
-            "constrained_nodes": stats.constrained_nodes,
-            "node_health_ratio": round(node_health_ratio, 3),
-            "constrained_ratio": round(constrained_ratio, 3),
-            "backpressure_active": self.is_backpressure_active(),
-            "backpressure_level": self._cluster_backpressure.value,
-            "subscribed": self._subscribed,
-            "avg_gpu_utilization": round(stats.avg_gpu_utilization, 1),
-        }
+        # Determine status based on health
+        if healthy_status:
+            status = CoordinatorStatus.RUNNING
+            message = f"Monitoring {total} nodes, {healthy} healthy"
+        elif self._subscribed:
+            status = CoordinatorStatus.DEGRADED
+            message = f"Degraded: {stats.constrained_nodes} constrained nodes"
+        else:
+            status = CoordinatorStatus.STOPPED
+            message = "Not subscribed to events"
+
+        return HealthCheckResult(
+            healthy=healthy_status,
+            status=status,
+            message=message,
+            details={
+                "total_nodes": total,
+                "healthy_nodes": healthy,
+                "constrained_nodes": stats.constrained_nodes,
+                "node_health_ratio": round(node_health_ratio, 3),
+                "constrained_ratio": round(constrained_ratio, 3),
+                "backpressure_active": self.is_backpressure_active(),
+                "backpressure_level": self._cluster_backpressure.value,
+                "subscribed": self._subscribed,
+                "avg_gpu_utilization": round(stats.avg_gpu_utilization, 1),
+            },
+        )
 
 
 # =============================================================================

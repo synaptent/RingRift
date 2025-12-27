@@ -571,12 +571,15 @@ The following components are deprecated and will be removed in future releases:
 
 ### Daemons (Removal: Q2 2026)
 
-| Deprecated                    | Replacement                       | Notes                     |
-| ----------------------------- | --------------------------------- | ------------------------- |
-| `DaemonType.SYNC_COORDINATOR` | `DaemonType.AUTO_SYNC`            | Use AutoSyncDaemon        |
-| `DaemonType.HEALTH_CHECK`     | `DaemonType.NODE_HEALTH_MONITOR`  | Unified health monitoring |
-| `vast_idle_daemon.py`         | `unified_idle_shutdown_daemon.py` | Provider-agnostic         |
-| `lambda_idle_daemon.py`       | `unified_idle_shutdown_daemon.py` | Provider-agnostic         |
+| Deprecated                    | Replacement                                         | Notes                     |
+| ----------------------------- | --------------------------------------------------- | ------------------------- |
+| `DaemonType.SYNC_COORDINATOR` | `DaemonType.AUTO_SYNC`                              | Use AutoSyncDaemon        |
+| `DaemonType.HEALTH_CHECK`     | `DaemonType.NODE_HEALTH_MONITOR`                    | Unified health monitoring |
+| `vast_idle_daemon.py`         | `unified_idle_shutdown_daemon.py`                   | Provider-agnostic         |
+| `lambda_idle_daemon.py`       | `unified_idle_shutdown_daemon.py`                   | Provider-agnostic         |
+| `auto_evaluation_daemon.py`   | `evaluation_daemon.py` + `auto_promotion_daemon.py` | Monolithic → composable   |
+| `queue_populator_daemon.py`   | `unified_queue_populator.py`                        | Archived Dec 2025         |
+| `node_health_monitor.py`      | `health_check_orchestrator.py`                      | Safe to archive           |
 
 ### Training Modules (Deprecated Dec 2025)
 
