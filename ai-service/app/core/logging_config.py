@@ -332,14 +332,20 @@ def configure_third_party_loggers(
             )
 
 
-class LogContext:
+class TemporaryLogLevel:
     """Context manager for temporary log level changes.
 
+    Temporarily changes a logger's level and restores it on exit.
+    Useful for enabling debug logging in specific code sections.
+
     Usage:
-        with LogContext(logger, logging.DEBUG):
+        with TemporaryLogLevel(logger, logging.DEBUG):
             # This block has debug logging
             logger.debug("Detailed info")
         # Back to original level
+
+    For structured log context (adding key-value pairs to messages),
+    use LogContext from app.utils.logging_utils instead.
     """
 
     def __init__(self, logger: logging.Logger, level: int):
@@ -353,6 +359,10 @@ class LogContext:
 
     def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:
         self.logger.setLevel(self.original_level)
+
+
+# Backward compatibility alias (deprecated Dec 2025)
+LogContext = TemporaryLogLevel
 
 
 # =============================================================================

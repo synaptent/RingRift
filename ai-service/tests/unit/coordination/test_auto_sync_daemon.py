@@ -1020,16 +1020,28 @@ class TestSyncStats:
         assert stats.databases_verification_failed == 0
 
     def test_sync_stats_mutation(self):
-        """Test SyncStats can be mutated."""
+        """Test SyncStats can be mutated via underlying fields.
+
+        December 2025: SyncStats now uses property aliases for backward
+        compatibility. Direct mutation uses the underlying parent class fields:
+        - operations_attempted (aliased as total_syncs)
+        - syncs_completed (aliased as successful_syncs)
+        - syncs_failed (aliased as failed_syncs)
+        """
         stats = SyncStats()
-        stats.total_syncs = 10
-        stats.successful_syncs = 8
-        stats.failed_syncs = 2
+        # Mutate via underlying fields (properties are read-only aliases)
+        stats.operations_attempted = 10
+        stats.syncs_completed = 8
+        stats.syncs_failed = 2
         stats.last_error = "Test error"
 
-        assert stats.total_syncs == 10
-        assert stats.successful_syncs == 8
-        assert stats.failed_syncs == 2
+        # Verify via both underlying fields and property aliases
+        assert stats.operations_attempted == 10
+        assert stats.total_syncs == 10  # Alias for operations_attempted
+        assert stats.syncs_completed == 8
+        assert stats.successful_syncs == 8  # Alias for syncs_completed
+        assert stats.syncs_failed == 2
+        assert stats.failed_syncs == 2  # Alias for syncs_failed
         assert stats.last_error == "Test error"
 
 

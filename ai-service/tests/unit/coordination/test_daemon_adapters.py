@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.coordination.daemon_adapters import (
     DaemonAdapter,
     DaemonAdapterConfig,
+    ConfigurableDaemonAdapter,
     DistillationDaemonAdapter,
     PromotionDaemonAdapter,
     ExternalDriveSyncAdapter,
@@ -324,11 +325,16 @@ class TestAdapterRegistry:
         assert len(adapters) == 9
 
     def test_get_daemon_adapter_distillation(self):
-        """Test get_daemon_adapter returns correct adapter for DISTILLATION."""
+        """Test get_daemon_adapter returns correct adapter for DISTILLATION.
+
+        December 2025: DISTILLATION now uses ConfigurableDaemonAdapter
+        via ADAPTER_SPECS instead of legacy DistillationDaemonAdapter.
+        """
         adapter = get_daemon_adapter(DaemonType.DISTILLATION)
 
         assert adapter is not None
-        assert isinstance(adapter, DistillationDaemonAdapter)
+        # Note: Now uses ConfigurableDaemonAdapter for ADAPTER_SPECS entries
+        assert isinstance(adapter, (ConfigurableDaemonAdapter, DistillationDaemonAdapter))
         assert adapter.daemon_type == DaemonType.DISTILLATION
 
     def test_get_daemon_adapter_with_config(self):

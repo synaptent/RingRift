@@ -574,7 +574,7 @@ class EvaluationDaemon(BaseEventHandler):
             "tracked_recently_evaluated": len(self._recently_evaluated),
         }
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health (December 2025: CoordinatorProtocol compliance).
 
         December 27, 2025: Extends BaseEventHandler health_check with

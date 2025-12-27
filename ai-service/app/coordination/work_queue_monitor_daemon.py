@@ -535,7 +535,7 @@ class WorkQueueMonitorDaemon:
             "avg_latency_seconds": round(stats.avg_latency_seconds, 2),
         }
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health status."""
         try:
             from app.coordination.protocols import HealthCheckResult, CoordinatorStatus

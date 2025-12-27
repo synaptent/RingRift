@@ -458,7 +458,7 @@ class CoordinatorHealthMonitorDaemon:
             },
         }
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health status."""
         try:
             from app.coordination.protocols import HealthCheckResult, CoordinatorStatus

@@ -382,7 +382,7 @@ class DaemonWatchdog:
             },
         }
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check watchdog health (December 2025: CoordinatorProtocol compliance).
 
         Returns:

@@ -895,6 +895,29 @@ class DataPipelineOrchestrator:
                 self._on_consolidation_complete,
             )
 
+            # December 2025: Wire previously orphaned critical events
+            # These events were being emitted but had no subscribers
+            router.subscribe(
+                DataEventType.REPAIR_COMPLETED.value,
+                self._on_repair_completed,
+            )
+            router.subscribe(
+                DataEventType.REPAIR_FAILED.value,
+                self._on_repair_failed,
+            )
+            router.subscribe(
+                DataEventType.QUALITY_SCORE_UPDATED.value,
+                self._on_quality_score_updated,
+            )
+            router.subscribe(
+                DataEventType.CURRICULUM_REBALANCED.value,
+                self._on_curriculum_rebalanced,
+            )
+            router.subscribe(
+                DataEventType.CURRICULUM_ADVANCED.value,
+                self._on_curriculum_advanced,
+            )
+
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
             return True
 
@@ -1357,6 +1380,130 @@ class DataPipelineOrchestrator:
                 pass  # data_events not available
             except Exception as e:
                 logger.debug(f"[DataPipelineOrchestrator] Failed to emit new_games_available: {e}")
+
+    # =========================================================================
+    # Orphaned Event Handlers (December 27, 2025)
+    # These handlers wire previously orphaned events that were being emitted
+    # but had no subscribers, breaking feedback loops.
+    # =========================================================================
+
+    async def _on_repair_completed(self, event: Any) -> None:
+        """Handle REPAIR_COMPLETED - retrigger blocked pipeline stages.
+
+        December 2025: After replication repair completes, retrigger any pipeline
+        stages that were blocked waiting for data availability.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        repair_type = payload.get("repair_type", "unknown")
+        files_repaired = payload.get("files_repaired", 0)
+        source_node = payload.get("source_node")
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Repair completed: {repair_type}, "
+            f"{files_repaired} files from {source_node}"
+        )
+
+        # If we were blocked on data availability, retry the pending stage
+        if self._current_stage == PipelineStage.SELFPLAY:
+            # Repair may have fixed missing game data - check if we can proceed
+            logger.info("[DataPipelineOrchestrator] Checking if we can proceed after repair")
+            # Emit event to trigger sync check
+            try:
+                from app.distributed.data_events import emit_data_event, DataEventType
+                await emit_data_event(
+                    event_type=DataEventType.SYNC_TRIGGERED,
+                    payload={"reason": "post_repair", "source": "data_pipeline_orchestrator"},
+                )
+            except Exception:
+                pass
+
+    async def _on_repair_failed(self, event: Any) -> None:
+        """Handle REPAIR_FAILED - log and potentially escalate."""
+        payload = getattr(event, "payload", {}) or {}
+        repair_type = payload.get("repair_type", "unknown")
+        error = payload.get("error", "unknown error")
+        source_node = payload.get("source_node")
+
+        logger.warning(
+            f"[DataPipelineOrchestrator] Repair failed: {repair_type} "
+            f"from {source_node}: {error}"
+        )
+
+        # Increment error count for circuit breaker consideration
+        if hasattr(self, "_repair_failure_count"):
+            self._repair_failure_count += 1
+        else:
+            self._repair_failure_count = 1
+
+    async def _on_quality_score_updated(self, event: Any) -> None:
+        """Handle QUALITY_SCORE_UPDATED - track per-game quality changes.
+
+        December 2025: Aggregates quality scores for quality gating decisions.
+        If quality drops significantly, may block training.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        game_id = payload.get("game_id")
+        quality_score = payload.get("quality_score", 0.0)
+        config_key = payload.get("config_key")
+
+        # Track quality scores
+        if not hasattr(self, "_recent_quality_scores"):
+            self._recent_quality_scores: list = []
+
+        self._recent_quality_scores.append(quality_score)
+        # Keep only last 100 scores
+        if len(self._recent_quality_scores) > 100:
+            self._recent_quality_scores = self._recent_quality_scores[-100:]
+
+        # Check for quality degradation
+        if len(self._recent_quality_scores) >= 10:
+            avg_quality = sum(self._recent_quality_scores[-10:]) / 10
+            if avg_quality < 0.3:
+                logger.warning(
+                    f"[DataPipelineOrchestrator] Low quality trend detected: "
+                    f"avg={avg_quality:.2f} for {config_key}"
+                )
+
+    async def _on_curriculum_rebalanced(self, event: Any) -> None:
+        """Handle CURRICULUM_REBALANCED - update pipeline priorities.
+
+        December 2025: When curriculum weights change, adjust which configs
+        get priority in the training pipeline.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        config_key = payload.get("config_key")
+        new_weights = payload.get("weights", {})
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Curriculum rebalanced for {config_key}: "
+            f"weights={new_weights}"
+        )
+
+        # Store curriculum weights for training priority decisions
+        if not hasattr(self, "_curriculum_weights"):
+            self._curriculum_weights: dict = {}
+        self._curriculum_weights[config_key] = new_weights
+
+    async def _on_curriculum_advanced(self, event: Any) -> None:
+        """Handle CURRICULUM_ADVANCED - log curriculum tier progression.
+
+        December 2025: When curriculum advances to a harder tier, log
+        for tracking training progress.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        config_key = payload.get("config_key")
+        new_tier = payload.get("tier")
+        old_tier = payload.get("old_tier")
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Curriculum advanced for {config_key}: "
+            f"{old_tier} -> {new_tier}"
+        )
+
+        # Track curriculum progression
+        if not hasattr(self, "_curriculum_tiers"):
+            self._curriculum_tiers: dict = {}
+        self._curriculum_tiers[config_key] = new_tier
 
     async def _on_selfplay_complete(self, result) -> None:
         """Handle selfplay completion."""

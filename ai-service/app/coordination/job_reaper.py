@@ -448,7 +448,7 @@ class JobReaperDaemon:
         })
         return stats
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health status.
 
         December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.

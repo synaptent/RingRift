@@ -43,11 +43,11 @@ class AutoExportConfig:
 
     enabled: bool = True
     # Minimum games before triggering export
-    # Lowered from 500 to 100 (Dec 2025) for faster training iteration
-    min_games_threshold: int = 100
+    # Lowered from 500→100→50 (Dec 2025) for faster training iteration
+    min_games_threshold: int = 50
     # Cooldown between exports for same config (seconds)
-    # Reduced from 30 min to 5 min (Phase 1.5) to enable faster training cycles
-    export_cooldown_seconds: int = 300  # 5 minutes
+    # Reduced from 30min→5min→1min (Dec 2025) to minimize training data lag
+    export_cooldown_seconds: int = 60  # 1 minute
     # Maximum concurrent exports
     max_concurrent_exports: int = 2
     # Timeout for export subprocess (seconds)
@@ -821,7 +821,7 @@ class AutoExportDaemon:
             },
         }
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health (December 2025: CoordinatorProtocol compliance).
 
         Returns:

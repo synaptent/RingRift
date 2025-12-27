@@ -300,6 +300,46 @@ class CoordinatorBase(ABC):
             "last_error": self._last_error,
         }
 
+    def get_status_dict(self, **custom_fields: Any) -> dict[str, Any]:
+        """Get standard status dict with optional custom fields.
+
+        December 2025 P1.5: Extracted pattern from 58 files implementing
+        nearly identical get_status() methods.
+
+        This provides a consistent structure for status reporting, while
+        allowing subclasses to add custom fields via kwargs.
+
+        Args:
+            **custom_fields: Additional fields to include in status dict
+
+        Returns:
+            Standard status dictionary with:
+            - name: Coordinator name
+            - running: Whether running
+            - uptime_seconds: Time since start
+            - status: Current status string
+            - error_count: Number of errors
+            - Plus any custom_fields passed in
+
+        Example:
+            # Basic usage
+            status = self.get_status_dict()
+
+            # With custom fields
+            status = self.get_status_dict(
+                current_config="hex8_2p",
+                jobs_completed=42,
+            )
+        """
+        return {
+            "name": self._name,
+            "running": self._running,
+            "uptime_seconds": round(self.uptime_seconds, 2),
+            "status": self._status.value if self._status else "unknown",
+            "error_count": self._errors_count,
+            **custom_fields,
+        }
+
     def health_check(self) -> "HealthCheckResult":
         """Perform health check (CoordinatorProtocol compliance).
 

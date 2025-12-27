@@ -622,7 +622,7 @@ class UnifiedIdleShutdownDaemon:
                 f"Total: {self._terminated_count} terminated, ${self._cost_saved:.2f}/hr saved"
             )
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health (December 2025: CoordinatorProtocol compliance).
 
         Returns:

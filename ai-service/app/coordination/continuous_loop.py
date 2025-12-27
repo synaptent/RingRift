@@ -215,7 +215,7 @@ class ContinuousTrainingLoop:
         self.stats.current_state = LoopState.STOPPED
         logger.info("Continuous training loop stopped")
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health (December 2025: CoordinatorProtocol compliance).
 
         Returns:
