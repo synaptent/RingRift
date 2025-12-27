@@ -162,6 +162,10 @@ RETRY_DEAD_NODE_INTERVAL = 120  # Retry dead nodes every 2 minutes (reduced from
 # Gossip Protocol
 # ============================================
 
+# Gossip fanout - number of peers to forward gossip messages to
+GOSSIP_FANOUT = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "3") or 3)
+# Gossip interval - seconds between gossip rounds
+GOSSIP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GOSSIP_INTERVAL", "60") or 60)
 # Upper bound on peer endpoints included in gossip payloads to limit message size.
 GOSSIP_MAX_PEER_ENDPOINTS = int(
     os.environ.get("RINGRIFT_P2P_GOSSIP_MAX_PEER_ENDPOINTS", "25") or 25
@@ -211,6 +215,27 @@ PEER_BOOTSTRAP_INTERVAL = 60
 PEER_BOOTSTRAP_MIN_PEERS = 3
 VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_P2P_VOTER_MIN_QUORUM", "3") or 3)
 
+# Bootstrap seeds - initial peers to contact for mesh join
+# Empty by default; loaded from distributed_hosts.yaml or CLI args
+_bootstrap_seeds_env = os.environ.get("RINGRIFT_P2P_BOOTSTRAP_SEEDS", "").strip()
+BOOTSTRAP_SEEDS: list[str] = [s.strip() for s in _bootstrap_seeds_env.split(",") if s.strip()] if _bootstrap_seeds_env else []
+
+# Minimum number of bootstrap attempts per seed before moving on
+MIN_BOOTSTRAP_ATTEMPTS = int(os.environ.get("RINGRIFT_P2P_MIN_BOOTSTRAP_ATTEMPTS", "3") or 3)
+
+# Interval between bootstrap attempts when node is isolated (no connected peers)
+ISOLATED_BOOTSTRAP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_ISOLATED_BOOTSTRAP_INTERVAL", "30") or 30)
+
+# Minimum connected peers to not be considered isolated
+MIN_CONNECTED_PEERS = int(os.environ.get("RINGRIFT_P2P_MIN_CONNECTED_PEERS", "2") or 2)
+
+# ============================================
+# Cluster Epochs
+# ============================================
+
+# Initial cluster epoch value (incremented on significant cluster events)
+INITIAL_CLUSTER_EPOCH = int(os.environ.get("RINGRIFT_P2P_INITIAL_CLUSTER_EPOCH", "0") or 0)
+
 # ============================================
 # Safeguards
 # ============================================
@@ -259,6 +284,134 @@ SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT
 
 MEMBERSHIP_MODE = os.environ.get("RINGRIFT_MEMBERSHIP_MODE", "http")
 CONSENSUS_MODE = os.environ.get("RINGRIFT_CONSENSUS_MODE", "bully")
+
+# ============================================
+# Environment Variable Names (for reference)
+# ============================================
+
+ADVERTISE_HOST_ENV = "RINGRIFT_P2P_ADVERTISE_HOST"
+ADVERTISE_PORT_ENV = "RINGRIFT_P2P_ADVERTISE_PORT"
+AUTH_TOKEN_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN"
+AUTH_TOKEN_FILE_ENV = "RINGRIFT_CLUSTER_AUTH_TOKEN_FILE"
+BUILD_VERSION_ENV = "RINGRIFT_BUILD_VERSION"
+
+# ============================================
+# Dynamic Voter Management
+# ============================================
+
+DYNAMIC_VOTER_ENABLED = os.environ.get("RINGRIFT_P2P_DYNAMIC_VOTER", "").lower() in {"1", "true", "yes", "on"}
+DYNAMIC_VOTER_MIN = int(os.environ.get("RINGRIFT_P2P_DYNAMIC_VOTER_MIN", "3") or 3)
+DYNAMIC_VOTER_TARGET = int(os.environ.get("RINGRIFT_P2P_DYNAMIC_VOTER_TARGET", "5") or 5)
+DYNAMIC_VOTER_MAX_QUORUM = int(os.environ.get("RINGRIFT_P2P_DYNAMIC_VOTER_MAX_QUORUM", "7") or 7)
+VOTER_DEMOTION_FAILURES = int(os.environ.get("RINGRIFT_P2P_VOTER_DEMOTION_FAILURES", "3") or 3)
+VOTER_HEALTH_THRESHOLD = float(os.environ.get("RINGRIFT_P2P_VOTER_HEALTH_THRESHOLD", "0.8") or 0.8)
+VOTER_PROMOTION_UPTIME = int(os.environ.get("RINGRIFT_P2P_VOTER_PROMOTION_UPTIME", "3600") or 3600)  # 1 hour
+
+# ============================================
+# Leader Health
+# ============================================
+
+LEADER_HEALTH_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_LEADER_HEALTH_CHECK_INTERVAL", "30") or 30)
+LEADER_MIN_RESPONSE_RATE = float(os.environ.get("RINGRIFT_P2P_LEADER_MIN_RESPONSE_RATE", "0.5") or 0.5)
+LEADER_DEGRADED_STEPDOWN_DELAY = int(os.environ.get("RINGRIFT_P2P_LEADER_DEGRADED_STEPDOWN_DELAY", "60") or 60)
+
+# ============================================
+# Git Auto-Update
+# ============================================
+
+GIT_BRANCH_NAME = os.environ.get("RINGRIFT_P2P_GIT_BRANCH", "main")
+GIT_REMOTE_NAME = os.environ.get("RINGRIFT_P2P_GIT_REMOTE", "origin")
+GIT_UPDATE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GIT_UPDATE_CHECK_INTERVAL", "300") or 300)
+GRACEFUL_SHUTDOWN_BEFORE_UPDATE = int(os.environ.get("RINGRIFT_P2P_GRACEFUL_SHUTDOWN_BEFORE_UPDATE", "30") or 30)
+
+# ============================================
+# Idle Detection
+# ============================================
+
+IDLE_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_IDLE_CHECK_INTERVAL", "60") or 60)
+IDLE_GPU_THRESHOLD = float(os.environ.get("RINGRIFT_P2P_IDLE_GPU_THRESHOLD", "5.0") or 5.0)  # % GPU utilization
+IDLE_GRACE_PERIOD = int(os.environ.get("RINGRIFT_P2P_IDLE_GRACE_PERIOD", "300") or 300)  # 5 minutes
+
+# ============================================
+# Data Management
+# ============================================
+
+DATA_MANAGEMENT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_DATA_MANAGEMENT_INTERVAL", "300") or 300)
+DB_EXPORT_THRESHOLD_MB = int(os.environ.get("RINGRIFT_P2P_DB_EXPORT_THRESHOLD_MB", "100") or 100)
+TRAINING_DATA_SYNC_THRESHOLD_MB = int(os.environ.get("RINGRIFT_P2P_TRAINING_DATA_SYNC_THRESHOLD_MB", "10") or 10)
+MAX_CONCURRENT_EXPORTS = int(os.environ.get("RINGRIFT_P2P_MAX_CONCURRENT_EXPORTS", "2") or 2)
+AUTO_TRAINING_THRESHOLD_MB = int(os.environ.get("RINGRIFT_P2P_AUTO_TRAINING_THRESHOLD_MB", "50") or 50)
+
+# JSONL manifest scanning
+MANIFEST_JSONL_SAMPLE_BYTES = int(os.environ.get("RINGRIFT_P2P_MANIFEST_JSONL_SAMPLE_BYTES", "8192") or 8192)
+MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = int(os.environ.get("RINGRIFT_P2P_MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES", "65536") or 65536)
+MANIFEST_JSONL_LINECOUNT_MAX_BYTES = int(os.environ.get("RINGRIFT_P2P_MANIFEST_JSONL_LINECOUNT_MAX_BYTES", "10485760") or 10485760)  # 10MB
+STARTUP_JSONL_GRACE_PERIOD_SECONDS = int(os.environ.get("RINGRIFT_P2P_STARTUP_JSONL_GRACE_PERIOD", "120") or 120)
+
+# ============================================
+# Training Node Sync
+# ============================================
+
+TRAINING_NODE_COUNT = int(os.environ.get("RINGRIFT_P2P_TRAINING_NODE_COUNT", "5") or 5)
+TRAINING_SYNC_INTERVAL = float(os.environ.get("RINGRIFT_P2P_TRAINING_SYNC_INTERVAL", "300.0") or 300.0)
+MIN_GAMES_FOR_SYNC = int(os.environ.get("RINGRIFT_P2P_MIN_GAMES_FOR_SYNC", "100") or 100)
+MODEL_SYNC_INTERVAL = int(os.environ.get("RINGRIFT_P2P_MODEL_SYNC_INTERVAL", "300") or 300)
+
+# ============================================
+# Adaptive Sync Intervals (P2P)
+# ============================================
+
+# Data sync (game databases)
+P2P_DATA_SYNC_BASE = int(os.environ.get("RINGRIFT_P2P_DATA_SYNC_BASE", "300") or 300)  # 5 minutes
+P2P_DATA_SYNC_MIN = int(os.environ.get("RINGRIFT_P2P_DATA_SYNC_MIN", "60") or 60)     # 1 minute
+P2P_DATA_SYNC_MAX = int(os.environ.get("RINGRIFT_P2P_DATA_SYNC_MAX", "1800") or 1800)  # 30 minutes
+
+# Model sync
+P2P_MODEL_SYNC_BASE = int(os.environ.get("RINGRIFT_P2P_MODEL_SYNC_BASE", "600") or 600)  # 10 minutes
+P2P_MODEL_SYNC_MIN = int(os.environ.get("RINGRIFT_P2P_MODEL_SYNC_MIN", "120") or 120)   # 2 minutes
+P2P_MODEL_SYNC_MAX = int(os.environ.get("RINGRIFT_P2P_MODEL_SYNC_MAX", "3600") or 3600)  # 1 hour
+
+# Training DB sync (NPZ exports)
+P2P_TRAINING_DB_SYNC_BASE = int(os.environ.get("RINGRIFT_P2P_TRAINING_DB_SYNC_BASE", "600") or 600)
+P2P_TRAINING_DB_SYNC_MIN = int(os.environ.get("RINGRIFT_P2P_TRAINING_DB_SYNC_MIN", "120") or 120)
+P2P_TRAINING_DB_SYNC_MAX = int(os.environ.get("RINGRIFT_P2P_TRAINING_DB_SYNC_MAX", "3600") or 3600)
+
+# Sync interval adjustment factors
+P2P_SYNC_SPEEDUP_FACTOR = float(os.environ.get("RINGRIFT_P2P_SYNC_SPEEDUP_FACTOR", "0.8") or 0.8)
+P2P_SYNC_BACKOFF_FACTOR = float(os.environ.get("RINGRIFT_P2P_SYNC_BACKOFF_FACTOR", "1.5") or 1.5)
+
+# ============================================
+# Stale Process Cleanup
+# ============================================
+
+STALE_PROCESS_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_STALE_PROCESS_CHECK_INTERVAL", "300") or 300)
+# Process name patterns to kill when stale (configurable via env as comma-separated)
+_stale_patterns_env = os.environ.get("RINGRIFT_P2P_STALE_PROCESS_PATTERNS", "").strip()
+STALE_PROCESS_PATTERNS: list[str] = [p.strip() for p in _stale_patterns_env.split(",") if p.strip()] if _stale_patterns_env else [
+    "python.*selfplay",
+    "python.*training",
+    "python.*gauntlet",
+    "python.*tournament",
+]
+
+# Max runtime limits for various job types
+MAX_SELFPLAY_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_SELFPLAY_RUNTIME", "7200") or 7200)    # 2 hours
+MAX_TRAINING_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_TRAINING_RUNTIME", "86400") or 86400)  # 24 hours
+MAX_TOURNAMENT_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_TOURNAMENT_RUNTIME", "14400") or 14400)  # 4 hours
+MAX_GAUNTLET_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_GAUNTLET_RUNTIME", "7200") or 7200)    # 2 hours
+
+# ============================================
+# Work Assignment
+# ============================================
+
+AUTO_ASSIGN_ENABLED = os.environ.get("RINGRIFT_P2P_AUTO_ASSIGN", "true").lower() in {"1", "true", "yes", "on"}
+AUTO_WORK_BATCH_SIZE = int(os.environ.get("RINGRIFT_P2P_AUTO_WORK_BATCH_SIZE", "5") or 5)
+
+# ============================================
+# Unified Discovery
+# ============================================
+
+UNIFIED_DISCOVERY_INTERVAL = int(os.environ.get("RINGRIFT_P2P_UNIFIED_DISCOVERY_INTERVAL", "60") or 60)
 
 # ============================================
 # Network Helpers
