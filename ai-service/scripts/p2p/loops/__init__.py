@@ -73,6 +73,8 @@ from .job_loops import (
 from .network_loops import (
     IpDiscoveryConfig,
     IpDiscoveryLoop,
+    NATManagementConfig,
+    NATManagementLoop,
     TailscaleRecoveryConfig,
     TailscaleRecoveryLoop,
 )
@@ -116,6 +118,8 @@ __all__ = [
     # Network
     "IpDiscoveryConfig",
     "IpDiscoveryLoop",
+    "NATManagementConfig",
+    "NATManagementLoop",
     "TailscaleRecoveryConfig",
     "TailscaleRecoveryLoop",
     # Discovery

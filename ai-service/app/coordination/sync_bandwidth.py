@@ -78,13 +78,11 @@ def _get_provider_bandwidth_hints() -> dict[str, int]:
 PROVIDER_BANDWIDTH_HINTS = _get_provider_bandwidth_hints()
 
 
-class TransferPriority(Enum):
-    """Priority levels for bandwidth allocation."""
+# December 2025: Import TransferPriority from canonical source
+from app.coordination.types import TransferPriority
 
-    LOW = "low"
-    NORMAL = "normal"
-    HIGH = "high"
-    CRITICAL = "critical"
+# TransferPriority is now imported from app.coordination.types
+# Canonical values: CRITICAL, HIGH, NORMAL, LOW, BACKGROUND
 
 
 @dataclass

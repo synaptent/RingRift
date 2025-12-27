@@ -66,15 +66,11 @@ except ImportError:
     _DEFAULT_DISK_THRESHOLD = 90.0
 
 
-class ResourceType(Enum):
-    """Types of resources being monitored."""
+# December 2025: Import ResourceType from canonical source
+from app.coordination.types import ResourceType
 
-    GPU = "gpu"
-    CPU = "cpu"
-    MEMORY = "memory"
-    DISK = "disk"
-    NETWORK = "network"
-
+# ResourceType is now imported from app.coordination.types
+# Canonical values: CPU, GPU, MEMORY, DISK, NETWORK, HYBRID, IO
 
 # BackpressureLevel imported from app.coordination.types
 # Legacy values NONE/LOW/MEDIUM/HIGH/CRITICAL are now part of unified enum

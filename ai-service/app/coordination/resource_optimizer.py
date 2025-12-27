@@ -118,11 +118,11 @@ from app.utils.paths import DATA_DIR
 COORDINATION_DB_PATH = DATA_DIR / "coordination" / "resource_state.db"
 
 
-class ResourceType(str, Enum):
-    """Types of resources to optimize."""
-    CPU = "cpu"
-    GPU = "gpu"
-    MEMORY = "memory"
+# December 2025: Import ResourceType from canonical source
+from app.coordination.types import ResourceType
+
+# ResourceType is now imported from app.coordination.types
+# Canonical values: CPU, GPU, MEMORY, DISK, NETWORK, HYBRID, IO
 
 
 class ScaleAction(str, Enum):

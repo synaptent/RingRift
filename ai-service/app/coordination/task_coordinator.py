@@ -117,16 +117,11 @@ except ImportError:
 from app.coordination.types import TaskType  # noqa: E402
 
 
-class ResourceType(Enum):
-    """Resource classification for tasks.
+# December 2025: Import ResourceType from canonical source
+from app.coordination.types import ResourceType
 
-    Used to ensure CPU and GPU tasks can run independently without
-    one resource type's utilization blocking the other.
-    """
-    CPU = "cpu"           # CPU-bound tasks (selfplay, tournament, sync)
-    GPU = "gpu"           # GPU-bound tasks (training, cmaes)
-    HYBRID = "hybrid"     # Uses both resources significantly
-    IO = "io"             # I/O-bound tasks (sync, export)
+# ResourceType is now imported from app.coordination.types
+# Canonical values: CPU, GPU, MEMORY, DISK, NETWORK, HYBRID, IO
 
 
 # Map task types to their primary resource usage
@@ -277,13 +272,13 @@ class TaskInfo:
         return time.time() - self.started_at
 
 
-class CoordinatorState(Enum):
-    """State of the task coordinator."""
-    RUNNING = "running"
-    PAUSED = "paused"       # Temporarily paused - no new tasks
-    DRAINING = "draining"   # Stopping - let existing tasks finish
-    EMERGENCY = "emergency" # Emergency stop - kill all tasks
-    STOPPED = "stopped"
+# December 2025: Import CoordinatorRunState from canonical source
+from app.coordination.types import CoordinatorRunState
+
+# CoordinatorRunState is now imported from app.coordination.types
+# Canonical values: RUNNING, PAUSED, DRAINING, EMERGENCY, STOPPED
+# Backward-compat alias:
+CoordinatorState = CoordinatorRunState
 
 
 # ============================================

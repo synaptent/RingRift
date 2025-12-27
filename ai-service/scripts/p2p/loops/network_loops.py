@@ -292,9 +292,98 @@ class TailscaleRecoveryLoop(BaseLoop):
         }
 
 
+@dataclass
+class NATManagementConfig:
+    """Configuration for NAT management loop."""
+
+    check_interval_seconds: float = 60.0  # NAT_BLOCKED_PROBE_INTERVAL
+    stun_probe_interval_seconds: float = 300.0  # NAT_STUN_LIKE_PROBE_INTERVAL
+    symmetric_detection_enabled: bool = True
+
+
+class NATManagementLoop(BaseLoop):
+    """Advanced NAT management loop.
+
+    Handles:
+    - STUN-like probing to detect NAT type
+    - Symmetric NAT detection (which breaks direct connectivity)
+    - Intelligent relay selection
+    - Hole-punch coordination
+
+    December 2025: Extracted from p2p_orchestrator._nat_management_loop
+    """
+
+    def __init__(
+        self,
+        detect_nat_type: Callable[[], Coroutine[Any, Any, None]],
+        probe_nat_blocked_peers: Callable[[], Coroutine[Any, Any, None]],
+        update_relay_preferences: Callable[[], Coroutine[Any, Any, None]],
+        config: NATManagementConfig | None = None,
+    ):
+        """Initialize NAT management loop.
+
+        Args:
+            detect_nat_type: Async callback to detect NAT type via STUN-like probing
+            probe_nat_blocked_peers: Async callback to probe NAT-blocked peers for recovery
+            update_relay_preferences: Async callback to update relay preferences
+            config: NAT management configuration
+        """
+        self.config = config or NATManagementConfig()
+        super().__init__(
+            name="nat_management",
+            interval=self.config.check_interval_seconds,
+        )
+        self._detect_nat_type = detect_nat_type
+        self._probe_nat_blocked_peers = probe_nat_blocked_peers
+        self._update_relay_preferences = update_relay_preferences
+        self._last_stun_probe = 0.0
+
+        # Statistics
+        self._stun_probes_count = 0
+        self._nat_recovery_attempts = 0
+        self._relay_updates_count = 0
+
+    async def _on_start(self) -> None:
+        """Log startup."""
+        logger.info("Starting advanced NAT management loop")
+
+    async def _run_once(self) -> None:
+        """Perform NAT management cycle."""
+        now = time.time()
+
+        # Periodic STUN-like probe to detect external IP and NAT type
+        if (
+            self.config.symmetric_detection_enabled
+            and now - self._last_stun_probe > self.config.stun_probe_interval_seconds
+        ):
+            self._last_stun_probe = now
+            self._stun_probes_count += 1
+            await self._detect_nat_type()
+
+        # Probe NAT-blocked peers for recovery
+        self._nat_recovery_attempts += 1
+        await self._probe_nat_blocked_peers()
+
+        # Update relay preferences based on connectivity
+        self._relay_updates_count += 1
+        await self._update_relay_preferences()
+
+    def get_nat_stats(self) -> dict[str, Any]:
+        """Get NAT management statistics."""
+        return {
+            "stun_probes": self._stun_probes_count,
+            "nat_recovery_attempts": self._nat_recovery_attempts,
+            "relay_updates": self._relay_updates_count,
+            "last_stun_probe": self._last_stun_probe,
+            **self.stats.to_dict(),
+        }
+
+
 __all__ = [
     "IpDiscoveryConfig",
     "IpDiscoveryLoop",
+    "NATManagementConfig",
+    "NATManagementLoop",
     "TailscaleRecoveryConfig",
     "TailscaleRecoveryLoop",
 ]

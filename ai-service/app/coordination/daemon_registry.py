@@ -471,6 +471,36 @@ def get_categories() -> list[str]:
     return sorted(set(spec.category for spec in DAEMON_REGISTRY.values()))
 
 
+def get_deprecated_daemons() -> list[tuple[DaemonType, str]]:
+    """Get all deprecated daemon types with their migration messages.
+
+    Returns:
+        List of (DaemonType, deprecated_message) tuples for deprecated daemons.
+
+    Example:
+        >>> for daemon_type, message in get_deprecated_daemons():
+        ...     print(f"{daemon_type.name}: {message}")
+    """
+    return [
+        (daemon_type, spec.deprecated_message)
+        for daemon_type, spec in DAEMON_REGISTRY.items()
+        if spec.deprecated
+    ]
+
+
+def is_daemon_deprecated(daemon_type: DaemonType) -> bool:
+    """Check if a daemon type is deprecated.
+
+    Args:
+        daemon_type: The daemon type to check
+
+    Returns:
+        True if the daemon is marked as deprecated
+    """
+    spec = DAEMON_REGISTRY.get(daemon_type)
+    return spec is not None and spec.deprecated
+
+
 def validate_registry() -> list[str]:
     """Validate the daemon registry for common issues.
 

@@ -505,11 +505,15 @@ class TestConcurrentOperations:
 
     @pytest.mark.asyncio
     async def test_lock_reentrancy_during_dependency_wait(self, manager: DaemonManager):
-        """Lock should be released during dependency wait to avoid deadlock."""
-        dependency_ready = asyncio.Event()
+        """Lock should be released during dependency wait to avoid deadlock.
+
+        This test verifies that starting a child daemon with dependencies
+        doesn't cause deadlock when the parent starts concurrently.
+        """
+        parent_started = asyncio.Event()
 
         async def parent_factory():
-            dependency_ready.set()
+            parent_started.set()
             while True:
                 await asyncio.sleep(1)
 
@@ -524,12 +528,21 @@ class TestConcurrentOperations:
             depends_on=[DaemonType.EVENT_ROUTER],
         )
 
-        # Start child first (will wait for parent)
+        # Start child first (will wait for parent to be running and ready)
         child_task = asyncio.create_task(manager.start(DaemonType.DATA_PIPELINE))
 
-        # Start parent concurrently - should not deadlock
+        # Let child start waiting for dependency
         await asyncio.sleep(0.05)
+
+        # Start parent concurrently - should not deadlock due to lock release
         parent_task = asyncio.create_task(manager.start(DaemonType.EVENT_ROUTER))
+
+        # Wait for parent to start running
+        await asyncio.wait_for(parent_started.wait(), timeout=1.0)
+        await asyncio.sleep(0.05)
+
+        # Mark parent as ready so child can proceed
+        manager.mark_daemon_ready(DaemonType.EVENT_ROUTER)
 
         # Both should complete without deadlock (timeout = 2s)
         try:
@@ -538,6 +551,12 @@ class TestConcurrentOperations:
                 timeout=2.0,
             )
         except asyncio.TimeoutError:
+            child_task.cancel()
+            parent_task.cancel()
+            try:
+                await asyncio.gather(child_task, parent_task, return_exceptions=True)
+            except asyncio.CancelledError:
+                pass
             pytest.fail("Deadlock detected - lock not released during dependency wait")
 
         # Both should be running
