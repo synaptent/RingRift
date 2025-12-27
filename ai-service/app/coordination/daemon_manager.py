@@ -736,6 +736,10 @@ class DaemonManager:
             # Phase 5: Verify critical subscriptions are active
             await self._verify_subscriptions()
 
+            # Phase 12 (Dec 2025): Emit readiness signal after critical daemons initialized
+            # This closes the startup race condition where events were lost before handlers ready
+            await self._emit_daemons_ready()
+
         return await self._lifecycle.start_all(
             types=types,
             on_started_callback=_post_start_callback,
@@ -968,6 +972,78 @@ class DaemonManager:
 
         except (ImportError, RuntimeError, AttributeError) as e:
             logger.warning(f"[DaemonManager] Subscription verification failed: {e}")
+
+    async def _emit_daemons_ready(self) -> None:
+        """Emit ALL_CRITICAL_DAEMONS_READY signal after startup completes.
+
+        Phase 12 (December 2025): This closes the startup race condition where
+        events could be emitted before handlers were registered. External systems
+        (P2P orchestrator, training pipeline) can wait for this signal before
+        emitting events that need to be handled.
+
+        The event includes:
+        - ready_daemons: List of daemons that started successfully
+        - timestamp: When readiness was achieved
+        - subscription_status: Whether critical subscriptions are active
+        """
+        try:
+            from app.coordination.event_router import get_router, DataEventType
+
+            router = get_router()
+            if router is None:
+                logger.debug("[DaemonManager] Event router not available for readiness signal")
+                return
+
+            # Collect ready daemons
+            ready_daemons = [
+                dtype.value for dtype, state in self._lifecycle.get_daemon_states().items()
+                if state.name == "RUNNING"
+            ]
+
+            # Check if we have critical daemons ready
+            critical_types = [
+                DaemonType.EVENT_ROUTER,
+                DaemonType.SELFPLAY_SCHEDULER,
+                DaemonType.FEEDBACK_LOOP,
+            ]
+            critical_ready = sum(
+                1 for dt in critical_types
+                if dt in self._lifecycle.get_daemon_states()
+                and self._lifecycle.get_daemon_states()[dt].name == "RUNNING"
+            )
+
+            event_data = {
+                "ready_daemons": ready_daemons,
+                "total_ready": len(ready_daemons),
+                "critical_ready": critical_ready,
+                "critical_total": len(critical_types),
+                "timestamp": __import__("time").time(),
+                "fully_ready": critical_ready == len(critical_types),
+            }
+
+            # Check if ALL_CRITICAL_DAEMONS_READY event type exists
+            if hasattr(DataEventType, "ALL_CRITICAL_DAEMONS_READY"):
+                router.publish(
+                    DataEventType.ALL_CRITICAL_DAEMONS_READY.value,
+                    event_data,
+                )
+                logger.info(
+                    f"[DaemonManager] Emitted ALL_CRITICAL_DAEMONS_READY: "
+                    f"{len(ready_daemons)} daemons ready, {critical_ready}/{len(critical_types)} critical"
+                )
+            else:
+                # Fallback: emit as generic SYSTEM_STATUS event
+                router.publish(
+                    "system.daemons_ready",
+                    event_data,
+                )
+                logger.info(
+                    f"[DaemonManager] Emitted system.daemons_ready: "
+                    f"{len(ready_daemons)} daemons ready"
+                )
+
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.warning(f"[DaemonManager] Failed to emit readiness signal: {e}")
 
     async def stop_all(self) -> dict[DaemonType, bool]:
         """Stop all running daemons.

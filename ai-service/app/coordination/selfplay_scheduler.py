@@ -138,6 +138,7 @@ class ConfigPriority:
     elo_velocity: float = 0.0  # ELO points per day
     training_pending: bool = False
     exploration_boost: float = 1.0
+    exploration_boost_expires_at: float = 0.0  # Phase 12: When boost decays back to 1.0
     curriculum_weight: float = 1.0  # Phase 2C.3: Curriculum-based weight
     improvement_boost: float = 0.0  # Phase 5: From ImprovementOptimizer (-0.10 to +0.15)
     quality_penalty: float = 0.0  # Phase 5: Quality degradation penalty (0.0 to -0.20)
@@ -381,6 +382,11 @@ class SelfplayScheduler:
 
             # Compute priority score
             priority.priority_score = self._compute_priority_score(priority)
+
+        # Phase 12: Check for expired exploration boosts and decay them
+        decayed_count = self._decay_expired_boosts(now)
+        if decayed_count > 0:
+            logger.info(f"[SelfplayScheduler] Decayed {decayed_count} expired exploration boosts")
 
         logger.debug(f"[SelfplayScheduler] Updated priorities for {len(self._config_priorities)} configs")
 
@@ -1584,10 +1590,16 @@ class SelfplayScheduler:
             # Apply the boost factor directly from FeedbackLoopController
             priority.exploration_boost = max(priority.exploration_boost, boost_factor)
 
+            # Phase 12: Set boost expiry (15 minutes from now by default)
+            # This ensures temporary anomalies don't cause permanent boosts
+            import time
+            boost_duration = float(os.environ.get("RINGRIFT_EXPLORATION_BOOST_DURATION", "900"))  # 15 min default
+            priority.exploration_boost_expires_at = time.time() + boost_duration
+
             logger.info(
                 f"[SelfplayScheduler] Exploration boost for {config_key}: "
                 f"{old_boost:.2f} → {priority.exploration_boost:.2f} "
-                f"(reason={reason}, anomaly_count={anomaly_count})"
+                f"(reason={reason}, anomaly_count={anomaly_count}, expires_in={boost_duration}s)"
             )
 
             # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
@@ -1608,6 +1620,58 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling exploration boost: {e}")
+
+    def _decay_expired_boosts(self, now: float) -> int:
+        """Decay exploration boosts that have expired.
+
+        Phase 12 (Dec 2025): Prevents temporary training anomalies from causing
+        permanent exploration boosts. After the boost expires, gradually decay
+        back to 1.0 (normal exploration level).
+
+        Args:
+            now: Current timestamp
+
+        Returns:
+            Number of boosts that were decayed
+        """
+        decayed_count = 0
+
+        for config_key, priority in self._config_priorities.items():
+            # Skip if no boost active
+            if priority.exploration_boost <= 1.0:
+                continue
+
+            # Skip if boost hasn't expired yet
+            if priority.exploration_boost_expires_at > now:
+                continue
+
+            # Decay the boost
+            old_boost = priority.exploration_boost
+            priority.exploration_boost = 1.0
+            priority.exploration_boost_expires_at = 0.0
+            decayed_count += 1
+
+            logger.info(
+                f"[SelfplayScheduler] Exploration boost expired for {config_key}: "
+                f"{old_boost:.2f} → 1.0"
+            )
+
+            # Emit event for downstream consumers
+            try:
+                from app.coordination.event_router import get_event_bus, DataEventType
+
+                bus = get_event_bus()
+                if bus:
+                    bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                        "config_key": config_key,
+                        "priority": "normal",
+                        "reason": "exploration_boost_expired",
+                        "exploration_boost": 1.0,
+                    })
+            except Exception as emit_err:
+                logger.debug(f"[SelfplayScheduler] Failed to emit boost decay: {emit_err}")
+
+        return decayed_count
 
     def _on_low_quality_warning(self, event: Any) -> None:
         """Handle LOW_QUALITY_DATA_WARNING to throttle selfplay allocation.
