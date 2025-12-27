@@ -620,6 +620,18 @@ class P2PBackend:
                 details={"leader_url": self.leader_url, "error": str(e)},
             )
 
+    async def is_healthy(self) -> bool:
+        """Simple boolean health check for backward compatibility.
+
+        December 2025: Added for callers that just need a boolean result.
+        Use health_check() for detailed health information.
+
+        Returns:
+            True if P2P leader is healthy
+        """
+        result = await self.health_check()
+        return result.healthy
+
 
 def _normalize_p2p_seed_url(raw: str) -> str:
     """Normalize a P2P seed URL."""

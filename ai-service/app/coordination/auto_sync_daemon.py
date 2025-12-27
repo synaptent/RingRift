@@ -1059,6 +1059,7 @@ class AutoSyncDaemon:
         December 2025: Consolidated from ephemeral_sync.py
         December 2025: Added sync mutex to prevent concurrent syncs to same target
         December 2025: Added circuit breaker for fault tolerance
+        December 2025: Added write lock check to prevent syncing incomplete data
 
         Args:
             db_path: Local database path
@@ -1067,6 +1068,13 @@ class AutoSyncDaemon:
         Returns:
             True if successful
         """
+        # Check write lock - don't sync if database is being written to
+        if not is_database_safe_to_sync(db_path):
+            logger.debug(
+                f"[AutoSyncDaemon] Database {db_path} has active write lock, skipping sync"
+            )
+            return False
+
         # Check circuit breaker before attempting sync (December 2025)
         if self._circuit_breaker and not self._circuit_breaker.allow_request(target_node):
             logger.debug(

@@ -274,20 +274,6 @@ class ResourceTargetManager(SingletonMixin):
 
         return overrides
 
-    @classmethod
-    def get_instance(cls, db_path: Path | None = None) -> ResourceTargetManager:
-        """Get or create the singleton instance."""
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = cls(db_path)
-            return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset singleton for testing."""
-        with cls._lock:
-            cls._instance = None
-
     def _init_db(self) -> None:
         """Initialize database tables for target persistence."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)

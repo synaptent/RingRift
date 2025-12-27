@@ -2539,6 +2539,7 @@ class P2POrchestrator(
                 AutoScalingLoop,
                 WorkQueueMaintenanceLoop,
                 NATManagementLoop,
+                ManifestCollectionLoop,
             )
 
             # QueuePopulatorLoop - maintains 50+ work items until 2000 Elo
