@@ -537,8 +537,7 @@ class IdleResourceDaemon:
         reduce spawning cluster-wide to avoid overwhelming the pipeline.
         """
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
 
@@ -607,8 +606,7 @@ class IdleResourceDaemon:
         - P2P_CLUSTER_UNHEALTHY: Reduce spawning cluster-wide
         """
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
 
@@ -1095,9 +1093,9 @@ class IdleResourceDaemon:
             idle_nodes: List of nodes with idle GPU resources.
         """
         try:
-            from app.distributed.data_events import emit_idle_resource_detected
+            from app.coordination.event_router import emit_idle_resource_detected
         except ImportError:
-            logger.debug("[IdleResourceDaemon] data_events not available for emit")
+            logger.debug("[IdleResourceDaemon] event_router not available for emit")
             return
 
         now = time.time()

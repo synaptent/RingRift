@@ -110,20 +110,9 @@ except ImportError:
 # Configuration
 # ============================================
 
-class TaskType(Enum):
-    """Types of tasks that can be spawned."""
-    SELFPLAY = "selfplay"
-    GPU_SELFPLAY = "gpu_selfplay"
-    HYBRID_SELFPLAY = "hybrid_selfplay"
-    TRAINING = "training"
-    CMAES = "cmaes"
-    TOURNAMENT = "tournament"
-    EVALUATION = "evaluation"
-    SYNC = "sync"
-    EXPORT = "export"
-    PIPELINE = "pipeline"
-    IMPROVEMENT_LOOP = "improvement_loop"
-    BACKGROUND_LOOP = "background_loop"
+# TaskType consolidated into app.coordination.types (December 2025)
+# Import from canonical source for consistency across codebase
+from app.coordination.types import TaskType  # noqa: E402
 
 
 class ResourceType(Enum):

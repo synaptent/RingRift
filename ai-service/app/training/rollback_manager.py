@@ -850,8 +850,7 @@ class AutoRollbackHandler:
             triggered_by: What triggered the rollback (auto/manual)
         """
         try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_event_bus, DataEventType
 
             bus = get_event_bus()
             if not bus:
@@ -897,7 +896,7 @@ class AutoRollbackHandler:
             except RuntimeError:
                 # No running event loop - use sync if available
                 if hasattr(bus, 'publish_sync'):
-                    from app.distributed.data_events import DataEvent
+                    from app.coordination.event_router import DataEvent
 
                     sync_event = DataEvent(
                         event_type=DataEventType.PROMOTION_ROLLED_BACK,
@@ -1064,8 +1063,7 @@ class QualityRollbackWatcher:
             True if subscription succeeded
         """
         try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_event_bus, DataEventType
 
             bus = get_event_bus()
             if bus is None:

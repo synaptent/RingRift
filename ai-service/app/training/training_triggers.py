@@ -393,6 +393,13 @@ class TrainingTriggers:
             return True
 
         bus = get_event_bus()
+        if bus is None:
+            # Defensive guard: some test setups (or partial imports during consolidation)
+            # may provide DataEventType but not a concrete EventBus instance.
+            logger.warning(
+                "Event bus unavailable (get_event_bus returned None); quality events disabled"
+            )
+            return False
 
         # Subscribe to quality events
         bus.subscribe(
