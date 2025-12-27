@@ -165,6 +165,8 @@ def _infer_capability_from_vram(vram_gb: float) -> dict[str, BoardType]:
 def load_gpu_profiles_from_config() -> dict[str, dict[str, BoardType]]:
     """Load GPU profiles dynamically from distributed_hosts.yaml.
 
+    December 2025: Consolidated to use cluster_config.py helpers.
+
     This augments the static GPU_CAPABILITIES with host-specific profiles
     from the cluster configuration, ensuring new GPU types are automatically
     supported based on their VRAM specs.
@@ -172,58 +174,20 @@ def load_gpu_profiles_from_config() -> dict[str, dict[str, BoardType]]:
     Returns:
         Dict mapping GPU names to capability dicts
     """
-    from pathlib import Path
-
     profiles: dict[str, dict[str, BoardType]] = {}
 
-    # Try multiple config paths
-    config_paths = [
-        Path("config/distributed_hosts.yaml"),
-        Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml",
-        Path.home() / "ringrift" / "ai-service" / "config" / "distributed_hosts.yaml",
-    ]
-
-    config_path = None
-    for path in config_paths:
-        if path.exists():
-            config_path = path
-            break
-
-    if not config_path:
-        logger.debug("[UtilizationOptimizer] No distributed_hosts.yaml found, using static profiles")
-        return profiles
-
     try:
-        import yaml
+        from app.config.cluster_config import get_gpu_types
 
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
+        gpu_types = get_gpu_types()
 
-        hosts = config.get("hosts", {})
-        seen_gpus: set[str] = set()
-
-        for host_id, host_config in hosts.items():
-            gpu = host_config.get("gpu", "")
-            gpu_vram = host_config.get("gpu_vram_gb", 0)
-
-            if not gpu or gpu == "none" or gpu_vram <= 0:
-                continue
-
-            # Parse GPU name (handle "2x RTX 5090" format)
-            gpu_name = gpu
-            if "x " in gpu:
-                # Extract GPU model from "Nx GPU_MODEL" format
-                parts = gpu.split("x ", 1)
-                if len(parts) == 2:
-                    gpu_name = parts[1]
-
-            # Skip if we've already seen this GPU
-            if gpu_name in seen_gpus:
-                continue
-            seen_gpus.add(gpu_name)
-
+        for gpu_name, gpu_vram in gpu_types.items():
             # Skip if already in static capabilities
             if gpu_name in GPU_CAPABILITIES:
+                continue
+
+            # Skip GPUs with no VRAM info
+            if gpu_vram <= 0:
                 continue
 
             # Infer capability from VRAM
@@ -238,11 +202,11 @@ def load_gpu_profiles_from_config() -> dict[str, dict[str, BoardType]]:
         if profiles:
             logger.info(
                 f"[UtilizationOptimizer] Loaded {len(profiles)} dynamic GPU profiles "
-                f"from {config_path}"
+                f"from cluster_config"
             )
 
     except ImportError:
-        logger.debug("[UtilizationOptimizer] PyYAML not available, using static profiles")
+        logger.debug("[UtilizationOptimizer] cluster_config not available, using static profiles")
     except Exception as e:
         logger.warning(f"[UtilizationOptimizer] Failed to load dynamic GPU profiles: {e}")
 

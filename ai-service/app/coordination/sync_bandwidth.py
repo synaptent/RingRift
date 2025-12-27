@@ -126,66 +126,31 @@ class BandwidthConfig:
 def load_host_bandwidth_hints() -> dict[str, int]:
     """Load per-host bandwidth hints from distributed_hosts.yaml.
 
+    December 2025: Consolidated to use cluster_config.py helpers.
+
     Returns:
         Dictionary mapping host names to bandwidth limits in KB/s
     """
-    from pathlib import Path
-    import yaml
+    try:
+        from app.config.cluster_config import get_cluster_nodes, get_node_bandwidth_kbs
 
-    hints: dict[str, int] = {}
+        nodes = get_cluster_nodes()
+        hints = {
+            name: get_node_bandwidth_kbs(name)
+            for name in nodes
+        }
 
-    config_paths = [
-        Path(__file__).resolve().parent.parent.parent / "config" / "distributed_hosts.yaml",
-        Path.home() / ".ringrift" / "distributed_hosts.yaml",
-    ]
+        if hints:
+            logger.debug(f"Loaded bandwidth hints for {len(hints)} hosts from cluster_config")
 
-    for config_path in config_paths:
-        if not config_path.exists():
-            continue
+        return hints
 
-        try:
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
-
-            hosts = config.get("hosts", {})
-            for host_name, host_config in hosts.items():
-                # Look for bandwidth_mbps in host config
-                if "bandwidth_mbps" in host_config:
-                    hints[host_name] = host_config["bandwidth_mbps"] * 1000  # Convert to KB/s
-                # Fallback: infer from provider type
-                elif host_config.get("ssh_host", "").startswith("100."):
-                    # Tailscale internal = high bandwidth
-                    hints[host_name] = 100000  # 100 MB/s
-                elif "lambda" in host_name.lower():
-                    # Lambda nodes have fast internal network
-                    hints[host_name] = 100000  # 100 MB/s
-                elif "nebius" in host_name.lower():
-                    # December 2025: Nebius has rate limits that can cause
-                    # connection resets if exceeded. Use conservative limit.
-                    # The 955MB NPZ corruption was caused by ~100 connection
-                    # resets during rsync transfer from Nebius.
-                    hints[host_name] = 50000  # 50 MB/s (conservative)
-                elif "runpod" in host_name.lower():
-                    # RunPod has good network
-                    hints[host_name] = 100000  # 100 MB/s
-                elif "vast" in host_name.lower():
-                    # Vast.ai varies, use moderate default
-                    hints[host_name] = 50000  # 50 MB/s
-                elif "vultr" in host_name.lower():
-                    # Vultr vGPU instances - good network
-                    hints[host_name] = 80000  # 80 MB/s
-                elif "hetzner" in host_name.lower():
-                    # Hetzner has good network
-                    hints[host_name] = 80000  # 80 MB/s
-
-            if hints:
-                logger.debug(f"Loaded bandwidth hints for {len(hints)} hosts")
-                break
-
-        except Exception as e:
-            logger.debug(f"Failed to load bandwidth hints from {config_path}: {e}")
-
-    return hints
+    except ImportError:
+        logger.debug("cluster_config not available, using empty bandwidth hints")
+        return {}
+    except Exception as e:
+        logger.debug(f"Failed to load bandwidth hints: {e}")
+        return {}
 
 
 class BandwidthManager:

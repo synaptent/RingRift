@@ -483,8 +483,11 @@ class ClusterNode:
     memory_gb: int = 0
     cpus: int = 0
     gpu: str = ""
+    gpu_vram_gb: int = 0  # GPU VRAM in GB (December 2025)
+    bandwidth_mbps: int = 0  # Bandwidth limit in MB/s (December 2025)
     data_server_port: int = 8766
     data_server_url: str | None = None
+    is_coordinator: bool = False  # Whether this is the Elo coordinator
 
     @property
     def best_ip(self) -> str | None:
@@ -544,6 +547,9 @@ def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, Cluste
     except (ImportError, AttributeError, KeyError):
         pass
 
+    # Get Elo coordinator name for is_coordinator flag
+    elo_coordinator = config.elo_sync.coordinator
+
     for name, cfg in config.hosts_raw.items():
         nodes[name] = ClusterNode(
             name=name,
@@ -558,8 +564,11 @@ def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, Cluste
             memory_gb=cfg.get("memory_gb", 0),
             cpus=cfg.get("cpus", 0),
             gpu=cfg.get("gpu", ""),
+            gpu_vram_gb=cfg.get("gpu_vram_gb", 0),
+            bandwidth_mbps=cfg.get("bandwidth_mbps", 0),
             data_server_port=cfg.get("data_server_port", default_data_port),
             data_server_url=cfg.get("data_server_url"),
+            is_coordinator=(name == elo_coordinator or cfg.get("is_coordinator", False)),
         )
 
     return nodes
@@ -593,3 +602,122 @@ def get_nfs_hosts(config_path: str | Path | None = None) -> list[str]:
         name for name, cfg in config.hosts_raw.items()
         if cfg.get("nfs_enabled", False) or cfg.get("has_nfs", False)
     ]
+
+
+# =============================================================================
+# Provider-based defaults (December 2025)
+# Consolidated from sync_bandwidth.py and utilization_optimizer.py
+# =============================================================================
+
+# Default bandwidth limits by provider (in KB/s)
+_PROVIDER_BANDWIDTH_DEFAULTS_KBS: dict[str, int] = {
+    "lambda": 100_000,     # 100 MB/s - fast internal network
+    "runpod": 100_000,     # 100 MB/s - good network
+    "nebius": 50_000,      # 50 MB/s - conservative due to rate limits
+    "vast": 50_000,        # 50 MB/s - varies by instance
+    "vultr": 25_000,       # 25 MB/s - vGPU instances
+    "hetzner": 100_000,    # 100 MB/s - dedicated servers
+    "local": 100_000,      # 100 MB/s - local network
+}
+
+
+def get_node_bandwidth_kbs(node_name: str, config_path: str | Path | None = None) -> int:
+    """Get bandwidth limit for a node in KB/s.
+
+    Priority order:
+    1. Explicit bandwidth_mbps in YAML config
+    2. auto_sync.host_bandwidth_overrides pattern match
+    3. Provider-based default
+    4. Global default (100 MB/s)
+
+    Args:
+        node_name: The node/host name
+        config_path: Optional config file path
+
+    Returns:
+        Bandwidth limit in KB/s
+    """
+    nodes = get_cluster_nodes(config_path)
+    node = nodes.get(node_name)
+
+    # 1. Check explicit config in node definition
+    if node and node.bandwidth_mbps > 0:
+        return node.bandwidth_mbps * 1000  # Convert MB/s to KB/s
+
+    # 2. Check auto_sync overrides (uses glob patterns)
+    auto_sync = get_auto_sync_config(config_path)
+    override_limit = auto_sync.get_bandwidth_limit(node_name)
+    if override_limit != auto_sync.bandwidth_limit_mbps:
+        return override_limit * 1000
+
+    # 3. Provider-based default
+    provider = get_host_provider(node_name)
+    if provider in _PROVIDER_BANDWIDTH_DEFAULTS_KBS:
+        return _PROVIDER_BANDWIDTH_DEFAULTS_KBS[provider]
+
+    # 4. Check for Tailscale IP (internal network = high bandwidth)
+    if node and node.tailscale_ip:
+        return 100_000  # 100 MB/s for Tailscale
+
+    # 5. Global default
+    return auto_sync.bandwidth_limit_mbps * 1000
+
+
+def get_ready_nodes(config_path: str | Path | None = None) -> list[ClusterNode]:
+    """Get all cluster nodes with status='ready'.
+
+    Returns:
+        List of ClusterNode objects with ready status.
+    """
+    return [
+        n for n in get_cluster_nodes(config_path).values()
+        if n.status == "ready"
+    ]
+
+
+def get_nodes_by_provider(
+    provider: str,
+    config_path: str | Path | None = None,
+    *,
+    only_active: bool = True,
+) -> list[ClusterNode]:
+    """Get all nodes for a specific provider.
+
+    Args:
+        provider: Provider name (vast, runpod, nebius, etc.)
+        config_path: Optional config file path
+        only_active: If True, only return active nodes
+
+    Returns:
+        List of ClusterNode objects for the provider.
+    """
+    nodes = get_cluster_nodes(config_path).values()
+    result = [n for n in nodes if n.provider == provider.lower()]
+    if only_active:
+        result = [n for n in result if n.is_active]
+    return result
+
+
+def get_gpu_types(config_path: str | Path | None = None) -> dict[str, int]:
+    """Get unique GPU types and their VRAM from cluster config.
+
+    Returns:
+        Dict mapping GPU model name to VRAM in GB.
+    """
+    gpu_types: dict[str, int] = {}
+
+    for node in get_gpu_nodes(config_path):
+        if not node.gpu or node.gpu == "none":
+            continue
+
+        # Handle "Nx GPU_MODEL" format (e.g., "2x RTX 5090")
+        gpu_name = node.gpu
+        if "x " in gpu_name:
+            parts = gpu_name.split("x ", 1)
+            if len(parts) == 2:
+                gpu_name = parts[1]
+
+        if gpu_name not in gpu_types:
+            gpu_types[gpu_name] = node.gpu_vram_gb
+
+    return gpu_types

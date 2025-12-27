@@ -563,38 +563,32 @@ class DatabaseSyncManager(SyncManagerBase):
         await self._discover_nodes_from_yaml()
 
     async def _discover_nodes_from_yaml(self) -> None:
-        """Discover nodes from distributed_hosts.yaml config."""
+        """Discover nodes from distributed_hosts.yaml config.
+
+        December 2025: Consolidated to use cluster_config.py helpers.
+        """
         try:
-            import yaml
+            from app.config.cluster_config import get_ready_nodes
 
-            config_path = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
-            if not config_path.exists():
-                logger.warning(f"[{self.db_type}] Config not found: {config_path}")
-                return
+            ready_nodes = get_ready_nodes()
+            for node in ready_nodes:
+                # Build HTTP URL from data_server_base_url if available
+                http_url = node.data_server_base_url
 
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
-
-            hosts = config.get("hosts", [])
-            for host in hosts:
-                name = host.get("name", "")
-                if not name or host.get("status") != "ready":
-                    continue
-
-                self.nodes[name] = SyncNodeInfo(
-                    name=name,
-                    tailscale_ip=host.get("tailscale_ip"),
-                    ssh_host=host.get("ssh_host"),
-                    ssh_port=host.get("ssh_port", 22),
-                    http_url=host.get("http_url"),
+                self.nodes[node.name] = SyncNodeInfo(
+                    name=node.name,
+                    tailscale_ip=node.tailscale_ip,
+                    ssh_host=node.ssh_host,
+                    ssh_port=node.ssh_port,
+                    http_url=http_url,
                     remote_db_path=self._get_remote_db_path(),
-                    is_coordinator=host.get("is_coordinator", False),
+                    is_coordinator=node.is_coordinator,
                 )
 
-            logger.info(f"[{self.db_type}] Loaded {len(self.nodes)} nodes from YAML config")
+            logger.info(f"[{self.db_type}] Loaded {len(self.nodes)} nodes from cluster_config")
 
         except ImportError:
-            logger.warning(f"[{self.db_type}] PyYAML not available for YAML discovery")
+            logger.warning(f"[{self.db_type}] cluster_config not available for discovery")
         except Exception as e:
             logger.warning(f"[{self.db_type}] YAML discovery failed: {e}")
 
