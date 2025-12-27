@@ -421,11 +421,13 @@ class AutoSyncDaemonAdapter(DaemonAdapter):
 
 
 class NPZDistributionDaemonAdapter(DaemonAdapter):
-    """Adapter for NPZ training data distribution daemon (December 2025).
+    """Adapter for distribution daemon (consolidated Dec 26, 2025).
 
-    Distributes exported NPZ training files to all training-capable nodes
-    after NPZ_EXPORT_COMPLETE events. Solves the gap where training data
-    would only exist on the export node.
+    DEPRECATED: Use MODEL_DISTRIBUTION which now handles both model and NPZ
+    distribution via UnifiedDistributionDaemon.
+
+    This adapter is preserved for backward compatibility but redirects to
+    the unified distribution daemon.
     """
 
     @property
@@ -442,12 +444,27 @@ class NPZDistributionDaemonAdapter(DaemonAdapter):
         return []
 
     async def _create_daemon(self) -> Any:
-        try:
-            from app.coordination.npz_distribution_daemon import NPZDistributionDaemon
+        import warnings
 
-            return NPZDistributionDaemon()
+        warnings.warn(
+            "NPZDistributionDaemonAdapter is deprecated. "
+            "Use MODEL_DISTRIBUTION with UnifiedDistributionDaemon instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        try:
+            from app.coordination.unified_distribution_daemon import (
+                UnifiedDistributionDaemon,
+            )
+
+            logger.info(
+                "[NPZDistributionDaemonAdapter] Redirecting to UnifiedDistributionDaemon"
+            )
+            return UnifiedDistributionDaemon()
         except ImportError:
-            logger.warning("[NPZDistributionDaemonAdapter] NPZDistributionDaemon not available")
+            logger.warning(
+                "[NPZDistributionDaemonAdapter] UnifiedDistributionDaemon not available"
+            )
             return None
 
     async def _run_daemon(self, daemon: Any) -> None:

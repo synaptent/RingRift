@@ -27,7 +27,7 @@ Usage:
         async def get_stats(self) -> Dict[str, Any]:
             return {"status": self.status, "count": self._count}
 
-See: docs/CONSOLIDATION_ROADMAP.md for consolidation context.
+See: ai-service/docs/CONSOLIDATION_ROADMAP.md for consolidation context.
 """
 
 from __future__ import annotations

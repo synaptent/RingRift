@@ -836,7 +836,7 @@ class DaemonManager:
             # Check if rollback daemon is running and healthy
             if DaemonType.MODEL_DISTRIBUTION in self._daemons:
                 info = self._daemons[DaemonType.MODEL_DISTRIBUTION]
-                if info.status == DaemonStatus.RUNNING:
+                if info.state == DaemonState.RUNNING:
                     logger.info(
                         f"[DaemonManager] Model distribution daemon running - "
                         f"rollback should be handled by RollbackManager"
@@ -1738,22 +1738,25 @@ class DaemonManager:
             raise
 
     async def _create_model_distribution(self) -> None:
-        """Create and run model distribution daemon (December 2025).
+        """Create and run unified distribution daemon (consolidated Dec 26, 2025).
 
-        Automatically distributes models to cluster nodes after promotion.
-        Subscribes to MODEL_PROMOTED events.
+        Automatically distributes models AND NPZ files to cluster nodes.
+        Subscribes to MODEL_PROMOTED and DATA_SYNCED events.
+        Uses UnifiedDistributionDaemon (consolidates model + NPZ distribution).
         """
         try:
-            from app.coordination.model_distribution_daemon import ModelDistributionDaemon
+            from app.coordination.unified_distribution_daemon import (
+                UnifiedDistributionDaemon,
+            )
 
-            daemon = ModelDistributionDaemon()
+            daemon = UnifiedDistributionDaemon()
             await daemon.start()
 
             while daemon.is_running():
                 await asyncio.sleep(10)
 
         except ImportError as e:
-            logger.error(f"ModelDistributionDaemon not available: {e}")
+            logger.error(f"UnifiedDistributionDaemon not available: {e}")
             raise
 
     async def _create_p2p_backend(self) -> None:
@@ -1961,25 +1964,40 @@ class DaemonManager:
             raise
 
     async def _create_npz_distribution(self) -> None:
-        """Create and run NPZ distribution daemon (December 2025).
+        """DEPRECATED: NPZ distribution handled by UnifiedDistributionDaemon.
 
-        Watches for NPZ_EXPORT_COMPLETE events and automatically distributes
-        exported NPZ files to all training-capable cluster nodes.
+        As of December 26, 2025, this daemon is superseded by the unified
+        distribution daemon (MODEL_DISTRIBUTION) which handles both model
+        and NPZ distribution.
 
-        Subscribes to:
-            - NPZ_EXPORT_COMPLETE: Triggered after training data export
-
-        Emits:
-            - NPZ_DISTRIBUTION_COMPLETE: After successful distribution
+        This factory now redirects to UnifiedDistributionDaemon for
+        backward compatibility.
         """
-        try:
-            from app.coordination.npz_distribution_daemon import NPZDistributionDaemon
+        import warnings
 
-            daemon = NPZDistributionDaemon()
+        warnings.warn(
+            "NPZ_DISTRIBUTION daemon is deprecated. Use MODEL_DISTRIBUTION instead. "
+            "UnifiedDistributionDaemon handles both model and NPZ distribution.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.info(
+            "[DaemonManager] NPZ_DISTRIBUTION redirected to UnifiedDistributionDaemon"
+        )
+
+        try:
+            from app.coordination.unified_distribution_daemon import (
+                UnifiedDistributionDaemon,
+            )
+
+            daemon = UnifiedDistributionDaemon()
             await daemon.start()
 
+            while daemon.is_running():
+                await asyncio.sleep(10)
+
         except ImportError as e:
-            logger.error(f"NPZDistributionDaemon not available: {e}")
+            logger.error(f"UnifiedDistributionDaemon not available: {e}")
             raise
 
     async def _create_orphan_detection(self) -> None:
@@ -2961,7 +2979,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
     # Coordinator node profile - runs on central MacBook
     "coordinator": [
         DaemonType.EVENT_ROUTER,
-        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
+        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
         DaemonType.P2P_BACKEND,
         DaemonType.TOURNAMENT_DAEMON,
         DaemonType.MODEL_DISTRIBUTION,
@@ -2983,7 +3001,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.NODE_RECOVERY,  # Phase 21: Auto-recover terminated nodes
         DaemonType.LAMBDA_IDLE,  # Dec 2025: Auto-terminate idle Lambda nodes (suspended - keep for restoration)
         DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
-        # NOTE: CURRICULUM_INTEGRATION removed - not registered in factory (Dec 26, 2025)
+        DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
@@ -2991,13 +3009,13 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.AUTO_SYNC,  # Dec 2025: CRITICAL - Pull game data from remote nodes
         DaemonType.CLUSTER_DATA_SYNC,  # Dec 2025: Cluster-wide data distribution
         DaemonType.CLUSTER_WATCHDOG,  # Dec 2025: Self-healing cluster utilization
-        # NOTE: METRICS_ANALYSIS removed - not registered in factory (Dec 26, 2025)
+        DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
     ],
 
     # Training node profile - runs on GPU nodes
     "training_node": [
         DaemonType.EVENT_ROUTER,
-        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
+        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
         DaemonType.DATA_PIPELINE,
         DaemonType.CONTINUOUS_TRAINING_LOOP,
         DaemonType.AUTO_SYNC,
@@ -3006,14 +3024,14 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.QUALITY_MONITOR,  # Monitor local selfplay quality
         DaemonType.ORPHAN_DETECTION,  # Detect local orphaned databases
         DaemonType.UNIFIED_PROMOTION,  # Phase 18.4: Auto-promote models after evaluation
-        # NOTE: P2P_AUTO_DEPLOY removed - not registered in factory (Dec 26, 2025)
+        DaemonType.P2P_AUTO_DEPLOY,  # Phase 21.2: Ensure P2P runs on recovered nodes
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
         DaemonType.UTILIZATION_OPTIMIZER,  # Phase 4: Match GPU capabilities to workloads
-        # NOTE: CURRICULUM_INTEGRATION removed - not registered in factory (Dec 26, 2025)
+        DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for local self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.FEEDBACK_LOOP,  # Phase 21.2: Orchestrate all feedback signals
-        # NOTE: METRICS_ANALYSIS removed - not registered in factory (Dec 26, 2025)
+        DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
         DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
     ],
 
@@ -3021,7 +3039,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
     # Phase 21.2: Expanded from 4 to 9 daemons for better data safety & observability
     "ephemeral": [
         DaemonType.EVENT_ROUTER,
-        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
+        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
         DaemonType.EPHEMERAL_SYNC,
         DaemonType.DATA_PIPELINE,
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
@@ -3034,7 +3052,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
     # Selfplay-only profile - just generates games
     "selfplay": [
         DaemonType.EVENT_ROUTER,
-        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
+        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
         DaemonType.AUTO_SYNC,
         DaemonType.QUALITY_MONITOR,  # Monitor quality to trigger throttling feedback
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
