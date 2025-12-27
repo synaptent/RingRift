@@ -63,7 +63,7 @@ class TestSearchEngineModes:
         """Test SEARCH_ENGINE_MODES contains expected modes."""
         expected = {"maxn", "brs", "mcts", "gumbel-mcts",
                    "policy-only", "nn-descent", "nn-minimax"}
-        assert JobManager.SEARCH_ENGINE_MODES == expected
+        assert expected == JobManager.SEARCH_ENGINE_MODES
 
     def test_heuristic_not_in_search_modes(self):
         """Test heuristic modes are NOT search modes."""
@@ -366,7 +366,12 @@ class TestSelfplayJobExecution:
             (ai_service / "run_gpu_selfplay.py").write_text("# gpu mock")
             (ai_service / "run_hybrid_selfplay.py").write_text("# hybrid mock")
 
-            with patch('asyncio.create_subprocess_exec') as mock_exec:
+            # Mock GPU availability to prevent fallback to heuristic-only
+            mock_torch = MagicMock()
+            mock_torch.cuda.is_available.return_value = True
+            with patch('asyncio.create_subprocess_exec') as mock_exec, \
+                 patch.dict("sys.modules", {"torch": mock_torch}):
+
                 mock_proc = AsyncMock()
                 mock_proc.pid = 12345
                 mock_proc.communicate = AsyncMock(return_value=(b"", b""))
@@ -468,6 +473,11 @@ class TestTournamentMethods:
             status = "pending"
             completed_matches = 0
             worker_nodes = []
+            models = ["model1.pth", "model2.pth"]  # At least 2 models required
+            total_matches = 0
+            games_per_pair = 10
+            board_type = "hex8"
+            num_players = 2
 
         tournament_state = {"tourney1": MockState()}
 

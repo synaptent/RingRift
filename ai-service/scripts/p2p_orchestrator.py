@@ -4432,8 +4432,7 @@ class P2POrchestrator(
                     if result is None:
                         job.status = "failed"
                         job.error_message = last_err or "sync_pull_failed"
-                        if self.current_sync_plan:
-                            self.current_sync_plan.jobs_failed += 1
+                        # Note: SyncPlanner tracks jobs_failed count
                         return False
 
             ok = bool(result.get("success"))
@@ -4444,11 +4443,7 @@ class P2POrchestrator(
             if not ok:
                 job.error_message = str(result.get("error") or "Unknown error")
 
-            if self.current_sync_plan:
-                if ok:
-                    self.current_sync_plan.jobs_completed += 1
-                else:
-                    self.current_sync_plan.jobs_failed += 1
+            # Note: SyncPlanner tracks jobs_completed/jobs_failed counts
 
             if ok:
                 logger.info(f"Sync job {job.job_id[:8]} completed: {job.source_node} -> {job.target_node}")
@@ -4461,8 +4456,7 @@ class P2POrchestrator(
             job.status = "failed"
             job.error_message = str(e)
             job.completed_at = time.time()
-            if self.current_sync_plan:
-                self.current_sync_plan.jobs_failed += 1
+            # Note: SyncPlanner tracks jobs_failed count
             logger.info(f"Sync job {job.job_id[:8]} failed: {e}")
             return False
 
@@ -9952,35 +9946,9 @@ print(json.dumps(result))
     # Use self.training_coordinator.check_training_readiness() instead.
     # See scripts/p2p/managers/training_coordinator.py for implementation.
 
-    def _find_running_training_job(self, job_type: str, config_key: str) -> TrainingJob | None:
-        """Find a running training job of the given type for the config."""
-        with self.training_lock:
-            for job in self.training_jobs.values():
-                if (job.job_type == job_type and
-                    f"{job.board_type}_{job.num_players}p" == config_key and
-                    job.status in ("pending", "queued", "running")):
-                    return job
-        return None
-
-    def _find_resumable_training_job(self, job_type: str, config_key: str) -> TrainingJob | None:
-        """Find a failed/interrupted training job with a valid checkpoint.
-
-        TRAINING CHECKPOINTING: When a training job fails or is interrupted,
-        this function finds it if it has a valid checkpoint that can be resumed.
-
-        Returns:
-            TrainingJob with valid checkpoint, or None
-        """
-        with self.training_lock:
-            for job in self.training_jobs.values():
-                if (job.job_type == job_type and
-                    f"{job.board_type}_{job.num_players}p" == config_key and
-                    job.status == "failed" and
-                    job.checkpoint_path and
-                    job.checkpoint_epoch > 0):
-                    # Found a failed job with checkpoint
-                    return job
-        return None
+    # NOTE: _find_running_training_job() and _find_resumable_training_job() removed Dec 2025 (29 LOC).
+    # Use self.training_coordinator.find_running_training_job() and
+    # self.training_coordinator.find_resumable_training_job() instead.
 
     # NOTE: _dispatch_training_job() removed Dec 2025 (9 LOC).
     # Use self.training_coordinator.dispatch_training_job() directly.
@@ -10092,7 +10060,7 @@ print(json.dumps(result))
                 continue
 
             # Check if we already have a running training job for this config
-            existing_job = self._find_running_training_job("nnue", config_key)
+            existing_job = self.training_coordinator.find_running_training_job("nnue", config_key)
             if existing_job:
                 continue
 

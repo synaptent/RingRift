@@ -421,6 +421,57 @@ for rec in recommendations:
         await execute_priority_sync(rec)
 ```
 
+## Module Dependencies
+
+### Optional Import Patterns
+
+Many coordination modules use graceful degradation for optional dependencies. These modules import
+optional features inside functions with `except ImportError: pass` to allow operation in minimal
+environments.
+
+| Module                               | Optional Dependency                                          | Purpose                   |
+| ------------------------------------ | ------------------------------------------------------------ | ------------------------- |
+| `event_router.py`                    | `tracing`                                                    | Distributed trace logging |
+| `sync_router.py`                     | Various sync modules                                         | Advanced sync features    |
+| `distributed_lock.py`                | `event_router`                                               | Lock acquisition events   |
+| `maintenance_daemon.py`              | `cluster_manifest`, `work_queue`                             | Advanced cleanup          |
+| `resource_monitoring_coordinator.py` | `event_router`                                               | Backpressure events       |
+| `curriculum_integration.py`          | `pfsp`, `feedback_loop_controller`, `temperature_scheduling` | Curriculum features       |
+| `feedback_loop_controller.py`        | `temperature_scheduling`, event system                       | Scheduler wiring          |
+
+**Example pattern:**
+
+```python
+def my_function():
+    try:
+        from app.coordination.event_router import emit
+        emit("MY_EVENT", data)
+    except ImportError:
+        pass  # Event system not available, continue without emitting
+```
+
+This allows modules to function in:
+
+- Minimal environments without full coordination stack
+- Unit tests with mocked dependencies
+- Cluster nodes with reduced installations
+
+### Async Exception Handling
+
+Standard patterns for async task lifecycle:
+
+```python
+# Task cancellation (expected when shutting down)
+except asyncio.CancelledError:
+    pass
+
+# Task state checks (expected during cleanup)
+except asyncio.InvalidStateError:
+    pass
+```
+
+These are **not** error conditions but normal async lifecycle states.
+
 ## Environment Variables
 
 | Variable                            | Default                                  | Description                           |

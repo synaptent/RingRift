@@ -354,6 +354,38 @@ def _init_selfplay_orchestrator() -> BootstrapCoordinatorStatus:
     return status
 
 
+def _init_selfplay_scheduler() -> BootstrapCoordinatorStatus:
+    """Initialize SelfplayScheduler and wire its event subscriptions.
+
+    December 2025: Ensures SelfplayScheduler receives feedback events:
+    - SELFPLAY_COMPLETE: Updates config completion counts
+    - TRAINING_COMPLETE: Adjusts priority based on training outcomes
+    - ELO_VELOCITY_CHANGED: Modifies allocation based on momentum
+    - QUALITY_DEGRADED: Triggers exploration boost
+    - NODE_UNHEALTHY/NODE_RECOVERED: Adjusts cluster capacity
+    """
+    status = BootstrapCoordinatorStatus(name="selfplay_scheduler")
+    try:
+        from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+        scheduler = get_selfplay_scheduler()
+        # subscribe_to_events() is called in get_selfplay_scheduler()
+        # but we verify the subscription state here
+        status.initialized = scheduler is not None
+        status.subscribed = getattr(scheduler, '_subscribed', False)
+        status.initialized_at = datetime.now()
+        logger.info("[Bootstrap] SelfplayScheduler initialized and subscribed to events")
+
+    except ImportError as e:
+        status.error = f"Import error: {e}"
+        logger.warning(f"[Bootstrap] SelfplayScheduler not available: {e}")
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        status.error = str(e)
+        logger.error(f"[Bootstrap] Failed to initialize SelfplayScheduler: {e}")
+
+    return status
+
+
 def _init_pipeline_orchestrator(
     auto_trigger: bool = False,
     training_epochs: int | None = None,
@@ -412,7 +444,7 @@ def _init_sync_coordinator() -> BootstrapCoordinatorStatus:
     """Initialize SyncCoordinator (SyncScheduler) and SyncRouter."""
     status = BootstrapCoordinatorStatus(name="sync_coordinator")
     try:
-        from app.coordination.sync_coordinator import wire_sync_events
+        from app.coordination.cluster.sync import wire_sync_events
 
         coordinator = wire_sync_events()
         status.initialized = True
@@ -936,7 +968,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # 3. Wire SELFPLAY_COMPLETE to SyncCoordinator (for auto-trigger sync)
     try:
         from app.coordination.event_router import DataEventType, get_event_bus
-        from app.coordination.sync_coordinator import get_sync_scheduler
+        from app.coordination.cluster.sync import get_sync_scheduler
 
         sync_coord = get_sync_scheduler()
         bus = get_event_bus()
@@ -1374,6 +1406,7 @@ def bootstrap_coordination(
         ("queue_populator", enable_queue, _init_queue_populator),
         # Selfplay layer (depends on task_lifecycle, resources)
         ("selfplay_orchestrator", enable_selfplay, _init_selfplay_orchestrator),
+        ("selfplay_scheduler", enable_selfplay, _init_selfplay_scheduler),  # Dec 2025: Feedback loop
         # Pipeline layer (depends on selfplay, cache)
         ("pipeline_orchestrator", enable_pipeline, lambda: _init_pipeline_orchestrator(
             pipeline_auto_trigger, training_epochs, training_batch_size, training_model_version
@@ -1536,7 +1569,7 @@ def shutdown_coordination() -> dict[str, Any]:
                 from app.coordination.task_lifecycle_coordinator import get_task_lifecycle_coordinator
                 coordinator = get_task_lifecycle_coordinator()
             elif name == "sync_coordinator":
-                from app.coordination.sync_coordinator import get_sync_scheduler
+                from app.coordination.cluster.sync import get_sync_scheduler
                 coordinator = get_sync_scheduler()
             elif name == "training_coordinator":
                 from app.coordination.training_coordinator import get_training_coordinator

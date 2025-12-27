@@ -18,6 +18,16 @@
 
 ## Core Workflows
 
+### Automation / Orchestration
+
+```bash
+# Canonical automation entry point
+python scripts/master_loop.py --config config/unified_loop.yaml
+
+# Watch status without starting the loop
+python scripts/master_loop.py --watch
+```
+
 ### Training Pipeline
 
 ```bash

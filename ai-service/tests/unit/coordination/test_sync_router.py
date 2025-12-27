@@ -489,3 +489,138 @@ class TestEdgeCases:
 
         # Should fall back to manifest policy
         mock_manifest.can_receive_data.assert_called()
+
+
+class TestEventHandlers:
+    """Tests for SyncRouter event handlers (Dec 2025 P2P integration)."""
+
+    @pytest.mark.asyncio
+    async def test_on_host_online_adds_new_node(self, router, mock_manifest):
+        """Test HOST_ONLINE event adds new node to capabilities."""
+        event = MagicMock()
+        event.payload = {"host": "new-node-xyz"}
+
+        await router._on_host_online(event)
+
+        cap = router.get_node_capability("new-node-xyz")
+        assert cap is not None
+        assert cap.node_id == "new-node-xyz"
+        assert cap.can_receive_games is True
+
+    @pytest.mark.asyncio
+    async def test_on_host_online_ignores_existing_node(self, router, mock_manifest):
+        """Test HOST_ONLINE doesn't overwrite existing capabilities."""
+        # Modify existing node
+        existing_cap = router.get_node_capability("lambda-gh200-a")
+        original_priority = existing_cap.is_priority_node
+
+        event = MagicMock()
+        event.payload = {"host": "lambda-gh200-a"}
+
+        await router._on_host_online(event)
+
+        # Should not have changed
+        cap = router.get_node_capability("lambda-gh200-a")
+        assert cap.is_priority_node == original_priority
+
+    @pytest.mark.asyncio
+    async def test_on_host_offline_disables_receive(self, router, mock_manifest):
+        """Test HOST_OFFLINE event disables data reception."""
+        event = MagicMock()
+        event.payload = {"host": "lambda-gh200-b"}
+
+        await router._on_host_offline(event)
+
+        cap = router.get_node_capability("lambda-gh200-b")
+        assert cap.can_receive_games is False
+        assert cap.can_receive_models is False
+        assert cap.can_receive_npz is False
+
+    @pytest.mark.asyncio
+    async def test_on_training_started_marks_priority(self, router, mock_manifest):
+        """Test TRAINING_STARTED event marks node as training priority."""
+        event = MagicMock()
+        event.payload = {"node_id": "lambda-gh200-b"}
+
+        await router._on_training_started(event)
+
+        cap = router.get_node_capability("lambda-gh200-b")
+        assert cap.is_training_node is True
+        assert cap.is_priority_node is True
+
+    @pytest.mark.asyncio
+    async def test_on_cluster_capacity_changed_refresh(self, router, mock_manifest):
+        """Test CLUSTER_CAPACITY_CHANGED refreshes capacity data."""
+        event = MagicMock()
+        event.payload = {
+            "change_type": "node_joined",
+            "node_id": "new-gpu-node",
+            "total_nodes": 10,
+            "gpu_nodes": 8,
+        }
+
+        # Should not raise
+        await router._on_cluster_capacity_changed(event)
+
+    @pytest.mark.asyncio
+    async def test_on_new_games_available_routing(self, router, mock_manifest):
+        """Test NEW_GAMES_AVAILABLE event triggers routing."""
+        mock_manifest.can_receive_data.return_value = True
+        router.node_id = "mac-studio"
+
+        event = MagicMock()
+        event.payload = {
+            "count": 100,
+            "source": "vast-5090",
+        }
+
+        # Should not raise
+        await router._on_new_games_available(event)
+
+    @pytest.mark.asyncio
+    async def test_event_handlers_graceful_on_invalid_payload(self, router, mock_manifest):
+        """Test event handlers don't crash on malformed payloads."""
+        event = MagicMock()
+        event.payload = {}  # Missing required fields
+
+        # All handlers should handle gracefully
+        await router._on_host_online(event)
+        await router._on_host_offline(event)
+        await router._on_training_started(event)
+        await router._on_new_games_available(event)
+        await router._on_cluster_capacity_changed(event)
+
+    def test_wire_to_event_router_graceful_without_router(self, router):
+        """Test wire_to_event_router handles missing event router."""
+        # Patch the actual import location used inside wire_to_event_router
+        with patch.dict('sys.modules', {'app.coordination.event_router': None}):
+            # Should not raise, just log warning
+            router.wire_to_event_router()
+
+
+class TestRefreshCapacity:
+    """Tests for capacity refresh functionality (Dec 2025)."""
+
+    def test_refresh_all_capacity(self, router, mock_manifest):
+        """Test refreshing all node capacity from manifest."""
+        mock_manifest.get_node_capacity.return_value = NodeCapacity(
+            node_id="lambda-gh200-a",
+            total_bytes=1_000_000_000,
+            used_bytes=500_000_000,
+            free_bytes=500_000_000,
+            usage_percent=50.0,
+        )
+
+        # Method is refresh_all_capacity, not refresh_node_capacity
+        router.refresh_all_capacity()
+
+        # Should have called manifest for each node
+        cap = router.get_node_capability("lambda-gh200-a")
+        assert cap is not None
+
+    def test_refresh_capacity_handles_missing_nodes(self, router, mock_manifest):
+        """Test refresh handles nodes not in manifest gracefully."""
+        mock_manifest.get_node_capacity.return_value = None
+
+        # Should not raise
+        router.refresh_all_capacity()

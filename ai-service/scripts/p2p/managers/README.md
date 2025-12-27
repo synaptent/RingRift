@@ -303,36 +303,30 @@ The managers module is part of the ongoing P2P orchestrator decomposition:
 
 ---
 
-## Delegation Status (December 2025)
+## Delegation Status (Updated Dec 27, 2025)
 
-While managers are **extracted** (code exists), not all are **delegated** (called by orchestrator).
-~1,600 LOC of duplicate code remains in `p2p_orchestrator.py`.
+~1,231 LOC removed from `p2p_orchestrator.py` during Dec 27 cleanup.
 
-| Manager             | Methods Delegated | Methods Available | LOC Savings | Priority |
-| ------------------- | ----------------- | ----------------- | ----------- | -------- |
-| StateManager        | 7/7 (100%)        | 7                 | ~200        | Done     |
-| NodeSelector        | 0/8 (0%)          | 8                 | ~160        | Medium   |
-| SelfplayScheduler   | 2/6 (33%)         | 6                 | ~280        | High     |
-| TrainingCoordinator | 1/8 (12%)         | 8                 | ~350        | Critical |
-| JobManager          | 0/7 (0%)          | 7                 | ~290        | Critical |
-| SyncPlanner         | 0/4 (0%)          | 4                 | ~390        | High     |
+| Manager             | Methods Delegated | Status      | LOC Removed | Notes                         |
+| ------------------- | ----------------- | ----------- | ----------- | ----------------------------- |
+| StateManager        | 7/7 (100%)        | ✅ Complete | ~200        | All delegated                 |
+| NodeSelector        | 6/6 (100%)        | ✅ Complete | ~50         | All wrappers removed          |
+| TrainingCoordinator | 5/5 (100%)        | ✅ Complete | ~450        | All wrappers removed          |
+| JobManager          | 7/7 (100%)        | ✅ Complete | ~400        | All wrappers removed          |
+| SelfplayScheduler   | 3/6 (50%)         | ⚠️ Partial  | ~200        | Some targeting methods active |
+| SyncPlanner         | 2/4 (50%)         | ⚠️ Partial  | ~60         | `_execute_sync_plan` active   |
 
-**Currently delegated**:
+**Dec 27 Cleanup Highlights**:
 
-- `SelfplayScheduler.pick_weighted_config()` - used in `_spawn_selfplay_tasks()`
-- `TrainingCoordinator.check_training_readiness()` - used in training loop
+- Removed `_dispatch_training_job`, `_handle_training_job_completion`, `_schedule_model_comparison_tournament`, `_run_post_training_gauntlet` (→ TrainingCoordinator)
+- Removed `_run_gpu_selfplay_job`, `_run_distributed_tournament`, `_run_distributed_selfplay`, `_export_training_data`, `_run_training`, `_cleanup_old_completed_jobs` (→ JobManager)
+- Removed `_get_hybrid_job_targets`, `_pick_weighted_selfplay_config`, `_get_elo_based_priority_boost` (→ SelfplayScheduler)
+- Migrated 5 background loops to LoopManager (`_elo_sync_loop`, `_idle_detection_loop`, `_auto_scaling_loop`, `_job_reaper_loop`, `_queue_populator_loop`)
 
-**Not delegated** (have deprecation docstrings):
+**Remaining partial delegation** (scheduled for Q2 2026):
 
-- `_track_selfplay_diversity()` → `SelfplayScheduler.track_diversity()`
-- `_get_diversity_metrics()` → `SelfplayScheduler.get_diversity_metrics()`
-- `_run_distributed_selfplay()` → `JobManager.run_distributed_selfplay()`
-- `_run_local_selfplay()` → `JobManager.run_local_selfplay()`
-- `_run_training()` → `TrainingCoordinator.dispatch_training_job()`
-- `_collect_local_data_manifest()` → `SyncPlanner.collect_local_manifest()`
-- `_plan_data_sync()` → `SyncPlanner.generate_sync_plan()`
-
-**Scheduled for removal**: Q2 2026
+- `_execute_sync_plan()` → `SyncPlanner.execute_sync()`
+- `_get_selfplay_targeting()` → `SelfplayScheduler.get_targeting()`
 
 ### Migration Path
 
@@ -385,7 +379,26 @@ python3 -c "from scripts.p2p.managers import StateManager, NodeSelector, SyncPla
 
 ### Unit Testing
 
-Each manager can be tested in isolation using mock callbacks:
+Each manager has dedicated unit tests in `tests/unit/p2p/`:
+
+| Test File               | Tests | Coverage                                   |
+| ----------------------- | ----- | ------------------------------------------ |
+| `test_state_manager.py` | 35    | SQLite persistence, cluster epoch, job ops |
+| `test_node_selector.py` | 38    | GPU/CPU ranking, filtering, selection      |
+| `test_job_manager.py`   | 30    | Job spawning, lifecycle, script selection  |
+| `test_loops.py`         | 50+   | Loop management, LoopManager integration   |
+
+**Running tests**:
+
+```bash
+# All P2P manager tests
+PYTHONPATH=. python3 -m pytest tests/unit/p2p/ -v
+
+# Specific manager
+PYTHONPATH=. python3 -m pytest tests/unit/p2p/test_node_selector.py -v
+```
+
+**Test Pattern Example**:
 
 ```python
 from scripts.p2p.managers import NodeSelector
@@ -406,6 +419,25 @@ selector = NodeSelector(
 # Test ranking
 nodes = selector.get_training_primary_nodes(count=5)
 assert len(nodes) == 1
+```
+
+**Async Test Pattern** (for async methods):
+
+```python
+import pytest
+from unittest.mock import AsyncMock, patch
+
+@pytest.mark.asyncio
+async def test_run_gpu_selfplay_job():
+    mgr = JobManager(...)
+
+    with patch('asyncio.create_subprocess_exec') as mock_exec:
+        mock_proc = AsyncMock()
+        mock_proc.pid = 12345
+        mock_exec.return_value = mock_proc
+
+        await mgr.run_gpu_selfplay_job(...)
+        assert mock_exec.called
 ```
 
 ---

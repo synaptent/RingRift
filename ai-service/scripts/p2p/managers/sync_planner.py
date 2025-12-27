@@ -605,12 +605,14 @@ class SyncPlanner:
         self,
         plan: "ClusterSyncPlan | None" = None,
         execute_job_callback: Callable[["DataSyncJob"], bool] | None = None,
+        execute_job_callback_async: Callable[["DataSyncJob"], Any] | None = None,
     ) -> dict[str, Any]:
         """Execute the sync plan by dispatching jobs.
 
         Args:
             plan: Optional plan to execute (uses current if None)
-            execute_job_callback: Callback to execute a single sync job
+            execute_job_callback: Sync callback to execute a single sync job
+            execute_job_callback_async: Async callback (preferred for network calls)
 
         Returns:
             Dict with execution results
@@ -661,7 +663,12 @@ class SyncPlanner:
             for target_node, jobs in jobs_by_target.items():
                 for job in jobs:
                     try:
-                        if execute_job_callback:
+                        success = False
+                        if execute_job_callback_async:
+                            # Async callback (preferred for network operations)
+                            success = await execute_job_callback_async(job)
+                        elif execute_job_callback:
+                            # Sync callback
                             success = execute_job_callback(job)
                         else:
                             # Default: mark as pending for external execution
@@ -669,12 +676,15 @@ class SyncPlanner:
                             success = True  # Will be executed externally
 
                         if success:
-                            job.status = "completed"
-                            job.completed_at = time.time()
+                            # Only set completed if not already set by callback
+                            if job.status != "completed":
+                                job.status = "completed"
+                                job.completed_at = time.time()
                             results["jobs_completed"] += 1
                             self.stats.sync_jobs_completed += 1
                         else:
-                            job.status = "failed"
+                            if job.status != "failed":
+                                job.status = "failed"
                             results["jobs_failed"] += 1
                             self.stats.sync_jobs_failed += 1
 

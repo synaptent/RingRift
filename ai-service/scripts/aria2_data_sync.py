@@ -120,28 +120,18 @@ def _load_hosts_from_config():
         print("[Script] Warning: No config found")
         return []
     try:
-        from app.sync.cluster_hosts import load_hosts_config
-        config = load_hosts_config()
+        from app.config.cluster_config import get_active_nodes
+        nodes = get_active_nodes()
     except (ImportError, ModuleNotFoundError):
-        config = {}
+        nodes = []
 
     try:
         # Extract hosts with data servers (prefer Tailscale IPs)
         sources = []
-        for _name, host_config in config.get("hosts", {}).items():
-            if host_config.get("status") == "terminated":
-                continue
-
-            data_url = host_config.get("data_server_url")
-            if data_url:
-                sources.append(data_url)
-                continue
-
-            ip = host_config.get("tailscale_ip") or host_config.get("ssh_host")
-            port = host_config.get("data_server_port", DEFAULT_DATA_PORT)
-            if ip:
-                host = ip.split("@", 1)[1] if "@" in ip else ip
-                sources.append(f"http://{host}:{port}")
+        for node in nodes:
+            base_url = node.data_server_base_url
+            if base_url:
+                sources.append(base_url)
 
         return sources
     except Exception as e:

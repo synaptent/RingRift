@@ -800,3 +800,245 @@ def verify_transfer(
         return False
 
     return local_checksum == remote_checksum
+
+
+def chunked_push(
+    local_path: str | Path,
+    host: str,
+    port: int,
+    remote_path: str,
+    config: TransferConfig,
+    chunk_size_mb: int = 5,
+) -> TransferResult:
+    """Push a large file in chunks for flaky connections.
+
+    This function splits a large file into smaller chunks, transfers each
+    chunk separately with retries, then reassembles on the remote end.
+    Each chunk can succeed independently, making this robust for unstable
+    connections that reset during large transfers.
+
+    Keywords for searchability:
+    - split file into chunks
+    - chunked upload / chunked push
+    - reassemble file on remote
+    - flaky connection transfer
+    - unstable network transfer
+    - connection reset recovery
+    - large file transfer
+    - firewall-friendly transfer
+
+    See also:
+    - scripts/cluster_file_sync.py:chunked_transfer - more feature-rich version
+    - app/distributed/resilient_transfer.py - BitTorrent/aria2 multi-transport
+
+    Args:
+        local_path: Local file path
+        host: Remote hostname
+        port: SSH port
+        remote_path: Destination path on remote
+        config: Transfer configuration
+        chunk_size_mb: Size of each chunk in MB (default 5MB)
+
+    Returns:
+        TransferResult with operation details
+
+    Example:
+        result = chunked_push(
+            "models/large_model.pth",
+            "cluster-node",
+            22,
+            "/data/models/",
+            TransferConfig(ssh_key="~/.ssh/id_rsa"),
+            chunk_size_mb=5,
+        )
+    """
+    import tempfile
+
+    local_path = Path(local_path)
+    if not local_path.exists():
+        return TransferResult(
+            success=False,
+            error=f"Local file not found: {local_path}",
+            method="chunked_push",
+            source=str(local_path),
+            destination=f"{host}:{remote_path}",
+        )
+
+    file_size = local_path.stat().st_size
+    chunk_size = chunk_size_mb * 1024 * 1024
+    start_time = time.time()
+
+    # For small files, just use regular SCP
+    if file_size <= chunk_size:
+        result = scp_push(local_path, host, port, remote_path, config)
+        result.method = "chunked_push (single)"
+        return result
+
+    # Calculate number of chunks
+    num_chunks = (file_size + chunk_size - 1) // chunk_size
+    logger.info(f"Splitting {local_path.name} ({file_size / 1024 / 1024:.1f}MB) into {num_chunks} chunks")
+
+    # Create temp directory for chunks
+    with tempfile.TemporaryDirectory(prefix="chunked_transfer_") as temp_dir:
+        temp_path = Path(temp_dir)
+        chunk_files = []
+
+        # Split file into chunks
+        with open(local_path, "rb") as f:
+            for i in range(num_chunks):
+                chunk_name = f"{local_path.stem}.chunk{i:04d}"
+                chunk_path = temp_path / chunk_name
+                chunk_data = f.read(chunk_size)
+                with open(chunk_path, "wb") as cf:
+                    cf.write(chunk_data)
+                chunk_files.append(chunk_path)
+
+        # Create manifest with checksums
+        manifest = {
+            "filename": local_path.name,
+            "total_size": file_size,
+            "num_chunks": num_chunks,
+            "chunk_size": chunk_size,
+            "checksum": compute_checksum(local_path),
+            "chunks": [],
+        }
+
+        for i, chunk_path in enumerate(chunk_files):
+            manifest["chunks"].append({
+                "index": i,
+                "name": chunk_path.name,
+                "size": chunk_path.stat().st_size,
+                "checksum": compute_checksum(chunk_path),
+            })
+
+        # Write manifest
+        manifest_path = temp_path / f"{local_path.stem}.manifest"
+        import json
+        with open(manifest_path, "w") as mf:
+            json.dump(manifest, mf, indent=2)
+
+        # Determine remote temp directory
+        remote_basename = Path(remote_path.rstrip("/")).name if not remote_path.endswith("/") else local_path.name
+        remote_temp_dir = f"/tmp/chunked_{remote_basename}_{int(time.time())}"
+
+        # Create remote temp directory
+        ssh_opts = config.get_ssh_options()
+        ssh_cmd = ["ssh"] + ssh_opts + ["-p", str(port), f"{config.ssh_user}@{host}", f"mkdir -p {remote_temp_dir}"]
+        try:
+            subprocess.run(ssh_cmd, capture_output=True, timeout=30)
+        except Exception as e:
+            return TransferResult(
+                success=False,
+                error=f"Failed to create remote temp dir: {e}",
+                method="chunked_push",
+                source=str(local_path),
+                destination=f"{host}:{remote_path}",
+            )
+
+        # Transfer manifest first
+        manifest_result = scp_push(manifest_path, host, port, f"{remote_temp_dir}/", config)
+        if not manifest_result.success:
+            return TransferResult(
+                success=False,
+                error=f"Failed to transfer manifest: {manifest_result.error}",
+                method="chunked_push",
+                source=str(local_path),
+                destination=f"{host}:{remote_path}",
+            )
+
+        # Transfer each chunk with retries
+        bytes_transferred = 0
+        for i, chunk_path in enumerate(chunk_files):
+            logger.info(f"Transferring chunk {i + 1}/{num_chunks}")
+            chunk_result = scp_push(chunk_path, host, port, f"{remote_temp_dir}/", config)
+            if not chunk_result.success:
+                # Clean up remote temp dir
+                cleanup_cmd = ["ssh"] + ssh_opts + ["-p", str(port), f"{config.ssh_user}@{host}", f"rm -rf {remote_temp_dir}"]
+                subprocess.run(cleanup_cmd, capture_output=True, timeout=30)
+
+                return TransferResult(
+                    success=False,
+                    error=f"Failed to transfer chunk {i}: {chunk_result.error}",
+                    method="chunked_push",
+                    source=str(local_path),
+                    destination=f"{host}:{remote_path}",
+                    bytes_transferred=bytes_transferred,
+                )
+            bytes_transferred += chunk_result.bytes_transferred
+
+        # Reassemble on remote
+        final_remote_path = remote_path if not remote_path.endswith("/") else f"{remote_path}{local_path.name}"
+        reassemble_script = f'''
+import json
+import os
+import hashlib
+
+manifest_path = "{remote_temp_dir}/{local_path.stem}.manifest"
+with open(manifest_path) as f:
+    manifest = json.load(f)
+
+output_path = "{final_remote_path}"
+os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+with open(output_path, "wb") as out:
+    for chunk in manifest["chunks"]:
+        chunk_path = "{remote_temp_dir}/" + chunk["name"]
+        with open(chunk_path, "rb") as cf:
+            out.write(cf.read())
+
+# Verify checksum
+hasher = hashlib.md5()
+with open(output_path, "rb") as f:
+    for chunk in iter(lambda: f.read(8192), b""):
+        hasher.update(chunk)
+
+if hasher.hexdigest() == manifest["checksum"]:
+    print("OK")
+else:
+    print("CHECKSUM_MISMATCH")
+    os.remove(output_path)
+'''
+
+        reassemble_cmd = ["ssh"] + ssh_opts + ["-p", str(port), f"{config.ssh_user}@{host}", f"python3 -c '{reassemble_script}'"]
+        try:
+            result = subprocess.run(reassemble_cmd, capture_output=True, text=True, timeout=120)
+            if "OK" in result.stdout:
+                # Clean up remote temp dir
+                cleanup_cmd = ["ssh"] + ssh_opts + ["-p", str(port), f"{config.ssh_user}@{host}", f"rm -rf {remote_temp_dir}"]
+                subprocess.run(cleanup_cmd, capture_output=True, timeout=30)
+
+                duration = time.time() - start_time
+                return TransferResult(
+                    success=True,
+                    bytes_transferred=file_size,
+                    duration_seconds=duration,
+                    method="chunked_push",
+                    source=str(local_path),
+                    destination=f"{host}:{remote_path}",
+                    checksum_verified=True,
+                )
+            else:
+                error = "Checksum mismatch after reassembly" if "CHECKSUM_MISMATCH" in result.stdout else result.stderr
+                return TransferResult(
+                    success=False,
+                    error=error,
+                    method="chunked_push",
+                    source=str(local_path),
+                    destination=f"{host}:{remote_path}",
+                )
+        except Exception as e:
+            return TransferResult(
+                success=False,
+                error=f"Reassembly failed: {e}",
+                method="chunked_push",
+                source=str(local_path),
+                destination=f"{host}:{remote_path}",
+            )
+
+    return TransferResult(
+        success=False,
+        error="Unknown error",
+        method="chunked_push",
+        source=str(local_path),
+        destination=f"{host}:{remote_path}",
+    )

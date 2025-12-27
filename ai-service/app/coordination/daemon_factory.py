@@ -249,8 +249,8 @@ def _build_registry() -> dict[str, DaemonSpec]:
             class_name="IdleResourceDaemon",
         ),
         DaemonType.QUEUE_POPULATOR.name: DaemonSpec(
-            import_path="app.coordination.queue_populator_daemon",
-            class_name="QueuePopulatorDaemon",
+            import_path="app.coordination.unified_queue_populator",
+            class_name="UnifiedQueuePopulator",
         ),
         DaemonType.NODE_RECOVERY.name: DaemonSpec(
             import_path="app.coordination.node_recovery_daemon",

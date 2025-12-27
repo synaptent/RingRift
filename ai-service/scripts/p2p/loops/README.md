@@ -16,11 +16,24 @@ All loops inherit from `BaseLoop`, which provides:
 ```
 BaseLoop (abstract)
     │
-    ├── QueuePopulatorLoop    - Maintains work queue depth (leader only)
-    ├── IdleDetectionLoop     - Detects idle nodes (TODO)
-    ├── AutoScalingLoop       - Auto-scales cluster (TODO)
-    ├── ModelSyncLoop         - Syncs models across nodes (TODO)
-    └── TailscalePeerRecoveryLoop - Recovers Tailscale peers (TODO)
+    ├── QueuePopulatorLoop       - Maintains work queue depth (leader only)
+    ├── EloSyncLoop              - Keeps unified_elo.db consistent across cluster
+    │
+    ├── Coordination Loops (coordination_loops.py)
+    │   ├── AutoScalingLoop      - Scales cluster based on work queue depth
+    │   └── HealthAggregationLoop - Aggregates health metrics from all nodes
+    │
+    ├── Data Loops (data_loops.py)
+    │   ├── ModelSyncLoop        - Synchronizes models across cluster nodes
+    │   └── DataAggregationLoop  - Aggregates training data from distributed nodes
+    │
+    ├── Job Loops (job_loops.py)
+    │   ├── JobReaperLoop        - Cleans up stale and stuck jobs
+    │   └── IdleDetectionLoop    - Detects idle nodes for work assignment
+    │
+    └── Network Loops (network_loops.py)
+        ├── IpDiscoveryLoop      - Updates node IP addresses
+        └── TailscaleRecoveryLoop - Recovers Tailscale connections
 ```
 
 ## Usage
@@ -231,19 +244,22 @@ class MyLoop(BaseLoop):
         # Logic using dependency
 ```
 
-## Planned Extractions
+## Loop Implementation Status
 
-| Loop                      | Source Method                   | Status   |
-| ------------------------- | ------------------------------- | -------- |
-| QueuePopulatorLoop        | `_queue_populator_loop`         | Complete |
-| IdleDetectionLoop         | `_idle_detection_loop`          | Planned  |
-| AutoScalingLoop           | `_auto_scaling_loop`            | Planned  |
-| ModelSyncLoop             | `_model_sync_loop`              | Planned  |
-| TailscalePeerRecoveryLoop | `_tailscale_peer_recovery_loop` | Planned  |
-| EloSyncLoop               | `_elo_sync_loop`                | Planned  |
-| JobReaperLoop             | `_job_reaper_loop`              | Planned  |
-| DataConversionLoop        | `_data_management_loop`         | Planned  |
-| VastIPUpdateLoop          | `_vast_ip_update_loop`          | Planned  |
+| Loop                  | Source File               | Status   | Notes                               |
+| --------------------- | ------------------------- | -------- | ----------------------------------- |
+| QueuePopulatorLoop    | `queue_populator_loop.py` | Complete | Leader-only, integrates scheduler   |
+| EloSyncLoop           | `elo_sync_loop.py`        | Complete | Syncs unified_elo.db across cluster |
+| AutoScalingLoop       | `coordination_loops.py`   | Complete | Scale up/down based on queue depth  |
+| HealthAggregationLoop | `coordination_loops.py`   | Complete | Collects CPU/GPU/disk metrics       |
+| ModelSyncLoop         | `data_loops.py`           | Complete | Prioritizes hex8/square8 configs    |
+| DataAggregationLoop   | `data_loops.py`           | Complete | Aggregates selfplay databases       |
+| JobReaperLoop         | `job_loops.py`            | Complete | Enforces job timeouts               |
+| IdleDetectionLoop     | `job_loops.py`            | Complete | Detects nodes with no activity      |
+| IpDiscoveryLoop       | `network_loops.py`        | Complete | Fetches node IPs via HTTP/Tailscale |
+| TailscaleRecoveryLoop | `network_loops.py`        | Complete | Restarts Tailscale on failure       |
+
+All loops were extracted in December 2025 as part of Phase 4 of the P2P decomposition.
 
 ## Testing
 

@@ -41,7 +41,8 @@ BACKUP_PATHS = {
 INCLUDE_PATTERNS = {
     "models/best": ["ringrift_best_*.pth"],
     "models/nnue": ["*.pt"],
-    "data/games": ["*.db"],
+    # Include WAL and SHM files for complete database backup (Dec 2025 fix)
+    "data/games": ["*.db", "*.db-wal", "*.db-shm"],
     "data/state": ["*.json"],
 }
 
@@ -171,7 +172,7 @@ def backup_databases(dry_run: bool = False) -> dict[str, int]:
     uploaded, deleted = sync_to_s3(
         games_path,
         "data/games",
-        ["*.db"],
+        INCLUDE_PATTERNS.get("data/games", ["*.db"]),
         dry_run
     )
 

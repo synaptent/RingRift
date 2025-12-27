@@ -26,6 +26,8 @@ with warnings.catch_warnings():
         ClusterDataStatus,
         HostDataState,
         get_sync_coordinator,
+        get_sync_scheduler,
+        wire_sync_events,
     )
 
 # Re-export from sync_bandwidth (execution layer)
@@ -49,6 +51,8 @@ __all__ = [
     "ClusterDataStatus",
     "HostDataState",
     "get_sync_coordinator",
+    "get_sync_scheduler",
+    "wire_sync_events",
     # From sync_bandwidth
     "BandwidthCoordinatedRsync",
     "TransferPriority",
