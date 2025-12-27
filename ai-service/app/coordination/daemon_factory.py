@@ -29,8 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DaemonSpec:
-    """Specification for a daemon type."""
+class DaemonImportSpec:
+    """Specification for lazy-loading a daemon class.
+
+    Note: This is different from daemon_registry.DaemonSpec which specifies
+    daemon runner configuration. This class specifies import paths for
+    lazy class loading to avoid circular imports.
+
+    December 2025: Renamed from DaemonSpec to avoid collision with
+    daemon_registry.DaemonSpec.
+    """
 
     import_path: str  # Full import path e.g., "app.coordination.auto_sync_daemon"
     class_name: str   # Class name e.g., "AutoSyncDaemon"
@@ -38,12 +46,16 @@ class DaemonSpec:
     singleton: bool = True  # Whether to cache the instance
 
 
+# Backward compatibility alias
+DaemonSpec = DaemonImportSpec
+
+
 # Registry of all daemon types
 # Lazy loaded to avoid circular imports
-_DAEMON_REGISTRY: dict[str, DaemonSpec] = {}
+_DAEMON_REGISTRY: dict[str, DaemonImportSpec] = {}
 
 
-def _build_registry() -> dict[str, DaemonSpec]:
+def _build_registry() -> dict[str, DaemonImportSpec]:
     """Build the daemon registry lazily.
 
     This function is called once on first use to avoid circular imports

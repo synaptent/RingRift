@@ -500,8 +500,9 @@ class NPZDistributionDaemonAdapter(DaemonAdapter):
 
     @property
     def role(self) -> OrchestratorRole | None:
-        # Runs on coordinator nodes that generate NPZ files
-        return OrchestratorRole.DATA_DISTRIBUTOR
+        # December 2025: No exclusive role since this is deprecated
+        # and delegates to UnifiedDistributionDaemon
+        return None
 
     @property
     def depends_on(self) -> list[DaemonType]:
