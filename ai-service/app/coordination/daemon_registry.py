@@ -49,17 +49,21 @@ class DaemonSpec:
 DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # =========================================================================
     # Sync Daemons
+    # All sync daemons depend on EVENT_ROUTER since they emit events
     # =========================================================================
     DaemonType.SYNC_COORDINATOR: DaemonSpec(
         runner_name="create_sync_coordinator",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
     ),
     DaemonType.HIGH_QUALITY_SYNC: DaemonSpec(
         runner_name="create_high_quality_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
     ),
     DaemonType.ELO_SYNC: DaemonSpec(
         runner_name="create_elo_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
     ),
     # Auto sync (December 2025) - emits 12+ event types including DATA_SYNC_*
@@ -84,6 +88,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.GOSSIP_SYNC: DaemonSpec(
         runner_name="create_gossip_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
     ),
     # =========================================================================
@@ -95,6 +100,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.CROSS_PROCESS_POLLER: DaemonSpec(
         runner_name="create_cross_process_poller",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="event",
     ),
     DaemonType.DLQ_RETRY: DaemonSpec(
@@ -111,6 +117,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.QUEUE_MONITOR: DaemonSpec(
         runner_name="create_queue_monitor",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="health",
     ),
     DaemonType.DAEMON_WATCHDOG: DaemonSpec(
@@ -145,6 +152,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.CLUSTER_WATCHDOG: DaemonSpec(
         runner_name="create_cluster_watchdog",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR),
         category="health",
     ),
     DaemonType.COORDINATOR_HEALTH_MONITOR: DaemonSpec(
@@ -234,6 +242,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.DATA_SERVER: DaemonSpec(
         runner_name="create_data_server",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="distribution",
     ),
     # =========================================================================
@@ -336,6 +345,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.MAINTENANCE: DaemonSpec(
         runner_name="create_maintenance",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="recovery",
     ),
     DaemonType.ORPHAN_DETECTION: DaemonSpec(
@@ -363,10 +373,12 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.EXTERNAL_DRIVE_SYNC: DaemonSpec(
         runner_name="create_external_drive_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="misc",
     ),
     DaemonType.VAST_CPU_PIPELINE: DaemonSpec(
         runner_name="create_vast_cpu_pipeline",
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="misc",
     ),
     DaemonType.CLUSTER_DATA_SYNC: DaemonSpec(
@@ -389,6 +401,30 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="misc",
     ),
+    # =========================================================================
+    # Disk Management (December 2025)
+    # =========================================================================
+    DaemonType.DISK_SPACE_MANAGER: DaemonSpec(
+        runner_name="create_disk_space_manager",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="recovery",
+    ),
+    DaemonType.COORDINATOR_DISK_MANAGER: DaemonSpec(
+        runner_name="create_coordinator_disk_manager",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DISK_SPACE_MANAGER),
+        category="recovery",
+    ),
+    # =========================================================================
+    # Data Consolidation
+    # =========================================================================
+    DaemonType.DATA_CONSOLIDATION: DaemonSpec(
+        runner_name="create_data_consolidation",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
+        category="pipeline",
+    ),
+    # Note: HEALTH_SERVER is registered inline in daemon_manager.py because
+    # it requires access to `self.liveness_probe()`. It's intentionally
+    # omitted from this registry.
 }
 
 

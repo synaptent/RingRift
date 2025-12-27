@@ -187,7 +187,16 @@ class DaemonManager:
 
         Only _create_health_server remains inline (needs self access).
         """
-        from app.coordination.daemon_registry import DAEMON_REGISTRY
+        from app.coordination.daemon_registry import DAEMON_REGISTRY, validate_registry
+
+        # Validate registry at startup to catch configuration errors early
+        # December 2025: Added to prevent silent failures from typos/missing runners
+        validation_errors = validate_registry()
+        if validation_errors:
+            for error in validation_errors:
+                logger.error(f"[DaemonManager] Registry validation error: {error}")
+            # Don't raise - allow system to start with partial registry
+            # but log errors prominently for visibility
 
         # Register all daemons from the declarative registry
         for daemon_type, spec in DAEMON_REGISTRY.items():
