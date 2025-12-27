@@ -16322,47 +16322,9 @@ print(json.dumps(result))
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to report work result: {e}")
 
-    async def _work_queue_maintenance_loop(self):
-        """Background loop for leader to maintain the work queue.
-
-        Runs periodically to:
-        - Check for timed out work items
-        - Clean up old completed items from the database
-        """
-        MAINTENANCE_INTERVAL = 300  # Every 5 minutes
-        CLEANUP_AGE = 86400.0  # Clean up items older than 24 hours
-
-        await asyncio.sleep(60)  # Initial delay
-
-        logger.info("Work queue maintenance loop started")
-
-        while self.running:
-            try:
-                # Only leader performs maintenance
-                if self.role != NodeRole.LEADER:
-                    await asyncio.sleep(MAINTENANCE_INTERVAL)
-                    continue
-
-                wq = get_work_queue()
-                if wq is None:
-                    await asyncio.sleep(MAINTENANCE_INTERVAL)
-                    continue
-
-                # Check for timeouts
-                timed_out = wq.check_timeouts()
-                if timed_out:
-                    logger.info(f"Work queue maintenance: {len(timed_out)} items timed out")
-
-                # Cleanup old items
-                removed = wq.cleanup_old_items(max_age_seconds=CLEANUP_AGE)
-                if removed:
-                    logger.info(f"Work queue maintenance: cleaned up {removed} old items")
-
-                await asyncio.sleep(MAINTENANCE_INTERVAL)
-
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Work queue maintenance error: {e}")
-                await asyncio.sleep(MAINTENANCE_INTERVAL)
+    # NOTE: _work_queue_maintenance_loop() removed Dec 2025 (42 LOC).
+    # Now runs via LoopManager as WorkQueueMaintenanceLoop.
+    # See scripts/p2p/loops/job_loops.py for implementation.
 
     # NOTE: _idle_detection_loop() removed Dec 2025 (128 LOC).
     # Now runs via LoopManager as IdleDetectionLoop.
@@ -27389,8 +27351,8 @@ print(json.dumps({{
         self._background_tasks = tasks
 
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
-        # These 5 loops now ONLY run via LoopManager (inline versions removed):
-        # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop
+        # These 6 loops now ONLY run via LoopManager (inline versions removed):
+        # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop, WorkQueueMaintenanceLoop
         job_reaper_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()

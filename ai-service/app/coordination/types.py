@@ -52,6 +52,13 @@ __all__ = [
     "BoardType",
     "WorkStatus",
     "HealthLevel",
+    # December 2025 consolidation
+    "TaskStatus",
+    "ResourceType",
+    "TransferPriority",
+    "CoordinatorHealthState",
+    "CoordinatorRunState",
+    "ErrorSeverity",
 ]
 
 
@@ -237,3 +244,109 @@ class HealthLevel(str, Enum):
     UNHEALTHY = "unhealthy"
     CRITICAL = "critical"
     UNKNOWN = "unknown"
+
+
+class TaskStatus(str, Enum):
+    """Canonical task execution status.
+
+    Consolidated from:
+    - app.coordination.facade.TaskStatus
+    - app.coordination.task_lifecycle_coordinator.TaskStatus
+
+    December 2025: Unified to single source of truth.
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    ORPHANED = "orphaned"
+
+
+class ResourceType(str, Enum):
+    """Types of resources for monitoring and task classification.
+
+    Consolidated from:
+    - app.coordination.resource_monitoring_coordinator.ResourceType
+    - app.coordination.resource_optimizer.ResourceType
+    - app.coordination.task_coordinator.ResourceType
+
+    December 2025: Unified superset of all ResourceType definitions.
+    """
+
+    CPU = "cpu"
+    GPU = "gpu"
+    MEMORY = "memory"
+    DISK = "disk"
+    NETWORK = "network"
+    HYBRID = "hybrid"  # Uses both CPU and GPU
+    IO = "io"  # I/O-bound tasks
+
+
+class TransferPriority(str, Enum):
+    """Priority levels for bandwidth allocation.
+
+    Consolidated from:
+    - app.coordination.sync_bandwidth.TransferPriority
+    - app.coordination.bandwidth_manager.TransferPriority
+
+    December 2025: Unified with all priority levels.
+    """
+
+    CRITICAL = "critical"  # Emergency/urgent transfers
+    HIGH = "high"  # Production data
+    NORMAL = "normal"  # Regular sync
+    LOW = "low"  # Bulk transfers
+    BACKGROUND = "background"  # Best effort
+
+
+class CoordinatorHealthState(str, Enum):
+    """Health state of a coordinator.
+
+    Used by health monitor daemon to track coordinator status.
+    Renamed from CoordinatorState to avoid collision with CoordinatorRunState.
+
+    December 2025: Canonical location for coordinator health states.
+    """
+
+    UNKNOWN = "unknown"
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    DEGRADED = "degraded"
+    SHUTDOWN = "shutdown"
+    INIT_FAILED = "init_failed"
+
+
+class CoordinatorRunState(str, Enum):
+    """Operational state of the task coordinator.
+
+    Used by task coordinator to track running state.
+    Renamed from CoordinatorState to avoid collision with CoordinatorHealthState.
+
+    December 2025: Canonical location for coordinator operational states.
+    """
+
+    RUNNING = "running"
+    PAUSED = "paused"  # Temporarily paused - no new tasks
+    DRAINING = "draining"  # Stopping - let existing tasks finish
+    EMERGENCY = "emergency"  # Emergency stop - kill all tasks
+    STOPPED = "stopped"
+
+
+class ErrorSeverity(str, Enum):
+    """Error severity levels.
+
+    Consolidated from app.coordination.unified_health_manager.ErrorSeverity.
+
+    Note: alert_types.py has a different ErrorSeverity (LOW/MEDIUM/HIGH/CRITICAL)
+    that maps to AlertSeverity. Use that for alerts, this for general errors.
+
+    December 2025: Canonical error severity for non-alert contexts.
+    """
+
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
