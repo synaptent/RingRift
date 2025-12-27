@@ -101,10 +101,10 @@ ALL_CONFIGS = [
     "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
 ]
 
-# Loop timing
-LOOP_INTERVAL_SECONDS = 60  # Check every minute
-TRAINING_CHECK_INTERVAL = 300  # Check training readiness every 5 minutes
-ALLOCATION_CHECK_INTERVAL = 600  # Rebalance allocations every 10 minutes
+# Loop timing (Dec 2025: Reduced from 60/300/600 for faster event-driven pipeline)
+LOOP_INTERVAL_SECONDS = 30  # Check every 30 seconds
+TRAINING_CHECK_INTERVAL = 60  # Check training readiness every minute (fallback for events)
+ALLOCATION_CHECK_INTERVAL = 120  # Rebalance allocations every 2 minutes (fallback for events)
 
 # Thresholds
 MIN_GAMES_FOR_EXPORT = 1000  # Minimum new games before triggering export

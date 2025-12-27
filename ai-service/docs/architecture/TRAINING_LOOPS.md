@@ -139,7 +139,7 @@ When selfplay completes, the pipeline auto-triggers:
 SELFPLAY_COMPLETE
        │
        ▼
-SYNC_COMPLETE ──▶ NPZ_EXPORT ──▶ TRAINING ──▶ EVALUATION ──▶ PROMOTION
+DATA_SYNC_COMPLETED ──▶ NPZ_EXPORT_COMPLETE ──▶ TRAINING_COMPLETED ──▶ EVALUATION_COMPLETED ──▶ MODEL_PROMOTED
        │                │              │            │             │
        ▼                ▼              ▼            ▼             ▼
    sync games      export to      train         gauntlet      promote if

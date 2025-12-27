@@ -31,7 +31,7 @@ import asyncio
 import logging
 import socket
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -454,12 +454,9 @@ class ReplicationRepairDaemon:
             True if successful
         """
         try:
-            from app.coordination.sync_bandwidth import (
-                BandwidthCoordinatedSync,
-                get_bandwidth_coordinator,
-            )
+            from app.coordination.sync_bandwidth import get_bandwidth_coordinator
         except ImportError:
-            job.error = "BandwidthCoordinatedSync not available"
+            job.error = "sync_bandwidth not available"
             return False
 
         if not job.source_nodes or not job.target_nodes:

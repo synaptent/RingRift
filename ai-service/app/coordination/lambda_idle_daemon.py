@@ -36,7 +36,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.config.env import env
 from app.coordination.protocols import (
     CoordinatorStatus,
     register_coordinator,

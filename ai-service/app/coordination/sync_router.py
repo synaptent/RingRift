@@ -33,8 +33,6 @@ import yaml
 from app.distributed.cluster_manifest import (
     ClusterManifest,
     DataType,
-    NodeCapacity,
-    NodeSyncPolicy,
     SyncTarget,
     get_cluster_manifest,
 )

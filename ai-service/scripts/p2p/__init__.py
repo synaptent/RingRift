@@ -103,6 +103,13 @@ from .network_utils import (
     NetworkUtilsMixin,
 )
 
+# Re-export peer manager (Dec 26, 2025 - Phase 2.1)
+from .peer_manager import (
+    PeerManagerMixin,
+    get_peer_manager,
+    set_peer_manager,
+)
+
 # Re-export client utilities
 from .client import (
     P2PClient,
@@ -126,6 +133,10 @@ __all__ = [
     # Network utilities (Dec 26, 2025)
     'NetworkUtils',
     'NetworkUtilsMixin',
+    # Peer manager (Dec 26, 2025 - Phase 2.1)
+    'PeerManagerMixin',
+    'get_peer_manager',
+    'set_peer_manager',
     # Constants
     'DEFAULT_PORT',
     'DISK_CRITICAL_THRESHOLD',

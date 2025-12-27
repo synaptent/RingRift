@@ -47,6 +47,9 @@ class Provider(str, Enum):
     """Cloud/compute providers."""
     LAMBDA = "lambda"
     VAST = "vast"
+    RUNPOD = "runpod"
+    NEBIUS = "nebius"
+    VULTR = "vultr"
     AWS = "aws"
     HETZNER = "hetzner"
     LOCAL = "local"
@@ -150,13 +153,13 @@ class MultiProviderOrchestrator:
                 self._discover_vast(),
                 self._discover_aws(),
                 self._discover_hetzner(),
-                self._discover_lambda_from_config(),
+                self._discover_hosts_from_config(),
                 return_exceptions=True
             )
 
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    provider = ["tailscale", "vast", "aws", "hetzner", "lambda"][i]
+                    provider = ["tailscale", "vast", "aws", "hetzner", "config"][i]
                     logger.error(f"[Orchestrator] {provider} discovery failed: {result}")
 
             self._last_discovery = time.time()
@@ -392,8 +395,8 @@ class MultiProviderOrchestrator:
 
         return nodes
 
-    async def _discover_lambda_from_config(self) -> list[ClusterNode]:
-        """Load Lambda nodes from config file."""
+    async def _discover_hosts_from_config(self) -> list[ClusterNode]:
+        """Load configured hosts from distributed_hosts.yaml."""
         nodes = []
         config_path = Path(__file__).parents[2] / "config" / "distributed_hosts.yaml"
 
@@ -404,32 +407,58 @@ class MultiProviderOrchestrator:
 
             hosts = config.get("hosts", {})
             for name, host_config in hosts.items():
-                if "lambda" in name.lower():
-                    node = ClusterNode(
-                        name=name,
-                        provider=Provider.LAMBDA,
-                        tailscale_ip=host_config.get("tailscale_ip"),
-                        public_ip=host_config.get("ssh_host"),
-                        ssh_user=host_config.get("ssh_user", "ubuntu"),
-                        gpu_name=host_config.get("gpu"),
-                        memory_gb=host_config.get("memory_gb", 0),
-                    )
+                provider = self._detect_provider(name)
+                gpu_name = host_config.get("gpu")
+                gpu_count = host_config.get("gpu_count", 1)
+                cpu_cores = host_config.get("cpus", 0)
+                memory_gb = host_config.get("memory_gb", 0)
+                gpu_memory_gb = host_config.get("gpu_vram_gb", 0)
 
-                    if name in self.nodes:
-                        existing = self.nodes[name]
-                        if not existing.gpu_name:
-                            existing.gpu_name = node.gpu_name
-                        if not existing.memory_gb:
-                            existing.memory_gb = node.memory_gb
-                    else:
-                        self.nodes[name] = node
+                status = str(host_config.get("status", "")).lower()
+                is_online = status in {"ready", "online", "running", "active"}
 
-                    nodes.append(node)
+                node = ClusterNode(
+                    name=name,
+                    provider=provider,
+                    tailscale_ip=host_config.get("tailscale_ip"),
+                    ssh_host=host_config.get("ssh_host"),
+                    ssh_port=host_config.get("ssh_port", 22),
+                    ssh_user=host_config.get("ssh_user", "ubuntu"),
+                    gpu_name=gpu_name,
+                    gpu_count=gpu_count,
+                    gpu_memory_gb=gpu_memory_gb,
+                    cpu_cores=cpu_cores,
+                    memory_gb=memory_gb,
+                    is_online=is_online,
+                )
 
-            logger.info(f"[Lambda] Loaded {len(nodes)} nodes from config")
+                if name in self.nodes:
+                    existing = self.nodes[name]
+                    existing.tailscale_ip = existing.tailscale_ip or node.tailscale_ip
+                    existing.ssh_host = existing.ssh_host or node.ssh_host
+                    existing.ssh_port = existing.ssh_port or node.ssh_port
+                    existing.ssh_user = existing.ssh_user or node.ssh_user
+                    if not existing.gpu_name:
+                        existing.gpu_name = node.gpu_name
+                    if not existing.gpu_count:
+                        existing.gpu_count = node.gpu_count
+                    if not existing.gpu_memory_gb:
+                        existing.gpu_memory_gb = node.gpu_memory_gb
+                    if not existing.cpu_cores:
+                        existing.cpu_cores = node.cpu_cores
+                    if not existing.memory_gb:
+                        existing.memory_gb = node.memory_gb
+                    if not existing.is_online:
+                        existing.is_online = node.is_online
+                else:
+                    self.nodes[name] = node
+
+                nodes.append(node)
+
+            logger.info(f"[Config] Loaded {len(nodes)} nodes from distributed_hosts.yaml")
 
         except Exception as e:
-            logger.error(f"[Lambda] Config load error: {e}")
+            logger.error(f"[Config] Config load error: {e}")
 
         return nodes
 
@@ -438,6 +467,12 @@ class MultiProviderOrchestrator:
         hostname_lower = hostname.lower()
         if "lambda" in hostname_lower or "gh200" in hostname_lower:
             return Provider.LAMBDA
+        elif "runpod" in hostname_lower:
+            return Provider.RUNPOD
+        elif "nebius" in hostname_lower:
+            return Provider.NEBIUS
+        elif "vultr" in hostname_lower:
+            return Provider.VULTR
         elif "vast" in hostname_lower:
             return Provider.VAST
         elif hostname_lower.startswith("ip-172-31") or "aws" in hostname_lower:

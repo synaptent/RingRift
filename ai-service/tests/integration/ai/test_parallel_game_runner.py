@@ -17,11 +17,16 @@ from app.ai.gpu_parallel_games import ParallelGameRunner
 
 @pytest.fixture
 def device():
-    """Get test device."""
+    """Get test device.
+
+    Notes:
+    - CUDA is the primary supported acceleration backend for the parallel runner.
+    - On Apple Silicon, MPS is frequently slower than CPU for this workload
+      (many small kernels + sync points), and can cause timeouts in CI.
+      Prefer CPU when CUDA is not available.
+    """
     if torch.cuda.is_available():
         return torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        return torch.device("mps")
     return torch.device("cpu")
 
 

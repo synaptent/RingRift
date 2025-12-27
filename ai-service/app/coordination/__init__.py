@@ -197,6 +197,13 @@ with _warnings.catch_warnings():
 # Backward-compatible alias for code that imported SyncCoordinator from coordination
 CoordinationSyncCoordinator = SyncScheduler
 
+# Sync stall handler exports (automatic failover for stalled syncs)
+from app.coordination.sync_stall_handler import (
+    SyncStallHandler,
+    get_stall_handler,
+    reset_stall_handler,
+)
+
 # Sync mutex exports
 from app.coordination.sync_mutex import (
     SyncLockInfo,
@@ -1701,6 +1708,7 @@ __all__ = [
     "SyncPriority",
     "SyncRecommendation",
     "SyncScheduler",
+    "SyncStallHandler",
     "SyncStats",
     "SyncStatus",
     "SyncWAL",

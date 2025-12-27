@@ -197,10 +197,7 @@ class ReplicationMonitorDaemon:
         start_time = time.time()
 
         try:
-            from app.distributed.cluster_manifest import (
-                get_cluster_manifest,
-                REPLICATION_TARGET_COUNT,
-            )
+            from app.distributed.cluster_manifest import get_cluster_manifest
         except ImportError as e:
             logger.error(f"ClusterManifest not available: {e}")
             return

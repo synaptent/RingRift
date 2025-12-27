@@ -231,7 +231,12 @@ class ParallelGameRunner:
         self.rings_per_player = rings_per_player
 
         if device is None:
-            self.device = get_device()
+            # NOTE: The GPU parallel game simulation is optimized for CUDA.
+            # On Apple Silicon, torch MPS is typically *much* slower than CPU for
+            # this workload (many small tensor ops + unavoidable sync points).
+            # Default to CPU on MPS to keep self-play and tests performant.
+            detected = get_device()
+            self.device = torch.device("cpu") if detected.type == "mps" else detected
         elif isinstance(device, str):
             self.device = torch.device(device)
         else:

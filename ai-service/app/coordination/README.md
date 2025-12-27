@@ -168,7 +168,7 @@ await shutdown_all_coordinators()
 The training pipeline flows through stages, each emitting events:
 
 ```
-SELFPLAY_COMPLETE → SYNC_COMPLETE → NPZ_EXPORT_COMPLETE → TRAINING_COMPLETE → PROMOTION_COMPLETE
+SELFPLAY_COMPLETE → DATA_SYNC_COMPLETED → NPZ_EXPORT_COMPLETE → TRAINING_COMPLETED → MODEL_PROMOTED
          │                │                  │                    │                   │
          ▼                ▼                  ▼                    ▼                   ▼
     SelfplayOrch    SyncScheduler    DataPipelineOrch    TrainingCoord    CurriculumFeedback

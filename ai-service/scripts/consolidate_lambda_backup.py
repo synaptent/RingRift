@@ -100,6 +100,87 @@ def get_game_stats(db_path: Path) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def detect_schema_format(db_path: Path) -> str:
+    """Detect whether database uses old (moves column) or new (game_moves table) schema."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        # Check if games table has moves column
+        cursor = conn.execute("PRAGMA table_info(games)")
+        columns = [row[1] for row in cursor]
+
+        if "moves" in columns:
+            conn.close()
+            return "old"
+
+        # Check if game_moves table exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
+        )
+        if cursor.fetchone():
+            conn.close()
+            return "new"
+
+        conn.close()
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+
+def extract_game_from_new_schema(source_conn: sqlite3.Connection, game_id: str) -> tuple | None:
+    """Extract game data from new schema (with separate game_moves table)."""
+    import json
+
+    try:
+        # Get game metadata
+        cursor = source_conn.execute("""
+            SELECT board_type, num_players, winner
+            FROM games
+            WHERE game_id = ?
+        """, (game_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        board_type, num_players, winner = row
+
+        # Get all moves for this game
+        cursor = source_conn.execute("""
+            SELECT move_number, turn_number, player, phase, move_type, move_json
+            FROM game_moves
+            WHERE game_id = ?
+            ORDER BY move_number
+        """, (game_id,))
+
+        moves = []
+        for move_row in cursor:
+            move_number, turn_number, player, phase, move_type, move_json = move_row
+            move_data = json.loads(move_json)
+            moves.append({
+                "moveNumber": move_number,
+                "turnNumber": turn_number,
+                "player": player,
+                "phase": phase,
+                "moveType": move_type,
+                **move_data
+            })
+
+        # Construct moves JSON
+        moves_json = json.dumps(moves)
+
+        # Get scores (calculate from final state if not stored)
+        # For now, we'll just use empty scores
+        scores_json = json.dumps([])
+
+        # Construct metadata
+        metadata_json = json.dumps({"source": "lambda_backup"})
+
+        return (game_id, board_type, num_players, moves_json, winner, scores_json, metadata_json)
+
+    except Exception as e:
+        logger.warning(f"Error extracting game {game_id}: {e}")
+        return None
+
+
 def consolidate_to_config(
     databases: list[Path],
     board_type: str,
@@ -130,43 +211,97 @@ def consolidate_to_config(
 
     for db_path in databases:
         try:
+            # Detect schema format
+            schema_format = detect_schema_format(db_path)
+
+            if schema_format == "unknown":
+                logger.warning(f"Unknown schema format in {db_path}, skipping")
+                continue
+
             # Attach source database
             source_conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-            cursor = source_conn.execute("""
-                SELECT game_id, board_type, num_players, moves, winner, scores, metadata
-                FROM games
-                WHERE board_type = ? AND num_players = ?
-            """, (board_type, num_players))
 
-            batch = []
-            for row in cursor:
-                batch.append(row)
-                if len(batch) >= 1000:
-                    # Insert batch
-                    for game in batch:
-                        try:
-                            conn.execute("""
-                                INSERT INTO games (game_id, board_type, num_players, moves, winner, scores, metadata)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, game)
-                            total_games += 1
-                        except sqlite3.IntegrityError:
-                            duplicates += 1
-                    batch = []
+            if schema_format == "old":
+                # Old schema: direct SELECT
+                cursor = source_conn.execute("""
+                    SELECT game_id, board_type, num_players, moves, winner, scores, metadata
+                    FROM games
+                    WHERE board_type = ? AND num_players = ?
+                """, (board_type, num_players))
 
-            # Insert remaining
-            for game in batch:
-                try:
-                    conn.execute("""
-                        INSERT INTO games (game_id, board_type, num_players, moves, winner, scores, metadata)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, game)
-                    total_games += 1
-                except sqlite3.IntegrityError:
-                    duplicates += 1
+                batch = []
+                for row in cursor:
+                    batch.append(row)
+                    if len(batch) >= 1000:
+                        # Insert batch
+                        for game in batch:
+                            try:
+                                conn.execute("""
+                                    INSERT INTO games (game_id, board_type, num_players, moves, winner, scores, metadata)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, game)
+                                total_games += 1
+                            except sqlite3.IntegrityError:
+                                duplicates += 1
+                        batch = []
+                        conn.commit()
+
+                # Insert remaining
+                for game in batch:
+                    try:
+                        conn.execute("""
+                            INSERT INTO games (game_id, board_type, num_players, moves, winner, scores, metadata)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, game)
+                        total_games += 1
+                    except sqlite3.IntegrityError:
+                        duplicates += 1
+                conn.commit()
+
+            else:  # new schema
+                # Get list of game_ids for this config
+                cursor = source_conn.execute("""
+                    SELECT game_id
+                    FROM games
+                    WHERE board_type = ? AND num_players = ?
+                """, (board_type, num_players))
+
+                game_ids = [row[0] for row in cursor]
+                logger.info(f"  Extracting {len(game_ids)} games from {db_path.name}...")
+
+                batch = []
+                for game_id in game_ids:
+                    game_data = extract_game_from_new_schema(source_conn, game_id)
+                    if game_data:
+                        batch.append(game_data)
+
+                    if len(batch) >= 100:
+                        # Insert batch
+                        for game in batch:
+                            try:
+                                conn.execute("""
+                                    INSERT INTO games (game_id, board_type, num_players, moves, winner, scores, metadata)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, game)
+                                total_games += 1
+                            except sqlite3.IntegrityError:
+                                duplicates += 1
+                        batch = []
+                        conn.commit()
+
+                # Insert remaining
+                for game in batch:
+                    try:
+                        conn.execute("""
+                            INSERT INTO games (game_id, board_type, num_players, moves, winner, scores, metadata)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, game)
+                        total_games += 1
+                    except sqlite3.IntegrityError:
+                        duplicates += 1
+                conn.commit()
 
             source_conn.close()
-            conn.commit()
 
         except Exception as e:
             logger.warning(f"Error processing {db_path}: {e}")
