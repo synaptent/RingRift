@@ -795,7 +795,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["cluster_sync_to_pipeline"] = False
-        logger.debug(f"[Bootstrap] Failed to wire cluster sync to pipeline: {e}")
+        logger.warning(f"[Bootstrap] Failed to wire cluster sync to pipeline: {e}")
 
     # 2. Wire MODEL_SYNC_COMPLETE to ModelLifecycleCoordinator
     try:
@@ -818,7 +818,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["model_sync_to_lifecycle"] = False
-        logger.debug(f"[Bootstrap] Failed to wire model sync to lifecycle: {e}")
+        logger.warning(f"[Bootstrap] Failed to wire model sync to lifecycle: {e}")
 
     # 3. Wire SELFPLAY_COMPLETE to SyncCoordinator (for auto-trigger sync)
     try:
@@ -892,7 +892,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["selfplay_to_sync"] = False
-        logger.debug(f"[Bootstrap] Failed to wire selfplay to sync: {e}")
+        logger.warning(f"[Bootstrap] Failed to wire selfplay to sync: {e}")
 
     # 4. Initialize model selector events for hot-reload on MODEL_PROMOTED
     # December 2025: Critical fix - handler existed but was never initialized!
@@ -922,7 +922,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     except (AttributeError, TypeError, RuntimeError) as e:
         results["quality_to_rollback"] = False
-        logger.debug(f"[Bootstrap] Failed to wire quality to rollback: {e}")
+        logger.warning(f"[Bootstrap] Failed to wire quality to rollback: {e}")
 
     # 5b. Wire REGRESSION_DETECTED to automatic model rollback (December 2025)
     # This completes the feedback loop: evaluation → regression → rollback
@@ -945,7 +945,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     except (AttributeError, TypeError, RuntimeError) as e:
         results["regression_to_rollback"] = False
-        logger.debug(f"[Bootstrap] Failed to wire regression to rollback: {e}")
+        logger.warning(f"[Bootstrap] Failed to wire regression to rollback: {e}")
 
     # 6. Wire PLATEAU_DETECTED to curriculum rebalancing (December 2025)
     try:
