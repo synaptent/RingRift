@@ -27284,8 +27284,8 @@ print(json.dumps({{
             self._create_safe_task(self._discovery_loop(), "discovery"),
             # IMPROVED: Dedicated voter heartbeat loop for reliable leader election
             self._create_safe_task(self._voter_heartbeat_loop(), "voter_heartbeat"),
-            # IMPROVED: Advanced NAT management for better connectivity
-            self._create_safe_task(self._nat_management_loop(), "nat_management"),
+            # NOTE: _nat_management_loop removed Dec 2025 - now runs via LoopManager (NATManagementLoop)
+            # See scripts/p2p/loops/network_loops.py for implementation
             # SWIM gossip membership for leaderless failure detection (<5s vs 60s+)
             self._create_safe_task(self._swim_membership_loop(), "swim_membership"),
         ]
@@ -27351,8 +27351,8 @@ print(json.dumps({{
         self._background_tasks = tasks
 
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
-        # These 6 loops now ONLY run via LoopManager (inline versions removed):
-        # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop, WorkQueueMaintenanceLoop
+        # These 7 loops now ONLY run via LoopManager (inline versions removed):
+        # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop, WorkQueueMaintenanceLoop, NATManagementLoop
         job_reaper_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()
