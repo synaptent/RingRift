@@ -3842,71 +3842,9 @@ class P2POrchestrator(
 
         return result
 
-    def _get_diversity_metrics(self) -> dict[str, Any]:
-        """Get diversity tracking metrics for monitoring.
-
-        .. deprecated:: December 2025
-            Use self.selfplay_scheduler.get_diversity_metrics() instead.
-        """
-        metrics = dict(self.diversity_metrics)
-        metrics["uptime_seconds"] = time.time() - metrics.get("last_reset", time.time())
-
-        # Calculate diversity ratios
-        total_games = metrics.get("asymmetric_games", 0) + metrics.get("symmetric_games", 0)
-        if total_games > 0:
-            metrics["asymmetric_ratio"] = metrics["asymmetric_games"] / total_games
-        else:
-            metrics["asymmetric_ratio"] = 0.0
-
-        # Engine mode distribution
-        engine_total = sum(metrics.get("games_by_engine_mode", {}).values())
-        if engine_total > 0:
-            metrics["engine_mode_distribution"] = {
-                k: v / engine_total
-                for k, v in metrics.get("games_by_engine_mode", {}).items()
-            }
-        else:
-            metrics["engine_mode_distribution"] = {}
-
-        return metrics
-
-    def _track_selfplay_diversity(self, config: dict[str, Any]):
-        """Track diversity metrics for a scheduled selfplay game.
-
-        .. deprecated:: December 2025
-            Use self.selfplay_scheduler.track_diversity() instead.
-        """
-        # Track engine mode
-        engine_mode = config.get("engine_mode", "unknown")
-        if engine_mode not in self.diversity_metrics["games_by_engine_mode"]:
-            self.diversity_metrics["games_by_engine_mode"][engine_mode] = 0
-        self.diversity_metrics["games_by_engine_mode"][engine_mode] += 1
-
-        # Track board config
-        board_key = f"{config.get('board_type', 'unknown')}_{config.get('num_players', 0)}p"
-        if board_key not in self.diversity_metrics["games_by_board_config"]:
-            self.diversity_metrics["games_by_board_config"][board_key] = 0
-        self.diversity_metrics["games_by_board_config"][board_key] += 1
-
-        # Track asymmetric vs symmetric
-        if config.get("asymmetric"):
-            self.diversity_metrics["asymmetric_games"] += 1
-            strong = config.get("strong_config", {})
-            weak = config.get("weak_config", {})
-            logger.info(f"DIVERSE: Asymmetric game scheduled - "
-                  f"Strong({strong.get('engine_mode')}@D{strong.get('difficulty')}) vs "
-                  f"Weak({weak.get('engine_mode')}@D{weak.get('difficulty')}) "
-                  f"on {board_key}")
-        else:
-            self.diversity_metrics["symmetric_games"] += 1
-
-        # Track difficulty if available
-        difficulty = config.get("difficulty", config.get("difficulty_band"))
-        if difficulty:
-            diff_key = str(difficulty)
-            if diff_key not in self.diversity_metrics["games_by_difficulty"]:
-                self.diversity_metrics["games_by_difficulty"][diff_key] = 0
-            self.diversity_metrics["games_by_difficulty"][diff_key] += 1
+    # NOTE: _get_diversity_metrics() and _track_selfplay_diversity() removed.
+    # Delegated to self.selfplay_scheduler.get_diversity_metrics() and
+    # self.selfplay_scheduler.track_diversity(). Removed ~66 LOC Dec 2025.
 
     def _count_local_jobs(self) -> tuple[int, int]:
         """Count running selfplay and training jobs on this node."""
@@ -15667,7 +15605,8 @@ print(json.dumps(result))
                 num_players = config.get("num_players", 2)
                 num_games = config.get("num_games", 500)
 
-                asyncio.create_task(self._run_gpu_selfplay_job(
+                # Delegate to JobManager (Phase 2B refactoring, Dec 2025)
+                asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
                     job_id=f"pull-{work_id}",
                     board_type=board_type,
                     num_players=num_players,
