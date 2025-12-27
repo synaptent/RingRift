@@ -193,6 +193,52 @@ class NodePolicyManager:
         self.overrides.clear()
         self._load_config()
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check policy manager health for daemon monitoring.
+
+        December 2025 Phase 4: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with policy configuration status.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            policy_count = len(self.policies)
+            override_count = len(self.overrides)
+            config_exists = self.config_path.exists()
+
+            if not config_exists:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Config file not found: {self.config_path}",
+                    details={
+                        "config_path": str(self.config_path),
+                        "using_defaults": True,
+                    },
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Policy manager healthy: {policy_count} policies, {override_count} overrides",
+                details={
+                    "policy_count": policy_count,
+                    "override_count": override_count,
+                    "config_path": str(self.config_path),
+                    "policies": list(self.policies.keys()),
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"Error checking NodePolicyManager health: {e}")
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check error: {e}",
+            )
+
 
 # Singleton instance
 _policy_manager: NodePolicyManager | None = None

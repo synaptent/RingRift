@@ -788,6 +788,79 @@ class TransactionIsolation(SingletonMixin):
 
         return stats
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check transaction isolation health for daemon monitoring.
+
+        December 2025 Phase 4: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with transaction status and failure metrics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            stats = self.get_transaction_stats()
+            active_count = stats["active_transactions"]
+            recent_failures = stats["recent_failures"]
+
+            # Check for stuck transactions (PENDING/PREPARING for too long)
+            conn = self._get_conn()
+            stuck_threshold = datetime.now().timestamp() - self.max_transaction_age
+            cursor = conn.execute(
+                """
+                SELECT COUNT(*) as count FROM transactions
+                WHERE state IN (?, ?) AND created_at < ?
+                """,
+                (
+                    TransactionState.PENDING.value,
+                    TransactionState.PREPARING.value,
+                    datetime.fromtimestamp(stuck_threshold).isoformat(),
+                )
+            )
+            stuck_count = cursor.fetchone()["count"]
+
+            if stuck_count > 0:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"{stuck_count} stuck transactions older than {self.max_transaction_age}s",
+                    details={
+                        "stuck_transactions": stuck_count,
+                        "active_transactions": active_count,
+                        "recent_failures": recent_failures,
+                    },
+                )
+
+            if recent_failures > 10:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"High transaction failure rate: {recent_failures} failures in 24h",
+                    details={
+                        "active_transactions": active_count,
+                        "recent_failures": recent_failures,
+                    },
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Transaction isolation healthy: {active_count} active, {recent_failures} recent failures",
+                details={
+                    "active_transactions": active_count,
+                    "recent_failures": recent_failures,
+                    "by_state": stats["by_state"],
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"Error checking TransactionIsolation health: {e}")
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check error: {e}",
+            )
+
 
 # Module-level singleton access
 _instance: TransactionIsolation | None = None

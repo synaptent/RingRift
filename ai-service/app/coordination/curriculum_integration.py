@@ -958,6 +958,192 @@ class PromotionFailedToCurriculumWatcher:
 
 
 # =============================================================================
+# 2.4.1. REGRESSION_CRITICAL → Curriculum Weight Boost (December 27, 2025)
+# =============================================================================
+
+
+class RegressionCriticalToCurriculumWatcher:
+    """Boosts curriculum weight when critical model regression is detected.
+
+    When GauntletFeedbackController detects a severe Elo regression or
+    consecutive regressions (emits REGRESSION_CRITICAL), this watcher
+    increases that config's curriculum weight to generate more diverse
+    training data for recovery.
+
+    Event flow (December 2025):
+    1. GauntletFeedbackController detects Elo drop > threshold or consecutive regressions
+    2. Emits REGRESSION_CRITICAL with severity, elo_drop, recommendation
+    3. This watcher subscribes and increases curriculum weight
+    4. CurriculumFeedback allocates more selfplay to affected configs
+    5. Emits CURRICULUM_REBALANCED to notify downstream systems
+
+    The weight increase is more aggressive than promotion failures since
+    regression indicates the model is actively getting worse and needs
+    immediate attention.
+    """
+
+    # Weight increase factor per regression severity
+    WEIGHT_INCREASE_MODERATE = 0.25  # 25% for moderate regressions
+    WEIGHT_INCREASE_SEVERE = 0.50  # 50% for severe regressions
+
+    def __init__(self):
+        self._subscribed = False
+        self._regression_counts: dict[str, int] = {}  # config -> consecutive regressions
+
+    def subscribe(self) -> bool:
+        """Subscribe to REGRESSION_CRITICAL events."""
+        if self._subscribed:
+            return True
+
+        try:
+            from app.coordination.event_router import get_router
+            from app.coordination.event_router import DataEventType
+
+            router = get_router()
+            if router is None:
+                logger.debug("[RegressionCriticalToCurriculumWatcher] Event router not available")
+                return False
+
+            router.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
+            self._subscribed = True
+            logger.info("[RegressionCriticalToCurriculumWatcher] Subscribed to REGRESSION_CRITICAL")
+            return True
+
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            logger.warning(f"[RegressionCriticalToCurriculumWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.coordination.event_router import get_router
+            from app.coordination.event_router import DataEventType
+
+            router = get_router()
+            if router:
+                router.unsubscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
+            self._subscribed = False
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            pass
+
+    def _on_regression_critical(self, event) -> None:
+        """Handle REGRESSION_CRITICAL event - boost curriculum weight.
+
+        December 2025: Closes the regression → curriculum weight feedback loop.
+        When model regression is detected, increase selfplay allocation to
+        generate more diverse data for recovery training.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+
+            config_key = payload.get("config_key", payload.get("config", ""))
+            severity = payload.get("severity", "unknown")
+            elo_drop = payload.get("elo_drop", 0)
+            consecutive_regressions = payload.get("consecutive_regressions", 1)
+            recommendation = payload.get("recommendation", "")
+
+            if not config_key:
+                return
+
+            # Track consecutive regressions
+            self._regression_counts[config_key] = consecutive_regressions
+
+            logger.warning(
+                f"[RegressionCriticalToCurriculumWatcher] Regression detected for {config_key}: "
+                f"severity={severity}, elo_drop={elo_drop:.0f}, "
+                f"consecutive_regressions={consecutive_regressions}, recommendation={recommendation}"
+            )
+
+            # Increase curriculum weight to generate more diverse training data
+            self._increase_curriculum_weight(config_key, severity, elo_drop, consecutive_regressions)
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[RegressionCriticalToCurriculumWatcher] Error handling regression: {e}")
+
+    def _increase_curriculum_weight(
+        self,
+        config_key: str,
+        severity: str,
+        elo_drop: float,
+        consecutive_regressions: int,
+    ) -> None:
+        """Increase curriculum weight based on regression severity."""
+        try:
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+            current_weight = feedback._current_weights.get(config_key, 1.0)
+
+            # Calculate weight increase based on severity
+            if severity == "severe":
+                base_increase = self.WEIGHT_INCREASE_SEVERE
+            else:
+                base_increase = self.WEIGHT_INCREASE_MODERATE
+
+            # Additional increase for consecutive regressions
+            weight_multiplier = 1.0 + base_increase + (0.1 * (consecutive_regressions - 1))
+            weight_multiplier = min(3.0, weight_multiplier)  # Cap at 3x
+
+            new_weight = min(feedback.weight_max, current_weight * weight_multiplier)
+
+            if new_weight > current_weight:
+                feedback._current_weights[config_key] = new_weight
+
+                logger.info(
+                    f"[RegressionCriticalToCurriculumWatcher] Increased curriculum weight for {config_key}: "
+                    f"{current_weight:.2f} → {new_weight:.2f} (severity={severity}, elo_drop={elo_drop:.0f})"
+                )
+
+                # Emit CURRICULUM_REBALANCED event
+                self._emit_rebalance_event(config_key, new_weight, severity, elo_drop)
+
+        except ImportError as e:
+            logger.debug(f"[RegressionCriticalToCurriculumWatcher] curriculum_feedback import error: {e}")
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            logger.warning(f"[RegressionCriticalToCurriculumWatcher] Error increasing weight: {e}")
+
+    def _emit_rebalance_event(
+        self,
+        config_key: str,
+        new_weight: float,
+        severity: str,
+        elo_drop: float,
+    ) -> None:
+        """Emit CURRICULUM_REBALANCED event for downstream systems."""
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish_sync(
+                "CURRICULUM_REBALANCED",
+                {
+                    "trigger": "regression_critical",
+                    "changed_configs": [config_key],
+                    "new_weights": {config_key: new_weight},
+                    "severity": severity,
+                    "elo_drop": elo_drop,
+                    "timestamp": time.time(),
+                },
+                source="regression_critical_curriculum_watcher",
+            )
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            logger.debug(f"Failed to emit rebalance event: {e}")
+
+    def reset_regression_count(self, config_key: str) -> None:
+        """Reset regression count for a config (called when model improves)."""
+        if config_key in self._regression_counts:
+            del self._regression_counts[config_key]
+            logger.info(f"[RegressionCriticalToCurriculumWatcher] Reset regression count for {config_key}")
+
+    def get_regression_counts(self) -> dict[str, int]:
+        """Get current regression counts."""
+        return dict(self._regression_counts)
+
+
+# =============================================================================
 # 2.5. QUALITY_PENALTY_APPLIED → Curriculum Weight Reduction
 # =============================================================================
 

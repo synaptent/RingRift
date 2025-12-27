@@ -367,6 +367,76 @@ class ResilientCoordinatorMixin:
             },
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check handler resilience health for daemon monitoring.
+
+        December 2025 Phase 4: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with handler failure metrics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            health_data = self._get_handler_health()
+            success_rate = health_data["success_rate"]
+            total_failures = health_data["total_failures"]
+            total_timeouts = health_data["total_timeouts"]
+            handler_count = health_data["handler_count"]
+
+            # Check for degraded handlers (high consecutive failures)
+            degraded_handlers = [
+                name for name, data in health_data["handlers"].items()
+                if data.get("consecutive_failures", 0) >= (
+                    self._handler_config.max_consecutive_failures
+                    if self._handler_config else 5
+                )
+            ]
+
+            if degraded_handlers:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Handlers degraded: {', '.join(degraded_handlers)}",
+                    details={
+                        "degraded_handlers": degraded_handlers,
+                        "success_rate": success_rate,
+                        "total_failures": total_failures,
+                        "total_timeouts": total_timeouts,
+                    },
+                )
+
+            if success_rate < 0.8 and health_data["total_invocations"] > 10:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Low handler success rate: {success_rate:.1%}",
+                    details={
+                        "success_rate": success_rate,
+                        "total_failures": total_failures,
+                        "total_timeouts": total_timeouts,
+                    },
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"{self._coordinator_name} handlers healthy: {handler_count} handlers, {success_rate:.1%} success",
+                details={
+                    "handler_count": handler_count,
+                    "success_rate": success_rate,
+                    "total_invocations": health_data["total_invocations"],
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"Error checking ResilientCoordinatorMixin health: {e}")
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check error: {e}",
+            )
+
 
 __all__ = [
     "HandlerMetrics",

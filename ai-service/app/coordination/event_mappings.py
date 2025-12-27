@@ -187,6 +187,7 @@ DATA_TO_CROSS_PROCESS_MAP: Final[dict[str, str]] = {
     "p2p_cluster_healthy": "P2P_CLUSTER_HEALTHY",
     "p2p_cluster_unhealthy": "P2P_CLUSTER_UNHEALTHY",
     "p2p_nodes_dead": "P2P_NODES_DEAD",
+    "p2p_node_dead": "P2P_NODE_DEAD",  # Dec 2025: Single node dead (vs p2p_nodes_dead for batch)
     "leader_elected": "LEADER_ELECTED",
     "leader_lost": "LEADER_LOST",
     # Work queue events
@@ -206,6 +207,9 @@ DATA_TO_CROSS_PROCESS_MAP: Final[dict[str, str]] = {
     "task_failed": "TASK_FAILED",
     "task_orphaned": "TASK_ORPHANED",
     "task_cancelled": "TASK_CANCELLED",
+    "task_abandoned": "TASK_ABANDONED",  # Dec 2025: Intentionally cancelled tasks
+    # Handler lifecycle events
+    "handler_failed": "HANDLER_FAILED",  # Dec 2025: Event handler threw exception
     # Resource/capacity events
     "idle_resource_detected": "IDLE_RESOURCE_DETECTED",
     "backpressure_activated": "BACKPRESSURE_ACTIVATED",

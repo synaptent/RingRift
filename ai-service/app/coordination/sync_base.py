@@ -289,6 +289,79 @@ class SyncManagerBase(ABC):
             } if cb_states else {},
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check sync manager health for daemon monitoring.
+
+        December 2025 Phase 4: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with sync status and error metrics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            # Get current state
+            synced_count = len(self._state.synced_nodes)
+            failed_count = len(self._state.failed_nodes)
+            pending_count = len(self._state.pending_syncs)
+
+            if not self._running:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.STOPPED,
+                    message="Sync manager not running",
+                )
+
+            # Check for high failure rate
+            total_nodes = synced_count + failed_count
+            if total_nodes > 0:
+                failure_rate = failed_count / total_nodes
+                if failure_rate > 0.5:
+                    return HealthCheckResult(
+                        healthy=False,
+                        status=CoordinatorStatus.DEGRADED,
+                        message=f"High sync failure rate: {failure_rate:.1%} ({failed_count}/{total_nodes} nodes)",
+                        details={
+                            "synced_nodes": synced_count,
+                            "failed_nodes": failed_count,
+                            "pending_syncs": pending_count,
+                            "failure_rate": failure_rate,
+                        },
+                    )
+
+            # Check if last sync was recent (within 2x interval)
+            time_since_sync = time.time() - self._state.last_sync_timestamp
+            if self._state.last_sync_timestamp > 0 and time_since_sync > self.sync_interval * 2:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Last sync was {time_since_sync:.0f}s ago (interval: {self.sync_interval}s)",
+                    details={
+                        "time_since_sync": time_since_sync,
+                        "sync_interval": self.sync_interval,
+                    },
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Sync manager healthy: {synced_count} synced, {failed_count} failed",
+                details={
+                    "synced_nodes": synced_count,
+                    "failed_nodes": failed_count,
+                    "pending_syncs": pending_count,
+                    "sync_count": self._state.sync_count,
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"Error checking SyncManagerBase health: {e}")
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check error: {e}",
+            )
+
 
 # Transport helper functions for common sync patterns
 
