@@ -185,6 +185,8 @@ class GossipHandlersMixin:
             )
 
         except Exception as e:
+            # Dec 2025: Added logging for debugging gossip failures
+            logger.error(f"Error handling gossip request: {e}", exc_info=True)
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_gossip_anti_entropy(self, request: web.Request) -> web.Response:

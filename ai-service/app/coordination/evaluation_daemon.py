@@ -1,6 +1,7 @@
 """EvaluationDaemon - Auto-evaluate models after training completes.
 
 December 2025: Part of Phase 11 (Auto-Evaluation Pipeline).
+December 27, 2025: Migrated to BaseEventHandler (Wave 4 Phase 1).
 
 This daemon subscribes to TRAINING_COMPLETE events and automatically triggers
 gauntlet evaluation for newly trained models. This closes the training loop
@@ -34,12 +35,15 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Dict
 
 logger = logging.getLogger(__name__)
 
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import EvaluationDaemonStats
+
+# December 27, 2025: Use BaseEventHandler for subscription lifecycle
+from app.coordination.base_event_handler import BaseEventHandler, EventHandlerConfig
 
 __all__ = [
     "EvaluationConfig",
@@ -103,14 +107,24 @@ class EvaluationConfig:
     dedup_max_tracked_models: int = 1000  # Max models to track for dedup
 
 
-class EvaluationDaemon:
-    """Daemon that auto-evaluates models after training completes."""
+class EvaluationDaemon(BaseEventHandler):
+    """Daemon that auto-evaluates models after training completes.
+
+    December 27, 2025: Migrated to BaseEventHandler - inherits:
+    - Automatic event subscription/unsubscription lifecycle
+    - Standard health_check() implementation
+    - Error counting and last_error tracking
+    - get_metrics() and get_status() for DaemonManager
+    """
 
     def __init__(self, config: EvaluationConfig | None = None):
+        # Initialize BaseEventHandler with custom config
+        handler_config = EventHandlerConfig()
+        handler_config.register_with_registry = False  # Singleton pattern managed externally
+        super().__init__("EvaluationDaemon", handler_config)
+
         self.config = config or EvaluationConfig()
         self.stats = EvaluationStats()
-        self._running = False
-        self._subscribed = False
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
         self._active_evaluations: set[str] = set()
 
@@ -128,14 +142,28 @@ class EvaluationDaemon:
         # Task reference for proper cleanup (December 2025)
         self._worker_task: asyncio.Task | None = None
 
-    async def start(self) -> None:
-        """Start the evaluation daemon."""
-        if self._running:
-            logger.warning("[EvaluationDaemon] Already running")
-            return
+    def _get_subscriptions(self) -> Dict[Any, Callable]:
+        """Return event subscriptions for BaseEventHandler.
 
-        self._running = True
-        self._subscribe_to_events()
+        Returns:
+            Dict mapping event types to handler methods.
+        """
+        from app.coordination.event_router import DataEventType
+
+        return {
+            DataEventType.TRAINING_COMPLETED: self._on_training_complete,
+        }
+
+    async def start(self) -> bool:
+        """Start the evaluation daemon.
+
+        Returns:
+            True if successfully started.
+        """
+        # Call parent start for event subscription
+        success = await super().start()
+        if not success:
+            return False
 
         # Start the evaluation worker and store task for proper cleanup
         self._worker_task = asyncio.create_task(self._evaluation_worker())
@@ -145,15 +173,10 @@ class EvaluationDaemon:
             f"Games per baseline: {self.config.games_per_baseline}, "
             f"Early stopping: {self.config.early_stopping_enabled}"
         )
+        return True
 
     async def stop(self) -> None:
         """Stop the evaluation daemon."""
-        if not self._running:
-            return
-
-        self._running = False
-        self._unsubscribe_from_events()
-
         # Cancel worker task if running (December 2025)
         if self._worker_task and not self._worker_task.done():
             self._worker_task.cancel()
@@ -161,6 +184,9 @@ class EvaluationDaemon:
                 await self._worker_task
             except asyncio.CancelledError:
                 pass  # Expected on cancellation
+
+        # Call parent stop for event cleanup
+        await super().stop()
 
         logger.info(
             f"[EvaluationDaemon] Stopped. "
@@ -175,13 +201,16 @@ class EvaluationDaemon:
         """Get daemon status for DaemonManager health monitoring.
 
         December 2025: Added to fix missing status method (P0 gap).
+        December 27, 2025: Enhanced with BaseEventHandler metrics.
 
         Returns:
             Status dict with running state, stats, and dedup metrics.
         """
-        return {
-            "running": self._running,
-            "subscribed": self._subscribed,
+        # Get base status from parent
+        base_status = super().get_status()
+
+        # Add evaluation-specific fields
+        base_status.update({
             "queue_size": self._evaluation_queue.qsize(),
             "active_evaluations": list(self._active_evaluations),
             "stats": {
@@ -200,48 +229,8 @@ class EvaluationDaemon:
                 "early_stopping_enabled": self.config.early_stopping_enabled,
                 "dedup_cooldown_seconds": self.config.dedup_cooldown_seconds,
             },
-        }
-
-    def _subscribe_to_events(self) -> None:
-        """Subscribe to training completion events."""
-        if self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import DataEventType, get_event_bus
-
-            bus = get_event_bus()
-            if bus is None:
-                logger.warning("[EvaluationDaemon] Event bus not available")
-                return
-
-            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
-            self._subscribed = True
-
-            logger.debug("[EvaluationDaemon] Subscribed to TRAINING_COMPLETED events")
-
-        except ImportError as e:
-            logger.warning(f"[EvaluationDaemon] Event system not available: {e}")
-        except (RuntimeError, AttributeError) as e:
-            logger.error(f"[EvaluationDaemon] Failed to subscribe: {e}")
-
-    def _unsubscribe_from_events(self) -> None:
-        """Unsubscribe from events."""
-        if not self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import DataEventType, get_event_bus
-
-            bus = get_event_bus()
-            if bus:
-                bus.unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
-
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"[EvaluationDaemon] Error unsubscribing: {e}")
-        finally:
-            # Dec 2025: Always reset _subscribed to allow re-subscription after restart
-            self._subscribed = False
+        })
+        return base_status
 
     def _compute_event_hash(self, model_path: str, board_type: str, num_players: int) -> str:
         """Compute a content hash for deduplication.
@@ -588,19 +577,22 @@ class EvaluationDaemon:
     def health_check(self):
         """Check daemon health (December 2025: CoordinatorProtocol compliance).
 
+        December 27, 2025: Extends BaseEventHandler health_check with
+        evaluation-specific failure rate detection.
+
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
-        if not self._running:
-            return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.STOPPED,
-                message="Evaluation daemon not running",
-            )
+        # Get base health check first
+        base_result = super().health_check()
 
-        # Check for high failure rate
+        # If base check failed, return it
+        if not base_result.healthy:
+            return base_result
+
+        # Additional evaluation-specific checks
         total = self.stats.evaluations_triggered
         failed = self.stats.evaluations_failed
         if total > 5 and failed / total > 0.5:
@@ -611,9 +603,10 @@ class EvaluationDaemon:
                 details=self.get_stats(),
             )
 
+        # Return enhanced result with evaluation stats
         return HealthCheckResult(
             healthy=True,
-            status=CoordinatorStatus.RUNNING,
+            status=base_result.status,
             message=f"Evaluation daemon running ({self.stats.evaluations_completed} completed)",
             details=self.get_stats(),
         )

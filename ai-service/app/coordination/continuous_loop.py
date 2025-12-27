@@ -411,7 +411,6 @@ class ContinuousTrainingLoop:
                     num_players=num_players,
                     num_games=num_games,
                     engine=engine,
-                    emit_events=True,  # Trigger pipeline events
                 ),
             )
 

@@ -1282,7 +1282,7 @@ class DataPipelineOrchestrator:
                 payload={
                     "board_type": board_type or "unknown",
                     "num_players": num_players or 2,
-                    "games_count": registered_count,
+                    "new_games": registered_count,  # Canonical key (Dec 2025 standardization)
                     "source": "orphan_recovery",
                     "config_key": config_key,
                 },
@@ -1344,7 +1344,7 @@ class DataPipelineOrchestrator:
                     payload={
                         "board_type": board_type,
                         "num_players": num_players,
-                        "games_count": games_consolidated,
+                        "new_games": games_consolidated,  # Canonical key (Dec 2025 standardization)
                         "source": "consolidation",
                         "config_key": config_key,
                         "canonical_db": canonical_db,
@@ -2625,7 +2625,11 @@ class DataPipelineOrchestrator:
         payload = event.payload if hasattr(event, "payload") else event
 
         config_key = payload.get("config_key")
-        game_count = payload.get("count", payload.get("game_count", 0))
+        # Read with fallback chain for backward compatibility (canonical: new_games)
+        game_count = payload.get(
+            "new_games",
+            payload.get("games_count", payload.get("count", payload.get("game_count", 0)))
+        )
         source = payload.get("source", payload.get("host", "unknown"))
 
         logger.debug(

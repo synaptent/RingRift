@@ -5,6 +5,8 @@ and adjusts training parameters based on model performance. This creates a
 tightly-coupled adaptive loop where stronger models automatically produce
 better training conditions.
 
+December 27, 2025: Migrated to BaseEventHandler (Wave 4 Phase 1).
+
 Feedback Actions:
 - Strong model (>80% vs heuristic): Reduce exploration, raise quality threshold
 - Weak model (<70% vs random): Trigger extra selfplay, extend epochs
@@ -37,19 +39,15 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable, Dict
 
 from app.config.thresholds import (
     STRONG_VS_HEURISTIC_THRESHOLD,
     WEAK_VS_RANDOM_THRESHOLD,
 )
-from app.coordination.protocols import (
-    CoordinatorStatus,
-    HealthCheckResult,
-    register_coordinator,
-    unregister_coordinator,
-)
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_router import DataEventType
+from app.coordination.base_event_handler import BaseEventHandler, EventHandlerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +125,14 @@ class ConfigTracker:
 # =============================================================================
 
 
-class GauntletFeedbackController:
+class GauntletFeedbackController(BaseEventHandler):
     """Adjusts training parameters based on gauntlet evaluation results.
+
+    December 27, 2025: Migrated to BaseEventHandler - inherits:
+    - Automatic event subscription/unsubscription lifecycle
+    - Standard health_check() implementation
+    - Error counting and last_error tracking
+    - get_metrics() and get_status() for DaemonManager
 
     This controller creates a feedback loop from gauntlet → training:
     - Subscribes to EVALUATION_COMPLETED events
@@ -143,38 +147,24 @@ class GauntletFeedbackController:
         Args:
             config: Configuration for feedback thresholds and actions
         """
+        # Initialize BaseEventHandler
+        handler_config = EventHandlerConfig()
+        handler_config.register_with_registry = True  # Register with coordinator registry
+        super().__init__("GauntletFeedbackController", handler_config)
+
         self.config = config or GauntletFeedbackConfig()
         self._config_trackers: dict[str, ConfigTracker] = {}
-        self._subscribed = False
-        self._started = False
-        self._status = CoordinatorStatus.INITIALIZING
-        self._start_time: float = 0.0
         self._actions_taken: list[dict[str, Any]] = []
-        self._errors_count: int = 0
-        self._last_error: str = ""
-        self._lock = asyncio.Lock()
 
-    @property
-    def name(self) -> str:
-        """Controller name for identification."""
-        return "GauntletFeedbackController"
+    def _get_subscriptions(self) -> Dict[Any, Callable]:
+        """Return event subscriptions for BaseEventHandler.
 
-    @property
-    def status(self) -> CoordinatorStatus:
-        """Current status of the coordinator."""
-        return self._status
-
-    @property
-    def is_running(self) -> bool:
-        """Whether the controller is actively processing events."""
-        return self._started and self._subscribed
-
-    @property
-    def uptime_seconds(self) -> float:
-        """Time since controller started, in seconds."""
-        if self._start_time <= 0:
-            return 0.0
-        return time.time() - self._start_time
+        Returns:
+            Dict mapping event types to handler methods.
+        """
+        return {
+            DataEventType.EVALUATION_COMPLETED: self._on_evaluation_completed,
+        }
 
     async def start(self) -> bool:
         """Start the feedback controller.
@@ -182,162 +172,81 @@ class GauntletFeedbackController:
         Returns:
             True if successfully started
         """
-        if self._started:
-            return True
-
-        success = await self._subscribe_to_events()
+        success = await super().start()
         if success:
-            self._started = True
-            self._status = CoordinatorStatus.RUNNING
-            self._start_time = time.time()
-            register_coordinator(self)
             logger.info(f"[{self.name}] Started - listening for EVALUATION_COMPLETED events")
-        else:
-            self._status = CoordinatorStatus.ERROR
-            self._last_error = "Failed to subscribe to events"
         return success
 
     async def stop(self) -> None:
         """Stop the feedback controller."""
-        self._status = CoordinatorStatus.STOPPING
-        await self._unsubscribe_from_events()
-        unregister_coordinator(self.name)
-        self._started = False
-        self._status = CoordinatorStatus.STOPPED
+        await super().stop()
         logger.info(f"[{self.name}] Stopped")
 
     def get_metrics(self) -> dict[str, Any]:
         """Get controller metrics.
 
+        December 27, 2025: Enhanced with BaseEventHandler metrics.
+
         Returns:
             Dictionary of metrics (CoordinatorProtocol compliant)
         """
-        return {
-            "name": self.name,
-            "status": self._status.value,
-            "uptime_seconds": self.uptime_seconds,
-            "start_time": self._start_time,
-            "events_processed": sum(t.elo_history.maxlen for t in self._config_trackers.values() if t.elo_history),
-            "errors_count": self._errors_count,
-            "last_error": self._last_error,
-            # Custom metrics
+        # Get base metrics from parent
+        base_metrics = super().get_metrics()
+
+        # Add controller-specific metrics
+        base_metrics.update({
+            "events_processed": sum(
+                t.elo_history.maxlen for t in self._config_trackers.values() if t.elo_history
+            ),
             "is_running": self.is_running,
             "configs_tracked": len(self._config_trackers),
             "actions_taken": len(self._actions_taken),
             "recent_actions": self._actions_taken[-10:] if self._actions_taken else [],
-        }
+        })
+        return base_metrics
 
     def health_check(self) -> HealthCheckResult:
         """Check controller health.
 
+        December 27, 2025: Extends BaseEventHandler health_check with
+        controller-specific details.
+
         Returns:
             HealthCheckResult (CoordinatorProtocol compliant)
         """
-        if self._status == CoordinatorStatus.ERROR:
-            return HealthCheckResult.unhealthy(
-                f"Controller in error state: {self._last_error}",
-                subscribed=self._subscribed,
-                configs_tracked=len(self._config_trackers),
-            )
+        # Get base health check
+        base_result = super().health_check()
 
-        if self._status == CoordinatorStatus.STOPPED:
+        # Enhance with controller-specific details
+        if base_result.healthy:
             return HealthCheckResult(
                 healthy=True,
-                status=CoordinatorStatus.STOPPED,
-                message="Controller is stopped",
+                status=base_result.status,
+                message=f"{self.name}: {len(self._config_trackers)} configs tracked",
+                details={
+                    "subscribed": self._subscribed,
+                    "configs_tracked": len(self._config_trackers),
+                    "uptime_seconds": self.uptime_seconds,
+                    "actions_taken": len(self._actions_taken),
+                },
             )
-
-        if not self._subscribed:
-            return HealthCheckResult.degraded(
-                "Controller running but not subscribed to events",
-                configs_tracked=len(self._config_trackers),
-            )
-
-        return HealthCheckResult(
-            healthy=True,
-            status=self._status,
-            details={
-                "subscribed": self._subscribed,
-                "configs_tracked": len(self._config_trackers),
-                "uptime_seconds": self.uptime_seconds,
-                "actions_taken": len(self._actions_taken),
-            },
-        )
-
-    # =========================================================================
-    # Event Subscription
-    # =========================================================================
-
-    async def _subscribe_to_events(self) -> bool:
-        """Subscribe to EVALUATION_COMPLETED events.
-
-        Returns:
-            True if successfully subscribed
-        """
-        try:
-            from app.coordination.event_router import (
-                DataEventType,
-                get_event_bus,
-            )
-
-            bus = get_event_bus()
-            if bus is None:
-                logger.warning(f"[{self.name}] Event bus not available")
-                return False
-
-            bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
-            self._subscribed = True
-            logger.info(f"[{self.name}] Subscribed to EVALUATION_COMPLETED events")
-            return True
-
-        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
-            logger.warning(f"[{self.name}] Failed to subscribe: {e}")
-            return False
-
-    async def _unsubscribe_from_events(self) -> None:
-        """Unsubscribe from evaluation events."""
-        if not self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import (
-                DataEventType,
-                get_event_bus,
-            )
-
-            bus = get_event_bus()
-            if bus:
-                bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
-            self._subscribed = False
-
-        except (ImportError, RuntimeError, ValueError, AttributeError):
-            pass
+        return base_result
 
     # =========================================================================
     # Event Handling
     # =========================================================================
 
-    def _on_evaluation_completed(self, event: Any) -> None:
-        """Handle EVALUATION_COMPLETED event synchronously.
+    async def _on_evaluation_completed(self, event: Any) -> None:
+        """Handle EVALUATION_COMPLETED event.
 
-        Schedules async processing via fire_and_forget.
+        December 27, 2025: Now async - BaseEventHandler wraps sync callbacks.
         """
         try:
-            from app.core.async_context import fire_and_forget
-
-            fire_and_forget(self._handle_evaluation_async(event))
-        except (ImportError, RuntimeError, ValueError, AttributeError) as e:
-            logger.warning(f"[{self.name}] Failed to schedule evaluation handling: {e}")
-
-    async def _handle_evaluation_async(self, event: Any) -> None:
-        """Handle EVALUATION_COMPLETED event asynchronously."""
-        async with self._lock:
-            try:
-                await self._process_evaluation(event)
-            except (RuntimeError, ValueError, KeyError, AttributeError) as e:
-                self._errors_count += 1
-                self._last_error = str(e)
-                logger.error(f"[{self.name}] Error processing evaluation: {e}")
+            await self._process_evaluation(event)
+        except (RuntimeError, ValueError, KeyError, AttributeError) as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[{self.name}] Error processing evaluation: {e}")
 
     async def _process_evaluation(self, event: Any) -> None:
         """Process an evaluation event and take appropriate action.

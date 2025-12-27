@@ -223,11 +223,23 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             logger.debug(f"[DataConsolidationDaemon] Error unsubscribing: {e}")
 
     def _on_new_games_available(self, event: Any) -> None:
-        """Handle NEW_GAMES_AVAILABLE event."""
+        """Handle NEW_GAMES_AVAILABLE event.
+
+        Payload schema (standardized December 2025):
+        - new_games: int - Number of new games available (canonical key)
+        - config_key: str - Configuration key (e.g., "hex8_2p")
+        - host/source: str - Source of the games
+
+        Backward-compatible aliases: games_added, games_count, count, game_count
+        """
         try:
             payload = event.payload if hasattr(event, "payload") else event
             config_key = payload.get("config_key", "")
-            games_added = payload.get("games_added", 0)
+            # Read with fallback chain for backward compatibility (canonical: new_games)
+            games_added = payload.get(
+                "new_games",
+                payload.get("games_added", payload.get("games_count", payload.get("count", 0)))
+            )
 
             if config_key and games_added > 0:
                 self._pending_configs.add(config_key)

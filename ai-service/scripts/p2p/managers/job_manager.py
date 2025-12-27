@@ -38,7 +38,9 @@ class JobManagerStats:
     hosts_online: int = 0
 
 # Event emission helper - imported lazily to avoid circular imports
+# Dec 2025: Added thread-safe initialization to prevent race conditions
 _emit_event: Callable[[str, dict], None] | None = None
+_event_emitter_lock = threading.Lock()
 
 # Default P2P port - cached to avoid repeated imports
 _default_p2p_port: int | None = None
@@ -61,15 +63,25 @@ def _get_default_port() -> int:
 
 
 def _get_event_emitter() -> Callable[[str, dict], None] | None:
-    """Get the event emitter function, initializing if needed."""
+    """Get the event emitter function, initializing if needed (thread-safe).
+
+    Dec 2025: Fixed race condition where multiple threads could race to
+    initialize _emit_event. Now uses double-check locking pattern.
+    """
     global _emit_event
-    if _emit_event is None:
-        try:
-            from app.coordination.event_router import emit_sync
-            _emit_event = emit_sync
-        except ImportError:
-            # Event system not available
-            pass
+    # Fast path - already initialized
+    if _emit_event is not None:
+        return _emit_event
+
+    # Slow path with lock
+    with _event_emitter_lock:
+        if _emit_event is None:
+            try:
+                from app.coordination.event_router import emit_sync
+                _emit_event = emit_sync
+            except ImportError:
+                # Event system not available
+                logger.debug("Event router not available, job events will not be emitted")
     return _emit_event
 
 

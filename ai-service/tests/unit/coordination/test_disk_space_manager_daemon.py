@@ -522,7 +522,12 @@ class TestCoordinatorDiskManager:
     def test_cleanup_synced_training(
         self, coord_daemon: CoordinatorDiskManager, temp_root: Path
     ) -> None:
-        """Test cleanup of synced training files."""
+        """Test cleanup of synced training files.
+
+        NOTE: December 27, 2025 - This method is now DISABLED for safety.
+        NPZ files are in PROTECTED_PATTERNS and are never auto-deleted.
+        The method returns 0 and doesn't delete any files.
+        """
         training_path = temp_root / "data" / "training"
 
         # Create old training file
@@ -537,14 +542,20 @@ class TestCoordinatorDiskManager:
 
         bytes_freed = coord_daemon._cleanup_synced_training()
 
-        assert not old_npz.exists()
+        # Method is disabled - files should NOT be deleted
+        assert old_npz.exists()  # NOT deleted - disabled for safety
         assert new_npz.exists()
-        assert bytes_freed > 0
+        assert bytes_freed == 0  # Disabled method returns 0
 
     def test_cleanup_synced_games(
         self, coord_daemon: CoordinatorDiskManager, temp_root: Path
     ) -> None:
-        """Test cleanup of synced game databases."""
+        """Test cleanup of synced game databases.
+
+        NOTE: December 27, 2025 - This method is now DISABLED for safety.
+        Database deletion was disabled after a data loss incident.
+        The method returns 0 and doesn't delete any files.
+        """
         games_path = temp_root / "data" / "games"
 
         # Create non-canonical old database
@@ -553,16 +564,17 @@ class TestCoordinatorDiskManager:
         old_time = time.time() - (2 * 86400)  # 2 days old
         os.utime(old_db, (old_time, old_time))
 
-        # Create canonical database (should not be deleted)
+        # Create canonical database
         canonical_db = games_path / "canonical_hex8_2p.db"
         canonical_db.write_text("canonical data")
         os.utime(canonical_db, (old_time, old_time))
 
         bytes_freed = coord_daemon._cleanup_synced_games()
 
-        assert not old_db.exists()
-        assert canonical_db.exists()  # Canonical preserved
-        assert bytes_freed > 0
+        # Method is disabled - NO files should be deleted
+        assert old_db.exists()  # NOT deleted - disabled for safety
+        assert canonical_db.exists()
+        assert bytes_freed == 0  # Disabled method returns 0
 
     def test_get_status_includes_sync_stats(
         self, coord_daemon: CoordinatorDiskManager
