@@ -398,8 +398,8 @@ class DataManagementLoop(BaseLoop):
         self._active_exports: dict[str, float] = {}  # path -> start_time
         self._db_integrity_counter = 0
 
-        # Statistics
-        self._stats = {
+        # Statistics (renamed from _stats to avoid conflict with BaseLoop._stats)
+        self._data_stats = {
             "disk_cleanups": 0,
             "jsonl_to_db_conversions": 0,
             "jsonl_to_npz_conversions": 0,
@@ -429,7 +429,7 @@ class DataManagementLoop(BaseLoop):
             )
             try:
                 await self._cleanup_disk()
-                self._stats["disk_cleanups"] += 1
+                self._data_stats["disk_cleanups"] += 1
             except Exception as e:
                 logger.debug(f"[{self.name}] Cleanup error: {e}")
             # Re-check after cleanup
@@ -446,7 +446,7 @@ class DataManagementLoop(BaseLoop):
         try:
             converted = await self._convert_jsonl_to_db(data_dir, games_dir)
             if converted > 0:
-                self._stats["jsonl_to_db_conversions"] += converted
+                self._data_stats["jsonl_to_db_conversions"] += converted
                 logger.debug(f"[{self.name}] JSONL→DB: {converted} games converted")
         except Exception as e:
             logger.debug(f"[{self.name}] JSONL→DB error: {e}")
@@ -455,7 +455,7 @@ class DataManagementLoop(BaseLoop):
         try:
             npz_created = await self._convert_jsonl_to_npz(data_dir, training_dir)
             if npz_created > 0:
-                self._stats["jsonl_to_npz_conversions"] += npz_created
+                self._data_stats["jsonl_to_npz_conversions"] += npz_created
                 logger.debug(f"[{self.name}] JSONL→NPZ: {npz_created} files created")
         except Exception as e:
             logger.debug(f"[{self.name}] JSONL→NPZ error: {e}")
@@ -479,7 +479,7 @@ class DataManagementLoop(BaseLoop):
         ):
             try:
                 result = await self._check_db_integrity(games_dir)
-                self._stats["integrity_checks"] += 1
+                self._data_stats["integrity_checks"] += 1
                 if result.get("corrupted", 0) > 0:
                     logger.info(
                         f"[{self.name}] DB integrity: {result.get('checked', 0)} checked, "
@@ -545,7 +545,7 @@ class DataManagementLoop(BaseLoop):
                 success = await self._trigger_export(db_file, output_path, board_type)
                 if success:
                     self._active_exports[export_key] = time.time()
-                    self._stats["exports_triggered"] += 1
+                    self._data_stats["exports_triggered"] += 1
                     current_exports += 1
                     logger.info(f"[{self.name}] Triggered export for {db_file.name}")
             except Exception as e:
@@ -586,7 +586,7 @@ class DataManagementLoop(BaseLoop):
             logger.info(f"[{self.name}] Auto-triggering training ({total_mb:.1f}MB available)")
             try:
                 await self._start_training(largest_npz)
-                self._stats["training_triggered"] += 1
+                self._data_stats["training_triggered"] += 1
             except Exception as e:
                 logger.debug(f"[{self.name}] Training trigger error: {e}")
 
@@ -604,7 +604,7 @@ class DataManagementLoop(BaseLoop):
         """Get extended loop status with statistics."""
         status = super().get_status()
         status["data_management_stats"] = {
-            **self._stats,
+            **self._data_stats,
             "active_exports": len(self._active_exports),
             "integrity_check_counter": self._db_integrity_counter,
         }

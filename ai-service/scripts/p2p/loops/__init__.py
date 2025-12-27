@@ -77,6 +77,8 @@ from .network_loops import (
     IpDiscoveryLoop,
     NATManagementConfig,
     NATManagementLoop,
+    TailscalePeerDiscoveryConfig,
+    TailscalePeerDiscoveryLoop,
     TailscaleRecoveryConfig,
     TailscaleRecoveryLoop,
 )
@@ -128,6 +130,8 @@ __all__ = [
     "IpDiscoveryLoop",
     "NATManagementConfig",
     "NATManagementLoop",
+    "TailscalePeerDiscoveryConfig",
+    "TailscalePeerDiscoveryLoop",
     "TailscaleRecoveryConfig",
     "TailscaleRecoveryLoop",
     # Discovery

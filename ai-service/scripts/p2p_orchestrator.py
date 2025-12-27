@@ -223,6 +223,7 @@ def _load_loop_classes():
             DataAggregationLoop,
             IpDiscoveryLoop,
             TailscaleRecoveryLoop,
+            TailscalePeerDiscoveryLoop,
             AutoScalingLoop,
             HealthAggregationLoop,
             JobReaperLoop,

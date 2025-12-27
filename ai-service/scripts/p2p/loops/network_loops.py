@@ -5,15 +5,26 @@ December 2025: Background loops for network health and recovery.
 Loops:
 - IpDiscoveryLoop: Updates node IP addresses as they change
 - TailscaleRecoveryLoop: Recovers Tailscale connections when they fail
+- TailscalePeerDiscoveryLoop: Discovers and connects to Tailscale peers not in P2P network
+- NATManagementLoop: Manages NAT traversal and relay selection
 
 Usage:
-    from scripts.p2p.loops import IpDiscoveryLoop, TailscaleRecoveryLoop
+    from scripts.p2p.loops import IpDiscoveryLoop, TailscalePeerDiscoveryLoop
 
     ip_loop = IpDiscoveryLoop(
         get_nodes=lambda: orchestrator.peer_status,
         update_node_ip=orchestrator.update_node_ip,
     )
     await ip_loop.run_forever()
+
+    # Peer discovery for cross-cloud connectivity
+    discovery_loop = TailscalePeerDiscoveryLoop(
+        is_leader=lambda: orchestrator.role == NodeRole.LEADER,
+        get_current_peers=lambda: {p.node_id for p in orchestrator.peers.values()},
+        get_alive_peer_count=lambda: sum(1 for p in orchestrator.peers.values() if p.is_alive()),
+        probe_and_connect=orchestrator.probe_and_register_peer,
+    )
+    await discovery_loop.run_forever()
 """
 
 from __future__ import annotations
@@ -406,11 +417,255 @@ class NATManagementLoop(BaseLoop):
         }
 
 
+@dataclass
+class TailscalePeerDiscoveryConfig:
+    """Configuration for Tailscale peer discovery loop.
+
+    December 2025: Extracted from p2p_orchestrator._tailscale_peer_recovery_loop
+    """
+
+    discovery_interval_seconds: float = 120.0  # 2 minutes for leaders
+    non_leader_skip_count: int = 3  # Non-leaders run every 3rd iteration (6 min)
+    min_connected_peers: int = 3  # If fewer peers, always run discovery
+    connect_timeout_seconds: float = 10.0
+    max_nodes_per_cycle: int = 10
+    p2p_port: int = 8770
+    # Hostname patterns for compute nodes we want in the P2P network
+    compute_patterns: tuple[str, ...] = (
+        "lambda-", "vast-", "gh200", "h100", "a100", "a10",
+        "192-222-", "aws-", "nebius-", "runpod-", "vultr-", "hetzner-",
+    )
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.discovery_interval_seconds <= 0:
+            raise ValueError("discovery_interval_seconds must be > 0")
+        if self.non_leader_skip_count <= 0:
+            raise ValueError("non_leader_skip_count must be > 0")
+        if self.min_connected_peers < 0:
+            raise ValueError("min_connected_peers must be >= 0")
+        if self.connect_timeout_seconds <= 0:
+            raise ValueError("connect_timeout_seconds must be > 0")
+        if self.max_nodes_per_cycle <= 0:
+            raise ValueError("max_nodes_per_cycle must be > 0")
+        if self.p2p_port < 1 or self.p2p_port > 65535:
+            raise ValueError("p2p_port must be between 1 and 65535")
+
+
+class TailscalePeerDiscoveryLoop(BaseLoop):
+    """Background loop that discovers and connects to Tailscale peers.
+
+    Proactively finds compute nodes in the Tailscale mesh that are not yet
+    in the P2P network and attempts to establish connections.
+
+    Key behaviors:
+    - Leaders run discovery every 2 minutes
+    - Non-leaders run every 6 minutes (unless isolated)
+    - Isolated nodes (few peers) run at leader frequency
+    - Connects via HTTP health check + heartbeat
+
+    December 2025: Extracted from p2p_orchestrator._tailscale_peer_recovery_loop
+    """
+
+    def __init__(
+        self,
+        is_leader: Callable[[], bool],
+        get_current_peers: Callable[[], set[str]],
+        get_alive_peer_count: Callable[[], int],
+        probe_and_connect: Callable[[str, str], Coroutine[Any, Any, bool]],
+        config: TailscalePeerDiscoveryConfig | None = None,
+    ):
+        """Initialize Tailscale peer discovery loop.
+
+        Args:
+            is_leader: Callback returning True if this node is the cluster leader
+            get_current_peers: Callback returning set of current peer node_ids
+            get_alive_peer_count: Callback returning count of alive peers
+            probe_and_connect: Async callback (ip, hostname) -> success to probe
+                               a node and establish P2P connection
+            config: Discovery configuration
+        """
+        self.config = config or TailscalePeerDiscoveryConfig()
+        super().__init__(
+            name="tailscale_peer_discovery",
+            interval=self.config.discovery_interval_seconds,
+        )
+        self._is_leader = is_leader
+        self._get_current_peers = get_current_peers
+        self._get_alive_peer_count = get_alive_peer_count
+        self._probe_and_connect = probe_and_connect
+
+        # Statistics
+        self._loop_count = 0
+        self._nodes_discovered = 0
+        self._connections_attempted = 0
+        self._connections_succeeded = 0
+
+    async def _on_start(self) -> None:
+        """Log startup."""
+        logger.info(
+            f"[TailscalePeerDiscovery] Starting peer discovery loop "
+            f"(interval={self.config.discovery_interval_seconds}s)"
+        )
+
+    async def _run_once(self) -> None:
+        """Discover and connect to Tailscale peers not in P2P network."""
+        self._loop_count += 1
+
+        # Non-leaders run less frequently (unless isolated)
+        if not self._is_leader():
+            if self._loop_count % self.config.non_leader_skip_count != 0:
+                # Check if we're isolated (few peers)
+                alive_count = self._get_alive_peer_count()
+                if alive_count >= self.config.min_connected_peers:
+                    return  # Skip this iteration
+
+        # Get current peers
+        current_peers = self._get_current_peers()
+
+        # Get Tailscale peers via `tailscale status --json`
+        ts_peers = await self._get_tailscale_peers()
+        if not ts_peers:
+            return
+
+        # Find compute nodes not in P2P network
+        missing_nodes = self._find_missing_compute_nodes(ts_peers, current_peers)
+        if not missing_nodes:
+            return
+
+        self._nodes_discovered += len(missing_nodes)
+        logger.info(
+            f"[TailscalePeerDiscovery] Found {len(missing_nodes)} compute nodes "
+            f"not in P2P network"
+        )
+
+        # Attempt to connect to missing nodes
+        for hostname, ip in missing_nodes[:self.config.max_nodes_per_cycle]:
+            self._connections_attempted += 1
+            try:
+                success = await asyncio.wait_for(
+                    self._probe_and_connect(ip, hostname),
+                    timeout=self.config.connect_timeout_seconds,
+                )
+                if success:
+                    self._connections_succeeded += 1
+                    logger.info(f"[TailscalePeerDiscovery] Connected to {hostname} ({ip})")
+                else:
+                    logger.debug(f"[TailscalePeerDiscovery] Failed to connect to {hostname}")
+            except asyncio.TimeoutError:
+                logger.debug(f"[TailscalePeerDiscovery] Timeout connecting to {hostname}")
+            except Exception as e:
+                logger.debug(f"[TailscalePeerDiscovery] Error connecting to {hostname}: {e}")
+
+    async def _get_tailscale_peers(self) -> dict[str, Any] | None:
+        """Get Tailscale peer information via CLI.
+
+        Returns:
+            Dict of peer_id -> peer_info, or None if command fails
+        """
+        import json
+        import subprocess
+
+        try:
+            loop = asyncio.get_running_loop()
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["tailscale", "status", "--json"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    ),
+                ),
+                timeout=15.0,
+            )
+            if result.returncode != 0:
+                logger.debug(f"[TailscalePeerDiscovery] tailscale status failed: {result.stderr}")
+                return None
+            ts_data = json.loads(result.stdout)
+            return ts_data.get("Peer", {})
+        except json.JSONDecodeError as e:
+            logger.debug(f"[TailscalePeerDiscovery] JSON parse error: {e}")
+            return None
+        except asyncio.TimeoutError:
+            logger.debug("[TailscalePeerDiscovery] tailscale status timed out")
+            return None
+        except FileNotFoundError:
+            logger.debug("[TailscalePeerDiscovery] tailscale not installed")
+            return None
+        except Exception as e:
+            logger.debug(f"[TailscalePeerDiscovery] Error getting tailscale status: {e}")
+            return None
+
+    def _find_missing_compute_nodes(
+        self,
+        ts_peers: dict[str, Any],
+        current_peers: set[str],
+    ) -> list[tuple[str, str]]:
+        """Find compute nodes in Tailscale but not in P2P network.
+
+        Args:
+            ts_peers: Tailscale peer data (from `tailscale status --json`)
+            current_peers: Set of current P2P peer node_ids
+
+        Returns:
+            List of (hostname, ip) tuples for missing nodes
+        """
+        missing: list[tuple[str, str]] = []
+
+        for _peer_id, peer_info in ts_peers.items():
+            hostname = peer_info.get("HostName", "").lower()
+            online = peer_info.get("Online", False)
+            ts_ips = peer_info.get("TailscaleIPs", [])
+
+            if not online or not ts_ips:
+                continue
+
+            # Check if this is a compute node
+            is_compute = any(pat in hostname for pat in self.config.compute_patterns)
+            if not is_compute:
+                continue
+
+            # Check if already in P2P network (by hostname or variants)
+            if hostname in current_peers:
+                continue
+            if hostname.replace("-", "_") in current_peers:
+                continue
+
+            # Also check by IP prefix
+            ip = ts_ips[0] if ts_ips else ""
+            ip_based_id = ip.replace(".", "-")
+            if ip_based_id in current_peers:
+                continue
+
+            missing.append((hostname, ip))
+
+        return missing
+
+    def get_discovery_stats(self) -> dict[str, Any]:
+        """Get discovery statistics."""
+        return {
+            "loop_count": self._loop_count,
+            "nodes_discovered": self._nodes_discovered,
+            "connections_attempted": self._connections_attempted,
+            "connections_succeeded": self._connections_succeeded,
+            "connection_success_rate": (
+                self._connections_succeeded / self._connections_attempted * 100
+                if self._connections_attempted > 0
+                else 0.0
+            ),
+            **self.stats.to_dict(),
+        }
+
+
 __all__ = [
     "IpDiscoveryConfig",
     "IpDiscoveryLoop",
     "NATManagementConfig",
     "NATManagementLoop",
+    "TailscalePeerDiscoveryConfig",
+    "TailscalePeerDiscoveryLoop",
     "TailscaleRecoveryConfig",
     "TailscaleRecoveryLoop",
 ]

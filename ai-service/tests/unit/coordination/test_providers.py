@@ -366,19 +366,21 @@ class TestVastProvider:
 
 
 class TestLambdaProvider:
-    """Tests for Lambda Labs provider implementation."""
+    """Tests for Lambda Labs provider implementation.
 
+    Note: Lambda Labs account terminated Dec 2025. Provider removed.
+    These tests are skipped but kept for documentation.
+    """
+
+    @pytest.mark.skip(reason="Lambda Labs account terminated Dec 2025 - provider removed")
     def test_import(self):
         """LambdaProvider can be imported."""
-        from app.coordination.providers.lambda_provider import LambdaProvider
-        assert LambdaProvider is not None
+        pass
 
+    @pytest.mark.skip(reason="Lambda Labs account terminated Dec 2025 - provider removed")
     def test_instantiation(self):
         """LambdaProvider can be instantiated."""
-        from app.coordination.providers.lambda_provider import LambdaProvider
-        provider = LambdaProvider()
-        assert provider.provider_type == ProviderType.LAMBDA
-        assert provider.name == "Lambda"  # Note: Just "Lambda", not "Lambda Labs"
+        pass
 
 
 class TestVultrProvider:
