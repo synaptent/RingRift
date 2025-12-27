@@ -67,6 +67,15 @@ except ImportError:
     HAS_GAME_DISCOVERY = False
     GameDiscovery = None
 
+# Dec 2025: Bandwidth limiting for rsync transfers
+try:
+    from app.config.cluster_config import get_node_bandwidth_kbs
+    HAS_BANDWIDTH_CONFIG = True
+except ImportError:
+    HAS_BANDWIDTH_CONFIG = False
+    def get_node_bandwidth_kbs(node_name: str, config_path=None) -> int:
+        return 50 * 1024  # Default 50 MB/s in KB/s
+
 from scripts.lib.logging_config import setup_script_logging
 
 logger = setup_script_logging("hex8_training_pipeline")
@@ -317,7 +326,8 @@ def rsync_remote_db(node_name: str, config: dict, dest_dir: Path, db_name: str =
     dest_path = dest_dir / f"{node_name}_{db_name}"
 
     # Build rsync command with checksum verification (December 2025)
-    rsync_cmd = ["rsync", "-avz", "--progress", "--checksum"]
+    bwlimit_kbs = get_node_bandwidth_kbs(node_name)  # Dec 2025: Bandwidth limit
+    rsync_cmd = ["rsync", "-avz", "--progress", "--checksum", f"--bwlimit={bwlimit_kbs}"]
     ssh_opts = f"-i {os.path.expanduser(ssh_key)} -o ConnectTimeout=30 -o StrictHostKeyChecking=no"
     if ssh_port:
         ssh_opts += f" -p {ssh_port}"

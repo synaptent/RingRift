@@ -770,6 +770,11 @@ class AutoSyncDaemon:
             await self._push_pending_games(force=True)
         except (RuntimeError, OSError, asyncio.CancelledError, asyncio.TimeoutError) as e:
             logger.error(f"[AutoSyncDaemon] Final sync failed: {e}")
+            # Dec 2025: Emit DATA_SYNC_FAILED for final sync failures
+            fire_and_forget(
+                self._emit_sync_failed(f"Final sync failed: {e}"),
+                error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
+            )
 
     async def on_game_complete(
         self,
@@ -824,6 +829,11 @@ class AutoSyncDaemon:
                         return True
                     else:
                         logger.warning(f"[AutoSyncDaemon] Write-through push failed for game {game_id}")
+                        # Dec 2025: Emit DATA_SYNC_FAILED for write-through failures (critical for ephemeral nodes)
+                        fire_and_forget(
+                            self._emit_sync_failed(f"Write-through push failed for game {game_id}"),
+                            error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
+                        )
                         return False
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -1459,6 +1469,11 @@ class AutoSyncDaemon:
             else:
                 error = stderr.decode().strip() if stderr else "Unknown error"
                 logger.warning(f"[AutoSyncDaemon] Sync failed to {target['node_id']}: {error}")
+                # Dec 2025: Emit DATA_SYNC_FAILED for individual sync failures
+                fire_and_forget(
+                    self._emit_sync_failure(target["node_id"], str(source), error),
+                    error_callback=lambda e: logger.debug(f"Failed to emit sync failure: {e}"),
+                )
                 return {
                     "source": str(source),
                     "target": target["node_id"],

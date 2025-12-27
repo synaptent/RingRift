@@ -60,8 +60,13 @@ from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 logger = logging.getLogger(__name__)
 
 
-class RecoveryAction(str, Enum):
-    """Recovery actions in escalation order."""
+class SystemRecoveryAction(str, Enum):
+    """System-level recovery actions in escalation order.
+
+    NOTE (Dec 2025): Renamed from RecoveryAction to avoid collision with
+    JobRecoveryAction in unified_health_manager.py and NodeRecoveryAction
+    in node_recovery_daemon.py which have different semantics.
+    """
 
     RESTART_P2P = "restart_p2p"
     RESTART_TAILSCALE = "restart_tailscale"
@@ -69,6 +74,10 @@ class RecoveryAction(str, Enum):
     HARD_REBOOT = "hard_reboot"
     REPROVISION = "reprovision"  # Vast.ai only
     ALERT_HUMAN = "alert_human"
+
+
+# Backward-compat alias (deprecated)
+RecoveryAction = SystemRecoveryAction
 
 
 @dataclass

@@ -111,8 +111,13 @@ class RecoveryStatus(Enum):
     FAILED = "failed"
 
 
-class RecoveryAction(str, Enum):
-    """Types of recovery actions."""
+class JobRecoveryAction(str, Enum):
+    """Types of job-level recovery actions.
+
+    NOTE (Dec 2025): Renamed from RecoveryAction to avoid collision with
+    SystemRecoveryAction in recovery_orchestrator.py and NodeRecoveryAction
+    in node_recovery_daemon.py which have different semantics.
+    """
 
     RESTART_JOB = "restart_job"
     KILL_JOB = "kill_job"
@@ -121,6 +126,10 @@ class RecoveryAction(str, Enum):
     REMOVE_NODE = "remove_node"
     ESCALATE_HUMAN = "escalate_human"
     NONE = "none"
+
+
+# Backward-compat alias (deprecated)
+RecoveryAction = JobRecoveryAction
 
 
 class RecoveryResult(str, Enum):

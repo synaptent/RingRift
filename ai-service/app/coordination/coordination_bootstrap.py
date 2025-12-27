@@ -1132,7 +1132,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     except (AttributeError, TypeError, KeyError, RuntimeError) as e:
         results["promotion_rejected_handler"] = False
-        logger.debug(f"[Bootstrap] Failed to wire promotion rejected: {e}")
+        logger.warning(f"[Bootstrap] Failed to wire promotion rejected: {e}")
 
     wired = sum(1 for v in results.values() if v)
     total = len(results)

@@ -47,13 +47,22 @@ from app.coordination.event_emitters import (
 )
 
 
-class RecoveryAction(Enum):
-    """Types of recovery actions."""
+class NodeRecoveryAction(Enum):
+    """Types of node-level recovery actions.
+
+    NOTE (Dec 2025): Renamed from RecoveryAction to avoid collision with
+    JobRecoveryAction in unified_health_manager.py and SystemRecoveryAction
+    in recovery_orchestrator.py which have different semantics.
+    """
     NONE = "none"
     RESTART = "restart"
     PREEMPTIVE_RESTART = "preemptive_restart"
     NOTIFY = "notify"  # Just notify, don't auto-recover
     FAILOVER = "failover"  # Migrate workload to another node
+
+
+# Backward-compat alias (deprecated)
+RecoveryAction = NodeRecoveryAction
 
 
 class NodeProvider(Enum):
