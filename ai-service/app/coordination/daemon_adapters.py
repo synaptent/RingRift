@@ -242,33 +242,6 @@ class DaemonAdapter(ABC):
             "has_instance": self._daemon_instance is not None,
         }
 
-    def health_check(self) -> "HealthCheckResult":
-        """Return health check result for CoordinatorProtocol compliance.
-
-        December 2025 Phase 7: Added to satisfy CoordinatorProtocol interface.
-        All DaemonAdapter subclasses now have health_check() via inheritance.
-        """
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
-
-        status_info = self.get_status()
-        is_healthy = status_info.get("running", False) and status_info.get("healthy", False)
-
-        # Determine CoordinatorStatus based on running/healthy state
-        if not status_info.get("running", False):
-            coord_status = CoordinatorStatus.STOPPED
-        elif not status_info.get("healthy", True):
-            coord_status = CoordinatorStatus.ERROR
-        else:
-            coord_status = CoordinatorStatus.RUNNING
-
-        return HealthCheckResult(
-            healthy=is_healthy,
-            status=coord_status,
-            message=f"{self.daemon_type.value} adapter health check",
-            details=status_info,
-        )
-
-
 # =============================================================================
 # Configurable Daemon Adapter (December 2025 Consolidation)
 # =============================================================================

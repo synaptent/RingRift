@@ -10,6 +10,9 @@
 
 This document provides comprehensive documentation for all environment variables used by RingRift.
 
+For internal/experimental flags referenced in code but not yet fully described here, see:
+`docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
+
 ## Quick Start
 
 1. Copy `.env.example` to `.env`

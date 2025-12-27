@@ -356,3 +356,248 @@ class TestValidationMethods:
 
         result = await mgr.run_post_training_gauntlet(MockJob())
         assert result is True
+
+
+class TestHealthCheck:
+    """Test JobManager.health_check() method."""
+
+    def test_health_check_healthy_no_jobs(self):
+        """Test health_check returns healthy when subscribed and no jobs running."""
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs={},
+            jobs_lock=threading.Lock(),
+        )
+        # Mark as subscribed to get healthy status
+        mgr._subscribed = True
+
+        health = mgr.health_check()
+
+        assert health["status"] == "healthy"
+        assert health["running_jobs"] == 0
+        assert health["failed_jobs"] == 0
+        assert health["errors_count"] == 0
+        assert health["subscribed"] is True
+
+    def test_health_check_with_running_jobs(self):
+        """Test health_check reports running jobs correctly."""
+        active_jobs = {
+            "selfplay": {
+                "job1": {"status": "running", "node_id": "node1"},
+                "job2": {"status": "running", "node_id": "node2"},
+            }
+        }
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs=active_jobs,
+            jobs_lock=threading.Lock(),
+        )
+        # Mark as subscribed to get healthy status
+        mgr._subscribed = True
+
+        health = mgr.health_check()
+
+        assert health["status"] == "healthy"
+        assert health["running_jobs"] == 2
+        assert health["operations_count"] == 2
+        assert "selfplay" in health["job_types"]
+
+    def test_health_check_degraded_with_failures(self):
+        """Test health_check returns degraded with >20% failure rate."""
+        # 3 running, 1 failed = 25% failure rate -> degraded
+        active_jobs = {
+            "selfplay": {
+                "job1": {"status": "running", "node_id": "node1"},
+                "job2": {"status": "running", "node_id": "node2"},
+                "job3": {"status": "running", "node_id": "node3"},
+                "job4": {"status": "failed", "node_id": "node4"},
+            }
+        }
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs=active_jobs,
+            jobs_lock=threading.Lock(),
+        )
+
+        health = mgr.health_check()
+
+        assert health["status"] == "degraded"
+        assert health["failed_jobs"] == 1
+        assert "failure rate" in health["last_error"].lower()
+
+    def test_health_check_unhealthy_with_high_failures(self):
+        """Test health_check returns unhealthy with >50% failure rate."""
+        # 1 running, 2 failed = 66% failure rate -> unhealthy
+        active_jobs = {
+            "selfplay": {
+                "job1": {"status": "running", "node_id": "node1"},
+                "job2": {"status": "failed", "node_id": "node2"},
+                "job3": {"status": "error", "node_id": "node3"},
+            }
+        }
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs=active_jobs,
+            jobs_lock=threading.Lock(),
+        )
+
+        health = mgr.health_check()
+
+        assert health["status"] == "unhealthy"
+        assert health["failed_jobs"] == 2
+        assert health["errors_count"] == 2
+
+    def test_health_check_degraded_not_subscribed(self):
+        """Test health_check degrades when not subscribed to events."""
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs={},
+            jobs_lock=threading.Lock(),
+        )
+        # Not subscribed (default)
+
+        health = mgr.health_check()
+
+        # Should be degraded because not subscribed
+        assert health["status"] == "degraded"
+        assert health["subscribed"] is False
+        assert health["last_error"] == "Not subscribed to events"
+
+    def test_health_check_counts_timeout_and_error_as_failed(self):
+        """Test health_check counts timeout and error statuses as failed."""
+        active_jobs = {
+            "selfplay": {
+                "job1": {"status": "failed", "node_id": "node1"},
+                "job2": {"status": "error", "node_id": "node2"},
+                "job3": {"status": "timeout", "node_id": "node3"},
+            }
+        }
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs=active_jobs,
+            jobs_lock=threading.Lock(),
+        )
+
+        health = mgr.health_check()
+
+        # All 3 should be counted as failed
+        assert health["failed_jobs"] == 3
+        assert health["running_jobs"] == 0
+
+
+class TestEventSubscriptions:
+    """Test event subscription methods."""
+
+    def test_subscribe_to_events_sets_flag(self):
+        """Test subscribe_to_events sets _subscribed flag."""
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs={},
+            jobs_lock=threading.Lock(),
+        )
+        assert mgr._subscribed is False
+
+        # Mock the event router to avoid actual subscription
+        with patch("scripts.p2p.managers.job_manager._get_event_emitter"):
+            with patch("app.coordination.event_router.get_event_bus") as mock_bus:
+                mock_bus.return_value.subscribe = MagicMock()
+                mgr.subscribe_to_events()
+
+        assert mgr._subscribed is True
+
+    def test_subscribe_to_events_idempotent(self):
+        """Test subscribe_to_events only subscribes once."""
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs={},
+            jobs_lock=threading.Lock(),
+        )
+        mgr._subscribed = True  # Already subscribed
+
+        # Mock the event bus
+        with patch("app.coordination.event_router.get_event_bus") as mock_bus:
+            mgr.subscribe_to_events()
+            # Should not call get_event_bus because already subscribed
+            mock_bus.assert_not_called()
+
+
+class TestHostOfflineHandler:
+    """Test _on_host_offline handler."""
+
+    @pytest.mark.asyncio
+    async def test_on_host_offline_cancels_jobs(self):
+        """Test _on_host_offline cancels jobs on offline node."""
+        active_jobs = {
+            "selfplay": {
+                "job1": {"status": "running", "node_id": "offline-node"},
+                "job2": {"status": "running", "node_id": "other-node"},
+            }
+        }
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs=active_jobs,
+            jobs_lock=threading.Lock(),
+        )
+
+        # Create mock event
+        class MockEvent:
+            payload = {"node_id": "offline-node"}
+
+        with patch.object(mgr, "_emit_task_event"):
+            await mgr._on_host_offline(MockEvent())
+
+        # Job on offline node should be cancelled
+        assert active_jobs["selfplay"]["job1"]["status"] == "cancelled"
+        # Job on other node should still be running
+        assert active_jobs["selfplay"]["job2"]["status"] == "running"
+        # Stats should be updated
+        assert mgr.stats.jobs_cancelled >= 1
+        assert mgr.stats.hosts_offline >= 1
+
+    @pytest.mark.asyncio
+    async def test_on_host_offline_empty_node_id(self):
+        """Test _on_host_offline handles empty node_id gracefully."""
+        mgr = JobManager(
+            ringrift_path="/tmp",
+            node_id="test-node",
+            peers={},
+            peers_lock=threading.Lock(),
+            active_jobs={"selfplay": {"job1": {"status": "running", "node_id": "node1"}}},
+            jobs_lock=threading.Lock(),
+        )
+
+        class MockEvent:
+            payload = {"node_id": ""}
+
+        # Should not raise, should return early
+        await mgr._on_host_offline(MockEvent())
+
+        # Job should not be cancelled
+        assert mgr.active_jobs["selfplay"]["job1"]["status"] == "running"
