@@ -38,15 +38,24 @@ A review of [`jest-results.json`](../jest-results.json) reveals **72 failing tes
 
 | Document                                                              | Last Updated     | Status     |
 | :-------------------------------------------------------------------- | :--------------- | :--------- |
+<<<<<<< Updated upstream
 | [`DOCUMENTATION_INDEX.md`](../../../DOCUMENTATION_INDEX.md)                 | 2025-12-01       | ✅ Current |
 | [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md)                               | December 1, 2025 | ✅ Current |
+=======
+| [`DOCUMENTATION_INDEX.md`](../../../DOCUMENTATION_INDEX.md)           | 2025-12-01       | ✅ Current |
+| [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md)                         | December 1, 2025 | ✅ Current |
+>>>>>>> Stashed changes
 | [`docs/P18.18_SKIPPED_TEST_TRIAGE.md`](P18.18_SKIPPED_TEST_TRIAGE.md) | Recent           | ✅ Current |
 
 ### 2.2 Stale Documents Needing Updates
 
 | Document                                                                                                                            | Last Updated      | Issues Found                                     |
 | :---------------------------------------------------------------------------------------------------------------------------------- | :---------------- | :----------------------------------------------- |
+<<<<<<< Updated upstream
 | [`TODO.md`](../../../TODO.md)                                                                                                             | November 30, 2025 | Test status claims unverified                    |
+=======
+| [`TODO.md`](../../../TODO.md)                                                                                                       | November 30, 2025 | Test status claims unverified                    |
+>>>>>>> Stashed changes
 | [`PASS19B_ASSESSMENT_REPORT.md`](PASS19B_ASSESSMENT_REPORT.md)                                                                      | 2025-11-30        | Claims "0 failed" but jest-results.json shows 72 |
 | [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | Recent            | May need test health update                      |
 

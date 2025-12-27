@@ -158,7 +158,11 @@ Treat the subtasks in this tier as **planning guidance** and a refinement backlo
 | T3-W5-D    | 5          | **Add cancellation token pattern** - Implement cancellation tokens for all async game operations               | `CancellationToken` utility in `src/shared/utils/cancellation.ts`                                               | `src/shared/utils/cancellation.ts` (new), `src/server/services/AIServiceClient.ts` | T3-W5-C                 | M          | Code      |
 | T3-W5-E    | 5          | **Integrate cancellation with WebSocket flows** - Use cancellation tokens for pending choices and reconnection | WebSocket handlers check cancellation before processing                                                         | `src/server/websocket/server.ts`, `src/server/game/WebSocketInteractionHandler.ts` | T3-W5-D                 | L          | Code      |
 | T3-W5-F    | 5          | **Explicit timeout modeling** - Replace setTimeout patterns with typed timeout handling                        | `TimedOperation<T>` wrapper with explicit timeout types                                                         | `src/shared/utils/timeout.ts` (new), `src/server/websocket/server.ts`              | T3-W5-D                 | M          | Code      |
+<<<<<<< Updated upstream
 | T3-W5-G    | 5          | **Document state machine transitions** - Create Mermaid diagrams for all state machines                        | `docs/architecture/STATE_MACHINES.md` with session, AI request, and WebSocket lifecycle diagrams                             | `docs/architecture/STATE_MACHINES.md`                                                           | T3-W5-A through T3-W5-F | S          | Architect |
+=======
+| T3-W5-G    | 5          | **Document state machine transitions** - Create Mermaid diagrams for all state machines                        | `docs/architecture/STATE_MACHINES.md` with session, AI request, and WebSocket lifecycle diagrams                | `docs/architecture/STATE_MACHINES.md`                                              | T3-W5-A through T3-W5-F | S          | Architect |
+>>>>>>> Stashed changes
 | T3-W5-H    | 5          | **Create resilience test suite** - Test error recovery, timeouts, and cancellation paths                       | `tests/integration/Resilience.*.test.ts` covering all async failure modes                                       | `tests/integration/AIResilience.test.ts` (extend), new resilience tests            | T3-W5-G                 | L          | Code      |
 
 ### Completion Criteria
@@ -200,7 +204,11 @@ This tier simplifies configuration management by consolidating multiple config e
 | ---------- | ---------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------- | ---------- | --------- |
 | T4-W4-A    | 4          | **Audit configuration entrypoints** - Document all config sources and their consumers                 | Config audit document showing all entrypoints and usage                                | `src/server/config.ts`, `src/server/config/env.ts`, `src/server/config/index.ts`, `.env.example` | None             | S          | Architect |
 | T4-W4-B    | 4          | **Consolidate to single config entrypoint** - Merge all config modules into unified config            | Single `src/server/config/index.ts` exporting typed `Config` object                    | `src/server/config/*.ts` → `src/server/config/index.ts`                                          | T4-W4-A          | M          | Code      |
+<<<<<<< Updated upstream
 | T4-W4-C    | 4          | **Document topology modes** - Create documentation for topology enforcement modes                     | `docs/architecture/TOPOLOGY_MODES.md` explaining square8, square19, hexagonal modes                 | `docs/architecture/TOPOLOGY_MODES.md` (new)                                                                   | None             | S          | Architect |
+=======
+| T4-W4-C    | 4          | **Document topology modes** - Create documentation for topology enforcement modes                     | `docs/architecture/TOPOLOGY_MODES.md` explaining square8, square19, hexagonal modes    | `docs/architecture/TOPOLOGY_MODES.md` (new)                                                      | None             | S          | Architect |
+>>>>>>> Stashed changes
 | T4-W4-D    | 4          | **Extract topology as runtime module** - Move topology logic to dedicated module with clear interface | `src/shared/engine/topology/` with `TopologyConfig` and board-specific implementations | `src/shared/engine/core.ts` topology sections, new `src/shared/engine/topology/`                 | T4-W4-C          | M          | Code      |
 | T4-W6-A    | 6          | **Audit test coverage overlaps** - Identify tests covering identical behavior                         | Test overlap matrix document                                                           | `tests/unit/`, `tests/scenarios/`, `tests/integration/`                                          | None             | M          | Architect |
 | T4-W6-B    | 6          | **Define test layering strategy** - Document test layer responsibilities                              | `tests/TEST_LAYERS.md` defining unit, contract, integration, e2e layers                | `tests/TEST_LAYERS.md`                                                                           | T4-W6-A          | S          | Architect |
@@ -416,8 +424,13 @@ Each tier should be deployable independently with feature flags:
 | `src/client/services/GameConnection.ts`                | WebSocket handling             | 5    | In Progress                |
 | `src/client/contexts/SandboxContext.tsx`               | Sandbox state                  | 5    | Pending                    |
 | `src/client/adapters/GameViewModels.ts`                | View model adapters            | 5    | Pending                    |
+<<<<<<< Updated upstream
 | `docs/architecture/STATE_MACHINES.md`                               | State machine documentation    | 3    | ✅ Complete                |
 | `docs/architecture/TOPOLOGY_MODES.md`                               | Topology documentation         | 4    | ✅ Complete                |
+=======
+| `docs/architecture/STATE_MACHINES.md`                  | State machine documentation    | 3    | ✅ Complete                |
+| `docs/architecture/TOPOLOGY_MODES.md`                  | Topology documentation         | 4    | ✅ Complete                |
+>>>>>>> Stashed changes
 | `tests/TEST_LAYERS.md`                                 | Test layer strategy            | 4    | ✅ Complete                |
 
 ---

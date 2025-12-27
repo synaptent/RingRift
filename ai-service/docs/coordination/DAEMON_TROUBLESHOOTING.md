@@ -27,11 +27,19 @@ tail -f logs/daemons.log | grep -E "(ERROR|WARNING|CRITICAL)"
 ### 1. Daemon Won't Start
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Daemon exits immediately after starting
 - "Dependencies not available" error
 - Import errors
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Test daemon import
 python -c "from app.coordination.daemon_manager import DaemonManager; print('OK')"
@@ -42,6 +50,7 @@ python -c "from app.coordination.auto_sync_daemon import AutoSyncDaemon; print('
 
 **Common Causes & Fixes:**
 
+<<<<<<< Updated upstream
 | Cause | Fix |
 |-------|-----|
 | Missing dependency | `pip install -r requirements.txt` |
@@ -50,6 +59,17 @@ python -c "from app.coordination.auto_sync_daemon import AutoSyncDaemon; print('
 | EVENT_ROUTER not started | Start EVENT_ROUTER first (dependency) |
 
 **Resolution:**
+=======
+| Cause                    | Fix                                       |
+| ------------------------ | ----------------------------------------- |
+| Missing dependency       | `pip install -r requirements.txt`         |
+| Wrong PYTHONPATH         | `export PYTHONPATH=.` from ai-service dir |
+| Circular import          | Check import order in `__init__.py`       |
+| EVENT_ROUTER not started | Start EVENT_ROUTER first (dependency)     |
+
+**Resolution:**
+
+>>>>>>> Stashed changes
 ```bash
 # Start with dependencies in order
 python scripts/launch_daemons.py --daemons EVENT_ROUTER
@@ -60,11 +80,19 @@ python scripts/launch_daemons.py --daemons AUTO_SYNC
 ### 2. Daemon Keeps Restarting
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Daemon restarts every few minutes
 - "Task failed" or "Task exception" in logs
 - DAEMON_WATCHDOG keeps restarting daemons
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Check watchdog restarts
 grep "Restarting daemon" logs/daemons.log
@@ -75,6 +103,7 @@ grep -c "failed" logs/daemons.log
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Symptoms | Fix |
 |-------|----------|-----|
 | Resource exhaustion | OOM errors | Reduce batch sizes, check memory |
@@ -83,6 +112,17 @@ grep -c "failed" logs/daemons.log
 | Infinite loop | 100% CPU | Add `asyncio.sleep()` in loops |
 
 **Resolution - Database Lock:**
+=======
+| Cause               | Symptoms           | Fix                              |
+| ------------------- | ------------------ | -------------------------------- |
+| Resource exhaustion | OOM errors         | Reduce batch sizes, check memory |
+| Network failures    | SSH timeout errors | Check node connectivity          |
+| Database locked     | SQLite lock errors | Kill stuck processes             |
+| Infinite loop       | 100% CPU           | Add `asyncio.sleep()` in loops   |
+
+**Resolution - Database Lock:**
+
+>>>>>>> Stashed changes
 ```bash
 # Find processes holding locks
 lsof data/work_queue.db
@@ -97,11 +137,19 @@ sqlite3 data/work_queue.db "PRAGMA integrity_check"
 ### 3. Events Not Being Delivered
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Subscribers not receiving events
 - Events appear in router stats but not in handlers
 - "Event loop is closed" errors
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Check event router stats
 python -c "
@@ -113,6 +161,7 @@ print(router.get_stats())
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Fix |
 |-------|-----|
 | Router not started | Call `await router.start()` |
@@ -121,6 +170,17 @@ print(router.get_stats())
 | Fire-and-forget task failed | Check error callback |
 
 **Resolution - Debug Event Flow:**
+=======
+| Cause                       | Fix                              |
+| --------------------------- | -------------------------------- |
+| Router not started          | Call `await router.start()`      |
+| Wrong event type            | Check `DataEventType` enum value |
+| Handler exception           | Add try/except in handler        |
+| Fire-and-forget task failed | Check error callback             |
+
+**Resolution - Debug Event Flow:**
+
+>>>>>>> Stashed changes
 ```python
 # Add debug logging to event router
 import logging
@@ -130,11 +190,19 @@ logging.getLogger("app.coordination.event_router").setLevel(logging.DEBUG)
 ### 4. P2P Leader Issues
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Multiple nodes think they're leader
 - Leader-only daemons running on wrong node
 - "Not leader" skips in JobReaper
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Check leader on multiple nodes
 for host in node1 node2 node3; do
@@ -145,6 +213,7 @@ done
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Symptoms | Fix |
 |-------|----------|-----|
 | Network partition | Different leaders per partition | Check Tailscale/network |
@@ -153,6 +222,17 @@ done
 | Voter quorum lost | No leader elected | Check voter nodes alive |
 
 **Resolution - Force Re-Election:**
+=======
+| Cause             | Symptoms                        | Fix                          |
+| ----------------- | ------------------------------- | ---------------------------- |
+| Network partition | Different leaders per partition | Check Tailscale/network      |
+| Stale state file  | Old leader ID persisted         | Delete `/tmp/p2p_state.json` |
+| Clock skew        | Election timeouts wrong         | Sync NTP                     |
+| Voter quorum lost | No leader elected               | Check voter nodes alive      |
+
+**Resolution - Force Re-Election:**
+
+>>>>>>> Stashed changes
 ```bash
 # On all nodes, restart P2P with clean state
 pkill -f p2p_orchestrator
@@ -163,11 +243,19 @@ python scripts/p2p_orchestrator.py &
 ### 5. Sync Failures
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - "Sync failed" events
 - Data not propagating to nodes
 - Stale data on some nodes
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Check sync status
 python -c "
@@ -182,6 +270,7 @@ sqlite3 data/sync_history.db "SELECT * FROM syncs ORDER BY timestamp DESC LIMIT 
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Symptoms | Fix |
 |-------|----------|-----|
 | SSH key issues | "Permission denied" | Check ~/.ssh/id_cluster |
@@ -190,6 +279,17 @@ sqlite3 data/sync_history.db "SELECT * FROM syncs ORDER BY timestamp DESC LIMIT 
 | rsync version mismatch | Protocol errors | Update rsync on all nodes |
 
 **Resolution - Force Manual Sync:**
+=======
+| Cause                  | Symptoms             | Fix                       |
+| ---------------------- | -------------------- | ------------------------- |
+| SSH key issues         | "Permission denied"  | Check ~/.ssh/id_cluster   |
+| Bandwidth exhausted    | Slow/stuck transfers | Reduce parallel syncs     |
+| Disk full              | "No space left"      | Clean old data            |
+| rsync version mismatch | Protocol errors      | Update rsync on all nodes |
+
+**Resolution - Force Manual Sync:**
+
+>>>>>>> Stashed changes
 ```bash
 # Sync specific database to node
 rsync -avz --progress data/games/selfplay.db \
@@ -199,11 +299,19 @@ rsync -avz --progress data/games/selfplay.db \
 ### 6. Work Queue Starvation
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Nodes are idle but queue is empty
 - QueuePopulator not adding items
 - "Backpressure active" messages
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Check queue status
 python -c "
@@ -222,6 +330,7 @@ print(populator.get_status())
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Symptoms | Fix |
 |-------|----------|-----|
 | All targets met | All Elo >= 2000 | Raise target Elo |
@@ -230,6 +339,17 @@ print(populator.get_status())
 | Cluster health factor | Dead nodes detected | Check P2P health |
 
 **Resolution:**
+=======
+| Cause                 | Symptoms              | Fix                       |
+| --------------------- | --------------------- | ------------------------- |
+| All targets met       | All Elo >= 2000       | Raise target Elo          |
+| Backpressure          | Queue > 50 pending    | Wait for jobs to complete |
+| No work queue set     | `_work_queue is None` | Set queue in populator    |
+| Cluster health factor | Dead nodes detected   | Check P2P health          |
+
+**Resolution:**
+
+>>>>>>> Stashed changes
 ```bash
 # Force populate queue
 python -c "
@@ -244,11 +364,19 @@ print(f'Added {added} items')
 ### 7. Training Jobs Timeout
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Jobs marked as TIMEOUT
 - JobReaper killing processes
 - Blacklisted nodes
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Check JobReaper stats
 python -c "
@@ -262,6 +390,7 @@ grep "blacklisted" logs/daemons.log
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Symptoms | Fix |
 |-------|----------|-----|
 | Timeout too short | Good jobs killed | Increase timeout in config |
@@ -270,6 +399,17 @@ grep "blacklisted" logs/daemons.log
 | Network I/O | Waiting for data | Check data server |
 
 **Resolution - Adjust Timeouts:**
+=======
+| Cause             | Symptoms                 | Fix                        |
+| ----------------- | ------------------------ | -------------------------- |
+| Timeout too short | Good jobs killed         | Increase timeout in config |
+| GPU OOM           | Process killed by system | Reduce batch size          |
+| Stuck process     | 100% CPU, no progress    | Check for infinite loops   |
+| Network I/O       | Waiting for data         | Check data server          |
+
+**Resolution - Adjust Timeouts:**
+
+>>>>>>> Stashed changes
 ```python
 # In job_reaper.py, update timeouts
 self.job_timeouts = {
@@ -281,11 +421,19 @@ self.job_timeouts = {
 ### 8. Memory Leaks in Long-Running Daemons
 
 **Symptoms:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 - Memory usage grows over time
 - OOM after hours/days of operation
 - Daemon slows down over time
 
 **Diagnosis:**
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Monitor memory usage
 watch -n 10 'ps aux | grep -E "daemon|p2p" | awk "{print \$4, \$11}"'
@@ -300,6 +448,7 @@ print(f'Garbage: {len(gc.garbage)}')
 
 **Common Causes:**
 
+<<<<<<< Updated upstream
 | Cause | Fix |
 |-------|-----|
 | Event history growing | Set `max_history` in router config |
@@ -308,6 +457,17 @@ print(f'Garbage: {len(gc.garbage)}')
 | Queued work IDs set | Prune old entries periodically |
 
 **Resolution - Add Periodic Cleanup:**
+=======
+| Cause                 | Fix                                  |
+| --------------------- | ------------------------------------ |
+| Event history growing | Set `max_history` in router config   |
+| Unbounded caches      | Add LRU eviction                     |
+| Task references held  | Use `asyncio.create_task()` properly |
+| Queued work IDs set   | Prune old entries periodically       |
+
+**Resolution - Add Periodic Cleanup:**
+
+>>>>>>> Stashed changes
 ```python
 # Add to daemon loop
 async def _cleanup_memory(self):
@@ -322,12 +482,20 @@ async def _cleanup_memory(self):
 ## Daemon Health Checks
 
 ### Liveness Check
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 curl -s http://localhost:8765/health/live
 # Expected: {"status": "ok"}
 ```
 
 ### Readiness Check
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 curl -s http://localhost:8765/health/ready
 # Expected: {"status": "ready", "daemons": {...}}
@@ -336,6 +504,10 @@ curl -s http://localhost:8765/health/ready
 ## Emergency Recovery
 
 ### Stop All Daemons
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 python scripts/launch_daemons.py --stop-all
 pkill -f "p2p_orchestrator"
@@ -343,6 +515,10 @@ pkill -f "daemon_manager"
 ```
 
 ### Clean Restart
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Kill everything
 pkill -f ringrift
@@ -358,6 +534,10 @@ python scripts/launch_daemons.py --all
 ```
 
 ### Recover Corrupted Database
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 ```bash
 # Backup first
 cp data/work_queue.db data/work_queue.db.bak
@@ -380,6 +560,10 @@ sqlite3 data/work_queue.db < dump.sql
    - Leader changes > 3 per hour
 
 2. **Log rotation**:
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
    ```bash
    # Add to crontab
    0 0 * * * find logs/ -name "*.log" -mtime +7 -delete

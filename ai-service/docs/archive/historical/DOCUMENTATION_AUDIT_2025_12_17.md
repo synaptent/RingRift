@@ -170,10 +170,17 @@ BoardType.HEXAGONAL: BoardConfig(
 
 ### Architecture Documentation
 
+<<<<<<< Updated upstream
 | File                                    | Status  | Issues |
 | --------------------------------------- | ------- | ------ |
 | ai-service/docs/architecture/GPU_ARCHITECTURE_SIMPLIFICATION.md | CURRENT | None   |
 | docs/NEURAL_AI_ARCHITECTURE.md          | CURRENT | None   |
+=======
+| File                                                            | Status  | Issues |
+| --------------------------------------------------------------- | ------- | ------ |
+| ai-service/docs/architecture/GPU_ARCHITECTURE_SIMPLIFICATION.md | CURRENT | None   |
+| docs/NEURAL_AI_ARCHITECTURE.md                                  | CURRENT | None   |
+>>>>>>> Stashed changes
 | ai-service/docs/architecture/MPS_ARCHITECTURE.md                | CURRENT | None   |
 
 ### Scripts Documentation

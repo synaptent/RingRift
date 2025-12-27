@@ -187,6 +187,7 @@ From [`docs/architecture/FSM_EXTENSION_STRATEGY.md`](../../../docs/architecture/
 
 ### 4.2 P1 High Priority Tasks
 
+<<<<<<< Updated upstream
 | ID      | Task                                                      | Acceptance Criteria                                                                | Dependency | Effort | Mode      |
 | ------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------- | ------ | --------- |
 | P23.1-1 | Add useSandboxInteractions hook tests                     | All interaction types tested; edge cases covered                                   | None       | M      | code      |
@@ -195,6 +196,16 @@ From [`docs/architecture/FSM_EXTENSION_STRATEGY.md`](../../../docs/architecture/
 | P23.1-4 | Begin SandboxGameHost Phase 1 decomposition               | useSandboxClock hook extracted per [plan](../../architecture/SANDBOX_GAME_HOST_DECOMPOSITION_PLAN.md) | None       | L      | code      |
 | P23.1-5 | Extract useSandboxAITracking hook                         | AI tracking state/effects in dedicated hook                                        | P23.1-4    | M      | code      |
 | P23.1-6 | Address top 100 weak assertions                           | Identified assertions upgraded to meaningful checks                                | None       | L      | code      |
+=======
+| ID      | Task                                                      | Acceptance Criteria                                                                                   | Dependency | Effort | Mode      |
+| ------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------- | ------ | --------- |
+| P23.1-1 | Add useSandboxInteractions hook tests                     | All interaction types tested; edge cases covered                                                      | None       | M      | code      |
+| P23.1-2 | Fix ai-service/docs/ARCHITECTURE.md game_engine path      | Path updated from `game_engine.py` to `game_engine/__init__.py`                                       | None       | S      | code      |
+| P23.1-3 | Document 11 missing helpers in MODULE_RESPONSIBILITIES.md | All helper files documented with responsibilities                                                     | P23.0-5    | M      | architect |
+| P23.1-4 | Begin SandboxGameHost Phase 1 decomposition               | useSandboxClock hook extracted per [plan](../../architecture/SANDBOX_GAME_HOST_DECOMPOSITION_PLAN.md) | None       | L      | code      |
+| P23.1-5 | Extract useSandboxAITracking hook                         | AI tracking state/effects in dedicated hook                                                           | P23.1-4    | M      | code      |
+| P23.1-6 | Address top 100 weak assertions                           | Identified assertions upgraded to meaningful checks                                                   | None       | L      | code      |
+>>>>>>> Stashed changes
 
 ### 4.3 P2 Medium Priority Tasks
 
@@ -234,12 +245,21 @@ From [`docs/architecture/FSM_EXTENSION_STRATEGY.md`](../../../docs/architecture/
 
 ### Document Accuracy Matrix
 
+<<<<<<< Updated upstream
 | Document                                                                                             | Status        | Issues Found                                                    | Resolution |
 | ---------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------- | ---------- |
 | [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md)                                                      | ✅ Current    | None                                                            | N/A        |
 | [`DOMAIN_AGGREGATE_DESIGN.md`](../../architecture/DOMAIN_AGGREGATE_DESIGN.md)                           | ⚠️ Incomplete | Missing EliminationAggregate, RecoveryAggregate                 | P23.0-5    |
 | [`MODULE_RESPONSIBILITIES.md`](../../architecture/MODULE_RESPONSIBILITIES.md)                           | ⚠️ Incomplete | 11 helper files undocumented                                    | P23.1-3    |
 | [`ai-service/docs/ARCHITECTURE.md`](../../../ai-service/docs/ARCHITECTURE.md)                        | ❌ Incorrect  | `game_engine.py` path should be `game_engine/__init__.py`       | P23.1-2    |
+=======
+| Document                                                                                                | Status        | Issues Found                                                    | Resolution |
+| ------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------- | ---------- |
+| [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md)                                                         | ✅ Current    | None                                                            | N/A        |
+| [`DOMAIN_AGGREGATE_DESIGN.md`](../../architecture/DOMAIN_AGGREGATE_DESIGN.md)                           | ⚠️ Incomplete | Missing EliminationAggregate, RecoveryAggregate                 | P23.0-5    |
+| [`MODULE_RESPONSIBILITIES.md`](../../architecture/MODULE_RESPONSIBILITIES.md)                           | ⚠️ Incomplete | 11 helper files undocumented                                    | P23.1-3    |
+| [`ai-service/docs/ARCHITECTURE.md`](../../../ai-service/docs/ARCHITECTURE.md)                           | ❌ Incorrect  | `game_engine.py` path should be `game_engine/__init__.py`       | P23.1-2    |
+>>>>>>> Stashed changes
 | [`SANDBOX_GAME_HOST_DECOMPOSITION_PLAN.md`](../../architecture/SANDBOX_GAME_HOST_DECOMPOSITION_PLAN.md) | ✅ Current    | Plan is detailed and actionable                                 | N/A        |
 | [`HEURISTIC_AI_DECOMPOSITION_PLAN.md`](../../architecture/HEURISTIC_AI_DECOMPOSITION_PLAN.md)           | ✅ Completed  | Marked as completed, 6 evaluators extracted                     | N/A        |
 | [`FSM_EXTENSION_STRATEGY.md`](../../architecture/FSM_EXTENSION_STRATEGY.md)                             | ⚠️ Partial    | Extension strategy exists but migration completion plan missing | P23.4-1    |

@@ -37,6 +37,7 @@ RingRift uses a multi-layer sync architecture to replicate training data (games,
 
 ## Layer Overview
 
+<<<<<<< Updated upstream
 | Layer | Module | Purpose |
 |-------|--------|---------|
 | **SyncOrchestrator** | `sync_orchestrator.py` | Unified facade, coordinates all sync |
@@ -45,6 +46,16 @@ RingRift uses a multi-layer sync architecture to replicate training data (games,
 | **SyncRouter** | `sync_router.py` | Routing: which nodes get data |
 | **ClusterManifest** | `cluster_manifest.py` | Registry: tracks where data exists |
 | **AutoSyncDaemon** | `auto_sync_daemon.py` | Background: automated replication |
+=======
+| Layer                          | Module                               | Purpose                              |
+| ------------------------------ | ------------------------------------ | ------------------------------------ |
+| **SyncOrchestrator**           | `sync_orchestrator.py`               | Unified facade, coordinates all sync |
+| **SyncScheduler**              | `sync_coordinator.py` (coordination) | Scheduling: when/what to sync        |
+| **DistributedSyncCoordinator** | `sync_coordinator.py` (distributed)  | Execution: performs actual syncs     |
+| **SyncRouter**                 | `sync_router.py`                     | Routing: which nodes get data        |
+| **ClusterManifest**            | `cluster_manifest.py`                | Registry: tracks where data exists   |
+| **AutoSyncDaemon**             | `auto_sync_daemon.py`                | Background: automated replication    |
+>>>>>>> Stashed changes
 
 ## Sync Strategies
 
@@ -95,12 +106,21 @@ training nodes   (disk full)         (manifest)
 
 The system automatically selects the best transport:
 
+<<<<<<< Updated upstream
 | Transport | Speed | Use Case |
 |-----------|-------|----------|
 | **P2P HTTP** | Fast | Same-provider nodes, leader distribution |
 | **aria2** | Fast | Parallel multi-source downloads |
 | **rsync/SSH** | Medium | Cross-provider, bandwidth-limited |
 | **Gossip** | Slow | Eventual consistency, background |
+=======
+| Transport     | Speed  | Use Case                                 |
+| ------------- | ------ | ---------------------------------------- |
+| **P2P HTTP**  | Fast   | Same-provider nodes, leader distribution |
+| **aria2**     | Fast   | Parallel multi-source downloads          |
+| **rsync/SSH** | Medium | Cross-provider, bandwidth-limited        |
+| **Gossip**    | Slow   | Eventual consistency, background         |
+>>>>>>> Stashed changes
 
 ### Selection Logic
 
@@ -120,6 +140,7 @@ else:
 
 Provider-specific limits prevent network saturation:
 
+<<<<<<< Updated upstream
 | Provider | Limit | Notes |
 |----------|-------|-------|
 | Lambda | 100 MB/s | Internal network is fast |
@@ -130,6 +151,18 @@ Provider-specific limits prevent network saturation:
 | Nebius | 50 MB/s | Has rate limits |
 | Vast.ai | 50 MB/s | Varies by instance |
 | Default | 20 MB/s | Conservative fallback |
+=======
+| Provider  | Limit    | Notes                    |
+| --------- | -------- | ------------------------ |
+| Lambda    | 100 MB/s | Internal network is fast |
+| RunPod    | 100 MB/s | Good connectivity        |
+| Tailscale | 100 MB/s | Internal mesh            |
+| Hetzner   | 80 MB/s  | Dedicated servers        |
+| Vultr     | 80 MB/s  | Cloud compute            |
+| Nebius    | 50 MB/s  | Has rate limits          |
+| Vast.ai   | 50 MB/s  | Varies by instance       |
+| Default   | 20 MB/s  | Conservative fallback    |
+>>>>>>> Stashed changes
 
 ### Priority-Based Allocation
 
@@ -149,12 +182,21 @@ The `ClusterManifest` tracks where data exists across the cluster:
 
 ### Data Types Tracked
 
+<<<<<<< Updated upstream
 | Type | Example | Purpose |
 |------|---------|---------|
 | `GAME` | `game-123` → `gh200-a:/data/games/selfplay.db` | Game locations |
 | `MODEL` | `canonical_hex8_2p.pth` → `[nebius-h100, runpod-h100]` | Model replicas |
 | `NPZ` | `hex8_2p.npz` → `[training-node-1, training-node-2]` | Training data |
 | `CHECKPOINT` | `checkpoint_epoch_50.pth` → `nebius-h100-1` | Training checkpoints |
+=======
+| Type         | Example                                                | Purpose              |
+| ------------ | ------------------------------------------------------ | -------------------- |
+| `GAME`       | `game-123` → `gh200-a:/data/games/selfplay.db`         | Game locations       |
+| `MODEL`      | `canonical_hex8_2p.pth` → `[nebius-h100, runpod-h100]` | Model replicas       |
+| `NPZ`        | `hex8_2p.npz` → `[training-node-1, training-node-2]`   | Training data        |
+| `CHECKPOINT` | `checkpoint_epoch_50.pth` → `nebius-h100-1`            | Training checkpoints |
+>>>>>>> Stashed changes
 
 ### Replication Targets
 
@@ -181,10 +223,17 @@ Routes data to appropriate nodes based on policies:
 # From distributed_hosts.yaml
 sync_routing:
   exclude_from_sync:
+<<<<<<< Updated upstream
     - mac-studio    # Coordinator, limited disk
     - dev-laptop    # Development machine
   nfs_sharing_groups:
     - [gh200-a, gh200-b, gh200-c]  # Share NFS, skip sync
+=======
+    - mac-studio # Coordinator, limited disk
+    - dev-laptop # Development machine
+  nfs_sharing_groups:
+    - [gh200-a, gh200-b, gh200-c] # Share NFS, skip sync
+>>>>>>> Stashed changes
 ```
 
 ### Capacity Checks
@@ -391,7 +440,11 @@ sync_routing:
     - dev-machines
 
   nfs_sharing_groups:
+<<<<<<< Updated upstream
     - [gh200-a, gh200-b, gh200-c]  # Lambda NFS group
+=======
+    - [gh200-a, gh200-b, gh200-c] # Lambda NFS group
+>>>>>>> Stashed changes
 
   ephemeral_hosts:
     - vast-*
@@ -400,7 +453,11 @@ sync_routing:
   allowed_external_storage:
     - host: backup.example.com
       path: /backups/ringrift
+<<<<<<< Updated upstream
       schedule: "0 */6 * * *"  # Every 6 hours
+=======
+      schedule: '0 */6 * * *' # Every 6 hours
+>>>>>>> Stashed changes
 
 hosts:
   nebius-h100-1:
@@ -411,6 +468,7 @@ hosts:
 
 ### Environment Variables
 
+<<<<<<< Updated upstream
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RINGRIFT_SYNC_INTERVAL` | 60 | Main sync interval (seconds) |
@@ -433,6 +491,30 @@ hosts:
 | `app/coordination/sync_constants.py` | Shared enums/dataclasses |
 | `app/coordination/sync_integrity.py` | Checksum verification |
 | `app/coordination/ephemeral_sync.py` | Ephemeral host support (deprecated) |
+=======
+| Variable                       | Default | Description                  |
+| ------------------------------ | ------- | ---------------------------- |
+| `RINGRIFT_SYNC_INTERVAL`       | 60      | Main sync interval (seconds) |
+| `RINGRIFT_GOSSIP_INTERVAL`     | 30      | Gossip interval (seconds)    |
+| `RINGRIFT_SYNC_MAX_CONCURRENT` | 4       | Max concurrent syncs         |
+| `RINGRIFT_SYNC_BANDWIDTH_MBPS` | 50      | Default bandwidth limit      |
+| `RINGRIFT_SYNC_MAX_DISK_USAGE` | 70      | Max disk usage %             |
+
+## Files Reference
+
+| File                                   | Purpose                                |
+| -------------------------------------- | -------------------------------------- |
+| `app/distributed/sync_orchestrator.py` | Unified facade                         |
+| `app/coordination/sync_coordinator.py` | SyncScheduler (scheduling)             |
+| `app/distributed/sync_coordinator.py`  | DistributedSyncCoordinator (execution) |
+| `app/coordination/sync_router.py`      | Intelligent routing                    |
+| `app/distributed/cluster_manifest.py`  | Central registry                       |
+| `app/coordination/auto_sync_daemon.py` | Background automation                  |
+| `app/coordination/sync_bandwidth.py`   | Bandwidth management                   |
+| `app/coordination/sync_constants.py`   | Shared enums/dataclasses               |
+| `app/coordination/sync_integrity.py`   | Checksum verification                  |
+| `app/coordination/ephemeral_sync.py`   | Ephemeral host support (deprecated)    |
+>>>>>>> Stashed changes
 
 ## Migration from Legacy Systems
 

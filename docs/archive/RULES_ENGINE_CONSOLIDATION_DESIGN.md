@@ -1037,6 +1037,7 @@ def test_decision_enumeration_parity(vector):
 
 **Tasks:**
 
+<<<<<<< Updated upstream
 | Task                                   | File(s)                        | Effort |
 | -------------------------------------- | ------------------------------ | ------ |
 | Remove deprecated backend modules      | Various                        | 1 day  |
@@ -1045,6 +1046,16 @@ def test_decision_enumeration_parity(vector):
 | Update `CANONICAL_ENGINE_API.md`       | `docs/architecture/CANONICAL_ENGINE_API.md` | 1 day  |
 | Convert parity tests to contract tests | `tests/unit/*Parity*.test.ts`  | 2 days |
 | Performance optimization               | Various                        | 3 days |
+=======
+| Task                                   | File(s)                                     | Effort |
+| -------------------------------------- | ------------------------------------------- | ------ |
+| Remove deprecated backend modules      | Various                                     | 1 day  |
+| Remove deprecated sandbox modules      | Various                                     | 1 day  |
+| Update `RULES_ENGINE_ARCHITECTURE.md`  | `RULES_ENGINE_ARCHITECTURE.md`              | 2 days |
+| Update `CANONICAL_ENGINE_API.md`       | `docs/architecture/CANONICAL_ENGINE_API.md` | 1 day  |
+| Convert parity tests to contract tests | `tests/unit/*Parity*.test.ts`               | 2 days |
+| Performance optimization               | Various                                     | 3 days |
+>>>>>>> Stashed changes
 
 **Files to Remove:**
 

@@ -31,8 +31,13 @@ This 9th assessment pass focused on examining areas of the codebase that were no
 
 #### Critical: Component Complexity
 
+<<<<<<< Updated upstream
 | File                                                                            | Lines | Issue                                                                              | Severity |
 | ------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- | -------- |
+=======
+| File                                                                                  | Lines | Issue                                                                              | Severity |
+| ------------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- | -------- |
+>>>>>>> Stashed changes
 | [`src/client/pages/GamePage.tsx`](../../../src/client/pages/GamePage.tsx)             | 2144  | Extremely large monolithic component handling both backend and local sandbox modes | Critical |
 | [`src/client/components/GameHUD.tsx`](../../../src/client/components/GameHUD.tsx)     | 888   | Dual interface support (legacy + view model) creates maintenance burden            | High     |
 | [`src/client/contexts/GameContext.tsx`](../../../src/client/contexts/GameContext.tsx) | 493   | Complex WebSocket/Socket.IO management with multiple state concerns                | Medium   |
@@ -53,8 +58,13 @@ This 9th assessment pass focused on examining areas of the codebase that were no
 
 Components lack proper accessibility attributes:
 
+<<<<<<< Updated upstream
 | Component                                                       | Missing                                    | Impact |
 | --------------------------------------------------------------- | ------------------------------------------ | ------ |
+=======
+| Component                                                             | Missing                                    | Impact |
+| --------------------------------------------------------------------- | ------------------------------------------ | ------ |
+>>>>>>> Stashed changes
 | [`BoardView.tsx`](../../../src/client/components/BoardView.tsx)       | ARIA labels, keyboard navigation for cells | High   |
 | [`ChoiceDialog.tsx`](../../../src/client/components/ChoiceDialog.tsx) | Focus trap, escape key handling            | Medium |
 | [`VictoryModal.tsx`](../../../src/client/components/VictoryModal.tsx) | Screen reader announcements                | Medium |
@@ -63,8 +73,13 @@ Components lack proper accessibility attributes:
 
 The hooks at [`src/client/hooks/`](../../../src/client/hooks) show inconsistent patterns:
 
+<<<<<<< Updated upstream
 | Hook                                                                  | Lines | Concern                                                |
 | --------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
+=======
+| Hook                                                                        | Lines | Concern                                                |
+| --------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
+>>>>>>> Stashed changes
 | [`useGameConnection.ts`](../../../src/client/hooks/useGameConnection.ts:31) | 290   | Hardcoded 8-second staleness threshold (line 31)       |
 | [`useGameState.ts`](../../../src/client/hooks/useGameState.ts)              | 300   | View model transformation duplicates GameContext logic |
 | [`useGameActions.ts`](../../../src/client/hooks/useGameActions.ts)          | 388   | Large surface area, could be split                     |
@@ -93,10 +108,17 @@ The hooks at [`src/client/hooks/`](../../../src/client/hooks) show inconsistent 
 
 **Files:** [`monitoring/alertmanager/alertmanager.yml`](../../../monitoring/alertmanager/alertmanager.yml), [`monitoring/prometheus/alerts.yml`](../../../monitoring/prometheus/alerts.yml)
 
+<<<<<<< Updated upstream
 | Issue                    | Location                                                                      | Description                                                               |
 | ------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | Invalid runbook URLs     | [`alertmanager.yml:50-70`](../../../monitoring/alertmanager/alertmanager.yml:50)    | References non-existent runbooks like `/docs/runbooks/ai_service_down.md` |
 | Missing runbook links    | Various alerts                                                                | Some alerts lack runbook annotation                                       |
+=======
+| Issue                    | Location                                                                            | Description                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Invalid runbook URLs     | [`alertmanager.yml:50-70`](../../../monitoring/alertmanager/alertmanager.yml:50)    | References non-existent runbooks like `/docs/runbooks/ai_service_down.md` |
+| Missing runbook links    | Various alerts                                                                      | Some alerts lack runbook annotation                                       |
+>>>>>>> Stashed changes
 | Generic severity routing | [`alertmanager.yml:100-130`](../../../monitoring/alertmanager/alertmanager.yml:100) | Routing based on severity alone, missing service-specific routes          |
 
 **Valid Runbooks Found:**
@@ -115,8 +137,13 @@ The hooks at [`src/client/hooks/`](../../../src/client/hooks) show inconsistent 
 
 **Valuable Historical Context:**
 
+<<<<<<< Updated upstream
 | Document                                                                                                                    | Key Insights                                                                  | Status              |
 | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------- |
+=======
+| Document                                                                                                                          | Key Insights                                                                  | Status              |
+| --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------- |
+>>>>>>> Stashed changes
 | [`archive/HARDEST_PROBLEMS_REPORT.md`](../../../archive/HARDEST_PROBLEMS_REPORT.md)                                               | 7 major problems identified; chain capture bug SOLVED, trace parity MITIGATED | Partially Addressed |
 | [`archive/AI_STALL_BUG_CONTINUED.md`](../../../archive/AI_STALL_BUG_CONTINUED.md)                                                 | Sandbox AI stalls when player hits ring cap                                   | Unknown Status      |
 | [`archive/REMAINING_IMPLEMENTATION_TASKS.md`](../../../archive/REMAINING_IMPLEMENTATION_TASKS.md)                                 | 31 tasks (5 P0, 14 P1, 12 P2)                                                 | Need Verification   |
@@ -132,8 +159,13 @@ The hooks at [`src/client/hooks/`](../../../src/client/hooks) show inconsistent 
 
 **Files:** [`src/shared/engine/contracts/`](../../../src/shared/engine/contracts)
 
+<<<<<<< Updated upstream
 | File                                                                              | Lines | Purpose                                      | Quality   |
 | --------------------------------------------------------------------------------- | ----- | -------------------------------------------- | --------- |
+=======
+| File                                                                                    | Lines | Purpose                                      | Quality   |
+| --------------------------------------------------------------------------------------- | ----- | -------------------------------------------- | --------- |
+>>>>>>> Stashed changes
 | [`schemas.ts`](../../../src/shared/engine/contracts/schemas.ts)                         | 476   | JSON Schema definitions for TS↔Python parity | Excellent |
 | [`serialization.ts`](../../../src/shared/engine/contracts/serialization.ts)             | 321   | GameState serialize/deserialize              | Good      |
 | [`testVectorGenerator.ts`](../../../src/shared/engine/contracts/testVectorGenerator.ts) | 385   | Test vector generation for parity testing    | Good      |
@@ -178,8 +210,13 @@ global.ResizeObserver = class ResizeObserver {...} as any;
 
 **Files:** [`ai-service/app/ai/`](../../../ai-service/app/ai)
 
+<<<<<<< Updated upstream
 | Component                                                                               | Lines | Description                         | Quality   |
 | --------------------------------------------------------------------------------------- | ----- | ----------------------------------- | --------- |
+=======
+| Component                                                                                     | Lines | Description                         | Quality   |
+| --------------------------------------------------------------------------------------------- | ----- | ----------------------------------- | --------- |
+>>>>>>> Stashed changes
 | [`heuristic_ai.py`](../../../ai-service/app/ai/heuristic_ai.py)                               | 875   | 18 weighted evaluation features     | Excellent |
 | [`mcts_ai.py`](../../../ai-service/app/ai/mcts_ai.py)                                         | 1285  | Incremental search with make/unmake | Excellent |
 | [`bounded_transposition_table.py`](../../../ai-service/app/ai/bounded_transposition_table.py) | ~200  | LRU-bounded hash tables             | Good      |
@@ -266,6 +303,7 @@ model RefreshToken {
 
 **Composite Score: 2.4/5**
 
+<<<<<<< Updated upstream
 | Sub-component | Score | Evidence                                                         |
 | ------------- | ----- | ---------------------------------------------------------------- |
 | Pages         | 2.2   | [`GamePage.tsx`](../../../src/client/pages/GamePage.tsx) at 2144 lines |
@@ -273,6 +311,15 @@ model RefreshToken {
 | Hooks         | 3.0   | Hardcoded thresholds, duplication                                |
 | Build Config  | 2.6   | No optimization configured                                       |
 | Accessibility | 1.5   | Missing ARIA, keyboard nav                                       |
+=======
+| Sub-component | Score | Evidence                                                               |
+| ------------- | ----- | ---------------------------------------------------------------------- |
+| Pages         | 2.2   | [`GamePage.tsx`](../../../src/client/pages/GamePage.tsx) at 2144 lines |
+| Components    | 3.0   | Dual interface maintenance burden                                      |
+| Hooks         | 3.0   | Hardcoded thresholds, duplication                                      |
+| Build Config  | 2.6   | No optimization configured                                             |
+| Accessibility | 1.5   | Missing ARIA, keyboard nav                                             |
+>>>>>>> Stashed changes
 
 **Specific Evidence:**
 
@@ -449,6 +496,7 @@ GamePage/
 
 ### 7.1 Documentation Contradictions
 
+<<<<<<< Updated upstream
 | Source A                                                                                    | Source B                                                                        | Contradiction                                                        | Resolution                           |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------ |
 | [`archive/REMAINING_IMPLEMENTATION_TASKS.md`](../../../archive/REMAINING_IMPLEMENTATION_TASKS.md) | [`docs/runbooks/DEPLOYMENT_ROUTINE.md`](../../runbooks/DEPLOYMENT_ROUTINE.md) | "Session persistence" listed as TODO but runbook implies operational | Verify if completed                  |
@@ -460,15 +508,36 @@ GamePage/
 
 | Document                                                                              | Claims                    | Reality                                            |
 | ------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------- |
+=======
+| Source A                                                                                          | Source B                                                                      | Contradiction                                                        | Resolution                           |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| [`archive/REMAINING_IMPLEMENTATION_TASKS.md`](../../../archive/REMAINING_IMPLEMENTATION_TASKS.md) | [`docs/runbooks/DEPLOYMENT_ROUTINE.md`](../../runbooks/DEPLOYMENT_ROUTINE.md) | "Session persistence" listed as TODO but runbook implies operational | Verify if completed                  |
+| [`archive/AI_STALL_BUG_CONTINUED.md`](../../../archive/AI_STALL_BUG_CONTINUED.md)                 | [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md)                                 | Stall bug documented in archive but missing from KNOWN_ISSUES        | Add to KNOWN_ISSUES or confirm fixed |
+| [`monitoring/alertmanager/alertmanager.yml`](../../../monitoring/alertmanager/alertmanager.yml)   | [`docs/runbooks/INDEX.md`](../../runbooks/INDEX.md)                           | Alert URLs reference non-existent runbooks                           | Create missing runbooks              |
+| [`archive/HARDEST_PROBLEMS_REPORT.md`](../../../archive/HARDEST_PROBLEMS_REPORT.md)               | Current codebase                                                              | "Chain capture bug" marked SOLVED but no test vector confirmation    | Add regression test                  |
+
+### 7.2 Version Inconsistencies
+
+| Document                                                                                    | Claims                    | Reality                                            |
+| ------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------- |
+>>>>>>> Stashed changes
 | [`src/shared/engine/contracts/schemas.ts`](../../../src/shared/engine/contracts/schemas.ts) | Version "1.0.0" in bundle | No version tracking mechanism for schema evolution |
 
 ### 7.3 Gap Analysis
 
+<<<<<<< Updated upstream
 | Expected                  | Location                              | Status                                            |
 | ------------------------- | ------------------------------------- | ------------------------------------------------- |
 | Python schema consumption | Undocumented                          | Missing - how Python validates against TS schemas |
 | Bundle size baseline      | [`vite.config.ts`](../../../vite.config.ts) | Missing - no measurement or budget                |
 | Accessibility audit       | Client components                     | Missing - no systematic WCAG review               |
+=======
+| Expected                  | Location                                    | Status                                            |
+| ------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| Python schema consumption | Undocumented                                | Missing - how Python validates against TS schemas |
+| Bundle size baseline      | [`vite.config.ts`](../../../vite.config.ts) | Missing - no measurement or budget                |
+| Accessibility audit       | Client components                           | Missing - no systematic WCAG review               |
+>>>>>>> Stashed changes
 
 ---
 
@@ -511,14 +580,24 @@ GamePage/
 
 ## Appendix A: File Reference Quick Links
 
+<<<<<<< Updated upstream
 | Category          | Key Files                                                                                                                                                  |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Client Pages      | [`GamePage.tsx`](../../../src/client/pages/GamePage.tsx)                                                                                                         |
+=======
+| Category          | Key Files                                                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client Pages      | [`GamePage.tsx`](../../../src/client/pages/GamePage.tsx)                                                                                                               |
+>>>>>>> Stashed changes
 | Client Components | [`BoardView.tsx`](../../../src/client/components/BoardView.tsx), [`GameHUD.tsx`](../../../src/client/components/GameHUD.tsx)                                           |
 | Client Hooks      | [`useGameConnection.ts`](../../../src/client/hooks/useGameConnection.ts), [`useGameState.ts`](../../../src/client/hooks/useGameState.ts)                               |
 | Build Config      | [`vite.config.ts`](../../../vite.config.ts), [`tailwind.config.js`](../../../tailwind.config.js)                                                                       |
 | Monitoring        | [`prometheus.yml`](../../../monitoring/prometheus/prometheus.yml), [`alerts.yml`](../../../monitoring/prometheus/alerts.yml)                                           |
+<<<<<<< Updated upstream
 | Alerting          | [`alertmanager.yml`](../../../monitoring/alertmanager/alertmanager.yml)                                                                                          |
+=======
+| Alerting          | [`alertmanager.yml`](../../../monitoring/alertmanager/alertmanager.yml)                                                                                                |
+>>>>>>> Stashed changes
 | Contracts         | [`schemas.ts`](../../../src/shared/engine/contracts/schemas.ts), [`serialization.ts`](../../../src/shared/engine/contracts/serialization.ts)                           |
 | Python AI         | [`heuristic_ai.py`](../../../ai-service/app/ai/heuristic_ai.py), [`mcts_ai.py`](../../../ai-service/app/ai/mcts_ai.py)                                                 |
 | Test Setup        | [`setup.ts`](../../../tests/setup.ts), [`setup-jsdom.ts`](../../../tests/setup-jsdom.ts)                                                                               |

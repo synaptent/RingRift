@@ -226,6 +226,7 @@ All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and re
 
 | Document                                                                                                                                                                       | Role                          | Status            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- | ----------------- |
+<<<<<<< Updated upstream
 | [`ringrift_complete_rules.md`](../ringrift_complete_rules.md:1)                                                                                                                   | Authoritative rulebook        | ✅ Current        |
 | [`ringrift_compact_rules.md`](../ringrift_compact_rules.md:1)                                                                                                                     | Implementation spec           | ✅ Current        |
 | [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) | Factual implementation status | ✅ Updated Nov 22 |
@@ -234,6 +235,16 @@ All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and re
 | [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md:1)                                                                                                                                         | P0/P1/P2 issue tracker        | ✅ Updated Nov 22 |
 | [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md:1)                                                                                                                                   | AI system design & plans      | ✅ Updated Nov 22 |
 | [`QUICKSTART.md`](../QUICKSTART.md:1)                                                                                                                                             | Getting started guide         | ✅ Updated Nov 22 |
+=======
+| [`ringrift_complete_rules.md`](../ringrift_complete_rules.md:1)                                                                                                                | Authoritative rulebook        | ✅ Current        |
+| [`ringrift_compact_rules.md`](../ringrift_compact_rules.md:1)                                                                                                                  | Implementation spec           | ✅ Current        |
+| [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md:1) | Factual implementation status | ✅ Updated Nov 22 |
+| [`ARCHITECTURE_ASSESSMENT.md`](../docs/archive/plans/ARCHITECTURE_ASSESSMENT.md:1)                                                                                             | System architecture & design  | ✅ Current        |
+| [`STRATEGIC_ROADMAP.md`](../docs/planning/STRATEGIC_ROADMAP.md:1)                                                                                                              | Phased development plan       | ✅ Updated Nov 22 |
+| [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md:1)                                                                                                                                      | P0/P1/P2 issue tracker        | ✅ Updated Nov 22 |
+| [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md:1)                                                                                                              | AI system design & plans      | ✅ Updated Nov 22 |
+| [`QUICKSTART.md`](../QUICKSTART.md:1)                                                                                                                                          | Getting started guide         | ✅ Updated Nov 22 |
+>>>>>>> Stashed changes
 | [`CONTRIBUTING.md`](CONTRIBUTING.md:1)                                                                                                                                         | Contribution guidelines       | ✅ Current        |
 
 ### 2.2 Documentation Changes Made

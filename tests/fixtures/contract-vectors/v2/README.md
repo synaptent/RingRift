@@ -41,6 +41,7 @@ All vectors follow the schema defined in `src/shared/engine/contracts/schemas.ts
 
 ## Vector Files
 
+<<<<<<< Updated upstream
 | File                                   | Category                                         | Description                                                                                                                                                                       |
 | -------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `placement.vectors.json`               | placement                                        | Ring placement and skip placement scenarios                                                                                                                                       |
@@ -54,6 +55,21 @@ All vectors follow the schema defined in `src/shared/engine/contracts/schemas.ts
 | `forced_elimination.vectors.json`      | edge_case / territory_processing                 | Forced-elimination and ANM scenarios (monotone chains, rotation, explicit vs host-level)                                                                                          |
 | `territory_line_endgame.vectors.json`  | line_processing / territory_processing           | Composite overlong-line + territory endgame scenarios (see T3 in `RULES_SCENARIO_MATRIX.md` and §8.5.3 in `docs/rules/PYTHON_PARITY_REQUIREMENTS.md` for TS↔Python parity traceability) |
 | `hex_edge_cases.vectors.json`          | edge_case / chain_capture / territory_processing | Hex-specific edge/corner capture, territory, and forced-elimination cases                                                                                                         |
+=======
+| File                                   | Category                                         | Description                                                                                                                                                                             |
+| -------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `placement.vectors.json`               | placement                                        | Ring placement and skip placement scenarios                                                                                                                                             |
+| `movement.vectors.json`                | movement                                         | Stack movement scenarios                                                                                                                                                                |
+| `capture.vectors.json`                 | capture                                          | Overtaking capture scenarios                                                                                                                                                            |
+| `chain_capture.vectors.json`           | chain_capture                                    | Chain-capture continuation segments                                                                                                                                                     |
+| `chain_capture_long_tail.vectors.json` | chain_capture                                    | Extended chain-capture sequences (depth ≥ 3, multi-board, sequence-tagged orchestrator flows)                                                                                           |
+| `line_detection.vectors.json`          | line_detection                                   | Line-detection entry scenarios (pre line-reward decisions)                                                                                                                              |
+| `territory.vectors.json`               | territory                                        | Territory detection / credit scenarios                                                                                                                                                  |
+| `territory_processing.vectors.json`    | territory_processing                             | Orchestrator-driven region processing + self-elimination composites                                                                                                                     |
+| `forced_elimination.vectors.json`      | edge_case / territory_processing                 | Forced-elimination and ANM scenarios (monotone chains, rotation, explicit vs host-level)                                                                                                |
+| `territory_line_endgame.vectors.json`  | line_processing / territory_processing           | Composite overlong-line + territory endgame scenarios (see T3 in `RULES_SCENARIO_MATRIX.md` and §8.5.3 in `docs/rules/PYTHON_PARITY_REQUIREMENTS.md` for TS↔Python parity traceability) |
+| `hex_edge_cases.vectors.json`          | edge_case / chain_capture / territory_processing | Hex-specific edge/corner capture, territory, and forced-elimination cases                                                                                                               |
+>>>>>>> Stashed changes
 
 The `territory_processing.vectors.json` bundle is generated by the orchestrator-focused
 vector generator in `scripts/generate-orchestrator-contract-vectors.ts`, and is intended

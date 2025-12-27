@@ -27,9 +27,9 @@ This document audits key archive documents to determine the completion status of
 | Problem ID | Description                         | Archive Status             | Current Status                                                                                                    | Verified            |
 | ---------- | ----------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------- |
 | #1         | Chain Capture Phase Advancement Bug | ✅ SOLVED                  | ✅ Confirmed - Tests exist                                                                                        | YES                 |
-| #2         | Backend↔Sandbox Trace Parity       | ⚠️ SUBSTANTIALLY MITIGATED | ⚠️ Confirmed - DIV-001/002 resolved, DIV-008 deferred                                                             | YES                 |
-| #3         | RNG Determinism Across TS↔Python   | Not implemented            | ❌ Still TODO - Listed in [`TODO.md:389-392`](../TODO.md:389) as P2.3                                             | VERIFIED INCOMPLETE |
-| #4         | TS↔Python Rules Parity Gaps        | Known gap                  | ✅ RESOLVED - Phase 4 contract tests achieve 100% parity                                                          | YES                 |
+| #2         | Backend↔Sandbox Trace Parity        | ⚠️ SUBSTANTIALLY MITIGATED | ⚠️ Confirmed - DIV-001/002 resolved, DIV-008 deferred                                                             | YES                 |
+| #3         | RNG Determinism Across TS↔Python    | Not implemented            | ❌ Still TODO - Listed in [`TODO.md:389-392`](../TODO.md:389) as P2.3                                             | VERIFIED INCOMPLETE |
+| #4         | TS↔Python Rules Parity Gaps         | Known gap                  | ✅ RESOLVED - Phase 4 contract tests achieve 100% parity                                                          | YES                 |
 | #5         | CCE-006 Non-Bare-Board LPS          | Known gap                  | ⚠️ Still known gap - Not in current regression tests                                                              | UNCHANGED           |
 | #6         | CCE-004 captureChainHelpers Stub    | Stub exists                | ❌ STILL STUB - [`captureChainHelpers.ts:139`](../src/shared/engine/captureChainHelpers.ts:139) throws TODO error | VERIFIED INCOMPLETE |
 | #7         | CCE-007 Forced Elimination Choice   | Known issue                | ⚠️ Tracked in [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) as P0.1                                                     | UNCHANGED           |
@@ -44,6 +44,7 @@ This document listed 31 tasks across P0/P1/P2 priorities. Cross-referencing with
 
 #### P0 Tasks (5 total)
 
+<<<<<<< Updated upstream
 | Task                          | Archive Status | Current Status                                                                                                                      | Verdict         |
 | ----------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------- |
 | FAQ Test Matrix               | Listed as P0   | ✅ Completed - [`RULES_SCENARIO_MATRIX.md`](../docs/rules/RULES_SCENARIO_MATRIX.md) exists                                                     | COMPLETE        |
@@ -51,6 +52,15 @@ This document listed 31 tasks across P0/P1/P2 priorities. Cross-referencing with
 | Python Contract Tests         | Listed as P0   | ✅ Completed - Phase 4 achieves 100% parity                                                                                         | COMPLETE        |
 | React Testing Library Setup   | Listed as P0   | ❌ Missing - [`PASS9_ASSESSMENT_REPORT.md:151-152`](../docs/archive/assessments/PASS9_ASSESSMENT_REPORT.md:151) notes WebSocket/Socket.IO mocks missing | NEEDS ATTENTION |
 | Production Environment Config | Listed as P0   | ⚠️ Partial - Docker/staging configs exist but no production validation docs                                                         | PARTIAL         |
+=======
+| Task                          | Archive Status | Current Status                                                                                                                                          | Verdict         |
+| ----------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| FAQ Test Matrix               | Listed as P0   | ✅ Completed - [`RULES_SCENARIO_MATRIX.md`](../docs/rules/RULES_SCENARIO_MATRIX.md) exists                                                              | COMPLETE        |
+| Sandbox Parity Hardening      | Listed as P0   | ⚠️ Partial - Major divergences resolved per [`KNOWN_ISSUES.md:113-165`](../KNOWN_ISSUES.md:113)                                                         | PARTIAL         |
+| Python Contract Tests         | Listed as P0   | ✅ Completed - Phase 4 achieves 100% parity                                                                                                             | COMPLETE        |
+| React Testing Library Setup   | Listed as P0   | ❌ Missing - [`PASS9_ASSESSMENT_REPORT.md:151-152`](../docs/archive/assessments/PASS9_ASSESSMENT_REPORT.md:151) notes WebSocket/Socket.IO mocks missing | NEEDS ATTENTION |
+| Production Environment Config | Listed as P0   | ⚠️ Partial - Docker/staging configs exist but no production validation docs                                                                             | PARTIAL         |
+>>>>>>> Stashed changes
 
 #### P1 Tasks (14 total) - Sample Verification
 
@@ -139,11 +149,11 @@ This document catalogues duplication between backend/sandbox engines. Key findin
 
 ### 2.1 Critical Contradictions
 
-| #   | Archive Source                                                             | Current Source                          | Contradiction                                                                       | Resolution                                                       |
-| --- | -------------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| 1   | [`REMAINING_IMPLEMENTATION_TASKS.md`](./REMAINING_IMPLEMENTATION_TASKS.md) | [`TODO.md:29-70`](../TODO.md:29)        | Archive lists Phase 1.5 tasks as pending, TODO shows Phase 1.5 as COMPLETED         | **Archive is stale** - Phase 1.5 completed Nov 26, 2025          |
+| #   | Archive Source                                                             | Current Source                          | Contradiction                                                                      | Resolution                                                       |
+| --- | -------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 1   | [`REMAINING_IMPLEMENTATION_TASKS.md`](./REMAINING_IMPLEMENTATION_TASKS.md) | [`TODO.md:29-70`](../TODO.md:29)        | Archive lists Phase 1.5 tasks as pending, TODO shows Phase 1.5 as COMPLETED        | **Archive is stale** - Phase 1.5 completed Nov 26, 2025          |
 | 2   | [`HARDEST_PROBLEMS_REPORT.md`](./HARDEST_PROBLEMS_REPORT.md) Problem #4    | [`TODO.md:240-305`](../TODO.md:240)     | Archive calls TS↔Python parity a "known gap", TODO.md P0.5 shows it as ✅ complete | **Archive is stale** - Phase 4 contract tests resolved this      |
-| 3   | [`AI_STALL_BUG_CONTINUED.md`](./AI_STALL_BUG_CONTINUED.md)                 | [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) | AI stall bug documented in archive but NOT in KNOWN_ISSUES                          | **Needs verification** - Add to KNOWN_ISSUES or confirm resolved |
+| 3   | [`AI_STALL_BUG_CONTINUED.md`](./AI_STALL_BUG_CONTINUED.md)                 | [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) | AI stall bug documented in archive but NOT in KNOWN_ISSUES                         | **Needs verification** - Add to KNOWN_ISSUES or confirm resolved |
 
 ### 2.2 Minor Inconsistencies
 

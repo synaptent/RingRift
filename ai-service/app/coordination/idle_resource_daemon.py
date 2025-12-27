@@ -576,6 +576,9 @@ class IdleResourceDaemon:
         # December 2025: Subscribe to P2P cluster health events
         self._wire_p2p_health_events()
 
+        # December 2025: Subscribe to cluster-wide idle state broadcast
+        self._wire_cluster_state_events()
+
         # Start monitoring loop
         self._monitor_task = safe_create_task(
             self._monitor_loop(),
@@ -742,6 +745,220 @@ class IdleResourceDaemon:
         except Exception as e:
             logger.warning(f"[IdleResourceDaemon] Failed to wire P2P health events: {e}")
 
+    def _wire_cluster_state_events(self) -> None:
+        """Subscribe to cluster-wide idle state broadcast events.
+
+        December 2025: Enables cluster-wide visibility into idle resources.
+        Each node broadcasts its idle state periodically, allowing:
+        - Better job placement decisions
+        - Cluster-wide resource optimization
+        - Visibility into total idle capacity
+
+        Events:
+        - IDLE_STATE_BROADCAST: Receive idle state from other nodes
+        - IDLE_STATE_REQUEST: Respond with local idle state
+        """
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+
+            def _on_idle_state_broadcast(event: Any) -> None:
+                """Handle IDLE_STATE_BROADCAST from other nodes."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                node_id = payload.get("node_id", "")
+
+                if not node_id or node_id == self.node_id:
+                    return  # Ignore self or invalid
+
+                try:
+                    # Parse and store remote node's idle state
+                    state = NodeIdleState(
+                        node_id=node_id,
+                        host=payload.get("host", ""),
+                        is_idle=payload.get("is_idle", False),
+                        gpu_utilization=payload.get("gpu_utilization", 0.0),
+                        gpu_memory_free_gb=payload.get("gpu_memory_free_gb", 0.0),
+                        gpu_memory_total_gb=payload.get("gpu_memory_total_gb", 0.0),
+                        idle_duration_seconds=payload.get("idle_duration_seconds", 0.0),
+                        recommended_config=payload.get("recommended_config", ""),
+                        provider=payload.get("provider", "unknown"),
+                        timestamp=payload.get("timestamp", time.time()),
+                        active_jobs=payload.get("active_jobs", 0),
+                    )
+                    self._cluster_idle_states[node_id] = state
+
+                    # Clean up stale states
+                    self._prune_stale_cluster_states()
+
+                except Exception as e:
+                    logger.debug(f"[IdleResourceDaemon] Failed to parse idle state from {node_id}: {e}")
+
+            def _on_idle_state_request(event: Any) -> None:
+                """Handle IDLE_STATE_REQUEST - respond with our current state."""
+                # Trigger immediate broadcast of local state
+                safe_create_task(
+                    self._broadcast_local_state(force=True),
+                    name="idle_state_response"
+                )
+
+            # Subscribe to cluster state events
+            if hasattr(DataEventType, 'IDLE_STATE_BROADCAST'):
+                router.subscribe(DataEventType.IDLE_STATE_BROADCAST.value, _on_idle_state_broadcast)
+            if hasattr(DataEventType, 'IDLE_STATE_REQUEST'):
+                router.subscribe(DataEventType.IDLE_STATE_REQUEST.value, _on_idle_state_request)
+
+            logger.info(
+                "[IdleResourceDaemon] Subscribed to cluster idle state events "
+                "(IDLE_STATE_BROADCAST, IDLE_STATE_REQUEST)"
+            )
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] Event router not available, cluster state disabled")
+        except Exception as e:
+            logger.warning(f"[IdleResourceDaemon] Failed to wire cluster state events: {e}")
+
+    def _prune_stale_cluster_states(self) -> None:
+        """Remove cluster states older than the stale threshold."""
+        now = time.time()
+        stale_nodes = [
+            node_id for node_id, state in self._cluster_idle_states.items()
+            if now - state.timestamp > self._state_stale_threshold
+        ]
+        for node_id in stale_nodes:
+            del self._cluster_idle_states[node_id]
+            logger.debug(f"[IdleResourceDaemon] Pruned stale idle state for {node_id}")
+
+    async def _broadcast_local_state(self, force: bool = False) -> None:
+        """Broadcast this node's idle state to the cluster.
+
+        Args:
+            force: If True, broadcast immediately regardless of interval.
+        """
+        now = time.time()
+
+        # Rate limit broadcasts unless forced
+        if not force and now - self._last_broadcast_time < self._broadcast_interval:
+            return
+
+        self._last_broadcast_time = now
+
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+
+            # Get local node's current state
+            local_state = self._get_local_idle_state()
+            if local_state is None:
+                return
+
+            # Broadcast to cluster
+            if hasattr(DataEventType, 'IDLE_STATE_BROADCAST'):
+                await router.publish(
+                    DataEventType.IDLE_STATE_BROADCAST.value,
+                    {
+                        "node_id": local_state.node_id,
+                        "host": local_state.host,
+                        "is_idle": local_state.is_idle,
+                        "gpu_utilization": local_state.gpu_utilization,
+                        "gpu_memory_free_gb": local_state.gpu_memory_free_gb,
+                        "gpu_memory_total_gb": local_state.gpu_memory_total_gb,
+                        "idle_duration_seconds": local_state.idle_duration_seconds,
+                        "recommended_config": local_state.recommended_config,
+                        "provider": local_state.provider,
+                        "timestamp": local_state.timestamp,
+                        "active_jobs": local_state.active_jobs,
+                    },
+                    source="idle_resource_daemon",
+                )
+
+        except ImportError:
+            pass  # Event router not available
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] Failed to broadcast local state: {e}")
+
+    def _get_local_idle_state(self) -> NodeIdleState | None:
+        """Get this node's current idle state."""
+        # Check if we have local GPU info
+        local_node = self._node_states.get(self.node_id)
+
+        if local_node is None:
+            # Try to get local GPU info
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=utilization.gpu,memory.total,memory.used",
+                     "--format=csv,noheader,nounits"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    parts = result.stdout.strip().split(',')
+                    if len(parts) >= 3:
+                        gpu_util = float(parts[0].strip())
+                        mem_total = float(parts[1].strip()) / 1024.0
+                        mem_used = float(parts[2].strip()) / 1024.0
+
+                        local_node = NodeStatus(
+                            node_id=self.node_id,
+                            host=socket.gethostname(),
+                            gpu_utilization=gpu_util,
+                            gpu_memory_total_gb=mem_total,
+                            gpu_memory_used_gb=mem_used,
+                            last_seen=time.time(),
+                        )
+            except Exception:
+                pass
+
+        if local_node is None:
+            return None
+
+        now = time.time()
+        is_idle = local_node.gpu_utilization < self.config.idle_threshold_percent
+        idle_duration = now - local_node.idle_since if local_node.idle_since > 0 else 0.0
+
+        return NodeIdleState(
+            node_id=self.node_id,
+            host=local_node.host,
+            is_idle=is_idle,
+            gpu_utilization=local_node.gpu_utilization,
+            gpu_memory_free_gb=local_node.gpu_memory_total_gb - local_node.gpu_memory_used_gb,
+            gpu_memory_total_gb=local_node.gpu_memory_total_gb,
+            idle_duration_seconds=idle_duration,
+            recommended_config=self._get_recommended_config(local_node) if is_idle else "",
+            provider=self._detect_provider(self.node_id),
+            timestamp=now,
+            active_jobs=local_node.active_jobs,
+        )
+
+    def get_cluster_idle_state(self) -> ClusterIdleState:
+        """Get aggregated cluster-wide idle state.
+
+        Returns:
+            ClusterIdleState with all known node states.
+        """
+        # Prune stale states first
+        self._prune_stale_cluster_states()
+
+        # Include local state
+        local_state = self._get_local_idle_state()
+        all_states = list(self._cluster_idle_states.values())
+        if local_state is not None:
+            all_states.append(local_state)
+
+        idle_nodes = [s for s in all_states if s.is_idle]
+        total_idle_memory = sum(s.gpu_memory_free_gb for s in idle_nodes)
+
+        return ClusterIdleState(
+            total_nodes=len(all_states),
+            idle_nodes=len(idle_nodes),
+            total_idle_gpu_memory_gb=total_idle_memory,
+            nodes=all_states,
+            timestamp=time.time(),
+        )
+
     async def stop(self) -> None:
         """Stop the idle resource daemon."""
         if self._coordinator_status == CoordinatorStatus.STOPPED:
@@ -796,6 +1013,9 @@ class IdleResourceDaemon:
         priority-based config selection.
         """
         try:
+            # December 2025: Broadcast local idle state to cluster
+            await self._broadcast_local_state()
+
             # Update SelfplayScheduler priorities before spawning
             await self._update_scheduler_priorities()
 

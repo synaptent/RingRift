@@ -82,8 +82,13 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### docs/drafts/ Status
 
+<<<<<<< Updated upstream
 | Document                                                                                     | Lines | Status    | Last Updated | Notes                                     |
 | -------------------------------------------------------------------------------------------- | ----- | --------- | ------------ | ----------------------------------------- |
+=======
+| Document                                                                            | Lines | Status    | Last Updated | Notes                                     |
+| ----------------------------------------------------------------------------------- | ----- | --------- | ------------ | ----------------------------------------- |
+>>>>>>> Stashed changes
 | [`LEGACY_CODE_ELIMINATION_PLAN.md`](../LEGACY_CODE_ELIMINATION_PLAN.md)             | ~400  | ✅ Active | 2025-11-26   | Phase 6.1 complete, ~3,793 lines targeted |
 | [`ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md`](../ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md) | 834   | ✅ Active | 2025-11-27   | 6-phase rollout, circuit breaker design   |
 | [`RULES_ENGINE_CONSOLIDATION_DESIGN.md`](../RULES_ENGINE_CONSOLIDATION_DESIGN.md)   | 1,129 | ✅ Active | 2025-11      | 5-phase migration, 8-10 weeks             |
@@ -92,8 +97,13 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### docs/supplementary/ Status
 
+<<<<<<< Updated upstream
 | Document                                                                                | Lines | Status     | Notes                                                   |
 | --------------------------------------------------------------------------------------- | ----- | ---------- | ------------------------------------------------------- |
+=======
+| Document                                                                                 | Lines | Status     | Notes                                                   |
+| ---------------------------------------------------------------------------------------- | ----- | ---------- | ------------------------------------------------------- |
+>>>>>>> Stashed changes
 | [`AI_IMPROVEMENT_BACKLOG.md`](../../supplementary/AI_IMPROVEMENT_BACKLOG.md)             | 450   | ✅ Current | 8 sections, difficulty ladder, RNG, search optimization |
 | [`RULES_CONSISTENCY_EDGE_CASES.md`](../../supplementary/RULES_CONSISTENCY_EDGE_CASES.md) | 498   | ✅ Current | CCE-001 through CCE-008 catalog                         |
 | [`RULES_DOCS_UX_AUDIT.md`](../../supplementary/RULES_DOCS_UX_AUDIT.md)                   | -     | ✅ Current | Documentation UX analysis                               |
@@ -104,8 +114,13 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### docs/incidents/ Status
 
+<<<<<<< Updated upstream
 | Document                                            | Lines | Status     | Notes                                       |
 | --------------------------------------------------- | ----- | ---------- | ------------------------------------------- |
+=======
+| Document                                             | Lines | Status     | Notes                                       |
+| ---------------------------------------------------- | ----- | ---------- | ------------------------------------------- |
+>>>>>>> Stashed changes
 | [`INDEX.md`](../../incidents/INDEX.md)               | ~100  | ✅ Current | Alert-to-runbook mapping, 4 severity levels |
 | [`TRIAGE_GUIDE.md`](../../incidents/TRIAGE_GUIDE.md) | 301   | ✅ Current | 6-step procedure, quick severity matrix     |
 | [`AI_SERVICE.md`](../../incidents/AI_SERVICE.md)     | -     | ✅ Current | AI service incident runbook                 |
@@ -118,10 +133,17 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### Core Document Accuracy
 
+<<<<<<< Updated upstream
 | Document                                             | Status      | Issues                                                                                                                                                   |
 | ---------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`../../architecture/AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md)           | ✅ Verified | 1008 lines, Nov 23-26 2025. Minor path reference discrepancy (mentions `helpers/` subfolder that doesn't exist - files are at `src/shared/engine/` root) |
 | [`../../../RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md) | ✅ Verified | 615 lines, Nov 26 2025 Active. 37 RR-CANON rules (R001-R191). Properly references shared engine as SSoT                                                  |
+=======
+| Document                                                                         | Status      | Issues                                                                                                                                                   |
+| -------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`../../architecture/AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md) | ✅ Verified | 1008 lines, Nov 23-26 2025. Minor path reference discrepancy (mentions `helpers/` subfolder that doesn't exist - files are at `src/shared/engine/` root) |
+| [`../../../RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md)           | ✅ Verified | 615 lines, Nov 26 2025 Active. 37 RR-CANON rules (R001-R191). Properly references shared engine as SSoT                                                  |
+>>>>>>> Stashed changes
 
 ---
 
@@ -129,8 +151,13 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### Tested/Coverage Status
 
+<<<<<<< Updated upstream
 | Area                                                           | Files                 | Test Coverage    | Priority | Notes                                         |
 | -------------------------------------------------------------- | --------------------- | ---------------- | -------- | --------------------------------------------- |
+=======
+| Area                                                                           | Files                 | Test Coverage    | Priority | Notes                                         |
+| ------------------------------------------------------------------------------ | --------------------- | ---------------- | -------- | --------------------------------------------- |
+>>>>>>> Stashed changes
 | [`../../../src/client/adapters`](../../../src/client/adapters)                 | 1 (1051 lines)        | None             | Medium   | Pure data transformation, view model adapters |
 | [`../../../src/server/middleware`](../../../src/server/middleware)             | 8 files               | Partial          | High     | auth.ts, rateLimiter.ts are security-critical |
 | [`../../../src/shared/engine/contracts`](../../../src/shared/engine/contracts) | 5 files               | Via parity tests | Low      | Test vector generation, schemas               |
@@ -148,8 +175,13 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 #### Server Middleware
 
+<<<<<<< Updated upstream
 | File                                                                   | Lines | Coverage        | Notes                                                        |
 | ---------------------------------------------------------------------- | ----- | --------------- | ------------------------------------------------------------ |
+=======
+| File                                                                            | Lines | Coverage        | Notes                                                        |
+| ------------------------------------------------------------------------------- | ----- | --------------- | ------------------------------------------------------------ |
+>>>>>>> Stashed changes
 | [`auth.ts`](../../../src/server/middleware/auth.ts)                             | 308   | Partial         | JWT verification, tokenVersion revocation, refresh tokens    |
 | [`rateLimiter.ts`](../../../src/server/middleware/rateLimiter.ts)               | 663   | Partial         | 12 limiter types, Redis/memory fallback, X-RateLimit headers |
 | [`errorHandler.ts`](../../../src/server/middleware/errorHandler.ts)             | 250   | Via integration | Standardized ApiError format, Zod integration                |
@@ -215,8 +247,13 @@ The [`../../../src/shared/engine`](../../../src/shared/engine) directory contain
 
 ### Components Without Unit Tests
 
+<<<<<<< Updated upstream
 | Component                                                            | Lines | Priority | Notes                       |
 | -------------------------------------------------------------------- | ----- | -------- | --------------------------- |
+=======
+| Component                                                                     | Lines | Priority | Notes                       |
+| ----------------------------------------------------------------------------- | ----- | -------- | --------------------------- |
+>>>>>>> Stashed changes
 | [`AIDebugView.tsx`](../../../src/client/components/AIDebugView.tsx)           | ~200  | Medium   | Debug/dev component         |
 | [`GameEventLog.tsx`](../../../src/client/components/GameEventLog.tsx)         | ~150  | Medium   | Display component           |
 | [`Badge.tsx`](../../../src/client/components/ui/Badge.tsx)                    | ~50   | Low      | Simple UI component         |
@@ -227,8 +264,13 @@ The [`../../../src/shared/engine`](../../../src/shared/engine) directory contain
 
 ### Pages Without Unit Tests
 
+<<<<<<< Updated upstream
 | Page                                                          | Lines | Priority | Notes                |
 | ------------------------------------------------------------- | ----- | -------- | -------------------- |
+=======
+| Page                                                                   | Lines | Priority | Notes                |
+| ---------------------------------------------------------------------- | ----- | -------- | -------------------- |
+>>>>>>> Stashed changes
 | [`HomePage.tsx`](../../../src/client/pages/HomePage.tsx)               | ~150  | Low      | E2E coverage via POM |
 | [`LobbyPage.tsx`](../../../src/client/pages/LobbyPage.tsx)             | ~300  | Medium   | Complex form state   |
 | [`LoginPage.tsx`](../../../src/client/pages/LoginPage.tsx)             | ~150  | Low      | E2E coverage via POM |
@@ -265,6 +307,7 @@ The [`../../../src/shared/engine`](../../../src/shared/engine) directory contain
 
 ## Verification of Pass 13 Work
 
+<<<<<<< Updated upstream
 | Item                                                                 | Status      | Evidence                                                                |
 | -------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
 | [`movementApplication.ts`](../../../src/shared/engine/movementApplication.ts) | ✅ VERIFIED | 462 lines, `applySimpleMovement()`, `applyCaptureSegment()`             |
@@ -272,6 +315,15 @@ The [`../../../src/shared/engine`](../../../src/shared/engine) directory contain
 | Hook tests (98)                                                      | ✅ VERIFIED | Per Pass 13 report                                                      |
 | Context tests (51)                                                   | ✅ VERIFIED | Per Pass 13 report                                                      |
 | ChoiceDialog tests (49)                                              | ✅ VERIFIED | Per Pass 13 report                                                      |
+=======
+| Item                                                                          | Status      | Evidence                                                                |
+| ----------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
+| [`movementApplication.ts`](../../../src/shared/engine/movementApplication.ts) | ✅ VERIFIED | 462 lines, `applySimpleMovement()`, `applyCaptureSegment()`             |
+| [`placementHelpers.ts`](../../../src/shared/engine/placementHelpers.ts)       | ✅ VERIFIED | 354 lines, `applyPlacementMove()`, `evaluateSkipPlacementEligibility()` |
+| Hook tests (98)                                                               | ✅ VERIFIED | Per Pass 13 report                                                      |
+| Context tests (51)                                                            | ✅ VERIFIED | Per Pass 13 report                                                      |
+| ChoiceDialog tests (49)                                                       | ✅ VERIFIED | Per Pass 13 report                                                      |
+>>>>>>> Stashed changes
 
 ---
 

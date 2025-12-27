@@ -279,6 +279,7 @@ class NodeHealthStatus:
     consecutive_successes: int = 0
     last_failure_time: float = 0.0
     retired: bool = False
+    retired_at: float | None = None  # Timestamp when node was retired
     nfs_accessible: bool = True
     errors_last_hour: int = 0
 
@@ -374,6 +375,7 @@ class JobStatus:
     cmaes_running: bool = False
     gauntlet_running: bool = False
     tournament_running: bool = False
+    data_merge_running: bool = False  # Whether data merge/export is in progress
     game_counts: dict[str, int] = field(default_factory=dict)
     total_games: int = 0
 
@@ -405,6 +407,7 @@ class NodeInfo:
     node_id: str
     hostname: str = ""
     role: NodeRole = NodeRole.FOLLOWER
+    leader_id: str | None = None  # Current cluster leader node_id
     capabilities: list[str] = field(default_factory=list)
     version: str = "1.0.0"
     code_version: str = ""
@@ -458,6 +461,7 @@ class NodeInfo:
             "node_id": self.node_id,
             "hostname": self.hostname,
             "role": self.role.value,
+            "leader_id": self.leader_id,
             "capabilities": self.capabilities,
             "version": self.version,
             "code_version": self.code_version,
@@ -503,7 +507,7 @@ class NodeInfo:
             except ValueError:
                 data["last_sync_time"] = None
 
-        valid_keys = {"node_id", "hostname", "role", "capabilities", "version",
+        valid_keys = {"node_id", "hostname", "role", "leader_id", "capabilities", "version",
                       "code_version", "gpu", "resources", "connection", "health",
                       "provider", "jobs", "last_sync_time", "sync_lag_seconds"}
         return cls(**{k: v for k, v in data.items() if k in valid_keys})
@@ -544,6 +548,7 @@ class NodeInfo:
             port=data.get("port", 8770),
             tailscale_ip=data.get("tailscale_ip"),
             nat_blocked=data.get("nat_blocked", False),
+            nat_blocked_since=data.get("nat_blocked_since"),
             relay_via=data.get("relay_via", ""),
         )
 
@@ -559,6 +564,7 @@ class NodeInfo:
             last_seen=data.get("last_seen", time.time()),
             consecutive_failures=data.get("consecutive_failures", 0),
             retired=data.get("retired", False),
+            retired_at=data.get("retired_at"),
         )
 
         jobs = JobStatus(
@@ -566,12 +572,14 @@ class NodeInfo:
             selfplay_jobs=data.get("selfplay_jobs", 0),
             training_jobs=data.get("training_jobs", 0),
             training_active=data.get("training_active", False),
+            data_merge_running=data.get("data_merge_running", False),
         )
 
         return cls(
             node_id=node_id,
             hostname=data.get("hostname", node_id),
             role=role,
+            leader_id=data.get("leader_id"),
             capabilities=data.get("capabilities", []),
             gpu=gpu,
             resources=resources,

@@ -128,8 +128,8 @@ describe('Rate limiter + errorHandler integration', () => {
     if (maxRequests > 100) {
       throw new Error(
         `Unexpected API rate limit config: ${maxRequests}. ` +
-        `Expected ~50. Environment variables may not have been cleared. ` +
-        `Check RATE_LIMIT_API_POINTS env var.`
+          `Expected ~50. Environment variables may not have been cleared. ` +
+          `Check RATE_LIMIT_API_POINTS env var.`
       );
     }
 

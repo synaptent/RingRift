@@ -20,6 +20,7 @@ Pass 10 systematically verified claims from the previous 9 assessment passes. **
 
 ## 2. Verification Matrix
 
+<<<<<<< Updated upstream
 | Pass | Area                    | Claim                                            | Status      | Evidence                                                                                                                                                                                                                                |
 | ---- | ----------------------- | ------------------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1    | Turn Orchestration      | 7 bug fixes, 3.5→4.4 score                       | ⚠️ PARTIAL  | File exists at different path: [`src/shared/engine/orchestration/turnOrchestrator.ts`](../../../src/shared/engine/orchestration/turnOrchestrator.ts) (695 lines). No dedicated unit tests found.                                              |
@@ -30,6 +31,18 @@ Pass 10 systematically verified claims from the previous 9 assessment passes. **
 | 6    | Security/Privacy        | Account deletion & retention tests               | ✅ VERIFIED | [`tests/integration/accountDeletion.test.ts`](../../../tests/integration/accountDeletion.test.ts) (631 lines); [`tests/integration/dataLifecycle.test.ts`](../../../tests/integration/dataLifecycle.test.ts) (DataRetentionService tests)           |
 | 7    | CI Quality Gates        | No continue-on-error except advisory             | ✅ VERIFIED | [`../../../.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) - Only Snyk has `continue-on-error: true`                                                                                                                                        |
 | 8    | Orchestrator Rollout    | 51 tests (RolloutService), 44 tests (ShadowMode) | ✅ VERIFIED | [`tests/unit/OrchestratorRolloutService.test.ts`](../../../tests/unit/OrchestratorRolloutService.test.ts) (802 lines); [`tests/unit/ShadowModeComparator.test.ts`](../tests/unit/ShadowModeComparator.test.ts) (1086 lines)                   |
+=======
+| Pass | Area                    | Claim                                            | Status      | Evidence                                                                                                                                                                                                                                            |
+| ---- | ----------------------- | ------------------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Turn Orchestration      | 7 bug fixes, 3.5→4.4 score                       | ⚠️ PARTIAL  | File exists at different path: [`src/shared/engine/orchestration/turnOrchestrator.ts`](../../../src/shared/engine/orchestration/turnOrchestrator.ts) (695 lines). No dedicated unit tests found.                                                    |
+| 2    | Make/Unmake Pattern     | 12-25x speedup, comprehensive tests              | ✅ VERIFIED | [`ai-service/tests/test_mutable_state.py`](../../../ai-service/tests/test_mutable_state.py) (1522 lines, 12 test classes)                                                                                                                           |
+| 3    | Training Infrastructure | 253+ tests                                       | ✅ VERIFIED | 35+ root test files + subdirectories (contracts/, integration/, invariants/, parity/, rules/)                                                                                                                                                       |
+| 4    | Persistence Services    | Tests exist                                      | ⚠️ PARTIAL  | [`tests/unit/GamePersistenceService.test.ts`](../../../tests/unit/GamePersistenceService.test.ts) (579 lines) ✅; `RatingService.test.ts` **NOT FOUND** ❌                                                                                          |
+| 5    | E2E Tests               | 85+ tests                                        | ✅ VERIFIED | ~100+ tests across 10 spec files in [`tests/e2e/`](../../../tests/e2e)                                                                                                                                                                              |
+| 6    | Security/Privacy        | Account deletion & retention tests               | ✅ VERIFIED | [`tests/integration/accountDeletion.test.ts`](../../../tests/integration/accountDeletion.test.ts) (631 lines); [`tests/integration/dataLifecycle.test.ts`](../../../tests/integration/dataLifecycle.test.ts) (DataRetentionService tests)           |
+| 7    | CI Quality Gates        | No continue-on-error except advisory             | ✅ VERIFIED | [`../../../.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) - Only Snyk has `continue-on-error: true`                                                                                                                                  |
+| 8    | Orchestrator Rollout    | 51 tests (RolloutService), 44 tests (ShadowMode) | ✅ VERIFIED | [`tests/unit/OrchestratorRolloutService.test.ts`](../../../tests/unit/OrchestratorRolloutService.test.ts) (802 lines); [`tests/unit/ShadowModeComparator.test.ts`](../tests/unit/ShadowModeComparator.test.ts) (1086 lines)                         |
+>>>>>>> Stashed changes
 | 9    | Contract Validators     | 22 validators, 68 tests                          | ✅ VERIFIED | [`src/shared/engine/contracts/validators.ts`](../../../src/shared/engine/contracts/validators.ts) (593 lines, 22 Zod schemas); [`tests/unit/contracts.validation.test.ts`](../../../tests/unit/contracts.validation.test.ts) (940 lines, ~68 tests) |
 
 ### Verification Summary
@@ -45,6 +58,7 @@ Pass 10 systematically verified claims from the previous 9 assessment passes. **
 
 ### 3.1 Documents Requiring Updates
 
+<<<<<<< Updated upstream
 | Document                                                                                          | Last Updated | Issue                                                                                       | Priority   |
 | ------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------- | ---------- |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md)                                                           | Nov 15, 2025 | Claims e2e-tests has `continue-on-error: true` but CI now has e2e blocking                  | **HIGH**   |
@@ -61,6 +75,24 @@ Pass 10 systematically verified claims from the previous 9 assessment passes. **
 | [`QUICKSTART.md`](../../../QUICKSTART.md)                               | Nov 27, 2025 | ✅ Current                          |
 | [`AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md)                     | Nov 23, 2025 | ✅ Current (references make/unmake) |
 | [`ARCHITECTURE_ASSESSMENT.md`](../plans/ARCHITECTURE_ASSESSMENT.md)     | Nov 27, 2025 | ✅ Current                          |
+=======
+| Document                                                                                                | Last Updated | Issue                                                                                       | Priority   |
+| ------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------- | ---------- |
+| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md)                                                           | Nov 15, 2025 | Claims e2e-tests has `continue-on-error: true` but CI now has e2e blocking                  | **HIGH**   |
+| [`deprecated/`](../deprecated/)                                                                         | N/A          | Folder is completely empty despite being referenced                                         | **LOW**    |
+| [`archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`](../../../archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) | Historical   | Still referenced from CONTRIBUTING.md as historical                                         | **LOW**    |
+| Assessment Reports                                                                                      | Various      | Multiple `*_ASSESSMENT_REPORT.md` files in docs/ may have overlapping/contradictory content | **MEDIUM** |
+
+### 3.2 Documents Verified Current
+
+| Document                                                                          | Last Updated | Status                              |
+| --------------------------------------------------------------------------------- | ------------ | ----------------------------------- |
+| [`README.md`](../../../README.md)                                                 | Nov 27, 2025 | ✅ Current                          |
+| [`TODO.md`](../../../TODO.md)                                                     | Nov 26, 2025 | ✅ Current                          |
+| [`QUICKSTART.md`](../../../QUICKSTART.md)                                         | Nov 27, 2025 | ✅ Current                          |
+| [`AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md)                     | Nov 23, 2025 | ✅ Current (references make/unmake) |
+| [`ARCHITECTURE_ASSESSMENT.md`](../plans/ARCHITECTURE_ASSESSMENT.md)               | Nov 27, 2025 | ✅ Current                          |
+>>>>>>> Stashed changes
 | [`RULES_ENGINE_ARCHITECTURE.md`](../../architecture/RULES_ENGINE_ARCHITECTURE.md) | Nov 26, 2025 | ✅ Current                          |
 
 ---
@@ -210,11 +242,19 @@ The hardest remaining problem is completing the orchestrator adapter rollout:
 
 ### Tier 1: Critical (This Week)
 
+<<<<<<< Updated upstream
 | #   | Task                                                                     | Owner   | Effort   |
 | --- | ------------------------------------------------------------------------ | ------- | -------- |
 | 1   | Create `tests/unit/RatingService.test.ts` with comprehensive coverage    | Backend | 1-2 days |
 | 2   | Update [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) CI section - e2e blocking | DevOps  | 1 hour   |
 | 3   | Create `tests/unit/turnOrchestrator.test.ts` with dedicated unit tests   | Engine  | 1 day    |
+=======
+| #   | Task                                                                           | Owner   | Effort   |
+| --- | ------------------------------------------------------------------------------ | ------- | -------- |
+| 1   | Create `tests/unit/RatingService.test.ts` with comprehensive coverage          | Backend | 1-2 days |
+| 2   | Update [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) CI section - e2e blocking | DevOps  | 1 hour   |
+| 3   | Create `tests/unit/turnOrchestrator.test.ts` with dedicated unit tests         | Engine  | 1 day    |
+>>>>>>> Stashed changes
 
 ### Tier 2: High Priority (This Sprint)
 

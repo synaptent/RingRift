@@ -71,6 +71,75 @@ except ImportError:
     DEFAULT_RECOVERY_TIMEOUT = 300  # 5 minutes
 
 
+# =============================================================================
+# Error Classes
+# =============================================================================
+
+
+class TransportError(Exception):
+    """Base transport error for cluster operations."""
+
+    def __init__(self, message: str, target: str | None = None, transport: str | None = None):
+        super().__init__(message)
+        self.target = target
+        self.transport = transport
+
+
+class RetryableTransportError(TransportError):
+    """Temporary transport error - safe to retry.
+
+    Used for transient failures like network timeouts, connection refused,
+    or temporary node unavailability.
+    """
+    pass
+
+
+class PermanentTransportError(TransportError):
+    """Permanent transport error - don't retry.
+
+    Used for configuration errors, authentication failures, or
+    when the target is definitively unreachable.
+    """
+    pass
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+
+@dataclass
+class TransportConfig:
+    """Configuration for cluster transport operations."""
+
+    connect_timeout: int = DEFAULT_CONNECT_TIMEOUT
+    operation_timeout: int = DEFAULT_OPERATION_TIMEOUT
+    http_timeout: int = DEFAULT_HTTP_TIMEOUT
+    failure_threshold: int = DEFAULT_FAILURE_THRESHOLD
+    recovery_timeout: float = float(DEFAULT_RECOVERY_TIMEOUT)
+    retry_attempts: int = 3
+    retry_backoff: float = 1.5
+
+    @classmethod
+    def for_large_transfers(cls) -> "TransportConfig":
+        """Config optimized for large file transfers (>100MB)."""
+        return cls(
+            connect_timeout=60,
+            operation_timeout=600,
+            retry_attempts=2,
+        )
+
+    @classmethod
+    def for_quick_requests(cls) -> "TransportConfig":
+        """Config optimized for quick API requests."""
+        return cls(
+            connect_timeout=10,
+            operation_timeout=30,
+            http_timeout=15,
+            retry_attempts=2,
+        )
+
+
 @dataclass
 class NodeConfig:
     """Configuration for a cluster node."""
@@ -493,7 +562,12 @@ __all__ = [
     "ClusterTransport",
     # Data classes
     "NodeConfig",
+    "TransportConfig",
     "TransportResult",
+    # Error classes
+    "TransportError",
+    "RetryableTransportError",
+    "PermanentTransportError",
     # Functions
     "get_cluster_transport",
 ]

@@ -376,6 +376,12 @@ from app.coordination.daemon_manager import (
     setup_signal_handlers,
 )
 
+# DaemonLifecycle - lifecycle operations and dependency validation (December 2025 Phase 12)
+from app.coordination.daemon_lifecycle import (
+    DaemonLifecycleManager,
+    DependencyValidationError,
+)
+
 # DaemonFactory - centralized lazy daemon creation (December 2025 - Phase 1.2)
 from app.coordination.daemon_factory import (
     DaemonFactory,
@@ -1673,10 +1679,12 @@ __all__ = [
     "CrossProcessEventPoller",
     "CrossProcessEventQueue",
     "DaemonInfo",
+    "DaemonLifecycleManager",
     "DaemonManager",
     "DaemonManagerConfig",
     "DaemonState",
     "DaemonType",
+    "DependencyValidationError",
     "DataPipelineOrchestrator",
     "DistributedLock",
     "DistributedSyncCoordinator",

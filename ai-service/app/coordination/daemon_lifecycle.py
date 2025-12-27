@@ -51,6 +51,18 @@ from app.coordination.daemon_types import (
     _check_deprecated_daemon,
 )
 
+
+class DependencyValidationError(Exception):
+    """Raised when daemon dependencies are invalid.
+
+    Phase 12 (December 2025): Strict validation prevents startup with:
+    - Circular dependencies (would cause deadlock)
+    - Missing dependencies (would cause startup failure)
+    - Self-dependencies (configuration error)
+    """
+
+    pass
+
 if TYPE_CHECKING:
     pass
 
@@ -431,6 +443,9 @@ class DaemonLifecycleManager:
     ) -> dict[DaemonType, bool]:
         """Start all (or specified) daemons in dependency order.
 
+        Phase 12 (December 2025): Now validates dependency graph before startup.
+        Raises DependencyValidationError if invalid dependencies are detected.
+
         Args:
             types: Specific daemon types to start (all if None)
             on_started_callback: Optional async callback to run after starting daemons
@@ -438,6 +453,9 @@ class DaemonLifecycleManager:
 
         Returns:
             Dict mapping daemon type to start success
+
+        Raises:
+            DependencyValidationError: If circular, missing, or self-dependencies detected
         """
         # Check if master loop is running (December 2025)
         # Warn user if starting daemons outside of master loop
@@ -453,6 +471,10 @@ class DaemonLifecycleManager:
 
         results: dict[DaemonType, bool] = {}
         types_to_start = types or list(self._factories.keys())
+
+        # Phase 12: Validate dependency graph before startup
+        # This fails fast with clear errors instead of proceeding with broken config
+        self.validate_dependency_graph(types_to_start)
 
         # Sort by dependencies (topological sort)
         sorted_types = self._sort_by_dependencies(types_to_start)
@@ -554,3 +576,99 @@ class DaemonLifecycleManager:
             if daemon_type in info.depends_on:
                 dependents.append(dt)
         return dependents
+
+    def validate_dependency_graph(self, types: list[DaemonType] | None = None) -> None:
+        """Validate the dependency graph before startup.
+
+        Phase 12 (December 2025): Strict pre-flight validation that prevents
+        startup with invalid dependencies. Raises DependencyValidationError
+        instead of silently proceeding with broken configuration.
+
+        Validates:
+        1. No self-dependencies (daemon depending on itself)
+        2. All dependencies are registered (no dangling references)
+        3. No circular dependencies (would cause deadlock)
+
+        Args:
+            types: Specific daemon types to validate (all if None)
+
+        Raises:
+            DependencyValidationError: If any validation fails
+        """
+        types_to_check = set(types) if types else set(self._daemons.keys())
+
+        # Phase 1: Check for self-dependencies and missing dependencies
+        for dt in types_to_check:
+            info = self._daemons.get(dt)
+            if info is None:
+                continue
+
+            for dep in info.depends_on:
+                # Self-dependency check
+                if dep == dt:
+                    raise DependencyValidationError(
+                        f"Self-dependency detected: {dt.value} depends on itself. "
+                        f"Remove {dt.value} from its own depends_on list."
+                    )
+
+                # Missing dependency check
+                if dep not in self._daemons:
+                    raise DependencyValidationError(
+                        f"Missing dependency: {dt.value} depends on {dep.value}, "
+                        f"but {dep.value} is not registered. "
+                        f"Register {dep.value} before starting daemons."
+                    )
+
+                # Dependency not in types_to_check but should be started first
+                if dep not in types_to_check and dep in self._daemons:
+                    dep_info = self._daemons[dep]
+                    if dep_info.state != DaemonState.RUNNING:
+                        raise DependencyValidationError(
+                            f"Dependency not included: {dt.value} depends on {dep.value}, "
+                            f"but {dep.value} is not in the startup list and not running. "
+                            f"Either include {dep.value} in types or start it first."
+                        )
+
+        # Phase 2: Detect circular dependencies using DFS
+        # States: 0=unvisited, 1=visiting (in current path), 2=visited
+        state: dict[DaemonType, int] = {dt: 0 for dt in types_to_check}
+        path: list[DaemonType] = []
+
+        def dfs(dt: DaemonType) -> list[DaemonType] | None:
+            """DFS to detect cycles. Returns cycle path if found, None otherwise."""
+            if state[dt] == 2:  # Already fully visited
+                return None
+            if state[dt] == 1:  # Found cycle - in current path
+                # Extract cycle from path
+                cycle_start = path.index(dt)
+                return path[cycle_start:] + [dt]
+
+            state[dt] = 1
+            path.append(dt)
+
+            info = self._daemons.get(dt)
+            if info:
+                for dep in info.depends_on:
+                    if dep in state:  # Only check deps in our validation set
+                        cycle = dfs(dep)
+                        if cycle:
+                            return cycle
+
+            path.pop()
+            state[dt] = 2
+            return None
+
+        for dt in types_to_check:
+            if state[dt] == 0:
+                cycle = dfs(dt)
+                if cycle:
+                    cycle_str = " -> ".join(d.value for d in cycle)
+                    raise DependencyValidationError(
+                        f"Circular dependency detected: {cycle_str}. "
+                        f"Break the cycle by removing one dependency."
+                    )
+
+        logger.debug(
+            f"Dependency graph validated: {len(types_to_check)} daemons, "
+            f"no cycles or missing dependencies"
+        )

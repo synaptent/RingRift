@@ -93,14 +93,24 @@ ORCHESTRATOR_ADAPTER_ENABLED: z
 
 **8 test files** call `disableOrchestratorAdapter()`:
 
+<<<<<<< Updated upstream
 | File                                                                                                                                                | Purpose                               | Migration Strategy                      |
 | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | --------------------------------------- |
 | [`GameEngine.orchestratorParity.integration.test.ts`](../tests/unit/GameEngine.orchestratorParity.integration.test.ts:65)                           | Parity testing legacy vs orchestrator | **Keep** – Critical parity verification |
+=======
+| File                                                                                                                                                   | Purpose                               | Migration Strategy                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- | --------------------------------------- |
+| [`GameEngine.orchestratorParity.integration.test.ts`](../tests/unit/GameEngine.orchestratorParity.integration.test.ts:65)                              | Parity testing legacy vs orchestrator | **Keep** – Critical parity verification |
+>>>>>>> Stashed changes
 | [`ClientSandboxEngine.chainCapture.getValidMoves.test.ts`](../../tests/unit/ClientSandboxEngine.chainCapture.getValidMoves.test.ts:56)                 | Capture enumeration                   | **Migrate** – Use orchestrator adapter  |
 | [`ClientSandboxEngine.movementParity.shared.test.ts`](../../tests/unit/ClientSandboxEngine.movementParity.shared.test.ts:66)                           | Movement parity                       | **Keep** – Dual-path verification       |
 | [`ClientSandboxEngine.placement.shared.test.ts`](../../tests/unit/ClientSandboxEngine.placement.shared.test.ts:44)                                     | Placement testing                     | **Migrate** – Use orchestrator          |
 | [`GameEngine.utilityMethods.test.ts`](../../tests/unit/GameEngine.utilityMethods.test.ts:232)                                                          | Utility method testing                | **Keep** – Tests the toggle itself      |
+<<<<<<< Updated upstream
 | [`Backend_vs_Sandbox.CaptureAndTerritoryParity.test.ts`](../tests/unit/Backend_vs_Sandbox.CaptureAndTerritoryParity.test.ts:182)                    | Critical parity                       | **Keep** – Dual-path verification       |
+=======
+| [`Backend_vs_Sandbox.CaptureAndTerritoryParity.test.ts`](../tests/unit/Backend_vs_Sandbox.CaptureAndTerritoryParity.test.ts:182)                       | Critical parity                       | **Keep** – Dual-path verification       |
+>>>>>>> Stashed changes
 | [`ClientSandboxEngine.orchestratorParity.test.ts`](../../tests/unit/ClientSandboxEngine.orchestratorParity.test.ts:64)                                 | Parity testing                        | **Keep** – Critical parity verification |
 | [`ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts`](../../tests/unit/ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts:75) | Territory decisions                   | **Migrate** – Use orchestrator          |
 

@@ -241,11 +241,19 @@ Deploying RingRift to production at the documented target scale (100+ concurrent
 | `PROJECT_GOALS.md`                                                                       | 2025-11-27   | ✅ Accurate: goals align with implementation          |
 | `KNOWN_ISSUES.md`                                                                        | 2025-12-01   | ✅ Accurate: issues match actual code state           |
 | `TODO.md`                                                                                | 2025-11-30   | ✅ Accurate: tracks match roadmap                     |
+<<<<<<< Updated upstream
 | `docs/testing/TEST_CATEGORIES.md`                                                                | 2025-12-01   | ✅ Accurate: test categories match actual suites      |
 | `ARCHITECTURE_ASSESSMENT.md`                                                             | 2025-11-27   | ✅ Accurate: architecture matches implementation      |
 | `WEAKNESS_ASSESSMENT_REPORT.md`                                                          | 2025-12-01   | ✅ Accurate: historical assessments documented        |
 | `docs/security/SECURITY_THREAT_MODEL.md`                                                          | 2025-11-27   | ✅ Accurate: threats/controls match code              |
 | `docs/planning/DEPLOYMENT_REQUIREMENTS.md`                                                        | 2025-11-27   | ✅ Accurate: Docker configs match                     |
+=======
+| `docs/testing/TEST_CATEGORIES.md`                                                        | 2025-12-01   | ✅ Accurate: test categories match actual suites      |
+| `ARCHITECTURE_ASSESSMENT.md`                                                             | 2025-11-27   | ✅ Accurate: architecture matches implementation      |
+| `WEAKNESS_ASSESSMENT_REPORT.md`                                                          | 2025-12-01   | ✅ Accurate: historical assessments documented        |
+| `docs/security/SECURITY_THREAT_MODEL.md`                                                 | 2025-11-27   | ✅ Accurate: threats/controls match code              |
+| `docs/planning/DEPLOYMENT_REQUIREMENTS.md`                                               | 2025-11-27   | ✅ Accurate: Docker configs match                     |
+>>>>>>> Stashed changes
 | `src/server/config/env.ts`                                                               | Current      | ✅ Accurate: schema validated against usage           |
 | `prisma/schema.prisma`                                                                   | Current      | ✅ Accurate: migrations align with schema             |
 | `package.json`                                                                           | Current      | ✅ Accurate: scripts and deps verified                |

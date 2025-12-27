@@ -453,6 +453,7 @@ Use hypothesis (Python) and fast-check (TypeScript) for:
 
 ### 5.4 Existing Parity & Sanity Tests
 
+<<<<<<< Updated upstream
 | Test Suite                                   | Location                      | Coverage                                                                                    |
 | -------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
 | `contractVectorRunner.test.ts`               | `tests/contracts/`            | Contract vectors (TS): shared engine semantics → v2 contract vectors                        |
@@ -464,6 +465,19 @@ Use hypothesis (Python) and fast-check (TypeScript) for:
 | `test_default_engine_equivalence.py`         | `ai-service/tests/rules/`     | Move application parity (DefaultRulesEngine vs GameEngine)                                  |
 | `test_default_engine_flags.py`               | `ai-service/tests/rules/`     | Mutator shadow contracts / safety flags                                                     |
 | `test_heuristic_training_evaluation.py`      | `ai-service/tests/`           | Heuristic training/evaluation sanity: fitness harness and HeuristicAI weight sensitivity    |
+=======
+| Test Suite                                   | Location                      | Coverage                                                                                          |
+| -------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| `contractVectorRunner.test.ts`               | `tests/contracts/`            | Contract vectors (TS): shared engine semantics → v2 contract vectors                              |
+| `test_contract_vectors.py`                   | `ai-service/tests/contracts/` | Contract vectors (Python): TS↔Python rules parity on v2 vectors                                   |
+| `test_rules_parity_fixtures.py`              | `ai-service/tests/parity/`    | TS→Python trace/plateau parity using generated fixtures                                           |
+| `test_ts_seed_plateau_snapshot_parity.py`    | `ai-service/tests/parity/`    | Seed plateau snapshot parity against TS engine                                                    |
+| `test_ai_plateau_progress.py`                | `ai-service/tests/parity/`    | AI plateau progress parity vs TS plateau traces                                                   |
+| `test_line_and_territory_scenario_parity.py` | `ai-service/tests/parity/`    | Focused line+territory scenario parity using TS-generated fixtures                                |
+| `test_default_engine_equivalence.py`         | `ai-service/tests/rules/`     | Move application parity (DefaultRulesEngine vs GameEngine)                                        |
+| `test_default_engine_flags.py`               | `ai-service/tests/rules/`     | Mutator shadow contracts / safety flags                                                           |
+| `test_heuristic_training_evaluation.py`      | `ai-service/tests/`           | Heuristic training/evaluation sanity: fitness harness and HeuristicAI weight sensitivity          |
+>>>>>>> Stashed changes
 | `TraceFixtures.sharedEngineParity.test.ts`   | `tests/unit/`                 | Legacy trace replay parity (diagnostic; see `docs/rules/PARITY_SEED_TRIAGE.md` for usage context) |
 
 ---

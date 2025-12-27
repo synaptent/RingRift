@@ -1010,8 +1010,138 @@ def create_npz_distribution_daemon() -> UnifiedDistributionDaemon:
 
 
 # =============================================================================
+# Helper Functions for Model Availability Checking
+# =============================================================================
+
+
+async def wait_for_model_distribution(
+    board_type: str,
+    num_players: int,
+    timeout: float = 300.0,
+) -> bool:
+    """Wait for a model to be distributed to this node.
+
+    This function waits for MODEL_DISTRIBUTION_COMPLETE event or checks
+    if the model already exists locally. Use this before selfplay starts
+    to avoid race conditions where nodes try to load models before
+    distribution completes.
+
+    Args:
+        board_type: Board type (hex8, square8, etc.)
+        num_players: Number of players (2, 3, 4)
+        timeout: Maximum time to wait in seconds (default: 300)
+
+    Returns:
+        True if model is available, False if timed out
+
+    Example:
+        available = await wait_for_model_distribution("hex8", 2, timeout=300)
+        if not available:
+            logger.warning("Model distribution timed out, using fallback")
+    """
+    import asyncio
+    import time
+
+    config_key = f"{board_type}_{num_players}p"
+    model_name = f"canonical_{config_key}.pth"
+    models_dir = ROOT / "models"
+    model_path = models_dir / model_name
+
+    # Check if model already exists locally
+    if model_path.exists():
+        logger.debug(f"[ModelDistribution] Model already available: {model_path}")
+        return True
+
+    # Wait for MODEL_DISTRIBUTION_COMPLETE event
+    logger.info(
+        f"[ModelDistribution] Waiting for {model_name} distribution "
+        f"(timeout: {timeout}s)..."
+    )
+
+    distribution_event = asyncio.Event()
+
+    def on_distribution_complete(event: Any) -> None:
+        """Handle MODEL_DISTRIBUTION_COMPLETE event."""
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            models = payload.get("models", [])
+            for model_info in models:
+                model_path_str = model_info.get("model_path", "")
+                if model_name in model_path_str:
+                    logger.info(
+                        f"[ModelDistribution] Received {model_name} distribution complete"
+                    )
+                    distribution_event.set()
+                    return
+        except Exception as e:
+            logger.warning(f"[ModelDistribution] Error handling event: {e}")
+
+    # Subscribe to distribution events
+    try:
+        from app.coordination.event_router import subscribe, DataEventType
+
+        subscribe(DataEventType.MODEL_DISTRIBUTION_COMPLETE, on_distribution_complete)
+
+        try:
+            await asyncio.wait_for(distribution_event.wait(), timeout=timeout)
+            logger.info(f"[ModelDistribution] Model {model_name} is now available")
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[ModelDistribution] Timed out waiting for {model_name} "
+                f"after {timeout}s"
+            )
+            return False
+
+    except ImportError:
+        logger.debug("[ModelDistribution] Event system not available")
+        # Without event system, just check if file appeared
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if model_path.exists():
+                logger.info(f"[ModelDistribution] Model {model_name} found on disk")
+                return True
+            await asyncio.sleep(5.0)
+
+        logger.warning(
+            f"[ModelDistribution] Model {model_name} not found after {timeout}s"
+        )
+        return False
+
+
+def check_model_availability(
+    board_type: str,
+    num_players: int,
+) -> bool:
+    """Synchronously check if a model is available locally.
+
+    Args:
+        board_type: Board type (hex8, square8, etc.)
+        num_players: Number of players (2, 3, 4)
+
+    Returns:
+        True if model exists locally, False otherwise
+
+    Example:
+        if not check_model_availability("hex8", 2):
+            logger.warning("Model not available yet")
+    """
+    config_key = f"{board_type}_{num_players}p"
+    model_name = f"canonical_{config_key}.pth"
+    models_dir = ROOT / "models"
+    model_path = models_dir / model_name
+
+    # Also check for symlinks (ringrift_best_*.pth)
+    symlink_name = f"ringrift_best_{config_key}.pth"
+    symlink_path = models_dir / symlink_name
+
+    return model_path.exists() or symlink_path.exists()
+
+
+# =============================================================================
 # Standalone Entry Point
 # =============================================================================
+
 
 async def main() -> None:
     """Run daemon standalone."""

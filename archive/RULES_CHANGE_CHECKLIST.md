@@ -14,9 +14,15 @@
 | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md)                                                       | Canonical rules with RR-CANON-RXXX identifiers |
 | [`docs/supplementary/RULES_RULESET_CLARIFICATIONS.md`](../docs/supplementary/RULES_RULESET_CLARIFICATIONS.md) | CLAR-XXX entries for ambiguous areas           |
+<<<<<<< Updated upstream
 | [`RULES_IMPLEMENTATION_MAPPING.md`](../docs/rules/RULES_IMPLEMENTATION_MAPPING.md)                                       | Maps rules to TS + Python code locations       |
 | [`RULES_ENGINE_ARCHITECTURE.md`](../docs/architecture/RULES_ENGINE_ARCHITECTURE.md)                                             | Architecture, parity, and rollout strategy     |
 | [`../docs/ai/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md)                                        | AI training implications                       |
+=======
+| [`RULES_IMPLEMENTATION_MAPPING.md`](../docs/rules/RULES_IMPLEMENTATION_MAPPING.md)                            | Maps rules to TS + Python code locations       |
+| [`RULES_ENGINE_ARCHITECTURE.md`](../docs/architecture/RULES_ENGINE_ARCHITECTURE.md)                           | Architecture, parity, and rollout strategy     |
+| [`../docs/ai/AI_TRAINING_AND_DATASETS.md`](../docs/ai/AI_TRAINING_AND_DATASETS.md)                            | AI training implications                       |
+>>>>>>> Stashed changes
 
 ---
 

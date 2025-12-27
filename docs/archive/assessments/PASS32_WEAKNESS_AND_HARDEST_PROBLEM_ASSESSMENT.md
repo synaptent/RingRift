@@ -7,6 +7,7 @@
 > **Assessment date:** 2025-12-26
 >
 > **Basis documents (SSoT + supporting):**
+>
 > - Goals/scope SSoT: [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:1)
 > - Rules semantics SSoT: [`RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md:1)
 > - Active issue tracker: [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md:1)
@@ -28,7 +29,7 @@ There are a few remaining ambiguities/drifts that should be cleaned up (see §1.
 
 **Weakest aspect:** **Production validation at target scale with clean signal**.
 
-Even after substantial engine consolidation and parity improvements (including square19 replay parity now passing in the highlighted work and tracked as resolved in [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md:1103)), the largest remaining *risk to v1.0 confidence* is the lack of a **repeatable, low-noise, target-scale SLO validation gate** that exercises:
+Even after substantial engine consolidation and parity improvements (including square19 replay parity now passing in the highlighted work and tracked as resolved in [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md:1103)), the largest remaining _risk to v1.0 confidence_ is the lack of a **repeatable, low-noise, target-scale SLO validation gate** that exercises:
 
 - mixed human/AI gameplay,
 - WebSocket concurrency (including reconnection patterns), and
@@ -68,7 +69,7 @@ This is the right structure: it prevents “status docs” from accidentally rew
    - AI ladder positioning (whether 7–10 are v1.0 rated-grade) remains open in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:397).
    - Launch concurrency target interpretation remains open in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:403).
 
-   These aren’t blocking for internal development, but they *do* affect what “production validation at scale” must prove.
+   These aren’t blocking for internal development, but they _do_ affect what “production validation at scale” must prove.
 
 ### 1.3 Doc hygiene drift impacting clarity (not goals SSoT, but supporting docs)
 
@@ -91,7 +92,7 @@ The single weakest aspect is **production validation at target scale with clean 
 This matches the explicit v1.0 release-gate framing in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:143) and the previously documented weakness in [`WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md`](WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md:14), but is refreshed here with today’s context:
 
 - Rules engine consolidation and parity work have removed a major historic blocker (for example the square19 parity thread tracked in [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md:1103)).
-- Remaining risk is primarily “can we prove, repeatedly, that the *system* meets the SLOs under representative load?”
+- Remaining risk is primarily “can we prove, repeatedly, that the _system_ meets the SLOs under representative load?”
 
 ### 2.2 Evidence
 
@@ -108,12 +109,12 @@ This matches the explicit v1.0 release-gate framing in [`PROJECT_GOALS.md`](../.
 
 This section explicitly compares against several plausible candidates from the requested focus areas (docs/test/code quality/architecture).
 
-| Candidate | Why it is plausible | Why it is not the single weakest right now |
-| --- | --- | --- |
-| **Documentation hygiene / drift** | There is demonstrable drift between status/registry docs and current reality (see [`CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md:87) and [`TRAINING_DATA_REGISTRY.md`](../../../ai-service/TRAINING_DATA_REGISTRY.md:19)). | This is a *process and clarity risk*, but it does not directly threaten v1.0 correctness or uptime. It is also easier to remediate than production-scale validation.
-| **Test hygiene / coverage** | The project has a large test surface and a non-trivial skipped/diagnostic taxonomy in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:169). | The existing suites already provide strong correctness assurance for rules/parity. Remaining test work is incremental hardening; it is not the dominant unknown compared to scale validation.
-| **Architecture: duplicate TS `GameState` types blocking validator consolidation** | This is explicitly called out as blocking consolidation in [`NEXT_STEPS.md`](../../architecture/NEXT_STEPS.md:40). | This is real maintainability debt, but it is not a release gate in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:143). It can be scheduled as a post-v1.0 internal cleanup if needed.
-| **AI strength and advanced search** | Truly strong multiplayer AI is objectively hard and ongoing in the long run. | Strong evidence in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:287) that “advanced AI” is a post‑v1.0 objective; v1.0 requires a functional ladder and resilient fallbacks, not frontier-strength AI.
+| Candidate                                                                         | Why it is plausible                                                                                                                                                                                                                                   | Why it is not the single weakest right now                                                                                                                                                               |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Documentation hygiene / drift**                                                 | There is demonstrable drift between status/registry docs and current reality (see [`CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md:87) and [`TRAINING_DATA_REGISTRY.md`](../../../ai-service/TRAINING_DATA_REGISTRY.md:19)). | This is a _process and clarity risk_, but it does not directly threaten v1.0 correctness or uptime. It is also easier to remediate than production-scale validation.                                     |
+| **Test hygiene / coverage**                                                       | The project has a large test surface and a non-trivial skipped/diagnostic taxonomy in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:169).                                                                                                            | The existing suites already provide strong correctness assurance for rules/parity. Remaining test work is incremental hardening; it is not the dominant unknown compared to scale validation.            |
+| **Architecture: duplicate TS `GameState` types blocking validator consolidation** | This is explicitly called out as blocking consolidation in [`NEXT_STEPS.md`](../../architecture/NEXT_STEPS.md:40).                                                                                                                                    | This is real maintainability debt, but it is not a release gate in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:143). It can be scheduled as a post-v1.0 internal cleanup if needed.                   |
+| **AI strength and advanced search**                                               | Truly strong multiplayer AI is objectively hard and ongoing in the long run.                                                                                                                                                                          | Strong evidence in [`PROJECT_GOALS.md`](../../../PROJECT_GOALS.md:287) that “advanced AI” is a post‑v1.0 objective; v1.0 requires a functional ladder and resilient fallbacks, not frontier-strength AI. |
 
 ---
 
@@ -252,7 +253,7 @@ flowchart TD
 
 Relative to [`WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md`](WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md:1), this PASS32 refresh:
 
-- keeps the *core diagnosis* (production validation is still the gating vulnerability),
+- keeps the _core diagnosis_ (production validation is still the gating vulnerability),
 - updates context to reflect the current parity posture (for example the square19 parity thread resolution in [`KNOWN_ISSUES.md`](../../../KNOWN_ISSUES.md:1103)), and
 - adds an explicit remediation item to repair doc drift where high-authority status docs no longer reflect recent changes (see [`CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md:87)).
 

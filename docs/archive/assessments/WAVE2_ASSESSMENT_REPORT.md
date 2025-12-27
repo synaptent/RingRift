@@ -58,8 +58,13 @@ The [`gameEndExplanation.ts`](../../../src/shared/engine/gameEndExplanation.ts:1
 
 Four new specification documents created:
 
+<<<<<<< Updated upstream
 | Document                                                                              | Lines | Purpose                                   |
 | ------------------------------------------------------------------------------------- | ----- | ----------------------------------------- |
+=======
+| Document                                                                                  | Lines | Purpose                                   |
+| ----------------------------------------------------------------------------------------- | ----- | ----------------------------------------- |
+>>>>>>> Stashed changes
 | [`AI_CALIBRATION_RUNBOOK.md`](../../ai/AI_CALIBRATION_RUNBOOK.md:1)                       | 475   | Operational procedures for AI calibration |
 | [`AI_LADDER_HEALTH_MONITORING_SPEC.md`](../../ai/AI_LADDER_HEALTH_MONITORING_SPEC.md:1)   | 865   | Health metrics and alerting               |
 | [`AI_LADDER_CHANGE_GUARDRAILS.md`](../../ai/AI_LADDER_CHANGE_GUARDRAILS.md:1)             | 617   | Change management controls                |

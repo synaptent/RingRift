@@ -355,7 +355,7 @@ class SelfplayRunner(ABC):
         checks if model already exists locally. Times out after 300s.
         """
         try:
-            from app.coordination.model_distribution_daemon import (
+            from app.coordination.unified_distribution_daemon import (
                 wait_for_model_distribution,
                 check_model_availability,
             )

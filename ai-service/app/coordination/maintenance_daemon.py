@@ -62,6 +62,18 @@ class MaintenanceConfig:
     archive_games_older_than_days: int = 30
     archive_interval_hours: float = 24.0  # Daily
     archive_enabled: bool = True
+    archive_directory: str = field(
+        default_factory=lambda: os.getenv(
+            "RINGRIFT_ARCHIVE_DIR", str(Path("data/games/archive"))
+        )
+    )
+    archive_compress: bool = True  # Use gzip compression for archived databases
+    archive_to_s3: bool = field(
+        default_factory=lambda: os.getenv("RINGRIFT_ARCHIVE_TO_S3", "false").lower() == "true"
+    )
+    archive_s3_bucket: str = field(
+        default_factory=lambda: os.getenv("RINGRIFT_ARCHIVE_S3_BUCKET", "ringrift-archive")
+    )
 
     # DLQ cleanup (also handled by DLQ_RETRY daemon, but backup cleanup here)
     dlq_cleanup_interval_hours: float = 168.0  # Weekly
