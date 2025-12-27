@@ -113,8 +113,9 @@ async def _check_p2p_leader_status() -> tuple[bool, str | None]:
 
     this_node = _get_node_id()
 
-    # Try P2P status endpoint
-    p2p_url = "http://localhost:8770/status"
+    # Try P2P status endpoint (Dec 2025: use configurable URL)
+    p2p_base = os.environ.get("RINGRIFT_P2P_URL", "http://localhost:8770")
+    p2p_url = f"{p2p_base}/status"
 
     try:
         async with aiohttp.ClientSession() as session:

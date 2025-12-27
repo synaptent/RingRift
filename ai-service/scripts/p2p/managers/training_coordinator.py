@@ -35,6 +35,16 @@ except ImportError:
     MIN_MEMORY_GB_FOR_TASKS = 64  # Dec 2025: GH200 nodes
     LEADERLESS_TRAINING_TIMEOUT = 30  # Match constants.py
 
+# Dec 2025: Import event emission helpers for training lifecycle events
+try:
+    from app.coordination.event_emitters import (
+        emit_training_started_sync,
+        emit_training_completed_sync,
+    )
+    _HAS_EVENT_EMITTERS = True
+except ImportError:
+    _HAS_EVENT_EMITTERS = False
+
 
 class TrainingCoordinator:
     """Coordinates training job dispatch and completion workflows.
@@ -431,6 +441,20 @@ class TrainingCoordinator:
                             job.started_at = time.time()
                             logger.info(f"Started {job_type} training job {job_id} on {worker_node.node_id}")
                             self.save_state_callback()
+
+                            # Dec 2025: Emit TRAINING_STARTED event for pipeline coordination
+                            if _HAS_EVENT_EMITTERS:
+                                try:
+                                    emit_training_started_sync(
+                                        config_key=config_key,
+                                        node_name=worker_node.node_id,
+                                        job_id=job_id,
+                                        job_type=job_type,
+                                    )
+                                    logger.debug(f"Emitted TRAINING_STARTED for {config_key}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to emit TRAINING_STARTED: {e}")
+
                             return job
                         job.status = "failed"
                         job.error_message = str(result.get("error") or "Unknown error")
@@ -465,6 +489,20 @@ class TrainingCoordinator:
 
         try:
             logger.info(f"Training job {job.job_id} completed, triggering evaluation")
+
+            # Dec 2025: Emit TRAINING_COMPLETED event for pipeline coordination
+            config_key = f"{job.board_type}_{job.num_players}p"
+            if _HAS_EVENT_EMITTERS:
+                try:
+                    emit_training_completed_sync(
+                        config_key=config_key,
+                        model_id=Path(job.output_model_path).stem if job.output_model_path else "unknown",
+                        job_id=job.job_id,
+                        val_loss=getattr(job, "val_loss", 0.0),
+                    )
+                    logger.debug(f"Emitted TRAINING_COMPLETED for {config_key}")
+                except Exception as e:
+                    logger.warning(f"Failed to emit TRAINING_COMPLETED: {e}")
 
             # Run immediate gauntlet evaluation
             passed = await self._run_post_training_gauntlet(job)

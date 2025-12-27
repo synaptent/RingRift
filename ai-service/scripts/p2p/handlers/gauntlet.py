@@ -88,7 +88,8 @@ class GauntletHandlersMixin:
         """
         try:
             data = await request.json()
-        except (AttributeError):
+        except (AttributeError, ValueError, UnicodeDecodeError):
+            # Dec 2025: Catch all JSON parsing errors
             return web.json_response({"error": "Invalid JSON"}, status=400)
 
         run_id = data.get("run_id", "unknown")
@@ -224,7 +225,8 @@ class GauntletHandlersMixin:
 
         try:
             # Run game in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
+            # Dec 2025: Use get_running_loop() in async context
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 self._run_gauntlet_game_sync,
@@ -405,7 +407,8 @@ class GauntletHandlersMixin:
             # Run games: model vs baseline from both sides
             wins = 0
             total_games = 0
-            loop = asyncio.get_event_loop()
+            # Dec 2025: Use get_running_loop() in async context
+            loop = asyncio.get_running_loop()
 
             for game_num in range(games_per_side * 2):
                 try:

@@ -949,11 +949,13 @@ class SelfplayOrchestrator:
             # Check if P2P orchestrator is running locally
             async def _send_request():
                 try:
+                    # Dec 2025: Use configurable P2P URL
+                    p2p_url = os.environ.get("RINGRIFT_P2P_URL", "http://localhost:8770")
                     async with aiohttp.ClientSession(
                         timeout=aiohttp.ClientTimeout(total=5)
                     ) as session:
                         async with session.post(
-                            "http://localhost:8770/queue/selfplay",
+                            f"{p2p_url}/queue/selfplay",
                             json={
                                 "config_key": config_key,
                                 "num_games": num_games,

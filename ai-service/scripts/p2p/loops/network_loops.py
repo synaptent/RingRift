@@ -114,7 +114,8 @@ class IpDiscoveryLoop(BaseLoop):
         """Resolve hostname to IP address."""
         try:
             import socket
-            loop = asyncio.get_event_loop()
+            # Dec 2025: Use get_running_loop() in async context
+            loop = asyncio.get_running_loop()
             result = await asyncio.wait_for(
                 loop.run_in_executor(None, socket.gethostbyname, hostname),
                 timeout=self.config.dns_timeout_seconds,

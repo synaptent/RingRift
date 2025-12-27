@@ -222,10 +222,11 @@ class SystemHealthMonitorDaemon:
     def _get_cluster_status(self) -> dict[str, Any]:
         """Get cluster status from P2P or cluster monitor."""
         try:
-            # Try P2P status first
+            # Try P2P status first (Dec 2025: use configurable URL)
             import requests
 
-            response = requests.get("http://localhost:8770/status", timeout=5)
+            p2p_url = os.environ.get("RINGRIFT_P2P_URL", "http://localhost:8770")
+            response = requests.get(f"{p2p_url}/status", timeout=5)
             if response.ok:
                 return response.json()
         except (requests.Timeout, requests.ConnectionError) as e:
