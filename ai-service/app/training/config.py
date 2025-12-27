@@ -39,6 +39,10 @@ from dataclasses import dataclass, field
 
 from app.models import BoardType
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # =============================================================================
 # GPU Scaling Configuration
 # =============================================================================

@@ -388,6 +388,7 @@ class ClusterJob:
     pid: int = 0
     started_at: float = 0.0
     status: str = "running"
+    error_message: str = ""
     # Extended fields for distributed jobs
     coordinator_node: str = ""  # Node running coordinator (for worker jobs)
     worker_port: int = 8766     # Port for worker server
@@ -406,6 +407,7 @@ class ClusterJob:
         d.setdefault('coordinator_node', '')
         d.setdefault('worker_port', 8766)
         d.setdefault('config_json', '')
+        d.setdefault('error_message', '')
         return cls(**d)
 
 

@@ -570,6 +570,35 @@ Seconds a GPU must remain idle before the node is treated as idle.
 
 Seconds to wait before SIGKILL after SIGTERM when shutting down jobs.
 
+### Advanced AI Service Flags (Curated)
+
+These are high-impact coordination/P2P knobs used by the Python AI service. The
+full auto-extracted list lives in `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
+
+| Variable                                  | Default | Description                                                 | Status   |
+| ----------------------------------------- | ------- | ----------------------------------------------------------- | -------- |
+| `RINGRIFT_SYNC_LOCK_TIMEOUT`              | `120`   | Sync mutex lock timeout (seconds).                          | Advanced |
+| `RINGRIFT_MAX_SYNCS_PER_HOST`             | `2`     | Max concurrent syncs per host.                              | Advanced |
+| `RINGRIFT_MAX_SYNCS_CLUSTER`              | `10`    | Max concurrent syncs cluster-wide.                          | Advanced |
+| `RINGRIFT_BACKPRESSURE_GPU_THRESHOLD`     | `90.0`  | GPU utilization (%) threshold to trigger backpressure.      | Advanced |
+| `RINGRIFT_BACKPRESSURE_MEMORY_THRESHOLD`  | `85.0`  | Memory utilization (%) threshold to trigger backpressure.   | Advanced |
+| `RINGRIFT_BACKPRESSURE_DISK_THRESHOLD`    | `90.0`  | Disk utilization (%) threshold to trigger backpressure.     | Advanced |
+| `RINGRIFT_BACKPRESSURE_COOLDOWN`          | `30`    | Backpressure cooldown (seconds) before re-evaluating.       | Advanced |
+| `RINGRIFT_DAEMON_HEALTH_INTERVAL`         | `60`    | Health check interval for daemons (seconds).                | Advanced |
+| `RINGRIFT_DAEMON_CRITICAL_CHECK_INTERVAL` | `30`    | Health check interval for critical daemons (seconds).       | Advanced |
+| `RINGRIFT_DAEMON_STARTUP_TIMEOUT`         | `30`    | Startup timeout before a daemon is marked unhealthy.        | Advanced |
+| `RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT`        | `10`    | Shutdown timeout before forcing stop.                       | Advanced |
+| `RINGRIFT_P2P_HEARTBEAT_INTERVAL`         | `15`    | P2P heartbeat interval (seconds).                           | Advanced |
+| `RINGRIFT_P2P_GOSSIP_INTERVAL`            | `15`    | P2P gossip interval (seconds).                              | Advanced |
+| `RINGRIFT_P2P_ELECTION_TIMEOUT`           | `30`    | Leader election timeout (seconds).                          | Advanced |
+| `RINGRIFT_P2P_PEER_TIMEOUT`               | `60`    | Peer timeout before marking offline (seconds).              | Advanced |
+| `RINGRIFT_P2P_MAX_PEERS`                  | `100`   | Max P2P peers tracked per node.                             | Advanced |
+| `RINGRIFT_P2P_QUORUM`                     | `3`     | Minimum quorum size for leader election.                    | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_GPU_SELFPLAY`       | `3600`  | GPU selfplay job timeout (seconds).                         | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_TRAINING`           | `14400` | Training job timeout (seconds).                             | Advanced |
+| `RINGRIFT_NPX_PATH`                       | unset   | Override path for `npx` used in TS replay parity checks.    | Tooling  |
+| `RINGRIFT_SKIP_SCRIPT_INIT_IMPORTS`       | unset   | Skip heavy imports in `scripts/__init__.py` (parity/tools). | Tooling  |
+
 ### `RINGRIFT_GPU_IDLE_THRESHOLD`
 
 | Property | Value    |

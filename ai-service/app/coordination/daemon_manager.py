@@ -446,13 +446,16 @@ class DaemonManager:
     # P2P event verification is now consolidated in _verify_subscriptions() at line ~1156
     # which is called in the post-start callback of start_all()
 
-    async def start(self, daemon_type: DaemonType) -> bool:
+    async def start(
+        self, daemon_type: DaemonType, *, wait_for_deps: bool = True
+    ) -> bool:
         """Start a specific daemon.
 
         Delegates to DaemonLifecycleManager (Dec 2025 extraction).
 
         Args:
             daemon_type: Type of daemon to start
+            wait_for_deps: If True, wait for dependencies to be ready first
 
         Returns:
             True if started successfully
@@ -461,6 +464,10 @@ class DaemonManager:
         # before any daemon starts. This fixes the integration gap where
         # master_loop.py calls start() individually instead of start_all().
         await self._ensure_coordination_wired()
+
+        # Dec 27, 2025: Wait for dependencies before starting
+        if wait_for_deps:
+            await self._wait_for_dependencies(daemon_type)
 
         result = await self._lifecycle.start(daemon_type)
         if result:
@@ -504,9 +511,28 @@ class DaemonManager:
         where master_loop.py calling start() individually would never start
         the health monitoring, causing crashed daemons to never be restarted.
 
+        Dec 2025 update: Added crash detection and logging. If the health loop
+        crashed (task.done() with exception), we log the exception before
+        restarting to aid debugging.
+
         Safe to call multiple times - will only start health loop once.
         """
         if not self._health_task or self._health_task.done():
+            # Check if the previous health loop crashed
+            if self._health_task and self._health_task.done():
+                try:
+                    exception = self._health_task.exception()
+                    if exception:
+                        logger.error(
+                            f"[DaemonManager] Health loop crashed, restarting: {exception}"
+                        )
+                except asyncio.CancelledError:
+                    # Task was cancelled, not crashed
+                    logger.debug("[DaemonManager] Health loop was cancelled")
+                except asyncio.InvalidStateError:
+                    # Task still pending (shouldn't happen after done() check)
+                    pass
+
             self._running = True
             self._health_task = safe_create_task(
                 self._health_loop(),

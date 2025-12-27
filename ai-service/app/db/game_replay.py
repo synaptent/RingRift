@@ -555,10 +555,37 @@ class GameWriter:
         self,
         final_state: GameState,
         metadata: dict | None = None,
+        *,
+        allow_empty: bool = False,
     ) -> None:
-        """Finalize and close the game record."""
+        """Finalize and close the game record.
+
+        Args:
+            final_state: The final game state
+            metadata: Optional metadata dict
+            allow_empty: If False (default), raises error if no moves recorded.
+                         Set to True only for testing/debugging purposes.
+
+        Raises:
+            RuntimeError: If already finalized or if no moves recorded (unless allow_empty=True)
+        """
         if self._finalized:
             raise RuntimeError("GameWriter already finalized")
+
+        # SAFEGUARD: Prevent creating games without move data
+        # This is the primary cause of useless databases in the training pipeline
+        if self._move_count == 0 and not allow_empty:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Attempted to finalize game {self._game_id} with 0 moves. "
+                f"This would create an orphan game record. Aborting instead."
+            )
+            self.abort()
+            raise RuntimeError(
+                f"Cannot finalize game {self._game_id} with 0 moves. "
+                f"Use allow_empty=True to override (not recommended for production)."
+            )
 
         metadata = metadata or {}
 
@@ -1235,6 +1262,8 @@ class GameReplayDB:
         store_history_entries: bool = True,
         compress_states: bool = False,
         snapshot_interval: int = 20,
+        *,
+        min_moves: int = 1,
     ) -> None:
         """Store a complete game with all associated data.
 
@@ -1249,7 +1278,19 @@ class GameReplayDB:
                                    full before/after state snapshots for each move
             compress_states: If True, gzip compress state JSON in history entries
             snapshot_interval: Store snapshots every N moves for NNUE training (default 20)
+            min_moves: Minimum moves required (default 1). Raises if len(moves) < min_moves.
+
+        Raises:
+            ValueError: If moves list is too short (< min_moves)
         """
+        # SAFEGUARD: Prevent storing games without move data
+        # This is the primary cause of useless databases in the training pipeline
+        if len(moves) < min_moves:
+            raise ValueError(
+                f"Cannot store game {game_id}: only {len(moves)} moves provided, "
+                f"minimum is {min_moves}. Games without moves are useless for training."
+            )
+
         # Import here to avoid circular imports
         from app.game_engine import GameEngine
 

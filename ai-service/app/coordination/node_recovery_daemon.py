@@ -215,11 +215,19 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
 
             router = get_router()
 
-            # Subscribe to node death events
+            # Subscribe to node death events (batch)
             router.subscribe(
                 DataEventType.P2P_NODES_DEAD.value,
                 self._on_nodes_dead
             )
+
+            # Subscribe to single node death events (Dec 2025 fix)
+            if hasattr(DataEventType, 'P2P_NODE_DEAD'):
+                router.subscribe(
+                    DataEventType.P2P_NODE_DEAD.value,
+                    self._on_single_node_dead
+                )
+                logger.info("[NodeRecoveryDaemon] Subscribed to P2P_NODE_DEAD events")
 
             logger.info("[NodeRecoveryDaemon] Subscribed to P2P_NODES_DEAD events")
 
@@ -229,7 +237,7 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             logger.warning(f"Failed to subscribe to events: {e}")
 
     def _on_nodes_dead(self, event) -> None:
-        """Handle P2P_NODES_DEAD event."""
+        """Handle P2P_NODES_DEAD event (batch of dead nodes)."""
         payload = event.payload if hasattr(event, 'payload') else event
         dead_nodes = payload.get("nodes", [])
 
@@ -242,6 +250,37 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
                     f"[NodeRecoveryDaemon] Node {node_id} marked unreachable "
                     f"(failures: {node.consecutive_failures})"
                 )
+
+    def _on_single_node_dead(self, event) -> None:
+        """Handle P2P_NODE_DEAD event (single node).
+
+        Dec 2025: Added to handle single node death events from P2P orchestrator.
+        Previously only batch P2P_NODES_DEAD was handled, causing single node
+        failures to be missed until batch heartbeat timeout.
+        """
+        payload = event.payload if hasattr(event, 'payload') else event
+        node_id = payload.get("node_id")
+        reason = payload.get("reason", "unknown")
+
+        if not node_id:
+            logger.warning("[NodeRecoveryDaemon] Received P2P_NODE_DEAD without node_id")
+            return
+
+        if node_id in self._node_states:
+            node = self._node_states[node_id]
+            node.consecutive_failures += 1
+            node.status = "unreachable"
+            node.last_failure_reason = reason
+            logger.info(
+                f"[NodeRecoveryDaemon] Single node {node_id} confirmed dead "
+                f"(reason: {reason}, failures: {node.consecutive_failures})"
+            )
+        else:
+            # Create new state for unknown node
+            logger.info(
+                f"[NodeRecoveryDaemon] Unknown node {node_id} reported dead, "
+                f"will track on next cluster scan"
+            )
 
     async def _on_stop(self) -> None:
         """Graceful shutdown handler.

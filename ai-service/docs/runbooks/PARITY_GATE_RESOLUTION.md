@@ -86,6 +86,15 @@ python scripts/check_ts_python_replay_parity.py \
   --db data/games/canonical_hex8_2p.db \
   --max-games 1000
 
+# If parity fails, emit a state bundle for debugging
+python scripts/check_ts_python_replay_parity.py \
+  --db data/games/canonical_hex8_2p.db \
+  --emit-state-bundles-dir parity_bundles
+
+# Diff a bundle to locate the first divergence
+python scripts/diff_state_bundle.py \
+  --bundle parity_bundles/<bundle>.state_bundle.json
+
 # Or run the canonical gate script
 python scripts/run_canonical_selfplay_parity_gate.py --board-type hex8 --num-players 2
 ```

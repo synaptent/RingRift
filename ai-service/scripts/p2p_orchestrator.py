@@ -9393,6 +9393,15 @@ class P2POrchestrator(
 
                 logger.info(f"Unretired peer: {node_id} (admin request)")
 
+                # Emit HOST_ONLINE event so SelfplayScheduler/SyncRouter detect recovered node
+                capabilities = []
+                if getattr(peer_info, "has_gpu", False):
+                    gpu_type = getattr(peer_info, "gpu_type", "") or "gpu"
+                    capabilities.append(gpu_type)
+                else:
+                    capabilities.append("cpu")
+                await _emit_p2p_host_online(node_id, capabilities)
+
             return web.json_response({
                 "success": True,
                 "message": f"Node '{node_id}' has been unretired",
@@ -21365,11 +21374,14 @@ print(json.dumps({{
         # Clear stale leader IDs after restarts/partitions
         if self.leader_id and not self._is_leader_lease_valid():
             logger.info(f"Clearing stale/expired leader lease: leader_id={self.leader_id}")
+            old_leader_id = self.leader_id
             self.leader_id = None
             self.leader_lease_id = ""
             self.leader_lease_expires = 0.0
             self.last_lease_renewal = 0.0
             self.role = NodeRole.FOLLOWER
+            # Emit LEADER_LOST before starting election (Dec 2025 fix)
+            asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, "lease_expired"))
             asyncio.create_task(self._start_election())
 
         # If leader is dead, start election

@@ -846,6 +846,18 @@ class MasterLoopController:
                     f"intensive daemons (node: {env.node_id})"
                 )
 
+            # December 2025: Add coordinator-specific daemons
+            # These manage coordinator disk space by syncing data to external storage
+            coordinator_daemons = {
+                DaemonType.COORDINATOR_DISK_MANAGER,  # Proactive disk cleanup with external sync
+            }
+            for daemon in coordinator_daemons:
+                if daemon not in daemons:
+                    daemons.append(daemon)
+                    logger.info(
+                        f"[MasterLoop] Coordinator mode: added {daemon.value} for disk management"
+                    )
+
         # Ensure event router starts first when present
         if DaemonType.EVENT_ROUTER in daemons:
             daemons = [DaemonType.EVENT_ROUTER] + [d for d in daemons if d != DaemonType.EVENT_ROUTER]

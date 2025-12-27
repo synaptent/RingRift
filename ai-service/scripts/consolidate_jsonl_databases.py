@@ -256,6 +256,12 @@ def merge_games(
         src_conn = sqlite3.connect(str(source_db))
         src_conn.row_factory = sqlite3.Row
 
+        # Check if game_moves table exists
+        cursor = src_conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
+        )
+        has_game_moves_table = cursor.fetchone() is not None
+
         # Get valid games for this config
         cursor = src_conn.execute("""
             SELECT * FROM games
@@ -273,6 +279,28 @@ def merge_games(
 
             if game_id in existing_ids:
                 stats.games_duplicate += 1
+                continue
+
+            # CRITICAL: Verify game_moves actually exist for this game
+            # This prevents merging orphan games that have total_moves>0 but no actual move data
+            if has_game_moves_table:
+                move_cursor = src_conn.execute(
+                    "SELECT COUNT(*) FROM game_moves WHERE game_id = ?",
+                    (game_id,)
+                )
+                actual_move_count = move_cursor.fetchone()[0]
+
+                if actual_move_count == 0:
+                    # Game claims to have moves but game_moves table is empty for it
+                    stats.games_invalid += 1
+                    logger.debug(
+                        f"  Skipping orphan game {game_id}: total_moves={row['total_moves']} "
+                        f"but game_moves has 0 entries"
+                    )
+                    continue
+            else:
+                # No game_moves table at all - can't merge this game
+                stats.games_invalid += 1
                 continue
 
             # Convert row to dict for easier access

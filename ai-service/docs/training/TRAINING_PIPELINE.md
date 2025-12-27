@@ -4,6 +4,12 @@ This document describes the self-improvement training loop architecture and oper
 
 ## Architecture Overview
 
+**Canonical path (Dec 2025):** `master_loop.py` + daemon stack, canonical replay DBs
+(`data/games/canonical_*.db`), parity + canonical-history gates.
+
+**Legacy path:** JSONL selfplay + aggregate-to-DB remains for some GPU/selfplay
+pipelines, but is not the canonical training source.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         UNIFIED AI TRAINING LOOP                             │
@@ -48,14 +54,16 @@ This document describes the self-improvement training loop architecture and oper
 
 ### 1. Selfplay Generation
 
-**Hosts**: Configure in `config/cluster_hosts.yaml` (GPU nodes for selfplay, cloud VMs optional)
+**Hosts**: Configure in `config/distributed_hosts.yaml` (canonical SSoT for nodes)
 
-**Output**: JSONL files in `data/selfplay/` directories
+**Output**: Prefer direct `GameReplayDB` writes under `data/games/`.
+Legacy GPU pipelines may still emit JSONL under `data/selfplay/`.
 
 **Process**:
 
 - Workers generate games via `run_gpu_selfplay.py` or `selfplay.py`
-- Games are written to JSONL format for efficiency
+- Canonical selfplay should be generated via `scripts/generate_canonical_selfplay.py`
+- JSONL output is legacy/experimental only
 - Each worker writes to its own subdirectory
 
 ### 2. Data Synchronization
@@ -63,13 +71,13 @@ This document describes the self-improvement training loop architecture and oper
 **Cron Job**: Every 15 minutes
 
 ```bash
-# Sync from vast hosts via P2P or unified sync
-python scripts/unified_data_sync.py --source vast --dest local
+# AutoSync daemon (preferred) or on-demand unified sync
+python scripts/unified_data_sync.py --watchdog
 ```
 
 **Script**: `unified_data_sync.py` (supersedes deprecated `sync_vast_jsonl.sh`)
 
-### 3. JSONL to SQLite Aggregation
+### 3. JSONL to SQLite Aggregation (Legacy)
 
 **Cron Job**: Every 30 minutes
 
@@ -79,11 +87,12 @@ python3 scripts/aggregate_jsonl_to_db.py \
     --output-db data/games/cluster_merged.db
 ```
 
-**Output**: `data/games/cluster_merged.db` (or config-specific DBs like `hex8_2p.db`)
+**Output**: `data/games/cluster_merged.db` (legacy pipeline only).
+Canonical selfplay should write to `data/games/canonical_*.db` directly.
 
 ### 4. NPZ Export
 
-**Triggered by**: Unified loop when training threshold reached
+**Triggered by**: Master loop + pipeline daemons when training threshold reached
 
 ```bash
 python3 scripts/export_replay_dataset.py \
@@ -95,9 +104,9 @@ python3 scripts/export_replay_dataset.py \
 
 **Host**: Training GPU Node
 
-**Script**: `scripts/master_loop.py`
+**Script**: `scripts/master_loop.py` (canonical entrypoint)
 
-**Config**: `config/unified_loop.yaml`
+**Config**: `config/unified_loop.yaml` + defaults from `app/config/unified_config.py`
 
 ```yaml
 training:
@@ -115,14 +124,31 @@ training:
 2. If Elo gain >= threshold, promote to production
 3. Distribute to all selfplay workers
 
+## Canonical Data Gates
+
+Before training on a canonical DB, run:
+
+```bash
+# TS<->Python parity
+python scripts/check_ts_python_replay_parity.py --db data/games/canonical_square8_2p.db
+
+# Canonical history validation
+python scripts/check_canonical_phase_history.py --db data/games/canonical_square8_2p.db
+```
+
+For end-to-end generation + gates:
+
+```bash
+python scripts/generate_canonical_selfplay.py --board square8 --num-players 2 --num-games 200
+```
+
 ## Key Configuration Files
 
-| File                                        | Purpose                            |
-| ------------------------------------------- | ---------------------------------- |
-| `config/unified_loop.yaml`                  | Main loop configuration            |
-| `config/distributed_hosts.yaml`             | Cluster host inventory (canonical) |
-| `config/distributed_hosts.yaml`             | Data sync host definitions (SSoT)  |
-| `logs/unified_loop/unified_loop_state.json` | Loop state persistence             |
+| File                                        | Purpose                       |
+| ------------------------------------------- | ----------------------------- |
+| `config/unified_loop.yaml`                  | Main loop configuration       |
+| `config/distributed_hosts.yaml`             | Cluster host inventory (SSoT) |
+| `logs/unified_loop/unified_loop_state.json` | Loop state persistence        |
 
 ## Monitoring
 
@@ -607,7 +633,7 @@ python scripts/train_nnue_policy.py \
 
 ### Network Configuration
 
-Configure your cluster nodes in `config/cluster_hosts.yaml.example`:
+Configure your cluster nodes in `config/distributed_hosts.yaml` (canonical SSoT):
 
 | Node Type    | Example Tailscale IP | Example Direct IP |
 | ------------ | -------------------- | ----------------- |
@@ -617,7 +643,7 @@ Configure your cluster nodes in `config/cluster_hosts.yaml.example`:
 
 The sync script (`scripts/sync_training_data_cron.sh`) tries Tailscale first, then falls back to direct IP.
 
-**Setup**: Copy `config/cluster_hosts.yaml.example` to `config/cluster_hosts.yaml` and fill in your IPs.
+**Setup**: Create or update `config/distributed_hosts.yaml` with your node IDs, IPs, and roles.
 
 ## Contact
 

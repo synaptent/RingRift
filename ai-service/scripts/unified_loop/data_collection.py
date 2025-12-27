@@ -737,6 +737,9 @@ class StreamingDataCollector:
                         jsonl_path = config_dir / "games.jsonl"
                         if jsonl_path.exists():
                             try:
+                                if jsonl_path.stat().st_size == 0:
+                                    print(f"[DataCollector] GPU selfplay JSONL empty: {jsonl_path}")
+                                    continue
                                 # Count lines = count games
                                 with open(jsonl_path) as f:
                                     count = sum(1 for _ in f)

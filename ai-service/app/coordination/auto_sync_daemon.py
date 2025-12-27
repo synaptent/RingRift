@@ -264,7 +264,19 @@ class AutoSyncConfig:
 
                 # Check role - coordinators should not receive synced data
                 # UNLESS they have external storage configured
-                if host_config.get("role") == "coordinator":
+                #
+                # December 2025: Added hostname pattern fallback for coordinator detection.
+                # Some coordinator nodes may not have role: coordinator in config,
+                # so we also check common coordinator hostname patterns.
+                is_coordinator_by_role = host_config.get("role") == "coordinator"
+                is_coordinator_by_flag = host_config.get("is_coordinator", False)
+                is_coordinator_by_hostname = any(
+                    pattern in host_name.lower()
+                    for pattern in ["mac-studio", "localhost", "local-mac", "coordinator"]
+                )
+                is_coordinator = is_coordinator_by_role or is_coordinator_by_flag or is_coordinator_by_hostname
+
+                if is_coordinator:
                     # Allow if external storage is configured
                     if host_config.get("use_external_storage", False):
                         logger.debug(
@@ -273,8 +285,14 @@ class AutoSyncConfig:
                         continue
                     # Exclude coordinators without external storage
                     config.exclude_hosts.append(host_name)
+                    detection_method = (
+                        "role" if is_coordinator_by_role else
+                        "flag" if is_coordinator_by_flag else
+                        "hostname"
+                    )
                     logger.debug(
-                        f"[AutoSyncConfig] Auto-excluding coordinator node: {host_name}"
+                        f"[AutoSyncConfig] Auto-excluding coordinator node: {host_name} "
+                        f"(detected via {detection_method})"
                     )
 
         except (OSError, ValueError, KeyError, AttributeError) as e:
@@ -1984,6 +2002,16 @@ class AutoSyncDaemon:
                 bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._wrap_handler(self._on_selfplay_complete))
                 logger.info("[AutoSyncDaemon] Subscribed to SELFPLAY_COMPLETE (immediate sync)")
 
+            # Subscribe to TRAINING_STARTED for priority sync to training nodes (Dec 2025)
+            if hasattr(DataEventType, 'TRAINING_STARTED'):
+                bus.subscribe(DataEventType.TRAINING_STARTED, self._wrap_handler(self._on_training_started))
+                logger.info("[AutoSyncDaemon] Subscribed to TRAINING_STARTED (priority sync)")
+
+            # Subscribe to NODE_RECOVERED to clear exclusion state for recovered nodes (Dec 2025)
+            if hasattr(DataEventType, 'NODE_RECOVERED'):
+                bus.subscribe(DataEventType.NODE_RECOVERED, self._wrap_handler(self._on_node_recovered))
+                logger.info("[AutoSyncDaemon] Subscribed to NODE_RECOVERED (exclusion reset)")
+
             self._subscribed = True
             if HAS_RESILIENT_HANDLER:
                 logger.info("[AutoSyncDaemon] Event handlers wrapped with resilient_handler")
@@ -2183,6 +2211,83 @@ class AutoSyncDaemon:
             self._errors_count += 1
             self._last_error = str(e)
             logger.error(f"[AutoSyncDaemon] Error handling SELFPLAY_COMPLETE: {e}")
+
+    async def _on_training_started(self, event) -> None:
+        """Handle TRAINING_STARTED event - priority sync to training node.
+
+        December 2025: When training starts on a node, we should immediately
+        sync fresh data to that node to ensure it has the latest training samples.
+        This reduces latency in the training feedback loop.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            config_key = payload.get("config_key", "")
+            node_id = payload.get("node_id", "")
+
+            if not node_id:
+                logger.debug("[AutoSyncDaemon] TRAINING_STARTED: no node_id, skipping")
+                return
+
+            logger.info(
+                f"[AutoSyncDaemon] TRAINING_STARTED: {config_key} on {node_id} "
+                "- triggering priority sync to training node"
+            )
+
+            self._events_processed += 1
+
+            # Trigger priority sync to the training node
+            try:
+                success = await self._sync_to_peer(node_id)
+                if success:
+                    logger.info(
+                        f"[AutoSyncDaemon] Priority sync to training node {node_id} complete"
+                    )
+            except (RuntimeError, OSError, ConnectionError) as sync_err:
+                logger.warning(
+                    f"[AutoSyncDaemon] Priority sync to {node_id} failed: {sync_err}"
+                )
+
+        except (RuntimeError, OSError, ConnectionError) as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[AutoSyncDaemon] Error handling TRAINING_STARTED: {e}")
+
+    async def _on_node_recovered(self, event) -> None:
+        """Handle NODE_RECOVERED event - clear exclusion state for recovered nodes.
+
+        December 2025: When a node recovers from being offline or unhealthy,
+        we should clear any temporary exclusion state so it can participate
+        in sync operations again.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            node_id = payload.get("node_id", "")
+
+            if not node_id:
+                logger.debug("[AutoSyncDaemon] NODE_RECOVERED: no node_id, skipping")
+                return
+
+            logger.info(
+                f"[AutoSyncDaemon] NODE_RECOVERED: {node_id} "
+                "- clearing exclusion state"
+            )
+
+            self._events_processed += 1
+
+            # Clear any temporary exclusion for this node
+            if hasattr(self, "_excluded_nodes") and node_id in self._excluded_nodes:
+                self._excluded_nodes.discard(node_id)
+                logger.info(f"[AutoSyncDaemon] Cleared exclusion for {node_id}")
+
+            # Reset failure counter if we track per-node failures
+            if hasattr(self, "_node_failure_counts") and node_id in self._node_failure_counts:
+                self._node_failure_counts[node_id] = 0
+                logger.debug(f"[AutoSyncDaemon] Reset failure count for {node_id}")
+
+        except (RuntimeError, OSError, ConnectionError) as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[AutoSyncDaemon] Error handling NODE_RECOVERED: {e}")
 
     async def _push_to_neighbors(self, config_key: str, new_games: int) -> None:
         """Push data to up to 3 neighbor nodes (Layer 1: push-from-generator).

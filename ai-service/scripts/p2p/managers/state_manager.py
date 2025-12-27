@@ -644,8 +644,12 @@ class StateManager:
         status = "healthy"
         errors_count = 0
         last_error: str | None = None
+        peer_count = 0
+        job_count = 0
 
         # Check database connectivity
+        # December 27, 2025: Fixed connection leak - moved close to finally block
+        conn = None
         try:
             conn = self._db_connect()
             cursor = conn.cursor()
@@ -653,13 +657,13 @@ class StateManager:
             peer_count = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM jobs WHERE status = 'running'")
             job_count = cursor.fetchone()[0]
-            conn.close()
         except Exception as e:
             status = "unhealthy"
             errors_count = 1
             last_error = f"Database connection failed: {e}"
-            peer_count = 0
-            job_count = 0
+        finally:
+            if conn:
+                conn.close()
 
         # Check if database file exists
         if not self.db_path.exists():

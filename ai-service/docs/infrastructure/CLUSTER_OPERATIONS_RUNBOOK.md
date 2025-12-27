@@ -4,7 +4,7 @@ Quick reference for daily cluster operations and troubleshooting.
 
 ## Cluster Overview
 
-Configure your cluster in `config/cluster_hosts.yaml`. Example structure:
+Configure your cluster in `config/distributed_hosts.yaml` (canonical SSoT). Example structure:
 
 | Host Type    | Role               | GPU Example | Notes            |
 | ------------ | ------------------ | ----------- | ---------------- |
@@ -12,7 +12,7 @@ Configure your cluster in `config/cluster_hosts.yaml`. Example structure:
 | gpu-worker-N | Workers            | Any GPU     | Selfplay workers |
 | gpu-training | Training + Workers | H100+       | High-throughput  |
 
-**Note:** Update `config/cluster_hosts.yaml` with your actual host definitions.
+**Note:** Update `config/distributed_hosts.yaml` with your actual host definitions.
 
 ## Quick Status Check
 

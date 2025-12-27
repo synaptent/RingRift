@@ -1928,6 +1928,80 @@ class ResourceOptimizer:
 
         return deleted
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check resource optimizer health for CoordinatorProtocol compliance.
+
+        December 2025: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with health status and metrics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            # Check database connectivity
+            try:
+                with self._get_connection() as conn:
+                    conn.execute("SELECT 1")
+                db_ok = True
+            except Exception:
+                db_ok = False
+
+            if not db_ok:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message="Database not accessible",
+                )
+
+            # Get cluster state for health metrics
+            cluster_state = self.get_cluster_state(max_age_seconds=120)
+
+            # Check if we have any nodes reporting
+            if cluster_state.node_count == 0:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message="No nodes reporting utilization",
+                    details={"node_count": 0},
+                )
+
+            # Check utilization levels
+            cpu_util = cluster_state.total_cpu_util
+            gpu_util = cluster_state.total_gpu_util if cluster_state.gpu_node_count > 0 else 0
+
+            # Degraded if severely over/under utilized
+            if cpu_util > 95 or (cluster_state.gpu_node_count > 0 and gpu_util > 95):
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"High utilization: CPU {cpu_util:.0f}%, GPU {gpu_util:.0f}%",
+                    details={
+                        "cpu_util": cpu_util,
+                        "gpu_util": gpu_util,
+                        "node_count": cluster_state.node_count,
+                    },
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Healthy: {cluster_state.node_count} nodes, CPU {cpu_util:.0f}%, GPU {gpu_util:.0f}%",
+                details={
+                    "cpu_util": cpu_util,
+                    "gpu_util": gpu_util,
+                    "node_count": cluster_state.node_count,
+                    "gpu_node_count": cluster_state.gpu_node_count,
+                },
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check failed: {e}",
+            )
+
 
 # =============================================================================
 # Module-level convenience functions

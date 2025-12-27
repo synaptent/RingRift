@@ -38,58 +38,99 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Event Bus Imports (with fallback)
+# Event Bus Imports (with atomic state to prevent race conditions)
 # =============================================================================
 
+
+class _EventState:
+    """Atomic state for event availability.
+
+    December 27, 2025: Created to fix COORDINATOR_HEALTHY race condition.
+    Ensures HAS_DATA_EVENTS and DataEventType are always consistent.
+    Previously, fire-and-forget tasks could see HAS_DATA_EVENTS=True but
+    DataEventType=None due to module-level variable inconsistency.
+    """
+
+    def __init__(self) -> None:
+        self.stage_available = False
+        self.data_available = False
+        self.router_available = False
+        self.event_type = None
+        self.data_event = None
+        self.stage_event = None
+        self.stage_result = None
+        self.get_data_bus = None
+        self.get_stage_bus = None
+        self.get_router = None
+
+
+_state = _EventState()
+
+# Single import block - no backward compat second block that causes inconsistency
 try:
     from app.coordination.event_router import (
         StageCompletionResult,
         StageEvent,
-        get_stage_event_bus as get_stage_bus,
+        get_stage_event_bus as _get_stage_bus,
         DataEvent,
         DataEventType,
-        get_event_bus as get_data_bus,
+        get_event_bus as _get_data_bus,
     )
-    HAS_STAGE_EVENTS = True
+    _state.stage_available = True
+    _state.data_available = True
+    _state.event_type = DataEventType
+    _state.data_event = DataEvent
+    _state.stage_event = StageEvent
+    _state.stage_result = StageCompletionResult
+    _state.get_data_bus = _get_data_bus
+    _state.get_stage_bus = _get_stage_bus
 except ImportError:
-    HAS_STAGE_EVENTS = False
+    # Leave _state with defaults (all False/None)
     StageEvent = None
     StageCompletionResult = None
     DataEvent = None
     DataEventType = None
 
-    def get_stage_bus():
+    def _get_stage_bus():
         return None
 
-    def get_data_bus():
+    def _get_data_bus():
         return None
 
-# Backward compatibility - was a separate try block
+# Unified event router
 try:
-    if DataEvent is None:
-        from app.coordination.event_router import (
-            DataEvent,
-            DataEventType,
-            get_event_bus as get_data_bus,
-        )
-    HAS_DATA_EVENTS = True
+    from app.coordination.event_router import get_router as _get_router
+    _state.router_available = True
+    _state.get_router = _get_router
 except ImportError:
-    HAS_DATA_EVENTS = False
-    DataEvent = None
-    DataEventType = None
+    pass
 
-    def get_data_bus():
-        return None
+# Backward-compat module-level aliases (for existing code)
+# These are now derived from atomic state, so they're always consistent
+HAS_STAGE_EVENTS = _state.stage_available
+HAS_DATA_EVENTS = _state.data_available
+HAS_EVENT_ROUTER = _state.router_available
 
-# Unified event router (preferred for cross-system routing)
-try:
-    from app.coordination.event_router import get_router as get_event_router
-    HAS_EVENT_ROUTER = True
-except ImportError:
-    HAS_EVENT_ROUTER = False
 
-    def get_event_router():
-        return None
+def get_stage_bus():
+    """Get stage event bus (backward-compat wrapper)."""
+    if _state.get_stage_bus:
+        return _state.get_stage_bus()
+    return None
+
+
+def get_data_bus():
+    """Get data event bus (backward-compat wrapper)."""
+    if _state.get_data_bus:
+        return _state.get_data_bus()
+    return None
+
+
+def get_event_router():
+    """Get unified event router (backward-compat wrapper)."""
+    if _state.get_router:
+        return _state.get_router()
+    return None
 
 
 # Configuration: whether to use unified router or direct bus access
@@ -1843,11 +1884,11 @@ async def emit_coordinator_healthy(
     Returns:
         True if emitted successfully
     """
-    # December 27, 2025: Guard against DataEventType being None when import fails
-    if not HAS_DATA_EVENTS or DataEventType is None:
+    # December 27, 2025: Guard using atomic state to prevent race condition
+    if not _state.data_available or _state.event_type is None:
         return False
     return await _emit_data_event(
-        DataEventType.COORDINATOR_HEALTHY,
+        _state.event_type.COORDINATOR_HEALTHY,
         {
             "coordinator_name": coordinator_name,
             "health_score": health_score,
@@ -1883,11 +1924,11 @@ async def emit_coordinator_unhealthy(
     Returns:
         True if emitted successfully
     """
-    # December 27, 2025: Guard against DataEventType being None when import fails
-    if not HAS_DATA_EVENTS or DataEventType is None:
+    # December 27, 2025: Guard using atomic state to prevent race condition
+    if not _state.data_available or _state.event_type is None:
         return False
     return await _emit_data_event(
-        DataEventType.COORDINATOR_UNHEALTHY,
+        _state.event_type.COORDINATOR_UNHEALTHY,
         {
             "coordinator_name": coordinator_name,
             "reason": reason,

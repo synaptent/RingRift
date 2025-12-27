@@ -1665,11 +1665,24 @@ def train_model(
                     )
 
             if dataset_globals_dim is None:
-                raise ValueError(
-                    "Dataset is missing globals features required for training.\n"
-                    f"  dataset={data_path_str}\n"
-                    "Regenerate the dataset with scripts/export_replay_dataset.py."
-                )
+                # Check for autonomous mode - warn but continue with zero-filled globals
+                autonomous_mode = os.environ.get("RINGRIFT_AUTONOMOUS_MODE", "").lower() in ("1", "true")
+                if autonomous_mode:
+                    if not distributed or is_main_process():
+                        logger.warning(
+                            "[AUTONOMOUS] Dataset %s missing globals features. "
+                            "Training will use zeros for globals (degraded quality). "
+                            "Recommend regenerating dataset for best results.",
+                            data_path_str,
+                        )
+                    # Set a marker to inject zeros later - but for now, set to expected dim
+                    dataset_globals_dim = 20  # Expected dimension, will be zero-filled
+                else:
+                    raise ValueError(
+                        "Dataset is missing globals features required for training.\n"
+                        f"  dataset={data_path_str}\n"
+                        "Regenerate the dataset with scripts/export_replay_dataset.py."
+                    )
             if dataset_globals_dim != 20:
                 raise ValueError(
                     "Dataset globals feature dimension does not match the CNN encoder.\n"

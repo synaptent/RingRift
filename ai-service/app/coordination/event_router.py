@@ -1520,6 +1520,41 @@ def get_event_bus():
 
 
 # =============================================================================
+# Module Validation
+# =============================================================================
+
+
+def _validate_router_class() -> None:
+    """Verify UnifiedEventRouter has all required methods.
+
+    December 27, 2025: Added to catch circular import issues that leave the
+    class definition incomplete. This is called at module load time.
+
+    If methods are missing (due to circular import during class definition),
+    we emit a warning rather than raising an exception to allow the module
+    to load partially and provide better error messages later.
+    """
+    required_methods = ["start", "stop", "publish", "subscribe", "is_running"]
+    missing = [m for m in required_methods if not hasattr(UnifiedEventRouter, m)]
+    if missing:
+        import warnings
+
+        warnings.warn(
+            f"UnifiedEventRouter missing methods: {missing}. "
+            "This may indicate a circular import issue.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        logger.warning(
+            f"[event_router] UnifiedEventRouter missing required methods: {missing}"
+        )
+
+
+# Run validation at module load time
+_validate_router_class()
+
+
+# =============================================================================
 # Backward Compatibility Layer for unified_event_coordinator.py
 # These aliases allow code that imported from unified_event_coordinator to
 # work with the consolidated event_router instead.

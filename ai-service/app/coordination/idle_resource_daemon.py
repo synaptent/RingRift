@@ -618,6 +618,9 @@ class IdleResourceDaemon:
         # December 2025: Subscribe to selfplay priority updates from feedback loop
         self._wire_selfplay_target_events()
 
+        # December 27, 2025: Subscribe to quality degradation events
+        self._wire_quality_events()
+
         # Start monitoring loop
         self._monitor_task = safe_create_task(
             self._monitor_loop(),
@@ -928,6 +931,99 @@ class IdleResourceDaemon:
             logger.debug("[IdleResourceDaemon] Event router not available, selfplay target updates disabled")
         except Exception as e:
             logger.warning(f"[IdleResourceDaemon] Failed to wire selfplay target events: {e}")
+
+    def _wire_quality_events(self) -> None:
+        """Subscribe to QUALITY_DEGRADED events from feedback loop.
+
+        December 27, 2025: When selfplay data quality drops below threshold,
+        we should reduce spawn rate for the affected config to allow quality
+        to recover before generating more low-quality games.
+
+        Events handled:
+        - QUALITY_DEGRADED: Reduce spawn rate for affected config
+        """
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+
+            # Track quality-degraded configs and their reduction factors
+            if not hasattr(self, "_quality_degraded_configs"):
+                self._quality_degraded_configs: dict[str, dict[str, Any]] = {}
+
+            def _on_quality_degraded(event: Any) -> None:
+                """Handle QUALITY_DEGRADED - reduce spawn rate for affected config."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                config_key = payload.get("config_key", "")
+                quality_score = payload.get("quality_score", 0.0)
+                threshold = payload.get("threshold", 0.6)
+                previous_score = payload.get("previous_score", 1.0)
+
+                if not config_key:
+                    return
+
+                # Calculate reduction factor based on how far below threshold
+                # At threshold: 0.75 reduction, At 0: 0.25 reduction
+                if threshold > 0:
+                    quality_ratio = quality_score / threshold
+                    reduction_factor = max(0.25, min(0.75, 0.25 + 0.5 * quality_ratio))
+                else:
+                    reduction_factor = 0.5
+
+                # Store degraded config with metadata
+                self._quality_degraded_configs[config_key] = {
+                    "quality_score": quality_score,
+                    "threshold": threshold,
+                    "previous_score": previous_score,
+                    "reduction_factor": reduction_factor,
+                    "timestamp": time.time(),
+                }
+
+                logger.warning(
+                    f"[IdleResourceDaemon] QUALITY_DEGRADED: {config_key} "
+                    f"quality={quality_score:.2f} (threshold={threshold:.2f}), "
+                    f"reducing spawn rate by {(1 - reduction_factor) * 100:.0f}%"
+                )
+
+            # Subscribe to the event
+            if hasattr(DataEventType, 'QUALITY_DEGRADED'):
+                router.subscribe(DataEventType.QUALITY_DEGRADED.value, _on_quality_degraded)
+                logger.info(
+                    "[IdleResourceDaemon] Subscribed to QUALITY_DEGRADED "
+                    "(quality-based spawn reduction)"
+                )
+            else:
+                logger.debug("[IdleResourceDaemon] QUALITY_DEGRADED event type not available")
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] Event router not available, quality events disabled")
+        except Exception as e:
+            logger.warning(f"[IdleResourceDaemon] Failed to wire quality events: {e}")
+
+    def get_quality_degraded_configs(self) -> dict[str, dict[str, Any]]:
+        """Get current quality-degraded configs for spawning decisions.
+
+        December 27, 2025: Returns configs with degraded quality and their
+        reduction factors. Prunes entries older than 10 minutes.
+
+        Returns:
+            Dict mapping config_key to quality metadata (quality_score, reduction_factor, etc.)
+        """
+        if not hasattr(self, "_quality_degraded_configs"):
+            return {}
+
+        # Prune stale entries (older than 10 minutes - quality can change quickly)
+        now = time.time()
+        stale_threshold = 10 * 60  # 10 minutes
+        stale_keys = [
+            key for key, meta in self._quality_degraded_configs.items()
+            if now - meta.get("timestamp", 0) > stale_threshold
+        ]
+        for key in stale_keys:
+            del self._quality_degraded_configs[key]
+            logger.debug(f"[IdleResourceDaemon] Pruned stale quality degradation for {key}")
+
+        return self._quality_degraded_configs.copy()
 
     def get_priority_configs(self) -> dict[str, dict[str, Any]]:
         """Get current priority configs for spawning decisions.

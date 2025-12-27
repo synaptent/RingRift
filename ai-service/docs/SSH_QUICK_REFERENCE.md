@@ -51,7 +51,7 @@ print(f"{cmd} using {memory_mb}MB")
 
 ## Configuration
 
-### From cluster_hosts.yaml
+### From distributed_hosts.yaml
 
 ```python
 client = get_ssh_client("node-id")  # Auto-loads config

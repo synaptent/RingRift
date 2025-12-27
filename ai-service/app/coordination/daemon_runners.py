@@ -175,11 +175,29 @@ async def create_gossip_sync() -> None:
 
 
 async def create_event_router() -> None:
-    """Create and run unified event router daemon."""
+    """Create and run unified event router daemon.
+
+    December 27, 2025: Added validation guards to catch import timing issues.
+    The .start() method may not be available if circular imports leave
+    the UnifiedEventRouter class incomplete during initialization.
+    """
     try:
-        from app.coordination.event_router import get_router
+        from app.coordination.event_router import UnifiedEventRouter, get_router
+
+        # Validate class has required method (guards against incomplete import)
+        if not hasattr(UnifiedEventRouter, "start"):
+            logger.error(
+                "UnifiedEventRouter.start() not found - possible circular import issue"
+            )
+            raise RuntimeError("UnifiedEventRouter missing start() method")
 
         router = get_router()
+
+        # Double-check instance has method (guards against class mismatch)
+        if not hasattr(router, "start"):
+            logger.error("Router instance missing start() - possible stale module cache")
+            raise RuntimeError("Router instance missing start() method")
+
         await router.start()
         await _wait_for_daemon(router)
     except ImportError as e:
@@ -190,7 +208,7 @@ async def create_event_router() -> None:
 async def create_cross_process_poller() -> None:
     """Create and run cross-process event poller daemon."""
     try:
-        from app.coordination.cross_process_events import CrossProcessEventPoller
+        from app.coordination.event_router import CrossProcessEventPoller
 
         poller = CrossProcessEventPoller()
         await poller.start()

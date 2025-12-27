@@ -501,16 +501,18 @@ class JobManager:
 
         except asyncio.TimeoutError:
             # December 2025: Kill the subprocess to prevent zombie processes
-            try:
-                proc.kill()  # SIGKILL for immediate termination
-                await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
-            except (ProcessLookupError, asyncio.TimeoutError):
-                # Process already dead or won't die - try SIGTERM as fallback
+            # December 27, 2025: Check if proc exists before attempting cleanup
+            if "proc" in dir() and proc is not None:
                 try:
-                    proc.terminate()
-                    await asyncio.wait_for(proc.wait(), timeout=2.0)
-                except (ProcessLookupError, asyncio.TimeoutError, OSError) as e:
-                    logger.debug(f"Process cleanup for job {job_id}: {type(e).__name__}: {e}")
+                    proc.kill()  # SIGKILL for immediate termination
+                    await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
+                except (ProcessLookupError, asyncio.TimeoutError):
+                    # Process already dead or won't die - try SIGTERM as fallback
+                    try:
+                        proc.terminate()
+                        await asyncio.wait_for(proc.wait(), timeout=2.0)
+                    except (ProcessLookupError, asyncio.TimeoutError, OSError) as e:
+                        logger.debug(f"Process cleanup for job {job_id}: {type(e).__name__}: {e}")
             with self.jobs_lock:
                 if job_id in self.active_jobs.get("selfplay", {}):
                     self.active_jobs["selfplay"][job_id]["status"] = "timeout"
@@ -519,11 +521,13 @@ class JobManager:
             self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="timeout", board_type=board_type)
         except Exception as e:
             # December 2025: Also kill subprocess on unexpected errors
-            try:
-                proc.kill()
-                await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
-            except (ProcessLookupError, asyncio.TimeoutError, OSError) as cleanup_err:
-                logger.debug(f"Process cleanup for job {job_id}: {type(cleanup_err).__name__}: {cleanup_err}")
+            # December 27, 2025: Check if proc exists before attempting cleanup
+            if "proc" in dir() and proc is not None:
+                try:
+                    proc.kill()
+                    await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
+                except (ProcessLookupError, asyncio.TimeoutError, OSError) as cleanup_err:
+                    logger.debug(f"Process cleanup for job {job_id}: {type(cleanup_err).__name__}: {cleanup_err}")
             with self.jobs_lock:
                 if job_id in self.active_jobs.get("selfplay", {}):
                     self.active_jobs["selfplay"][job_id]["status"] = "error"

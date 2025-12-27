@@ -3,6 +3,8 @@
 This module consolidates health functionality from:
 - unified_health_manager.py (system-level health, pipeline pause)
 - health_check_orchestrator.py (node-level health, recovery escalation)
+- daemon_manager.py (daemon health aggregation)
+- sync infrastructure (sync health status)
 
 Replaces deprecated modules (Q2 2026 removal):
 - system_health_monitor.py
@@ -20,10 +22,22 @@ Usage:
         get_healthy_nodes,
         get_unhealthy_nodes,
 
+        # Job scheduling gate (December 2025)
+        should_allow_new_jobs,
+
+        # Dashboard (December 2025)
+        ClusterHealthDashboard,
+        ClusterHealthStatus,
+        get_cluster_health_dashboard,
+
         # Managers (for advanced use)
         get_health_manager,
         get_health_orchestrator,
     )
+
+    # Check if new jobs should be allowed
+    if should_allow_new_jobs():
+        schedule_new_job()
 
     # Check if pipeline should pause
     should_pause, reasons = should_pause_pipeline()
@@ -34,14 +48,25 @@ Usage:
         # Node is healthy
         pass
 
+    # Get comprehensive dashboard
+    dashboard = get_cluster_health_dashboard()
+    status = dashboard.get_cluster_health()
+    print(f"Overall score: {status.overall_score}")
+
 Created: December 2025
 Purpose: Unified health interface (consolidation phase)
+Updated: December 27, 2025 - Added ClusterHealthDashboard for job scheduling gates
 """
 
 from __future__ import annotations
 
+import logging
+import time
 import warnings
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 # Re-export system-level health from unified_health_manager
 from app.coordination.unified_health_manager import (
@@ -224,6 +249,438 @@ def get_system_health() -> "UnifiedHealthManager":
     return get_health_manager()
 
 
+# =============================================================================
+# Cluster Health Dashboard (December 27, 2025)
+# =============================================================================
+
+# Default health score threshold for allowing new jobs
+DEFAULT_JOB_SCHEDULING_THRESHOLD = 60
+
+
+@dataclass
+class DaemonHealthSummary:
+    """Summary of daemon health status."""
+
+    total_daemons: int = 0
+    running: int = 0
+    stopped: int = 0
+    failed: int = 0
+    healthy_ratio: float = 0.0
+    critical_daemons_healthy: bool = True
+    critical_failures: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SyncHealthSummary:
+    """Summary of sync infrastructure health."""
+
+    last_sync_time: float = 0.0
+    seconds_since_sync: float = 0.0
+    sync_healthy: bool = True
+    consecutive_failures: int = 0
+    data_server_healthy: bool = True
+    transport_available: dict[str, bool] = field(default_factory=dict)
+
+
+@dataclass
+class ClusterHealthStatus:
+    """Comprehensive cluster health status.
+
+    This aggregates health from multiple sources:
+    - System-level health score (from UnifiedHealthManager)
+    - Node-level health (from HealthCheckOrchestrator)
+    - Daemon health (from DaemonManager)
+    - Sync health (from sync infrastructure)
+
+    Usage:
+        dashboard = get_cluster_health_dashboard()
+        status = dashboard.get_cluster_health()
+        if status.overall_score >= 60:
+            # Cluster is healthy enough for new jobs
+            pass
+    """
+
+    overall_score: float = 0.0
+    overall_level: str = "unknown"
+    timestamp: float = field(default_factory=time.time)
+
+    # Component health
+    system_score: float = 0.0
+    node_score: float = 0.0
+    daemon_score: float = 0.0
+    sync_score: float = 0.0
+
+    # Detailed summaries
+    node_counts: dict[str, int] = field(default_factory=dict)
+    daemon_health: DaemonHealthSummary = field(default_factory=DaemonHealthSummary)
+    sync_health: SyncHealthSummary = field(default_factory=SyncHealthSummary)
+
+    # Aggregated status
+    total_nodes: int = 0
+    healthy_nodes: int = 0
+    pipeline_paused: bool = False
+    pause_reasons: list[str] = field(default_factory=list)
+
+    @property
+    def is_healthy(self) -> bool:
+        """Check if cluster is in healthy state."""
+        return self.overall_score >= DEFAULT_JOB_SCHEDULING_THRESHOLD
+
+    @property
+    def can_schedule_jobs(self) -> bool:
+        """Check if new jobs should be scheduled."""
+        return (
+            self.overall_score >= DEFAULT_JOB_SCHEDULING_THRESHOLD
+            and not self.pipeline_paused
+            and self.daemon_health.critical_daemons_healthy
+        )
+
+
+class ClusterHealthDashboard:
+    """Unified cluster health aggregation (December 2025).
+
+    This class provides a single source of truth for cluster health by
+    aggregating health data from multiple sources:
+
+    1. System health (UnifiedHealthManager)
+    2. Node health (HealthCheckOrchestrator)
+    3. Daemon health (DaemonManager)
+    4. Sync health (SyncCoordinator)
+
+    Usage:
+        dashboard = ClusterHealthDashboard()
+        status = dashboard.get_cluster_health()
+
+        if dashboard.should_allow_new_jobs():
+            schedule_new_job()
+
+        # Or with custom threshold
+        if dashboard.should_allow_new_jobs(threshold=80):
+            schedule_high_priority_job()
+    """
+
+    # Critical daemons that must be healthy for job scheduling
+    CRITICAL_DAEMONS = frozenset({
+        "EVENT_ROUTER",
+        "AUTO_SYNC",
+        "DATA_PIPELINE",
+        "SELFPLAY_COORDINATOR",
+    })
+
+    # Health score weights for overall calculation
+    WEIGHT_SYSTEM = 0.35
+    WEIGHT_NODE = 0.30
+    WEIGHT_DAEMON = 0.20
+    WEIGHT_SYNC = 0.15
+
+    _instance: ClusterHealthDashboard | None = None
+
+    def __init__(self) -> None:
+        """Initialize the dashboard."""
+        self._last_status: ClusterHealthStatus | None = None
+        self._last_check: float = 0.0
+        self._cache_ttl: float = 5.0  # Cache for 5 seconds
+
+    @classmethod
+    def get_instance(cls) -> "ClusterHealthDashboard":
+        """Get or create the singleton instance."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset the singleton (for testing)."""
+        cls._instance = None
+
+    def get_cluster_health(self, force_refresh: bool = False) -> ClusterHealthStatus:
+        """Get comprehensive cluster health status.
+
+        Args:
+            force_refresh: If True, bypass cache and recalculate
+
+        Returns:
+            ClusterHealthStatus with aggregated health data
+        """
+        now = time.time()
+
+        # Return cached status if still valid
+        if (
+            not force_refresh
+            and self._last_status is not None
+            and (now - self._last_check) < self._cache_ttl
+        ):
+            return self._last_status
+
+        # Calculate fresh status
+        status = self._calculate_health_status()
+        self._last_status = status
+        self._last_check = now
+        return status
+
+    def _calculate_health_status(self) -> ClusterHealthStatus:
+        """Calculate comprehensive health status."""
+        # Get system health
+        system_score_obj = get_system_health_score()
+        system_score = system_score_obj.score if system_score_obj else 0.0
+        system_level = (
+            system_score_obj.level.value
+            if system_score_obj
+            else SystemHealthLevel.CRITICAL.value
+        )
+
+        # Get node health
+        node_counts = self._get_node_counts()
+        node_score = self._calculate_node_score(node_counts)
+
+        # Get daemon health
+        daemon_summary = self._get_daemon_health()
+        daemon_score = daemon_summary.healthy_ratio * 100
+
+        # Get sync health
+        sync_summary = self._get_sync_health()
+        sync_score = 100.0 if sync_summary.sync_healthy else 50.0
+        if sync_summary.consecutive_failures > 0:
+            sync_score = max(0, sync_score - sync_summary.consecutive_failures * 10)
+
+        # Calculate overall score (weighted average)
+        overall_score = (
+            self.WEIGHT_SYSTEM * system_score
+            + self.WEIGHT_NODE * node_score
+            + self.WEIGHT_DAEMON * daemon_score
+            + self.WEIGHT_SYNC * sync_score
+        )
+
+        # Determine overall level
+        if overall_score >= 80:
+            overall_level = SystemHealthLevel.HEALTHY.value
+        elif overall_score >= 60:
+            overall_level = SystemHealthLevel.DEGRADED.value
+        elif overall_score >= 40:
+            overall_level = SystemHealthLevel.UNHEALTHY.value
+        else:
+            overall_level = SystemHealthLevel.CRITICAL.value
+
+        # Get pipeline status
+        should_pause, pause_reasons = should_pause_pipeline()
+
+        return ClusterHealthStatus(
+            overall_score=overall_score,
+            overall_level=overall_level,
+            timestamp=time.time(),
+            system_score=system_score,
+            node_score=node_score,
+            daemon_score=daemon_score,
+            sync_score=sync_score,
+            node_counts=node_counts,
+            daemon_health=daemon_summary,
+            sync_health=sync_summary,
+            total_nodes=sum(node_counts.values()),
+            healthy_nodes=node_counts.get(NodeHealthState.HEALTHY.value, 0),
+            pipeline_paused=should_pause,
+            pause_reasons=pause_reasons,
+        )
+
+    def _get_node_counts(self) -> dict[str, int]:
+        """Get node counts by health state."""
+        orchestrator = get_health_orchestrator()
+        counts: dict[str, int] = {
+            NodeHealthState.HEALTHY.value: 0,
+            NodeHealthState.DEGRADED.value: 0,
+            NodeHealthState.UNHEALTHY.value: 0,
+            NodeHealthState.OFFLINE.value: 0,
+            NodeHealthState.RETIRED.value: 0,
+        }
+        for details in orchestrator.node_health.values():
+            state_value = details.state.value
+            if state_value in counts:
+                counts[state_value] += 1
+        return counts
+
+    def _calculate_node_score(self, node_counts: dict[str, int]) -> float:
+        """Calculate node health score (0-100)."""
+        total = sum(node_counts.values())
+        if total == 0:
+            return 0.0
+
+        healthy = node_counts.get(NodeHealthState.HEALTHY.value, 0)
+        degraded = node_counts.get(NodeHealthState.DEGRADED.value, 0)
+
+        # Healthy nodes count fully, degraded count half
+        score = ((healthy * 1.0) + (degraded * 0.5)) / total * 100
+        return min(100.0, max(0.0, score))
+
+    def _get_daemon_health(self) -> DaemonHealthSummary:
+        """Get daemon health summary."""
+        try:
+            from app.coordination.daemon_manager import get_daemon_manager
+            from app.coordination.daemon_types import DaemonState
+
+            dm = get_daemon_manager()
+            all_health = dm.get_all_daemon_health()
+
+            running = 0
+            stopped = 0
+            failed = 0
+            critical_failures: list[str] = []
+
+            for daemon_type, health in all_health.items():
+                state = health.get("state", "unknown")
+                if state == DaemonState.RUNNING.value:
+                    running += 1
+                elif state == DaemonState.STOPPED.value:
+                    stopped += 1
+                elif state == DaemonState.FAILED.value:
+                    failed += 1
+                    # Check if it's a critical daemon
+                    if daemon_type.name in self.CRITICAL_DAEMONS:
+                        critical_failures.append(daemon_type.name)
+
+            total = running + stopped + failed
+            healthy_ratio = running / total if total > 0 else 0.0
+
+            return DaemonHealthSummary(
+                total_daemons=total,
+                running=running,
+                stopped=stopped,
+                failed=failed,
+                healthy_ratio=healthy_ratio,
+                critical_daemons_healthy=len(critical_failures) == 0,
+                critical_failures=critical_failures,
+            )
+
+        except ImportError:
+            logger.debug("DaemonManager not available for health check")
+            return DaemonHealthSummary()
+        except Exception as e:
+            logger.debug(f"Error getting daemon health: {e}")
+            return DaemonHealthSummary()
+
+    def _get_sync_health(self) -> SyncHealthSummary:
+        """Get sync infrastructure health summary."""
+        try:
+            from app.distributed.sync_coordinator import SyncCoordinator
+
+            sync = SyncCoordinator.get_instance()
+            health = sync.health_check()
+
+            return SyncHealthSummary(
+                last_sync_time=health.details.get("last_sync_time", 0.0),
+                seconds_since_sync=health.details.get("seconds_since_last_sync", 0.0),
+                sync_healthy=health.status == "healthy",
+                consecutive_failures=health.details.get("consecutive_failures", 0),
+                data_server_healthy=health.details.get("data_server_healthy", True),
+                transport_available=health.details.get("transport_available", {}),
+            )
+
+        except ImportError:
+            logger.debug("SyncCoordinator not available for health check")
+            return SyncHealthSummary(sync_healthy=True)  # Assume healthy if not available
+        except Exception as e:
+            logger.debug(f"Error getting sync health: {e}")
+            return SyncHealthSummary()
+
+    def should_allow_new_jobs(
+        self,
+        threshold: float = DEFAULT_JOB_SCHEDULING_THRESHOLD,
+    ) -> bool:
+        """Check if new jobs should be scheduled based on cluster health.
+
+        This is the primary gate for job scheduling decisions. It considers:
+        1. Overall health score vs threshold
+        2. Pipeline pause status
+        3. Critical daemon health
+
+        Args:
+            threshold: Minimum health score to allow jobs (default: 60)
+
+        Returns:
+            True if new jobs should be allowed, False otherwise
+        """
+        status = self.get_cluster_health()
+        return (
+            status.overall_score >= threshold
+            and not status.pipeline_paused
+            and status.daemon_health.critical_daemons_healthy
+        )
+
+    def get_scheduling_recommendation(self) -> tuple[bool, str]:
+        """Get job scheduling recommendation with reason.
+
+        Returns:
+            Tuple of (should_schedule, reason_message)
+        """
+        status = self.get_cluster_health()
+
+        if status.overall_score < DEFAULT_JOB_SCHEDULING_THRESHOLD:
+            return (
+                False,
+                f"Cluster health score ({status.overall_score:.1f}) "
+                f"below threshold ({DEFAULT_JOB_SCHEDULING_THRESHOLD})"
+            )
+
+        if status.pipeline_paused:
+            reasons = ", ".join(status.pause_reasons) if status.pause_reasons else "unknown"
+            return False, f"Pipeline is paused: {reasons}"
+
+        if not status.daemon_health.critical_daemons_healthy:
+            failures = ", ".join(status.daemon_health.critical_failures)
+            return False, f"Critical daemons unhealthy: {failures}"
+
+        return True, f"Cluster healthy (score: {status.overall_score:.1f})"
+
+
+# Singleton accessor
+def get_cluster_health_dashboard() -> ClusterHealthDashboard:
+    """Get the singleton ClusterHealthDashboard instance.
+
+    Returns:
+        ClusterHealthDashboard instance
+    """
+    return ClusterHealthDashboard.get_instance()
+
+
+# Convenience function for job scheduling
+def should_allow_new_jobs(
+    threshold: float = DEFAULT_JOB_SCHEDULING_THRESHOLD,
+) -> bool:
+    """Check if new jobs should be scheduled based on cluster health.
+
+    This is a convenience wrapper around ClusterHealthDashboard.should_allow_new_jobs().
+
+    Args:
+        threshold: Minimum health score to allow jobs (default: 60)
+
+    Returns:
+        True if new jobs should be allowed, False otherwise
+
+    Example:
+        if should_allow_new_jobs():
+            orchestrator.spawn_selfplay_job(config)
+        else:
+            logger.warning("Cluster unhealthy, deferring job scheduling")
+    """
+    return get_cluster_health_dashboard().should_allow_new_jobs(threshold)
+
+
+def get_daemon_health_summary() -> DaemonHealthSummary:
+    """Get a summary of daemon health.
+
+    Returns:
+        DaemonHealthSummary with daemon health statistics
+    """
+    return get_cluster_health_dashboard()._get_daemon_health()
+
+
+def get_sync_health_summary() -> SyncHealthSummary:
+    """Get a summary of sync infrastructure health.
+
+    Returns:
+        SyncHealthSummary with sync health statistics
+    """
+    return get_cluster_health_dashboard()._get_sync_health()
+
+
 __all__ = [
     # System-level health
     "get_health_manager",
@@ -248,6 +705,16 @@ __all__ = [
     "mark_node_retired",
     # Cluster summary
     "get_cluster_health_summary",
+    # Cluster Health Dashboard (December 2025)
+    "ClusterHealthDashboard",
+    "ClusterHealthStatus",
+    "DaemonHealthSummary",
+    "SyncHealthSummary",
+    "get_cluster_health_dashboard",
+    "should_allow_new_jobs",
+    "get_daemon_health_summary",
+    "get_sync_health_summary",
+    "DEFAULT_JOB_SCHEDULING_THRESHOLD",
     # Backward compat (deprecated)
     "get_node_health_monitor",
     "get_system_health",

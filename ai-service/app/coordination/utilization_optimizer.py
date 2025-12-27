@@ -707,6 +707,60 @@ echo "CPU_SELFPLAY_STOPPED"
         self.board_data_needs.update(board_needs)
         logger.info(f"[UtilizationOptimizer] Updated board data needs: {board_needs}")
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check utilization optimizer health for CoordinatorProtocol compliance.
+
+        December 2025: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with health status and metrics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            # Check if health orchestrator is available
+            if self.health_orchestrator is None:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message="Health orchestrator not available",
+                )
+
+            # Get tracked node count
+            tracked_nodes = len(self.node_workloads)
+
+            # Check if we're tracking any workloads
+            if tracked_nodes == 0:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message="No nodes being tracked",
+                    details={"tracked_nodes": 0},
+                )
+
+            # Count active workloads
+            active_selfplay = sum(w.selfplay_jobs for w in self.node_workloads.values())
+            training_jobs = sum(1 for w in self.node_workloads.values() if w.training_running)
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Tracking {tracked_nodes} nodes, {active_selfplay} selfplay, {training_jobs} training",
+                details={
+                    "tracked_nodes": tracked_nodes,
+                    "active_selfplay_jobs": active_selfplay,
+                    "training_jobs": training_jobs,
+                    "board_data_needs": {k.value: v for k, v in self.board_data_needs.items()},
+                },
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check failed: {e}",
+            )
+
 
 # Global instance
 _utilization_optimizer: UtilizationOptimizer | None = None
