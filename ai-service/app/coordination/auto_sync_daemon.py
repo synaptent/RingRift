@@ -643,6 +643,7 @@ class AutoSyncDaemon:
         """Trigger an immediate sync cycle.
 
         Dec 2025: Added to expose sync functionality to sync_facade.py.
+        Dec 27, 2025: Added DATA_SYNC_COMPLETED event emission for pipeline coordination.
 
         Returns:
             Number of games synced (0 if skipped or no data).
@@ -651,7 +652,27 @@ class AutoSyncDaemon:
             logger.warning("[AutoSyncDaemon] sync_now() called but daemon not running")
             return 0
 
-        return await self._sync_cycle()
+        try:
+            games_synced = await self._sync_cycle()
+            # December 27, 2025: Emit DATA_SYNC_COMPLETED for pipeline coordination
+            # This ensures DataPipelineOrchestrator knows when sync finishes
+            if games_synced and games_synced > 0:
+                fire_and_forget(
+                    self._emit_sync_completed(games_synced),
+                    error_callback=lambda exc: logger.debug(
+                        f"Failed to emit sync completed from sync_now(): {exc}"
+                    ),
+                )
+            return games_synced
+        except (RuntimeError, OSError, ConnectionError) as e:
+            logger.error(f"[AutoSyncDaemon] sync_now() error: {e}")
+            fire_and_forget(
+                self._emit_sync_failed(str(e)),
+                error_callback=lambda exc: logger.debug(
+                    f"Failed to emit sync failed from sync_now(): {exc}"
+                ),
+            )
+            return 0
 
     async def start(self) -> None:
         """Start the auto sync daemon."""

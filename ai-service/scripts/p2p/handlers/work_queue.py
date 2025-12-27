@@ -303,22 +303,26 @@ class WorkQueueHandlersMixin:
             if not work_id:
                 return web.json_response({"error": "work_id_required"}, status=400)
 
-            # Get work item before completing to track type
-            work_item = wq.items.get(work_id)
-            work_type = work_item.work_type if work_item else None
-            config = work_item.config if work_item else {}
+            # Dec 2025: Fixed race condition - read work item data under lock
+            # before calling complete_work() which modifies state
+            with wq.lock:
+                work_item = wq.items.get(work_id)
+                work_type = work_item.work_type if work_item else None
+                # Copy config dict to avoid stale reference after lock release
+                config = dict(work_item.config) if work_item else {}
+                assigned_to = work_item.assigned_to if work_item else ""
 
             success = wq.complete_work(work_id, result)
 
             # Emit event to coordination EventRouter
             if success and HAS_EVENT_BRIDGE:
-                node_id = work_item.assigned_to if work_item else ""
+                # Use locally captured assigned_to (already read under lock above)
                 await emit_p2p_work_completed(
                     work_id=work_id,
                     work_type=work_type.value if work_type else "unknown",
                     config_key=f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
                     result=result,
-                    node_id=node_id,
+                    node_id=assigned_to,
                     duration_seconds=result.get("duration_seconds", 0.0),
                 )
 

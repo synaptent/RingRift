@@ -93,6 +93,14 @@ except ImportError:
     DEFAULT_FAILURE_THRESHOLD = 3
     DEFAULT_RECOVERY_TIMEOUT = 300  # 5 minutes
 
+# Import bandwidth limiting from cluster_config (December 2025)
+try:
+    from app.config.cluster_config import get_node_bandwidth_kbs
+    HAS_BANDWIDTH_CONFIG = True
+except ImportError:
+    HAS_BANDWIDTH_CONFIG = False
+    get_node_bandwidth_kbs = None
+
 
 # =============================================================================
 # Error Classes
@@ -527,12 +535,28 @@ class ClusterTransport:
         else:
             src, dst = remote_spec, str(local_path)
 
+        # Extract hostname from remote_spec (format: user@host:path)
+        # December 2025: Add bandwidth limiting to prevent network saturation
+        bwlimit_arg = ""
+        if HAS_BANDWIDTH_CONFIG and get_node_bandwidth_kbs:
+            try:
+                # Parse hostname from remote_spec
+                if "@" in remote_spec and ":" in remote_spec:
+                    host_part = remote_spec.split("@")[1].split(":")[0]
+                    bwlimit_kbs = get_node_bandwidth_kbs(host_part)
+                    if bwlimit_kbs > 0:
+                        bwlimit_arg = f"--bwlimit={bwlimit_kbs}"
+            except (IndexError, ValueError):
+                pass  # Use no bandwidth limit on parse error
+
         cmd = [
             "rsync", "-az", f"--timeout={self.operation_timeout}",
             "-e", f"ssh -p {ssh_port} -o StrictHostKeyChecking=no "
                   f"-o ConnectTimeout={self.connect_timeout}",
-            src, dst
         ]
+        if bwlimit_arg:
+            cmd.append(bwlimit_arg)
+        cmd.extend([src, dst])
 
         try:
             proc = await asyncio.create_subprocess_exec(

@@ -903,6 +903,54 @@ async def _emit_model_distribution_failed(
         logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_FAILED: {e}")
 
 
+async def _emit_model_promoted(
+    model_id: str,
+    config_key: str,
+    elo: float = 0.0,
+    elo_gain: float = 0.0,
+    source: str = "p2p_orchestrator",
+) -> None:
+    """Safely emit MODEL_PROMOTED event when a model is promoted to baseline.
+
+    December 2025: Closes critical gap where _promote_to_baseline() didn't emit events.
+    Enables:
+    - Model distribution daemon to sync model to cluster
+    - SelfplayModelSelector to hot-reload model cache
+    - Temperature scheduling to adjust exploration
+    - Metrics recording
+
+    Args:
+        model_id: Model identifier (e.g., filename or path)
+        config_key: Configuration key (e.g., "hex8_2p")
+        elo: Model's Elo rating (if known)
+        elo_gain: Elo gain over previous baseline (if known)
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.event_helpers import emit_model_promoted_safe
+        await emit_model_promoted_safe(
+            model_id=model_id,
+            config=config_key,
+            elo=elo,
+            elo_gain=elo_gain,
+            source=source,
+        )
+        logger.info(
+            f"[P2P Event] Emitted MODEL_PROMOTED: {model_id} "
+            f"(config: {config_key}, elo: {elo}, gain: {elo_gain})"
+        )
+    except ImportError:
+        pass  # Event helpers module not available
+    except (AttributeError, RuntimeError, TypeError) as e:
+        # AttributeError: emit function doesn't exist
+        # RuntimeError: event bus not initialized
+        # TypeError: wrong function signature
+        logger.debug(f"[P2P Event] Failed to emit MODEL_PROMOTED: {e}")
+
+
 # Add project root to path for scripts.lib imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -11717,6 +11765,18 @@ print(json.dumps(result))
 
             shutil.copy2(model_path, baseline_path)
             logger.info(f"Promoted {model_path} to baseline at {baseline_path}")
+
+            # Dec 2025: Emit MODEL_PROMOTED event for coordination layer
+            # Enables: model distribution, model selector hot-reload, temperature adjustment
+            config_key = f"{board_type}_{num_players}p"
+            model_id = Path(model_path).name
+            await _emit_model_promoted(
+                model_id=model_id,
+                config_key=config_key,
+                elo=0.0,  # Elo not available in this context
+                elo_gain=0.0,
+                source="p2p_orchestrator._promote_to_baseline",
+            )
 
         except Exception as e:  # noqa: BLE001
             logger.info(f"Baseline promotion error: {e}")
