@@ -557,8 +557,8 @@ class TestRecordUtilization:
         """Test that recording updates host state."""
         host = "test-host"
 
-        # First, get host targets to create entry
-        manager.get_host_targets(host)
+        # First, get host targets to create entry - keep reference
+        targets = manager.get_host_targets(host)
 
         # Record utilization
         manager.record_utilization(
@@ -569,8 +569,8 @@ class TestRecordUtilization:
             job_count=10,
         )
 
-        # Check that state was updated
-        targets = manager.get_host_targets(host)
+        # The same cached object should be updated
+        # (get_host_targets returns cached object)
         assert targets.last_cpu == 65.0
         assert targets.last_gpu == 70.0
         assert targets.last_memory == 50.0
