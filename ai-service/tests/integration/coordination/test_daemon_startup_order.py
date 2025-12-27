@@ -214,10 +214,13 @@ class TestCriticalDaemonHealthChecks:
         """Critical daemons should have shorter health check intervals."""
         # This tests the P11-HIGH-2 feature: critical daemons get 15s (3x health timeout)
         # vs 60s default for non-critical daemons
-        from app.coordination.daemon_types import DaemonLoopDefaults
+        from app.config.coordination_defaults import DaemonLoopDefaults
+        from app.coordination.daemon_types import DaemonInfo
 
-        critical_interval = DaemonLoopDefaults.HEALTH_CHECK_TIMEOUT * 3  # 15s
-        default_interval = DaemonLoopDefaults.DAEMON_HEALTH_CHECK_INTERVAL  # 60s
+        # Critical daemons get 3x health timeout (15s = 5s * 3)
+        critical_interval = DaemonLoopDefaults.HEALTH_CHECK_TIMEOUT * 3
+        # Default health check interval from DaemonInfo
+        default_interval = DaemonInfo(DaemonType.EVENT_ROUTER).health_check_interval
 
         # Verify critical interval is faster
         assert critical_interval < default_interval, (

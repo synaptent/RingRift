@@ -139,8 +139,15 @@ class UnifiedInventory:
             self._distributed_hosts = config.get("hosts", {})
             logger.info(f"Loaded {len(self._distributed_hosts)} hosts from distributed_hosts.yaml")
 
-        # Load cluster_nodes.env
+        # Load cluster_nodes.env (DEPRECATED - Dec 2025)
+        # This file has been archived to archive/deprecated_config/ because it
+        # referenced retired Lambda Labs nodes. Use distributed_hosts.yaml instead.
         if CLUSTER_NODES_PATH.exists():
+            logger.warning(
+                "[UnifiedInventory] cluster_nodes.env is deprecated (Dec 2025). "
+                "Use distributed_hosts.yaml for cluster configuration. "
+                "See archive/deprecated_config/cluster_nodes.env for archived file."
+            )
             try:
                 with open(CLUSTER_NODES_PATH) as f:
                     for line in f:

@@ -2257,6 +2257,8 @@ class P2POrchestrator(
             improvement_loop_state=self.improvement_loop_state,
             distributed_tournament_state=self.distributed_tournament_state,
         )
+        # December 2025: Subscribe to job-relevant events (HOST_OFFLINE, HOST_ONLINE)
+        self.job_manager.subscribe_to_events()
 
         # Phase 2B Refactoring: TrainingCoordinator for training dispatch and completion
         self.training_coordinator = TrainingCoordinator(

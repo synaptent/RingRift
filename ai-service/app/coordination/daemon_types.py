@@ -170,6 +170,10 @@ class DaemonType(Enum):
     # Queue populator (December 2025 - Phase 4) - auto-populates work queue with selfplay/training jobs
     QUEUE_POPULATOR = "queue_populator"
 
+    # Work queue monitor (December 2025) - tracks WORK_* lifecycle events
+    # Provides queue depth, latency metrics, backpressure signaling, stuck job detection
+    WORK_QUEUE_MONITOR = "work_queue_monitor"
+
     # Curriculum integration (December 2025) - bridges all feedback loops for self-improvement
     CURRICULUM_INTEGRATION = "curriculum_integration"
 
@@ -342,8 +346,9 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.FEEDBACK_LOOP,          # 4. Training feedback (before sync!)
     DaemonType.AUTO_SYNC,              # 5. Data sync (emits events)
     DaemonType.QUEUE_POPULATOR,        # 6. Work queue maintenance
-    DaemonType.IDLE_RESOURCE,          # 7. GPU utilization
-    DaemonType.TRAINING_TRIGGER,       # 8. Training trigger (after pipeline)
+    DaemonType.WORK_QUEUE_MONITOR,     # 7. Queue visibility (after populator)
+    DaemonType.IDLE_RESOURCE,          # 8. GPU utilization
+    DaemonType.TRAINING_TRIGGER,       # 9. Training trigger (after pipeline)
 ]
 
 

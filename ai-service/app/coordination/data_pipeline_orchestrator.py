@@ -2166,6 +2166,90 @@ class DataPipelineOrchestrator:
             )
             await self._auto_trigger_export(self._current_iteration)
 
+    async def _on_exploration_boost(self, event) -> None:
+        """Handle EXPLORATION_BOOST - request to boost exploration temperature.
+
+        December 2025: Wire previously orphaned event. Emitted when curriculum
+        feedback detects that exploration diversity is low or training is
+        plateauing on certain configurations.
+
+        Actions:
+        - Log the boost request for metrics
+        - Forward to curriculum integration if available
+        - Update exploration multiplier in pipeline metadata
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        config_key = payload.get("config_key", "unknown")
+        boost_factor = payload.get("boost_factor", 1.2)
+        reason = payload.get("reason", "exploration_plateau")
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Exploration boost requested: "
+            f"config={config_key}, factor={boost_factor:.2f}, reason={reason}"
+        )
+
+        # Track exploration boost events for pipeline metrics
+        if not hasattr(self, "_exploration_boost_count"):
+            self._exploration_boost_count = 0
+        self._exploration_boost_count += 1
+
+        # Forward to curriculum integration if wired
+        try:
+            from app.training.curriculum_integration import (
+                get_curriculum_integration,
+            )
+            curriculum = get_curriculum_integration()
+            if curriculum and hasattr(curriculum, "apply_exploration_boost"):
+                await curriculum.apply_exploration_boost(config_key, boost_factor)
+                logger.debug(
+                    f"[DataPipelineOrchestrator] Forwarded exploration boost to curriculum"
+                )
+        except ImportError:
+            pass  # Curriculum integration not available
+        except Exception as e:
+            logger.warning(f"[DataPipelineOrchestrator] Failed to forward exploration boost: {e}")
+
+    async def _on_sync_triggered(self, event) -> None:
+        """Handle SYNC_TRIGGERED - data sync initiated due to staleness.
+
+        December 2025: Wire previously orphaned event. Emitted when AutoSyncDaemon
+        or SyncFacade triggers a sync due to stale data detection.
+
+        Actions:
+        - Log the sync trigger for metrics
+        - Update pipeline stage if appropriate
+        - Track sync frequency for feedback
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        reason = payload.get("reason", "stale_data")
+        config_key = payload.get("config_key")
+        data_age_hours = payload.get("data_age_hours", 0)
+        source = payload.get("source", "unknown")
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Sync triggered: reason={reason}, "
+            f"config={config_key}, age={data_age_hours:.1f}h, source={source}"
+        )
+
+        # Track sync trigger frequency
+        if not hasattr(self, "_sync_trigger_count"):
+            self._sync_trigger_count = 0
+        self._sync_trigger_count += 1
+
+        # If we're idle and sync was triggered, transition to SYNC stage
+        if self._current_stage == PipelineStage.IDLE and self.auto_trigger:
+            self._transition_to(
+                PipelineStage.SYNC,
+                self._current_iteration,
+                metadata={
+                    "trigger_reason": reason,
+                    "config_key": config_key,
+                    "data_age_hours": data_age_hours,
+                },
+            )
+
     async def _on_promotion_candidate(self, event) -> None:
         """Handle PROMOTION_CANDIDATE - model ready for promotion evaluation.
 

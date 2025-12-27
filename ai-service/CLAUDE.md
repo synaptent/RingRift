@@ -616,6 +616,27 @@ Special handlers retained for `_init_pipeline_orchestrator` (extra args) and `_i
 - Fixed `adaptive_resource_manager.py:414` - was importing non-existent `get_cluster_monitor`
 - Wired `emit_task_abandoned` to job cancellation paths in p2p_orchestrator.py
 
+**Enum Collision Fixes (December 27, 2025):**
+
+Fixed CRITICAL naming collisions where multiple enums had the same name but different semantics:
+
+| Original Name    | New Name (module)                               | Purpose                          |
+| ---------------- | ----------------------------------------------- | -------------------------------- |
+| `NodeRole`       | `LeadershipRole` (leadership_coordinator)       | Raft roles: LEADER, FOLLOWER     |
+| `NodeRole`       | `ClusterNodeRole` (multi_provider_orchestrator) | Job roles: TRAINING, SELFPLAY    |
+| `RecoveryAction` | `JobRecoveryAction` (unified_health_manager)    | Job-level: RESTART_JOB, KILL_JOB |
+| `RecoveryAction` | `SystemRecoveryAction` (recovery_orchestrator)  | System: RESTART_P2P, REBOOT      |
+| `RecoveryAction` | `NodeRecoveryAction` (node_recovery_daemon)     | Node: RESTART, FAILOVER          |
+
+Backward-compat aliases retained (deprecated). Use `app/coordination/enums.py` for centralized access:
+
+```python
+from app.coordination.enums import (
+    LeadershipRole, ClusterNodeRole,
+    JobRecoveryAction, SystemRecoveryAction, NodeRecoveryAction,
+)
+```
+
 **P2P Manager Delegation (December 27, 2025):**
 
 All 7 P2P managers fully delegated (100% coverage):

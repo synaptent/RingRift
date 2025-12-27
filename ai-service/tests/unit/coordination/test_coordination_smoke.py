@@ -34,6 +34,10 @@ class TestEventSubscriptionWiring:
         assert hasattr(orch, "_on_orphan_games_detected")
         assert hasattr(orch, "_on_orphan_games_registered")
 
+        # Check exploration and sync feedback handlers (Dec 2025 fix)
+        assert hasattr(orch, "_on_exploration_boost")
+        assert hasattr(orch, "_on_sync_triggered")
+
     def test_sync_facade_methods(self):
         """SyncFacade has all required sync methods."""
         from app.coordination.sync_facade import SyncFacade, get_sync_facade
