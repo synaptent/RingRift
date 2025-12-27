@@ -405,7 +405,7 @@ class TestDataConsolidationDaemon:
     @pytest.mark.asyncio
     async def test_event_emission_on_consolidation(self, daemon, source_db):
         """Test that CONSOLIDATION events are emitted."""
-        with patch('app.coordination.data_consolidation_daemon.emit_event',
+        with patch('app.distributed.data_events.emit_event',
                    new_callable=AsyncMock) as mock_emit:
             await daemon._consolidate_config("hex8", 2)
 
