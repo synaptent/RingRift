@@ -36,17 +36,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable
 
+# December 2025: Import TaskStatus from canonical source
+from app.coordination.types import TaskStatus
+
 logger = logging.getLogger(__name__)
 
-
-class TaskStatus(str, Enum):
-    """Task execution status."""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    TIMED_OUT = "timed_out"
-    CANCELLED = "cancelled"
+# TaskStatus is now imported from app.coordination.types
+# Canonical values: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, TIMED_OUT, ORPHANED
 
 
 class TrainingStatus(str, Enum):

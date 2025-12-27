@@ -48,18 +48,13 @@ from typing import Any
 
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
+# December 2025: Import TaskStatus from canonical source
+from app.coordination.types import TaskStatus
+
 logger = logging.getLogger(__name__)
 
-
-class TaskStatus(Enum):
-    """Task status states."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    ORPHANED = "orphaned"
+# TaskStatus is now imported from app.coordination.types
+# Canonical values: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, TIMED_OUT, ORPHANED
 
 
 @dataclass

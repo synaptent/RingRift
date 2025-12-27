@@ -32,6 +32,8 @@ class DaemonSpec:
         auto_restart: Whether to auto-restart on failure.
         max_restarts: Maximum restart attempts.
         category: Human-readable category for documentation.
+        deprecated: Whether this daemon is deprecated (December 2025).
+        deprecated_message: Migration guidance for deprecated daemons.
     """
 
     runner_name: str
@@ -40,6 +42,8 @@ class DaemonSpec:
     auto_restart: bool = True
     max_restarts: int = 5
     category: str = "misc"
+    deprecated: bool = False
+    deprecated_message: str = ""
 
 
 # =============================================================================
@@ -55,6 +59,8 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_sync_coordinator",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
+        deprecated=True,
+        deprecated_message="Use AUTO_SYNC daemon instead. Removal: Q2 2026.",
     ),
     DaemonType.HIGH_QUALITY_SYNC: DaemonSpec(
         runner_name="create_high_quality_sync",
@@ -114,6 +120,8 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     DaemonType.HEALTH_CHECK: DaemonSpec(
         runner_name="create_health_check",
         category="health",
+        deprecated=True,
+        deprecated_message="Use NODE_HEALTH_MONITOR daemon instead. Removal: Q2 2026.",
     ),
     DaemonType.QUEUE_MONITOR: DaemonSpec(
         runner_name="create_queue_monitor",
@@ -239,6 +247,8 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_npz_distribution",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="distribution",
+        deprecated=True,
+        deprecated_message="Use unified_distribution_daemon.py with DataType.NPZ. Removal: Q2 2026.",
     ),
     DaemonType.DATA_SERVER: DaemonSpec(
         runner_name="create_data_server",
@@ -252,11 +262,15 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_replication_monitor",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="replication",
+        deprecated=True,
+        deprecated_message="Use unified_replication_daemon.py instead. Removal: Q2 2026.",
     ),
     DaemonType.REPLICATION_REPAIR: DaemonSpec(
         runner_name="create_replication_repair",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="replication",
+        deprecated=True,
+        deprecated_message="Use unified_replication_daemon.py instead. Removal: Q2 2026.",
     ),
     # =========================================================================
     # Resource Management
@@ -293,11 +307,15 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_lambda_idle",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR),
         category="provider",
+        deprecated=True,
+        deprecated_message="Use create_lambda_idle_daemon() from unified_idle_shutdown_daemon. Removal: Q2 2026.",
     ),
     DaemonType.VAST_IDLE: DaemonSpec(
         runner_name="create_vast_idle",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR),
         category="provider",
+        deprecated=True,
+        deprecated_message="Use create_vast_idle_daemon() from unified_idle_shutdown_daemon. Removal: Q2 2026.",
     ),
     DaemonType.MULTI_PROVIDER: DaemonSpec(
         runner_name="create_multi_provider",
