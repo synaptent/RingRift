@@ -939,11 +939,27 @@ async def _emit_promotion_complete(result: StageCompletionResult) -> None:
     try:
         from app.coordination.event_emitters import emit_promotion_complete
 
+        # Extract required parameters from metadata
+        board_type = result.metadata.get("board_type", "unknown")
+        num_players = result.metadata.get("num_players", 2)
+        model_path = result.output_path or result.metadata.get("model_path", "")
+
+        # Generate model_id from path or metadata
+        if model_path:
+            model_id = Path(model_path).stem
+        else:
+            model_id = f"{board_type}_{num_players}p_iter{result.iteration}"
+
         await emit_promotion_complete(
-            iteration=result.iteration,
+            model_id=model_id,
+            board_type=board_type,
+            num_players=num_players,
+            promotion_type="production",
+            elo_improvement=result.metadata.get("elo_delta"),
+            model_path=model_path,
             promoted=result.metadata.get("promoted", False),
             promotion_reason=result.metadata.get("reason", ""),
-            metadata=result.metadata,
+            iteration=result.iteration,
         )
     except Exception as e:
         logger.debug(f"[PipelineActions] Could not emit promotion_complete: {e}")

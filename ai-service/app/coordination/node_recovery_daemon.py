@@ -823,8 +823,10 @@ class NodeRecoveryDaemon:
             # No running loop - try to run directly
             try:
                 asyncio.run(_emit())
-            except Exception:
-                pass  # Best effort
+            except RuntimeError as e:
+                logger.debug(f"Failed to run recovery event emission (nested loop?): {e}")
+            except (OSError, IOError) as e:
+                logger.debug(f"Failed to emit recovery event (I/O error): {e}")
 
     def get_stats(self) -> dict[str, Any]:
         """Get daemon statistics."""

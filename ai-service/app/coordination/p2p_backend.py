@@ -524,64 +524,89 @@ async def discover_p2p_leader_url(
                 continue
         return None
 
+    async def _try_seed(session: aiohttp.ClientSession, seed: str) -> str | None:
+        """Try to discover leader from a single seed. Returns leader URL or None."""
+        try:
+            async with session.get(f"{seed}/status") as resp:
+                if resp.status != 200:
+                    return None
+                status = await resp.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+            return None
+
+        if not isinstance(status, dict):
+            return None
+
+        leader_id = (
+            status.get("effective_leader_id") or status.get("leader_id") or ""
+        ).strip()
+        if not leader_id:
+            return None
+
+        self_block = (
+            status.get("self") if isinstance(status.get("self"), dict) else {}
+        )
+        peers_block = (
+            status.get("peers") if isinstance(status.get("peers"), dict) else {}
+        )
+
+        leader_info: dict[str, Any] = {}
+        node_id = (status.get("node_id") or "").strip()
+        if leader_id == node_id or leader_id == (
+            self_block.get("node_id") or ""
+        ).strip():
+            leader_info = self_block
+        else:
+            leader_info = (
+                peers_block.get(leader_id)
+                if isinstance(peers_block.get(leader_id), dict)
+                else {}
+            )
+
+        host = (leader_info.get("host") or "").strip()
+        scheme = (leader_info.get("scheme") or "http").strip() or "http"
+        try:
+            port_i = int(leader_info.get("port", None))
+        except (ValueError, TypeError):
+            port_i = None
+
+        candidates = _candidate_base_urls(leader_info)
+        reachable = await _first_reachable_base(session, candidates)
+        if reachable:
+            return reachable
+
+        if host and port_i and not _is_loopback(host):
+            # Back-compat fallback (may be unreachable in NAT/proxy setups)
+            return f"{scheme}://{host}:{port_i}"
+
+        # Fallback: use the seed itself if it claims to be leader
+        if leader_id == node_id:
+            return seed
+
+        return None
+
+    # Parallel discovery: try all seeds concurrently, return first successful result
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-        for seed in seeds:
+        tasks = [asyncio.create_task(_try_seed(session, seed)) for seed in seeds]
+
+        # Use as_completed to return as soon as any seed succeeds
+        for coro in asyncio.as_completed(tasks):
             try:
-                async with session.get(f"{seed}/status") as resp:
-                    if resp.status != 200:
-                        continue
-                    status = await resp.json()
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
-                continue
-
-            if not isinstance(status, dict):
-                continue
-
-            leader_id = (
-                status.get("effective_leader_id") or status.get("leader_id") or ""
-            ).strip()
-            if not leader_id:
-                continue
-
-            self_block = (
-                status.get("self") if isinstance(status.get("self"), dict) else {}
-            )
-            peers_block = (
-                status.get("peers") if isinstance(status.get("peers"), dict) else {}
-            )
-
-            leader_info: dict[str, Any] = {}
-            node_id = (status.get("node_id") or "").strip()
-            if leader_id == node_id or leader_id == (
-                self_block.get("node_id") or ""
-            ).strip():
-                leader_info = self_block
-            else:
-                leader_info = (
-                    peers_block.get(leader_id)
-                    if isinstance(peers_block.get(leader_id), dict)
-                    else {}
-                )
-
-            host = (leader_info.get("host") or "").strip()
-            scheme = (leader_info.get("scheme") or "http").strip() or "http"
-            try:
-                port_i = int(leader_info.get("port", None))
-            except (ValueError, TypeError):
-                port_i = None
-
-            candidates = _candidate_base_urls(leader_info)
-            reachable = await _first_reachable_base(session, candidates)
-            if reachable:
-                return reachable
-
-            if host and port_i and not _is_loopback(host):
-                # Back-compat fallback (may be unreachable in NAT/proxy setups)
-                return f"{scheme}://{host}:{port_i}"
-
-            # Fallback: use the seed itself if it claims to be leader
-            if leader_id == node_id:
-                return seed
+                result = await coro
+                if result:
+                    # Cancel remaining tasks
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    return result
+            except asyncio.CancelledError:
+                continue  # Expected during parallel discovery
+            except asyncio.TimeoutError:
+                continue  # Seed timed out, try next
+            except (OSError, IOError):
+                continue  # Network error, try next
+            except (ValueError, KeyError):
+                continue  # Malformed response, try next
 
     return None
 

@@ -774,8 +774,10 @@ class NPZDistributionDaemon:
                 torrents = manifest.get_torrents_for_path(str(npz_file))
                 if torrents:
                     torrent_info = torrents[0]
-            except Exception:
-                pass
+            except (KeyError, ValueError, TypeError) as e:
+                logger.debug(f"Failed to lookup torrent for {npz_file.name}: {e}")
+            except (OSError, IOError) as e:
+                logger.debug(f"I/O error looking up torrent for {npz_file.name}: {e}")
 
             # Create torrent if not exists
             if not torrent_info:

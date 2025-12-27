@@ -527,7 +527,7 @@ class AutoSyncDaemon:
             self._events_processed += 1
 
         except (RuntimeError, AttributeError) as e:
-            logger.debug(f"[AutoSyncDaemon] Error handling DATA_SYNC_STARTED: {e}")
+            logger.warning(f"[AutoSyncDaemon] Error handling DATA_SYNC_STARTED: {e}")
 
     async def _on_model_distribution_complete(self, event) -> None:
         """Handle MODEL_DISTRIBUTION_COMPLETE - model synced to cluster.
@@ -558,7 +558,7 @@ class AutoSyncDaemon:
             self._events_processed += 1
 
         except (RuntimeError, AttributeError) as e:
-            logger.debug(f"[AutoSyncDaemon] Error handling MODEL_DISTRIBUTION_COMPLETE: {e}")
+            logger.warning(f"[AutoSyncDaemon] Error handling MODEL_DISTRIBUTION_COMPLETE: {e}")
 
     async def _push_to_neighbors(self, config_key: str, new_games: int) -> None:
         """Push data to up to 3 neighbor nodes (Layer 1: push-from-generator).
@@ -1019,7 +1019,7 @@ class AutoSyncDaemon:
             )
 
         except Exception as e:
-            logger.debug(f"Failed to update priority queue for {config_key}: {e}")
+            logger.warning(f"Failed to update priority queue for {config_key}: {e}")
 
     def _should_sync_database(self, db_path: Path) -> tuple[bool, str]:
         """Check if database meets minimum quality for sync.
@@ -1165,7 +1165,7 @@ class AutoSyncDaemon:
                         fire_and_forget(self._extract_quality_from_synced_db(db_path))
 
             except (OSError, RuntimeError) as e:
-                logger.debug(f"Failed to register games from {db_path}: {e}")
+                logger.warning(f"Failed to register games from {db_path}: {e}")
 
         if registered > 0 or skipped_quality > 0:
             logger.info(

@@ -43,6 +43,7 @@ import atexit
 import contextlib
 import logging
 import os
+import random
 import signal
 import time
 import warnings
@@ -270,6 +271,13 @@ class DaemonManager:
 
         # Orphan detection daemon (December 2025) - detects unregistered game databases
         self.register_factory(DaemonType.ORPHAN_DETECTION, self._create_orphan_detection)
+
+        # Data cleanup daemon (December 2025) - auto-quarantine/delete poor quality databases
+        self.register_factory(
+            DaemonType.DATA_CLEANUP,
+            self._create_data_cleanup,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
 
         # Node health monitor (December 2025) - unified cluster health maintenance
         self.register_factory(DaemonType.NODE_HEALTH_MONITOR, self._create_node_health_monitor)
@@ -698,15 +706,18 @@ class DaemonManager:
                     )
                     break
 
-                # Restart with exponential backoff
+                # Restart with exponential backoff + jitter to prevent thundering herd
                 info.restart_count += 1
                 # P0.5: Use helper for event emission
                 self._update_daemon_state(
                     info, DaemonState.RESTARTING,
                     reason="auto_restart", error=str(e)
                 )
-                delay = min(info.restart_delay * (2 ** (info.restart_count - 1)), MAX_RESTART_DELAY)
-                logger.info(f"Restarting {daemon_type.value} (attempt {info.restart_count}) in {delay:.1f}s")
+                base_delay = min(info.restart_delay * (2 ** (info.restart_count - 1)), MAX_RESTART_DELAY)
+                # Add ±10% jitter to prevent all daemons restarting at same time
+                jitter = base_delay * 0.1 * (random.random() * 2 - 1)  # -10% to +10%
+                delay = max(1.0, base_delay + jitter)  # Minimum 1 second
+                logger.info(f"Restarting {daemon_type.value} (attempt {info.restart_count}) in {delay:.1f}s (base={base_delay:.1f}s)")
                 await asyncio.sleep(delay)
                 # P0.5: Use helper for event emission
                 self._update_daemon_state(
@@ -2091,7 +2102,28 @@ class DaemonManager:
             await daemon.start()
 
         except ImportError as e:
-            logger.error(f"OrphanDetectionDaemon not available: {e}")
+            logger.warning(f"OrphanDetectionDaemon not available: {e}")
+            while True:
+                await asyncio.sleep(3600)  # Stub: sleep forever
+
+    async def _create_data_cleanup(self) -> None:
+        """Create and run data cleanup daemon (December 2025).
+
+        Automatically quarantines or deletes poor quality game databases.
+        Quality thresholds are loaded from app.config.thresholds.
+
+        Emits:
+            - DATA_CLEANED: When databases are quarantined/deleted
+            - DATABASE_QUARANTINED: When a specific DB is quarantined
+        """
+        try:
+            from app.coordination.data_cleanup_daemon import DataCleanupDaemon
+
+            daemon = DataCleanupDaemon()
+            await daemon.start()
+
+        except ImportError as e:
+            logger.error(f"DataCleanupDaemon not available: {e}")
             raise
 
     async def _create_node_health_monitor(self) -> None:
@@ -2905,18 +2937,18 @@ class DaemonManager:
 
         NOTE: Lambda account currently suspended pending support ticket resolution.
               Keep this code for restoration when account is reactivated.
+
+        UPDATED Dec 2025: Now uses UnifiedIdleShutdownDaemon for consolidation.
         """
         try:
-            from app.coordination.lambda_idle_daemon import (
-                LambdaIdleDaemon,
-                LambdaIdleConfig,
+            from app.coordination.unified_idle_shutdown_daemon import (
+                create_lambda_idle_daemon,
             )
 
-            config = LambdaIdleConfig.from_env()
-            daemon = LambdaIdleDaemon(config=config)
+            daemon = create_lambda_idle_daemon()
             await daemon.start()
 
-            logger.info("[LambdaIdleDaemon] Started, monitoring for idle Lambda nodes")
+            logger.info("[LambdaIdleDaemon] Started via unified daemon, monitoring for idle Lambda nodes")
 
             # Keep daemon running until cancelled
             while True:
@@ -2939,18 +2971,18 @@ class DaemonManager:
         - Prioritize terminating expensive instances first
 
         This daemon should only run on the coordinator node.
+
+        UPDATED Dec 2025: Now uses UnifiedIdleShutdownDaemon for consolidation.
         """
         try:
-            from app.coordination.vast_idle_daemon import (
-                VastIdleDaemon,
-                VastIdleConfig,
+            from app.coordination.unified_idle_shutdown_daemon import (
+                create_vast_idle_daemon,
             )
 
-            config = VastIdleConfig.from_env()
-            daemon = VastIdleDaemon(config=config)
+            daemon = create_vast_idle_daemon()
             await daemon.start()
 
-            logger.info("[VastIdleDaemon] Started, monitoring for idle Vast.ai nodes")
+            logger.info("[VastIdleDaemon] Started via unified daemon, monitoring for idle Vast.ai nodes")
 
             # Keep daemon running until cancelled
             while True:

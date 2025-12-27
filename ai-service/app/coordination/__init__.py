@@ -373,6 +373,7 @@ from app.coordination.daemon_factory import (
 )
 
 # LambdaIdleDaemon - monitors and terminates idle Lambda GPU nodes (December 2025)
+# DEPRECATED: Use UnifiedIdleShutdownDaemon instead
 from app.coordination.lambda_idle_daemon import (
     LambdaIdleConfig,
     LambdaIdleDaemon,
@@ -380,10 +381,22 @@ from app.coordination.lambda_idle_daemon import (
 )
 
 # VastIdleDaemon - monitors and terminates idle Vast.ai GPU instances (December 2025)
+# DEPRECATED: Use UnifiedIdleShutdownDaemon instead
 from app.coordination.vast_idle_daemon import (
     VastIdleConfig,
     VastIdleDaemon,
     VastNodeStatus,
+)
+
+# UnifiedIdleShutdownDaemon - provider-agnostic idle shutdown (December 2025)
+# Consolidates lambda_idle_daemon and vast_idle_daemon
+from app.coordination.unified_idle_shutdown_daemon import (
+    IdleShutdownConfig,
+    NodeIdleStatus,
+    UnifiedIdleShutdownDaemon,
+    create_lambda_idle_daemon,
+    create_vast_idle_daemon,
+    create_runpod_idle_daemon,
 )
 
 # DataPipelineOrchestrator - unified pipeline stage coordination

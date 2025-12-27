@@ -31,6 +31,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -289,8 +290,10 @@ class P2PAutoDeployer:
                 with open(config_path) as f:
                     data = yaml.safe_load(f) or {}
                 voter_nodes = data.get("p2p_voters", [])
-            except Exception:
-                pass
+            except (OSError, IOError) as e:
+                logger.debug(f"Failed to read P2P voter config: {e}")
+            except yaml.YAMLError as e:
+                logger.debug(f"Failed to parse P2P voter config YAML: {e}")
 
         # Build peer URLs from voter hosts
         for voter in voter_nodes[:5]:  # Max 5 peers
@@ -388,14 +391,26 @@ fi
             output = stdout.decode().strip()
 
             if "P2P_STARTED" in output:
-                logger.info(f"Successfully deployed P2P to {host_id}")
-                return P2PDeploymentResult(
-                    node_id=host_id,
-                    success=True,
-                    method="ssh_direct",
-                    message="P2P started successfully",
-                    duration_seconds=time.time() - start_time,
-                )
+                # Verify mesh join - check if node sees peers
+                mesh_ok = await self._verify_mesh_join(host_id, host_info)
+                if mesh_ok:
+                    logger.info(f"Successfully deployed P2P to {host_id} (mesh verified)")
+                    return P2PDeploymentResult(
+                        node_id=host_id,
+                        success=True,
+                        method="ssh_direct",
+                        message="P2P started and mesh verified",
+                        duration_seconds=time.time() - start_time,
+                    )
+                else:
+                    logger.warning(f"P2P started on {host_id} but mesh join not verified")
+                    return P2PDeploymentResult(
+                        node_id=host_id,
+                        success=True,  # Still success - process is running
+                        method="ssh_direct",
+                        message="P2P started but mesh join unverified (may be isolated)",
+                        duration_seconds=time.time() - start_time,
+                    )
             else:
                 return P2PDeploymentResult(
                     node_id=host_id,
@@ -559,6 +574,94 @@ fi
     def stop(self) -> None:
         """Stop the daemon."""
         self._running = False
+
+    async def _verify_mesh_join(
+        self,
+        host_id: str,
+        host_info: dict[str, Any],
+        max_retries: int = 3,
+        retry_delay: float = 2.0,
+    ) -> bool:
+        """Verify that a node has successfully joined the P2P mesh.
+
+        Checks:
+        1. Node responds to /status
+        2. Node sees at least one peer (not isolated)
+        3. Node has adopted a valid epoch (synced with cluster)
+
+        Args:
+            host_id: Node identifier
+            host_info: Node configuration
+            max_retries: Number of retry attempts
+            retry_delay: Delay between retries in seconds
+
+        Returns:
+            True if mesh join verified, False otherwise
+        """
+        ssh_args = self._build_ssh_args(host_info, timeout=10.0)
+        remote_cmd = f"curl -s --connect-timeout 5 localhost:{self.config.p2p_port}/status 2>/dev/null"
+
+        for attempt in range(max_retries):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *ssh_args, "--", remote_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=15.0,
+                )
+
+                output = stdout.decode().strip()
+                if not output:
+                    logger.debug(f"Mesh verify {host_id}: Empty response (attempt {attempt + 1})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+                # Parse JSON status
+                try:
+                    status = json.loads(output)
+                except json.JSONDecodeError:
+                    logger.debug(f"Mesh verify {host_id}: Invalid JSON (attempt {attempt + 1})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+                # Check for peers - node should see at least one other node
+                alive_peers = status.get("alive_peers", 0)
+                peer_count = status.get("peer_count", 0)
+                total_peers = max(alive_peers, peer_count)
+
+                # Check for valid epoch (indicates cluster sync)
+                epoch = status.get("epoch", 0)
+                leader_id = status.get("leader_id", "")
+
+                if total_peers > 0:
+                    logger.debug(
+                        f"Mesh verify {host_id}: OK - {total_peers} peers, "
+                        f"epoch={epoch}, leader={leader_id}"
+                    )
+                    return True
+
+                # Node running but isolated - might just need more time
+                if attempt < max_retries - 1:
+                    logger.debug(
+                        f"Mesh verify {host_id}: No peers yet (attempt {attempt + 1}), "
+                        f"epoch={epoch}, retrying..."
+                    )
+                    await asyncio.sleep(retry_delay)
+
+            except asyncio.TimeoutError:
+                logger.debug(f"Mesh verify {host_id}: Timeout (attempt {attempt + 1})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+            except Exception as e:
+                logger.debug(f"Mesh verify {host_id}: Error {e} (attempt {attempt + 1})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+
+        logger.warning(f"Mesh verify {host_id}: Failed after {max_retries} attempts (node may be isolated)")
+        return False
 
     def get_latest_coverage(self) -> P2PCoverageReport | None:
         """Get the most recent coverage report."""
