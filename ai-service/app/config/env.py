@@ -380,8 +380,9 @@ class RingRiftEnv:
             config = self._get_node_config()
             if config:
                 return config.get("role", "").lower() == "coordinator"
-        except Exception:
-            pass
+        except (FileNotFoundError, KeyError, AttributeError) as e:
+            # Config not available or malformed - not a coordinator
+            logger.debug(f"Could not determine coordinator role: {e}")
         return False
 
     def _get_node_config(self) -> dict | None:
@@ -422,7 +423,11 @@ class RingRiftEnv:
                             if name in hosts:
                                 return hosts[name]
             return None
-        except Exception:
+        except (FileNotFoundError, OSError) as e:
+            logger.debug(f"Could not read node config: {e}")
+            return None
+        except (KeyError, AttributeError, TypeError) as e:
+            logger.debug(f"Malformed node config: {e}")
             return None
 
     def _get_node_config_bool(self, key: str, default: bool = True) -> bool:

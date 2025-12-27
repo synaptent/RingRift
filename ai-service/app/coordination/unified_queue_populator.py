@@ -615,7 +615,8 @@ class UnifiedQueuePopulator:
                     self._selfplay_scheduler.get_priority_configs(top_n=12)
                 )
                 return dict(priorities_list)
-        except Exception:
+        except (AttributeError, TypeError, RuntimeError) as e:
+            logger.debug(f"[QueuePopulator] Could not get scheduler priorities: {e}")
             return {}
 
     def _compute_work_priority(
@@ -1020,8 +1021,8 @@ class UnifiedQueuePopulatorDaemon:
             try:
                 if callable(unsub):
                     unsub()
-            except Exception:
-                pass
+            except (TypeError, RuntimeError) as e:
+                logger.debug(f"[QueuePopulatorDaemon] Unsubscribe failed: {e}")
 
         logger.info("[QueuePopulatorDaemon] Stopped")
 
@@ -1132,8 +1133,8 @@ class UnifiedQueuePopulatorDaemon:
                         self._populator._work_queue.add_work(item)
                         self._populator._queued_work_ids.add(item.work_id)
                         added += 1
-                    except Exception:
-                        pass
+                    except (ValueError, KeyError, AttributeError) as e:
+                        logger.debug(f"[QueuePopulator] Failed to create work item: {e}")
 
                 if added > 0:
                     logger.info(

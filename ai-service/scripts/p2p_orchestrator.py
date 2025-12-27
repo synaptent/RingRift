@@ -24155,39 +24155,8 @@ print(json.dumps({{
     # NOTE: _get_hybrid_job_targets() removed Dec 2025 (38 LOC).
     # Use self.selfplay_scheduler.get_hybrid_job_targets() instead.
 
-    def _should_spawn_cpu_only_jobs(self, node: NodeInfo) -> bool:
-        """Check if a node should spawn CPU-only jobs in addition to GPU jobs.
-
-        CPU-only jobs are beneficial when:
-        1. Node has many CPU cores (64+)
-        2. Node has limited GPU VRAM (<=16GB per GPU)
-        3. GPU jobs are already at capacity (VRAM-limited)
-        """
-        if not HAS_HW_AWARE_LIMITS:
-            return False
-
-        cpu_count = int(getattr(node, "cpu_count", 0) or 0)
-        has_gpu = bool(getattr(node, "has_gpu", False))
-        gpu_name = (getattr(node, "gpu_name", "") or "").upper()
-
-        # Must have significant CPU resources (64+ cores)
-        if cpu_count < 64:
-            return False
-
-        # For GPU nodes, only spawn CPU-only if GPU has limited VRAM
-        if has_gpu:
-            # High-end datacenter GPUs don't need CPU-only jobs (plenty of VRAM)
-            if any(g in gpu_name for g in ["GH200", "H100", "H200", "A100", "L40"]):
-                return False
-            # Consumer GPUs with limited VRAM benefit from CPU-only supplement
-            if any(g in gpu_name for g in ["3070", "3060", "2060", "2070", "2080", "4060", "4070"]):
-                return True
-            # 5090/4090 with 24-32GB might not need it unless very high CPU count
-            if any(g in gpu_name for g in ["5090", "4090", "3090"]):
-                return cpu_count >= 128
-
-        # CPU-only nodes always benefit from full CPU utilization
-        return True
+    # NOTE: _should_spawn_cpu_only_jobs() removed Dec 2025 (33 LOC).
+    # Use self.selfplay_scheduler.should_spawn_cpu_only_jobs() instead.
 
 
     async def _check_cluster_balance(self) -> dict[str, Any]:
@@ -24606,7 +24575,7 @@ print(json.dumps({{
                 current_gpu_jobs = min(node.selfplay_jobs, gpu_job_target)
                 remaining_gpu_slots = max(0, gpu_job_target - current_gpu_jobs)
                 remaining_cpu_slots = max(0, cpu_only_target)  # Can always spawn CPU-only if capacity
-                should_use_cpu_only = self._should_spawn_cpu_only_jobs(node) and cpu_only_target > 0
+                should_use_cpu_only = self.selfplay_scheduler.should_spawn_cpu_only_jobs(node) and cpu_only_target > 0
 
                 for i in range(jobs_to_start):
                     # LEARNED LESSONS - Smart CPU/GPU task routing:
