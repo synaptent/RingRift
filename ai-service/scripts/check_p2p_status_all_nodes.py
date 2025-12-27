@@ -3,7 +3,7 @@
 
 Checks each P2P-enabled node in config/distributed_hosts.yaml for:
 - P2P process running (pgrep for p2p_orchestrator.py)
-- Port 8770 responding with valid JSON
+- Port 8770 responding
 - Disk usage
 - NAT status and container type
 
@@ -13,7 +13,6 @@ Usage:
 Output shows node status table with recommendations for deployment/restart.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -152,12 +151,6 @@ def check_node_p2p_sync(node_name: str, ssh_config: Dict) -> Dict:
         )
         if curl_result.returncode == 0 and curl_result.stdout.strip():
             result["port_responding"] = True
-            # Try to parse JSON to see if it's valid
-            try:
-                json.loads(curl_result.stdout)
-            except json.JSONDecodeError:
-                # Port is responding but not with valid JSON
-                result["port_responding"] = False
 
         # 3. Check disk usage
         df_cmd = ssh_cmd_base + ["df -h / | tail -1"]

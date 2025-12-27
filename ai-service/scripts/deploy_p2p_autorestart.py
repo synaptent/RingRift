@@ -85,10 +85,7 @@ set -e
 
 # Expand home directory
 RINGRIFT_PATH="{ringrift_path}"
-case "$RINGRIFT_PATH" in
-  "~/"*) RINGRIFT_PATH="$HOME/${{RINGRIFT_PATH#~/}}" ;;
-  "~") RINGRIFT_PATH="$HOME" ;;
-esac
+RINGRIFT_PATH="${{RINGRIFT_PATH/#~/$HOME}}"
 
 NODE_ID="{node_id}"
 P2P_PORT=8770

@@ -316,8 +316,8 @@ def rsync_remote_db(node_name: str, config: dict, dest_dir: Path, db_name: str =
     remote_db_path = f"{ringrift_path}/data/games/{db_name}"
     dest_path = dest_dir / f"{node_name}_{db_name}"
 
-    # Build rsync command
-    rsync_cmd = ["rsync", "-avz", "--progress"]
+    # Build rsync command with checksum verification (December 2025)
+    rsync_cmd = ["rsync", "-avz", "--progress", "--checksum"]
     ssh_opts = f"-i {os.path.expanduser(ssh_key)} -o ConnectTimeout=30 -o StrictHostKeyChecking=no"
     if ssh_port:
         ssh_opts += f" -p {ssh_port}"

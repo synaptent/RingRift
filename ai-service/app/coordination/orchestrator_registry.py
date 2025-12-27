@@ -1414,8 +1414,17 @@ def get_registered_coordinators() -> dict[str, dict[str, Any]]:
             if entry.get("health_callback"):
                 try:
                     is_healthy = entry["health_callback"]()
-                except Exception:
-                    # Any exception in health check means unhealthy
+                except (ValueError, TypeError, AttributeError) as e:
+                    # Data or type errors in health check mean unhealthy
+                    logger.debug(f"Health check for {name} failed with data error: {e}")
+                    is_healthy = False
+                except (OSError, IOError) as e:
+                    # I/O errors in health check mean unhealthy
+                    logger.debug(f"Health check for {name} failed with I/O error: {e}")
+                    is_healthy = False
+                except RuntimeError as e:
+                    # Runtime errors (e.g., closed resources) mean unhealthy
+                    logger.debug(f"Health check for {name} failed with runtime error: {e}")
                     is_healthy = False
 
             result[name] = {

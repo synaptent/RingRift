@@ -97,9 +97,9 @@ def sync_code_to_instance(inst: VastInstance, dry_run: bool = False) -> bool:
         print(f"  SSH check failed for {inst.instance_id}: {e}")
         return False
 
-    # Sync critical files
+    # Sync critical files with checksum verification (December 2025)
     rsync_cmd = [
-        "rsync", "-avz", "--delete",
+        "rsync", "-avz", "--delete", "--checksum",
         "-e", f"ssh {' '.join(ssh_opts)}",
         f"{AI_SERVICE_ROOT}/scripts/",
         f"{ssh_target}:/root/RingRift/ai-service/scripts/",
@@ -193,8 +193,9 @@ def collect_results(inst: VastInstance, run_id: str, output_dir: Path) -> bool:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Rsync with checksum verification (December 2025)
     rsync_cmd = [
-        "rsync", "-avz",
+        "rsync", "-avz", "--checksum",
         "-e", f"ssh {' '.join(ssh_opts)}",
         f"{ssh_target}:/root/RingRift/ai-service/logs/nas/{run_id}/",
         f"{output_dir}/{inst.instance_id}/",

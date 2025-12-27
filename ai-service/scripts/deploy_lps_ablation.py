@@ -111,9 +111,9 @@ def run_ssh(host: HostConfig, cmd: str, timeout: int = 300) -> tuple[int, str, s
 
 
 def run_rsync(host: HostConfig, local_path: str, remote_path: str) -> tuple[int, str, str]:
-    """Run rsync to deploy files."""
+    """Run rsync to deploy files with checksum verification (December 2025)."""
     rsync_cmd = [
-        "rsync", "-avz", "--delete",
+        "rsync", "-avz", "--delete", "--checksum",
         "-e", f"ssh -p {host.port} -o StrictHostKeyChecking=no -o ConnectTimeout=30",
         "--exclude", "__pycache__",
         "--exclude", "*.pyc",

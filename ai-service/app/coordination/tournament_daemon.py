@@ -661,6 +661,37 @@ class TournamentDaemon:
             },
         }
 
+    def health_check(self):
+        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Tournament daemon not running",
+            )
+
+        # Check for high error rate
+        if len(self._stats.errors) > 10:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Tournament daemon has {len(self._stats.errors)} errors",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Tournament daemon running ({self._stats.games_played} games played)",
+            details=self.get_status(),
+        )
+
 
 # Module-level singleton
 _tournament_daemon: TournamentDaemon | None = None

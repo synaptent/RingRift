@@ -432,6 +432,36 @@ class AutoPromotionDaemon:
             "recent_promotions": self._promotion_history[-5:] if self._promotion_history else [],
         }
 
+    def health_check(self):
+        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="AutoPromotion daemon not running",
+            )
+
+        if not self._subscribed:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="AutoPromotion daemon not subscribed to events",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"AutoPromotion daemon running ({len(self._promotion_history)} promotions)",
+            details=self.get_status(),
+        )
+
 
 # Module-level singleton
 _auto_promotion_daemon: AutoPromotionDaemon | None = None

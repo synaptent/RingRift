@@ -333,6 +333,49 @@ class QualityMonitorDaemon:
             logger.error(f"Error emitting quality event: {e}")
 
 
+    def get_status(self) -> dict:
+        """Get daemon status."""
+        return {
+            "running": self._running,
+            "subscribed": self._subscribed,
+            "last_quality": self.last_quality,
+            "current_state": self.current_state.value,
+            "config_quality": self._config_quality,
+            "check_interval": self.config.check_interval,
+        }
+
+    def health_check(self):
+        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="QualityMonitor daemon not running",
+            )
+
+        # Check if quality is degraded
+        if self.current_state in (QualityState.POOR, QualityState.DEGRADED):
+            return HealthCheckResult(
+                healthy=True,  # Daemon is healthy, but quality is low
+                status=CoordinatorStatus.RUNNING,
+                message=f"QualityMonitor: quality={self.last_quality:.2f} ({self.current_state.value})",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"QualityMonitor running: quality={self.last_quality:.2f}",
+            details=self.get_status(),
+        )
+
+
 # Factory function for DaemonManager integration
 async def create_quality_monitor() -> None:
     """Factory function for DaemonManager.

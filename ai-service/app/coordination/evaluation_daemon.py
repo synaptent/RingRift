@@ -76,6 +76,10 @@ class EvaluationConfig:
     # Timeouts
     evaluation_timeout_seconds: float = 600.0  # 10 minutes
 
+    # Deduplication settings (December 2025)
+    dedup_cooldown_seconds: float = 300.0  # 5 minute cooldown per model
+    dedup_max_tracked_models: int = 1000  # Max models to track for dedup
+
 
 class EvaluationDaemon:
     """Daemon that auto-evaluates models after training completes."""
@@ -87,6 +91,18 @@ class EvaluationDaemon:
         self._subscribed = False
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
         self._active_evaluations: set[str] = set()
+
+        # Deduplication tracking (December 2025)
+        # Track recently evaluated models: model_path -> last_evaluation_timestamp
+        self._recently_evaluated: dict[str, float] = {}
+        # Track seen event content hashes to prevent duplicate triggers
+        self._seen_event_hashes: set[str] = set()
+        # Stats for deduplication
+        self._dedup_stats = {
+            "cooldown_skips": 0,
+            "content_hash_skips": 0,
+            "concurrent_skips": 0,
+        }
 
     async def start(self) -> None:
         """Start the evaluation daemon."""
@@ -395,6 +411,39 @@ class EvaluationDaemon:
             "total_games_played": self.stats.total_games_played,
             "average_evaluation_time": round(self.stats.average_evaluation_time, 1),
         }
+
+    def health_check(self):
+        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Evaluation daemon not running",
+            )
+
+        # Check for high failure rate
+        total = self.stats.evaluations_triggered
+        failed = self.stats.evaluations_failed
+        if total > 5 and failed / total > 0.5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"High evaluation failure rate: {failed}/{total}",
+                details=self.get_stats(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Evaluation daemon running ({self.stats.evaluations_completed} completed)",
+            details=self.get_stats(),
+        )
 
 
 def get_evaluation_daemon(config: EvaluationConfig | None = None) -> EvaluationDaemon:

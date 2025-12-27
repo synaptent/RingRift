@@ -214,11 +214,16 @@ sleep 3
     try:
         result = await asyncio.create_subprocess_exec(
             *ssh_cmd,
-            commands,
+            "bash",
+            "-s",
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=60)
+        stdout, stderr = await asyncio.wait_for(
+            result.communicate(commands.encode()),
+            timeout=60,
+        )
         stdout_text = stdout.decode().strip()
         stderr_text = stderr.decode().strip()
 

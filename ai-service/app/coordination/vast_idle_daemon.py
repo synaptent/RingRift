@@ -1,5 +1,12 @@
 """Vast.ai Idle Shutdown Daemon (December 2025).
 
+DEPRECATED: Use UnifiedIdleShutdownDaemon from unified_idle_shutdown_daemon.py instead.
+This module will be removed in a future release.
+
+Migration:
+    from app.coordination.unified_idle_shutdown_daemon import create_vast_idle_daemon
+    daemon = create_vast_idle_daemon()
+
 Monitors Vast.ai GPU instances for idle detection and automatically
 terminates them to reduce costs. Especially important for ephemeral
 marketplace instances that charge by the hour.

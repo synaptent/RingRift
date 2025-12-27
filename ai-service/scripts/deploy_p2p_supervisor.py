@@ -155,10 +155,7 @@ set -e
 
 # Expand home directory
 RINGRIFT_PATH="{ringrift_path}"
-case "$RINGRIFT_PATH" in
-  "~/"*) RINGRIFT_PATH="$HOME/${{RINGRIFT_PATH#~/}}" ;;
-  "~") RINGRIFT_PATH="$HOME" ;;
-esac
+RINGRIFT_PATH="${{RINGRIFT_PATH/#~/$HOME}}"
 
 # Create directories
 mkdir -p "$RINGRIFT_PATH/logs"

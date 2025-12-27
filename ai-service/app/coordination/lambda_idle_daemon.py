@@ -1,5 +1,12 @@
 """Lambda Idle Shutdown Daemon (December 2025).
 
+DEPRECATED: Use UnifiedIdleShutdownDaemon from unified_idle_shutdown_daemon.py instead.
+This module will be removed in a future release.
+
+Migration:
+    from app.coordination.unified_idle_shutdown_daemon import create_lambda_idle_daemon
+    daemon = create_lambda_idle_daemon()
+
 Monitors Lambda Labs GPU nodes for idle detection and automatically
 terminates them to reduce costs.
 

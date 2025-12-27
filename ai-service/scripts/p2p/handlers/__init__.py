@@ -28,6 +28,7 @@ from .gauntlet import GauntletHandlersMixin
 from .gossip import GossipHandlersMixin
 from .relay import RelayHandlersMixin
 from .ssh_tournament import SSHTournamentHandlersMixin
+from .swim import SwimHandlersMixin
 from .tournament import TournamentHandlersMixin
 from .work_queue import WorkQueueHandlersMixin
 
@@ -40,6 +41,7 @@ __all__ = [
     "GossipHandlersMixin",
     "RelayHandlersMixin",
     "SSHTournamentHandlersMixin",
+    "SwimHandlersMixin",
     "TournamentHandlersMixin",
     "WorkQueueHandlersMixin",
 ]
