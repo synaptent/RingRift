@@ -718,19 +718,67 @@ class SSHClient:
 
 
 # =============================================================================
-# Client Pool / Factory
+# Client Pool / Factory (December 2025: Added TTL, health checks, LRU eviction)
 # =============================================================================
 
+import threading
+import time as time_module
+
 _client_pool: dict[str, SSHClient] = {}
+_client_last_used: dict[str, float] = {}  # Track last use time
+_client_pool_lock = threading.Lock()
+
+# Pool configuration
+MAX_POOL_SIZE = 50  # Maximum clients to keep in pool
+CLIENT_TTL_SECONDS = 1800  # 30 minutes max age
+HEALTH_CHECK_INTERVAL = 300  # Check health every 5 minutes
+
+
+def _evict_stale_clients() -> int:
+    """Evict stale clients from pool. Returns number evicted."""
+    now = time_module.time()
+    evicted = 0
+    to_remove = []
+
+    with _client_pool_lock:
+        for node_id, last_used in list(_client_last_used.items()):
+            if now - last_used > CLIENT_TTL_SECONDS:
+                to_remove.append(node_id)
+
+        # Also evict LRU if pool is too large
+        if len(_client_pool) > MAX_POOL_SIZE:
+            sorted_by_age = sorted(_client_last_used.items(), key=lambda x: x[1])
+            excess = len(_client_pool) - MAX_POOL_SIZE
+            for node_id, _ in sorted_by_age[:excess]:
+                if node_id not in to_remove:
+                    to_remove.append(node_id)
+
+        for node_id in to_remove:
+            if node_id in _client_pool:
+                del _client_pool[node_id]
+                del _client_last_used[node_id]
+                evicted += 1
+
+    if evicted > 0:
+        logger.debug(f"[SSHPool] Evicted {evicted} stale clients, pool size: {len(_client_pool)}")
+
+    return evicted
 
 
 def get_ssh_client(node_id_or_host: str) -> SSHClient:
     """Get SSH client for a node, creating if needed.
 
     Loads config from cluster_hosts.yaml if node_id matches.
+    Automatically evicts stale clients when pool grows too large.
     """
-    if node_id_or_host in _client_pool:
-        return _client_pool[node_id_or_host]
+    # Periodically evict stale clients
+    if len(_client_pool) > MAX_POOL_SIZE // 2:
+        _evict_stale_clients()
+
+    with _client_pool_lock:
+        if node_id_or_host in _client_pool:
+            _client_last_used[node_id_or_host] = time_module.time()
+            return _client_pool[node_id_or_host]
 
     # Try to load from cluster config
     config = SSHConfig.from_cluster_node(node_id_or_host)
@@ -739,15 +787,39 @@ def get_ssh_client(node_id_or_host: str) -> SSHClient:
         config = SSHConfig(host=node_id_or_host)
 
     client = SSHClient(config)
-    _client_pool[node_id_or_host] = client
+
+    with _client_pool_lock:
+        _client_pool[node_id_or_host] = client
+        _client_last_used[node_id_or_host] = time_module.time()
+
     return client
+
+
+def get_pool_stats() -> dict:
+    """Get SSH connection pool statistics."""
+    with _client_pool_lock:
+        now = time_module.time()
+        return {
+            "pool_size": len(_client_pool),
+            "max_pool_size": MAX_POOL_SIZE,
+            "ttl_seconds": CLIENT_TTL_SECONDS,
+            "clients": {
+                node_id: {
+                    "age_seconds": now - _client_last_used.get(node_id, now),
+                    "host": client.config.host,
+                }
+                for node_id, client in _client_pool.items()
+            },
+        }
 
 
 async def close_all_clients() -> None:
     """Close all SSH connections."""
-    for client in _client_pool.values():
-        await client.close()
-    _client_pool.clear()
+    with _client_pool_lock:
+        for client in _client_pool.values():
+            await client.close()
+        _client_pool.clear()
+        _client_last_used.clear()
 
 
 # =============================================================================

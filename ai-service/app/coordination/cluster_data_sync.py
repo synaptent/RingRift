@@ -324,16 +324,18 @@ async def sync_to_target(source: Path, target: EligibleSyncNode) -> SyncResult:
         "-o ServerAliveInterval=30 "
         "-o ServerAliveCountMax=3"
     )
+    # December 2025: Removed --partial to prevent corruption from stitched segments
+    # on connection resets. Fresh transfers are safer than resumed partial ones.
+    # See: resilient_transfer.py for background on the 955MB NPZ corruption incident.
     cmd = [
         "rsync",
         "-avz",
         "--progress",
         f"--bwlimit={bandwidth_kbps}",  # Per-provider bandwidth limit
         "--timeout=60",           # Per-file I/O timeout (shorter, more granular)
-        "--partial",              # Keep partial transfers for resume
-        "--partial-dir=.rsync-partial",
+        "--inplace",              # Direct write without temp file (faster, but need checksum)
         "--delay-updates",        # Atomic: put files in place at end
-        "--checksum",             # Verify integrity after transfer
+        "--checksum",             # Verify integrity during transfer
         "-e", ssh_opts,
         str(source),
         target_path,

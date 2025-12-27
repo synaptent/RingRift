@@ -105,6 +105,221 @@ def clear_gpu_memory(device: torch.device | None = None) -> None:
 
 
 # =============================================================================
+# CUDA Health Monitoring and Recovery (December 2025)
+# =============================================================================
+
+
+@dataclass
+class CudaHealthStatus:
+    """CUDA device health status."""
+    available: bool
+    device_id: int = 0
+    memory_allocated_mb: float = 0.0
+    memory_reserved_mb: float = 0.0
+    memory_total_mb: float = 0.0
+    last_check_time: float = 0.0
+    consecutive_failures: int = 0
+    last_error: str = ""
+
+
+# Global health status per device
+_cuda_health: dict[int, CudaHealthStatus] = {}
+_cuda_health_lock = threading.Lock()
+
+
+def check_cuda_health(device_id: int = 0, timeout_seconds: float = 5.0) -> CudaHealthStatus:
+    """Check CUDA device health with a small test operation.
+
+    Performs a quick tensor operation to verify device is responsive.
+    Tracks consecutive failures to detect persistent issues.
+
+    Args:
+        device_id: CUDA device ID to check
+        timeout_seconds: Max time for health check operation
+
+    Returns:
+        CudaHealthStatus with current device state
+    """
+    with _cuda_health_lock:
+        if device_id not in _cuda_health:
+            _cuda_health[device_id] = CudaHealthStatus(available=False, device_id=device_id)
+        status = _cuda_health[device_id]
+
+    status.last_check_time = time.time()
+
+    if not torch.cuda.is_available():
+        status.available = False
+        status.last_error = "CUDA not available"
+        return status
+
+    try:
+        device = torch.device(f"cuda:{device_id}")
+
+        # Quick test operation (create small tensor, do computation)
+        test_tensor = torch.zeros(10, 10, device=device)
+        _ = test_tensor.sum()
+        torch.cuda.synchronize(device)
+
+        # Get memory stats
+        status.memory_allocated_mb = torch.cuda.memory_allocated(device) / (1024 * 1024)
+        status.memory_reserved_mb = torch.cuda.memory_reserved(device) / (1024 * 1024)
+        props = torch.cuda.get_device_properties(device)
+        status.memory_total_mb = props.total_memory / (1024 * 1024)
+
+        status.available = True
+        status.consecutive_failures = 0
+        status.last_error = ""
+
+    except RuntimeError as e:
+        status.available = False
+        status.consecutive_failures += 1
+        status.last_error = str(e)
+        logger.warning(f"CUDA health check failed for device {device_id}: {e}")
+
+    except Exception as e:
+        status.available = False
+        status.consecutive_failures += 1
+        status.last_error = str(e)
+        logger.warning(f"CUDA health check error for device {device_id}: {e}")
+
+    with _cuda_health_lock:
+        _cuda_health[device_id] = status
+
+    return status
+
+
+def recover_cuda_device(device_id: int = 0, max_attempts: int = 3) -> bool:
+    """Attempt to recover a CUDA device after errors.
+
+    Recovery steps:
+    1. Clear CUDA memory cache
+    2. Synchronize device
+    3. Reset peak memory stats
+    4. Retry health check
+
+    Args:
+        device_id: CUDA device ID to recover
+        max_attempts: Maximum recovery attempts
+
+    Returns:
+        True if device recovered successfully
+    """
+    if not torch.cuda.is_available():
+        return False
+
+    device = torch.device(f"cuda:{device_id}")
+
+    for attempt in range(max_attempts):
+        logger.info(f"CUDA recovery attempt {attempt + 1}/{max_attempts} for device {device_id}")
+
+        try:
+            # Step 1: Garbage collect Python objects
+            gc.collect()
+
+            # Step 2: Clear CUDA cache
+            torch.cuda.empty_cache()
+
+            # Step 3: Synchronize to clear pending operations
+            try:
+                torch.cuda.synchronize(device)
+            except RuntimeError:
+                # Device may be in bad state, continue with recovery
+                pass
+
+            # Step 4: Reset peak memory stats
+            torch.cuda.reset_peak_memory_stats(device)
+
+            # Step 5: Short delay for device to stabilize
+            time.sleep(0.5 * (attempt + 1))
+
+            # Step 6: Verify recovery with health check
+            status = check_cuda_health(device_id)
+            if status.available:
+                logger.info(f"CUDA device {device_id} recovered successfully")
+                return True
+
+        except Exception as e:
+            logger.warning(f"CUDA recovery attempt {attempt + 1} failed: {e}")
+
+    logger.error(f"CUDA device {device_id} recovery failed after {max_attempts} attempts")
+    return False
+
+
+def get_device_with_recovery(
+    prefer_gpu: bool = True,
+    device_id: int = 0,
+    fallback_to_cpu: bool = True,
+) -> torch.device:
+    """Get device with automatic recovery on CUDA failure.
+
+    If CUDA device is unhealthy, attempts recovery before falling back to CPU.
+
+    Args:
+        prefer_gpu: Whether to prefer GPU
+        device_id: CUDA device ID to use
+        fallback_to_cpu: Whether to fallback to CPU on CUDA failure
+
+    Returns:
+        torch.device (CUDA, MPS, or CPU)
+    """
+    if not prefer_gpu:
+        return torch.device("cpu")
+
+    # Check CUDA first
+    if torch.cuda.is_available():
+        status = check_cuda_health(device_id)
+
+        if status.available:
+            return torch.device(f"cuda:{device_id}")
+
+        # Device unhealthy - attempt recovery
+        if status.consecutive_failures < 5:  # Don't keep trying if persistently failing
+            if recover_cuda_device(device_id):
+                return torch.device(f"cuda:{device_id}")
+
+        logger.warning(
+            f"CUDA device {device_id} unavailable after recovery "
+            f"(failures={status.consecutive_failures}). Falling back to CPU."
+        )
+
+    # Try MPS (Apple Silicon)
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+
+    if fallback_to_cpu:
+        return torch.device("cpu")
+
+    raise RuntimeError(f"No available compute device (CUDA device {device_id} unhealthy)")
+
+
+def log_cuda_memory_state(device_id: int = 0, prefix: str = "") -> None:
+    """Log current CUDA memory state for debugging.
+
+    Useful for diagnosing memory leaks and fragmentation.
+
+    Args:
+        device_id: CUDA device ID
+        prefix: Optional prefix for log message
+    """
+    if not torch.cuda.is_available():
+        return
+
+    try:
+        device = torch.device(f"cuda:{device_id}")
+        allocated = torch.cuda.memory_allocated(device) / (1024 * 1024)
+        reserved = torch.cuda.memory_reserved(device) / (1024 * 1024)
+        max_allocated = torch.cuda.max_memory_allocated(device) / (1024 * 1024)
+
+        logger.info(
+            f"{prefix}CUDA memory (device {device_id}): "
+            f"allocated={allocated:.1f}MB, reserved={reserved:.1f}MB, "
+            f"peak={max_allocated:.1f}MB, fragmentation={reserved - allocated:.1f}MB"
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log CUDA memory state: {e}")
+
+
+# =============================================================================
 # Model Compilation (torch.compile optimization)
 # =============================================================================
 

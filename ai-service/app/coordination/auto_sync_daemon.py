@@ -1219,14 +1219,15 @@ class AutoSyncDaemon:
             "-o ServerAliveInterval=30 "
             "-o ServerAliveCountMax=3"
         )
+        # December 2025: Removed --partial to prevent corruption from stitched segments
+        # on connection resets. Fresh transfers are safer than resumed partial ones.
         cmd = [
             "rsync",
             "-avz",
             "--progress",
             f"--bwlimit={bandwidth_kbps}",
             "--timeout=60",
-            "--partial",
-            "--partial-dir=.rsync-partial",
+            "--inplace",
             "--delay-updates",
             "--checksum",
             "-e", ssh_opts,

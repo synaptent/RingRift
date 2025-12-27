@@ -149,8 +149,28 @@ class LeafEvaluationBuffer:
         try:
             values, _ = self.neural_net.evaluate_batch(states, value_head=value_head)
         except (RuntimeError, ValueError, AttributeError) as e:
-            logger.warning(f"Batch evaluation failed: {e}")
-            values = [0.0] * len(states)
+            error_msg = str(e).lower()
+            # Check if this is a CUDA error that might be recoverable
+            if "cuda" in error_msg or "device" in error_msg or "gpu" in error_msg:
+                try:
+                    from .gpu_batch import clear_gpu_memory, recover_cuda_device
+                    logger.warning(f"Batch evaluation CUDA error, attempting recovery: {e}")
+                    clear_gpu_memory()
+                    if recover_cuda_device():
+                        # Retry after recovery
+                        try:
+                            values, _ = self.neural_net.evaluate_batch(states, value_head=value_head)
+                        except Exception as retry_err:
+                            logger.warning(f"Retry after CUDA recovery failed: {retry_err}")
+                            values = [0.0] * len(states)
+                    else:
+                        values = [0.0] * len(states)
+                except ImportError:
+                    logger.warning(f"Batch evaluation failed (no recovery available): {e}")
+                    values = [0.0] * len(states)
+            else:
+                logger.warning(f"Batch evaluation failed: {e}")
+                values = [0.0] * len(states)
 
         # Build result with perspective flipping.
         # For 2-player games (value_head is None), flip for opponent perspective.
@@ -979,6 +999,24 @@ class GumbelMCTSAI(BaseAI):
                     )
                     all_values.extend(values if values else [0.0] * len(batch_states))
                 except (RuntimeError, ValueError, AttributeError) as e:
+                    error_msg = str(e).lower()
+                    # Check if this is a recoverable CUDA error
+                    if "cuda" in error_msg or "device" in error_msg or "gpu" in error_msg:
+                        try:
+                            from .gpu_batch import clear_gpu_memory, recover_cuda_device
+                            logger.warning(f"GumbelMCTSAI: CUDA error, attempting recovery: {e}")
+                            clear_gpu_memory()
+                            if recover_cuda_device():
+                                try:
+                                    values, _ = self.neural_net.evaluate_batch(
+                                        batch_states, value_head=value_head
+                                    )
+                                    all_values.extend(values if values else [0.0] * len(batch_states))
+                                    continue  # Success after recovery
+                                except Exception as retry_err:
+                                    logger.warning(f"Retry after recovery failed: {retry_err}")
+                        except ImportError:
+                            pass
                     logger.warning(f"GumbelMCTSAI: Batch evaluation failed: {e}")
                     all_values.extend([0.0] * len(batch_states))
 
