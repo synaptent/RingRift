@@ -711,10 +711,16 @@ class SyncRouter:
                 self._on_cluster_capacity_changed,
             )
 
+            # Dec 2025: Subscribe to MODEL_SYNC_REQUESTED to trigger model re-download
+            router.subscribe(
+                DataEventType.MODEL_SYNC_REQUESTED.value,
+                self._on_model_sync_requested,
+            )
+
             logger.info(
                 "[SyncRouter] Wired to event router "
                 "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE, "
-                "NODE_RECOVERED, CLUSTER_CAPACITY_CHANGED)"
+                "NODE_RECOVERED, CLUSTER_CAPACITY_CHANGED, MODEL_SYNC_REQUESTED)"
             )
 
         except ImportError as e:

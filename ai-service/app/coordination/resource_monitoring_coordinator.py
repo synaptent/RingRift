@@ -316,7 +316,7 @@ class ResourceMonitoringCoordinator:
             f"level={level.value}, reason={reason}"
         )
 
-    async def _on_backpressure_released(self, event) -> None:
+    async def _on_backpressure_released(self, event: Any) -> None:
         """Handle BACKPRESSURE_RELEASED event."""
         payload = event.payload
         node_id = payload.get("node_id", "")
@@ -353,7 +353,7 @@ class ResourceMonitoringCoordinator:
 
         logger.info(f"[ResourceMonitoringCoordinator] Backpressure released on {node_id}")
 
-    async def _on_resource_constraint(self, event) -> None:
+    async def _on_resource_constraint(self, event: Any) -> None:
         """Handle RESOURCE_CONSTRAINT event."""
         payload = event.payload
         node_id = payload.get("node_id", "")
@@ -379,7 +379,7 @@ class ResourceMonitoringCoordinator:
             f"{constraint_type} - {message}"
         )
 
-    async def _on_job_preempted(self, event) -> None:
+    async def _on_job_preempted(self, event: Any) -> None:
         """Handle JOB_PREEMPTED event.
 
         Tracks job preemptions for resource contention analysis.

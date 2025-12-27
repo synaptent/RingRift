@@ -1850,8 +1850,54 @@ class SelfplayScheduler:
                 f"due to low quality (score={quality_score:.2f}, throttle={throttle_factor:.2f}x)"
             )
 
+            # Emit QUALITY_PENALTY_APPLIED event for curriculum feedback (Dec 2025)
+            if throttled_count > 0:
+                self._emit_quality_penalty_applied(
+                    quality_score=quality_score,
+                    throttle_factor=throttle_factor,
+                    throttled_count=throttled_count,
+                )
+
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling low quality warning: {e}")
+
+    def _emit_quality_penalty_applied(
+        self,
+        quality_score: float,
+        throttle_factor: float,
+        throttled_count: int,
+    ) -> None:
+        """Emit QUALITY_PENALTY_APPLIED event for each throttled config.
+
+        Closes the feedback loop: LOW_QUALITY_DATA_WARNING → penalty applied → curriculum adjustment.
+        """
+        try:
+            from app.core.async_context import fire_and_forget
+            from app.coordination.event_emitters import emit_quality_penalty_applied
+
+            for config_key, priority in self._config_priorities.items():
+                if priority.quality_penalty < 0:  # Only emit for penalized configs
+                    async def emit(key=config_key, penalty=-priority.quality_penalty):
+                        await emit_quality_penalty_applied(
+                            config_key=key,
+                            penalty=penalty,
+                            reason="low_quality_selfplay_data",
+                            current_weight=priority.exploration_boost,
+                            source="selfplay_scheduler",
+                            quality_score=quality_score,
+                            throttle_factor=throttle_factor,
+                        )
+
+                    fire_and_forget(emit())
+
+            logger.debug(
+                f"[SelfplayScheduler] Emitted QUALITY_PENALTY_APPLIED for {throttled_count} configs"
+            )
+
+        except ImportError:
+            logger.debug("[SelfplayScheduler] Event emitters not available for penalty emission")
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Failed to emit quality penalty: {e}")
 
     # =========================================================================
     # P2P Cluster Health Event Handlers (December 2025 - Critical Gap Fix)

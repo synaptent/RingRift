@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CRITICAL_DAEMONS",
+    "DAEMON_DEPENDENCIES",
     "DAEMON_STARTUP_ORDER",
     "DaemonInfo",
     "DaemonManagerConfig",
@@ -32,7 +33,9 @@ __all__ = [
     "DaemonType",
     "MAX_RESTART_DELAY",
     "DAEMON_RESTART_RESET_AFTER",
+    "get_daemon_startup_position",
     "mark_daemon_ready",
+    "validate_daemon_dependencies",
 ]
 
 
@@ -355,6 +358,98 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.IDLE_RESOURCE,          # 9. GPU utilization
     DaemonType.TRAINING_TRIGGER,       # 10. Training trigger (after pipeline)
 ]
+
+
+# P0.4 Dec 2025: Explicit dependency map for startup validation
+# Daemons MUST wait for all dependencies to be running before starting.
+# This prevents race conditions where events are emitted before handlers are ready.
+DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
+    # Core infrastructure (no dependencies)
+    DaemonType.EVENT_ROUTER: set(),
+    DaemonType.DAEMON_WATCHDOG: {DaemonType.EVENT_ROUTER},
+
+    # Pipeline processors (depend on event system)
+    DaemonType.DATA_PIPELINE: {DaemonType.EVENT_ROUTER},
+    DaemonType.FEEDBACK_LOOP: {DaemonType.EVENT_ROUTER},
+
+    # Sync daemons (depend on pipeline being ready to handle events)
+    DaemonType.AUTO_SYNC: {
+        DaemonType.EVENT_ROUTER,
+        DaemonType.DATA_PIPELINE,
+        DaemonType.FEEDBACK_LOOP,
+    },
+
+    # Queue management (depend on event system)
+    DaemonType.QUEUE_POPULATOR: {DaemonType.EVENT_ROUTER},
+    DaemonType.WORK_QUEUE_MONITOR: {DaemonType.EVENT_ROUTER, DaemonType.QUEUE_POPULATOR},
+    DaemonType.COORDINATOR_HEALTH_MONITOR: {DaemonType.EVENT_ROUTER},
+
+    # Resource management (depend on queue being populated)
+    DaemonType.IDLE_RESOURCE: {DaemonType.EVENT_ROUTER, DaemonType.QUEUE_POPULATOR},
+
+    # Training coordination (depend on pipeline and sync)
+    DaemonType.TRAINING_TRIGGER: {
+        DaemonType.EVENT_ROUTER,
+        DaemonType.DATA_PIPELINE,
+        DaemonType.AUTO_SYNC,
+    },
+
+    # Evaluation daemons
+    DaemonType.EVALUATION: {DaemonType.EVENT_ROUTER, DaemonType.TRAINING_TRIGGER},
+    DaemonType.AUTO_PROMOTION: {DaemonType.EVENT_ROUTER, DaemonType.EVALUATION},
+
+    # Distribution daemons
+    DaemonType.MODEL_DISTRIBUTION: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
+    DaemonType.NPZ_DISTRIBUTION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+
+    # P2P daemons
+    DaemonType.GOSSIP_SYNC: {DaemonType.EVENT_ROUTER},
+    DaemonType.P2P_BACKEND: set(),  # Runs independently
+    DaemonType.P2P_AUTO_DEPLOY: {DaemonType.EVENT_ROUTER},
+
+    # Monitoring daemons
+    DaemonType.CLUSTER_MONITOR: {DaemonType.EVENT_ROUTER},
+    DaemonType.QUEUE_MONITOR: {DaemonType.EVENT_ROUTER},
+    DaemonType.REPLICATION_MONITOR: {DaemonType.EVENT_ROUTER},
+
+    # Multi-provider orchestrator
+    DaemonType.MULTI_PROVIDER: {DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE},
+}
+
+
+def validate_daemon_dependencies(
+    daemon_type: DaemonType,
+    running_daemons: set[DaemonType],
+) -> tuple[bool, list[DaemonType]]:
+    """Check if all dependencies for a daemon are running.
+
+    Args:
+        daemon_type: The daemon to check dependencies for.
+        running_daemons: Set of currently running daemon types.
+
+    Returns:
+        Tuple of (all_satisfied, missing_deps).
+        If all_satisfied is True, missing_deps will be empty.
+    """
+    required = DAEMON_DEPENDENCIES.get(daemon_type, set())
+    missing = [dep for dep in required if dep not in running_daemons]
+    return (len(missing) == 0, missing)
+
+
+def get_daemon_startup_position(daemon_type: DaemonType) -> int:
+    """Get the startup position for a daemon in DAEMON_STARTUP_ORDER.
+
+    Args:
+        daemon_type: The daemon type to look up.
+
+    Returns:
+        Position (0-indexed) in startup order, or -1 if not in order.
+        Daemons not in the order list can start after ordered daemons.
+    """
+    try:
+        return DAEMON_STARTUP_ORDER.index(daemon_type)
+    except ValueError:
+        return -1
 
 
 def mark_daemon_ready(daemon_type: DaemonType) -> None:
