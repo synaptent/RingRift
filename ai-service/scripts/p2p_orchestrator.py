@@ -1827,6 +1827,8 @@ class P2POrchestrator(
             # Hardware-aware limits (wired Dec 2025)
             get_max_selfplay_for_node_fn=get_max_selfplay_for_node if HAS_HW_AWARE_LIMITS else None,
             get_hybrid_selfplay_limits_fn=get_hybrid_selfplay_limits if HAS_HW_AWARE_LIMITS else None,
+            # Safeguards callback (wired Dec 2025) - halt selfplay during emergency
+            is_emergency_active_fn=_safeguards.is_emergency_active if HAS_SAFEGUARDS and _safeguards else None,
             verbose=self.verbose,
         )
 
@@ -23468,8 +23470,8 @@ print(json.dumps({{
             logger.info(f"LOCAL: Memory at {node.memory_percent:.0f}% - skipping job starts")
             return 0
 
-        # Calculate target jobs for this node
-        target_selfplay = self._target_selfplay_jobs_for_node(node)
+        # Calculate target jobs for this node (delegated to SelfplayScheduler Dec 2025)
+        target_selfplay = self.selfplay_scheduler.get_target_jobs_for_node(node)
         current_jobs = int(getattr(node, "selfplay_jobs", 0) or 0)
 
         # Start jobs if below target
@@ -24013,167 +24015,8 @@ print(json.dumps({{
     # Backward compatibility alias (GPU selfplay now redirects to diverse/hybrid)
     _schedule_gpu_selfplay_on_node = _schedule_diverse_selfplay_on_node
 
-    def _target_selfplay_jobs_for_node(self, node: NodeInfo) -> int:
-        """Return the desired selfplay concurrency for a node.
-
-        Uses unified resource targets for consistent 60-80% utilization:
-        - Backpressure-aware: Reduces jobs when training queue is full
-        - Adaptive scaling: Increases jobs when underutilized, decreases when overloaded
-        - Host-tier aware: Adjusts targets based on hardware capability
-
-        Target: 60-80% CPU/GPU utilization for optimal training throughput.
-        """
-        # Check safeguards first
-        if HAS_SAFEGUARDS and _safeguards and _safeguards.is_emergency_active():
-            return 0
-
-        # Check backpressure - reduce production when training queue is full
-        backpressure_factor = 1.0
-        if HAS_NEW_COORDINATION:
-            try:
-                if should_stop_production(QueueType.TRAINING_DATA):
-                    logger.info(f"Backpressure STOP: training queue full, halting selfplay on {node.node_id}")
-                    return 0
-                if should_throttle_production(QueueType.TRAINING_DATA):
-                    backpressure_factor = get_throttle_factor(QueueType.TRAINING_DATA)
-                    logger.info(f"Backpressure throttle: factor={backpressure_factor:.2f}")
-            except Exception as e:
-                logger.info(f"Backpressure check error: {e}")
-
-        # Minimum memory requirement - skip low-memory machines to avoid OOM
-        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
-        if memory_gb > 0 and memory_gb < MIN_MEMORY_GB_FOR_TASKS:
-            return 0
-
-        # Extract node metrics
-        has_gpu = bool(getattr(node, "has_gpu", False))
-        cpu_count = int(getattr(node, "cpu_count", 0) or 0)
-        cpu_percent = float(getattr(node, "cpu_percent", 0.0) or 0.0)
-        mem_percent = float(getattr(node, "memory_percent", 0.0) or 0.0)
-        disk_percent = float(getattr(node, "disk_percent", 0.0) or 0.0)
-        gpu_percent = float(getattr(node, "gpu_percent", 0.0) or 0.0)
-        gpu_mem_percent = float(getattr(node, "gpu_memory_percent", 0.0) or 0.0)
-        current_jobs = int(getattr(node, "selfplay_jobs", 0) or 0)
-
-        # Record utilization for adaptive feedback
-        if HAS_NEW_COORDINATION:
-            with contextlib.suppress(Exception):
-                record_utilization(node.node_id, cpu_percent, gpu_percent, mem_percent, current_jobs)
-
-        # Use unified resource targets if available
-        if HAS_NEW_COORDINATION:
-            try:
-                # Get host-specific targets adjusted for tier and backpressure
-                host_targets = get_host_targets(node.node_id)
-
-                # Use the unified target calculator
-                target_selfplay = get_target_job_count(
-                    node.node_id,
-                    cpu_count if cpu_count > 0 else 8,
-                    cpu_percent,
-                    gpu_percent if has_gpu else 0.0,
-                )
-
-                # Check if we should scale up (underutilized)
-                scale_up, reason = should_scale_up(
-                    node.node_id, cpu_percent, gpu_percent, current_jobs
-                )
-                if scale_up and current_jobs < target_selfplay:
-                    # Controlled scale-up: Add 2-4 jobs at a time, not all at once
-                    scale_up_increment = min(4, target_selfplay - current_jobs)
-                    target_selfplay = current_jobs + scale_up_increment
-                    if self.verbose:
-                        logger.info(f"Scale-up on {node.node_id}: {reason}, target={target_selfplay}")
-
-                # Check if we should scale down (overloaded)
-                scale_down, reduction, reason = should_scale_down(
-                    node.node_id, cpu_percent, gpu_percent, mem_percent
-                )
-                if scale_down:
-                    target_selfplay = max(1, current_jobs - reduction)
-                    logger.info(f"Scale-down on {node.node_id}: {reason}, target={target_selfplay}")
-
-                # Apply backpressure factor
-                target_selfplay = int(target_selfplay * backpressure_factor)
-
-                # Apply host-specific max
-                target_selfplay = min(target_selfplay, host_targets.max_selfplay)
-
-                return int(max(1, target_selfplay))
-
-            except Exception as e:
-                logger.info(f"Resource targets error, falling back to hardware-aware: {e}")
-
-        # FALLBACK: Use unified hardware-aware limits from resource_optimizer
-        # This ensures consistent limits across all orchestrators
-        gpu_name = (getattr(node, "gpu_name", "") or "")
-        gpu_count = int(getattr(node, "gpu_count", 1) or 1) if has_gpu else 0
-
-        if HAS_HW_AWARE_LIMITS and get_max_selfplay_for_node is not None:
-            # Use single source of truth from resource_optimizer
-            max_selfplay = get_max_selfplay_for_node(
-                node_id=node.node_id,
-                gpu_count=gpu_count,
-                gpu_name=gpu_name,
-                cpu_count=cpu_count,
-                memory_gb=memory_gb,
-                has_gpu=has_gpu,
-            )
-        else:
-            # Minimal fallback when resource_optimizer unavailable
-            # Values calibrated from observed workloads (GH200: 48 jobs at 70% GPU)
-            if has_gpu:
-                gpu_upper = gpu_name.upper()
-                if any(g in gpu_upper for g in ["GH200"]):
-                    # GH200 with unified 480GB memory - CPU is bottleneck
-                    max_selfplay = int(cpu_count * 0.8) if cpu_count > 0 else 48
-                elif any(g in gpu_upper for g in ["H100", "H200"]):
-                    max_selfplay = min(int(cpu_count * 0.5), 48) if cpu_count > 0 else 32
-                elif any(g in gpu_upper for g in ["A100", "L40"]):
-                    max_selfplay = min(int(cpu_count * 0.4), 32) if cpu_count > 0 else 24
-                elif any(g in gpu_upper for g in ["5090"]):
-                    # RTX 5090 (32GB) - very high capacity
-                    max_selfplay = min(int(cpu_count * 0.3), gpu_count * 12, 64) if cpu_count > 0 else 48
-                elif any(g in gpu_upper for g in ["A10", "4090", "3090"]):
-                    max_selfplay = min(int(cpu_count * 0.3), 24) if cpu_count > 0 else 16
-                elif any(g in gpu_upper for g in ["4080", "4070", "3080", "4060"]):
-                    max_selfplay = min(int(cpu_count * 0.25), 12) if cpu_count > 0 else 8
-                elif any(g in gpu_upper for g in ["3070", "3060", "2060", "2070", "2080"]):
-                    max_selfplay = min(int(cpu_count * 0.2), 10) if cpu_count > 0 else 6
-                else:
-                    max_selfplay = min(int(cpu_count * 0.2), 8) if cpu_count > 0 else 6
-            else:
-                # CPU-only: ~0.3 jobs per core, capped at 32
-                max_selfplay = min(int(cpu_count * 0.3), 32) if cpu_count > 0 else 8
-
-        target_selfplay = max_selfplay
-
-        # Utilization-aware adjustments (target 60-80%)
-        gpu_overloaded = gpu_percent > 85 or gpu_mem_percent > 85
-        cpu_overloaded = cpu_percent > 80
-        gpu_has_headroom = gpu_percent < 60 and gpu_mem_percent < 75
-        cpu_has_headroom = cpu_percent < 60
-
-        # Scale DOWN if overloaded
-        if gpu_overloaded:
-            target_selfplay = max(2, target_selfplay - 2)
-        if cpu_overloaded:
-            target_selfplay = max(2, target_selfplay - 1)
-
-        # Scale UP only if both resources have headroom (gradual)
-        if (not gpu_overloaded and not cpu_overloaded and current_jobs > 0 and (has_gpu and gpu_has_headroom and cpu_has_headroom)) or ((not has_gpu and cpu_has_headroom) and current_jobs < target_selfplay):
-            target_selfplay = min(target_selfplay, current_jobs + 2)
-
-        # Resource pressure warnings
-        if disk_percent >= DISK_WARNING_THRESHOLD:
-            target_selfplay = min(target_selfplay, 4)
-        if mem_percent >= MEMORY_WARNING_THRESHOLD:
-            target_selfplay = min(target_selfplay, 2)
-
-        # Apply backpressure factor
-        target_selfplay = int(target_selfplay * backpressure_factor)
-
-        return int(max(1, target_selfplay))
+    # NOTE: _target_selfplay_jobs_for_node() removed Dec 2025 (160 LOC).
+    # Use self.selfplay_scheduler.get_target_jobs_for_node() instead.
 
     # NOTE: _get_hybrid_job_targets() removed Dec 2025 (38 LOC).
     # Use self.selfplay_scheduler.get_hybrid_job_targets() instead.
@@ -24207,7 +24050,7 @@ print(json.dumps({{
             # Calculate capacity and utilization for each node
             node_stats = []
             for node in healthy_nodes:
-                target = self._target_selfplay_jobs_for_node(node)
+                target = self.selfplay_scheduler.get_target_jobs_for_node(node)
                 current = int(getattr(node, "selfplay_jobs", 0) or 0)
                 utilization = current / max(1, target)  # How full is this node
                 capacity_score = target  # Higher = more powerful
@@ -24346,7 +24189,7 @@ print(json.dumps({{
                 pressure_reasons.append("disk")
 
             if pressure_reasons:
-                desired = self._target_selfplay_jobs_for_node(node)
+                desired = self.selfplay_scheduler.get_target_jobs_for_node(node)
                 if node.memory_percent >= MEMORY_CRITICAL_THRESHOLD or node.disk_percent >= DISK_CRITICAL_THRESHOLD:
                     desired = 0
 
@@ -24401,7 +24244,7 @@ print(json.dumps({{
         # restart sweep to kill untracked jobs and recover capacity.
         for node in all_nodes:
             try:
-                target_selfplay = self._target_selfplay_jobs_for_node(node)
+                target_selfplay = self.selfplay_scheduler.get_target_jobs_for_node(node)
                 dynamic_threshold = max(16, target_selfplay * 3)
                 runaway_threshold = (
                     int(RUNAWAY_SELFPLAY_PROCESS_THRESHOLD)
