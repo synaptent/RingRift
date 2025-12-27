@@ -310,6 +310,11 @@ class DaemonLifecycleManager:
             try:
                 info.stable_since = time.time()  # Mark start of stable period
                 await factory()
+                # December 2025 fix: If factory returns normally (no exception),
+                # the daemon completed (either finished its work or skipped on coordinator).
+                # Break the loop to prevent infinite restarts.
+                logger.debug(f"{daemon_type.value} factory completed normally, stopping")
+                break
             except asyncio.CancelledError:
                 logger.debug(f"{daemon_type.value} cancelled")
                 break

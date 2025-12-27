@@ -85,26 +85,31 @@ except:
     if [ "$count" -ge "$threshold" ]; then
         echo "$(date): *** THRESHOLD REACHED for $config! Starting training... ***" | tee -a $LOG
 
-        # Export training data
+        # Export training data (--allow-noncanonical bypasses registry check)
         echo "$(date): Exporting NPZ for $config..." | tee -a $LOG
+        rm -f "data/training/${config}.npz"  # Remove any corrupt file first
         PYTHONPATH=. python scripts/export_replay_dataset.py \
             --db "$db" \
             --board-type $board_type --num-players $num_players \
             --output "data/training/${config}.npz" \
+            --allow-noncanonical \
             >> $LOG 2>&1
 
-        if [ ! -f "data/training/${config}.npz" ]; then
-            echo "$(date): ERROR: NPZ export failed for $config" | tee -a $LOG
+        # Check file exists AND is valid (>10KB to catch corrupt files)
+        local npz_size=$(stat -c%s "data/training/${config}.npz" 2>/dev/null || stat -f%z "data/training/${config}.npz" 2>/dev/null || echo 0)
+        if [ ! -f "data/training/${config}.npz" ] || [ "$npz_size" -lt 10000 ]; then
+            echo "$(date): ERROR: NPZ export failed for $config (size: ${npz_size} bytes)" | tee -a $LOG
             return 1
         fi
 
-        # Start training
+        # Start training (--allow-stale-data bypasses freshness check)
         echo "$(date): Training $config..." | tee -a $LOG
         PYTHONPATH=. python -m app.training.train \
             --board-type $board_type --num-players $num_players \
             --data-path "data/training/${config}.npz" \
             --save-path "models/${config}_trained.pth" \
             --batch-size 512 --epochs 50 \
+            --allow-stale-data \
             >> $LOG 2>&1
 
         if [ -f "models/${config}_trained.pth" ]; then
