@@ -10263,15 +10263,8 @@ print(json.dumps(result))
                     return job
         return None
 
-    async def _dispatch_training_job(self, job_config: dict[str, Any]) -> TrainingJob | None:
-        """Dispatch a training job to an appropriate worker.
-
-        .. deprecated:: December 2025
-            Delegates to TrainingCoordinator.dispatch_training_job().
-            This wrapper method will be removed in Q2 2026.
-        """
-        # Delegate to TrainingCoordinator (December 2025 refactoring)
-        return await self.training_coordinator.dispatch_training_job(job_config)
+    # NOTE: _dispatch_training_job() removed Dec 2025 (9 LOC).
+    # Use self.training_coordinator.dispatch_training_job() directly.
 
     async def _check_and_trigger_training(self):
         """Periodic check for training readiness (leader only)."""
