@@ -417,13 +417,13 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     # =========================================================================
     DaemonType.QUALITY_MONITOR,        # 16. Quality monitoring (depends on DATA_PIPELINE)
     DaemonType.DISTILLATION,           # 17. Distillation (depends on TRAINING_TRIGGER)
-    DaemonType.UNIFIED_PROMOTION,      # 18. Unified promotion (depends on EVALUATION)
 
     # =========================================================================
-    # Evaluation and promotion chain (positions 19-21)
-    # Must be in order: EVALUATION -> AUTO_PROMOTION -> MODEL_DISTRIBUTION
+    # Evaluation and promotion chain (positions 18-22)
+    # Must be in order: EVALUATION -> (UNIFIED_PROMOTION) -> AUTO_PROMOTION -> MODEL_DISTRIBUTION
     # =========================================================================
-    DaemonType.EVALUATION,             # 19. Model evaluation (depends on TRAINING_TRIGGER)
+    DaemonType.EVALUATION,             # 18. Model evaluation (depends on TRAINING_TRIGGER)
+    DaemonType.UNIFIED_PROMOTION,      # 19. Unified promotion (depends on EVALUATION)
     DaemonType.AUTO_PROMOTION,         # 20. Auto-promotion (depends on EVALUATION)
     DaemonType.MODEL_DISTRIBUTION,     # 21. Model distribution (depends on AUTO_PROMOTION)
 ]

@@ -38,6 +38,10 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.coordination.protocols import HealthCheckResult
 from enum import Enum
 from typing import Any
 
@@ -370,6 +374,55 @@ class BandwidthManager:
                 for a in self._allocations.values()
             ],
         }
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check bandwidth manager health for daemon monitoring.
+
+        December 2025: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with health status.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            status = self.get_status()
+            total_transfers = status.get("active_transfers", 0)
+            max_concurrent = status.get("max_concurrent", 0)
+            usage_percent = status.get("usage_percent", 0)
+
+            # Degraded if at capacity
+            if total_transfers >= max_concurrent:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"BandwidthManager at capacity: {total_transfers}/{max_concurrent} transfers",
+                    details={
+                        "active_transfers": total_transfers,
+                        "max_concurrent": max_concurrent,
+                        "usage_percent": usage_percent,
+                    },
+                )
+
+            # Healthy
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"BandwidthManager healthy: {total_transfers}/{max_concurrent} transfers, {usage_percent:.1f}% bandwidth",
+                details={
+                    "active_transfers": total_transfers,
+                    "max_concurrent": max_concurrent,
+                    "usage_percent": usage_percent,
+                    "per_host": status.get("per_host", {}),
+                },
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"BandwidthManager health check error: {e}",
+            )
 
 
 # Phase 5 (Dec 2025): Use canonical SyncResult from sync_constants

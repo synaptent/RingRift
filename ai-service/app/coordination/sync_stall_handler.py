@@ -252,7 +252,68 @@ class SyncStallHandler:
         self._stall_count = 0
         self._recovery_count = 0
         self._failed_recoveries = 0
-        logger.debug("[SyncStallHandler] State reset")
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check stall handler health for daemon monitoring.
+
+        December 2025: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with health status.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            stats = self.get_stats()
+            active_penalties = stats.get("active_penalties", 0)
+            stall_count = stats.get("stall_count", 0)
+            recovery_count = stats.get("recovery_count", 0)
+            failed_recoveries = stats.get("failed_recoveries", 0)
+
+            # Calculate recovery success rate
+            total_stalls = stall_count
+            recovery_rate = (
+                recovery_count / total_stalls * 100
+                if total_stalls > 0
+                else 100.0
+            )
+
+            # Degraded if too many failed recoveries
+            if failed_recoveries > 5:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"SyncStallHandler degraded: {failed_recoveries} failed recoveries",
+                    details={
+                        "stall_count": stall_count,
+                        "recovery_count": recovery_count,
+                        "failed_recoveries": failed_recoveries,
+                        "active_penalties": active_penalties,
+                        "recovery_rate_percent": recovery_rate,
+                    },
+                )
+
+            # Healthy
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"SyncStallHandler healthy: {stall_count} stalls, {recovery_count} recoveries, {active_penalties} active penalties",
+                details={
+                    "stall_count": stall_count,
+                    "recovery_count": recovery_count,
+                    "failed_recoveries": failed_recoveries,
+                    "active_penalties": active_penalties,
+                    "recovery_rate_percent": recovery_rate,
+                    "penalized_sources": stats.get("penalized_sources", []),
+                },
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"SyncStallHandler health check error: {e}",
+            )
 
 
 # Module-level singleton

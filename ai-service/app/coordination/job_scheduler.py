@@ -1681,6 +1681,46 @@ class NodeOverloadedHandler:
             "max_jobs_to_migrate": self.max_jobs_to_migrate,
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check overload handler health for daemon monitoring.
+
+        December 2025: Added for unified daemon health monitoring.
+
+        Returns:
+            HealthCheckResult with health status.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            stats = self.get_stats()
+            subscribed = stats.get("subscribed", False)
+            overload_count = stats.get("overload_count", 0)
+            jobs_migrated = stats.get("jobs_migrated", 0)
+
+            # Not subscribed is degraded
+            if not subscribed:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message="NodeOverloadedHandler not subscribed to events",
+                    details=stats,
+                )
+
+            # Healthy
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"NodeOverloadedHandler healthy: {overload_count} overloads handled, {jobs_migrated} jobs migrated",
+                details=stats,
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"NodeOverloadedHandler health check error: {e}",
+            )
+
 
 # Singleton overload handler
 _overload_handler: NodeOverloadedHandler | None = None

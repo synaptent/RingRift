@@ -1321,8 +1321,12 @@ GUMBEL_C_PUCT = 1.5
 # Gumbel MCTS budget constants (SOURCE OF TRUTH)
 # Previously imported from gumbel_common.py, now defined here to avoid torch import
 # gumbel_common.py should import FROM here, not the other way around
+#
+# December 2025: Increased STANDARD from 150 to 800 to match AlphaZero.
+# Low budgets (150) produce weak training data that plateaus at ~1600 Elo.
+# AlphaZero uses 800 simulations; this is the minimum for strong models.
 GUMBEL_BUDGET_THROUGHPUT = 64    # Maximum speed, low quality (for fast iteration)
-GUMBEL_BUDGET_STANDARD = 150     # Default balance for training games
+GUMBEL_BUDGET_STANDARD = 800     # Default for training selfplay (AlphaZero uses 800)
 GUMBEL_BUDGET_QUALITY = 800      # High quality for evaluation/gauntlet
 GUMBEL_BUDGET_ULTIMATE = 1600    # Maximum quality for final benchmarks
 GUMBEL_DEFAULT_BUDGET = GUMBEL_BUDGET_STANDARD
