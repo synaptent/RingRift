@@ -95,6 +95,10 @@ psutil==7.1.3
 # Distributed training (cluster worker discovery)
 zeroconf>=0.100.0
 
+# P2P gossip-based membership (SWIM protocol)
+# Provides leaderless failure detection with O(1) bandwidth, <5s failure detection
+swim-p2p>=1.2.0
+
 # OpenTelemetry for distributed tracing (per Section 4.3)
 opentelemetry-api==1.29.0
 opentelemetry-sdk==1.29.0

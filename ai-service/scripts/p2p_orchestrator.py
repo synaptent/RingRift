@@ -153,6 +153,46 @@ def get_tier_calibrator():
     return _tier_calibrator
 
 
+# SWIM membership manager for leaderless gossip-based membership
+_swim_manager = None
+SWIM_AVAILABLE = False
+
+
+def get_swim_manager(node_id: str | None = None, bind_port: int = 7947):
+    """Get the SWIM membership manager singleton (lazy load).
+
+    SWIM (Scalable Weakly-consistent Infection-style Membership) provides:
+    - O(1) message complexity per node (constant bandwidth)
+    - Failure detection in <5 seconds (vs 60+ seconds with heartbeat-based)
+    - No single leader required - truly distributed
+    - Suspicion mechanism to reduce false positives
+
+    Args:
+        node_id: Node identifier (required for first initialization)
+        bind_port: UDP port for SWIM protocol (default 7947)
+
+    Returns:
+        SwimMembershipManager instance or None if swim-p2p not installed
+    """
+    global _swim_manager, SWIM_AVAILABLE
+    if _swim_manager is None and node_id is not None:
+        try:
+            from app.p2p.swim_adapter import SwimMembershipManager, SWIM_AVAILABLE as _swim_avail
+            SWIM_AVAILABLE = _swim_avail
+            if SWIM_AVAILABLE:
+                _swim_manager = SwimMembershipManager.from_distributed_hosts(
+                    node_id=node_id,
+                    bind_port=bind_port,
+                )
+                logger.info(f"SWIM membership manager initialized for {node_id}")
+            else:
+                logger.warning("swim-p2p not installed - using HTTP heartbeats only")
+        except ImportError as e:
+            logger.warning(f"SWIM adapter not available: {e}")
+            _swim_manager = None
+    return _swim_manager
+
+
 # Board priority overrides from unified_loop.yaml
 # 0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW (lower value = higher priority)
 _board_priority_cache: dict[str, int] | None = None
@@ -471,8 +511,9 @@ from scripts.p2p.utils import (
     systemd_notify_ready,
     systemd_notify_watchdog,
 )
-from scripts.p2p.managers import NodeSelector, StateManager
+from scripts.p2p.managers import NodeSelector, StateManager, SyncPlanner, SyncPlannerConfig
 from scripts.p2p.managers.state_manager import PersistedLeaderState
+from scripts.p2p.metrics_manager import MetricsManager
 
 # Unified resource checking utilities (80% max utilization)
 # Includes graceful degradation for dynamic workload management
@@ -1323,6 +1364,9 @@ class P2POrchestrator(
         self.state_manager.init_database()
         self._cluster_epoch = self.state_manager.load_cluster_epoch()
 
+        # Metrics recording (Phase 1 refactoring: delegated to MetricsManager)
+        self.metrics_manager = MetricsManager(self.db_path)
+
         # Event flags
         self.running = True
         self.election_in_progress = False
@@ -1382,6 +1426,25 @@ class P2POrchestrator(
         # Self info
         self.self_info = self._create_self_info()
 
+        # Phase 1 Refactoring: NodeSelector for node ranking/selection
+        self.node_selector = NodeSelector(
+            get_peers=lambda: self.peers,
+            get_self_info=lambda: self.self_info,
+            peers_lock=self.peers_lock,
+            get_training_jobs=lambda: self.training_jobs,
+        )
+
+        # Phase 2A Refactoring: SyncPlanner for data synchronization
+        self.sync_planner = SyncPlanner(
+            node_id=self.node_id,
+            data_directory=self.get_data_directory(),
+            get_peers=lambda: self.peers,
+            get_self_info=lambda: self.self_info,
+            peers_lock=self.peers_lock,
+            is_leader=lambda: self._is_leader(),
+            config=SyncPlannerConfig(),
+        )
+
         print(
             f"[P2P] Initialized node {node_id} on {host}:{port} "
             f"(advertise {self.advertise_host}:{self.advertise_port})"
@@ -1404,6 +1467,11 @@ class P2POrchestrator(
                 logger.info("HybridTransport: enabled (HTTP with SSH fallback for Vast)")
             except Exception as e:
                 logger.info(f"HybridTransport: failed to initialize: {e}")
+
+        # SWIM-based leaderless membership (gossip protocol)
+        # This provides faster failure detection (<5s vs 60s+) and O(1) bandwidth
+        self._swim_manager = get_swim_manager(node_id=node_id, bind_port=7947)
+        self._swim_started = False
 
     def _is_leader(self) -> bool:
         """Check if this node is the current cluster leader with valid lease."""
@@ -2653,12 +2721,13 @@ class P2POrchestrator(
         """
         self._cluster_epoch = self.state_manager.increment_cluster_epoch()
 
-    # Class-level metrics buffer for batched writes (5% speedup)
+    # Class-level metrics buffer (legacy, kept for backward compatibility)
+    # Phase 1 Refactoring: Delegated to MetricsManager
     _metrics_buffer: list[tuple] = []
     _metrics_buffer_lock = threading.Lock()
     _metrics_last_flush: float = 0.0
-    _metrics_flush_interval: float = 30.0  # Flush every 30 seconds
-    _metrics_max_buffer: int = 100  # Or when buffer reaches 100 entries
+    _metrics_flush_interval: float = 30.0
+    _metrics_max_buffer: int = 100
 
     def record_metric(
         self,
@@ -2670,6 +2739,8 @@ class P2POrchestrator(
     ):
         """Record a metric to the history table for observability.
 
+        Phase 1 Refactoring: Delegated to MetricsManager.
+
         Metric types:
         - training_loss: NNUE training loss
         - elo_rating: Model Elo rating
@@ -2677,52 +2748,21 @@ class P2POrchestrator(
         - selfplay_games_per_hour: Game generation rate
         - validation_rate: GPU selfplay validation rate
         - tournament_win_rate: Tournament win rate for new model
-
-        Uses buffered writes for better performance (batches every 30s or 100 entries).
         """
-        entry = (
-            time.time(),
-            metric_type,
-            board_type,
-            num_players,
-            value,
-            json.dumps(metadata) if metadata else None,
+        self.metrics_manager.record_metric(
+            metric_type=metric_type,
+            value=value,
+            board_type=board_type,
+            num_players=num_players,
+            metadata=metadata,
         )
 
-        with self._metrics_buffer_lock:
-            self._metrics_buffer.append(entry)
-            should_flush = (
-                len(self._metrics_buffer) >= self._metrics_max_buffer or
-                time.time() - self._metrics_last_flush > self._metrics_flush_interval
-            )
-
-        if should_flush:
-            self._flush_metrics_buffer()
-
     def _flush_metrics_buffer(self):
-        """Flush buffered metrics to database using batch insert."""
-        with self._metrics_buffer_lock:
-            if not self._metrics_buffer:
-                return
-            entries = self._metrics_buffer.copy()
-            self._metrics_buffer.clear()
-            self._metrics_last_flush = time.time()
+        """Flush buffered metrics to database.
 
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
-            cursor = conn.cursor()
-            cursor.executemany("""
-                INSERT INTO metrics_history
-                (timestamp, metric_type, board_type, num_players, value, metadata)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, entries)
-            conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to flush metrics buffer ({len(entries)} entries): {e}")
-        finally:
-            if conn:
-                conn.close()
+        Phase 1 Refactoring: Delegated to MetricsManager.
+        """
+        self.metrics_manager.flush()
 
     def get_metrics_history(
         self,
@@ -4142,182 +4182,60 @@ class P2POrchestrator(
 
     # ============================================
     # Training Node Priority Sync
+    # Phase 1 Refactoring: Delegated to NodeSelector
     # ============================================
 
     def _get_training_primary_nodes(self, count: int = TRAINING_NODE_COUNT) -> list[NodeInfo]:
         """Get the top N nodes by GPU power for training priority.
 
-        Returns nodes sorted by GPU processing power (highest first).
-        These nodes should receive selfplay data first for training.
+        Phase 1 Refactoring: Delegated to NodeSelector.
         """
-        with self.peers_lock:
-            # Include self if we have a GPU
-            all_nodes = list(self.peers.values())
-            if self.self_info.has_gpu:
-                all_nodes.append(self.self_info)
-
-        # Filter to only GPU nodes that are alive and healthy
-        gpu_nodes = [
-            node for node in all_nodes
-            if node.has_gpu and node.is_alive() and node.gpu_power_score() > 0
-        ]
-
-        # Sort by GPU power score (descending)
-        gpu_nodes.sort(key=lambda n: n.gpu_power_score(), reverse=True)
-
-        # Return top N
-        return gpu_nodes[:count]
+        return self.node_selector.get_training_primary_nodes(count)
 
     def _get_training_nodes_ranked(self) -> list[dict[str, Any]]:
-        """Get all GPU nodes with their power rankings for dashboard display."""
-        with self.peers_lock:
-            all_nodes = list(self.peers.values())
-            if self.self_info.has_gpu:
-                all_nodes.append(self.self_info)
+        """Get all GPU nodes with their power rankings for dashboard display.
 
-        result = []
-        for node in all_nodes:
-            if node.has_gpu:
-                result.append({
-                    "node_id": node.node_id,
-                    "gpu_name": node.gpu_name,
-                    "gpu_power_score": node.gpu_power_score(),
-                    "memory_gb": node.memory_gb,
-                    "is_alive": node.is_alive(),
-                    "is_healthy": node.is_healthy(),
-                    "gpu_percent": node.gpu_percent,
-                })
-
-        # Sort by power score
-        result.sort(key=lambda x: x["gpu_power_score"], reverse=True)
-        return result
+        Phase 1 Refactoring: Delegated to NodeSelector.
+        """
+        return self.node_selector.get_training_nodes_ranked()
 
     # ============================================
     # CPU Node Priority for Data Processing
+    # Phase 1 Refactoring: Delegated to NodeSelector
     # ============================================
 
     def _get_cpu_primary_nodes(self, count: int = 3) -> list[NodeInfo]:
         """Get the top N nodes by CPU power for CPU-intensive tasks.
 
-        Returns nodes sorted by CPU processing power (highest first).
-        These nodes should receive CPU-intensive work like NPZ export,
-        data aggregation, etc. Vast nodes are strongly preferred.
+        Phase 1 Refactoring: Delegated to NodeSelector.
         """
-        with self.peers_lock:
-            all_nodes = list(self.peers.values())
-            all_nodes.append(self.self_info)
-
-        # Filter to only alive and healthy nodes with CPU info
-        cpu_nodes = [
-            node for node in all_nodes
-            if node.is_alive() and node.is_healthy() and node.cpu_power_score() > 0
-        ]
-
-        # Sort by CPU power score (descending) - vast nodes will rank highest
-        cpu_nodes.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
-
-        # Return top N
-        return cpu_nodes[:count]
+        return self.node_selector.get_cpu_primary_nodes(count)
 
     def _get_cpu_nodes_ranked(self) -> list[dict[str, Any]]:
-        """Get all nodes with their CPU power rankings for dashboard display."""
-        with self.peers_lock:
-            all_nodes = list(self.peers.values())
-            all_nodes.append(self.self_info)
+        """Get all nodes with their CPU power rankings for dashboard display.
 
-        result = []
-        for node in all_nodes:
-            if node.cpu_count and node.cpu_count > 0:
-                result.append({
-                    "node_id": node.node_id,
-                    "cpu_count": node.cpu_count,
-                    "cpu_power_score": node.cpu_power_score(),
-                    "cpu_percent": node.cpu_percent,
-                    "memory_gb": node.memory_gb,
-                    "is_alive": node.is_alive(),
-                    "is_healthy": node.is_healthy(),
-                    "has_gpu": node.has_gpu,
-                })
-
-        # Sort by CPU power score (descending)
-        result.sort(key=lambda x: x["cpu_power_score"], reverse=True)
-        return result
+        Phase 1 Refactoring: Delegated to NodeSelector.
+        """
+        return self.node_selector.get_cpu_nodes_ranked()
 
     # ============================================
     # Task-Specific Node Selection
+    # Phase 1 Refactoring: Delegated to NodeSelector
     # ============================================
 
     def _get_best_gpu_node_for_training(self) -> NodeInfo | None:
         """Get the best GPU node for neural network training.
 
-        Prioritizes:
-        1. GPU power score (H100 > GH200 > A10 > consumer GPUs)
-        2. Low current load
-        3. Not already running training
+        Phase 1 Refactoring: Delegated to NodeSelector.
         """
-        with self.peers_lock:
-            all_nodes = list(self.peers.values())
-            all_nodes.append(self.self_info)
-
-        # Filter to GPU nodes that are healthy and not retired
-        gpu_nodes = [
-            n for n in all_nodes
-            if n.has_gpu
-            and n.is_alive()
-            and n.is_healthy()
-            and not getattr(n, "retired", False)
-            and n.gpu_power_score() > 0
-        ]
-
-        if not gpu_nodes:
-            return None
-
-        # Prefer nodes not already running training
-        nodes_with_training = {
-            j.worker_node for j in self.training_jobs.values()
-            if j.status in ("running", "queued")
-        }
-        available = [n for n in gpu_nodes if n.node_id not in nodes_with_training]
-        candidates = available if available else gpu_nodes
-
-        # Sort by GPU power (descending), then load (ascending)
-        candidates.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
-        return candidates[0] if candidates else None
+        return self.node_selector.get_best_gpu_node_for_training()
 
     def _get_best_cpu_node_for_gauntlet(self) -> NodeInfo | None:
         """Get the best CPU node for gauntlet/tournament work.
 
-        Prioritizes Vast instances with high CPU count (200+ vCPUs).
-        Gauntlets are CPU-bound and benefit from massive parallelism.
+        Phase 1 Refactoring: Delegated to NodeSelector.
         """
-        with self.peers_lock:
-            all_nodes = list(self.peers.values())
-            all_nodes.append(self.self_info)
-
-        # Filter to healthy nodes with high CPU count
-        cpu_nodes = [
-            n for n in all_nodes
-            if n.is_alive()
-            and n.is_healthy()
-            and not getattr(n, "retired", False)
-            and n.cpu_power_score() > 0
-        ]
-
-        if not cpu_nodes:
-            return None
-
-        # Strongly prefer Vast nodes (identified by "vast" in node_id or high CPU count)
-        vast_nodes = [
-            n for n in cpu_nodes
-            if "vast" in n.node_id.lower() or n.cpu_count >= 64
-        ]
-
-        # Use vast nodes if available, otherwise fall back to any CPU node
-        candidates = vast_nodes if vast_nodes else cpu_nodes
-
-        # Sort by CPU power (descending), then load (ascending)
-        candidates.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
-        return candidates[0] if candidates else None
+        return self.node_selector.get_best_cpu_node_for_gauntlet()
 
     async def _dispatch_gauntlet_to_cpu_node(
         self,
@@ -6714,6 +6632,107 @@ class P2POrchestrator(
                 for field in status_fields:
                     if field in event_payload:
                         self.peers[node_id][field] = event_payload[field]
+
+    # ============================================================
+    # SWIM Native Integration - swim-p2p membership status
+    # ============================================================
+
+    async def handle_swim_status(self, request: web.Request) -> web.Response:
+        """GET /swim/status - Return SWIM membership protocol status.
+
+        SWIM provides leaderless gossip-based membership with:
+        - O(1) bandwidth per node (constant message complexity)
+        - <5 second failure detection (vs 60+ seconds with heartbeats)
+        - Suspicion mechanism to reduce false positives
+        """
+        try:
+            if not self._swim_manager:
+                return web.json_response({
+                    "status": "disabled",
+                    "reason": "swim-p2p not installed or SWIM adapter not available",
+                    "node_id": self.node_id,
+                    "fallback": "http_heartbeats",
+                })
+
+            summary = self._swim_manager.get_membership_summary()
+            alive_peers = self._swim_manager.get_alive_peers() if self._swim_started else []
+
+            return web.json_response({
+                "status": "enabled" if self._swim_started else "initialized",
+                "node_id": self.node_id,
+                "swim": summary,
+                "alive_peers": alive_peers,
+                "peer_count": len(alive_peers),
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting SWIM status: {e}")
+            return web.json_response({
+                "status": "error",
+                "error": str(e),
+                "node_id": self.node_id,
+            }, status=500)
+
+    async def _swim_membership_loop(self) -> None:
+        """Background task that integrates SWIM membership with P2P peer tracking.
+
+        This task:
+        1. Starts the SWIM manager if available
+        2. Periodically syncs SWIM membership with our peers dict
+        3. Uses SWIM failure detection to mark peers as failed faster
+        """
+        if not self._swim_manager:
+            logger.info("SWIM membership loop: disabled (swim-p2p not available)")
+            return
+
+        try:
+            # Start SWIM manager
+            started = await self._swim_manager.start()
+            if not started:
+                logger.warning("SWIM membership loop: failed to start SWIM manager")
+                return
+
+            self._swim_started = True
+            logger.info("SWIM membership loop: started successfully")
+
+            # Sync SWIM membership with our peer tracking every 10 seconds
+            while self.running:
+                try:
+                    alive_peers = self._swim_manager.get_alive_peers()
+
+                    # Update peers from SWIM detection
+                    now = time.time()
+                    with self.peers_lock:
+                        for peer_id in alive_peers:
+                            if peer_id not in self.peers:
+                                # New peer detected by SWIM
+                                self.peers[peer_id] = {
+                                    "last_seen": now,
+                                    "state": "alive",
+                                    "swim_detected": True,
+                                }
+                            else:
+                                # Update existing peer
+                                self.peers[peer_id]["last_seen"] = now
+                                self.peers[peer_id]["swim_alive"] = True
+
+                except Exception as e:
+                    logger.warning(f"SWIM sync error: {e}")
+
+                await asyncio.sleep(10)  # Sync every 10 seconds
+
+        except asyncio.CancelledError:
+            logger.info("SWIM membership loop: cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"SWIM membership loop error: {e}", exc_info=True)
+        finally:
+            if self._swim_manager and self._swim_started:
+                try:
+                    await self._swim_manager.stop()
+                except Exception as e:
+                    logger.warning(f"Error stopping SWIM manager: {e}")
+                self._swim_started = False
 
     async def handle_coordinator(self, request: web.Request) -> web.Response:
         """Handle coordinator announcement from new leader.
@@ -26927,6 +26946,9 @@ print(json.dumps({{
         # Serf integration routes (battle-tested SWIM gossip)
         app.router.add_post('/serf/event', self.handle_serf_event)
 
+        # Native SWIM integration (swim-p2p library)
+        app.router.add_get('/swim/status', self.handle_swim_status)
+
         app.router.add_post('/coordinator', self.handle_coordinator)
         app.router.add_post('/start_job', self.handle_start_job)
         app.router.add_post('/stop_job', self.handle_stop_job)
@@ -27152,6 +27174,8 @@ print(json.dumps({{
             self._create_safe_task(self._voter_heartbeat_loop(), "voter_heartbeat"),
             # IMPROVED: Advanced NAT management for better connectivity
             self._create_safe_task(self._nat_management_loop(), "nat_management"),
+            # SWIM gossip membership for leaderless failure detection (<5s vs 60s+)
+            self._create_safe_task(self._swim_membership_loop(), "swim_membership"),
         ]
 
         # Add git update loop if enabled
