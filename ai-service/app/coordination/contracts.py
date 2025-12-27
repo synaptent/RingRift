@@ -57,10 +57,14 @@ __all__ = [
 class CoordinatorStatus(str, Enum):
     """Status of a coordinator.
 
-    Canonical enum combining values from protocols.py and coordinator_base.py.
+    Canonical enum combining values from protocols.py, coordinator_base.py,
+    and handler_base.py. This is the single source of truth.
+
+    December 2025: Added STARTING for handler lifecycle compatibility.
     """
 
     INITIALIZING = "initializing"
+    STARTING = "starting"
     READY = "ready"
     RUNNING = "running"
     PAUSED = "paused"
@@ -68,7 +72,7 @@ class CoordinatorStatus(str, Enum):
     STOPPING = "stopping"
     STOPPED = "stopped"
     ERROR = "error"
-    DEGRADED = "degraded"  # Running but with reduced functionality
+    DEGRADED = "degraded"
 
 
 # =============================================================================

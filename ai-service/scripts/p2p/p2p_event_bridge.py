@@ -43,6 +43,44 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Import canonical config key parser (December 2025 - DRY consolidation)
+try:
+    from app.utils.canonical_naming import parse_config_key as _canonical_parse_config_key
+    HAS_CANONICAL_PARSING = True
+except ImportError:
+    HAS_CANONICAL_PARSING = False
+
+
+def _parse_config_key_safe(config_key: str) -> tuple[str, int]:
+    """Parse config_key into (board_type, num_players) with fallback.
+
+    Uses canonical parse_config_key when available, with inline fallback
+    for standalone P2P mode.
+
+    Returns:
+        (board_type, num_players) tuple. Returns ("", 0) if parsing fails.
+    """
+    if not config_key or "_" not in config_key:
+        return "", 0
+
+    # Try canonical parser first (December 2025)
+    if HAS_CANONICAL_PARSING:
+        try:
+            return _canonical_parse_config_key(config_key)
+        except ValueError:
+            return "", 0
+
+    # Fallback for standalone P2P mode
+    parts = config_key.rsplit("_", 1)
+    if len(parts) != 2:
+        return "", 0
+    board_type = parts[0]
+    try:
+        num_players = int(parts[1].rstrip("p"))
+        return board_type, num_players
+    except ValueError:
+        return "", 0
+
 # =============================================================================
 # Event Router Import (with fallback for standalone P2P mode)
 # =============================================================================

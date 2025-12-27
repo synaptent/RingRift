@@ -50,46 +50,12 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Callable, ClassVar
 
+# Import canonical types from contracts.py (single source of truth)
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 logger = logging.getLogger(__name__)
-
-
-class CoordinatorStatus(str, Enum):
-    """Standard daemon/coordinator status values."""
-
-    STOPPED = "stopped"
-    STARTING = "starting"
-    RUNNING = "running"
-    STOPPING = "stopping"
-    DEGRADED = "degraded"
-    ERROR = "error"
-
-
-@dataclass
-class HealthCheckResult:
-    """Standard health check result format.
-
-    Used by DaemonManager for health monitoring.
-    Compatible with health_check_orchestrator.py protocol.
-    """
-
-    healthy: bool
-    status: CoordinatorStatus = CoordinatorStatus.STOPPED
-    message: str = ""
-    details: dict[str, Any] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "healthy": self.healthy,
-            "status": self.status.value if isinstance(self.status, Enum) else self.status,
-            "message": self.message,
-            "details": self.details,
-            "timestamp": self.timestamp,
-        }
 
 
 @dataclass
