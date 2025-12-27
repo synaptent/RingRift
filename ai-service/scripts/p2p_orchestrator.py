@@ -224,6 +224,7 @@ def _load_loop_classes():
             IpDiscoveryLoop,
             TailscaleRecoveryLoop,
             TailscalePeerDiscoveryLoop,
+            FollowerDiscoveryLoop,
             AutoScalingLoop,
             HealthAggregationLoop,
             JobReaperLoop,
@@ -2811,6 +2812,59 @@ class P2POrchestrator(
                 manager.register(worker_pull)
             except (ImportError, TypeError) as e:
                 logger.debug(f"WorkerPullLoop: not available: {e}")
+
+            # FollowerDiscoveryLoop - December 27, 2025
+            # Simple peer list discovery for followers
+            def _get_known_peer_addresses() -> list[str]:
+                """Get list of known peer addresses for discovery."""
+                with self.peers_lock:
+                    return [
+                        f"{p.host}:{p.port}"
+                        for p in self.peers.values()
+                        if p.is_alive() and p.host and p.port
+                    ]
+
+            async def _query_peer_list(peer_addr: str) -> list[str] | None:
+                """Query a peer for its peer list."""
+                try:
+                    host, port_str = peer_addr.rsplit(":", 1)
+                    port = int(port_str)
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            f"http://{host}:{port}/peers",
+                            timeout=aiohttp.ClientTimeout(total=5.0),
+                        ) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                return data.get("peers", [])
+                except (aiohttp.ClientError, ValueError, asyncio.TimeoutError):
+                    pass
+                return None
+
+            def _add_discovered_peer(peer_addr: str) -> None:
+                """Add a newly discovered peer address."""
+                try:
+                    host, port_str = peer_addr.rsplit(":", 1)
+                    port = int(port_str)
+                    # Queue for background probing
+                    asyncio.create_task(
+                        self._send_heartbeat_to_peer(host, port),
+                        name=f"discover_peer_{peer_addr}",
+                    )
+                except ValueError:
+                    logger.debug(f"Invalid peer address format: {peer_addr}")
+
+            try:
+                from scripts.p2p.loops import FollowerDiscoveryLoop
+                follower_discovery = FollowerDiscoveryLoop(
+                    get_known_peers=_get_known_peer_addresses,
+                    query_peer_list=_query_peer_list,
+                    add_peer=_add_discovered_peer,
+                    is_leader=lambda: self.role == NodeRole.LEADER,
+                )
+                manager.register(follower_discovery)
+            except (ImportError, TypeError) as e:
+                logger.debug(f"FollowerDiscoveryLoop: not available: {e}")
 
             self._loops_registered = True
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
