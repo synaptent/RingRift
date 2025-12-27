@@ -1,3 +1,16 @@
+"""Canonical placement helpers for the Python rules engine.
+
+Python analogue of the shared TS PlacementAggregate / placementHelpers
+modules. This module centralises ring placement validation,
+enumeration, skip-placement eligibility, and application helpers
+so that mutators/validators and higher-level engines can delegate
+to a single canonical implementation.
+
+Semantics are aligned with the P2.1 placement spec and the TS
+PlacementAggregate, but implemented in terms of the existing
+GameEngine helpers to avoid duplicating low-level movement or
+capture geometry.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,21 +24,6 @@ from app.models import (
     MoveType,
     Position,
 )
-
-"""
-Canonical placement helpers for the Python rules engine.
-
-Python analogue of the shared TS PlacementAggregate / placementHelpers
-modules. This module centralises ring placement validation,
-enumeration, skip-placement eligibility, and application helpers
-so that mutators/validators and higher-level engines can delegate
-to a single canonical implementation.
-
-Semantics are aligned with the P2.1 placement spec and the TS
-PlacementAggregate, but implemented in terms of the existing
-GameEngine helpers to avoid duplicating low-level movement or
-capture geometry.
-"""
 
 
 @dataclass

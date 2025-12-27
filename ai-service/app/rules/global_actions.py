@@ -1,3 +1,9 @@
+"""Global action utilities for RingRift rules engine.
+
+Provides high-level action helpers including territory processing context
+derivation and global move generation. Supports the RulesEngine with
+composite operations that span multiple game subsystems.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,9 @@
+"""Default RulesEngine implementation backed by validators and mutators.
+
+Provides the primary RulesEngine implementation that composes validators and
+mutators to process game moves. Mirrors the TS GameEngine validator/mutator
+architecture for move validation and state transitions.
+"""
 from __future__ import annotations
 
 import os

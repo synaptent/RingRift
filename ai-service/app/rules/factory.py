@@ -1,3 +1,8 @@
+"""Factory for RulesEngine instances.
+
+Provides singleton access to RulesEngine with configurable options for
+shadow contracts and performance tuning. Entry point for AI and training code.
+"""
 from __future__ import annotations
 
 import os

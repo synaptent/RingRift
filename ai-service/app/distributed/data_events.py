@@ -1388,6 +1388,88 @@ async def emit_data_sync_failed(
 
 
 # =============================================================================
+# Model Distribution Events (December 2025)
+# =============================================================================
+
+async def emit_model_distribution_started(
+    total_models: int,
+    target_hosts: int,
+    source: str = "",
+) -> None:
+    """Emit a MODEL_DISTRIBUTION_STARTED event.
+
+    December 2025: Enables tracking of model sync operations.
+
+    Args:
+        total_models: Number of models being distributed
+        target_hosts: Number of target hosts
+        source: Component initiating distribution
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.MODEL_DISTRIBUTION_STARTED,
+        payload={
+            "total_models": total_models,
+            "target_hosts": target_hosts,
+        },
+        source=source,
+    ))
+
+
+async def emit_model_distribution_complete(
+    models_collected: int,
+    models_distributed: int,
+    target_hosts: int,
+    duration: float,
+    source: str = "",
+) -> None:
+    """Emit a MODEL_DISTRIBUTION_COMPLETE event.
+
+    December 2025: Enables tracking of successful model sync completion.
+
+    Args:
+        models_collected: Number of models collected from cluster
+        models_distributed: Number of models distributed to cluster
+        target_hosts: Number of target hosts
+        duration: Distribution duration in seconds
+        source: Component that completed distribution
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.MODEL_DISTRIBUTION_COMPLETE,
+        payload={
+            "models_collected": models_collected,
+            "models_distributed": models_distributed,
+            "target_hosts": target_hosts,
+            "duration": duration,
+        },
+        source=source,
+    ))
+
+
+async def emit_model_distribution_failed(
+    error: str,
+    partial_models: int = 0,
+    source: str = "",
+) -> None:
+    """Emit a MODEL_DISTRIBUTION_FAILED event.
+
+    December 2025: Enables tracking of failed model sync operations.
+
+    Args:
+        error: Error message
+        partial_models: Number of models partially synced before failure
+        source: Component where distribution failed
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.MODEL_DISTRIBUTION_FAILED,
+        payload={
+            "error": error,
+            "partial_models": partial_models,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
 # Host Status Events
 # =============================================================================
 

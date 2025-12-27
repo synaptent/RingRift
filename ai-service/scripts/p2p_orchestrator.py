@@ -686,6 +686,114 @@ async def _emit_data_sync_failed(
         logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_FAILED: {e}")
 
 
+async def _emit_model_distribution_started(
+    total_models: int,
+    target_hosts: int,
+    source: str = "p2p_model_sync_loop",
+) -> None:
+    """Safely emit MODEL_DISTRIBUTION_STARTED event when model sync begins.
+
+    December 2025: Enables tracking of model distribution operations.
+
+    Args:
+        total_models: Number of models being distributed
+        target_hosts: Number of target hosts
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.data_events import emit_model_distribution_started
+        await emit_model_distribution_started(
+            total_models=total_models,
+            target_hosts=target_hosts,
+            source=source,
+        )
+        logger.debug(
+            f"[P2P Event] Emitted MODEL_DISTRIBUTION_STARTED "
+            f"({total_models} models to {target_hosts} hosts)"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_STARTED: {e}")
+
+
+async def _emit_model_distribution_complete(
+    models_collected: int,
+    models_distributed: int,
+    target_hosts: int,
+    duration: float,
+    source: str = "p2p_model_sync_loop",
+) -> None:
+    """Safely emit MODEL_DISTRIBUTION_COMPLETE event when model sync finishes.
+
+    December 2025: Enables tracking of successful model distribution.
+
+    Args:
+        models_collected: Number of models collected from cluster
+        models_distributed: Number of models distributed to cluster
+        target_hosts: Number of target hosts
+        duration: Distribution duration in seconds
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.data_events import emit_model_distribution_complete
+        await emit_model_distribution_complete(
+            models_collected=models_collected,
+            models_distributed=models_distributed,
+            target_hosts=target_hosts,
+            duration=duration,
+            source=source,
+        )
+        logger.info(
+            f"[P2P Event] Emitted MODEL_DISTRIBUTION_COMPLETE "
+            f"(collected={models_collected}, distributed={models_distributed} in {duration:.1f}s)"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_COMPLETE: {e}")
+
+
+async def _emit_model_distribution_failed(
+    error: str,
+    partial_models: int = 0,
+    source: str = "p2p_model_sync_loop",
+) -> None:
+    """Safely emit MODEL_DISTRIBUTION_FAILED event when model sync fails.
+
+    December 2025: Enables error tracking for model distribution.
+
+    Args:
+        error: Error message
+        partial_models: Number of models partially synced before failure
+        source: Caller module
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.distributed.data_events import emit_model_distribution_failed
+        await emit_model_distribution_failed(
+            error=error,
+            partial_models=partial_models,
+            source=source,
+        )
+        logger.warning(
+            f"[P2P Event] Emitted MODEL_DISTRIBUTION_FAILED: {error} "
+            f"(partial: {partial_models})"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_FAILED: {e}")
+
+
 # Add project root to path for scripts.lib imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

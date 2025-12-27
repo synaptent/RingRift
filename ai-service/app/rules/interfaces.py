@@ -1,3 +1,8 @@
+"""Protocol interfaces for RingRift rules engine components.
+
+Defines the core abstractions (Validator, Mutator, RulesEngine) that enable
+pluggable rule implementations. Mirrors the TS interface architecture.
+"""
 from __future__ import annotations
 
 from typing import Protocol

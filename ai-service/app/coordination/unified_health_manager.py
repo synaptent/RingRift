@@ -967,6 +967,105 @@ class UnifiedHealthManager(CoordinatorBase):
                 f"Coordinator health critical (score={health_score:.2f}): {reason}",
             )
 
+    async def _on_coordinator_shutdown(self, event) -> None:
+        """Handle COORDINATOR_SHUTDOWN event - mark coordinator as offline.
+
+        Dec 2025: P0 gap fix - wires coordinator lifecycle to health monitoring.
+        When a coordinator gracefully shuts down, we:
+        1. Mark the coordinator/node as offline in our health state
+        2. Trip circuit breaker for the component
+        3. Log for cluster visibility
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        coordinator_name = payload.get("coordinator_name", "unknown")
+        node_id = payload.get("node_id", coordinator_name)
+        reason = payload.get("reason", "graceful_shutdown")
+        timestamp = payload.get("timestamp", time.time())
+
+        logger.info(
+            f"[UnifiedHealthManager] COORDINATOR_SHUTDOWN: {coordinator_name} "
+            f"(node={node_id}, reason={reason})"
+        )
+
+        # Update node health state
+        node_state = self._get_node_state(node_id)
+        node_state.is_healthy = False
+        node_state.is_responsive = False
+        node_state.last_health_update = timestamp
+        node_state.failure_count += 1
+
+        # Trip circuit breaker for this coordinator
+        component_key = f"coordinator:{coordinator_name}"
+        self._on_component_failure(component_key)
+
+        # Record as informational error (shutdown is expected behavior)
+        error = ErrorRecord(
+            error_id=self._generate_error_id(),
+            component=f"coordinator:{coordinator_name}",
+            error_type="coordinator_shutdown",
+            message=f"Coordinator shutdown: {reason}",
+            node_id=node_id,
+            severity=ErrorSeverity.INFO,
+            context={
+                "coordinator_name": coordinator_name,
+                "reason": reason,
+                "shutdown_timestamp": timestamp,
+            },
+        )
+        self._record_error(error)
+
+    async def _on_coordinator_heartbeat(self, event) -> None:
+        """Handle COORDINATOR_HEARTBEAT event - update liveness timestamp.
+
+        Dec 2025: P0 gap fix - wires coordinator lifecycle to health monitoring.
+        When a coordinator sends a heartbeat, we:
+        1. Update its last-seen timestamp
+        2. Mark it as healthy/responsive if it was previously offline
+        3. Reset failure count on successful heartbeats
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        coordinator_name = payload.get("coordinator_name", "unknown")
+        node_id = payload.get("node_id", coordinator_name)
+        health_score = payload.get("health_score", 1.0)
+        timestamp = payload.get("timestamp", time.time())
+
+        # Update node health state
+        node_state = self._get_node_state(node_id)
+        node_state.last_health_update = timestamp
+        node_state.last_heartbeat = timestamp
+
+        # If node was previously unhealthy, mark as recovered
+        if not node_state.is_healthy:
+            logger.info(
+                f"[UnifiedHealthManager] Coordinator recovered via heartbeat: "
+                f"{coordinator_name} (node={node_id})"
+            )
+            node_state.is_healthy = True
+            node_state.is_responsive = True
+            node_state.failure_count = 0
+
+            # Record recovery
+            recovery = RecoveryRecord(
+                recovery_id=self._generate_recovery_id(),
+                error_id=f"shutdown_{node_id}",
+                component=f"coordinator:{coordinator_name}",
+                strategy="heartbeat_recovery",
+                started_at=timestamp,
+                completed_at=timestamp,
+                successful=True,
+            )
+            self._record_recovery(recovery)
+
+            # Reset circuit breaker on recovery
+            component_key = f"coordinator:{coordinator_name}"
+            if component_key in self._circuit_breakers:
+                self._circuit_breakers[component_key].record_success()
+        else:
+            # Already healthy, just update timestamps
+            node_state.is_responsive = True
+
     async def _on_deadlock_detected(self, event) -> None:
         """Handle DEADLOCK_DETECTED event - log and trigger recovery.
 

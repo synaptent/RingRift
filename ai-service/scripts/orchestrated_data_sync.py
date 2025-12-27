@@ -121,8 +121,9 @@ async def check_node_space(node: TrainingNode) -> float:
     if code == 0:
         try:
             return float(output.rstrip("G"))
-        except:
-            pass
+        except (ValueError, AttributeError) as e:
+            # Dec 2025: Narrow exception - float() may fail on malformed output
+            logger.debug(f"[check_node_space] Could not parse disk space '{output}': {e}")
     return 0
 
 

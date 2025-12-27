@@ -1,3 +1,8 @@
+"""Chain capture logic for RingRift rules engine.
+
+Implements chain capture mechanics including segment recording, jump validation,
+and attack direction calculation. Mirrors TS ChainCaptureAggregate.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

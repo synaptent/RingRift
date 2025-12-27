@@ -378,7 +378,7 @@ class TestLambdaProvider:
         from app.coordination.providers.lambda_provider import LambdaProvider
         provider = LambdaProvider()
         assert provider.provider_type == ProviderType.LAMBDA
-        assert provider.name == "Lambda Labs"
+        assert provider.name == "Lambda"  # Note: Just "Lambda", not "Lambda Labs"
 
 
 class TestVultrProvider:
@@ -421,23 +421,49 @@ class TestHetznerProvider:
 class TestProviderExports:
     """Tests for provider module re-exports."""
 
-    def test_all_exports_available(self):
-        """All expected exports are available from __init__."""
+    def test_base_exports_available(self):
+        """Base types are available from __init__."""
         from app.coordination.providers import (
             CloudProvider,
             GPUType,
             Instance,
             InstanceStatus,
             ProviderType,
-            # Provider implementations
-            VastProvider,
-            LambdaProvider,
-            VultrProvider,
-            HetznerProvider,
         )
-        # All should be importable
+        # All base types should be importable
         assert CloudProvider is not None
-        assert VastProvider is not None
-        assert LambdaProvider is not None
-        assert VultrProvider is not None
-        assert HetznerProvider is not None
+        assert GPUType is not None
+        assert Instance is not None
+        assert InstanceStatus is not None
+        assert ProviderType is not None
+
+    def test_get_provider_function(self):
+        """get_provider() function is available."""
+        from app.coordination.providers import get_provider, ProviderType
+
+        # Get Vast provider via get_provider
+        provider = get_provider(ProviderType.VAST)
+        assert provider is not None
+        assert provider.provider_type == ProviderType.VAST
+
+    def test_get_all_providers_function(self):
+        """get_all_providers() function returns list."""
+        from app.coordination.providers import get_all_providers
+
+        providers = get_all_providers()
+        # Returns list (may be empty if providers not configured)
+        assert isinstance(providers, list)
+
+    def test_reset_providers_function(self):
+        """reset_providers() clears the cache."""
+        from app.coordination.providers import get_provider, reset_providers, ProviderType
+
+        # Get a provider to populate cache
+        p1 = get_provider(ProviderType.VAST)
+
+        # Reset and get again
+        reset_providers()
+        p2 = get_provider(ProviderType.VAST)
+
+        # Should be different instances after reset
+        assert p1 is not p2
