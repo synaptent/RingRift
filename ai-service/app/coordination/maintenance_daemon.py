@@ -816,6 +816,49 @@ class MaintenanceDaemon:
             },
         }
 
+    def health_check(self):
+        """Check daemon health status.
+
+        December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Maintenance daemon not running",
+            )
+
+        # Calculate time since last maintenance runs
+        now = time.time()
+        hours_since_log = (now - self._stats.last_log_rotation) / 3600 if self._stats.last_log_rotation else float('inf')
+        hours_since_vacuum = (now - self._stats.last_db_vacuum) / 3600 if self._stats.last_db_vacuum else float('inf')
+
+        # Warning if maintenance tasks are overdue
+        if hours_since_log > self.config.log_rotation_interval_hours * 3:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Log rotation overdue ({hours_since_log:.1f}h since last run)",
+                details=self.get_status(),
+            )
+
+        if hours_since_vacuum > self.config.db_vacuum_interval_hours * 1.5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Database vacuum overdue ({hours_since_vacuum:.1f}h since last run)",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Maintenance daemon running (logs: {self._stats.logs_rotated}, vacuums: {self._stats.databases_vacuumed})",
+            details=self.get_status(),
+        )
+
 
 # Module-level singleton
 _maintenance_daemon: MaintenanceDaemon | None = None

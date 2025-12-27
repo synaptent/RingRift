@@ -539,7 +539,7 @@ _CRITICAL_MODULES = [
 _OPTIONAL_MODULES = [
     ("app.coordination.sync_router", "Intelligent sync routing"),
     ("app.coordination.sync_bandwidth", "Bandwidth management"),
-    ("app.coordination.ephemeral_sync", "Ephemeral host sync"),
+    ("app.coordination.auto_sync_daemon", "Ephemeral host sync"),  # Migrated from ephemeral_sync
     ("app.coordination.training_freshness", "Data freshness checks"),
 ]
 

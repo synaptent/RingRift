@@ -18,6 +18,8 @@ BaseLoop (abstract)
     │
     ├── QueuePopulatorLoop       - Maintains work queue depth (leader only)
     ├── EloSyncLoop              - Keeps unified_elo.db consistent across cluster
+    ├── TrainingSyncLoop         - Syncs selfplay data to training nodes (leader only)
+    ├── ManifestCollectionLoop   - Collects cluster/local data manifests
     │
     ├── Coordination Loops (coordination_loops.py)
     │   ├── AutoScalingLoop      - Scales cluster based on work queue depth
@@ -246,18 +248,20 @@ class MyLoop(BaseLoop):
 
 ## Loop Implementation Status
 
-| Loop                  | Source File               | Status   | Notes                               |
-| --------------------- | ------------------------- | -------- | ----------------------------------- |
-| QueuePopulatorLoop    | `queue_populator_loop.py` | Complete | Leader-only, integrates scheduler   |
-| EloSyncLoop           | `elo_sync_loop.py`        | Complete | Syncs unified_elo.db across cluster |
-| AutoScalingLoop       | `coordination_loops.py`   | Complete | Scale up/down based on queue depth  |
-| HealthAggregationLoop | `coordination_loops.py`   | Complete | Collects CPU/GPU/disk metrics       |
-| ModelSyncLoop         | `data_loops.py`           | Complete | Prioritizes hex8/square8 configs    |
-| DataAggregationLoop   | `data_loops.py`           | Complete | Aggregates selfplay databases       |
-| JobReaperLoop         | `job_loops.py`            | Complete | Enforces job timeouts               |
-| IdleDetectionLoop     | `job_loops.py`            | Complete | Detects nodes with no activity      |
-| IpDiscoveryLoop       | `network_loops.py`        | Complete | Fetches node IPs via HTTP/Tailscale |
-| TailscaleRecoveryLoop | `network_loops.py`        | Complete | Restarts Tailscale on failure       |
+| Loop                   | Source File                   | Status   | Notes                                   |
+| ---------------------- | ----------------------------- | -------- | --------------------------------------- |
+| QueuePopulatorLoop     | `queue_populator_loop.py`     | Complete | Leader-only, integrates scheduler       |
+| EloSyncLoop            | `elo_sync_loop.py`            | Complete | Syncs unified_elo.db across cluster     |
+| AutoScalingLoop        | `coordination_loops.py`       | Complete | Scale up/down based on queue depth      |
+| HealthAggregationLoop  | `coordination_loops.py`       | Complete | Collects CPU/GPU/disk metrics           |
+| ModelSyncLoop          | `data_loops.py`               | Complete | Prioritizes hex8/square8 configs        |
+| DataAggregationLoop    | `data_loops.py`               | Complete | Aggregates selfplay databases           |
+| JobReaperLoop          | `job_loops.py`                | Complete | Enforces job timeouts                   |
+| IdleDetectionLoop      | `job_loops.py`                | Complete | Detects nodes with no activity          |
+| IpDiscoveryLoop        | `network_loops.py`            | Complete | Fetches node IPs via HTTP/Tailscale     |
+| TailscaleRecoveryLoop  | `network_loops.py`            | Complete | Restarts Tailscale on failure           |
+| TrainingSyncLoop       | `training_sync_loop.py`       | Complete | Leader-only data sync to training nodes |
+| ManifestCollectionLoop | `manifest_collection_loop.py` | Complete | Collects cluster/local manifests        |
 
 All loops were extracted in December 2025 as part of Phase 4 of the P2P decomposition.
 

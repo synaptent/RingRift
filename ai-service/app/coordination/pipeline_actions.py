@@ -48,6 +48,13 @@ except ImportError:
     PRODUCTION_MIN_WIN_RATE_VS_RANDOM = 0.90  # 90%
     PRODUCTION_MIN_WIN_RATE_VS_HEURISTIC = 0.60  # 60%
 
+# Import event emitter for training triggered events (December 2025)
+try:
+    from app.coordination.event_emitters import emit_training_triggered
+    HAS_EVENT_EMITTERS = True
+except ImportError:
+    HAS_EVENT_EMITTERS = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -533,6 +540,23 @@ async def trigger_training(
     root = _get_ai_service_root()
     start_time = time.time()
     last_error = None
+    config_key = f"{board_type}_{num_players}p"
+
+    # Emit training triggered event (December 2025)
+    if HAS_EVENT_EMITTERS:
+        try:
+            job_id = f"train_{config_key}_iter{iteration}"
+            await emit_training_triggered(
+                config=config_key,
+                job_id=job_id,
+                trigger_reason="pipeline",
+                priority="normal",
+                iteration=iteration,
+                epochs=epochs,
+                batch_size=batch_size,
+            )
+        except Exception as e:
+            logger.debug(f"[PipelineActions] Failed to emit training_triggered: {e}")
 
     # Output model path
     model_filename = f"{board_type}_{num_players}p_iter{iteration}.pth"

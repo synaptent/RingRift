@@ -121,7 +121,8 @@ class IpDiscoveryLoop(BaseLoop):
                 timeout=self.config.dns_timeout_seconds,
             )
             return result
-        except Exception:
+        except (OSError, asyncio.TimeoutError) as e:
+            logger.debug(f"[NetworkDiscovery] DNS resolution failed for {hostname}: {e}")
             return None
 
     async def _is_reachable(self, ip: str, port: int = 22) -> bool:
@@ -134,7 +135,8 @@ class IpDiscoveryLoop(BaseLoop):
             writer.close()
             await writer.wait_closed()
             return True
-        except Exception:
+        except (ConnectionError, asyncio.TimeoutError, OSError) as e:
+            logger.debug(f"[NetworkDiscovery] Reachability check failed for {ip}:{port}: {e}")
             return False
 
     def get_discovery_stats(self) -> dict[str, Any]:

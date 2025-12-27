@@ -446,6 +446,48 @@ class JobReaperDaemon:
         })
         return stats
 
+    def health_check(self):
+        """Check daemon health status.
+
+        December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self.running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Job reaper daemon not running",
+            )
+
+        # Check error rate
+        total_ops = self.stats.jobs_timed_out + self.stats.jobs_reassigned + self.stats.errors_count
+        if total_ops > 0:
+            error_rate = self.stats.errors_count / total_ops
+            if error_rate > 0.5:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Job reaper has high error rate: {error_rate:.1%}",
+                    details=self.get_stats(),
+                )
+
+        # Check consecutive failures
+        if self.stats.consecutive_failures > 5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Job reaper has {self.stats.consecutive_failures} consecutive failures",
+                details=self.get_stats(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Job reaper running (reaped: {self.stats.jobs_reaped}, reassigned: {self.stats.jobs_reassigned})",
+            details=self.get_stats(),
+        )
+
 
 # =============================================================================
 # Public Helpers

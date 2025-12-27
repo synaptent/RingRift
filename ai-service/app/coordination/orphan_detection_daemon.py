@@ -417,6 +417,38 @@ class OrphanDetectionDaemon:
         """Force an immediate orphan scan."""
         return await self._run_scan()
 
+    def health_check(self):
+        """Check daemon health status.
+
+        December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Orphan detection daemon not running",
+            )
+
+        # Check if scans are happening
+        now = time.time()
+        if self._last_scan_time > 0:
+            hours_since_scan = (now - self._last_scan_time) / 3600
+            # Warning if no scan in 2x the interval
+            if hours_since_scan > (self.config.scan_interval_seconds / 3600) * 2:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Orphan scan overdue ({hours_since_scan:.1f}h since last scan)",
+                )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Orphan detection daemon running (last scan: {self._last_scan_time:.0f}s ago)" if self._last_scan_time else "Orphan detection daemon running (no scans yet)",
+        )
+
 
 async def run() -> None:
     """Run the daemon (entry point for DaemonManager)."""

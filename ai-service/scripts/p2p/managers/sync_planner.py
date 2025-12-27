@@ -819,6 +819,120 @@ class SyncPlanner:
         }
 
     # ============================================
+    # Disk-based Manifest Cache
+    # ============================================
+    # December 2025: Moved from p2p_orchestrator.py for better cohesion.
+    # Disk caching complements in-memory caching for startup performance.
+
+    def get_manifest_cache_path(self) -> Path:
+        """Get path for persistent manifest cache on disk."""
+        return self.data_directory / ".manifest_cache.json"
+
+    def save_manifest_to_cache(self, manifest: "NodeDataManifest") -> bool:
+        """Save manifest to disk for faster startup.
+
+        Persists the current manifest state so nodes can resume quickly after
+        restart without needing to rescan all data files.
+
+        Args:
+            manifest: The NodeDataManifest to cache
+
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        import json
+
+        try:
+            cache_path = self.get_manifest_cache_path()
+            cache_data = {
+                "version": 1,
+                "saved_at": time.time(),
+                "manifest": manifest.to_dict() if hasattr(manifest, "to_dict") else {},
+            }
+            with open(cache_path, "w") as f:
+                json.dump(cache_data, f)
+            logger.debug(f"Saved manifest cache to {cache_path}")
+            return True
+        except (OSError, TypeError, ValueError) as e:
+            logger.error(f"Failed to save manifest cache: {e}")
+            return False
+
+    def load_manifest_from_cache(self, max_age_seconds: int = 300) -> "NodeDataManifest | None":
+        """Load manifest from disk cache if fresh enough.
+
+        Returns cached manifest if it exists and is not too old, otherwise None.
+        This speeds up startup by avoiding full data directory scans.
+
+        Args:
+            max_age_seconds: Maximum age of cache to consider valid (default 5 minutes)
+
+        Returns:
+            NodeDataManifest if cache is valid, None otherwise
+        """
+        import json
+        from ..models import NodeDataManifest
+
+        try:
+            cache_path = self.get_manifest_cache_path()
+            if not cache_path.exists():
+                return None
+
+            with open(cache_path) as f:
+                cache_data = json.load(f)
+
+            # Check version
+            if cache_data.get("version") != 1:
+                logger.debug("Manifest cache version mismatch, ignoring")
+                return None
+
+            # Check age
+            saved_at = cache_data.get("saved_at", 0)
+            if time.time() - saved_at > max_age_seconds:
+                logger.debug(f"Manifest cache too old ({int(time.time() - saved_at)}s > {max_age_seconds}s)")
+                return None
+
+            # Parse manifest
+            manifest_dict = cache_data.get("manifest", {})
+            if not manifest_dict:
+                return None
+
+            manifest = NodeDataManifest.from_dict(manifest_dict)
+            logger.info(f"Loaded manifest from cache (age: {int(time.time() - saved_at)}s)")
+            return manifest
+
+        except (OSError, json.JSONDecodeError, TypeError, KeyError) as e:
+            logger.debug(f"Failed to load manifest cache: {e}")
+            return None
+
+    def collect_local_manifest_cached(self, max_cache_age: int = 300) -> "NodeDataManifest":
+        """Collect manifest with disk caching support.
+
+        First tries to load from disk cache, then falls back to in-memory cache,
+        then falls back to full scan. Saves result to disk cache after collection.
+
+        Args:
+            max_cache_age: Maximum age in seconds for cached manifest
+
+        Returns:
+            NodeDataManifest with all discovered files
+        """
+        # Try disk cache first (for startup scenarios)
+        cached = self.load_manifest_from_cache(max_age_seconds=max_cache_age)
+        if cached:
+            # Update in-memory cache too
+            self._cached_local_manifest = cached
+            self._cached_manifest_time = time.time()
+            return cached
+
+        # Use normal collection (which includes in-memory caching)
+        manifest = self.collect_local_manifest(use_cache=True)
+
+        # Save to disk cache for next startup
+        self.save_manifest_to_cache(manifest)
+
+        return manifest
+
+    # ============================================
     # Selfplay to Training Nodes Sync
     # ============================================
 

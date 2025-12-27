@@ -544,13 +544,344 @@ def get_coordinated_rsync(
     return BandwidthCoordinatedRsync(manager)
 
 
+@dataclass
+class BatchSyncResult:
+    """Result of a batch sync operation."""
+
+    success: bool
+    source_dir: str
+    dest: str
+    host: str
+    files_requested: int = 0
+    files_transferred: int = 0
+    files_skipped: int = 0
+    files_failed: int = 0
+    bytes_transferred: int = 0
+    duration_seconds: float = 0.0
+    effective_rate_kbps: float = 0.0
+    errors: list = field(default_factory=list)
+
+
+class BatchRsync:
+    """Batch rsync operations for transferring multiple files efficiently.
+
+    Features:
+    - Uses rsync --files-from for batch transfers
+    - Single connection for multiple files (more efficient than per-file)
+    - Bandwidth coordination with BandwidthManager
+    - Resume support via --partial
+
+    Usage:
+        batch_rsync = BatchRsync()
+
+        result = await batch_rsync.sync_files(
+            source_dir="/data/games/",
+            dest="ubuntu@gpu-node:/data/games/",
+            host="gpu-node",
+            files=["game1.db", "game2.db", "game3.db"],
+        )
+    """
+
+    def __init__(
+        self,
+        manager: BandwidthManager | None = None,
+        rsync_path: str = "rsync",
+    ):
+        self.manager = manager or BandwidthManager.get_instance()
+        self.rsync_path = rsync_path
+
+    async def sync_files(
+        self,
+        source_dir: str,
+        dest: str,
+        host: str,
+        files: list[str],
+        priority: TransferPriority = TransferPriority.NORMAL,
+        timeout: float = 3600.0,
+        partial: bool = True,
+    ) -> BatchSyncResult:
+        """Sync multiple files in a single rsync operation.
+
+        Args:
+            source_dir: Local directory containing the files
+            dest: Remote destination (user@host:/path/)
+            host: Host identifier for bandwidth tracking
+            files: List of filenames relative to source_dir
+            priority: Transfer priority
+            timeout: Total timeout for the batch
+            partial: Enable partial transfers (resume support)
+
+        Returns:
+            BatchSyncResult with transfer details
+        """
+        import tempfile
+        import os
+
+        start_time = time.time()
+        result = BatchSyncResult(
+            success=False,
+            source_dir=source_dir,
+            dest=dest,
+            host=host,
+            files_requested=len(files),
+        )
+
+        if not files:
+            result.success = True
+            return result
+
+        # Get bandwidth allocation
+        allocation = await self.manager.request_allocation(
+            host=host,
+            priority=priority,
+            timeout=60.0,
+        )
+
+        if allocation is None:
+            result.errors.append("Failed to acquire bandwidth allocation")
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        try:
+            # Create temp file with list of files to transfer
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                for filename in files:
+                    f.write(filename + '\n')
+                files_from_path = f.name
+
+            try:
+                # Build rsync command with --files-from
+                cmd = [
+                    self.rsync_path,
+                    "-avz",
+                    "--progress",
+                    f"--bwlimit={allocation.bwlimit_kbps}",
+                    f"--files-from={files_from_path}",
+                ]
+
+                if partial:
+                    cmd.append("--partial")
+
+                # Ensure source_dir ends with /
+                if not source_dir.endswith('/'):
+                    source_dir = source_dir + '/'
+
+                cmd.extend([source_dir, dest])
+
+                logger.info(
+                    f"[BatchRsync] Starting batch sync: {len(files)} files to {host} "
+                    f"(bwlimit={allocation.bwlimit_kbps} KB/s)"
+                )
+
+                # Execute rsync
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=timeout,
+                    )
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+                    result.errors.append(f"Batch sync timed out after {timeout}s")
+                    result.duration_seconds = time.time() - start_time
+                    return result
+
+                duration = time.time() - start_time
+                exit_code = process.returncode or 0
+                output = stdout.decode("utf-8", errors="replace")
+
+                result.success = exit_code == 0
+                result.duration_seconds = duration
+
+                # Parse transfer stats
+                result.bytes_transferred = self._parse_bytes(output)
+                result.effective_rate_kbps = (
+                    result.bytes_transferred / 1024 / duration
+                ) if duration > 0 else 0
+
+                # Count transferred vs skipped files
+                result.files_transferred = output.count("\n>f")  # New files
+                result.files_skipped = len(files) - result.files_transferred
+
+                if not result.success:
+                    result.errors.append(stderr.decode("utf-8", errors="replace"))
+                    result.files_failed = len(files) - result.files_transferred
+
+                logger.info(
+                    f"[BatchRsync] Batch complete: {result.files_transferred}/{len(files)} files, "
+                    f"{result.bytes_transferred / 1024 / 1024:.1f} MB in {duration:.1f}s"
+                )
+
+            finally:
+                # Clean up temp file
+                os.unlink(files_from_path)
+
+        finally:
+            await self.manager.release_allocation(allocation)
+
+        return result
+
+    async def sync_directory(
+        self,
+        source_dir: str,
+        dest: str,
+        host: str,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+        priority: TransferPriority = TransferPriority.NORMAL,
+        timeout: float = 3600.0,
+        delete: bool = False,
+    ) -> BatchSyncResult:
+        """Sync a directory with include/exclude patterns.
+
+        Args:
+            source_dir: Local directory to sync
+            dest: Remote destination (user@host:/path/)
+            host: Host identifier for bandwidth tracking
+            include_patterns: Patterns to include (e.g., ["*.npz", "*.db"])
+            exclude_patterns: Patterns to exclude (e.g., ["*.tmp", "*.log"])
+            priority: Transfer priority
+            timeout: Total timeout
+            delete: Delete extraneous files on dest
+
+        Returns:
+            BatchSyncResult with transfer details
+        """
+        start_time = time.time()
+        result = BatchSyncResult(
+            success=False,
+            source_dir=source_dir,
+            dest=dest,
+            host=host,
+        )
+
+        # Get bandwidth allocation
+        allocation = await self.manager.request_allocation(
+            host=host,
+            priority=priority,
+            timeout=60.0,
+        )
+
+        if allocation is None:
+            result.errors.append("Failed to acquire bandwidth allocation")
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        try:
+            # Build rsync command
+            cmd = [
+                self.rsync_path,
+                "-avz",
+                "--progress",
+                f"--bwlimit={allocation.bwlimit_kbps}",
+            ]
+
+            if delete:
+                cmd.append("--delete")
+
+            # Add include patterns first
+            if include_patterns:
+                for pattern in include_patterns:
+                    cmd.append(f"--include={pattern}")
+                # Exclude everything else
+                cmd.append("--exclude=*")
+            elif exclude_patterns:
+                for pattern in exclude_patterns:
+                    cmd.append(f"--exclude={pattern}")
+
+            # Ensure source_dir ends with /
+            if not source_dir.endswith('/'):
+                source_dir = source_dir + '/'
+
+            cmd.extend([source_dir, dest])
+
+            logger.info(
+                f"[BatchRsync] Starting directory sync to {host} "
+                f"(bwlimit={allocation.bwlimit_kbps} KB/s)"
+            )
+
+            # Execute rsync
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                result.errors.append(f"Directory sync timed out after {timeout}s")
+                result.duration_seconds = time.time() - start_time
+                return result
+
+            duration = time.time() - start_time
+            exit_code = process.returncode or 0
+            output = stdout.decode("utf-8", errors="replace")
+
+            result.success = exit_code == 0
+            result.duration_seconds = duration
+            result.bytes_transferred = self._parse_bytes(output)
+            result.effective_rate_kbps = (
+                result.bytes_transferred / 1024 / duration
+            ) if duration > 0 else 0
+
+            # Count files
+            result.files_transferred = output.count("\n>f")
+
+            if not result.success:
+                result.errors.append(stderr.decode("utf-8", errors="replace"))
+
+            logger.info(
+                f"[BatchRsync] Directory sync complete: {result.files_transferred} files, "
+                f"{result.bytes_transferred / 1024 / 1024:.1f} MB in {duration:.1f}s"
+            )
+
+        finally:
+            await self.manager.release_allocation(allocation)
+
+        return result
+
+    def _parse_bytes(self, output: str) -> int:
+        """Parse bytes transferred from rsync output."""
+        import re
+
+        match = re.search(r'sent\s+([\d,]+)\s+bytes', output)
+        if match:
+            return int(match.group(1).replace(",", ""))
+
+        match = re.search(r'total size is\s+([\d,]+)', output)
+        if match:
+            return int(match.group(1).replace(",", ""))
+
+        return 0
+
+
+def get_batch_rsync(manager: BandwidthManager | None = None) -> BatchRsync:
+    """Get a BatchRsync instance."""
+    return BatchRsync(manager)
+
+
 __all__ = [
     "BandwidthAllocation",
     "BandwidthConfig",
     "BandwidthCoordinatedRsync",
     "BandwidthManager",
+    "BatchRsync",
+    "BatchSyncResult",
     "SyncResult",
     "TransferPriority",
     "get_bandwidth_manager",
+    "get_batch_rsync",
     "get_coordinated_rsync",
 ]

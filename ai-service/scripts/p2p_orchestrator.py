@@ -4733,89 +4733,15 @@ class P2POrchestrator(
             logger.error(f"requesting manifest from {peer_info.node_id}: {e}")
         return None
 
-    def _get_manifest_cache_path(self) -> Path:
-        """Get path for persistent manifest cache."""
-        data_dir = self.get_data_directory()
-        return data_dir / ".manifest_cache.json"
-
-    def _save_manifest_to_cache(self, manifest: NodeDataManifest) -> bool:
-        """DECENTRALIZED: Save manifest to disk for faster startup.
-
-        Persists the current manifest state so nodes can resume quickly after
-        restart without needing to rescan all data files.
-        """
-        try:
-            cache_path = self._get_manifest_cache_path()
-            cache_data = {
-                "version": 1,
-                "saved_at": time.time(),
-                "manifest": manifest.to_dict() if hasattr(manifest, "to_dict") else {},
-            }
-            import json
-            with open(cache_path, "w") as f:
-                json.dump(cache_data, f)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to save manifest cache: {e}")
-            return False
-
-    def _load_manifest_from_cache(self, max_age_seconds: int = 300) -> NodeDataManifest | None:
-        """DECENTRALIZED: Load manifest from disk cache if fresh enough.
-
-        Returns cached manifest if it exists and is not too old, otherwise None.
-        This speeds up startup by avoiding full data directory scans.
-
-        Args:
-            max_age_seconds: Maximum age of cache to consider valid (default 5 minutes)
-        """
-        try:
-            cache_path = self._get_manifest_cache_path()
-            if not cache_path.exists():
-                return None
-
-            import json
-            with open(cache_path) as f:
-                cache_data = json.load(f)
-
-            # Check version
-            if cache_data.get("version") != 1:
-                return None
-
-            # Check age
-            saved_at = cache_data.get("saved_at", 0)
-            if time.time() - saved_at > max_age_seconds:
-                return None
-
-            # Parse manifest
-            manifest_dict = cache_data.get("manifest", {})
-            if not manifest_dict:
-                return None
-
-            manifest = NodeDataManifest.from_dict(manifest_dict)
-            logger.info(f"Loaded manifest from cache (age: {int(time.time() - saved_at)}s)")
-            return manifest
-        except Exception as e:
-            logger.error(f"Failed to load manifest cache: {e}")
-            return None
-
-    def _collect_local_data_manifest_cached(self, max_cache_age: int = 300) -> NodeDataManifest:
-        """Collect manifest with caching support.
-
-        First tries to load from cache, then falls back to full scan.
-        Saves result to cache after collection.
-        """
-        # Try cache first
-        cached = self._load_manifest_from_cache(max_age_seconds=max_cache_age)
-        if cached:
-            return cached
-
-        # Full scan
-        manifest = self._collect_local_data_manifest()
-
-        # Save to cache
-        self._save_manifest_to_cache(manifest)
-
-        return manifest
+    # =========================================================================
+    # Manifest Cache Methods - MOVED to SyncPlanner (Dec 2025)
+    # =========================================================================
+    # The following methods were moved to scripts/p2p/managers/sync_planner.py:
+    # - get_manifest_cache_path() - disk cache path
+    # - save_manifest_to_cache() - persist manifest
+    # - load_manifest_from_cache() - load cached manifest
+    # - collect_local_manifest_cached() - collect with disk caching
+    # Access via: self.sync_planner.<method_name>()
 
     async def _collect_cluster_manifest(self) -> ClusterDataManifest:
         """Leader-only: Collect manifests from all peers and build cluster view."""
@@ -10501,7 +10427,7 @@ print(json.dumps(result))
         if not local_manifest:
             # Try to load from cache or collect if we don't have one
             try:
-                local_manifest = self._collect_local_data_manifest_cached(max_cache_age=600)
+                local_manifest = self.sync_planner.collect_local_manifest_cached(max_cache_age=600)
                 with self.manifest_lock:
                     self.local_data_manifest = local_manifest
             except (AttributeError):
@@ -21001,7 +20927,7 @@ print(json.dumps({{
         local_manifest = getattr(self, "local_data_manifest", None)
         if not local_manifest:
             try:
-                local_manifest = self._collect_local_data_manifest_cached(max_cache_age=600)
+                local_manifest = self.sync_planner.collect_local_manifest_cached(max_cache_age=600)
                 with self.manifest_lock:
                     self.local_data_manifest = local_manifest
             except (AttributeError):
@@ -21128,7 +21054,7 @@ print(json.dumps({{
                     logger.info(f"P2P SYNC: Completed {len(files_to_request)} files from {best_peer}")
                     self._last_successful_p2p_sync = now
                     # Invalidate manifest cache
-                    cache_path = self._get_manifest_cache_path()
+                    cache_path = self.sync_planner.get_manifest_cache_path()
                     if cache_path.exists():
                         cache_path.unlink()
                     # Update metrics

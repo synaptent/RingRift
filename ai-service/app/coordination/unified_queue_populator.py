@@ -1273,6 +1273,58 @@ class UnifiedQueuePopulatorDaemon:
         status["daemon_running"] = self._running
         return status
 
+    def health_check(self):
+        """Check daemon health status.
+
+        December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Queue populator daemon not running",
+            )
+
+        # Check queue depth
+        current_depth = self._populator.get_current_queue_depth()
+        min_depth = self._populator.config.min_queue_depth
+
+        if current_depth == 0:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="Queue is empty - no work items available",
+                details=self.get_status(),
+            )
+
+        # Check if all targets met
+        if self._populator.all_targets_met():
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="All Elo targets met - queue populator idle",
+                details=self.get_status(),
+            )
+
+        # Check cluster health factor
+        if self._populator._cluster_health_factor < 0.5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Cluster health degraded ({self._populator._cluster_health_factor:.1%})",
+                details=self.get_status(),
+            )
+
+        unmet = len(self._populator.get_unmet_targets())
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Queue populator running (depth: {current_depth}, unmet: {unmet})",
+            details=self.get_status(),
+        )
+
 
 # =============================================================================
 # Singleton Pattern

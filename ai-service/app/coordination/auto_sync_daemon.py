@@ -2791,6 +2791,22 @@ def create_cluster_data_sync_daemon() -> AutoSyncDaemon:
     return AutoSyncDaemon(config=config)
 
 
+def create_training_sync_daemon() -> AutoSyncDaemon:
+    """Factory function for training node sync daemon.
+
+    December 2025: Creates an AutoSyncDaemon configured for training node
+    synchronization with BROADCAST strategy and reduced sync interval (30s)
+    to ensure training nodes have fresh data.
+
+    Returns:
+        AutoSyncDaemon configured for training sync mode
+    """
+    config = AutoSyncConfig.from_config_file()
+    config.strategy = SyncStrategy.BROADCAST
+    config.sync_interval = 30.0  # Faster sync for training freshness
+    return AutoSyncDaemon(config=config)
+
+
 # Backward compatibility aliases (December 2025)
 # These will be removed in Q2 2026
 EphemeralSyncDaemon = AutoSyncDaemon  # Deprecated alias

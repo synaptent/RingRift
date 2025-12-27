@@ -72,171 +72,9 @@ class TestSearchEngineModes:
             assert mode not in JobManager.SEARCH_ENGINE_MODES
 
 
-class TestJobCounting:
-    """Test job counting methods."""
-
-    def test_get_job_count_for_node_empty(self):
-        """Test job count for node with no jobs."""
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs={},
-            jobs_lock=threading.Lock(),
-        )
-
-        assert mgr.get_job_count_for_node("node1") == 0
-        assert mgr.get_job_count_for_node("nonexistent") == 0
-
-    def test_get_job_count_for_node_with_jobs(self):
-        """Test job count for node with jobs."""
-        active_jobs = {
-            "selfplay": {
-                "job1": {"node_id": "node1", "status": "running"},
-                "job2": {"node_id": "node2", "status": "running"},
-            },
-            "training": {
-                "job3": {"node_id": "node1", "status": "running"},
-            }
-        }
-
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs=active_jobs,
-            jobs_lock=threading.Lock(),
-        )
-
-        assert mgr.get_job_count_for_node("node1") == 2
-        assert mgr.get_job_count_for_node("node2") == 1
-        assert mgr.get_job_count_for_node("node3") == 0
-
-    def test_get_selfplay_job_count_for_node(self):
-        """Test selfplay job count for node."""
-        active_jobs = {
-            "selfplay": {
-                "job1": {"node_id": "node1", "status": "running"},
-                "job2": {"node_id": "node1", "status": "running"},
-                "job3": {"node_id": "node2", "status": "running"},
-            },
-            "training": {
-                "job4": {"node_id": "node1", "status": "running"},
-            }
-        }
-
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs=active_jobs,
-            jobs_lock=threading.Lock(),
-        )
-
-        assert mgr.get_selfplay_job_count_for_node("node1") == 2
-        assert mgr.get_selfplay_job_count_for_node("node2") == 1
-        assert mgr.get_selfplay_job_count_for_node("node3") == 0
-
-    def test_get_training_job_count_for_node(self):
-        """Test training job count for node."""
-        active_jobs = {
-            "selfplay": {
-                "job1": {"node_id": "node1", "status": "running"},
-            },
-            "training": {
-                "job2": {"node_id": "node1", "status": "running"},
-                "job3": {"node_id": "node1", "status": "running"},
-            }
-        }
-
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs=active_jobs,
-            jobs_lock=threading.Lock(),
-        )
-
-        assert mgr.get_training_job_count_for_node("node1") == 2
-
-    def test_job_count_with_object_jobs(self):
-        """Test job counting with object-style jobs (not dicts)."""
-        class MockJob:
-            def __init__(self, node_id):
-                self.node_id = node_id
-
-        active_jobs = {
-            "selfplay": {
-                "job1": MockJob("node1"),
-                "job2": MockJob("node2"),
-            }
-        }
-
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs=active_jobs,
-            jobs_lock=threading.Lock(),
-        )
-
-        assert mgr.get_selfplay_job_count_for_node("node1") == 1
-        assert mgr.get_selfplay_job_count_for_node("node2") == 1
-
-
 class TestJobManagement:
     """Test job management methods."""
-
-    def test_get_all_jobs(self):
-        """Test getting all active jobs."""
-        active_jobs = {
-            "selfplay": {"job1": {"status": "running"}},
-            "training": {"job2": {"status": "pending"}},
-        }
-
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs=active_jobs,
-            jobs_lock=threading.Lock(),
-        )
-
-        all_jobs = mgr.get_all_jobs()
-        assert "selfplay" in all_jobs
-        assert "training" in all_jobs
-        assert all_jobs["selfplay"]["job1"]["status"] == "running"
-
-    def test_get_all_jobs_returns_copy(self):
-        """Test that get_all_jobs returns a shallow copy."""
-        active_jobs = {
-            "selfplay": {"job1": {"status": "running"}},
-        }
-
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs=active_jobs,
-            jobs_lock=threading.Lock(),
-        )
-
-        all_jobs = mgr.get_all_jobs()
-
-        # Adding a new job type to returned dict doesn't affect original
-        all_jobs["new_type"] = {"job2": {"status": "new"}}
-        assert "new_type" not in mgr.active_jobs
-
-        # Adding a job to an existing type's shallow copy doesn't affect original
-        all_jobs["selfplay"]["job2"] = {"status": "added"}
-        assert "job2" not in mgr.active_jobs["selfplay"]
+    # NOTE: get_all_jobs tests removed Dec 2025 - method was dead code
 
     def test_cleanup_completed_jobs(self):
         """Test cleanup of completed jobs."""
@@ -498,7 +336,8 @@ class TestTournamentMethods:
 
 
 class TestValidationMethods:
-    """Test validation methods (placeholders)."""
+    """Test validation methods."""
+    # NOTE: run_parity_validation and run_npz_export tests removed Dec 2025 - methods were dead code
 
     @pytest.mark.asyncio
     async def test_run_post_training_gauntlet(self):
@@ -517,44 +356,3 @@ class TestValidationMethods:
 
         result = await mgr.run_post_training_gauntlet(MockJob())
         assert result is True
-
-    @pytest.mark.asyncio
-    async def test_run_parity_validation(self):
-        """Test parity validation runs without error."""
-        mgr = JobManager(
-            ringrift_path="/tmp",
-            node_id="node1",
-            peers={},
-            peers_lock=threading.Lock(),
-            active_jobs={},
-            jobs_lock=threading.Lock(),
-        )
-
-        # Should not raise
-        await mgr.run_parity_validation(
-            job_id="test-job",
-            board_type="hex8",
-            num_players=2,
-            num_seeds=10,
-        )
-
-    @pytest.mark.asyncio
-    async def test_run_npz_export(self):
-        """Test NPZ export runs without error."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            mgr = JobManager(
-                ringrift_path=tmpdir,
-                node_id="node1",
-                peers={},
-                peers_lock=threading.Lock(),
-                active_jobs={},
-                jobs_lock=threading.Lock(),
-            )
-
-            # Should not raise
-            await mgr.run_npz_export(
-                job_id="test-job",
-                board_type="hex8",
-                num_players=2,
-                output_dir=tmpdir,
-            )

@@ -566,3 +566,665 @@ class TestEdgeCases:
         manager = DaemonManager()
         # Should not raise
         manager._sync_shutdown()
+
+
+# =============================================================================
+# Daemon Profiles Tests (December 2025)
+# =============================================================================
+
+
+class TestDaemonProfiles:
+    """Tests for daemon profile definitions."""
+
+    def test_coordinator_profile_exists(self):
+        """Coordinator profile should be defined."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        assert "coordinator" in DAEMON_PROFILES
+
+    def test_training_node_profile_exists(self):
+        """Training node profile should be defined."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        assert "training_node" in DAEMON_PROFILES
+
+    def test_ephemeral_profile_exists(self):
+        """Ephemeral profile should be defined."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        assert "ephemeral" in DAEMON_PROFILES
+
+    def test_selfplay_profile_exists(self):
+        """Selfplay profile should be defined."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        assert "selfplay" in DAEMON_PROFILES
+
+    def test_minimal_profile_exists(self):
+        """Minimal profile should be defined."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        assert "minimal" in DAEMON_PROFILES
+
+    def test_full_profile_exists(self):
+        """Full profile should be defined."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        assert "full" in DAEMON_PROFILES
+
+    def test_coordinator_has_event_router(self):
+        """Coordinator profile should include event_router (critical dependency)."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        profile = DAEMON_PROFILES["coordinator"]
+        assert DaemonType.EVENT_ROUTER in profile
+
+    def test_training_node_has_event_router(self):
+        """Training node profile should include event_router."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        profile = DAEMON_PROFILES["training_node"]
+        assert DaemonType.EVENT_ROUTER in profile
+
+    def test_ephemeral_has_ephemeral_sync(self):
+        """Ephemeral profile should include ephemeral_sync."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        profile = DAEMON_PROFILES["ephemeral"]
+        assert DaemonType.EPHEMERAL_SYNC in profile
+
+    def test_minimal_is_truly_minimal(self):
+        """Minimal profile should have only 1 daemon."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        profile = DAEMON_PROFILES["minimal"]
+        assert len(profile) == 1
+        assert DaemonType.EVENT_ROUTER in profile
+
+    def test_full_profile_includes_all(self):
+        """Full profile should include all daemon types."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        full_profile = DAEMON_PROFILES["full"]
+        assert len(full_profile) == len(DaemonType)
+
+    def test_profiles_have_no_duplicates(self):
+        """Profiles should not have duplicate daemon types."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        for name, daemons in DAEMON_PROFILES.items():
+            unique = set(daemons)
+            assert len(unique) == len(daemons), f"Profile {name} has duplicates"
+
+    def test_coordinator_has_critical_daemons(self):
+        """Coordinator profile should include critical coordination daemons."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        profile = DAEMON_PROFILES["coordinator"]
+        critical = [
+            DaemonType.FEEDBACK_LOOP,
+            DaemonType.CLUSTER_MONITOR,
+            DaemonType.AUTO_SYNC,
+        ]
+        for daemon in critical:
+            assert daemon in profile, f"Missing {daemon} in coordinator profile"
+
+    def test_training_node_has_training_daemons(self):
+        """Training node profile should include training-related daemons."""
+        from app.coordination.daemon_manager import DAEMON_PROFILES
+        profile = DAEMON_PROFILES["training_node"]
+        training_daemons = [
+            DaemonType.DATA_PIPELINE,
+            DaemonType.EVALUATION,
+            DaemonType.FEEDBACK_LOOP,
+        ]
+        for daemon in training_daemons:
+            assert daemon in profile, f"Missing {daemon} in training_node profile"
+
+
+# =============================================================================
+# Start Profile Tests
+# =============================================================================
+
+
+class TestStartProfile:
+    """Tests for start_profile function."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    @pytest.mark.asyncio
+    async def test_start_profile_minimal(self):
+        """start_profile should start minimal profile."""
+        from app.coordination.daemon_manager import start_profile, DAEMON_PROFILES
+
+        with patch.object(DaemonManager, 'start_all', new_callable=AsyncMock) as mock_start:
+            mock_start.return_value = {DaemonType.EVENT_ROUTER: True}
+            results = await start_profile("minimal")
+            mock_start.assert_called_once()
+            # Verify only minimal daemons passed
+            call_args = mock_start.call_args[0][0]
+            assert call_args == DAEMON_PROFILES["minimal"]
+
+    @pytest.mark.asyncio
+    async def test_start_profile_unknown_raises(self):
+        """start_profile should raise ValueError for unknown profile."""
+        from app.coordination.daemon_manager import start_profile
+
+        with pytest.raises(ValueError) as exc_info:
+            await start_profile("nonexistent_profile")
+        assert "Unknown profile" in str(exc_info.value)
+        assert "nonexistent_profile" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_start_profile_lists_available(self):
+        """start_profile error should list available profiles."""
+        from app.coordination.daemon_manager import start_profile, DAEMON_PROFILES
+
+        with pytest.raises(ValueError) as exc_info:
+            await start_profile("bad_profile")
+        error_msg = str(exc_info.value)
+        for profile_name in DAEMON_PROFILES.keys():
+            assert profile_name in error_msg
+
+
+# =============================================================================
+# Startup Order Tests
+# =============================================================================
+
+
+class TestStartupOrder:
+    """Tests for daemon startup order and dependency resolution."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    def test_event_router_starts_first(self):
+        """EVENT_ROUTER should be in first position when present."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            pass
+
+        # Register with EVENT_ROUTER depending on nothing
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+        manager.register_factory(
+            DaemonType.DATA_PIPELINE,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+        manager.register_factory(
+            DaemonType.FEEDBACK_LOOP,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        sorted_types = manager._sort_by_dependencies([
+            DaemonType.FEEDBACK_LOOP,
+            DaemonType.DATA_PIPELINE,
+            DaemonType.EVENT_ROUTER,
+        ])
+
+        # EVENT_ROUTER should be first
+        assert sorted_types[0] == DaemonType.EVENT_ROUTER
+
+    def test_multi_level_dependencies(self):
+        """Multi-level dependencies should be correctly ordered."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            pass
+
+        # Create A -> B -> C -> D chain
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)  # Level 0
+        manager.register_factory(
+            DaemonType.SYNC_COORDINATOR,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],  # Level 1
+        )
+        manager.register_factory(
+            DaemonType.DATA_PIPELINE,
+            factory,
+            depends_on=[DaemonType.SYNC_COORDINATOR],  # Level 2
+        )
+        manager.register_factory(
+            DaemonType.FEEDBACK_LOOP,
+            factory,
+            depends_on=[DaemonType.DATA_PIPELINE],  # Level 3
+        )
+
+        sorted_types = manager._sort_by_dependencies([
+            DaemonType.FEEDBACK_LOOP,
+            DaemonType.DATA_PIPELINE,
+            DaemonType.SYNC_COORDINATOR,
+            DaemonType.EVENT_ROUTER,
+        ])
+
+        # Verify order
+        er_idx = sorted_types.index(DaemonType.EVENT_ROUTER)
+        sc_idx = sorted_types.index(DaemonType.SYNC_COORDINATOR)
+        dp_idx = sorted_types.index(DaemonType.DATA_PIPELINE)
+        fl_idx = sorted_types.index(DaemonType.FEEDBACK_LOOP)
+
+        assert er_idx < sc_idx < dp_idx < fl_idx
+
+    def test_diamond_dependencies(self):
+        """Diamond dependency pattern should be handled correctly."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            pass
+
+        # Create diamond: A -> B, A -> C, B -> D, C -> D
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)  # A
+        manager.register_factory(
+            DaemonType.SYNC_COORDINATOR,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],  # B
+        )
+        manager.register_factory(
+            DaemonType.HEALTH_CHECK,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],  # C
+        )
+        manager.register_factory(
+            DaemonType.DATA_PIPELINE,
+            factory,
+            depends_on=[DaemonType.SYNC_COORDINATOR, DaemonType.HEALTH_CHECK],  # D
+        )
+
+        sorted_types = manager._sort_by_dependencies([
+            DaemonType.DATA_PIPELINE,
+            DaemonType.HEALTH_CHECK,
+            DaemonType.SYNC_COORDINATOR,
+            DaemonType.EVENT_ROUTER,
+        ])
+
+        # A must come before B and C, B and C must come before D
+        a_idx = sorted_types.index(DaemonType.EVENT_ROUTER)
+        b_idx = sorted_types.index(DaemonType.SYNC_COORDINATOR)
+        c_idx = sorted_types.index(DaemonType.HEALTH_CHECK)
+        d_idx = sorted_types.index(DaemonType.DATA_PIPELINE)
+
+        assert a_idx < b_idx
+        assert a_idx < c_idx
+        assert b_idx < d_idx
+        assert c_idx < d_idx
+
+    def test_partial_dependency_list(self):
+        """Sort should work with subset of registered daemons."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            pass
+
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+        manager.register_factory(
+            DaemonType.DATA_PIPELINE,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+        manager.register_factory(DaemonType.MODEL_SYNC, factory)  # Not included in sort
+
+        # Sort only 2 of 3 registered daemons
+        sorted_types = manager._sort_by_dependencies([
+            DaemonType.DATA_PIPELINE,
+            DaemonType.EVENT_ROUTER,
+        ])
+
+        assert len(sorted_types) == 2
+        assert DaemonType.MODEL_SYNC not in sorted_types
+
+
+# =============================================================================
+# Health Loop Tests
+# =============================================================================
+
+
+class TestHealthLoop:
+    """Tests for health monitoring loop."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    @pytest.mark.asyncio
+    async def test_health_loop_starts(self):
+        """Health loop should start when first daemon starts."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            while True:
+                await asyncio.sleep(0.1)
+
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+
+        # Before start
+        assert manager._health_task is None or manager._health_task.done()
+
+        await manager.start(DaemonType.EVENT_ROUTER)
+
+        # After start - health loop should be running
+        assert manager._health_task is not None
+        assert not manager._health_task.done()
+
+        await manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_health_loop_only_starts_once(self):
+        """Health loop should not restart if already running."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            while True:
+                await asyncio.sleep(0.1)
+
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+        manager.register_factory(DaemonType.MODEL_SYNC, factory)
+
+        await manager.start(DaemonType.EVENT_ROUTER)
+        first_health_task = manager._health_task
+
+        await manager.start(DaemonType.MODEL_SYNC)
+        second_health_task = manager._health_task
+
+        # Same task object
+        assert first_health_task is second_health_task
+
+        await manager.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_ensure_health_loop_running_idempotent(self):
+        """_ensure_health_loop_running should be safe to call multiple times."""
+        manager = DaemonManager()
+
+        await manager._ensure_health_loop_running()
+        first_task = manager._health_task
+
+        await manager._ensure_health_loop_running()
+        second_task = manager._health_task
+
+        assert first_task is second_task
+        assert manager._running is True
+
+        await manager.shutdown()
+
+
+# =============================================================================
+# Auto-Restart Tests
+# =============================================================================
+
+
+class TestAutoRestart:
+    """Tests for auto-restart behavior."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    def test_auto_restart_default_enabled(self):
+        """Auto-restart should be enabled by default."""
+        manager = DaemonManager()
+
+        async def factory():
+            pass
+
+        manager.register_factory(DaemonType.MODEL_SYNC, factory)
+        info = manager._daemons[DaemonType.MODEL_SYNC]
+
+        assert info.auto_restart is True
+
+    def test_auto_restart_can_be_disabled(self):
+        """Auto-restart can be disabled per daemon."""
+        manager = DaemonManager()
+
+        async def factory():
+            pass
+
+        manager.register_factory(
+            DaemonType.MODEL_SYNC,
+            factory,
+            auto_restart=False,
+        )
+        info = manager._daemons[DaemonType.MODEL_SYNC]
+
+        assert info.auto_restart is False
+
+    def test_max_restarts_configured(self):
+        """Max restarts should be configurable."""
+        manager = DaemonManager()
+
+        async def factory():
+            pass
+
+        manager.register_factory(
+            DaemonType.MODEL_SYNC,
+            factory,
+            max_restarts=10,
+        )
+        info = manager._daemons[DaemonType.MODEL_SYNC]
+
+        assert info.max_restarts == 10
+
+    def test_restart_count_tracked(self):
+        """Restart count should be tracked."""
+        manager = DaemonManager()
+
+        async def factory():
+            pass
+
+        manager.register_factory(DaemonType.MODEL_SYNC, factory)
+        info = manager._daemons[DaemonType.MODEL_SYNC]
+
+        # Initially 0
+        assert info.restart_count == 0
+
+        # Manually increment for testing
+        info.restart_count += 1
+        assert info.restart_count == 1
+
+
+# =============================================================================
+# Import Failure Handling Tests
+# =============================================================================
+
+
+class TestImportFailureHandling:
+    """Tests for handling import failures during daemon startup."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    def test_import_failed_state_exists(self):
+        """IMPORT_FAILED state should be defined."""
+        assert DaemonState.IMPORT_FAILED.value == "import_failed"
+
+    @pytest.mark.asyncio
+    async def test_failed_factory_sets_state(self):
+        """Factory that raises should eventually set FAILED state.
+
+        Note: Factory errors happen asynchronously. The start() method returns
+        True when the task is created, but the factory error occurs in the
+        background task and updates the state asynchronously.
+        """
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def failing_factory():
+            raise RuntimeError("Factory failed")
+
+        manager.register_factory(DaemonType.MODEL_SYNC, failing_factory, auto_restart=False)
+
+        # Start the daemon - returns True because task was created
+        result = await manager.start(DaemonType.MODEL_SYNC)
+        assert result is True  # Task creation succeeds
+
+        # Wait for async factory to fail
+        await asyncio.sleep(0.1)
+
+        # Now check that the state reflects the failure
+        info = manager._daemons[DaemonType.MODEL_SYNC]
+        assert info.state == DaemonState.FAILED
+        assert "Factory failed" in info.last_error
+
+        await manager.shutdown()
+
+
+# =============================================================================
+# Get Dependents Tests
+# =============================================================================
+
+
+class TestGetDependents:
+    """Tests for getting dependent daemons."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    def test_get_dependents_direct(self):
+        """_get_dependents should return direct dependents."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            pass
+
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+        manager.register_factory(
+            DaemonType.DATA_PIPELINE,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+        manager.register_factory(
+            DaemonType.FEEDBACK_LOOP,
+            factory,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+
+        dependents = manager._get_dependents(DaemonType.EVENT_ROUTER)
+
+        assert DaemonType.DATA_PIPELINE in dependents
+        assert DaemonType.FEEDBACK_LOOP in dependents
+
+    def test_get_dependents_none(self):
+        """_get_dependents should return empty for no dependents."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        async def factory():
+            pass
+
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+        manager.register_factory(DaemonType.MODEL_SYNC, factory)
+
+        dependents = manager._get_dependents(DaemonType.EVENT_ROUTER)
+
+        # MODEL_SYNC doesn't depend on EVENT_ROUTER
+        assert DaemonType.MODEL_SYNC not in dependents
+
+
+# =============================================================================
+# Shutdown Tests
+# =============================================================================
+
+
+class TestShutdown:
+    """Tests for daemon shutdown behavior."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancels_health_loop(self):
+        """shutdown() should cancel health monitoring loop."""
+        manager = DaemonManager()
+
+        await manager._ensure_health_loop_running()
+        assert manager._health_task is not None
+
+        await manager.shutdown()
+
+        assert manager._health_task.done() or manager._health_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_sets_not_running(self):
+        """shutdown() should set _running to False."""
+        manager = DaemonManager()
+
+        await manager._ensure_health_loop_running()
+        assert manager._running is True
+
+        await manager.shutdown()
+
+        assert manager._running is False
+
+    @pytest.mark.asyncio
+    async def test_shutdown_stops_all_daemons(self):
+        """shutdown() should stop all running daemons."""
+        manager = DaemonManager()
+        manager._factories.clear()
+        manager._daemons.clear()
+
+        stopped = []
+
+        async def factory():
+            try:
+                while True:
+                    await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                stopped.append(True)
+                raise
+
+        manager.register_factory(DaemonType.EVENT_ROUTER, factory)
+        manager.register_factory(DaemonType.MODEL_SYNC, factory)
+
+        await manager.start(DaemonType.EVENT_ROUTER)
+        await manager.start(DaemonType.MODEL_SYNC)
+
+        await manager.shutdown()
+
+        # Both daemons should have been stopped
+        for daemon_type in [DaemonType.EVENT_ROUTER, DaemonType.MODEL_SYNC]:
+            info = manager._daemons[daemon_type]
+            assert info.state == DaemonState.STOPPED
+
+
+# =============================================================================
+# Validate Critical Subsystems Tests
+# =============================================================================
+
+
+class TestValidateCriticalSubsystems:
+    """Tests for critical subsystem validation."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    def test_validate_returns_list(self):
+        """_validate_critical_subsystems should return a list."""
+        manager = DaemonManager()
+        errors = manager._validate_critical_subsystems()
+        assert isinstance(errors, list)
+
+    def test_validate_handles_missing_imports(self):
+        """_validate_critical_subsystems should handle import failures."""
+        manager = DaemonManager()
+        # Should not raise even if subsystems fail to import
+        errors = manager._validate_critical_subsystems()
+        assert errors is not None

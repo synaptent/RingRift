@@ -11,6 +11,7 @@ Loop Categories:
 - elo_sync_loop.py: Elo rating synchronization across cluster
 - data_loops.py: Model sync, data aggregation
 - network_loops.py: IP updates, Tailscale recovery
+- discovery_loop.py: UDP broadcast and follower peer discovery
 - coordination_loops.py: Auto-scaling, health aggregation
 - job_loops.py: Job reaper, idle detection
 
@@ -70,6 +71,13 @@ from .network_loops import (
     TailscaleRecoveryConfig,
     TailscaleRecoveryLoop,
 )
+from .discovery_loop import (
+    DEFAULT_DISCOVERY_PORT,
+    FollowerDiscoveryConfig,
+    FollowerDiscoveryLoop,
+    UdpDiscoveryConfig,
+    UdpDiscoveryLoop,
+)
 from .manifest_collection_loop import ManifestCollectionLoop
 from .queue_populator_loop import QueuePopulatorLoop
 from .training_sync_loop import TrainingSyncLoop
@@ -99,6 +107,12 @@ __all__ = [
     "IpDiscoveryLoop",
     "TailscaleRecoveryConfig",
     "TailscaleRecoveryLoop",
+    # Discovery
+    "DEFAULT_DISCOVERY_PORT",
+    "FollowerDiscoveryConfig",
+    "FollowerDiscoveryLoop",
+    "UdpDiscoveryConfig",
+    "UdpDiscoveryLoop",
     # Jobs
     "IdleDetectionConfig",
     "IdleDetectionLoop",

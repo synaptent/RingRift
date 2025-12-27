@@ -7,7 +7,7 @@
 
     - For sync scheduling: Use :class:`AutoSyncDaemon` from auto_sync_daemon.py
     - For sync execution: Use :class:`SyncCoordinator` from app.distributed.sync_coordinator
-    - For ephemeral syncs: Use :class:`EphemeralSyncDaemon` from ephemeral_sync.py
+    - For ephemeral syncs: Use :func:`create_ephemeral_sync_daemon` from auto_sync_daemon.py
 
     This module will be archived in Q2 2026.
 

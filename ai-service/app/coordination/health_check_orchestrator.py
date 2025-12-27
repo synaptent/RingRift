@@ -182,16 +182,18 @@ class HealthCheckOrchestrator:
     def __init__(
         self,
         check_interval: float = 60.0,
-        p2p_port: int = 8770,
+        p2p_port: int | None = None,
     ):
         """Initialize health check orchestrator.
 
         Args:
             check_interval: Seconds between health check cycles
-            p2p_port: P2P daemon port to check
+            p2p_port: P2P daemon port to check. If None, uses get_p2p_port()
+                     (default 8770, override with RINGRIFT_P2P_PORT env var)
         """
+        from app.config.cluster_config import get_p2p_port
         self.check_interval = check_interval
-        self.p2p_port = p2p_port
+        self.p2p_port = p2p_port if p2p_port is not None else get_p2p_port()
 
         # Provider managers
         self.lambda_mgr = LambdaManager()

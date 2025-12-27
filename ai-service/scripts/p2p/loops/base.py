@@ -495,8 +495,16 @@ class LoopManager:
         """
         return self._loops.get(name)
 
-    async def start_all(self) -> None:
-        """Start all registered loops as background tasks."""
+    async def start_all(self, verify_startup: bool = True, startup_timeout: float = 5.0) -> None:
+        """Start all registered loops as background tasks.
+
+        Args:
+            verify_startup: If True, verify all loops started successfully
+            startup_timeout: Seconds to wait for loops to start running
+
+        Raises:
+            RuntimeError: If verify_startup is True and any loop fails to start
+        """
         if self._started:
             logger.warning(f"[{self.name}] Already started")
             return
@@ -505,6 +513,45 @@ class LoopManager:
         for loop in self._loops.values():
             loop.start_background()
         self._started = True
+
+        # Dec 2025: Verify loops actually started running
+        if verify_startup and self._loops:
+            await self._verify_loops_running(timeout=startup_timeout)
+
+    async def _verify_loops_running(self, timeout: float = 5.0) -> None:
+        """Verify all loops have started running.
+
+        Dec 2025: Added to detect startup failures that would otherwise
+        be silent. Logs warnings for loops that haven't started.
+
+        Args:
+            timeout: Maximum seconds to wait for loops to start
+        """
+        import asyncio
+        start_time = time.time()
+        failed_loops: list[str] = []
+
+        while time.time() - start_time < timeout:
+            failed_loops = []
+            for name, loop in self._loops.items():
+                status = loop.get_status()
+                # Check if loop is running (has iterations or is_running flag)
+                is_running = status.get("is_running", False) or status.get("iterations", 0) > 0
+                if not is_running and not status.get("stopped", False):
+                    failed_loops.append(name)
+
+            if not failed_loops:
+                logger.info(f"[{self.name}] All {len(self._loops)} loops verified running")
+                return
+
+            await asyncio.sleep(0.5)
+
+        # Some loops didn't start
+        if failed_loops:
+            logger.warning(
+                f"[{self.name}] {len(failed_loops)} loops not yet running after {timeout}s: "
+                f"{', '.join(failed_loops)}"
+            )
 
     async def stop_all(self, timeout: float = 30.0) -> dict[str, bool]:
         """Stop all registered loops gracefully.

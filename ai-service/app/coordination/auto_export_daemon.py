@@ -784,6 +784,38 @@ class AutoExportDaemon:
             },
         }
 
+    def health_check(self):
+        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="AutoExport daemon not running",
+            )
+
+        # Check for high failure rate
+        total_failures = sum(s.consecutive_failures for s in self._export_states.values())
+        if total_failures > 5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"AutoExport daemon has {total_failures} consecutive failures",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"AutoExport daemon running ({len(self._export_states)} configs tracked)",
+            details=self.get_status(),
+        )
+
 
 # Singleton instance
 _daemon: AutoExportDaemon | None = None

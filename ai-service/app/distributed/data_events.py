@@ -1575,6 +1575,72 @@ async def emit_daemon_stopped(
 
 
 # =============================================================================
+# Orphan Detection Events (December 2025)
+# =============================================================================
+
+async def emit_orphan_games_detected(
+    host: str,
+    orphan_count: int,
+    orphan_paths: list[str],
+    total_games: int = 0,
+    source: str = "",
+) -> None:
+    """Emit an ORPHAN_GAMES_DETECTED event.
+
+    Dec 2025: Emitted when unregistered game databases are found on a node.
+    These are databases that exist on disk but aren't tracked in the manifest.
+
+    Args:
+        host: Host where orphans were detected
+        orphan_count: Number of orphan databases found
+        orphan_paths: List of paths to orphan databases
+        total_games: Total game count in orphan databases
+        source: Component that detected the orphans
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.ORPHAN_GAMES_DETECTED,
+        payload={
+            "host": host,
+            "orphan_count": orphan_count,
+            "orphan_paths": orphan_paths[:10],  # Limit to 10 paths to avoid huge payloads
+            "total_games": total_games,
+        },
+        source=source,
+    ))
+
+
+async def emit_orphan_games_registered(
+    host: str,
+    registered_count: int,
+    registered_paths: list[str],
+    games_recovered: int = 0,
+    source: str = "",
+) -> None:
+    """Emit an ORPHAN_GAMES_REGISTERED event.
+
+    Dec 2025: Emitted when orphan databases have been auto-registered
+    into the manifest after detection.
+
+    Args:
+        host: Host where orphans were registered
+        registered_count: Number of databases registered
+        registered_paths: List of paths that were registered
+        games_recovered: Total game count recovered from orphans
+        source: Component that performed registration
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.ORPHAN_GAMES_REGISTERED,
+        payload={
+            "host": host,
+            "registered_count": registered_count,
+            "registered_paths": registered_paths[:10],  # Limit paths
+            "games_recovered": games_recovered,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
 # Training Failure Events
 # =============================================================================
 

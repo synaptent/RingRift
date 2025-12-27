@@ -323,6 +323,22 @@ def get_p2p_voters(config_path: str | Path | None = None) -> list[str]:
     return load_cluster_config(config_path).p2p_voters
 
 
+def get_p2p_port() -> int:
+    """Get P2P orchestrator port from environment or default.
+
+    Centralizes the P2P port configuration to avoid hardcoded values
+    across the codebase.
+
+    Returns:
+        P2P port number, default 8770
+
+    Environment:
+        RINGRIFT_P2P_PORT: Override the default port
+    """
+    import os
+    return int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
+
+
 def get_host_bandwidth_limit(host_name: str, config_path: str | Path | None = None) -> int:
     """Get bandwidth limit for a host in MB/s.
 

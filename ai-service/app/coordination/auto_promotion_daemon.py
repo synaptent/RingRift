@@ -96,23 +96,42 @@ class AutoPromotionDaemon:
         logger.info("[AutoPromotion] Daemon stopped")
 
     async def _subscribe_to_events(self) -> None:
-        """Subscribe to EVALUATION_COMPLETED events."""
+        """Subscribe to EVALUATION_COMPLETED events with retry logic.
+
+        Retries up to 3 times with exponential backoff if the router
+        is not immediately available.
+        """
         if self._subscribed:
             return
 
-        try:
-            from app.coordination.event_router import get_router, DataEventType
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                from app.coordination.event_router import get_router, DataEventType
+                import asyncio
 
-            router = get_router()
-            if router:
+                router = get_router()
+                if not router:
+                    if attempt == max_retries - 1:
+                        logger.warning("[AutoPromotion] Router unavailable after retries")
+                        self._subscribed = False
+                        return
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+
                 await router.subscribe(
                     DataEventType.EVALUATION_COMPLETED,
                     self._on_evaluation_completed,
                 )
                 self._subscribed = True
                 logger.info("[AutoPromotion] Subscribed to EVALUATION_COMPLETED")
-        except Exception as e:
-            logger.warning(f"[AutoPromotion] Failed to subscribe: {e}")
+                return
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.warning(f"[AutoPromotion] Failed to subscribe after retries: {e}")
+                    self._subscribed = False
+                else:
+                    logger.debug(f"[AutoPromotion] Subscription attempt {attempt+1} failed: {e}")
 
     async def _on_evaluation_completed(self, event: Any) -> None:
         """Handle EVALUATION_COMPLETED event.

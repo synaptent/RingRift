@@ -389,9 +389,13 @@ class EvaluationDaemon:
         except asyncio.TimeoutError:
             self.stats.evaluations_failed += 1
             logger.error(f"[EvaluationDaemon] Evaluation timed out: {model_path}")
+            # Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix)
+            await self._emit_evaluation_failed(model_path, board_type, num_players, "timeout")
         except Exception as e:
             self.stats.evaluations_failed += 1
             logger.error(f"[EvaluationDaemon] Evaluation failed: {model_path}: {e}")
+            # Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix)
+            await self._emit_evaluation_failed(model_path, board_type, num_players, str(e))
 
     async def _run_gauntlet(
         self,
@@ -469,6 +473,32 @@ class EvaluationDaemon:
             logger.debug("[EvaluationDaemon] Event emitters not available")
         except Exception as e:
             logger.debug(f"[EvaluationDaemon] Failed to emit event: {e}")
+
+    async def _emit_evaluation_failed(
+        self,
+        model_path: str,
+        board_type: str,
+        num_players: int,
+        reason: str,
+    ) -> None:
+        """Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix).
+
+        This enables FeedbackLoopController and other subscribers to respond
+        to evaluation failures (e.g., retry with different parameters, rollback).
+        """
+        try:
+            from app.distributed.data_events import emit_evaluation_failed
+
+            await emit_evaluation_failed(
+                model_path=model_path,
+                config_key=f"{board_type}_{num_players}p",
+                reason=reason,
+            )
+            logger.info(f"[EvaluationDaemon] Emitted EVALUATION_FAILED: {model_path}")
+        except ImportError:
+            logger.debug("[EvaluationDaemon] Event emitters not available")
+        except Exception as e:
+            logger.debug(f"[EvaluationDaemon] Failed to emit failure event: {e}")
 
     def _update_average_time(self, elapsed: float) -> None:
         """Update running average of evaluation time."""

@@ -109,9 +109,11 @@ def _build_registry() -> dict[str, DaemonSpec]:
             import_path="app.distributed.external_drive_sync",
             class_name="ExternalDriveSyncDaemon",
         ),
+        # CLUSTER_DATA_SYNC: Updated Dec 2025 to use unified auto_sync_daemon
         DaemonType.CLUSTER_DATA_SYNC.name: DaemonSpec(
-            import_path="app.coordination.cluster_data_sync",
-            class_name="ClusterDataSyncDaemon",
+            import_path="app.coordination.auto_sync_daemon",
+            class_name="AutoSyncDaemon",
+            factory_fn="create_cluster_data_sync_daemon",
         ),
         DaemonType.HIGH_QUALITY_SYNC.name: DaemonSpec(
             import_path="app.distributed.sync_coordinator",
@@ -236,10 +238,11 @@ def _build_registry() -> dict[str, DaemonSpec]:
             class_name="UnifiedReplicationDaemon",
             factory_fn="create_replication_repair_daemon",
         ),
+        # TRAINING_NODE_WATCHER: Updated Dec 2025 to use unified auto_sync_daemon with BROADCAST strategy
         DaemonType.TRAINING_NODE_WATCHER.name: DaemonSpec(
-            import_path="app.coordination.cluster_data_sync",
-            class_name="TrainingNodeWatcher",
-            factory_fn="get_training_node_watcher",
+            import_path="app.coordination.auto_sync_daemon",
+            class_name="AutoSyncDaemon",
+            factory_fn="create_training_sync_daemon",
         ),
 
         # =================================================================
@@ -313,9 +316,11 @@ def _build_registry() -> dict[str, DaemonSpec]:
         # =================================================================
         # Health & System Monitoring
         # =================================================================
+        # SYSTEM_HEALTH_MONITOR: Updated Dec 2025 to use unified_health_manager
         DaemonType.SYSTEM_HEALTH_MONITOR.name: DaemonSpec(
-            import_path="app.coordination.system_health_monitor",
-            class_name="SystemHealthMonitorDaemon",
+            import_path="app.coordination.unified_health_manager",
+            class_name="UnifiedHealthManager",
+            factory_fn="get_health_manager",
         ),
         DaemonType.MAINTENANCE.name: DaemonSpec(
             import_path="app.coordination.maintenance_daemon",

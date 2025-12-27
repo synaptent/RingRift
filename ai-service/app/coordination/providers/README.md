@@ -30,12 +30,14 @@ class MyProvider(CloudProvider):
 
 ### Provider Implementations
 
-| Provider        | File                  | GPU Types                 | Notes              |
-| --------------- | --------------------- | ------------------------- | ------------------ |
-| **Lambda Labs** | `lambda_provider.py`  | GH200, H100, A10          | NFS shared storage |
-| **Vast.ai**     | `vast_provider.py`    | RTX 5090, 4090, 3090, A40 | Ephemeral, cheap   |
-| **Vultr**       | `vultr_provider.py`   | A100 (vGPU)               | Persistent         |
-| **Hetzner**     | `hetzner_provider.py` | CPU only                  | Data sync nodes    |
+| Provider        | File                  | GPU Types                 | Notes                   |
+| --------------- | --------------------- | ------------------------- | ----------------------- |
+| **Lambda Labs** | `lambda_provider.py`  | GH200, H100, A10          | ⚠️ TERMINATED Dec 2025  |
+| **Vast.ai**     | `vast_provider.py`    | RTX 5090, 4090, 3090, A40 | Ephemeral, cheap        |
+| **Vultr**       | `vultr_provider.py`   | A100 (vGPU)               | Persistent              |
+| **Hetzner**     | `hetzner_provider.py` | CPU only                  | P2P voters, data sync   |
+| **RunPod**      | (via cluster_config)  | H100, A100, L40S          | Persistent `/workspace` |
+| **Nebius**      | (via cluster_config)  | H100 80GB, L40S           | Training backbone       |
 
 ## Usage
 
@@ -72,11 +74,13 @@ path = provider.get_ringrift_path()  # "~/ringrift/ai-service" (NFS mount)
 
 ## Provider-Specific Notes
 
-### Lambda Labs
+### Lambda Labs (TERMINATED Dec 2025)
+
+> **Note**: Lambda Labs account terminated December 2025. Provider code kept for reference only.
 
 - Shared NFS storage at `/home/ubuntu/ringrift`
 - Skip sync between Lambda nodes (same filesystem)
-- GH200 nodes currently offline (Dec 2025)
+- All nodes permanently removed from cluster
 
 ### Vast.ai
 
