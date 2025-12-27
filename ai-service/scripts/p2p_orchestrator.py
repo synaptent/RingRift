@@ -1825,6 +1825,91 @@ class P2POrchestrator(
         self._sync_router: SyncRouter | None = None
         self._sync_router_wired = False
 
+        # Phase 4: LoopManager for extracted loops (Dec 2025)
+        self._loop_manager: LoopManager | None = None
+        self._loops_registered = False
+
+    def _get_loop_manager(self) -> "LoopManager | None":
+        """Get the LoopManager, initializing if needed."""
+        if self._loop_manager is None:
+            self._loop_manager = get_loop_manager()
+        return self._loop_manager
+
+    def _register_extracted_loops(self) -> bool:
+        """Register extracted loops with the LoopManager.
+
+        December 2025: Extracted loops run alongside inline loops during
+        the gradual migration. Once verified, inline loops will be deprecated.
+        """
+        if self._loops_registered:
+            return True
+
+        manager = self._get_loop_manager()
+        if manager is None:
+            logger.info("LoopManager: not available, using inline loops only")
+            return False
+
+        try:
+            from scripts.p2p.loops import (
+                QueuePopulatorLoop,
+                EloSyncLoop,
+                JobReaperLoop,
+                IdleDetectionLoop,
+                AutoScalingLoop,
+            )
+
+            # QueuePopulatorLoop - maintains 50+ work items until 2000 Elo
+            queue_populator = QueuePopulatorLoop(
+                get_role=lambda: self.role,
+                get_selfplay_scheduler=lambda: self.selfplay_scheduler,
+                notifier=self.notifier,
+            )
+            manager.register(queue_populator)
+
+            # EloSyncLoop - keeps unified_elo.db consistent across cluster
+            if hasattr(self, 'elo_sync_manager') and self.elo_sync_manager is not None:
+                elo_sync = EloSyncLoop(
+                    get_elo_sync_manager=lambda: self.elo_sync_manager,
+                    get_sync_in_progress=lambda: self.sync_in_progress,
+                )
+                manager.register(elo_sync)
+
+            # JobReaperLoop - enforces job timeouts and reassigns work
+            job_reaper = JobReaperLoop(
+                get_role=lambda: self.role,
+                get_work_queue=get_work_queue,
+                get_job_reaper=lambda: get_job_reaper(
+                    work_queue=get_work_queue(),
+                    ssh_config=getattr(self, 'ssh_config', None),
+                ),
+            )
+            manager.register(job_reaper)
+
+            # IdleDetectionLoop - auto-assigns work to idle nodes
+            idle_detection = IdleDetectionLoop(
+                get_role=lambda: self.role,
+                get_peers=lambda: self.peers,
+                get_work_queue=get_work_queue,
+            )
+            manager.register(idle_detection)
+
+            # AutoScalingLoop - provision/deprovision cloud instances
+            auto_scaling = AutoScalingLoop(
+                get_role=lambda: self.role,
+                get_auto_scaler=get_auto_scaler,
+                get_work_queue=get_work_queue,
+                get_peers=lambda: self.peers,
+            )
+            manager.register(auto_scaling)
+
+            self._loops_registered = True
+            logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
+            return True
+
+        except Exception as e:
+            logger.error(f"LoopManager: failed to register loops: {e}")
+            return False
+
     def _get_sync_router(self) -> SyncRouter | None:
         """Lazy-load SyncRouter singleton for intelligent sync routing."""
         if not HAS_SYNC_ROUTER:
@@ -10706,8 +10791,9 @@ print(json.dumps(result))
             self._save_state()
 
             # Auto-trigger tournament evaluation when training completes
+            # Delegate to TrainingCoordinator (Phase 2B refactoring, Dec 2025)
             if should_trigger_eval:
-                asyncio.create_task(self._handle_training_job_completion(job))
+                asyncio.create_task(self.training_coordinator.handle_training_job_completion(job))
 
             return web.json_response({"success": True})
 
