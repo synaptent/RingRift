@@ -326,8 +326,12 @@ class SelfplayRunner(ABC):
         Includes race condition protection: waits for model distribution
         to complete before attempting to load, avoiding failures when
         selfplay starts immediately after a model promotion.
+
+        December 2025: Now actually loads the NeuralNetAI object (not just
+        storing the path), enabling GPU batch evaluation in MCTS.
         """
         if not self.config.use_neural_net:
+            self._neural_net = None
             return
 
         try:
@@ -343,8 +347,65 @@ class SelfplayRunner(ABC):
             if model_path:
                 logger.info(f"  Model: {model_path}")
                 self._model = model_path
+
+                # December 2025: Actually load the neural network for GPU batch evaluation
+                # Previously only stored the path, causing MCTS to run without neural net
+                self._neural_net = self._create_neural_net_from_path(model_path)
+            else:
+                self._neural_net = None
         except (RuntimeError, ValueError, OSError, KeyError) as e:
             logger.warning(f"Model loading failed: {e}")
+            self._neural_net = None
+
+    def _create_neural_net_from_path(self, model_path: str) -> "Any":
+        """Create a NeuralNetAI instance from a model checkpoint path.
+
+        December 2025: Enables GPU batch evaluation by actually loading
+        the neural network instead of just storing the path.
+
+        Args:
+            model_path: Path to the .pth checkpoint file.
+
+        Returns:
+            NeuralNetAI instance, or None if loading fails.
+        """
+        try:
+            from ..models import BoardType, AIConfig
+            from ..ai.neural_net import NeuralNetAI
+
+            # Determine board type enum
+            board_type = BoardType(self.config.board_type)
+
+            # Create config for NeuralNetAI with the explicit checkpoint path
+            # Use nn_model_id to hint at the model, but the path is resolved internally
+            config = AIConfig(
+                difficulty=8,  # Not used for selfplay, but required
+                use_neural_net=True,
+                nn_model_id=f"canonical_{self.config.board_type}_{self.config.num_players}p",
+                # Pass explicit checkpoint path via the config attribute
+            )
+            # Set the explicit checkpoint path (NeuralNetAI checks this first)
+            config.explicit_checkpoint_path = model_path
+
+            # Create NeuralNetAI with player 1 (will be used for all players in batch eval)
+            neural_net = NeuralNetAI(
+                player_number=1,
+                config=config,
+                board_type=board_type,
+            )
+
+            logger.info(
+                f"  [GPU] Loaded NeuralNetAI from {model_path} "
+                f"(device={neural_net.device}, num_players={getattr(neural_net, 'num_players', 'unknown')})"
+            )
+            return neural_net
+
+        except ImportError as e:
+            logger.warning(f"NeuralNetAI not available: {e}")
+            return None
+        except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
+            logger.warning(f"Failed to load neural network from {model_path}: {e}")
+            return None
 
     def _wait_for_model_availability(self) -> None:
         """Wait for model to be distributed before loading.
@@ -1467,6 +1528,9 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
                 mode="standard",
                 simulation_budget=player_budget,
                 device=self.config.device or "cuda",
+                # December 2025: Pass loaded neural network for GPU batch evaluation
+                # Previously neural_net was None, disabling GPU acceleration
+                neural_net=getattr(self, '_neural_net', None),
             )
             # Enable GPU tree search for 10-20x speedup (December 2025)
             # This accelerates the sequential halving loop using GPU tensor operations
@@ -1514,6 +1578,8 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
                     mode="standard",
                     simulation_budget=player_budget,
                     device=self.config.device or "cuda",
+                    # December 2025: Pass loaded neural network for GPU batch evaluation
+                    neural_net=getattr(self, '_neural_net', None),
                 )
 
         start_time = time.time()

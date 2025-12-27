@@ -26888,11 +26888,109 @@ print(json.dumps({{
 
             await asyncio.sleep(DISCOVERY_INTERVAL)
 
+    def _validate_critical_subsystems(self) -> dict:
+        """Validate critical subsystems at startup.
+
+        Returns a status dict with protocol and manager availability.
+        Logs clear messages about which protocols are active.
+
+        December 2025: Added to address silent fallback behavior
+        where operators couldn't tell if SWIM/Raft was running.
+        """
+        from app.p2p.constants import (
+            SWIM_ENABLED, RAFT_ENABLED, MEMBERSHIP_MODE, CONSENSUS_MODE
+        )
+
+        status = {
+            "protocols": {
+                "membership_mode": MEMBERSHIP_MODE,
+                "consensus_mode": CONSENSUS_MODE,
+                "swim_enabled": SWIM_ENABLED,
+                "raft_enabled": RAFT_ENABLED,
+            },
+            "managers": {},
+            "warnings": [],
+            "errors": [],
+        }
+
+        # Check SWIM availability
+        try:
+            from app.p2p.swim_adapter import SWIM_AVAILABLE
+            status["protocols"]["swim_available"] = SWIM_AVAILABLE
+            if SWIM_ENABLED and not SWIM_AVAILABLE:
+                msg = "SWIM_ENABLED=true but swim-p2p not installed. Install: pip install swim-p2p>=1.2.0"
+                status["warnings"].append(msg)
+                logger.warning(f"[Startup Validation] {msg}")
+            elif SWIM_AVAILABLE:
+                logger.info(f"[Startup Validation] SWIM protocol available (membership_mode={MEMBERSHIP_MODE})")
+        except ImportError:
+            status["protocols"]["swim_available"] = False
+            if SWIM_ENABLED:
+                status["warnings"].append("swim_adapter import failed")
+
+        # Check Raft availability
+        try:
+            from app.p2p.raft_state import PYSYNCOBJ_AVAILABLE
+            status["protocols"]["raft_available"] = PYSYNCOBJ_AVAILABLE
+            if RAFT_ENABLED and not PYSYNCOBJ_AVAILABLE:
+                msg = "RAFT_ENABLED=true but pysyncobj not installed. Install: pip install pysyncobj>=0.3.14"
+                status["warnings"].append(msg)
+                logger.warning(f"[Startup Validation] {msg}")
+            elif PYSYNCOBJ_AVAILABLE:
+                logger.info(f"[Startup Validation] Raft protocol available (consensus_mode={CONSENSUS_MODE})")
+        except ImportError:
+            status["protocols"]["raft_available"] = False
+            if RAFT_ENABLED:
+                status["warnings"].append("raft_state import failed")
+
+        # Log active protocol configuration
+        logger.info(
+            f"[Startup Validation] Protocol config: membership={MEMBERSHIP_MODE}, consensus={CONSENSUS_MODE}"
+        )
+
+        # Check critical managers (lazy load check - don't fail, just report)
+        manager_checks = [
+            ("work_queue", "app.coordination.work_queue", "get_work_queue"),
+            ("health_manager", "app.coordination.unified_health_manager", "get_unified_health_manager"),
+            ("sync_router", "app.coordination.sync_router", "get_sync_router"),
+        ]
+
+        for name, module_path, getter_name in manager_checks:
+            try:
+                module = __import__(module_path, fromlist=[getter_name])
+                getter = getattr(module, getter_name, None)
+                status["managers"][name] = getter is not None
+                if getter:
+                    logger.debug(f"[Startup Validation] Manager {name} available")
+            except ImportError as e:
+                status["managers"][name] = False
+                status["warnings"].append(f"{name} import failed: {e}")
+                logger.warning(f"[Startup Validation] Manager {name} unavailable: {e}")
+
+        # Summary log
+        available_count = sum(1 for v in status["managers"].values() if v)
+        total_count = len(status["managers"])
+        if status["warnings"]:
+            logger.warning(
+                f"[Startup Validation] Completed with {len(status['warnings'])} warnings. "
+                f"Managers: {available_count}/{total_count} available"
+            )
+        else:
+            logger.info(
+                f"[Startup Validation] All checks passed. "
+                f"Managers: {available_count}/{total_count} available"
+            )
+
+        return status
+
     async def run(self):
         """Main entry point - start the orchestrator."""
         if not HAS_AIOHTTP:
             logger.error("aiohttp is required. Install with: pip install aiohttp")
             raise RuntimeError("aiohttp is required but not available - install with: pip install aiohttp")
+
+        # Validate critical subsystems before starting (December 2025)
+        self._startup_validation = self._validate_critical_subsystems()
 
         # Set up HTTP server
         @web.middleware
