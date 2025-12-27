@@ -328,7 +328,20 @@ class DaemonManagerConfig:
     Default values sourced from app.config.coordination_defaults.DaemonLoopDefaults
     for centralized configuration management.
     """
+
     auto_start: bool = False  # Auto-start all daemons on init
+
+    # Test/embedded mode knobs
+    # -------------------------------------------------------------------------
+    # Some unit/integration tests register ad-hoc daemon factories that don't
+    # need (and shouldn't pay for) the full coordination bootstrap.
+    enable_coordination_wiring: bool = True
+
+    # Dependency wait behavior (Dec 27, 2025)
+    # start(wait_for_deps=True) will poll these dependencies until ready.
+    dependency_wait_timeout: float = 30.0
+    dependency_poll_interval: float = 0.5
+
     # Dec 2025: Use centralized defaults from coordination_defaults.py
     health_check_interval: float = field(
         default_factory=lambda: float(DaemonLoopDefaults.CHECK_INTERVAL) / 10.0  # 30s (10% of check interval)

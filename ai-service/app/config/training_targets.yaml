@@ -20,7 +20,7 @@ defaults:
 
   # Training parameters
   training_epochs: 50 # Default epochs per training run
-  early_stopping_patience: 10 # Stop if no improvement for N epochs
+  early_stopping_patience: 25 # Stop if no improvement for N epochs (was 10, too aggressive)
 
   # Evaluation parameters
   gauntlet_games: 50 # Games per opponent in gauntlet

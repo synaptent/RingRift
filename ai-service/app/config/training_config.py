@@ -153,9 +153,10 @@ class NeuralNetConfig:
     policy_head_channels: int = 32
     value_head_channels: int = 32
 
-    # Training hyperparameters (optimized via random/bayesian search)
-    batch_size: int = 64
-    learning_rate: float = 0.0009
+    # Training hyperparameters (optimized Dec 2025 for >2000 Elo target)
+    # Previous values: batch_size=64, learning_rate=0.0009 were too conservative
+    batch_size: int = 256
+    learning_rate: float = 0.003
     weight_decay: float = 0.00028
     epochs: int = 100
     warmup_epochs: int = 5

@@ -158,17 +158,30 @@ def ensure_canonical_schema(db_path: Path, reference_db: Path = None) -> None:
         )
     """)
 
+    # Use the full v11 schema to preserve move_json (required for training export)
+    # The minimal schema was causing data loss during consolidation
     conn.execute("""
         CREATE TABLE IF NOT EXISTS game_moves (
             game_id TEXT NOT NULL,
             move_number INTEGER NOT NULL,
+            turn_number INTEGER NOT NULL DEFAULT 0,
             player INTEGER NOT NULL,
-            position_q INTEGER,
-            position_r INTEGER,
-            move_type TEXT,
+            phase TEXT NOT NULL DEFAULT 'unknown',
+            move_type TEXT NOT NULL DEFAULT 'unknown',
+            move_json TEXT NOT NULL DEFAULT '{}',
+            timestamp TEXT,
+            think_time_ms INTEGER,
+            time_remaining_ms INTEGER,
+            engine_eval REAL,
+            engine_eval_type TEXT,
+            engine_depth INTEGER,
+            engine_nodes INTEGER,
+            engine_pv TEXT,
+            engine_time_ms INTEGER,
             move_probs TEXT,
+            search_stats_json TEXT,
             PRIMARY KEY (game_id, move_number),
-            FOREIGN KEY (game_id) REFERENCES games(game_id)
+            FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
         )
     """)
 
@@ -357,21 +370,38 @@ def merge_games(
                 if not cursor.fetchone():
                     continue
 
-                # Get column names for this table
+                # Get column names from BOTH source and destination tables
+                # This handles schema differences between source (v11+) and canonical (v5) schemas
                 cursor = src_conn.execute(f"PRAGMA table_info({table_name})")
-                table_cols = [row[1] for row in cursor.fetchall()]
+                src_cols = [row[1] for row in cursor.fetchall()]
 
-                if not table_cols:
+                cursor = dest_conn.execute(f"PRAGMA table_info({table_name})")
+                dest_cols = [row[1] for row in cursor.fetchall()]
+
+                if not src_cols or not dest_cols:
                     continue
 
-                # Build placeholders for the columns
-                placeholders = ", ".join(["?" for _ in table_cols])
-                col_list = ", ".join(table_cols)
+                # Find columns that exist in BOTH tables (intersection)
+                # This allows copying between schemas with different column sets
+                common_cols = [c for c in src_cols if c in dest_cols]
+                if not common_cols:
+                    logger.debug(f"  No common columns between source and dest for {table_name}")
+                    continue
+
+                # Log schema difference for debugging
+                src_only = set(src_cols) - set(dest_cols)
+                if src_only:
+                    logger.debug(f"  {table_name}: source-only columns will be dropped: {src_only}")
+
+                # Build select/insert using only common columns
+                select_cols = ", ".join(common_cols)
+                placeholders = ", ".join(["?" for _ in common_cols])
+                col_indices = [src_cols.index(c) for c in common_cols]
 
                 # Copy rows for merged games
                 for game_id in game_ids_to_merge:
                     cursor = src_conn.execute(
-                        f"SELECT * FROM {table_name} WHERE game_id = ?",
+                        f"SELECT {select_cols} FROM {table_name} WHERE game_id = ?",
                         (game_id,)
                     )
                     rows = cursor.fetchall()
@@ -379,11 +409,11 @@ def merge_games(
                     for row in rows:
                         try:
                             dest_conn.execute(
-                                f"INSERT OR IGNORE INTO {table_name} ({col_list}) VALUES ({placeholders})",
+                                f"INSERT OR IGNORE INTO {table_name} ({select_cols}) VALUES ({placeholders})",
                                 tuple(row)
                             )
-                        except sqlite3.Error:
-                            pass  # Ignore duplicate key errors
+                        except sqlite3.Error as e:
+                            logger.debug(f"  Insert error for {table_name}: {e}")
 
             except sqlite3.Error as e:
                 logger.debug(f"  Could not copy {table_name}: {e}")
