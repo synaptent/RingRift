@@ -55,22 +55,45 @@ logger = logging.getLogger(__name__)
 # Configuration Constants
 # =============================================================================
 
-# Import targets from resource_targets for consistency
-try:
-    from app.coordination.resource_targets import get_resource_targets
-    _targets = get_resource_targets()
-    TARGET_UTIL_MIN = _targets.cpu_min  # 60%
-    TARGET_UTIL_MAX = _targets.cpu_max  # 80%
-    TARGET_UTIL_OPTIMAL = _targets.cpu_target  # 70%
-    SCALE_UP_THRESHOLD = TARGET_UTIL_MIN - 5  # 55%
-    SCALE_DOWN_THRESHOLD = TARGET_UTIL_MAX + 5  # 85%
-except ImportError:
-    # Fallback if resource_targets not available - use centralized env config
-    TARGET_UTIL_MIN = env.target_util_min
-    TARGET_UTIL_MAX = env.target_util_max
-    TARGET_UTIL_OPTIMAL = (TARGET_UTIL_MIN + TARGET_UTIL_MAX) / 2  # 70%
-    SCALE_UP_THRESHOLD = env.scale_up_threshold
-    SCALE_DOWN_THRESHOLD = env.scale_down_threshold
+# Lazy initialization of targets to avoid circular import with resource_targets
+# December 2025: Moved from module-level import to lazy accessor pattern
+_cached_targets: dict[str, float] | None = None
+
+
+def _get_targets() -> dict[str, float]:
+    """Lazy load resource targets to avoid circular import."""
+    global _cached_targets
+    if _cached_targets is not None:
+        return _cached_targets
+
+    try:
+        from app.coordination.resource_targets import get_resource_targets
+        _targets = get_resource_targets()
+        _cached_targets = {
+            "util_min": _targets.cpu_min,
+            "util_max": _targets.cpu_max,
+            "util_optimal": _targets.cpu_target,
+            "scale_up": _targets.cpu_min - 5,
+            "scale_down": _targets.cpu_max + 5,
+        }
+    except ImportError:
+        # Fallback to centralized env config
+        _cached_targets = {
+            "util_min": env.target_util_min,
+            "util_max": env.target_util_max,
+            "util_optimal": (env.target_util_min + env.target_util_max) / 2,
+            "scale_up": env.scale_up_threshold,
+            "scale_down": env.scale_down_threshold,
+        }
+    return _cached_targets
+
+
+# Module-level constants use env defaults; actual values come from _get_targets()
+TARGET_UTIL_MIN = env.target_util_min  # 60%
+TARGET_UTIL_MAX = env.target_util_max  # 80%
+TARGET_UTIL_OPTIMAL = (TARGET_UTIL_MIN + TARGET_UTIL_MAX) / 2  # 70%
+SCALE_UP_THRESHOLD = env.scale_up_threshold  # 55%
+SCALE_DOWN_THRESHOLD = env.scale_down_threshold  # 85%
 
 # PID controller parameters - use centralized defaults (December 2025)
 try:

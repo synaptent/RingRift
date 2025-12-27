@@ -20177,12 +20177,14 @@ print(json.dumps({{
                 if not self._is_leader_eligible(leader, conflict_keys):
                     reason = "dead" if not leader.is_alive() else "ineligible"
                     logger.info(f"Leader {self.leader_id} is {reason}, starting election")
-                    # Clear stale/ineligible leader to avoid proxy/relay selecting it.
+                    # Dec 2025: Emit LEADER_LOST before clearing stale/ineligible leader
+                    old_leader_id = self.leader_id
                     self.leader_id = None
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
                     self.last_lease_renewal = 0.0
                     self.role = NodeRole.FOLLOWER
+                    asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
                     asyncio.create_task(self._start_election())
 
         # If we're leaderless, periodically retry elections so the cluster can

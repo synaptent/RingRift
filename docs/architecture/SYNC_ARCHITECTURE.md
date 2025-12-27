@@ -415,12 +415,13 @@ hosts:
 
 | File                                   | Purpose                                |
 | -------------------------------------- | -------------------------------------- |
-| `app/distributed/sync_orchestrator.py` | Unified facade                         |
-| `app/coordination/sync_coordinator.py` | SyncScheduler (scheduling)             |
+| `app/coordination/sync_facade.py`      | Unified programmatic sync entry point  |
+| `app/coordination/auto_sync_daemon.py` | Background automation                  |
+| `app/coordination/sync_coordinator.py` | SyncScheduler (scheduling, deprecated) |
 | `app/distributed/sync_coordinator.py`  | DistributedSyncCoordinator (execution) |
 | `app/coordination/sync_router.py`      | Intelligent routing                    |
 | `app/distributed/cluster_manifest.py`  | Central registry                       |
-| `app/coordination/auto_sync_daemon.py` | Background automation                  |
+| `app/distributed/sync_orchestrator.py` | Legacy facade (pending deprecation)    |
 | `app/coordination/sync_bandwidth.py`   | Bandwidth management                   |
 | `app/coordination/sync_constants.py`   | Shared enums/dataclasses               |
 | `app/coordination/sync_integrity.py`   | Checksum verification                  |
@@ -440,12 +441,10 @@ await coordinator.sync_all()
 ### New Pattern (Recommended)
 
 ```python
-# Use unified orchestrator
-from app.distributed.sync_orchestrator import get_sync_orchestrator
+# Use unified sync facade
+from app.coordination.sync_facade import sync
 
-orchestrator = get_sync_orchestrator()
-await orchestrator.initialize()
-result = await orchestrator.sync_all()
+result = await sync("all")
 ```
 
 ## See Also

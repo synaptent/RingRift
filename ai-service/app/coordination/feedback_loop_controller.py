@@ -209,6 +209,13 @@ class FeedbackLoopController:
             bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
             bus.subscribe(DataEventType.WORK_COMPLETED, self._on_work_completed)
 
+            # Phase 27: Subscribe to work failure events (December 2025)
+            # Closes gap: WORK_FAILED/WORK_TIMEOUT events were orphaned
+            if hasattr(DataEventType, 'WORK_FAILED'):
+                bus.subscribe(DataEventType.WORK_FAILED, self._on_work_failed)
+            if hasattr(DataEventType, 'WORK_TIMEOUT'):
+                bus.subscribe(DataEventType.WORK_TIMEOUT, self._on_work_timeout)
+
             # Phase 23.1: Subscribe to selfplay rate change events for monitoring
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
                 bus.subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
@@ -292,6 +299,12 @@ class FeedbackLoopController:
             bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
             bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
             bus.unsubscribe(DataEventType.WORK_COMPLETED, self._on_work_completed)
+
+            # Phase 27: Unsubscribe from work failure events
+            if hasattr(DataEventType, 'WORK_FAILED'):
+                bus.unsubscribe(DataEventType.WORK_FAILED, self._on_work_failed)
+            if hasattr(DataEventType, 'WORK_TIMEOUT'):
+                bus.unsubscribe(DataEventType.WORK_TIMEOUT, self._on_work_timeout)
 
             # Phase 23.1: Unsubscribe from rate change events
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):

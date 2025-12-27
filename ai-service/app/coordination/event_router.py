@@ -1115,7 +1115,6 @@ __all__ = [
     "emit_host_offline",
     "emit_host_online",
     "emit_idle_resource_detected",
-    "emit_leader_lost",
     "emit_leader_elected",
     "emit_leader_lost",
     "emit_node_overloaded",
