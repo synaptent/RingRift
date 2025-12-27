@@ -697,9 +697,15 @@ class SyncRouter:
                 self._on_host_offline,
             )
 
+            # Subscribe to cluster capacity changes (Dec 2025 - P2P integration)
+            router.subscribe(
+                DataEventType.CLUSTER_CAPACITY_CHANGED.value,
+                self._on_cluster_capacity_changed,
+            )
+
             logger.info(
                 "[SyncRouter] Wired to event router "
-                "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE)"
+                "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE, CLUSTER_CAPACITY_CHANGED)"
             )
 
         except ImportError as e:
@@ -785,6 +791,90 @@ class SyncRouter:
 
         except Exception as e:
             logger.debug(f"[SyncRouter] Error handling host offline: {e}")
+
+    async def _on_cluster_capacity_changed(self, event: Any) -> None:
+        """Handle CLUSTER_CAPACITY_CHANGED event - refresh capacity data and recalculate routes.
+
+        December 2025: Enables real-time reaction to cluster membership changes.
+        When nodes join or leave, we refresh capacity data to ensure sync
+        targets are current and appropriately prioritized.
+
+        Args:
+            event: Event with payload containing change_type, node_id, total_nodes, gpu_nodes
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            change_type = payload.get("change_type", "unknown")
+            node_id = payload.get("node_id", "unknown")
+            total_nodes = payload.get("total_nodes", 0)
+            gpu_nodes = payload.get("gpu_nodes", 0)
+            reason = payload.get("reason", "")
+
+            logger.info(
+                f"[SyncRouter] Cluster capacity changed: {change_type} "
+                f"node={node_id}, total={total_nodes}, gpu={gpu_nodes}, reason={reason}"
+            )
+
+            # Refresh capacity data from manifest
+            if self._manifest:
+                self._manifest.refresh_capacity_data()
+
+            # Update node capability based on change
+            if change_type == "node_removed":
+                if node_id in self._node_capabilities:
+                    cap = self._node_capabilities[node_id]
+                    cap.can_receive_games = False
+                    cap.can_receive_models = False
+                    cap.can_receive_npz = False
+                    logger.debug(f"[SyncRouter] Disabled sync to removed node: {node_id}")
+
+            elif change_type == "node_added":
+                if node_id not in self._node_capabilities:
+                    # Add new node with default capabilities
+                    self._node_capabilities[node_id] = NodeSyncCapability(node_id=node_id)
+                else:
+                    # Re-enable existing node
+                    cap = self._node_capabilities[node_id]
+                    cap.can_receive_games = True
+                    cap.can_receive_models = True
+                    cap.can_receive_npz = True
+                logger.debug(f"[SyncRouter] Enabled sync to added node: {node_id}")
+
+            # Emit capacity refresh event for downstream consumers
+            await self._emit_capacity_refresh(
+                change_type=change_type,
+                node_id=node_id,
+                total_nodes=total_nodes,
+                gpu_nodes=gpu_nodes,
+            )
+
+        except Exception as e:
+            logger.warning(f"[SyncRouter] Error handling cluster capacity changed: {e}")
+
+    async def _emit_capacity_refresh(
+        self,
+        change_type: str,
+        node_id: str,
+        total_nodes: int,
+        gpu_nodes: int,
+    ) -> None:
+        """Emit a capacity refresh event for downstream consumers."""
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish(
+                "SYNC_CAPACITY_REFRESHED",
+                {
+                    "change_type": change_type,
+                    "node_id": node_id,
+                    "total_nodes": total_nodes,
+                    "gpu_nodes": gpu_nodes,
+                    "router": "SyncRouter",
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[SyncRouter] Could not emit capacity refresh: {e}")
 
     async def _emit_sync_routing_decision(
         self,

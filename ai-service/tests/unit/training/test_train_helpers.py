@@ -439,7 +439,7 @@ class TestEvaluateHeuristicCandidate:
 
     def test_fitness_calculation(self, mock_tier_spec, mock_eval_result):
         """Test that fitness is calculated correctly from results."""
-        with patch("app.training.train.run_heuristic_tier_eval") as mock_eval:
+        with patch("app.training.heuristic_tuning.run_heuristic_tier_eval") as mock_eval:
             mock_eval.return_value = mock_eval_result
 
             keys = list(HEURISTIC_WEIGHT_KEYS)
@@ -480,7 +480,7 @@ class TestEvaluateHeuristicCandidate:
 
     def test_fitness_with_zero_games(self, mock_tier_spec):
         """Test fitness calculation with zero games (edge case)."""
-        with patch("app.training.train.run_heuristic_tier_eval") as mock_eval:
+        with patch("app.training.heuristic_tuning.run_heuristic_tier_eval") as mock_eval:
             mock_eval.return_value = {
                 "games_played": 0,
                 "results": {},
@@ -523,7 +523,7 @@ class TestEvaluateHeuristicCandidate:
 
     def test_uses_games_per_candidate_override(self, mock_tier_spec, mock_eval_result):
         """Test that games_per_candidate overrides tier spec num_games."""
-        with patch("app.training.train.run_heuristic_tier_eval") as mock_eval:
+        with patch("app.training.heuristic_tuning.run_heuristic_tier_eval") as mock_eval:
             mock_eval.return_value = mock_eval_result
 
             keys = list(HEURISTIC_WEIGHT_KEYS)
@@ -625,7 +625,7 @@ class TestRunCmaesHeuristicOptimization:
             "margins": {"ring_margin_mean": 0.1, "territory_margin_mean": 0.5},
         }
 
-        with patch("app.training.train.run_heuristic_tier_eval") as mock_eval:
+        with patch("app.training.heuristic_tuning.run_heuristic_tier_eval") as mock_eval:
             mock_eval.return_value = mock_result
 
             report = run_cmaes_heuristic_optimization(
@@ -670,7 +670,7 @@ class TestRunCmaesHeuristicOptimization:
             "margins": {"ring_margin_mean": 0.2, "territory_margin_mean": 1.0},
         }
 
-        with patch("app.training.train.run_heuristic_tier_eval") as mock_eval:
+        with patch("app.training.heuristic_tuning.run_heuristic_tier_eval") as mock_eval:
             mock_eval.return_value = mock_result
 
             report = run_cmaes_heuristic_optimization(
@@ -718,7 +718,7 @@ class TestRunCmaesHeuristicOptimization:
                 "margins": {"ring_margin_mean": 0.0, "territory_margin_mean": 0.0},
             }
 
-        with patch("app.training.train.run_heuristic_tier_eval") as mock_eval:
+        with patch("app.training.heuristic_tuning.run_heuristic_tier_eval") as mock_eval:
             mock_eval.side_effect = varying_result
 
             report = run_cmaes_heuristic_optimization(

@@ -24,9 +24,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import os
 import signal
+import sqlite3
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -233,7 +235,7 @@ class SelfplayRunner(ABC):
 
         except ImportError:
             pass  # FeedbackAccelerator not available
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[SelfplayRunner] Elo-adaptive config not applied: {e}")
 
     def _apply_selfplay_rate_adjustment(self) -> None:
@@ -266,7 +268,7 @@ class SelfplayRunner(ABC):
                 )
         except ImportError:
             pass  # FeedbackAccelerator not available
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[SelfplayRunner] Selfplay rate adjustment not applied: {e}")
 
     def _apply_quality_budget_multiplier(self) -> None:
@@ -308,7 +310,7 @@ class SelfplayRunner(ABC):
 
         except ImportError:
             pass  # SelfplayOrchestrator not available
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[SelfplayRunner] Quality budget adjustment not applied: {e}")
 
     def teardown(self) -> None:
@@ -341,7 +343,7 @@ class SelfplayRunner(ABC):
             if model_path:
                 logger.info(f"  Model: {model_path}")
                 self._model = model_path
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError, KeyError) as e:
             logger.warning(f"Model loading failed: {e}")
 
     def _wait_for_model_availability(self) -> None:
@@ -404,7 +406,7 @@ class SelfplayRunner(ABC):
         except ImportError:
             # Model distribution daemon not available - skip wait
             logger.debug("[ModelDistribution] Distribution daemon not available, skipping wait")
-        except Exception as e:
+        except (asyncio.TimeoutError, RuntimeError, OSError) as e:
             logger.warning(f"[ModelDistribution] Error waiting for model: {e}")
 
     def _open_database(self) -> None:
@@ -422,7 +424,7 @@ class SelfplayRunner(ABC):
 
             # Phase 4A.3: Emit DATABASE_CREATED event for immediate registration
             self._register_database_immediately(db_path)
-        except Exception as e:
+        except (OSError, sqlite3.Error) as e:
             logger.warning(f"Failed to open database {self.config.record_db}: {e}")
             self._db = None
 
@@ -466,12 +468,12 @@ class SelfplayRunner(ABC):
                     config_key=config_key,
                     engine_mode=self.config.engine_mode.value if self.config.engine_mode else None,
                 )
-            except Exception as e:
+            except (AttributeError, KeyError, TypeError, OSError) as e:
                 logger.debug(f"[SelfplayRunner] Could not register in manifest: {e}")
 
         except ImportError:
             pass  # Event system not available
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, OSError) as e:
             logger.debug(f"[SelfplayRunner] Could not emit DATABASE_CREATED: {e}")
 
     def _close_database(self) -> None:
@@ -480,7 +482,7 @@ class SelfplayRunner(ABC):
             try:
                 # GameReplayDB doesn't have explicit close, but we clear the reference
                 self._db = None
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.warning(f"Error closing database: {e}")
 
     def _subscribe_to_quality_events(self) -> None:
@@ -552,7 +554,7 @@ class SelfplayRunner(ABC):
 
         except ImportError:
             pass  # Event system not available
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[SelfplayRunner] Failed to subscribe to quality events: {e}")
 
     def _subscribe_to_feedback_events(self) -> None:
@@ -842,7 +844,7 @@ class SelfplayRunner(ABC):
 
         except ImportError:
             pass  # Event system not available
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[SelfplayRunner] Failed to subscribe to feedback events: {e}")
 
     def _init_pfsp(self) -> None:
@@ -874,7 +876,7 @@ class SelfplayRunner(ABC):
 
         except ImportError as e:
             logger.debug(f"[PFSP] Module not available: {e}")
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError, RuntimeError) as e:
             logger.debug(f"[PFSP] Failed to initialize: {e}")
 
     def _init_temperature_scheduler(self) -> None:
@@ -914,7 +916,7 @@ class SelfplayRunner(ABC):
 
         except ImportError as e:
             logger.debug(f"[TemperatureScheduler] Module not available: {e}")
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[TemperatureScheduler] Failed to initialize: {e}")
 
     def get_pfsp_opponent(self, current_model: str, available_opponents: list[str]) -> str:
@@ -1037,7 +1039,7 @@ class SelfplayRunner(ABC):
                     snapshot_interval=getattr(self.config, 'snapshot_interval', 20),
                 )
             logger.debug(f"Saved game {result.game_id} to database")
-        except Exception as e:
+        except (OSError, sqlite3.Error, ValueError, TypeError) as e:
             logger.warning(f"Failed to save game {result.game_id} to database: {e}")
 
     def _save_game_with_mcts_data(self, result: GameResult) -> None:
@@ -1094,7 +1096,7 @@ class SelfplayRunner(ABC):
         for callback in self._callbacks:
             try:
                 callback(result)
-            except Exception as e:
+            except (TypeError, ValueError, AttributeError, RuntimeError) as e:
                 logger.warning(f"Callback error: {e}")
 
         # Phase 4A.5: Ephemeral sync integration for write-through mode
@@ -1135,7 +1137,7 @@ class SelfplayRunner(ABC):
 
         except ImportError:
             pass  # Ephemeral sync not available
-        except Exception as e:
+        except (AttributeError, RuntimeError, asyncio.TimeoutError, OSError) as e:
             logger.debug(f"[Ephemeral] Could not notify sync daemon: {e}")
 
     def _emit_orchestrator_event(self) -> None:
@@ -1176,7 +1178,7 @@ class SelfplayRunner(ABC):
             )
         except ImportError:
             pass  # Event system not available
-        except Exception as e:
+        except (AttributeError, RuntimeError, asyncio.TimeoutError, TypeError) as e:
             logger.warning(f"Failed to emit selfplay event: {e}")
 
     def get_temperature(self, move_number: int, game_state=None) -> float:
@@ -1231,7 +1233,7 @@ class SelfplayRunner(ABC):
                 return scheduler.get_temperature(move_number, game_state) * combined_scale
             except ImportError:
                 pass  # Fall through to default logic
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError) as e:
                 logger.debug(f"[Temperature] Elo-adaptive scheduler failed: {e}")
 
         # Default temperature logic (backward compatible)
@@ -1282,7 +1284,7 @@ class SelfplayRunner(ABC):
                             f"{self.stats.games_per_second:.2f} g/s{throttle_info}"
                         )
 
-                except Exception as e:
+                except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError, sqlite3.Error) as e:
                     logger.warning(f"Game {game_idx} failed: {e}")
                     self.stats.games_failed += 1
 
@@ -1775,10 +1777,10 @@ class GNNSelfplayRunner(SelfplayRunner):
                         total = sum(move_probs.values())
                         if total > 0:
                             move_probs = {k: v / total for k, v in move_probs.items()}
-                    except Exception:
+                    except (IndexError, TypeError, ValueError, RuntimeError):
                         move_probs = None
 
-                except Exception as e:
+                except (RuntimeError, ValueError, TypeError, IndexError) as e:
                     # Fallback to random move on any error
                     logger.debug(f"GNN inference error, using random: {e}")
                     move = random.choice(valid_moves)

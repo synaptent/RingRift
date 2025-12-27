@@ -645,6 +645,12 @@ class SelfplayOrchestrator:
                     f"[SelfplayOrchestrator] Curriculum weights updated (trigger={trigger}): "
                     f"{', '.join(changed_configs)}"
                 )
+                # Emit CURRICULUM_ALLOCATION_CHANGED event (Dec 2025 - enables pipeline tracking)
+                self._emit_curriculum_allocation_changed(
+                    changed_weights=new_weights,
+                    trigger=trigger,
+                    num_changes=len(changed_configs),
+                )
             else:
                 logger.debug(
                     f"[SelfplayOrchestrator] Curriculum weights updated (trigger={trigger}), "
@@ -700,11 +706,19 @@ class SelfplayOrchestrator:
         old_multiplier = self._quality_budget_multipliers.get(config_key, 1.0)
         self._quality_budget_multipliers[config_key] = multiplier
 
-        # Log significant changes
+        # Log and emit event for significant changes
         if abs(multiplier - old_multiplier) >= 0.1:
             logger.info(
                 f"[SelfplayOrchestrator] Quality-based budget for {config_key}: "
                 f"{old_multiplier:.1f}x→{multiplier:.1f}x (quality={quality_score:.2f})"
+            )
+            # Emit SELFPLAY_BUDGET_ADJUSTED event (Dec 2025 - enables pipeline tracking)
+            self._emit_selfplay_budget_adjusted(
+                config_key=config_key,
+                old_multiplier=old_multiplier,
+                new_multiplier=multiplier,
+                quality_score=quality_score,
+                reason="quality_feedback",
             )
 
     async def _on_idle_resource_detected(self, event) -> None:
@@ -819,6 +833,248 @@ class SelfplayOrchestrator:
         if self._paused_for_regression:
             self._paused_for_regression = False
             logger.info("[SelfplayOrchestrator] Regression pause cleared")
+
+    def request_selfplay(
+        self,
+        config_key: str,
+        num_games: int = 100,
+        priority: str = "normal",
+        source: str = "manual",
+    ) -> str | None:
+        """Request selfplay for a specific config.
+
+        Routes the request to P2P orchestrator (if available) or queues locally.
+        Emits REQUEST_SELFPLAY_QUEUED event for pipeline coordination.
+
+        December 2025: Implements the missing method called by _on_idle_resource_detected.
+        This closes the idle resource → selfplay feedback loop.
+
+        Args:
+            config_key: Config identifier (e.g., "square8_2p", "hex8_4p")
+            num_games: Number of games to generate
+            priority: Priority level ("low", "normal", "high", "critical")
+            source: Source of request for tracking ("idle_resource_detection", "manual", etc.)
+
+        Returns:
+            Task ID if request was queued, None if rejected
+        """
+        import uuid
+
+        # Generate task ID for tracking
+        task_id = f"selfplay-{uuid.uuid4().hex[:8]}"
+
+        # Parse config_key to extract board_type and num_players
+        try:
+            parts = config_key.rsplit("_", 1)
+            if len(parts) == 2 and parts[1].endswith("p"):
+                board_type = parts[0]
+                num_players = int(parts[1][:-1])
+            else:
+                board_type = config_key
+                num_players = 2
+        except (ValueError, IndexError):
+            board_type = config_key
+            num_players = 2
+
+        # Check backpressure before queueing
+        if self._paused_for_regression:
+            logger.warning(
+                f"[SelfplayOrchestrator] Rejecting selfplay request {task_id} - "
+                "paused for regression investigation"
+            )
+            return None
+
+        # Try to route to P2P orchestrator first (cluster-wide scheduling)
+        routed_to_p2p = self._route_to_p2p_orchestrator(
+            config_key=config_key,
+            num_games=num_games,
+            priority=priority,
+            task_id=task_id,
+        )
+
+        if routed_to_p2p:
+            logger.info(
+                f"[SelfplayOrchestrator] Selfplay request {task_id} routed to P2P: "
+                f"config={config_key}, games={num_games}, priority={priority}, source={source}"
+            )
+        else:
+            # Register locally for tracking (fallback when P2P unavailable)
+            self.register_task(
+                task_id=task_id,
+                selfplay_type=SelfplayType.BACKGROUND,
+                node_id="local",
+                board_type=board_type,
+                num_players=num_players,
+                games_requested=num_games,
+            )
+            logger.info(
+                f"[SelfplayOrchestrator] Selfplay request {task_id} queued locally: "
+                f"config={config_key}, games={num_games}, source={source}"
+            )
+
+        # Emit event for pipeline coordination
+        self._emit_selfplay_request_queued(
+            task_id=task_id,
+            config_key=config_key,
+            num_games=num_games,
+            priority=priority,
+            source=source,
+            routed_to_p2p=routed_to_p2p,
+        )
+
+        return task_id
+
+    def _route_to_p2p_orchestrator(
+        self,
+        config_key: str,
+        num_games: int,
+        priority: str,
+        task_id: str,
+    ) -> bool:
+        """Try to route selfplay request to P2P orchestrator.
+
+        Args:
+            config_key: Config identifier
+            num_games: Number of games
+            priority: Priority level
+            task_id: Task ID for tracking
+
+        Returns:
+            True if successfully routed, False if P2P unavailable
+        """
+        try:
+            import aiohttp
+            import asyncio
+
+            # Check if P2P orchestrator is running locally
+            async def _send_request():
+                try:
+                    async with aiohttp.ClientSession(
+                        timeout=aiohttp.ClientTimeout(total=5)
+                    ) as session:
+                        async with session.post(
+                            "http://localhost:8770/queue/selfplay",
+                            json={
+                                "config_key": config_key,
+                                "num_games": num_games,
+                                "priority": priority,
+                                "task_id": task_id,
+                            },
+                        ) as resp:
+                            return resp.status == 200
+                except Exception:
+                    return False
+
+            # Try to run in existing event loop or create new one
+            try:
+                loop = asyncio.get_running_loop()
+                # Can't await in sync context, schedule and return optimistically
+                loop.create_task(_send_request())
+                return True
+            except RuntimeError:
+                # No event loop, try to run synchronously
+                try:
+                    return asyncio.run(_send_request())
+                except Exception:
+                    return False
+
+        except ImportError:
+            logger.debug("[SelfplayOrchestrator] aiohttp not available for P2P routing")
+            return False
+        except Exception as e:
+            logger.debug(f"[SelfplayOrchestrator] P2P routing failed: {e}")
+            return False
+
+    def _emit_selfplay_request_queued(
+        self,
+        task_id: str,
+        config_key: str,
+        num_games: int,
+        priority: str,
+        source: str,
+        routed_to_p2p: bool,
+    ) -> None:
+        """Emit REQUEST_SELFPLAY_QUEUED event for pipeline coordination.
+
+        December 2025: Enables tracking of selfplay request lifecycle.
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish(
+                "REQUEST_SELFPLAY_QUEUED",
+                {
+                    "task_id": task_id,
+                    "config_key": config_key,
+                    "num_games": num_games,
+                    "priority": priority,
+                    "source": source,
+                    "routed_to_p2p": routed_to_p2p,
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[SelfplayOrchestrator] Failed to emit REQUEST_SELFPLAY_QUEUED: {e}")
+
+    def _emit_selfplay_budget_adjusted(
+        self,
+        config_key: str,
+        old_multiplier: float,
+        new_multiplier: float,
+        quality_score: float,
+        reason: str,
+    ) -> None:
+        """Emit SELFPLAY_BUDGET_ADJUSTED event for pipeline coordination.
+
+        December 2025: Enables tracking of quality-based budget adjustments.
+        Downstream systems can react to budget changes (e.g., adjust job allocation).
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish(
+                "SELFPLAY_BUDGET_ADJUSTED",
+                {
+                    "config_key": config_key,
+                    "old_multiplier": old_multiplier,
+                    "new_multiplier": new_multiplier,
+                    "quality_score": quality_score,
+                    "reason": reason,
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[SelfplayOrchestrator] Failed to emit SELFPLAY_BUDGET_ADJUSTED: {e}")
+
+    def _emit_curriculum_allocation_changed(
+        self,
+        changed_weights: dict[str, float],
+        trigger: str,
+        num_changes: int,
+    ) -> None:
+        """Emit CURRICULUM_ALLOCATION_CHANGED event for pipeline coordination.
+
+        December 2025: Enables tracking of curriculum weight updates.
+        Downstream systems can react to allocation changes (e.g., adjust job scheduling).
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish(
+                "CURRICULUM_ALLOCATION_CHANGED",
+                {
+                    "changed_weights": changed_weights,
+                    "trigger": trigger,
+                    "num_changes": num_changes,
+                    "all_weights": dict(self._curriculum_weights),
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[SelfplayOrchestrator] Failed to emit CURRICULUM_ALLOCATION_CHANGED: {e}")
 
     def get_constrained_nodes(self) -> list[str]:
         """Get list of nodes with recent resource constraints."""

@@ -457,3 +457,139 @@ def get_underserved_configs(config_path: str | Path | None = None) -> list[str]:
 def is_host_sync_excluded(host_name: str, config_path: str | Path | None = None) -> bool:
     """Check if a host is excluded from sync operations."""
     return load_cluster_config(config_path).sync_routing.is_host_excluded(host_name)
+
+
+# =============================================================================
+# Node Dataclass and Helpers (December 2025)
+# Consolidated from app/sync/cluster_hosts.py
+# =============================================================================
+
+@dataclass
+class ClusterNode:
+    """Represents a cluster node with connectivity info.
+
+    Provides unified access to host configuration from distributed_hosts.yaml.
+    """
+
+    name: str
+    tailscale_ip: str | None = None
+    ssh_host: str | None = None
+    ssh_user: str = "ubuntu"
+    ssh_key: str | None = None
+    ssh_port: int = 22
+    ringrift_path: str = "~/ringrift/ai-service"
+    status: str = "unknown"
+    role: str = "unknown"
+    memory_gb: int = 0
+    cpus: int = 0
+    gpu: str = ""
+    data_server_port: int = 8766
+    data_server_url: str | None = None
+
+    @property
+    def best_ip(self) -> str | None:
+        """Get best IP for connection (prefer Tailscale)."""
+        for candidate in (self.tailscale_ip, self.ssh_host):
+            if not candidate:
+                continue
+            host = str(candidate).strip()
+            if not host:
+                continue
+            # Handle user@host format
+            if "@" in host:
+                host = host.split("@", 1)[1]
+            return host
+        return None
+
+    @property
+    def data_server_base_url(self) -> str | None:
+        """Get base URL for the node's data server."""
+        if self.data_server_url:
+            return self.data_server_url
+        ip = self.best_ip
+        if not ip:
+            return None
+        return f"http://{ip}:{self.data_server_port}"
+
+    @property
+    def is_active(self) -> bool:
+        """Check if node is marked as active."""
+        return self.status not in ("terminated", "offline", "setup")
+
+    @property
+    def is_gpu_node(self) -> bool:
+        """Check if node has a GPU."""
+        return bool(self.gpu)
+
+    @property
+    def provider(self) -> str:
+        """Get provider inferred from node name."""
+        return get_host_provider(self.name)
+
+
+def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, ClusterNode]:
+    """Get all cluster nodes from config.
+
+    Returns:
+        Dict mapping node name to ClusterNode object.
+    """
+    config = load_cluster_config(config_path)
+    nodes: dict[str, ClusterNode] = {}
+
+    # Get default data server port
+    default_data_port = 8766
+    try:
+        from app.config.unified_config import get_config
+        default_data_port = get_config().distributed.data_server_port
+    except (ImportError, AttributeError, KeyError):
+        pass
+
+    for name, cfg in config.hosts_raw.items():
+        nodes[name] = ClusterNode(
+            name=name,
+            tailscale_ip=cfg.get("tailscale_ip"),
+            ssh_host=cfg.get("ssh_host"),
+            ssh_user=cfg.get("ssh_user", "ubuntu"),
+            ssh_key=cfg.get("ssh_key"),
+            ssh_port=cfg.get("ssh_port", 22),
+            ringrift_path=cfg.get("ringrift_path", "~/ringrift/ai-service"),
+            status=cfg.get("status", "unknown"),
+            role=cfg.get("role", "unknown"),
+            memory_gb=cfg.get("memory_gb", 0),
+            cpus=cfg.get("cpus", 0),
+            gpu=cfg.get("gpu", ""),
+            data_server_port=cfg.get("data_server_port", default_data_port),
+            data_server_url=cfg.get("data_server_url"),
+        )
+
+    return nodes
+
+
+def get_active_nodes(config_path: str | Path | None = None) -> list[ClusterNode]:
+    """Get all active (non-terminated) cluster nodes."""
+    return [n for n in get_cluster_nodes(config_path).values() if n.is_active]
+
+
+def get_gpu_nodes(config_path: str | Path | None = None) -> list[ClusterNode]:
+    """Get all GPU-equipped cluster nodes."""
+    return [n for n in get_cluster_nodes(config_path).values() if n.is_gpu_node and n.is_active]
+
+
+def get_coordinator_node(config_path: str | Path | None = None) -> ClusterNode | None:
+    """Get the Elo coordinator node."""
+    elo_config = get_elo_sync_config(config_path)
+    nodes = get_cluster_nodes(config_path)
+    return nodes.get(elo_config.coordinator)
+
+
+def get_nfs_hosts(config_path: str | Path | None = None) -> list[str]:
+    """Get hosts that have NFS configured (excluded from sync).
+
+    Returns:
+        List of host names with NFS configured.
+    """
+    config = load_cluster_config(config_path)
+    return [
+        name for name, cfg in config.hosts_raw.items()
+        if cfg.get("nfs_enabled", False) or cfg.get("has_nfs", False)
+    ]

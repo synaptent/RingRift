@@ -296,7 +296,7 @@ class UnifiedDistributionDaemon:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError) as e:
                 logger.error(f"Error in distribution daemon loop: {e}")
                 self._errors_count += 1
                 self._last_error = str(e)
@@ -609,7 +609,7 @@ class UnifiedDistributionDaemon:
                     logger.debug(f"HTTP upload to {host} failed: {response.status}")
                     return False
 
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError) as e:
             logger.debug(f"HTTP upload to {host} failed: {e}")
             return False
 
@@ -658,7 +658,7 @@ class UnifiedDistributionDaemon:
             logger.debug(f"rsync to {host} failed: {stderr.decode()[:100]}")
             return False
 
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, asyncio.SubprocessError) as e:
             logger.debug(f"rsync to {host} failed: {e}")
             return False
 
@@ -682,7 +682,7 @@ class UnifiedDistributionDaemon:
 
         except ImportError:
             return False
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
             logger.debug(f"BitTorrent distribution failed: {e}")
             return False
 
@@ -708,7 +708,7 @@ class UnifiedDistributionDaemon:
             )
             self._checksum_cache[cache_key] = checksum
             return checksum
-        except Exception as e:
+        except (OSError, ValueError, ImportError) as e:
             logger.warning(f"Failed to compute checksum for {path}: {e}")
             return None
 
@@ -759,7 +759,7 @@ class UnifiedDistributionDaemon:
                 self._checksum_failures += 1
             return False
 
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, asyncio.SubprocessError) as e:
             logger.debug(f"Checksum verification failed on {host}: {e}")
             return False
 
@@ -779,7 +779,7 @@ class UnifiedDistributionDaemon:
             return result.valid
         except ImportError:
             return True  # Skip validation if module not available
-        except Exception as e:
+        except (OSError, ValueError, KeyError) as e:
             logger.error(f"NPZ validation failed: {e}")
             return False
 
@@ -808,7 +808,7 @@ class UnifiedDistributionDaemon:
                     targets.append(host)
             return targets
 
-        except Exception as e:
+        except (OSError, yaml.YAMLError, KeyError, TypeError) as e:
             logger.warning(f"Failed to get distribution targets: {e}")
             return []
 
@@ -838,7 +838,7 @@ class UnifiedDistributionDaemon:
                             "user": node_cfg.get("user", "ubuntu"),
                         })
                 return nodes
-            except Exception:
+            except (OSError, yaml.YAMLError, KeyError, TypeError):
                 return []
 
     async def _create_model_symlinks(self, model_paths: list[Path]) -> None:
@@ -915,7 +915,7 @@ class UnifiedDistributionDaemon:
                 },
             )
             logger.info(f"Emitted {event_type} event")
-        except Exception as e:
+        except (ImportError, RuntimeError, TypeError) as e:
             logger.debug(f"Failed to emit completion event: {e}")
 
     async def _periodic_sync_check(self) -> None:
@@ -1073,7 +1073,7 @@ async def wait_for_model_distribution(
                     )
                     distribution_event.set()
                     return
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             logger.warning(f"[ModelDistribution] Error handling event: {e}")
 
     # Subscribe to distribution events

@@ -429,6 +429,71 @@ def _emit_p2p_host_online_sync(node_id: str, capabilities: list[str] | None = No
         pass
 
 
+async def _emit_cluster_capacity_changed(
+    change_type: str,
+    node_id: str,
+    total_nodes: int,
+    gpu_nodes: int,
+    reason: str = "",
+) -> None:
+    """Emit CLUSTER_CAPACITY_CHANGED when node joins/leaves cluster.
+
+    December 2025: Enables SyncRouter and other coordinators to react
+    to cluster capacity changes in real-time.
+
+    Args:
+        change_type: "node_added" or "node_removed"
+        node_id: The node that changed state
+        total_nodes: Total nodes after change
+        gpu_nodes: GPU-capable nodes after change
+        reason: Reason for change (e.g., "peer_timeout", "peer_recovered")
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.coordination.event_router import emit_cluster_capacity_changed
+        if emit_cluster_capacity_changed:
+            await emit_cluster_capacity_changed(
+                change_type=change_type,
+                node_id=node_id,
+                total_nodes=total_nodes,
+                gpu_nodes=gpu_nodes,
+                reason=reason,
+                source="p2p_orchestrator",
+            )
+            logger.debug(
+                f"[P2P Event] Emitted CLUSTER_CAPACITY_CHANGED: {change_type} "
+                f"node={node_id}, total={total_nodes}, gpu={gpu_nodes}"
+            )
+    except Exception as e:
+        logger.debug(f"[P2P Event] Failed to emit CLUSTER_CAPACITY_CHANGED: {e}")
+
+
+def _emit_cluster_capacity_changed_sync(
+    change_type: str,
+    node_id: str,
+    total_nodes: int,
+    gpu_nodes: int,
+    reason: str = "",
+) -> None:
+    """Synchronous version: emit CLUSTER_CAPACITY_CHANGED via fire-and-forget task.
+
+    For use in sync code paths like _check_dead_peers().
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(
+                _emit_cluster_capacity_changed(change_type, node_id, total_nodes, gpu_nodes, reason)
+            )
+    except RuntimeError:
+        pass
+
+
 # Add project root to path for scripts.lib imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -7483,7 +7548,7 @@ class P2POrchestrator(
             board_type = data.get("board_type", "square8")
             num_players = data.get("num_players", 2)
             num_games = data.get("num_games", 500)
-            engine_mode = data.get("engine_mode", "gpu")
+            engine_mode = data.get("engine_mode", "gumbel-mcts")  # GPU-accelerated MCTS
             data.get("auto_scaled", False)
 
             job_id = f"selfplay-{self.node_id}-{int(time.time())}"
@@ -7499,6 +7564,14 @@ class P2POrchestrator(
             ))
 
             logger.info(f"Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
+
+            # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
+            self.selfplay_scheduler.track_diversity({
+                "board_type": board_type,
+                "num_players": num_players,
+                "engine_mode": engine_mode,
+            })
+
             return web.json_response({
                 "success": True,
                 "job_id": job_id,
@@ -7511,128 +7584,9 @@ class P2POrchestrator(
             logger.error(f"Failed to start selfplay: {e}")
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
-    async def _run_gpu_selfplay_job(
-        self, job_id: str, board_type: str, num_players: int, num_games: int, engine_mode: str
-    ):
-        """Run selfplay job with appropriate script based on engine mode.
-
-        .. deprecated:: December 2025
-            Use self.job_manager.run_gpu_selfplay_job() instead.
-            Scheduled for removal in Q2 2026.
-
-        For simple modes (random, heuristic, nnue-guided): use run_gpu_selfplay.py (GPU-optimized)
-        For search modes (maxn, brs, mcts, gumbel-mcts): use run_hybrid_selfplay.py (supports search)
-        """
-        import sys
-        from pathlib import Path
-
-        # Engine modes that require search (need run_hybrid_selfplay.py)
-        SEARCH_ENGINE_MODES = {"maxn", "brs", "mcts", "gumbel-mcts", "policy-only", "nn-descent", "nn-minimax"}
-
-        board_norm = board_type.replace("hexagonal", "hex")
-        output_dir = Path(self.ringrift_path) / "ai-service" / "data" / "selfplay" / "p2p_gpu" / f"{board_norm}_{num_players}p" / job_id
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        effective_mode = engine_mode or "heuristic-only"
-
-        if effective_mode in SEARCH_ENGINE_MODES:
-            # Use run_hybrid_selfplay.py for search-based modes (maxn, brs, mcts, etc.)
-            script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_hybrid_selfplay.py")
-            if not os.path.exists(script_path):
-                logger.warning(f"Hybrid selfplay script not found: {script_path}")
-                return
-
-            cmd = [
-                sys.executable,
-                script_path,
-                "--board-type", board_norm,
-                "--num-players", str(num_players),
-                "--num-games", str(num_games),
-                "--output-dir", str(output_dir),
-                "--record-db", str(output_dir / "games.db"),
-                "--lean-db",
-                "--engine-mode", effective_mode,
-                "--seed", str(int(time.time() * 1000) % 2**31),
-            ]
-        else:
-            # Use run_gpu_selfplay.py for GPU-optimized modes (random, heuristic, nnue-guided)
-            script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_gpu_selfplay.py")
-            if not os.path.exists(script_path):
-                logger.warning(f"GPU selfplay script not found: {script_path}")
-                return
-
-            # Map engine modes: run_gpu_selfplay.py only supports: random-only, heuristic-only, nnue-guided
-            mode_map = {
-                "mixed": "heuristic-only",
-                "gpu": "heuristic-only",
-                "descent-only": "heuristic-only",
-                "heuristic-only": "heuristic-only",
-                "nnue-guided": "nnue-guided",
-                "random-only": "random-only",
-            }
-            gpu_engine_mode = mode_map.get(effective_mode, "heuristic-only")
-
-            cmd = [
-                sys.executable,
-                script_path,
-                "--board", board_norm,  # Note: --board not --board-type
-                "--num-players", str(num_players),
-                "--num-games", str(num_games),
-                "--output-dir", str(output_dir),
-                "--output-db", str(output_dir / "games.db"),
-                "--engine-mode", gpu_engine_mode,
-                "--seed", str(int(time.time() * 1000) % 2**31),
-            ]
-
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
-        env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-            )
-
-            # Track the job
-            with self.jobs_lock:
-                if "selfplay" not in self.active_jobs:
-                    self.active_jobs["selfplay"] = {}
-                self.active_jobs["selfplay"][job_id] = {
-                    "job_id": job_id,
-                    "status": "running",
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "num_games": num_games,
-                    "started_at": time.time(),
-                    "pid": proc.pid,
-                }
-
-            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=7200)  # 2 hour max
-
-            # Update job status
-            with self.jobs_lock:
-                if job_id in self.active_jobs.get("selfplay", {}):
-                    if proc.returncode == 0:
-                        self.active_jobs["selfplay"][job_id]["status"] = "completed"
-                        logger.info(f"GPU selfplay job {job_id} completed successfully")
-                    else:
-                        self.active_jobs["selfplay"][job_id]["status"] = "failed"
-                        logger.info(f"GPU selfplay job {job_id} failed: {stderr.decode()[:500]}")
-                    del self.active_jobs["selfplay"][job_id]
-
-        except asyncio.TimeoutError:
-            logger.info(f"GPU selfplay job {job_id} timed out")
-            with self.jobs_lock:
-                if job_id in self.active_jobs.get("selfplay", {}):
-                    del self.active_jobs["selfplay"][job_id]
-        except Exception as e:
-            logger.info(f"GPU selfplay job {job_id} error: {e}")
-            with self.jobs_lock:
-                if job_id in self.active_jobs.get("selfplay", {}):
-                    del self.active_jobs["selfplay"][job_id]
+    # NOTE: _run_gpu_selfplay_job() removed Dec 2025 (123 LOC).
+    # Use self.job_manager.run_gpu_selfplay_job() instead.
+    # See scripts/p2p/managers/job_manager.py for implementation.
 
     async def handle_cleanup_files(self, request: web.Request) -> web.Response:
         """Delete specific files from this node (for post-sync cleanup).
@@ -9234,15 +9188,8 @@ print(wins / total)
     # See SSHTournamentHandlersMixin
     # -------------------------------------------------------------------------
 
-    async def _run_distributed_tournament(self, job_id: str):
-        """Main coordinator loop for distributed tournament.
-
-        .. deprecated:: December 2025
-            Delegates to JobManager.run_distributed_tournament().
-            This wrapper method will be removed in Q2 2026.
-        """
-        # Delegate to JobManager (December 2025 refactoring)
-        await self.job_manager.run_distributed_tournament(job_id)
+    # NOTE: _run_distributed_tournament() removed Dec 27, 2025 (~9 LOC)
+    # Use self.job_manager.run_distributed_tournament() directly.
 
     async def _send_match_to_worker(self, job_id: str, worker_id: str, match: dict):
         """Send a match to a worker node."""
@@ -10012,15 +9959,15 @@ print(json.dumps(result))
                 # Phase 1: Selfplay
                 state.phase = "selfplay"
                 state.selfplay_progress = {}
-                await self._run_distributed_selfplay(job_id)
+                await self.job_manager.run_distributed_selfplay(job_id)
 
                 # Phase 2: Export training data
                 state.phase = "export"
-                await self._export_training_data(job_id)
+                await self.job_manager.export_training_data(job_id)
 
                 # Phase 3: Training
                 state.phase = "train"
-                await self._run_training(job_id)
+                await self.job_manager.run_training(job_id)
 
                 # Phase 4: Evaluation
                 state.phase = "evaluate"
@@ -10041,41 +9988,12 @@ print(json.dumps(result))
             if job_id in self.improvement_loop_state:
                 self.improvement_loop_state[job_id].status = f"error: {e}"
 
-    async def _run_distributed_selfplay(self, job_id: str):
-        """Coordinate distributed selfplay for improvement loop.
-
-        .. deprecated:: December 2025
-            Delegates to JobManager.run_distributed_selfplay().
-            This wrapper method will be removed in Q2 2026.
-        """
-        # Delegate to JobManager (December 2025 refactoring)
-        await self.job_manager.run_distributed_selfplay(job_id)
-
-    # NOTE: _run_local_selfplay() removed Dec 2025 (14 LOC).
-    # Use self.job_manager.run_local_selfplay() directly.
-
-    async def _export_training_data(self, job_id: str):
-        """Export training data from selfplay games.
-
-        .. deprecated:: December 2025
-            Delegates to JobManager.export_training_data().
-            This wrapper method will be removed in Q2 2026.
-        """
-        # Delegate to JobManager (December 2025 refactoring)
-        await self.job_manager.export_training_data(job_id)
-
-    async def _run_training(self, job_id: str):
-        """Run neural network training on GPU node.
-
-        .. deprecated:: December 2025
-            Delegates to JobManager.run_training().
-            This wrapper method will be removed in Q2 2026.
-        """
-        # Delegate to JobManager (December 2025 refactoring)
-        await self.job_manager.run_training(job_id)
-
-    # NOTE: _run_local_training() removed Dec 2025 (9 LOC).
-    # Use self.job_manager.run_local_training() directly.
+    # NOTE: The following methods were removed Dec 27, 2025 (call sites updated to use job_manager directly):
+    # - _run_distributed_selfplay() -> self.job_manager.run_distributed_selfplay()
+    # - _export_training_data() -> self.job_manager.export_training_data()
+    # - _run_training() -> self.job_manager.run_training()
+    # - _run_local_selfplay() -> self.job_manager.run_local_selfplay() (removed Dec 2025)
+    # - _run_local_training() -> self.job_manager.run_local_training() (removed Dec 2025)
 
     # ============================================
     # Phase 3: Training Pipeline Integration Methods
@@ -15409,6 +15327,7 @@ print(json.dumps(result))
                 board_type = config.get("board_type", "square8")
                 num_players = config.get("num_players", 2)
                 num_games = config.get("num_games", 500)
+                engine_mode = config.get("engine_mode", "mixed")
 
                 # Delegate to JobManager (Phase 2B refactoring, Dec 2025)
                 asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
@@ -15416,8 +15335,15 @@ print(json.dumps(result))
                     board_type=board_type,
                     num_players=num_players,
                     num_games=num_games,
-                    engine_mode="mixed",
+                    engine_mode=engine_mode,
                 ))
+
+                # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
+                self.selfplay_scheduler.track_diversity({
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "engine_mode": engine_mode,
+                })
                 return True
 
             elif work_type == "gpu_cmaes":
@@ -20455,6 +20381,16 @@ print(json.dumps({{
                         # CRITICAL: Emit HOST_OFFLINE event (Dec 2025 fix)
                         last_hb = getattr(info, "last_heartbeat", None)
                         asyncio.create_task(_emit_p2p_host_offline(node_id, "retired", last_hb))
+                        # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
+                        alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
+                        gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
+                        asyncio.create_task(_emit_cluster_capacity_changed(
+                            change_type="node_removed",
+                            node_id=node_id,
+                            total_nodes=alive_count,
+                            gpu_nodes=gpu_count,
+                            reason="peer_timeout",
+                        ))
                 elif info.is_alive() and getattr(info, "retired", False):
                     # Peer came back: clear retirement.
                     info.retired = False
@@ -20464,6 +20400,16 @@ print(json.dumps({{
                     if hasattr(info, "gpu_type") and info.gpu_type:
                         caps.append(f"gpu:{info.gpu_type}")
                     asyncio.create_task(_emit_p2p_host_online(node_id, caps))
+                    # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
+                    alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
+                    gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
+                    asyncio.create_task(_emit_cluster_capacity_changed(
+                        change_type="node_added",
+                        node_id=node_id,
+                        total_nodes=alive_count,
+                        gpu_nodes=gpu_count,
+                        reason="peer_recovered",
+                    ))
                     logger.info(f"Peer {node_id} recovered from retirement")
 
             for node_id in dead_peers:
@@ -20539,6 +20485,16 @@ print(json.dumps({{
                         # CRITICAL: Emit HOST_OFFLINE event (Dec 2025 fix) - sync version
                         last_hb = getattr(info, "last_heartbeat", None)
                         _emit_p2p_host_offline_sync(node_id, "retired", last_hb)
+                        # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
+                        alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
+                        gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
+                        _emit_cluster_capacity_changed_sync(
+                            change_type="node_removed",
+                            node_id=node_id,
+                            total_nodes=alive_count,
+                            gpu_nodes=gpu_count,
+                            reason="peer_timeout",
+                        )
                 elif info.is_alive() and getattr(info, "retired", False):
                     # Peer came back: clear retirement.
                     info.retired = False
@@ -20548,6 +20504,16 @@ print(json.dumps({{
                     if hasattr(info, "gpu_type") and info.gpu_type:
                         caps.append(f"gpu:{info.gpu_type}")
                     _emit_p2p_host_online_sync(node_id, caps)
+                    # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
+                    alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
+                    gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
+                    _emit_cluster_capacity_changed_sync(
+                        change_type="node_added",
+                        node_id=node_id,
+                        total_nodes=alive_count,
+                        gpu_nodes=gpu_count,
+                        reason="peer_recovered",
+                    )
                     logger.info(f"Peer {node_id} recovered from retirement")
 
             for node_id in dead_peers:
@@ -23286,7 +23252,7 @@ print(json.dumps({{
               f"{len(agent_ids)} agents, {len(pairings)} matches, {len(workers)} workers")
 
         # Launch coordinator task
-        asyncio.create_task(self._run_distributed_tournament(job_id))
+        asyncio.create_task(self.job_manager.run_distributed_tournament(job_id))
 
     def _get_distributed_tournament_summary(self) -> dict:
         """Get summary of distributed tournament scheduling for status endpoint."""
@@ -24103,39 +24069,10 @@ print(json.dumps({{
             await self._reduce_local_selfplay_jobs(target, reason="memory_warning")
 
         # Clean up old completed/failed jobs to prevent memory leak
-        await self._cleanup_old_completed_jobs()
+        self.job_manager.cleanup_completed_jobs()
 
-    async def _cleanup_old_completed_jobs(self):
-        """Clean up completed/failed jobs older than 24 hours to prevent memory leaks.
-
-        .. deprecated:: December 2025
-            Use self.job_manager.cleanup_completed_jobs() instead.
-
-        Jobs accumulate in self.local_jobs as they complete. This method removes
-        old completed/failed jobs that are no longer needed for status tracking.
-        """
-        now = time.time()
-        max_age_seconds = 86400  # 24 hours
-
-        with self.jobs_lock:
-            expired_job_ids = []
-            for job_id, job in self.local_jobs.items():
-                if job.status not in ("completed", "failed"):
-                    continue
-                # Check completed_at if available
-                completed_at = getattr(job, "completed_at", 0) or 0
-                if completed_at > 0 and (now - completed_at) > max_age_seconds:
-                    expired_job_ids.append(job_id)
-                elif completed_at == 0:
-                    # Fallback: use started_at + max_age if no completed_at
-                    started_at = getattr(job, "started_at", 0) or 0
-                    if started_at > 0 and (now - started_at) > max_age_seconds * 2:
-                        expired_job_ids.append(job_id)
-
-            if expired_job_ids:
-                for job_id in expired_job_ids:
-                    del self.local_jobs[job_id]
-                logger.info(f"Cleaned up {len(expired_job_ids)} old completed/failed jobs from memory")
+    # NOTE: _cleanup_old_completed_jobs() removed Dec 2025 (31 LOC).
+    # Use self.job_manager.cleanup_completed_jobs() directly.
 
     # NOTE: _get_elo_based_priority_boost() removed Dec 2025 (~45 LOC).
     # Use self.selfplay_scheduler.get_elo_based_priority_boost() instead.
@@ -24683,44 +24620,8 @@ print(json.dumps({{
 
         return int(max(1, target_selfplay))
 
-    def _get_hybrid_job_targets(self, node: NodeInfo) -> dict[str, int]:
-        """Get separate GPU and CPU-only selfplay job targets for hybrid mode.
-
-        .. deprecated:: December 2025
-            Use self.selfplay_scheduler.get_hybrid_job_targets() instead.
-            Scheduled for removal in Q2 2026.
-
-        For high-CPU nodes with limited GPU VRAM (like Vast hosts), this enables:
-        - Running GPU jobs up to VRAM limit
-        - Running additional CPU-only jobs to utilize excess CPU capacity
-
-        Returns:
-            Dict with 'gpu_jobs', 'cpu_only_jobs', 'total_jobs'
-        """
-        has_gpu = bool(getattr(node, "has_gpu", False))
-        cpu_count = int(getattr(node, "cpu_count", 0) or 0)
-        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
-        gpu_name = getattr(node, "gpu_name", "") or ""
-        gpu_count = int(getattr(node, "gpu_count", 1) or 1) if has_gpu else 0
-
-        # Use hybrid limits function if available
-        if HAS_HW_AWARE_LIMITS and get_hybrid_selfplay_limits is not None:
-            try:
-                limits = get_hybrid_selfplay_limits(
-                    node_id=node.node_id,
-                    gpu_count=gpu_count,
-                    gpu_name=gpu_name,
-                    cpu_count=cpu_count,
-                    memory_gb=memory_gb,
-                    has_gpu=has_gpu,
-                )
-                return limits
-            except Exception as e:
-                logger.info(f"Hybrid limits error: {e}")
-
-        # Fallback: No CPU-only jobs, use standard target
-        gpu_jobs = self._target_selfplay_jobs_for_node(node)
-        return {"gpu_jobs": gpu_jobs, "cpu_only_jobs": 0, "total_jobs": gpu_jobs}
+    # NOTE: _get_hybrid_job_targets() removed Dec 2025 (38 LOC).
+    # Use self.selfplay_scheduler.get_hybrid_job_targets() instead.
 
     def _should_spawn_cpu_only_jobs(self, node: NodeInfo) -> bool:
         """Check if a node should spawn CPU-only jobs in addition to GPU jobs.
@@ -25984,6 +25885,14 @@ print(json.dumps({{
                     self.local_jobs[job_id] = job
 
                 logger.info(f"Started GPU selfplay job {job_id} (PID {proc.pid}, batch={batch_size})")
+
+                # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
+                self.selfplay_scheduler.track_diversity({
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "engine_mode": gpu_engine_mode,
+                })
+
                 self._save_state()
 
                 # Monitor GPU selfplay and trigger CPU validation when complete
@@ -26123,6 +26032,14 @@ print(json.dumps({{
                     self.local_jobs[job_id] = job
 
                 logger.info(f"Started HYBRID selfplay job {job_id} (PID {proc.pid})")
+
+                # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
+                self.selfplay_scheduler.track_diversity({
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "engine_mode": engine_mode_norm,
+                })
+
                 self._save_state()
                 return job
 
@@ -26245,6 +26162,14 @@ print(json.dumps({{
                     self.local_jobs[job_id] = job
 
                 logger.info(f"Started GUMBEL selfplay job {job_id} (PID {proc.pid}, sims={simulation_budget})")
+
+                # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
+                self.selfplay_scheduler.track_diversity({
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "engine_mode": "gumbel-mcts",
+                })
+
                 self._save_state()
                 return job
 

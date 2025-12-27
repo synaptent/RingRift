@@ -121,8 +121,8 @@ def _quarantine_file(path: Path, reason: str = "checksum_mismatch") -> Path | No
         try:
             path.unlink()
             logger.warning(f"Deleted corrupted file (quarantine failed): {path}")
-        except Exception:
-            pass
+        except OSError as delete_err:
+            logger.debug(f"Could not delete corrupted file {path}: {delete_err}")
         return None
 
 

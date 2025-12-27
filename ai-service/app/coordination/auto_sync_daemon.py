@@ -22,8 +22,11 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import socket
+import sqlite3
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -162,7 +165,7 @@ class AutoSyncConfig:
             config.min_games_to_sync = auto_sync.min_games_to_sync
             config.bandwidth_limit_mbps = auto_sync.bandwidth_limit_mbps
 
-        except Exception as e:
+        except (OSError, ValueError, KeyError, AttributeError) as e:
             logger.warning(f"Failed to load cluster config: {e}")
 
         base_dir = Path(__file__).resolve().parent.parent.parent
@@ -281,7 +284,7 @@ class AutoSyncDaemon:
                 self._quality_config = QualityExtractorConfig()
                 self._elo_lookup = get_elo_lookup_from_service()
                 logger.info("Quality extraction enabled for training data prioritization")
-            except Exception as e:
+            except (RuntimeError, OSError, ValueError, KeyError) as e:
                 logger.warning(f"Failed to initialize quality extraction: {e}")
                 self.config.enable_quality_extraction = False
 
@@ -363,7 +366,7 @@ class AutoSyncDaemon:
                 status = json.loads(resp.read().decode())
                 leader_id = status.get("leader_id", "")
                 return leader_id == self.node_id
-        except Exception:
+        except (OSError, ValueError, json.JSONDecodeError, TimeoutError):
             return False
 
     def _init_ephemeral_wal(self) -> None:
@@ -387,7 +390,7 @@ class AutoSyncDaemon:
             # Recover pending games from WAL
             self._load_ephemeral_wal()
 
-        except Exception as e:
+        except OSError as e:
             logger.error(f"[AutoSyncDaemon] Failed to initialize ephemeral WAL: {e}")
             self._wal_initialized = False
 
@@ -424,7 +427,7 @@ class AutoSyncDaemon:
                     f"[AutoSyncDaemon] Recovered {loaded_count} pending games from WAL"
                 )
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             logger.error(f"[AutoSyncDaemon] Failed to load WAL: {e}")
 
     def _append_to_wal(self, game_entry: dict[str, Any]) -> None:
@@ -445,7 +448,7 @@ class AutoSyncDaemon:
                 f.flush()
                 os_module.fsync(f.fileno())  # Force to disk
 
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"[AutoSyncDaemon] Failed to append to WAL: {e}")
 
     def _clear_wal(self) -> None:
@@ -461,7 +464,7 @@ class AutoSyncDaemon:
             self._wal_path.write_text('')
             logger.debug("[AutoSyncDaemon] WAL cleared after successful sync")
 
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"[AutoSyncDaemon] Failed to clear WAL: {e}")
 
     def _init_cluster_manifest(self) -> None:
@@ -610,13 +613,13 @@ class AutoSyncDaemon:
             except RuntimeError:
                 try:
                     asyncio.run(self._handle_termination())
-                except Exception as e:
+                except (RuntimeError, OSError, asyncio.CancelledError) as e:
                     logger.error(f"[AutoSyncDaemon] Cannot run final sync: {e}")
 
         for sig in (signal.SIGTERM, signal.SIGINT):
             try:
                 signal.signal(sig, handle_termination)
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.debug(f"[AutoSyncDaemon] Could not set handler for {sig}: {e}")
 
     async def _handle_termination(self) -> None:
@@ -651,7 +654,7 @@ class AutoSyncDaemon:
 
         except ImportError:
             logger.debug("[AutoSyncDaemon] emit_host_offline not available")
-        except Exception as e:
+        except (RuntimeError, OSError, asyncio.CancelledError) as e:
             logger.warning(f"[AutoSyncDaemon] Failed to emit termination event: {e}")
 
     async def _final_sync(self) -> None:
@@ -667,7 +670,7 @@ class AutoSyncDaemon:
 
         try:
             await self._push_pending_games(force=True)
-        except Exception as e:
+        except (RuntimeError, OSError, asyncio.CancelledError, asyncio.TimeoutError) as e:
             logger.error(f"[AutoSyncDaemon] Final sync failed: {e}")
 
     async def on_game_complete(
@@ -783,7 +786,7 @@ class AutoSyncDaemon:
                             for game in games_to_push:
                                 game["synced"] = True
                             break
-                    except Exception as e:
+                    except (RuntimeError, OSError, asyncio.TimeoutError) as e:
                         logger.debug(f"[AutoSyncDaemon] Push to {target} failed: {e}")
 
             if any_success:
@@ -837,7 +840,7 @@ class AutoSyncDaemon:
                             self._stats.games_synced += len(games_to_push)
                             successful_targets.append(target)
                             break
-                    except Exception as e:
+                    except (RuntimeError, OSError, asyncio.TimeoutError) as e:
                         logger.debug(f"[AutoSyncDaemon] Push to {target} failed: {e}")
 
             if successful_targets:
@@ -866,7 +869,7 @@ class AutoSyncDaemon:
         except ImportError:
             logger.warning("[AutoSyncDaemon] SyncRouter not available")
             return []
-        except Exception as e:
+        except (RuntimeError, OSError, ValueError, KeyError) as e:
             logger.error(f"[AutoSyncDaemon] Failed to get sync targets: {e}")
             return []
 
@@ -902,7 +905,7 @@ class AutoSyncDaemon:
 
         except ImportError:
             return await self._direct_rsync(db_path, target_node)
-        except Exception as e:
+        except (RuntimeError, OSError, asyncio.TimeoutError) as e:
             logger.debug(f"[AutoSyncDaemon] Rsync error: {e}")
             return False
 
@@ -957,7 +960,7 @@ class AutoSyncDaemon:
         except subprocess.TimeoutExpired:
             logger.warning(f"[AutoSyncDaemon] Rsync timeout to {target_node}")
             return False
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
             logger.debug(f"[AutoSyncDaemon] Rsync error: {e}")
             return False
 
@@ -988,7 +991,7 @@ class AutoSyncDaemon:
                     },
                     source="AutoSyncDaemon",
                 )
-        except Exception as e:
+        except (RuntimeError, AttributeError, ImportError) as e:
             logger.debug(f"[AutoSyncDaemon] Could not emit GAME_SYNCED event: {e}")
 
     # =========================================================================
@@ -1101,7 +1104,7 @@ class AutoSyncDaemon:
             with urlopen(req, timeout=10) as resp:
                 status = json.loads(resp.read().decode())
 
-        except Exception as e:
+        except (OSError, ValueError, json.JSONDecodeError, TimeoutError) as e:
             logger.warning(f"[AutoSyncDaemon] Failed to get P2P status: {e}")
             return []
 
@@ -1288,7 +1291,7 @@ class AutoSyncDaemon:
                 "duration_seconds": time.time() - start_time,
                 "error": "Timeout",
             }
-        except Exception as e:
+        except (OSError, asyncio.CancelledError, subprocess.SubprocessError) as e:
             logger.error(f"[AutoSyncDaemon] Sync to {target['node_id']} error: {e}")
             return {
                 "source": str(source),
@@ -1328,7 +1331,7 @@ class AutoSyncDaemon:
                             item.unlink()
                             cleaned += 1
                             logger.debug(f"[AutoSyncDaemon] Cleaned stale partial: {item}")
-                except Exception as e:
+                except OSError as e:
                     logger.debug(f"[AutoSyncDaemon] Error cleaning {item}: {e}")
 
         return cleaned
@@ -1352,7 +1355,7 @@ class AutoSyncDaemon:
                 cleaned = await self.cleanup_stale_partials()
                 if cleaned > 0:
                     logger.info(f"[AutoSyncDaemon] Cleaned {cleaned} stale partial files")
-            except Exception as e:
+            except OSError as e:
                 logger.debug(f"[AutoSyncDaemon] Partial cleanup error: {e}")
 
         # Get eligible targets
@@ -2066,7 +2069,7 @@ class AutoSyncDaemon:
 
             return avg_quality
 
-        except Exception as e:
+        except (RuntimeError, OSError, KeyError, ValueError) as e:
             logger.warning(f"Quality extraction failed for {db_path.name}: {e}")
             return 0.0
 
@@ -2118,7 +2121,7 @@ class AutoSyncDaemon:
                 f"({category}), {game_count} games"
             )
 
-        except Exception as e:
+        except (RuntimeError, ImportError, AttributeError) as e:
             logger.warning(f"Failed to update priority queue for {config_key}: {e}")
 
     def _should_sync_database(self, db_path: Path) -> tuple[bool, str]:

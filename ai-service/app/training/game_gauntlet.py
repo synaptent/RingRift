@@ -122,7 +122,7 @@ def _allow_parallel_opponents() -> bool:
         if not main_file:
             return False
         return mp.current_process().name == "MainProcess"
-    except Exception:
+    except (OSError, AttributeError, RuntimeError) as e:
         return False
 
 
@@ -425,7 +425,7 @@ def create_neural_ai(
                     num_players=num_players,
                     policy_temperature=temperature,
                 )
-        except Exception as e:
+        except (RuntimeError, ValueError, FileNotFoundError, KeyError, OSError) as e:
             logger.warning(f"UniversalAI.from_checkpoint failed: {e}, falling back to PolicyOnlyAI")
 
         # Fallback to legacy loading via PolicyOnlyAI
@@ -614,11 +614,11 @@ def _emit_gauntlet_result_event(
                         source="game_gauntlet",
                     )
                 )
-            except Exception as e:
+            except (RuntimeError, asyncio.CancelledError) as e:
                 logger.debug(f"[gauntlet] Could not emit event (no async context): {e}")
     except ImportError:
         logger.debug("[gauntlet] Event helpers not available, skipping event emission")
-    except Exception as e:
+    except (RuntimeError, OSError, asyncio.CancelledError) as e:
         logger.warning(f"[gauntlet] Failed to emit EVALUATION_COMPLETED: {e}")
 
 
@@ -741,7 +741,7 @@ def _evaluate_single_opponent(
                 )
             except ImportError:
                 pass  # EloService not available
-            except Exception as elo_err:
+            except (OSError, RuntimeError, ValueError) as elo_err:
                 logger.debug(f"[gauntlet] Failed to record Elo: {elo_err}")
 
             if verbose:
@@ -809,7 +809,7 @@ def _evaluate_single_opponent(
                     )
                     break
 
-        except Exception as e:
+        except (RuntimeError, ValueError, KeyError, OSError, AttributeError) as e:
             logger.error(f"Error in game {game_num} vs {baseline_name}: {e}")
             continue
 
@@ -929,7 +929,7 @@ def run_baseline_gauntlet(
                 try:
                     eval_result = future.result()
                     opponent_eval_results.append(eval_result)
-                except Exception as e:
+                except (RuntimeError, ValueError, KeyError, OSError, AttributeError) as e:
                     logger.error(f"[gauntlet] Error evaluating vs {baseline.value}: {e}")
                     # Add empty result for this baseline
                     opponent_eval_results.append({
@@ -1060,7 +1060,7 @@ def run_baseline_gauntlet(
                         },
                     )
                 logger.debug(f"[gauntlet] Stored results for {effective_model_id} in gauntlet_results.db")
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.warning(f"[gauntlet] Failed to store results in DB: {e}")
 
     return result

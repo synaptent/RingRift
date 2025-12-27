@@ -166,6 +166,22 @@ class JobManager:
 
         effective_mode = engine_mode or "heuristic-only"
 
+        # GPU availability check for GPU-accelerated modes
+        if effective_mode in self.SEARCH_ENGINE_MODES:
+            try:
+                import torch
+                if not torch.cuda.is_available():
+                    logger.warning(
+                        f"GPU mode {effective_mode} requested but no GPU available, "
+                        f"falling back to heuristic-only for job {job_id}"
+                    )
+                    effective_mode = "heuristic-only"
+            except ImportError:
+                logger.warning(
+                    f"PyTorch not available for GPU check, falling back to heuristic-only for job {job_id}"
+                )
+                effective_mode = "heuristic-only"
+
         if effective_mode in self.SEARCH_ENGINE_MODES:
             # Use run_hybrid_selfplay.py for search-based modes
             script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_hybrid_selfplay.py")

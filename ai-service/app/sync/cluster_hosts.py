@@ -7,17 +7,39 @@ Used by:
 - scripts/validate_cluster_elo.py - Elo validation
 - app/training/elo_reconciliation.py - Elo drift reconciliation
 
-Centralizes host configuration loading from distributed_hosts.yaml
-to eliminate duplication across sync components.
+.. deprecated:: December 2025
+    This module is being consolidated into app/config/cluster_config.py.
+    Import ClusterNode and helper functions from there instead:
+
+        from app.config.cluster_config import (
+            ClusterNode,
+            get_cluster_nodes,
+            get_active_nodes,
+            get_coordinator_node,
+            get_elo_sync_config,
+        )
+
+    This module re-exports for backward compatibility.
 """
 
 import json
 import socket
 import urllib.request
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Re-export from cluster_config for backward compatibility
+from app.config.cluster_config import (
+    ClusterNode,
+    EloSyncConfig,
+    get_cluster_nodes,
+    get_active_nodes,
+    get_coordinator_node,
+    get_elo_sync_config,
+    load_cluster_config,
+)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 HOSTS_CONFIG = ROOT / "config" / "distributed_hosts.yaml"
@@ -36,168 +58,43 @@ def _get_default_data_server_port() -> int:
         return DATA_SYNC_PORT
 
 
-@dataclass
-class ClusterNode:
-    """Represents a cluster node with connectivity info."""
-    name: str
-    tailscale_ip: str | None = None
-    ssh_host: str | None = None
-    ssh_user: str = "ubuntu"
-    ssh_key: str | None = None
-    ssh_port: int = 22
-    ringrift_path: str = "~/ringrift/ai-service"
-    status: str = "unknown"
-    role: str = "unknown"
-    memory_gb: int = 0
-    cpus: int = 0
-    gpu: str = ""
-    data_server_port: int = DATA_SYNC_PORT
-    data_server_url: str | None = None
-
-    @property
-    def best_ip(self) -> str | None:
-        """Get best IP for connection (prefer Tailscale)."""
-        for candidate in (self.tailscale_ip, self.ssh_host):
-            if not candidate:
-                continue
-            host = str(candidate).strip()
-            if not host:
-                continue
-            if "@" in host:
-                host = host.split("@", 1)[1]
-            return host
-        return None
-
-    @property
-    def data_server_base_url(self) -> str | None:
-        """Get base URL for the node's data server."""
-        if self.data_server_url:
-            return self.data_server_url
-        ip = self.best_ip
-        if not ip:
-            return None
-        return f"http://{ip}:{self.data_server_port}"
-
-    @property
-    def is_active(self) -> bool:
-        """Check if node is marked as active."""
-        return self.status not in ("terminated", "offline", "setup")
-
-
-@dataclass
-class EloSyncConfig:
-    """Elo sync configuration from distributed_hosts.yaml."""
-    coordinator: str = "mac-studio"
-    sync_port: int = 8766
-    sync_interval: int = 300
-    divergence_threshold: int = 50
-    transports: list[str] = field(default_factory=lambda: ["tailscale", "aria2", "http"])
-
-
 def load_hosts_config() -> dict[str, Any]:
-    """Load raw hosts config from distributed_hosts.yaml."""
-    if not HOSTS_CONFIG.exists():
-        return {}
+    """Load raw hosts config from distributed_hosts.yaml.
 
-    try:
-        import yaml
-        with open(HOSTS_CONFIG) as f:
-            return yaml.safe_load(f) or {}
-    except ImportError:
-        # Fallback: basic YAML parsing
-        result = {"hosts": {}, "elo_sync": {}}
-        current_section = None
-        current_host = None
-
-        with open(HOSTS_CONFIG) as f:
-            for line in f:
-                line = line.rstrip()
-                if not line or line.startswith('#'):
-                    continue
-
-                if line == "hosts:":
-                    current_section = "hosts"
-                    continue
-                elif line == "elo_sync:":
-                    current_section = "elo_sync"
-                    continue
-
-                if current_section == "hosts":
-                    if line.startswith('  ') and ':' in line and not line.startswith('    '):
-                        current_host = line.strip().rstrip(':')
-                        result["hosts"][current_host] = {}
-                    elif current_host and line.startswith('    ') and ':' in line:
-                        key, _, value = line.strip().partition(':')
-                        value = value.strip().strip('"\'')
-                        if value.isdigit():
-                            value = int(value)
-                        result["hosts"][current_host][key] = value
-
-                elif (current_section == "elo_sync"
-                        and line.startswith('  ') and ':' in line and not line.startswith('    ')):
-                    key, _, value = line.strip().partition(':')
-                    value = value.strip().strip('"\'')
-                    if value.isdigit():
-                        value = int(value)
-                    result["elo_sync"][key] = value
-
-        return result
-    except (OSError, ValueError):
-        return {}
-
-
-def get_elo_sync_config() -> EloSyncConfig:
-    """Get Elo sync configuration."""
-    config = load_hosts_config().get("elo_sync", {})
-    return EloSyncConfig(
-        coordinator=config.get("coordinator", "mac-studio"),
-        sync_port=config.get("sync_port", 8766),
-        sync_interval=config.get("sync_interval", 300),
-        divergence_threshold=config.get("divergence_threshold", 50),
-        transports=config.get("transports", ["tailscale", "aria2", "http"]),
+    .. deprecated:: December 2025
+        Use load_cluster_config() from app.config.cluster_config instead.
+    """
+    warnings.warn(
+        "load_hosts_config() is deprecated. Use load_cluster_config() from "
+        "app.config.cluster_config instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
+    config = load_cluster_config()
+    # Reconstruct the raw format for backward compatibility
+    return {
+        "hosts": config.hosts_raw,
+        "elo_sync": {
+            "coordinator": config.elo_sync.coordinator,
+            "sync_port": config.elo_sync.sync_port,
+            "sync_interval": config.elo_sync.sync_interval,
+            "divergence_threshold": config.elo_sync.divergence_threshold,
+            "transports": config.elo_sync.transports,
+        },
+    }
 
 
-def get_cluster_nodes() -> dict[str, ClusterNode]:
-    """Get all cluster nodes from config."""
-    hosts_config = load_hosts_config().get("hosts", {})
-    nodes = {}
-    data_server_port = _get_default_data_server_port()
-
-    for name, cfg in hosts_config.items():
-        nodes[name] = ClusterNode(
-            name=name,
-            tailscale_ip=cfg.get("tailscale_ip"),
-            ssh_host=cfg.get("ssh_host"),
-            ssh_user=cfg.get("ssh_user", "ubuntu"),
-            ssh_key=cfg.get("ssh_key"),
-            ssh_port=cfg.get("ssh_port", 22),
-            ringrift_path=cfg.get("ringrift_path", "~/ringrift/ai-service"),
-            status=cfg.get("status", "unknown"),
-            role=cfg.get("role", "unknown"),
-            memory_gb=cfg.get("memory_gb", 0),
-            cpus=cfg.get("cpus", 0),
-            gpu=cfg.get("gpu", ""),
-            data_server_port=cfg.get("data_server_port", data_server_port),
-            data_server_url=cfg.get("data_server_url"),
-        )
-
-    return nodes
+# NOTE: The following functions were removed Dec 27, 2025 (now imported from cluster_config):
+# - ClusterNode dataclass
+# - EloSyncConfig dataclass
+# - get_elo_sync_config()
+# - get_cluster_nodes()
+# - get_active_nodes()
+# - get_coordinator_node()
+# See app/config/cluster_config.py for implementations.
 
 
-def get_active_nodes() -> list[ClusterNode]:
-    """Get all active (non-terminated) cluster nodes."""
-    return [n for n in get_cluster_nodes().values() if n.is_active]
-
-
-def get_coordinator_node() -> ClusterNode | None:
-    """Get the Elo coordinator node."""
-    sync_config = get_elo_sync_config()
-    nodes = get_cluster_nodes()
-    return nodes.get(sync_config.coordinator)
-
-
-def get_coordinator_address() -> tuple[str, int]:
+def get_coordinator_address() -> tuple[str | None, int]:
     """Get coordinator IP and port."""
     sync_config = get_elo_sync_config()
     coord_node = get_coordinator_node()

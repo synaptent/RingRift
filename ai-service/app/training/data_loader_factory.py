@@ -64,6 +64,12 @@ class DataLoaderConfig:
     use_curriculum_weights: bool = False
     curriculum_weights: dict[str, float] | None = None  # config_key -> weight
 
+    # V5/V5-heavy model support (December 2025)
+    return_heuristics: bool = False  # Load heuristic features for v5/v5-heavy models
+
+    # Platform-aware worker configuration (December 2025)
+    num_workers: int | None = None  # If None, auto-compute based on platform
+
 
 @dataclass
 class DataLoaderResult:
@@ -78,6 +84,35 @@ class DataLoaderResult:
     use_streaming: bool = False
     has_multi_player_values: bool = False
     data_paths: list[str] | None = None
+    num_workers: int = 0  # Actual num_workers used (platform-aware)
+
+
+def compute_num_workers(config_num_workers: int | None) -> int:
+    """Compute optimal num_workers based on platform and configuration.
+
+    Args:
+        config_num_workers: Explicit num_workers from config (None = auto-compute)
+
+    Returns:
+        Optimal num_workers for the platform
+    """
+    # Check environment variable override first
+    env_workers = os.environ.get("RINGRIFT_DATALOADER_WORKERS")
+    if env_workers is not None:
+        return int(env_workers)
+
+    # If explicitly configured, use that
+    if config_num_workers is not None:
+        return config_num_workers
+
+    # Platform-aware default
+    if sys.platform == "darwin":
+        # macOS: mmap incompatible with multiprocessing fork
+        return 0
+    else:
+        # Linux: Use up to 4 workers, but no more than half of CPUs
+        import multiprocessing
+        return min(4, multiprocessing.cpu_count() // 2)
 
 
 def should_use_streaming(
@@ -367,6 +402,9 @@ def create_standard_loaders(
     Returns:
         DataLoaderResult with standard loaders
     """
+    # Compute platform-aware num_workers upfront
+    num_workers = compute_num_workers(config.num_workers)
+
     # Create dataset
     if config.sampling_weights == 'uniform':
         full_dataset = RingRiftDataset(
@@ -376,6 +414,7 @@ def create_standard_loaders(
             use_multi_player_values=config.multi_player,
             filter_empty_policies=config.filter_empty_policies,
             return_num_players=config.multi_player,
+            return_heuristics=config.return_heuristics,
         )
         use_weighted_sampling = False
     else:
@@ -387,6 +426,7 @@ def create_standard_loaders(
             use_multi_player_values=config.multi_player,
             filter_empty_policies=config.filter_empty_policies,
             return_num_players=config.multi_player,
+            return_heuristics=config.return_heuristics,
         )
         use_weighted_sampling = True
 
@@ -417,16 +457,6 @@ def create_standard_loaders(
 
         train_sampler = get_distributed_sampler(train_dataset, shuffle=True)
         val_sampler = get_distributed_sampler(val_dataset, shuffle=False)
-
-        # Determine number of workers
-        env_workers = os.environ.get("RINGRIFT_DATALOADER_WORKERS")
-        if env_workers is not None:
-            num_workers = int(env_workers)
-        elif sys.platform == "darwin":
-            num_workers = 0  # macOS: mmap incompatible with multiprocessing
-        else:
-            import multiprocessing
-            num_workers = min(4, multiprocessing.cpu_count() // 2)
 
         train_loader = DataLoader(
             train_dataset,
@@ -488,6 +518,7 @@ def create_standard_loaders(
         val_size=val_size,
         use_streaming=False,
         has_multi_player_values=has_mp,
+        num_workers=num_workers,
     )
 
 
