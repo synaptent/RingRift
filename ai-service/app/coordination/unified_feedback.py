@@ -353,11 +353,14 @@ class UnifiedFeedbackOrchestrator:
             if hasattr(DataEventType, "QUALITY_PENALTY_APPLIED"):
                 bus.subscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
 
-            self._subscribed = True
             logger.info("[UnifiedFeedbackOrchestrator] Subscribed to events")
 
         except Exception as e:
             logger.warning(f"[UnifiedFeedbackOrchestrator] Failed to subscribe: {e}")
+        finally:
+            # December 27, 2025: Always set _subscribed = True in finally block
+            # This ensures cleanup runs even if subscription partially fails
+            self._subscribed = True
 
     def _unsubscribe_from_events(self) -> None:
         """Unsubscribe from all events."""

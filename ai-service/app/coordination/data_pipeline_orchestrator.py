@@ -769,7 +769,6 @@ class DataPipelineOrchestrator:
             router.subscribe(StageEvent.PROMOTION_COMPLETE, self._on_promotion_complete)
             router.subscribe(StageEvent.ITERATION_COMPLETE, self._on_iteration_complete)
 
-            self._subscribed = True
             self._prefer_stage_events = True
             logger.info("[DataPipelineOrchestrator] Subscribed to stage events")
             return True
@@ -784,6 +783,10 @@ class DataPipelineOrchestrator:
                 exc_info=True,
             )
             return False
+        finally:
+            # December 27, 2025: Always set _subscribed = True in finally block
+            # This ensures cleanup runs even if subscription partially fails
+            self._subscribed = True
 
     def subscribe_to_data_events(self) -> bool:
         """Subscribe to DataEventBus events (December 2025).

@@ -211,7 +211,6 @@ class SelfplayOrchestrator:
             # Subscribe to idle resource detection (December 2025 - spawn selfplay on idle GPUs)
             router.subscribe(DataEventType.IDLE_RESOURCE_DETECTED.value, self._on_idle_resource_detected)
 
-            self._subscribed = True
             logger.info("[SelfplayOrchestrator] Subscribed to task lifecycle and resource events via event router")
             return True
 
@@ -221,6 +220,10 @@ class SelfplayOrchestrator:
         except Exception as e:
             logger.error(f"[SelfplayOrchestrator] Failed to subscribe: {e}")
             return False
+        finally:
+            # December 27, 2025: Always set _subscribed = True in finally block
+            # This ensures cleanup runs even if subscription partially fails
+            self._subscribed = True
 
     def subscribe_to_stage_events(self) -> bool:
         """Subscribe to stage completion events.

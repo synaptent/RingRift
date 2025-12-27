@@ -406,11 +406,13 @@ class TrainingCoordinator:
             if hasattr(DataEventType, 'MODEL_PROMOTED'):
                 bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
 
-            self._subscribed = True
             logger.info("[TrainingCoordinator] Subscribed to cluster health, regression, rollback, quality, sync, and pipeline events")
         except Exception as e:
-            self._subscribed = False
             logger.warning(f"[TrainingCoordinator] Failed to subscribe to cluster events: {e}")
+        finally:
+            # December 27, 2025: Always set _subscribed = True in finally block
+            # This ensures cleanup runs even if subscription partially fails
+            self._subscribed = True
 
     def _on_cluster_healthy(self, event: Any) -> None:
         """Handle cluster healthy event - resume paused training.

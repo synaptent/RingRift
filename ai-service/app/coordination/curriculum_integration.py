@@ -143,7 +143,6 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
                 router.subscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
 
-            self._event_subscribed = True
             logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED")
             return True
 
@@ -154,6 +153,10 @@ class MomentumToCurriculumBridge:
             # RuntimeError: subscription failed
             logger.debug(f"[MomentumToCurriculumBridge] Event subscription failed: {e}")
             return False
+        finally:
+            # December 27, 2025: Always set _event_subscribed = True in finally block
+            # This ensures cleanup runs even if subscription partially fails
+            self._event_subscribed = True
 
     def _unsubscribe_from_events(self) -> None:
         """Unsubscribe from events."""

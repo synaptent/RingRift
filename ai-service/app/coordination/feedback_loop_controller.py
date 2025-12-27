@@ -347,9 +347,13 @@ class FeedbackLoopController:
 
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
 
-            self._subscribed = True
         except (AttributeError, TypeError, RuntimeError) as e:
             logger.warning(f"[FeedbackLoopController] Failed to subscribe: {e}")
+        finally:
+            # December 27, 2025: Always set _subscribed = True in finally block
+            # This ensures cleanup runs even if subscription partially fails
+            # (some subscriptions may exist that need unsubscribing)
+            self._subscribed = True
 
     def _unsubscribe_from_events(self) -> None:
         """Unsubscribe from events."""
