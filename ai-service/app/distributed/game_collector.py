@@ -95,7 +95,20 @@ class InMemoryGameCollector:
                                    entries with before/after state snapshots
             compress_states: Ignored for in-memory storage
             snapshot_interval: Ignored for in-memory storage
+
+        Returns:
+            game_id if stored successfully, None if rejected by quality gate
         """
+        # Validate game quality before storing
+        if self._enable_quality_gate:
+            from app.db.unified_recording import RecordingQualityGate
+
+            gate = RecordingQualityGate()
+            valid, error = gate.validate(initial_state, final_state, moves, metadata)
+            if not valid:
+                self._rejected_games += 1
+                return None
+
         # Import here to avoid circular imports
         from app.game_engine import GameEngine
 
