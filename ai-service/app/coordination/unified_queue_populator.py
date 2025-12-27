@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 # Canonical types (December 2025 consolidation)
-from app.coordination.types import BackpressureLevel
+from app.coordination.types import BackpressureLevel, BoardType
 
 if TYPE_CHECKING:
     from app.coordination.selfplay_scheduler import SelfplayScheduler
@@ -74,12 +74,7 @@ DEFAULT_CURRICULUM_WEIGHTS: dict[str, float] = {
 }
 
 
-class BoardType(str, Enum):
-    """Board types to train."""
-    SQUARE8 = "square8"
-    SQUARE19 = "square19"
-    HEX8 = "hex8"
-    HEXAGONAL = "hexagonal"
+# Note: BoardType is now imported from app.coordination.types (December 2025)
 
 
 # =============================================================================

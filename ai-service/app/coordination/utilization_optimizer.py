@@ -42,23 +42,17 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from app.providers import Provider
 from app.coordination.health_check_orchestrator import (
     HealthCheckOrchestrator,
     NodeHealthDetails,
     get_health_orchestrator,
 )
 
+# December 2025: Use canonical BoardType from coordination.types
+from app.coordination.types import BoardType
+from app.providers import Provider
+
 logger = logging.getLogger(__name__)
-
-
-class BoardType(str, Enum):
-    """Board types with their resource requirements."""
-
-    HEX8 = "hex8"  # Small, fast - good for consumer GPUs
-    SQUARE8 = "square8"  # Medium
-    SQUARE19 = "square19"  # Large - needs more GPU memory
-    HEXAGONAL = "hexagonal"  # Largest - needs high-end GPUs
 
 
 class WorkloadType(str, Enum):
