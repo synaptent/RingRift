@@ -28,8 +28,8 @@ try:
         MIN_MEMORY_GB_FOR_TASKS,
     )
 except ImportError:
-    # Fallback for testing/standalone use
-    MIN_MEMORY_GB_FOR_TASKS = 16
+    # Fallback for testing/standalone use - match canonical values in app/p2p/constants.py
+    MIN_MEMORY_GB_FOR_TASKS = 64  # Must match app/p2p/constants.py:84
     DISK_WARNING_THRESHOLD = 65  # Conservative: match constants.py
     MEMORY_WARNING_THRESHOLD = 75  # Conservative: match constants.py
 

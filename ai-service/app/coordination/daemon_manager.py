@@ -1791,9 +1791,10 @@ class DaemonManager:
         except OSError as e:
             if "address already in use" in str(e).lower():
                 logger.warning(f"Health server port {port} already in use, skipping")
-            logger.warning(f"Selfplay coordinator dependencies not available: {e}")
-        except (RuntimeError, OSError, ConnectionError) as e:
-            logger.error(f"Selfplay coordinator failed: {e}")
+            else:
+                logger.error(f"Health server failed: {e}")
+        except (RuntimeError, ConnectionError) as e:
+            logger.error(f"Health server failed: {e}")
 
 
 # =============================================================================

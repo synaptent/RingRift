@@ -111,14 +111,14 @@ class TestSyncRoute:
         route = SyncRoute(
             source_node="node-a",
             target_node="node-b",
-            data_type=DataType.GAMES,
+            data_type=DataType.GAME,
             priority=5,
             reason="training priority",
         )
 
         assert route.source_node == "node-a"
         assert route.target_node == "node-b"
-        assert route.data_type == DataType.GAMES
+        assert route.data_type == DataType.GAME
         assert route.priority == 5
         assert route.reason == "training priority"
 
@@ -127,7 +127,7 @@ class TestSyncRoute:
         route = SyncRoute(
             source_node="a",
             target_node="b",
-            data_type=DataType.MODELS,
+            data_type=DataType.MODEL,
         )
 
         assert route.priority == 0
@@ -209,7 +209,7 @@ class TestSyncTargetResolution:
             MagicMock(node_id="selfplay-node", priority=5),
         ]
 
-        targets = router.get_sync_targets(data_type=DataType.GAMES)
+        targets = router.get_sync_targets(data_type=DataType.GAME)
 
         assert isinstance(targets, list)
 
@@ -221,7 +221,7 @@ class TestSyncTargetResolution:
         ]
 
         targets = router.get_sync_targets(
-            data_type=DataType.GAMES,
+            data_type=DataType.GAME,
             max_targets=3,
         )
 
@@ -235,7 +235,7 @@ class TestSyncTargetResolution:
         ]
 
         targets = router.get_sync_targets(
-            data_type=DataType.GAMES,
+            data_type=DataType.GAME,
             exclude_nodes=["exclude-node"],
         )
 
@@ -260,7 +260,7 @@ class TestShouldSyncDecisions:
                 can_receive_games=False,  # Coordinators don't receive games
             )
 
-            result = router.should_sync_to_node("coordinator", DataType.GAMES)
+            result = router.should_sync_to_node("coordinator", DataType.GAME)
 
             assert result is False
 
@@ -268,7 +268,7 @@ class TestShouldSyncDecisions:
         """Should not sync to same node as source."""
         result = router.should_sync_to_node(
             "node-a",
-            DataType.GAMES,
+            DataType.GAME,
             source_node="node-a",
         )
 
@@ -288,7 +288,7 @@ class TestShouldSyncDecisions:
         with patch.object(router, "_is_excluded", return_value=False):
             result = router.should_sync_to_node(
                 "training-node",
-                DataType.GAMES,
+                DataType.GAME,
                 source_node="selfplay-node",
             )
 
@@ -405,7 +405,7 @@ class TestMultiNodeCoordination:
             MagicMock(node_id="selfplay-gpu", priority=5),
         ]
 
-        targets = router.get_sync_targets(data_type=DataType.GAMES)
+        targets = router.get_sync_targets(data_type=DataType.GAME)
 
         # Training node should be included
         target_ids = [t.node_id for t in targets]
@@ -422,7 +422,7 @@ class TestMultiNodeCoordination:
         with patch.object(router, "_is_excluded", return_value=False):
             result = router.should_sync_to_node(
                 "ephemeral-gpu",
-                DataType.GAMES,
+                DataType.GAME,
             )
 
             # Should allow (ephemeral nodes need game data for selfplay)
@@ -449,7 +449,7 @@ class TestCapacityAwareness:
         mock_manifest.get_disk_usage.return_value = 85.0
 
         with patch.object(router, "_check_disk_capacity", return_value=False):
-            result = router.should_sync_to_node("full-node", DataType.GAMES)
+            result = router.should_sync_to_node("full-node", DataType.GAME)
 
             assert result is False
 
@@ -466,7 +466,7 @@ class TestCapacityAwareness:
 
         with patch.object(router, "_is_excluded", return_value=False), \
              patch.object(router, "_check_disk_capacity", return_value=True):
-            result = router.should_sync_to_node("empty-node", DataType.GAMES)
+            result = router.should_sync_to_node("empty-node", DataType.GAME)
 
             assert result is True
 
@@ -491,7 +491,7 @@ class TestDataTypeRouting:
              patch.object(router, "_check_disk_capacity", return_value=True):
             result = router.should_sync_to_node(
                 "selfplay-node",
-                DataType.MODELS,
+                DataType.MODEL,
             )
 
             # Selfplay nodes need models
@@ -529,7 +529,7 @@ class TestQualityBasedRouting:
         route = SyncRoute(
             source_node="a",
             target_node="b",
-            data_type=DataType.GAMES,
+            data_type=DataType.GAME,
             quality_score=0.95,
         )
 
@@ -541,14 +541,14 @@ class TestQualityBasedRouting:
         high_quality = SyncRoute(
             source_node="a",
             target_node="b",
-            data_type=DataType.GAMES,
+            data_type=DataType.GAME,
             priority=5,
             quality_score=0.95,
         )
         low_quality = SyncRoute(
             source_node="a",
             target_node="c",
-            data_type=DataType.GAMES,
+            data_type=DataType.GAME,
             priority=5,
             quality_score=0.60,
         )

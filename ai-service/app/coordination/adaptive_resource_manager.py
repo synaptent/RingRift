@@ -32,6 +32,15 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Import bandwidth limiting from cluster_config (December 2025)
+try:
+    from app.config.cluster_config import get_node_bandwidth_kbs
+    HAS_BANDWIDTH_CONFIG = True
+except ImportError:
+    HAS_BANDWIDTH_CONFIG = False
+    get_node_bandwidth_kbs = None
+
+
 # ============================================
 # Configuration
 # ============================================
@@ -481,9 +490,19 @@ class AdaptiveResourceManager:
                 if dest_path.exists():
                     continue
 
-                # Use rsync for transfer
+                # Use rsync for transfer with bandwidth limiting (December 2025)
+                bwlimit_args = []
+                if HAS_BANDWIDTH_CONFIG and get_node_bandwidth_kbs:
+                    try:
+                        bwlimit_kbs = get_node_bandwidth_kbs(client.host)
+                        if bwlimit_kbs > 0:
+                            bwlimit_args = [f"--bwlimit={bwlimit_kbs}"]
+                    except (KeyError, ValueError):
+                        pass
+
                 rsync_cmd = [
                     "rsync", "-az", "--timeout=60",
+                    *bwlimit_args,
                     f"{client.user}@{client.host}:{db_file}",
                     str(dest_path),
                 ]

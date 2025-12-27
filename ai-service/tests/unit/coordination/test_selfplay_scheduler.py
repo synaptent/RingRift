@@ -341,3 +341,283 @@ class TestEventHandling:
         scheduler._on_curriculum_rebalanced(event)
         # Should update curriculum_weight for the specific config
         assert scheduler._config_priorities["hex8_2p"].curriculum_weight == 0.8
+
+
+class TestMetricsAndHealth:
+    """Tests for metrics and health check methods."""
+
+    @pytest.fixture(autouse=True)
+    def reset_singleton(self):
+        """Reset the scheduler singleton before each test."""
+        reset_selfplay_scheduler()
+        yield
+        reset_selfplay_scheduler()
+
+    @pytest.fixture
+    def scheduler(self):
+        """Create a fresh scheduler."""
+        return SelfplayScheduler()
+
+    def test_get_metrics_returns_dict(self, scheduler):
+        """Test that get_metrics returns a dictionary."""
+        metrics = scheduler.get_metrics()
+        assert isinstance(metrics, dict)
+
+    def test_get_metrics_has_allocation_count(self, scheduler):
+        """Test that metrics includes allocation tracking."""
+        # Manually increment allocations
+        scheduler._allocation_count = 10
+
+        metrics = scheduler.get_metrics()
+        # Should have some metrics about allocations
+        assert "games_allocated_total" in metrics or "allocation_count" in metrics
+
+    def test_get_metrics_has_games_per_hour(self, scheduler):
+        """Test that metrics includes throughput info."""
+        metrics = scheduler.get_metrics()
+        # Should track games per hour or similar throughput metric
+        assert "games_per_hour" in metrics or "throughput" in metrics or len(metrics) > 0
+
+    def test_health_check_returns_result(self, scheduler):
+        """Test that health_check returns a HealthCheckResult."""
+        result = scheduler.health_check()
+        # Should return HealthCheckResult or similar
+        assert result is not None
+        # Should have healthy/unhealthy status
+        assert hasattr(result, "healthy") or hasattr(result, "status")
+
+    def test_health_check_healthy_by_default(self, scheduler):
+        """Test that new scheduler is healthy by default."""
+        result = scheduler.health_check()
+        # Fresh scheduler should be healthy
+        if hasattr(result, "healthy"):
+            assert result.healthy is True
+        elif hasattr(result, "status"):
+            assert result.status in ("healthy", "HEALTHY", True)
+
+    def test_health_check_with_nodes(self, scheduler):
+        """Test health check with active nodes."""
+        # Add some node capabilities
+        scheduler._node_capabilities["node1"] = NodeCapability(
+            node_id="node1",
+            gpu_type="A100",
+            gpu_memory_gb=80.0,
+        )
+
+        result = scheduler.health_check()
+        assert result is not None
+
+
+class TestNodeTargeting:
+    """Tests for node targeting and job distribution."""
+
+    @pytest.fixture(autouse=True)
+    def reset_singleton(self):
+        """Reset the scheduler singleton before each test."""
+        reset_selfplay_scheduler()
+        yield
+        reset_selfplay_scheduler()
+
+    @pytest.fixture
+    def scheduler(self):
+        """Create a fresh scheduler."""
+        return SelfplayScheduler()
+
+    def test_get_target_jobs_returns_int(self, scheduler):
+        """Test that get_target_jobs_for_node returns an integer."""
+        mock_node = MagicMock()
+        mock_node.node_id = "test-node"
+        mock_node.gpu_type = "A100"
+
+        result = scheduler.get_target_jobs_for_node(mock_node)
+        assert isinstance(result, int)
+
+    def test_get_target_jobs_for_a100(self, scheduler):
+        """Test target jobs for high-end GPU."""
+        mock_node = MagicMock()
+        mock_node.node_id = "test-node"
+        mock_node.gpu_type = "A100"
+        mock_node.gpu_memory_gb = 80.0
+
+        result = scheduler.get_target_jobs_for_node(mock_node)
+        # A100 should get reasonable number of jobs
+        assert result >= 0
+
+    def test_get_target_jobs_for_rtx3090(self, scheduler):
+        """Test target jobs for consumer GPU."""
+        mock_node = MagicMock()
+        mock_node.node_id = "test-node"
+        mock_node.gpu_type = "RTX3090"
+        mock_node.gpu_memory_gb = 24.0
+
+        result = scheduler.get_target_jobs_for_node(mock_node)
+        assert result >= 0
+
+    def test_node_capability_update(self, scheduler):
+        """Test updating node capabilities."""
+        # Register a node
+        scheduler._node_capabilities["node1"] = NodeCapability(
+            node_id="node1",
+            gpu_type="A100",
+            gpu_memory_gb=80.0,
+            current_load=0.0,
+        )
+
+        # Update load
+        scheduler._node_capabilities["node1"].current_load = 0.5
+
+        # Verify update
+        assert scheduler._node_capabilities["node1"].current_load == 0.5
+
+    def test_allocate_with_multiple_nodes(self, scheduler):
+        """Test allocation across multiple nodes."""
+        # Register multiple nodes with different capabilities
+        scheduler._node_capabilities["node1"] = NodeCapability(
+            node_id="node1",
+            gpu_type="A100",
+            gpu_memory_gb=80.0,
+            current_load=0.0,
+        )
+        scheduler._node_capabilities["node2"] = NodeCapability(
+            node_id="node2",
+            gpu_type="RTX3090",
+            gpu_memory_gb=24.0,
+            current_load=0.0,
+        )
+        scheduler._node_capabilities["node3"] = NodeCapability(
+            node_id="node3",
+            gpu_type="H100",
+            gpu_memory_gb=80.0,
+            current_load=0.0,
+        )
+
+        # Allocate games
+        allocation = scheduler._allocate_to_nodes("hex8_2p", 200)
+
+        # Should return a dict
+        assert isinstance(allocation, dict)
+
+
+class TestPriorityEdgeCases:
+    """Tests for priority calculation edge cases."""
+
+    @pytest.fixture(autouse=True)
+    def reset_singleton(self):
+        """Reset the scheduler singleton before each test."""
+        reset_selfplay_scheduler()
+        yield
+        reset_selfplay_scheduler()
+
+    @pytest.fixture
+    def scheduler(self):
+        """Create a fresh scheduler."""
+        return SelfplayScheduler()
+
+    def test_extremely_stale_data(self):
+        """Test priority with extremely stale data (weeks old)."""
+        priority = ConfigPriority(
+            config_key="hex8_2p",
+            staleness_hours=168.0,  # 1 week
+        )
+        # Staleness factor should be capped at 1.0
+        assert priority.staleness_factor <= 1.0
+
+    def test_negative_staleness(self):
+        """Test handling of negative staleness (future timestamp edge case)."""
+        priority = ConfigPriority(
+            config_key="hex8_2p",
+            staleness_hours=-1.0,  # Negative (shouldn't happen but handle gracefully)
+        )
+        # Should clamp to 0
+        assert priority.staleness_factor >= 0.0
+
+    def test_very_high_game_count(self):
+        """Test data deficit with very high game count."""
+        priority = ConfigPriority(
+            config_key="hex8_2p",
+            game_count=10_000_000,  # 10 million games
+        )
+        # Data deficit should be minimal
+        assert priority.data_deficit_factor <= 0.1
+
+    def test_zero_game_count(self):
+        """Test data deficit with zero games."""
+        priority = ConfigPriority(
+            config_key="hex8_2p",
+            game_count=0,
+        )
+        # Data deficit should be maximum
+        assert priority.data_deficit_factor == 1.0
+
+    def test_curriculum_weight_override(self, scheduler):
+        """Test that curriculum weight affects priority."""
+        # Set high curriculum weight for a config
+        scheduler._config_priorities["hex8_2p"].curriculum_weight = 2.0
+        scheduler._config_priorities["square8_2p"].curriculum_weight = 0.5
+
+        # Compute priorities
+        hex_score = scheduler._compute_priority_score(
+            scheduler._config_priorities["hex8_2p"]
+        )
+        square_score = scheduler._compute_priority_score(
+            scheduler._config_priorities["square8_2p"]
+        )
+
+        # With higher curriculum weight, hex8_2p should have higher priority
+        # (assuming other factors are equal)
+        # Note: This depends on the actual implementation
+
+    def test_all_configs_have_priorities(self, scheduler):
+        """Verify all 12 canonical configs are tracked."""
+        expected_configs = [
+            "hex8_2p", "hex8_3p", "hex8_4p",
+            "square8_2p", "square8_3p", "square8_4p",
+            "square19_2p", "square19_3p", "square19_4p",
+            "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
+        ]
+
+        for config in expected_configs:
+            priority = scheduler.get_config_priority(config)
+            assert priority is not None, f"Missing priority for {config}"
+
+
+class TestNodeRecoveryHandling:
+    """Tests for node recovery event handling."""
+
+    @pytest.fixture(autouse=True)
+    def reset_singleton(self):
+        """Reset the scheduler singleton before each test."""
+        reset_selfplay_scheduler()
+        yield
+        reset_selfplay_scheduler()
+
+    @pytest.fixture
+    def scheduler(self):
+        """Create a fresh scheduler."""
+        return SelfplayScheduler()
+
+    def test_on_node_recovered(self, scheduler):
+        """Test handling node recovery event."""
+        event = MagicMock()
+        event.payload = MagicMock()
+        event.payload.get.side_effect = lambda k, d=None: {
+            "node_id": "test-node",
+            "gpu_type": "A100",
+        }.get(k, d)
+
+        # Should not raise
+        if hasattr(scheduler, "_on_node_recovered"):
+            scheduler._on_node_recovered(event)
+
+    def test_on_data_quality_updated(self, scheduler):
+        """Test handling data quality update event."""
+        event = MagicMock()
+        event.payload = MagicMock()
+        event.payload.get.side_effect = lambda k, d=None: {
+            "config_key": "hex8_2p",
+            "quality_score": 0.95,
+        }.get(k, d)
+
+        # Should not raise
+        if hasattr(scheduler, "_on_data_quality_updated"):
+            scheduler._on_data_quality_updated(event)

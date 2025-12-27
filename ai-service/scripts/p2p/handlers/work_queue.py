@@ -387,11 +387,14 @@ class WorkQueueHandlersMixin:
             if not work_id:
                 return web.json_response({"error": "work_id_required"}, status=400)
 
-            # Get work item info before marking as failed
-            work_item = wq.items.get(work_id)
-            work_type = work_item.work_type.value if work_item and work_item.work_type else "unknown"
-            config = work_item.config if work_item else {}
-            node_id = work_item.assigned_to if work_item else ""
+            # Dec 2025: Fixed race condition - read work item data under lock
+            # before calling fail_work() which modifies state
+            with wq.lock:
+                work_item = wq.items.get(work_id)
+                work_type = work_item.work_type.value if work_item and work_item.work_type else "unknown"
+                # Copy config dict to avoid stale reference after lock release
+                config = dict(work_item.config) if work_item else {}
+                node_id = work_item.assigned_to if work_item else ""
 
             success = wq.fail_work(work_id, error)
 

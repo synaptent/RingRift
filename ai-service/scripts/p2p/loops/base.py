@@ -535,8 +535,10 @@ class LoopManager:
             failed_loops = []
             for name, loop in self._loops.items():
                 status = loop.get_status()
-                # Check if loop is running (has iterations or is_running flag)
-                is_running = status.get("is_running", False) or status.get("iterations", 0) > 0
+                # Dec 2025: Fixed field name mismatch - use "running" not "is_running",
+                # and check stats.total_runs for iteration count
+                stats = status.get("stats", {})
+                is_running = status.get("running", False) or stats.get("total_runs", 0) > 0
                 if not is_running and not status.get("stopped", False):
                     failed_loops.append(name)
 

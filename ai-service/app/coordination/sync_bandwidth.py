@@ -316,6 +316,9 @@ class BandwidthManager:
                     f"[BandwidthManager] Released allocation {allocation.transfer_id}"
                 )
 
+            # Dec 2025: Proactively cleanup any other expired allocations
+            self._cleanup_expired()
+
     def _cleanup_expired(self) -> None:
         """Clean up expired allocations."""
         expired = [
@@ -337,6 +340,9 @@ class BandwidthManager:
 
     def get_status(self) -> dict[str, Any]:
         """Get bandwidth manager status."""
+        # Dec 2025: Cleanup expired allocations on status check
+        self._cleanup_expired()
+
         total_usage = sum(self._host_usage.values())
         total_transfers = sum(self._host_transfers.values())
 

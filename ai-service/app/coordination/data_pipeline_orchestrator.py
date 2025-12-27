@@ -825,6 +825,13 @@ class DataPipelineOrchestrator:
                 self._on_sync_triggered,
             )
 
+            # December 2025: Subscribe to DATA_STALE for training freshness
+            # When training data becomes stale, we trigger urgent sync
+            router.subscribe(
+                DataEventType.DATA_STALE.value,
+                self._on_data_stale,
+            )
+
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
             return True
 
@@ -1649,6 +1656,11 @@ class DataPipelineOrchestrator:
                 gauntlet_results = result.metadata if hasattr(result, "metadata") else {}
                 if model_path:
                     await self._auto_trigger_promotion(iteration, model_path, gauntlet_results)
+
+            # December 27, 2025: Trigger model sync after successful evaluation
+            # This ensures evaluated models are distributed to training nodes
+            if self.auto_trigger and self.auto_trigger_sync:
+                await self._trigger_model_sync_after_evaluation(result)
         else:
             self._transition_to(
                 PipelineStage.IDLE,
@@ -2249,6 +2261,62 @@ class DataPipelineOrchestrator:
                     "data_age_hours": data_age_hours,
                 },
             )
+
+    async def _on_data_stale(self, event) -> None:
+        """Handle DATA_STALE - training data has become stale.
+
+        December 2025: Wire this previously orphaned event. Emitted by
+        TrainingFreshness or train_cli.py when data age exceeds threshold.
+
+        Actions:
+        - Log the stale data alert
+        - Trigger priority sync via SyncFacade
+        - Track stale data frequency for health monitoring
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        config_key = payload.get("config_key")
+        data_age_hours = payload.get("data_age_hours", 0)
+        max_age_hours = payload.get("max_age_hours", 1.0)
+        source = payload.get("source", "unknown")
+
+        logger.warning(
+            f"[DataPipelineOrchestrator] DATA_STALE received: "
+            f"config={config_key}, age={data_age_hours:.1f}h (max={max_age_hours:.1f}h), "
+            f"source={source}"
+        )
+
+        # Track stale data frequency for health monitoring
+        if not hasattr(self, "_stale_data_count"):
+            self._stale_data_count = 0
+        self._stale_data_count += 1
+
+        # Trigger priority sync if we have SyncFacade available
+        try:
+            from app.coordination.sync_facade import get_sync_facade
+
+            facade = get_sync_facade()
+            if facade:
+                from app.core.async_context import fire_and_forget
+
+                async def trigger_sync():
+                    await facade.trigger_priority_sync(
+                        reason="stale_data",
+                        config_key=config_key,
+                        data_type="games",
+                    )
+
+                fire_and_forget(
+                    trigger_sync(),
+                    error_callback=lambda exc: logger.debug(
+                        f"Priority sync trigger failed: {exc}"
+                    ),
+                )
+                logger.info(
+                    f"[DataPipelineOrchestrator] Triggered priority sync for {config_key}"
+                )
+        except ImportError:
+            logger.debug("[DataPipelineOrchestrator] SyncFacade not available")
 
     async def _on_promotion_candidate(self, event) -> None:
         """Handle PROMOTION_CANDIDATE - model ready for promotion evaluation.

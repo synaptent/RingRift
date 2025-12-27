@@ -44,6 +44,10 @@ METRICS_PORT = 9090
 # Used for serving game databases and model files to other nodes
 DATA_SERVER_PORT = 8766
 
+# Distributed data transfer port for dynamic data distribution
+# Used by dynamic_data_distribution.py for NPZ/DB distribution from OWC
+DISTRIBUTED_DATA_PORT = 8767
+
 # Unified data sync HTTP API port
 # Used by UnifiedDataSyncService for cluster-wide data synchronization
 UNIFIED_SYNC_API_PORT = 8772

@@ -2468,8 +2468,6 @@ class FeedbackLoopController:
             "thresholds": {
                 "policy_accuracy": self.policy_accuracy_threshold,
                 "promotion": self.promotion_threshold,
-                "game_count": self.game_count_threshold,
-                "max_retries": self.max_retry_attempts,
             },
             "configs": {
                 "total": len(self._states),

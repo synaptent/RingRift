@@ -2955,10 +2955,8 @@ class P2POrchestrator(
             return False
         return True
 
-    @property
-    def is_leader(self) -> bool:
-        """Property wrapper for _is_leader() method."""
-        return self._is_leader()
+    # NOTE: is_leader property removed Dec 2025 (~4 LOC).
+    # All code already uses _is_leader() directly.
 
     # =========================================================================
     # TASK ISOLATION - Prevent single task failure from crashing all tasks
@@ -16361,29 +16359,8 @@ print(json.dumps(result))
     # Now runs via LoopManager as JobReaperLoop.
     # See scripts/p2p/loops/job_loops.py for implementation.
 
-    def _get_ssh_config_for_reaper(self) -> dict[str, Any]:
-        """Get SSH configuration for the job reaper from cluster config."""
-        ssh_config = {}
-        try:
-            # Try to load from cluster_nodes.yaml
-            config_path = Path(self.ringrift_path) / "ai-service" / "config" / "cluster_nodes.yaml"
-            if config_path.exists():
-                import yaml
-                with open(config_path) as f:
-                    config = yaml.safe_load(f)
-
-                for node_id, node_cfg in config.get("nodes", {}).items():
-                    ssh = node_cfg.get("ssh", {})
-                    if ssh:
-                        ssh_config[node_id] = {
-                            "host": ssh.get("host", node_id),
-                            "user": ssh.get("user", "ubuntu"),
-                            "key": ssh.get("key", ""),
-                        }
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Error loading SSH config for reaper: {e}")
-
-        return ssh_config
+    # NOTE: _get_ssh_config_for_reaper() removed Dec 2025 (~23 LOC).
+    # No callers existed - job reaper now uses cluster_config helpers.
 
     async def _validation_loop(self):
         """Background loop for automatic model validation.
