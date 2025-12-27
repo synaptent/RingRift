@@ -411,9 +411,9 @@ class TestGumbelMCTSIntegration:
     def test_budget_constants(self):
         """Should use standard budget constants."""
         assert GUMBEL_BUDGET_THROUGHPUT < GUMBEL_BUDGET_STANDARD
-        assert GUMBEL_BUDGET_STANDARD < GUMBEL_BUDGET_QUALITY
+        assert GUMBEL_BUDGET_STANDARD <= GUMBEL_BUDGET_QUALITY  # Equal after Dec 2025 change
 
-        # Typical values
+        # Values (Dec 2025: STANDARD raised from 150 to 800 for quality training)
         assert GUMBEL_BUDGET_THROUGHPUT == 64
-        assert GUMBEL_BUDGET_STANDARD == 150
+        assert GUMBEL_BUDGET_STANDARD == 800  # Dec 2025: raised from 150
         assert GUMBEL_BUDGET_QUALITY == 800

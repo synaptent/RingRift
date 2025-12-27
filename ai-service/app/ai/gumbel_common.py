@@ -383,11 +383,12 @@ GUMBEL_DEFAULT_C_PUCT = 1.5
 # Different budgets serve different use cases. Use the appropriate tier:
 # SOURCE OF TRUTH: app/config/thresholds.py (to avoid circular imports with torch)
 from app.config.thresholds import (
-    GUMBEL_BUDGET_THROUGHPUT,   # 64 - Multi-tree parallel selfplay
-    GUMBEL_BUDGET_STANDARD,     # 150 - Single-game, good quality/latency
-    GUMBEL_BUDGET_QUALITY,      # 800 - High-quality training data
+    GUMBEL_BUDGET_THROUGHPUT,   # 64 - Multi-tree parallel selfplay (bootstrap only)
+    GUMBEL_BUDGET_STANDARD,     # 800 - Default for training (AlphaZero uses 800)
+    GUMBEL_BUDGET_QUALITY,      # 800 - High-quality evaluation/gauntlet
     GUMBEL_BUDGET_ULTIMATE,     # 1600 - Maximum strength for benchmarks
-    GUMBEL_DEFAULT_BUDGET,      # Same as STANDARD (backward compatibility)
+    GUMBEL_BUDGET_MASTER,       # 3200 - 2000+ Elo training (Dec 2025)
+    GUMBEL_DEFAULT_BUDGET,      # Same as STANDARD (800)
 )
 
 

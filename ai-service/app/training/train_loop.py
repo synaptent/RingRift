@@ -178,7 +178,7 @@ def run_training_loop(config: TrainConfig | None = None, use_optimized_pipeline:
         if os.path.exists(best_model_file):
             print("Running tournament: Candidate vs Best...")
             tournament = Tournament(
-                candidate_model_file, best_model_file, num_games=10
+                candidate_model_file, best_model_file, num_games=50  # Increased from 10 for statistical validity
             )
             results = tournament.run()
 
@@ -319,7 +319,7 @@ def _run_training_loop_optimized(config: TrainConfig) -> None:
             if result.model_path and os.path.exists(result.model_path):
                 # 3. Evaluation Tournament
                 print("Running tournament: Candidate vs Best...")
-                tournament = Tournament(result.model_path, best_model_file, num_games=10)
+                tournament = Tournament(result.model_path, best_model_file, num_games=50)  # Increased from 10 for statistical validity
                 results = tournament.run()
 
                 total_decisive = results["A"] + results["B"]

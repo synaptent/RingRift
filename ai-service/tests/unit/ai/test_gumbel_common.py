@@ -166,13 +166,17 @@ class TestBudgetConstants:
     def test_budget_tiers_ordered(self):
         """Test budget tiers are properly ordered."""
         assert GUMBEL_BUDGET_THROUGHPUT < GUMBEL_BUDGET_STANDARD
-        assert GUMBEL_BUDGET_STANDARD < GUMBEL_BUDGET_QUALITY
+        assert GUMBEL_BUDGET_STANDARD <= GUMBEL_BUDGET_QUALITY  # Equal after Dec 2025 change
         assert GUMBEL_BUDGET_QUALITY < GUMBEL_BUDGET_ULTIMATE
 
     def test_budget_tier_values(self):
-        """Test specific budget values."""
+        """Test specific budget values.
+
+        Dec 2025: STANDARD raised from 150 to 800 to match AlphaZero.
+        Lower budgets produce weak training data that plateaus at ~1400 Elo.
+        """
         assert GUMBEL_BUDGET_THROUGHPUT == 64
-        assert GUMBEL_BUDGET_STANDARD == 150
+        assert GUMBEL_BUDGET_STANDARD == 800  # Dec 2025: raised from 150
         assert GUMBEL_BUDGET_QUALITY == 800
         assert GUMBEL_BUDGET_ULTIMATE == 1600
 

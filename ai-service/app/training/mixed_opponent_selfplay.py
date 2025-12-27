@@ -97,7 +97,7 @@ class MixedOpponentSelfplayRunner(SelfplayRunner):
         from ..game_engine import GameEngine
         from ..ai.factory import AIFactory, create_mcts
         from ..models import AIConfig, AIType, BoardType
-        from ..ai.gumbel_common import GUMBEL_BUDGET_THROUGHPUT
+        from ..ai.gumbel_common import GUMBEL_BUDGET_QUALITY
 
         self._engine = GameEngine
         board_type = BoardType(self.config.board_type)
@@ -139,7 +139,7 @@ class MixedOpponentSelfplayRunner(SelfplayRunner):
                 board_type=board_type.value,
                 num_players=self.config.num_players,
                 mode="standard",
-                simulation_budget=GUMBEL_BUDGET_THROUGHPUT,  # 64 simulations
+                simulation_budget=GUMBEL_BUDGET_QUALITY,  # 800 simulations (increased from 64 for 2000+ Elo quality)
                 device=self.config.device or "cuda",
             )
 

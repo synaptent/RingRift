@@ -851,6 +851,35 @@ class CoordinatorDiskManager(DiskSpaceManagerDaemon):
 
         return bytes_freed
 
+    def health_check(self) -> HealthCheckResult:
+        """Return health check result with coordinator-specific sync stats.
+
+        December 27, 2025: Override to include sync statistics in health check.
+        """
+        result = super().health_check()
+        # Add sync stats to details
+        if result.details:
+            result.details["sync_stats"] = self._sync_stats
+            result.details["remote_host"] = (
+                self.config.remote_host
+                if isinstance(self.config, CoordinatorDiskConfig)
+                else None
+            )
+            result.details["remote_sync_enabled"] = (
+                self.config.remote_sync_enabled
+                if isinstance(self.config, CoordinatorDiskConfig)
+                else False
+            )
+        # Check if sync errors are too high
+        if self._sync_stats.get("sync_errors", 0) > 5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"High sync error count: {self._sync_stats['sync_errors']}",
+                details=result.details,
+            )
+        return result
+
     def get_status(self) -> dict[str, Any]:
         """Get daemon status including sync statistics."""
         status = super().get_status()

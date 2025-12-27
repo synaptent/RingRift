@@ -36,7 +36,7 @@ try:
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
-    PROMOTION_WIN_RATE_THRESHOLD = 0.60  # Dec 2025: tightened from 0.55
+    PROMOTION_WIN_RATE_THRESHOLD = 0.80  # Dec 2025: raised from 0.60 for 2000+ Elo
 
 logger = logging.getLogger(__name__)
 

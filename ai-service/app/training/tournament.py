@@ -517,7 +517,7 @@ def run_tournament(
 def run_tournament_adaptive(
     model_a_path: str,
     model_b_path: str,
-    promotion_threshold: float = 0.60,  # Dec 2025: tightened from 0.55
+    promotion_threshold: float = 0.80,  # Dec 2025: raised from 0.60 for 2000+ Elo
     confidence: float = 0.95,
     min_games: int = 30,
     max_games: int = 300,

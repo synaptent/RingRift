@@ -46,6 +46,13 @@ from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 from app.utils.numpy_utils import safe_load_npz
 from app.utils.torch_utils import safe_load_checkpoint
 
+# Training control thresholds (December 2025)
+from app.config.thresholds import (
+    EARLY_STOPPING_PATIENCE,
+    ELO_PATIENCE,
+    MIN_TRAINING_EPOCHS,
+)
+
 # Training metrics extracted to dedicated module (December 2025)
 from app.training.train_metrics import (
     ANOMALY_DETECTIONS,
@@ -708,10 +715,13 @@ def train_model(
     # Resolve optional parameters from config (use config as source of truth)
     # This ensures callers that don't pass these params get the config defaults
     # rather than arbitrary function defaults
+    #
+    # December 2025: Defaults now use thresholds.py values (20 and 15 respectively)
+    # instead of hardcoded 5/10 which caused premature early stopping at ~3-5 epochs.
     if early_stopping_patience is None:
-        early_stopping_patience = getattr(config, 'early_stopping_patience', 5)
+        early_stopping_patience = getattr(config, 'early_stopping_patience', EARLY_STOPPING_PATIENCE)
     if elo_early_stopping_patience is None:
-        elo_early_stopping_patience = getattr(config, 'elo_early_stopping_patience', 10)
+        elo_early_stopping_patience = getattr(config, 'elo_early_stopping_patience', ELO_PATIENCE)
     if elo_min_improvement is None:
         elo_min_improvement = getattr(config, 'elo_min_improvement', 5.0)
     if warmup_epochs is None:
@@ -4955,6 +4965,14 @@ def train_model(
                     model=model_to_save,
                     epoch=epoch,
                 )
+                # December 2025: Enforce minimum training epochs before early stopping
+                # This prevents stopping at 3-5 epochs when 15-20+ are needed for 2000+ Elo
+                if should_stop and epoch + 1 < MIN_TRAINING_EPOCHS:
+                    if not distributed or is_main_process():
+                        logger.info(
+                            f"Early stopping suppressed at epoch {epoch+1} (minimum: {MIN_TRAINING_EPOCHS})"
+                        )
+                    should_stop = False
                 if should_stop:
                     if not distributed or is_main_process():
                         elo_info = f", best Elo: {early_stopper.best_elo:.1f}" if early_stopper.best_elo > float('-inf') else ""

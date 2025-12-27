@@ -694,8 +694,10 @@ RETRY_MAX_DELAY = 60.0
 # Model count threshold to trigger culling
 MODEL_CULL_THRESHOLD = 100
 
-# Win rate threshold for model promotion (December 2025: tightened from 0.55)
-PROMOTION_WIN_RATE_THRESHOLD = 0.60  # 60% - stricter to prevent weak model promotion
+# Win rate threshold for model promotion
+# Dec 2025: Raised from 0.60 to 0.80 to reach 2000+ Elo.
+# 60% only reaches ~1400 Elo plateau. 80% vs heuristic = ~1600+ Elo baseline.
+PROMOTION_WIN_RATE_THRESHOLD = 0.80  # 80% vs heuristic for strong model promotion
 
 # ELO underserved threshold (fewer games = underserved)
 ELO_UNDERSERVED_THRESHOLD = 100
@@ -1277,17 +1279,24 @@ def update_threshold(category: str, key: str, value: Any) -> None:
 # Checkpoint timeout for async save operations (seconds)
 CHECKPOINT_TIMEOUT = 120
 
+# December 2025: Increased patience values to allow more training.
+# Previous values (10) caused training to stop after 3-5 epochs,
+# but 15-20+ epochs are needed to reach 2000+ Elo.
+#
+# Minimum training epochs before early stopping can trigger
+MIN_TRAINING_EPOCHS = 15
+
 # Validation patience - epochs without improvement before early stopping
-VALIDATION_PATIENCE = 10
+VALIDATION_PATIENCE = 15
 
 # Elo plateau patience - updates without Elo improvement before early stopping
-ELO_PATIENCE = 10
+ELO_PATIENCE = 15
 
 # Learning rate warmup steps (linear warmup from 0 to lr)
 LR_WARMUP_STEPS = 0  # Default: no warmup (set via CLI --warmup-steps)
 
 # Early stopping patience - epochs without validation improvement
-EARLY_STOPPING_PATIENCE = 10
+EARLY_STOPPING_PATIENCE = 20
 
 # Validation interval - steps between validation checks
 VALIDATION_INTERVAL_STEPS = 500
@@ -1325,10 +1334,18 @@ GUMBEL_C_PUCT = 1.5
 # December 2025: Increased STANDARD from 150 to 800 to match AlphaZero.
 # Low budgets (150) produce weak training data that plateaus at ~1600 Elo.
 # AlphaZero uses 800 simulations; this is the minimum for strong models.
+#
+# Budget tiers for different training phases:
+# - THROUGHPUT (64): Fast bootstrap, curriculum warmup (< 1500 Elo)
+# - STANDARD (800): Core training for 1500-1800 Elo
+# - QUALITY (800): Evaluation and gauntlet games
+# - ULTIMATE (1600): Strong benchmarks, 1800-2000 Elo
+# - MASTER (3200): 2000+ Elo training, tournament-quality moves
 GUMBEL_BUDGET_THROUGHPUT = 64    # Maximum speed, low quality (for fast iteration)
 GUMBEL_BUDGET_STANDARD = 800     # Default for training selfplay (AlphaZero uses 800)
 GUMBEL_BUDGET_QUALITY = 800      # High quality for evaluation/gauntlet
 GUMBEL_BUDGET_ULTIMATE = 1600    # Maximum quality for final benchmarks
+GUMBEL_BUDGET_MASTER = 3200      # 2000+ Elo training (Dec 2025: for breaking Elo plateau)
 GUMBEL_DEFAULT_BUDGET = GUMBEL_BUDGET_STANDARD
 
 

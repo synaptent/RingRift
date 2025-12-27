@@ -25755,9 +25755,26 @@ print(json.dumps({{
                 # NOTE: Heuristic-only modes removed to ensure NN/strong AI in every game
                 selfplay_configs = [
                     # ================================================================
-                    # UNDERREPRESENTED COMBINATIONS - MIXED MODE (HIGHEST PRIORITY 8)
+                    # GUMBEL MCTS - HIGHEST PRIORITY (70% of jobs should use Gumbel)
+                    # GPU-accelerated Gumbel Top-K MCTS for high-quality training data
+                    # Priority 10 ensures ~70% selection over priority 8 mixed modes
+                    # ================================================================
+                    {"board_type": "hex8", "num_players": 2, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "hex8", "num_players": 3, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "hex8", "num_players": 4, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "square8", "num_players": 2, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "square8", "num_players": 3, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "square8", "num_players": 4, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "square19", "num_players": 2, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "square19", "num_players": 3, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "square19", "num_players": 4, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "hexagonal", "num_players": 2, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "hexagonal", "num_players": 3, "engine_mode": "gumbel-mcts", "priority": 10},
+                    {"board_type": "hexagonal", "num_players": 4, "engine_mode": "gumbel-mcts", "priority": 10},
+                    # ================================================================
+                    # UNDERREPRESENTED COMBINATIONS - MIXED MODE (PRIORITY 8)
                     # "mixed" mode provides varied AI matchups (NNUE, MCTS, heuristic combos)
-                    # for maximum training data diversity
+                    # for maximum training data diversity (~30% of jobs)
                     # ================================================================
                     {"board_type": "hexagonal", "num_players": 3, "engine_mode": "mixed", "priority": 8},
                     {"board_type": "hexagonal", "num_players": 2, "engine_mode": "mixed", "priority": 8},

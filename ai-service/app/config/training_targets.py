@@ -65,7 +65,7 @@ class TrainingTargets:
     # Evaluation parameters
     gauntlet_games: int = 50
     promotion_threshold_random: float = 0.85
-    promotion_threshold_heuristic: float = 0.60
+    promotion_threshold_heuristic: float = 0.80  # Dec 2025: raised from 0.60 for 2000+ Elo
 
     # Priority
     priority: str = "medium"

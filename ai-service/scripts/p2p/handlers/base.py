@@ -141,8 +141,15 @@ class BaseP2PHandler(ABC):
 
         if error_code:
             error_data["code"] = error_code
+
+        # Keep a nested details object for structured clients, but also provide a
+        # shallow top-level projection for backward compatibility with older
+        # handlers/tests that expected fields like "acquired"/"released" at the
+        # top level.
         if details:
             error_data["details"] = details
+            for k, v in details.items():
+                error_data.setdefault(k, v)
 
         return self.json_response(error_data, status=status)
 

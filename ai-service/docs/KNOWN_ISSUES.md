@@ -98,6 +98,36 @@ result = robust_push("file.npz", "host", 22, "/path/file.npz", TransferConfig())
 
 ## Training Issues
 
+### Elo Plateau at 1600-1700 (FIXED Dec 27, 2025)
+
+**Issue:** AI models plateau at ~1600-1700 Elo, never reaching the 2000+ target.
+
+**Root Causes (identified via exploration agents):**
+
+1. **Tournament sample size too small:** Using only 10 games for promotion decisions (statistically meaningless)
+2. **Selfplay MCTS budget too low:** Using THROUGHPUT (64 sims) instead of QUALITY (800)
+3. **No master-level budget tier:** Maximum was 1600 simulations, insufficient for 2000+ Elo
+
+**Fixes Applied (Dec 27, 2025):**
+
+1. `train_loop.py`: Tournament games increased from 10 → 50
+2. `mixed_opponent_selfplay.py`: MCTS budget changed from THROUGHPUT (64) → QUALITY (800)
+3. `thresholds.py`: Added GUMBEL_BUDGET_MASTER = 3200 for 2000+ Elo training
+
+**Status:** FIXED - Changes applied, requires regenerating training data and retraining
+
+**Budget Tier Reference:**
+
+| Tier       | Simulations | Use Case                          |
+| ---------- | ----------- | --------------------------------- |
+| THROUGHPUT | 64          | Fast bootstrap only               |
+| STANDARD   | 800         | Normal training (1500-1800 Elo)   |
+| QUALITY    | 800         | Evaluation/gauntlet               |
+| ULTIMATE   | 1600        | Strong benchmarks (1800-2000 Elo) |
+| MASTER     | 3200        | 2000+ Elo training                |
+
+---
+
 ### Gauntlet Semaphore Leak (Non-Critical)
 
 **Issue:** Gauntlet evaluation shows `resource_tracker: 5 leaked semaphore objects` warning on macOS with Python 3.10 spawn multiprocessing.

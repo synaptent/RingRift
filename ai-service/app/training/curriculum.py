@@ -205,7 +205,7 @@ class CurriculumConfig:
     games_per_generation: int = 500
     training_epochs: int = 20
     eval_games: int = 50
-    promotion_threshold: float = 0.60  # Win rate to promote (Dec 2025: tightened from 0.55)
+    promotion_threshold: float = 0.80  # Win rate to promote (Dec 2025: raised from 0.60 for 2000+ Elo)
 
     # Data retention
     data_retention: int = 3  # Generations of data to keep
