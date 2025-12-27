@@ -424,6 +424,47 @@ class UnifiedResourceCoordinator:
             self._node_status[node].is_healthy = True
             logger.info(f"[UnifiedResourceCoordinator] Node {node} marked healthy")
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check coordinator health for CoordinatorProtocol compliance.
+
+        December 2025: Added for unified daemon health monitoring.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        # Check for severe backpressure as a degraded state
+        if self._backpressure_level == BackpressureLevel.CRITICAL:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Critical backpressure ({self._backpressure_level.value})",
+            )
+
+        # Check if we have node data
+        if not self._node_status:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="No node status data yet",
+            )
+
+        # Count healthy vs unhealthy nodes
+        healthy_count = sum(1 for s in self._node_status.values() if s.is_healthy)
+        total_count = len(self._node_status)
+        healthy_ratio = healthy_count / total_count if total_count > 0 else 1.0
+
+        if healthy_ratio < 0.5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Only {healthy_count}/{total_count} nodes healthy",
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Healthy ({healthy_count}/{total_count} nodes, decisions: {self._decisions_made})",
+        )
+
 
 # Singleton instance
 _coordinator: UnifiedResourceCoordinator | None = None

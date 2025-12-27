@@ -871,6 +871,11 @@ from app.coordination.utils import (
     MetricsAccumulator,
 )
 
+# Core Utilities - Consolidated Module (December 2025)
+# This module consolidates: tracing, distributed_lock, optional_imports, yaml_utils
+# Prefer importing from core_utils for new code
+from app.coordination import core_utils
+
 # Work Distribution (December 2025 - cluster work queue integration)
 from app.coordination.work_distributor import (
     DistributedWorkConfig,
