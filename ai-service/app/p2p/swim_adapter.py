@@ -42,15 +42,26 @@ import yaml
 logger = logging.getLogger(__name__)
 
 # Try to import swim-p2p, fall back gracefully if not available
+# Note: swim-p2p v1.2.x uses Node/Member classes with a complex builder pattern.
+# Full integration requires proper factory setup which is deferred to future work.
+# For now, SWIM_AVAILABLE is False to use HTTP heartbeats as fallback.
 try:
-    from swim import SwimNode, SwimMember
-    SWIM_AVAILABLE = True
+    from swim import Node as SwimNode, Member as SwimMember, MemberState
+    # Check if the API matches our expected interface
+    # swim-p2p 1.2.x requires complex builder pattern, not simple constructor
+    if not hasattr(SwimNode, '__init__'):
+        raise ImportError("swim-p2p API mismatch")
+    # Defer full SWIM integration - the library needs builder pattern setup
+    # See https://pypi.org/project/swim-p2p/ for full API documentation
+    SWIM_AVAILABLE = False  # Temporarily disabled pending factory implementation
+    logger.info("swim-p2p installed but SWIM integration deferred (using HTTP heartbeats)")
 except ImportError:
     SWIM_AVAILABLE = False
     logger.warning("swim-p2p not installed. Install with: pip install swim-p2p")
     # Define stub classes for type hints
     SwimNode = None
     SwimMember = None
+    MemberState = None
 
 
 @dataclass
