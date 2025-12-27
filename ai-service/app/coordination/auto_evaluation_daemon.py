@@ -500,7 +500,8 @@ class AutoEvaluationDaemon:
             )
 
             # Convert board_type string to enum
-            from app.rules.types import BoardType
+            # Dec 2025: Import from unified_queue_populator (rules.types doesn't exist)
+            from app.coordination.unified_queue_populator import BoardType
 
             board_type_enum = BoardType[board_type.upper()]
 
@@ -604,7 +605,8 @@ class AutoEvaluationDaemon:
             )
 
             # Try to use promotion controller
-            from app.coordination.promotion_controller import get_promotion_controller
+            # Dec 2025: Fixed import path (was coordination, now training)
+            from app.training.promotion_controller import get_promotion_controller
 
             controller = get_promotion_controller()
             success = await controller.promote_model(

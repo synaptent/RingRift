@@ -1838,20 +1838,21 @@ class DaemonManager:
     async def _create_p2p_backend(self) -> None:
         """Create and run P2P backend server (December 2025).
 
+        .. deprecated:: December 2025
+            The P2P backend is now managed externally via scripts/p2p_orchestrator.py.
+            This daemon type should not be started via DaemonManager.
+            Use: python scripts/p2p_orchestrator.py --port 8770
+
         Runs the P2P mesh network backend for cluster communication.
         """
-        try:
-            from app.distributed.p2p import P2PNode
-
-            node = P2PNode()
-            await node.start()
-
-            while node.is_running():
-                await asyncio.sleep(10)
-
-        except ImportError as e:
-            logger.error(f"P2P backend not available: {e}")
-            raise
+        logger.warning(
+            "[DaemonManager] P2P_BACKEND daemon type is deprecated. "
+            "P2P is managed externally via scripts/p2p_orchestrator.py. "
+            "This daemon will idle without starting any services."
+        )
+        # Keep daemon "alive" but do nothing - P2P is external
+        while True:
+            await asyncio.sleep(60)
 
     async def _create_unified_promotion(self) -> None:
         """Create and run unified promotion daemon (December 2025).

@@ -164,9 +164,10 @@ class VastCpuPipelineDaemon:
         instances = []
 
         try:
-            from app.distributed.host_config import get_configured_hosts
+            # Dec 2025: Fixed import - host_config doesn't exist, use hosts module
+            from app.distributed.hosts import load_remote_hosts
 
-            hosts = get_configured_hosts()
+            hosts = load_remote_hosts()
             for name, host in hosts.items():
                 # Check if it's a Vast.ai instance
                 if not name.startswith("vast-") and host.provider != "vast":
