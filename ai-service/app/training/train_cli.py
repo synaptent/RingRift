@@ -523,16 +523,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
              'warnings (stale data, pending gate DBs, non-canonical sources). '
              'Equivalent to RINGRIFT_AUTONOMOUS_MODE=1. Use for unattended training.'
     )
-    parser.add_argument(
-        '--allow-stale-data', action='store_true',
-        help='Allow training on stale data (older than --max-data-age-hours). '
-             'Implicitly enabled in --autonomous mode.'
-    )
-    parser.add_argument(
-        '--max-data-age-hours', type=float, default=1.0,
-        help='Maximum age in hours for training data before it is considered stale. '
-             'Default: 1.0 hour. Only enforced if not in autonomous mode.'
-    )
+    # NOTE: --allow-stale-data and --max-data-age-hours already defined above (line ~390)
 
     return parser.parse_args(args)
 
