@@ -299,9 +299,13 @@ class TestShouldScaleDown:
         assert "CRITICAL memory" in reason
 
     def test_scale_down_critical_gpu(self):
-        """Scale down with critical GPU."""
+        """Scale down with critical GPU.
+
+        Note: gpu_critical defaults to 95.0 in config loader (not 80.0 dataclass default).
+        We use 96% to ensure we exceed the threshold.
+        """
         should_scale, reduction, reason = should_scale_down(
-            "runpod-h100", current_cpu=60, current_gpu=90, current_memory=50
+            "runpod-h100", current_cpu=60, current_gpu=96, current_memory=50
         )
         assert should_scale is True
         assert reduction == 6
@@ -400,7 +404,17 @@ class TestRecordUtilization:
         reset_resource_targets()
 
     def test_record_updates_host_targets(self):
-        """Record should update host targets state."""
+        """Record should update host targets state.
+
+        Note: We set _last_adaptive_update to prevent cache clearing.
+        When record_utilization runs and (now - _last_adaptive_update) > 300,
+        it triggers _update_adaptive_targets() which clears _host_targets cache.
+        """
+        # Get the manager instance and set recent adaptive update time
+        # to prevent cache clearing during record_utilization
+        manager = ResourceTargetManager.get_instance()
+        manager._last_adaptive_update = time.time()
+
         # First get host targets to create the entry
         _ = get_host_targets("test-host")
 

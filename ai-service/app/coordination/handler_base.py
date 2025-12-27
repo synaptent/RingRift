@@ -402,13 +402,35 @@ class HandlerBase(ABC):
     def _get_event_subscriptions(self) -> dict[str, Callable[[dict[str, Any]], Any]]:
         """Return event_type -> handler mapping.
 
-        Override in subclass to specify subscriptions.
+        Supports both naming conventions for backward compatibility:
+        - Canonical (new): override _get_event_subscriptions()
+        - Legacy (old): override _get_subscriptions()
+
+        The legacy method will emit a deprecation warning on first use.
 
         Example:
             def _get_event_subscriptions(self) -> dict:
                 return {
                     "training_completed": self._on_training_completed,
                 }
+        """
+        # Check if subclass overrode legacy _get_subscriptions method
+        if "_get_subscriptions" in type(self).__dict__:
+            legacy_subs = type(self)._get_subscriptions(self)
+            if legacy_subs:
+                logger.warning(
+                    f"{type(self).__name__}._get_subscriptions() is deprecated. "
+                    f"Use _get_event_subscriptions() instead. "
+                    f"This will be removed in Q2 2026."
+                )
+                return legacy_subs
+        return {}
+
+    def _get_subscriptions(self) -> dict[str, Callable[[dict[str, Any]], Any]]:
+        """Legacy method name - deprecated, use _get_event_subscriptions().
+
+        DEPRECATED: This method exists only for backward compatibility.
+        Override _get_event_subscriptions() in new code instead.
         """
         return {}
 
