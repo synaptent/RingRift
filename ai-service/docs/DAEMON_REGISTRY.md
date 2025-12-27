@@ -1024,7 +1024,8 @@ print('✓ Valid' if valid else f'✗ Errors: {errors}')
 - `daemon_types.py` - Type definitions and enums
 - `daemon_factory.py` - Centralized daemon creation factory
 - `daemon_adapters.py` - Daemon wrappers for legacy code
-- `base_handler.py` - Base classes for event handlers (Dec 2025)
+- `handler_base.py` - Canonical base classes for event handlers (Dec 2025)
+- `base_handler.py` - Legacy helpers (deprecated, Q2 2026)
 - `app/config/coordination_defaults.py` - Centralized configuration defaults (Dec 2025)
 - `CONFIG_REFERENCE.md` - Environment variable configuration
 - `CLAUDE.md` - Cluster infrastructure overview

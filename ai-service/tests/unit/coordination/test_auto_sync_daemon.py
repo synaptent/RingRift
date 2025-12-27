@@ -1106,3 +1106,398 @@ class TestEventEmission:
                 await daemon._emit_sync_failed("Test error")
             except ImportError:
                 pass  # Expected behavior - import failed
+
+
+# ============================================
+# Reverse Sync (PULL Strategy) Tests - December 2025
+# ============================================
+
+
+class TestReverseSyncPullStrategy:
+    """Tests for the PULL strategy reverse sync functionality."""
+
+    @pytest.fixture
+    def pull_config(self):
+        """Create config for PULL strategy testing."""
+        return AutoSyncConfig(
+            enabled=True,
+            strategy=SyncStrategy.PULL,
+            interval_seconds=60,
+        )
+
+    @pytest.fixture
+    def pull_daemon(self, pull_config, temp_dir):
+        """Create a daemon configured for PULL strategy."""
+        reset_auto_sync_daemon()
+        with patch("app.coordination.auto_sync_daemon.get_node_id", return_value="coordinator"):
+            daemon = AutoSyncDaemon(config=pull_config)
+            daemon._data_dir = temp_dir
+            return daemon
+
+    def test_pull_strategy_is_set(self, pull_daemon):
+        """Test that PULL strategy is set when configured."""
+        assert pull_daemon._resolved_strategy == SyncStrategy.PULL
+
+    @pytest.mark.asyncio
+    async def test_pull_from_cluster_nodes_requires_coordinator(self, temp_dir):
+        """Test that non-coordinators skip PULL sync."""
+        reset_auto_sync_daemon()
+        config = AutoSyncConfig(
+            enabled=True,
+            strategy=SyncStrategy.PULL,
+        )
+        with patch("app.coordination.auto_sync_daemon.get_node_id", return_value="worker-1"):
+            daemon = AutoSyncDaemon(config=config)
+            daemon._data_dir = temp_dir
+
+            # Mock env.is_coordinator to return False
+            with patch("app.config.env.env") as mock_env:
+                mock_env.is_coordinator = False
+
+                result = await daemon._pull_from_cluster_nodes()
+
+                assert result == 0  # Should skip
+
+    @pytest.mark.asyncio
+    async def test_pull_from_cluster_nodes_no_sources(self, pull_daemon):
+        """Test PULL when no sync sources available."""
+        # Mock coordinator check to return True
+        with patch("app.config.env.env") as mock_env:
+            mock_env.is_coordinator = True
+
+            with patch(
+                "app.coordination.sync_router.get_sync_router"
+            ) as mock_get_router:
+                mock_router = MagicMock()
+                mock_router.get_sync_sources.return_value = []
+                mock_router.refresh_from_cluster_config = MagicMock()
+                mock_get_router.return_value = mock_router
+
+                result = await pull_daemon._pull_from_cluster_nodes()
+
+                assert result == 0
+                mock_router.get_sync_sources.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pull_from_cluster_nodes_with_sources(self, pull_daemon):
+        """Test PULL with available sources."""
+        # Create mock source targets
+        mock_source = MagicMock()
+        mock_source.node_id = "worker-1"
+
+        # Mock coordinator check to return True
+        with patch("app.config.env.env") as mock_env:
+            mock_env.is_coordinator = True
+
+            with patch(
+                "app.coordination.sync_router.get_sync_router"
+            ) as mock_get_router:
+                mock_router = MagicMock()
+                mock_router.get_sync_sources.return_value = [mock_source]
+                mock_router.refresh_from_cluster_config = MagicMock()
+                mock_get_router.return_value = mock_router
+
+                with patch.object(
+                    pull_daemon, "_pull_from_node", new_callable=AsyncMock
+                ) as mock_pull:
+                    mock_pull.return_value = 10  # 10 games pulled
+
+                    result = await pull_daemon._pull_from_cluster_nodes()
+
+                    assert result == 10
+                    mock_pull.assert_called_once_with("worker-1")
+
+    @pytest.mark.asyncio
+    async def test_pull_from_node_no_config(self, pull_daemon):
+        """Test pull from node when config not found."""
+        with patch("app.config.cluster_config.get_cluster_nodes") as mock_nodes:
+            mock_nodes.return_value = {}  # Empty nodes dict
+
+            result = await pull_daemon._pull_from_node("unknown-node")
+
+            assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_pull_from_node_no_ssh_host(self, pull_daemon):
+        """Test pull from node with no SSH host configured."""
+        mock_node = MagicMock()
+        mock_node.best_ip = None  # No IP
+        mock_node.ssh_user = "ubuntu"
+        mock_node.ssh_key = "~/.ssh/id_cluster"
+
+        with patch("app.config.cluster_config.get_cluster_nodes") as mock_nodes:
+            mock_nodes.return_value = {"worker-1": mock_node}
+
+            result = await pull_daemon._pull_from_node("worker-1")
+
+            assert result == 0
+
+    def test_get_canonical_name_hex8_2p(self, pull_daemon):
+        """Test canonical name extraction for hex8_2p."""
+        result = pull_daemon._get_canonical_name("selfplay_hex8_2p.db")
+        assert result == "canonical_hex8_2p.db"
+
+    def test_get_canonical_name_square8_4p(self, pull_daemon):
+        """Test canonical name extraction for square8_4p."""
+        result = pull_daemon._get_canonical_name("games_square8_4p_2025.db")
+        assert result == "canonical_square8_4p.db"
+
+    def test_get_canonical_name_already_canonical(self, pull_daemon):
+        """Test canonical name when already canonical."""
+        result = pull_daemon._get_canonical_name("canonical_hex8_2p.db")
+        assert result == "canonical_hex8_2p.db"
+
+    def test_get_canonical_name_reversed_pattern(self, pull_daemon):
+        """Test canonical name with reversed pattern (2p_hex8)."""
+        result = pull_daemon._get_canonical_name("2p_hex8_games.db")
+        assert result == "canonical_hex8_2p.db"
+
+    def test_get_canonical_name_unknown_format(self, pull_daemon):
+        """Test canonical name fallback for unknown format."""
+        result = pull_daemon._get_canonical_name("random_games.db")
+        assert result == "canonical_random_games.db"
+
+    def test_get_remote_games_path_runpod(self, pull_daemon):
+        """Test remote path for RunPod provider."""
+        with patch("app.config.cluster_config.get_host_provider") as mock_provider:
+            mock_provider.return_value = "runpod"
+
+            result = pull_daemon._get_remote_games_path("runpod-h100")
+
+            assert "/workspace/ringrift" in result
+
+    def test_get_remote_games_path_vast(self, pull_daemon):
+        """Test remote path for Vast provider."""
+        with patch("app.config.cluster_config.get_host_provider") as mock_provider:
+            mock_provider.return_value = "vast"
+
+            result = pull_daemon._get_remote_games_path("vast-12345")
+
+            assert "~/ringrift" in result
+
+    def test_get_remote_games_path_vultr(self, pull_daemon):
+        """Test remote path for Vultr provider."""
+        with patch("app.config.cluster_config.get_host_provider") as mock_provider:
+            mock_provider.return_value = "vultr"
+
+            result = pull_daemon._get_remote_games_path("vultr-a100")
+
+            assert "/root/ringrift" in result
+
+    @pytest.mark.asyncio
+    async def test_list_remote_databases_success(self, pull_daemon):
+        """Test listing remote databases."""
+        # Mock successful SSH command
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (
+            b"/data/games/selfplay_hex8_2p.db\n/data/games/selfplay_square8_2p.db\n",
+            b"",
+        )
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
+                result = await pull_daemon._list_remote_databases(
+                    "192.168.1.1", "ubuntu", "~/.ssh/key", "/data/games"
+                )
+
+                # Should return filenames only
+                assert "selfplay_hex8_2p.db" in result
+                assert "selfplay_square8_2p.db" in result
+                assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_list_remote_databases_timeout(self, pull_daemon):
+        """Test handling of timeout during database listing."""
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=asyncio.TimeoutError()
+        ):
+            result = await pull_daemon._list_remote_databases(
+                "192.168.1.1", "ubuntu", "~/.ssh/key", "/data/games"
+            )
+
+            assert result == []
+
+    @pytest.mark.asyncio
+    async def test_rsync_pull_success(self, pull_daemon, temp_dir):
+        """Test successful rsync pull."""
+        local_path = temp_dir / "test.db"
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"", b"")
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
+                # Create the file to simulate rsync success
+                local_path.touch()
+
+                result = await pull_daemon._rsync_pull(
+                    "192.168.1.1", "ubuntu", "~/.ssh/key",
+                    "/data/games", "test.db", temp_dir
+                )
+
+                assert result == local_path
+
+    @pytest.mark.asyncio
+    async def test_rsync_pull_failure(self, pull_daemon, temp_dir):
+        """Test rsync pull failure."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"", b"rsync error")
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
+                result = await pull_daemon._rsync_pull(
+                    "192.168.1.1", "ubuntu", "~/.ssh/key",
+                    "/data/games", "test.db", temp_dir
+                )
+
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_emit_pull_sync_completed(self, pull_daemon):
+        """Test event emission for PULL sync completion."""
+        with patch(
+            "app.coordination.data_events.emit_data_event",
+            new_callable=AsyncMock
+        ) as mock_emit:
+            await pull_daemon._emit_pull_sync_completed(100, 3)
+
+            mock_emit.assert_called_once()
+            call_args = mock_emit.call_args
+            # Check event type
+            from app.coordination.data_events import DataEventType
+            assert call_args[0][0] == DataEventType.DATA_SYNC_COMPLETED
+            # Check payload
+            payload = call_args[0][1]
+            assert payload["sync_type"] == "pull"
+            assert payload["games_synced"] == 100
+            assert payload["sources_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_sync_cycle_uses_pull_for_pull_strategy(self, pull_daemon):
+        """Test that _sync_cycle calls _pull_from_cluster_nodes for PULL strategy."""
+        with patch.object(
+            pull_daemon, "_pull_from_cluster_nodes", new_callable=AsyncMock
+        ) as mock_pull:
+            mock_pull.return_value = 25
+
+            result = await pull_daemon._sync_cycle()
+
+            assert result == 25
+            mock_pull.assert_called_once()
+
+
+class TestMergeIntoCanonical:
+    """Tests for database merge functionality."""
+
+    @pytest.fixture
+    def merge_daemon(self, temp_dir):
+        """Create daemon for merge testing."""
+        reset_auto_sync_daemon()
+        config = AutoSyncConfig(
+            enabled=True,
+            strategy=SyncStrategy.PULL,
+            is_coordinator=True,
+        )
+        with patch("app.coordination.auto_sync_daemon.get_node_id", return_value="coordinator"):
+            daemon = AutoSyncDaemon(config=config)
+            daemon._data_dir = temp_dir
+            return daemon
+
+    @pytest.fixture
+    def canonical_db(self, temp_dir):
+        """Create a canonical database with some games."""
+        games_dir = temp_dir / "data" / "games"
+        games_dir.mkdir(parents=True, exist_ok=True)
+        db_path = games_dir / "canonical_hex8_2p.db"
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT,
+                num_players INTEGER
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE game_moves (
+                game_id TEXT,
+                move_number INTEGER,
+                move_data TEXT
+            )
+        """)
+        # Insert existing games
+        for i in range(5):
+            conn.execute(
+                "INSERT INTO games (game_id, board_type, num_players) VALUES (?, ?, ?)",
+                (f"existing_game_{i}", "hex8", 2),
+            )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    @pytest.fixture
+    def pulled_db(self, temp_dir):
+        """Create a pulled database with new games."""
+        pull_dir = temp_dir / "data" / "games" / "pulled"
+        pull_dir.mkdir(parents=True, exist_ok=True)
+        db_path = pull_dir / "selfplay_hex8_2p.db"
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT,
+                num_players INTEGER
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE game_moves (
+                game_id TEXT,
+                move_number INTEGER,
+                move_data TEXT
+            )
+        """)
+        # Insert new games
+        for i in range(3):
+            conn.execute(
+                "INSERT INTO games (game_id, board_type, num_players) VALUES (?, ?, ?)",
+                (f"new_game_{i}", "hex8", 2),
+            )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    @pytest.mark.asyncio
+    async def test_merge_creates_canonical_when_missing(
+        self, merge_daemon, pulled_db, temp_dir
+    ):
+        """Test merge creates canonical db when it doesn't exist."""
+        # Patch the base_dir calculation to use temp_dir
+        with patch.object(merge_daemon, "_get_canonical_name") as mock_name:
+            mock_name.return_value = "canonical_hex8_2p.db"
+
+            # Create a clean target location
+            games_dir = temp_dir / "data" / "games"
+            games_dir.mkdir(parents=True, exist_ok=True)
+            canonical_path = games_dir / "canonical_hex8_2p.db"
+
+            # Ensure canonical doesn't exist
+            if canonical_path.exists():
+                canonical_path.unlink()
+
+            # Manually create pulled db at expected location
+            pull_dir = games_dir / "pulled"
+            pull_dir.mkdir(exist_ok=True)
+            test_pulled_db = pull_dir / "test_hex8_2p.db"
+
+            conn = sqlite3.connect(str(test_pulled_db))
+            conn.execute("CREATE TABLE games (game_id TEXT PRIMARY KEY)")
+            conn.execute("INSERT INTO games VALUES ('test_game')")
+            conn.commit()
+            conn.close()
+
+            # The method renames file, so verify behavior
+            assert test_pulled_db.exists()

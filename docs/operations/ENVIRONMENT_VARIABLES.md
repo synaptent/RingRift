@@ -524,6 +524,18 @@ Explicit override for export jobs on this node. When unset, defaults are resolve
 
 Enable the idle-resource daemon that spawns or scales down selfplay based on GPU idleness.
 
+### `RINGRIFT_EXTRACTED_LOOPS`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `boolean`                 |
+| Values   | `true`, `false`, `1`, `0` |
+| Default  | `true`                    |
+| Required | No                        |
+
+Enable LoopManager-managed background loops for the P2P orchestrator (Elo sync, queue
+populator, validation loop, etc.). When disabled, the orchestrator runs legacy in-process loops.
+
 ### `RINGRIFT_IDLE_THRESHOLD`
 
 | Property | Value    |

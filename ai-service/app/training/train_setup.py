@@ -357,17 +357,163 @@ class TrainingState:
         self.last_good_epoch = epoch
 
 
+# =============================================================================
+# Optimizer Setup
+# =============================================================================
+
+@dataclass
+class OptimizerConfig:
+    """Configuration for optimizer and learning rate schedulers."""
+
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-4
+    scheduler_type: str = "cosine"
+    warmup_epochs: int = 0
+    lr_min: float = 1e-6
+    lr_t0: int = 10
+    lr_t_mult: int = 2
+    total_epochs: int = 100
+    freeze_policy: bool = False
+
+
+@dataclass
+class OptimizerComponents:
+    """Container for initialized optimizer components."""
+
+    optimizer: Any  # torch.optim.Optimizer
+    epoch_scheduler: Any | None = None
+    plateau_scheduler: Any | None = None
+    trainable_params: list | None = None
+
+
+def setup_parameter_freezing(
+    model: Any,  # nn.Module
+    freeze_policy: bool = False,
+) -> list:
+    """Configure which parameters to train based on freezing settings.
+
+    When freeze_policy is True, only value head parameters are trained.
+    This is useful for transfer learning or fine-tuning.
+
+    Args:
+        model: The neural network model.
+        freeze_policy: If True, freeze all except value head.
+
+    Returns:
+        List of parameters to pass to the optimizer.
+    """
+    if not freeze_policy:
+        return list(model.parameters())
+
+    # Freeze all parameters first
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Unfreeze only value head parameters
+    value_head_params = []
+    value_patterns = ['value_fc', 'value_head', 'value_conv', 'value_bn']
+
+    for name, param in model.named_parameters():
+        if any(pattern in name.lower() for pattern in value_patterns):
+            param.requires_grad = True
+            value_head_params.append(param)
+            logger.info(f"[freeze_policy] Unfreezing: {name}")
+
+    if not value_head_params:
+        logger.warning(
+            "[freeze_policy] No value head parameters found! "
+            "Check model architecture. Training all parameters."
+        )
+        for param in model.parameters():
+            param.requires_grad = True
+        return list(model.parameters())
+
+    logger.info(f"[freeze_policy] Training only {len(value_head_params)} value head parameters")
+    return value_head_params
+
+
+def setup_optimizer_and_schedulers(
+    model: Any,  # nn.Module
+    config: OptimizerConfig,
+) -> OptimizerComponents:
+    """Initialize optimizer and learning rate schedulers.
+
+    Sets up Adam optimizer with optional parameter freezing and LR scheduling.
+
+    Args:
+        model: The neural network model.
+        config: Optimizer configuration.
+
+    Returns:
+        OptimizerComponents with initialized optimizer and schedulers.
+
+    Example:
+        >>> from app.training.train_setup import (
+        ...     setup_optimizer_and_schedulers,
+        ...     OptimizerConfig,
+        ... )
+        >>> config = OptimizerConfig(learning_rate=1e-3, total_epochs=50)
+        >>> components = setup_optimizer_and_schedulers(model, config)
+        >>> optimizer = components.optimizer
+        >>> scheduler = components.epoch_scheduler
+    """
+    # Determine trainable parameters
+    trainable_params = setup_parameter_freezing(model, config.freeze_policy)
+
+    # Create optimizer
+    optimizer = torch.optim.Adam(
+        trainable_params,
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay,
+    )
+
+    # Create LR scheduler
+    epoch_scheduler = None
+    try:
+        from app.training.schedulers import create_lr_scheduler
+
+        epoch_scheduler = create_lr_scheduler(
+            optimizer,
+            scheduler_type=config.scheduler_type,
+            total_epochs=config.total_epochs,
+            warmup_epochs=config.warmup_epochs,
+            lr_min=config.lr_min,
+            lr_t0=config.lr_t0,
+            lr_t_mult=config.lr_t_mult,
+        )
+    except ImportError:
+        logger.debug("Scheduler module not available, using ReduceLROnPlateau")
+
+    # Fallback to ReduceLROnPlateau if no scheduler configured
+    plateau_scheduler = None
+    if epoch_scheduler is None:
+        plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=2
+        )
+
+    return OptimizerComponents(
+        optimizer=optimizer,
+        epoch_scheduler=epoch_scheduler,
+        plateau_scheduler=plateau_scheduler,
+        trainable_params=trainable_params,
+    )
+
+
 __all__ = [
+    # Fault tolerance
     'FaultToleranceComponents',
-    # Configuration
     'FaultToleranceConfig',
-    # State management
-    'TrainingState',
-    'compute_effective_lr',
-    # Helpers
-    'get_device',
-    # Setup functions
     'setup_fault_tolerance',
     'setup_graceful_shutdown',
     'setup_heartbeat_monitor',
+    # Optimizer
+    'OptimizerComponents',
+    'OptimizerConfig',
+    'setup_optimizer_and_schedulers',
+    'setup_parameter_freezing',
+    # State management
+    'TrainingState',
+    # Helpers
+    'compute_effective_lr',
+    'get_device',
 ]

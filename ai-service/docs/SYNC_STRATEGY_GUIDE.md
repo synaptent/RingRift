@@ -130,6 +130,13 @@ targets = router.get_sync_targets(
     config_key="square19_4p",
     max_targets=5,
 )
+
+# Reverse sync (pull) sources for coordinator ingestion
+sources = router.get_sync_sources(
+    data_type="games",
+    target_node="coordinator-1",
+    max_sources=3,
+)
 ```
 
 ## Data Types

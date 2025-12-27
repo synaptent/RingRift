@@ -147,6 +147,7 @@ In addition to managers, background loops were extracted to `scripts/p2p/loops/`
 - `AutoScalingLoop` - Dynamic node scaling
 - `JobReaperLoop` - Stale job cleanup
 - `QueuePopulatorLoop` - Work queue maintenance
+- `ValidationLoop` - Queues model validation work for newly trained models
 
 Controlled via `LoopManager.start_all()` and feature flag `RINGRIFT_EXTRACTED_LOOPS=true`.
 

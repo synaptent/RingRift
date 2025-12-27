@@ -2453,7 +2453,15 @@ class AutoSyncDaemon:
             Number of games pulled and validated.
         """
         # Only coordinators should use PULL strategy
-        if not self.config.is_coordinator:
+        # Check env.is_coordinator from centralized config
+        try:
+            from app.config.env import env
+            is_coordinator = env.is_coordinator
+        except ImportError:
+            # Fallback to checking hostname
+            is_coordinator = "mac-studio" in socket.gethostname().lower() or "coordinator" in socket.gethostname().lower()
+
+        if not is_coordinator:
             logger.debug("[AutoSyncDaemon] PULL strategy requires coordinator role")
             return 0
 

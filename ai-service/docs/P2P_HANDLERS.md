@@ -263,6 +263,19 @@ P2P handlers are wired to the coordination EventRouter via `scripts/p2p/p2p_even
 Emitter availability in `scripts/p2p_orchestrator.py` is cached: positive checks are reused,
 and negative checks are retried every 30 seconds to allow late EventRouter initialization.
 
+### Background Loops (`scripts/p2p/loops`)
+
+The P2P orchestrator delegates periodic work to LoopManager-managed loops:
+
+- `EloSyncLoop` - Periodic Elo synchronization
+- `IdleDetectionLoop` - GPU idle resource detection
+- `AutoScalingLoop` - Dynamic node scaling
+- `JobReaperLoop` - Stale job cleanup
+- `QueuePopulatorLoop` - Work queue maintenance
+- `ValidationLoop` - Queues model validation work for newly trained models
+
+Enable/disable via `RINGRIFT_EXTRACTED_LOOPS` (default `true`).
+
 ### Usage Example
 
 ```python

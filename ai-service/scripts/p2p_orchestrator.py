@@ -2657,6 +2657,56 @@ class P2POrchestrator(
             )
             manager.register(data_management)
 
+            # ModelSyncLoop - syncs NN/NNUE models across cluster
+            # December 27, 2025: Migrated from inline _model_sync_loop
+            # Note: The inline version is more complex (thread pool, batch sync, event emission)
+            # This registration uses the simpler ModelSyncLoop pattern with wrapper callbacks
+            if HAS_MODEL_SYNC and HAS_HOSTS_FOR_SYNC:
+                async def _get_node_models_for_sync(node_id: str) -> dict[str, str]:
+                    """Get model versions on a specific node."""
+                    # Use manifest data if available
+                    if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
+                        node_data = self.cluster_data_manifest.get(node_id, {})
+                        models = node_data.get("models", {})
+                        return {k: v.get("version", "") for k, v in models.items()} if isinstance(models, dict) else {}
+                    return {}
+
+                async def _sync_model_to_node(node_id: str, config_key: str, source_path: str) -> bool:
+                    """Sync a model to a specific node."""
+                    try:
+                        # Use rsync for model distribution
+                        peer = self.peers.get(node_id)
+                        if not peer:
+                            return False
+                        host = peer.get("ip") or peer.get("host", "")
+                        if not host:
+                            return False
+                        # Use sync_models infrastructure
+                        cmd = [
+                            "rsync", "-az", "--timeout=60",
+                            source_path,
+                            f"{host}:{source_path}",
+                        ]
+                        proc = await asyncio.create_subprocess_exec(
+                            *cmd,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL,
+                        )
+                        await proc.wait()
+                        return proc.returncode == 0
+                    except Exception:
+                        return False
+
+                model_sync = ModelSyncLoop(
+                    get_model_versions=lambda: getattr(self, '_model_versions', {}),
+                    get_node_models=_get_node_models_for_sync,
+                    sync_model=_sync_model_to_node,
+                    get_active_nodes=lambda: list(self.peers.keys()) if self.peers else [],
+                )
+                manager.register(model_sync)
+            else:
+                logger.debug("ModelSyncLoop: skipped (model sync not available)")
+
             # ValidationLoop - automatic model validation scheduling
             # December 27, 2025: Migrated from inline _validation_loop
             def _get_model_registry():
@@ -7120,8 +7170,18 @@ class P2POrchestrator(
                 traceback.print_exc()
                 await asyncio.sleep(60)
 
-    async def _model_sync_loop(self):
-        """Background loop for syncing NN/NNUE models across the cluster.
+    # =========================================================================
+    # DEPRECATED: _model_sync_loop - December 27, 2025
+    # This inline loop has been migrated to ModelSyncLoop in LoopManager.
+    # See scripts/p2p/loops/data_loops.py for the new implementation.
+    # Task creation removed from _run() - this method is now DEAD CODE.
+    # Retained temporarily for reference; safe to remove in Q1 2026.
+    # =========================================================================
+    async def _model_sync_loop_DEPRECATED(self):
+        """DEPRECATED: Use ModelSyncLoop via LoopManager instead.
+
+        Original docstring:
+        Background loop for syncing NN/NNUE models across the cluster.
 
         LEARNED LESSONS - Model distribution:
         - Training nodes produce new models that need distribution
@@ -7129,6 +7189,14 @@ class P2POrchestrator(
         - Use sync_models.py infrastructure for hash-based deduplication
         - Only leader runs this to avoid conflicts
         """
+        raise NotImplementedError(
+            "_model_sync_loop is deprecated. "
+            "Use ModelSyncLoop via LoopManager instead."
+        )
+
+        # ====================================================================
+        # DEAD CODE BELOW - Retained for historical reference only
+        # ====================================================================
         logger.info(f"Model sync loop started (interval: {MODEL_SYNC_INTERVAL}s)")
 
         while self.running:
@@ -27378,9 +27446,8 @@ print(json.dumps({{
         # NOTE: _data_management_loop removed Dec 2025 - now runs via LoopManager (DataManagementLoop)
         # See scripts/p2p/loops/data_loops.py for implementation
 
-        # Add model sync loop (syncs NN/NNUE models across cluster)
-        if HAS_MODEL_SYNC:
-            tasks.append(self._create_safe_task(self._model_sync_loop(), "model_sync"))
+        # NOTE: _model_sync_loop removed Dec 2025 - now runs via LoopManager (ModelSyncLoop)
+        # See scripts/p2p/loops/data_loops.py for implementation
 
         # NOTE: _elo_sync_loop removed Dec 2025 - now runs via LoopManager (EloSyncLoop)
 
@@ -27414,10 +27481,10 @@ print(json.dumps({{
         self._background_tasks = tasks
 
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
-        # These 10 loops now ONLY run via LoopManager (inline versions removed):
+        # These 11 loops now ONLY run via LoopManager (inline versions removed):
         # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop
         # - WorkQueueMaintenanceLoop, NATManagementLoop, ManifestCollectionLoop, ValidationLoop
-        # - DataManagementLoop
+        # - DataManagementLoop, ModelSyncLoop
         job_reaper_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()

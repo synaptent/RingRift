@@ -164,6 +164,15 @@ Enable P2P agent mode (worker node behavior).
 
 Enable automatic P2P code updates from leader.
 
+### `RINGRIFT_EXTRACTED_LOOPS`
+
+| Property | Default   | Description |
+| -------- | --------- | ----------- |
+| Type     | `boolean` | `true`      |
+
+Enable LoopManager-managed background loops (e.g., Elo sync, queue populator,
+validation loop) in `scripts/p2p/loops`.
+
 ### `RINGRIFT_P2P_STARTUP_GRACE_PERIOD`
 
 | Property | Default  | Description |

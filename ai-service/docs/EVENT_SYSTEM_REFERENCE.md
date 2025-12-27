@@ -371,10 +371,10 @@ print(bus.get_subscription_count())  # Returns dict of event_type -> count
 
 ## Best Practices
 
-### 1. Use BaseEventHandler for New Handlers
+### 1. Use HandlerBase for New Handlers
 
 ```python
-class MyHandler(BaseEventHandler):
+class MyHandler(HandlerBase):
     def _get_subscriptions(self):
         return {DataEventType.X: self._on_x}
 ```
@@ -424,6 +424,6 @@ async def my_handler(event):
 
 - `app/distributed/data_events.py` - Event type definitions
 - `app/coordination/event_router.py` - Unified router implementation
-- `app/coordination/base_event_handler.py` - Base class for handlers
+- `app/coordination/handler_base.py` - Canonical base class for handlers
 - `app/coordination/event_emitters.py` - Typed emitter functions
 - `docs/DAEMON_REGISTRY.md` - Daemon lifecycle documentation

@@ -254,6 +254,78 @@ warnings.filterwarnings('error', category=DeprecationWarning)
 
 ## December 27, 2025 Updates
 
+### Train.py Decomposition (Phase 3)
+
+Extracted utility functions from train.py (~5,479 lines) to dedicated modules:
+
+| Extraction                         | New Location          | Lines Added | Purpose                          |
+| ---------------------------------- | --------------------- | ----------- | -------------------------------- |
+| `setup_heartbeat_monitor()`        | `train_setup.py`      | ~65         | Heartbeat monitor initialization |
+| `validate_training_data()`         | `train_validation.py` | ~230        | Unified data validation          |
+| `setup_optimizer_and_schedulers()` | `train_setup.py`      | ~100        | Optimizer + LR scheduler setup   |
+
+**New APIs in `train_setup.py`:**
+
+```python
+from app.training.train_setup import (
+    # Heartbeat monitoring
+    setup_heartbeat_monitor,
+    # Optimizer setup
+    OptimizerConfig,
+    OptimizerComponents,
+    setup_optimizer_and_schedulers,
+    setup_parameter_freezing,
+    # Already existing
+    get_device,
+    setup_fault_tolerance,
+    setup_graceful_shutdown,
+)
+```
+
+**New APIs in `train_validation.py`:**
+
+```python
+from app.training.train_validation import (
+    # Unified validation
+    validate_training_data,
+    DataValidationResult,
+    # Individual validators
+    validate_training_data_freshness,
+    validate_npz_structure_files,
+    validate_training_data_files,
+    validate_data_checksums,
+    # Result types
+    FreshnessResult,
+    StructureValidationResult,
+    ValidationResult,
+)
+```
+
+**Example: Unified data validation**
+
+```python
+from app.training.train_validation import validate_training_data
+
+result = validate_training_data(
+    data_paths=["data/training/hex8_2p.npz"],
+    board_type="hex8",
+    num_players=2,
+    max_data_age_hours=1.0,
+    fail_on_invalid=True,
+)
+
+if result.all_valid:
+    print("All validations passed!")
+else:
+    for error in result.errors:
+        print(f"Error: {error}")
+```
+
+**Remaining Wave 4-5 (Q1 2026):**
+
+- Wave 4: Create `train_data.py` for data loading (~600 lines)
+- Wave 5: Extend `training_facade.py` with enhancements (~100 lines)
+
 ### Health Check Coverage (95%+)
 
 Added `health_check()` returning `HealthCheckResult` to remaining coordinators:

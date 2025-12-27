@@ -35,6 +35,7 @@ from typing import Any
 
 # December 2025: Import WorkStatus from canonical source
 from app.coordination.types import WorkStatus  # noqa: E402
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -1202,6 +1203,61 @@ class WorkQueue:
             "square19_2p": 0.8,
             "hexagonal_2p": 0.6,
         }
+
+    # =========================================================================
+    # Health Check Support (December 2025)
+    # =========================================================================
+
+    def health_check(self) -> HealthCheckResult:
+        """Return health status of the work queue.
+
+        Returns:
+            HealthCheckResult with queue status and metrics
+        """
+        with self.lock:
+            pending = sum(1 for item in self.items.values() if item.status == WorkStatus.PENDING)
+            running = sum(
+                1 for item in self.items.values()
+                if item.status in (WorkStatus.CLAIMED, WorkStatus.RUNNING)
+            )
+            failed = self.stats.get("total_failed", 0)
+            completed = self.stats.get("total_completed", 0)
+
+            # Check for potential issues
+            issues = []
+            if pending > 100:
+                issues.append(f"High pending count: {pending}")
+            if running > 50:
+                issues.append(f"High running count: {running}")
+
+            # Calculate error rate (avoid division by zero)
+            total = completed + failed
+            error_rate = (failed / total * 100) if total > 0 else 0.0
+
+            if error_rate > 20:
+                status = CoordinatorStatus.DEGRADED
+                message = f"High error rate: {error_rate:.1f}%"
+            elif issues:
+                status = CoordinatorStatus.DEGRADED
+                message = "; ".join(issues)
+            else:
+                status = CoordinatorStatus.RUNNING
+                message = f"Healthy: {pending} pending, {running} running"
+
+            return HealthCheckResult(
+                healthy=status != CoordinatorStatus.ERROR,
+                status=status,
+                message=message,
+                details={
+                    "pending": pending,
+                    "running": running,
+                    "completed": completed,
+                    "failed": failed,
+                    "error_rate": round(error_rate, 2),
+                    "total_items": len(self.items),
+                    "db_path": str(self.db_path) if self.db_path else None,
+                },
+            )
 
     # =========================================================================
     # Event System Integration (December 2025)

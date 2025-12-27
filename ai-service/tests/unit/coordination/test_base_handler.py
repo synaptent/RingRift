@@ -115,7 +115,8 @@ class TestBaseEventHandler:
         stats = handler.get_stats()
         assert stats["events_processed"] == 1
         assert stats["success_count"] == 1
-        assert stats["error_count"] == 0
+        # Use canonical key (errors_count, not error_count)
+        assert stats["errors_count"] == 0
 
     def test_record_error(self):
         """Test _record_error updates stats correctly."""
@@ -134,7 +135,8 @@ class TestBaseEventHandler:
         stats = handler.get_stats()
         assert stats["events_processed"] == 1
         assert stats["success_count"] == 0
-        assert stats["error_count"] == 1
+        # Use canonical key (errors_count, not error_count)
+        assert stats["errors_count"] == 1
         assert stats["last_error"] == "Test error"
 
     def test_subscribe_success(self):

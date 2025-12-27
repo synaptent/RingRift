@@ -21,7 +21,7 @@ This guide documents how RingRift's cluster components integrate together. After
 │                                                                 │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
 │  │ LoopManager │  │ EventRouter │  │ DaemonManager (62)      │ │
-│  │ (5 loops)   │  │ (unified)   │  │ Lifecycle management    │ │
+│  │ (6 loops)   │  │ (unified)   │  │ Lifecycle management    │ │
 │  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -179,7 +179,7 @@ status = manager.get_daemon_status(DaemonType.AUTO_SYNC)
 
 ## Background Loops
 
-The LoopManager runs 5 extracted loops:
+The LoopManager runs 6 extracted loops:
 
 | Loop                 | Interval | Purpose                          |
 | -------------------- | -------- | -------------------------------- |
@@ -188,6 +188,7 @@ The LoopManager runs 5 extracted loops:
 | `AutoScalingLoop`    | 120s     | Scale nodes based on queue depth |
 | `JobReaperLoop`      | 60s      | Clean up stale/completed jobs    |
 | `QueuePopulatorLoop` | 30s      | Maintain work queue targets      |
+| `ValidationLoop`     | 300s     | Queue validation for new models  |
 
 ### Feature Flag
 
