@@ -35,6 +35,8 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.contracts import HealthCheckResult
+from app.coordination.protocols import CoordinatorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -663,38 +665,61 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             logger.error(f"[ClusterWatchdog] Failed to activate {node.node_id}: {e}")
             return False
 
-    async def health_check(self) -> bool:
+    async def health_check(self) -> HealthCheckResult:
         """Check if the daemon is healthy.
 
-        Returns True if the daemon is running and functioning properly.
+        Returns HealthCheckResult for protocol compliance.
         Used by DaemonManager for crash detection and auto-restart.
 
-        Dec 2025: Added for DaemonManager health monitoring integration.
+        Dec 2025: Fixed to return HealthCheckResult instead of bool.
         """
+        is_healthy = True
+        message = "Cluster watchdog daemon running"
+        status = CoordinatorStatus.RUNNING
+
         # Check if daemon is running
         if not self._running:
-            return False
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Cluster watchdog daemon not running",
+                details={"running": False},
+            )
 
         # Check if we have recent cycle data (within 2x check interval)
         if self._last_cycle_stats is not None:
             max_age = self.config.check_interval_seconds * 2
             age = time.time() - self._last_cycle_stats.cycle_end
             if age > max_age:
-                logger.warning(
-                    f"[{self._get_daemon_name()}] Health check: stale cycle data "
-                    f"(age={age:.0f}s, max={max_age}s)"
-                )
-                return False
+                is_healthy = False
+                status = CoordinatorStatus.DEGRADED
+                message = f"Stale cycle data (age={age:.0f}s, max={max_age}s)"
+                logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
 
             # Check for excessive errors in last cycle
-            if len(self._last_cycle_stats.errors) > 5:
-                logger.warning(
-                    f"[{self._get_daemon_name()}] Health check: too many errors "
-                    f"({len(self._last_cycle_stats.errors)})"
-                )
-                return False
+            elif len(self._last_cycle_stats.errors) > 5:
+                is_healthy = False
+                status = CoordinatorStatus.DEGRADED
+                message = f"Too many errors ({len(self._last_cycle_stats.errors)})"
+                logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
 
-        return True
+        cycle_stats = {}
+        if self._last_cycle_stats:
+            cycle_stats = {
+                "nodes_discovered": self._last_cycle_stats.nodes_discovered,
+                "nodes_activated": self._last_cycle_stats.nodes_activated,
+                "errors_count": len(self._last_cycle_stats.errors),
+            }
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=message,
+            details={
+                "running": self._running,
+                **cycle_stats,
+            },
+        )
 
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for monitoring.

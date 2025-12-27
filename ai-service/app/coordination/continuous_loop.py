@@ -209,6 +209,37 @@ class ContinuousTrainingLoop:
         self.stats.current_state = LoopState.STOPPED
         logger.info("Continuous training loop stopped")
 
+    def health_check(self):
+        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="ContinuousTrainingLoop not running",
+            )
+
+        # Check for error state
+        if self.stats.current_state == LoopState.ERROR:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"ContinuousTrainingLoop in ERROR state: {self.stats.last_error or 'unknown'}",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"ContinuousTrainingLoop: {self.stats.current_state.value}, iterations={self.stats.total_iterations}",
+            details=self.get_status(),
+        )
+
     def _setup_pipeline(self) -> None:
         """Set up pipeline orchestrator with auto-trigger."""
         try:

@@ -1937,6 +1937,15 @@ class FeedbackLoopController:
 
             # Launch gauntlet evaluation asynchronously
             async def run_gauntlet():
+                """Run gauntlet evaluation for the trained model.
+
+                Launches model evaluation against baselines (random, heuristic AI)
+                to determine if the model is eligible for promotion. If evaluation
+                passes thresholds, triggers the promotion consideration workflow.
+
+                Uses trigger_evaluation from pipeline_actions for actual evaluation.
+                Results are logged and promotion is considered if eligible.
+                """
                 result = await trigger_evaluation(
                     model_path=model_path,
                     board_type=board_type,
