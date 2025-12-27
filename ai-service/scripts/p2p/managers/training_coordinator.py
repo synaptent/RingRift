@@ -179,8 +179,10 @@ class TrainingCoordinator:
             self._subscribed = True
         except ImportError:
             logger.debug("[TrainingCoordinator] Event router not available")
+            self._subscribed = False  # December 2025: Explicit reset on failure
         except (RuntimeError, AttributeError) as e:
             logger.warning(f"[TrainingCoordinator] Failed to subscribe: {e}")
+            self._subscribed = False  # December 2025: Explicit reset on failure
 
     async def _on_selfplay_complete(self, event) -> None:
         """Handle SELFPLAY_COMPLETE events - check training readiness."""

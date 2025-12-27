@@ -2216,6 +2216,77 @@ class ClusterManifest:
     # Sync Target Selection
     # =========================================================================
 
+    def get_all_nodes(self) -> dict[str, dict[str, Any]]:
+        """Get all known nodes with their properties.
+
+        Returns:
+            Dict mapping node_id to node properties dict with keys:
+            - disk_usage_percent: Current disk usage (0-100)
+            - is_storage_node: True if node has large storage capacity
+            - is_ephemeral: True if node is ephemeral (Vast.ai, spot instances)
+            - free_bytes: Available disk space in bytes
+            - role: Node role from config (selfplay, training, coordinator)
+
+        December 2025: Added for AutoSyncDaemon push-to-neighbors support.
+        """
+        result: dict[str, dict[str, Any]] = {}
+
+        # Get nodes from capacity database
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT node_id, total_bytes, used_bytes, free_bytes
+                FROM node_capacity
+                WHERE updated_at > datetime('now', '-1 hour')
+            """)
+            capacity_rows = cursor.fetchall()
+
+        for row in capacity_rows:
+            node_id, total_bytes, used_bytes, free_bytes = row
+            usage_percent = (used_bytes / total_bytes * 100) if total_bytes > 0 else 0
+
+            # Get node config from hosts
+            host_config = self._hosts_config.get(node_id, {})
+            role = host_config.get("role", "selfplay")
+
+            # Determine if storage node (>500GB free or >1TB total)
+            is_storage_node = (
+                free_bytes > 500 * 1024 * 1024 * 1024  # >500GB free
+                or total_bytes > 1024 * 1024 * 1024 * 1024  # >1TB total
+            )
+
+            # Determine if ephemeral (Vast.ai, spot instances)
+            is_ephemeral = (
+                node_id.startswith("vast-")
+                or host_config.get("ephemeral", False)
+                or host_config.get("provider", "").lower() in ("vast", "spot")
+            )
+
+            result[node_id] = {
+                "disk_usage_percent": usage_percent,
+                "is_storage_node": is_storage_node,
+                "is_ephemeral": is_ephemeral,
+                "free_bytes": free_bytes,
+                "role": role,
+            }
+
+        # Also add nodes from config that might not have capacity info yet
+        for node_id, host_config in self._hosts_config.items():
+            if node_id not in result:
+                result[node_id] = {
+                    "disk_usage_percent": 0,  # Unknown
+                    "is_storage_node": False,
+                    "is_ephemeral": (
+                        node_id.startswith("vast-")
+                        or host_config.get("ephemeral", False)
+                        or host_config.get("provider", "").lower() in ("vast", "spot")
+                    ),
+                    "free_bytes": 0,
+                    "role": host_config.get("role", "selfplay"),
+                }
+
+        return result
+
     def get_sync_policy(self, node_id: str) -> NodeSyncPolicy:
         """Get sync policy for a node.
 
