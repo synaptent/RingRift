@@ -54,7 +54,7 @@ from app.coordination.daemon_stats import JobDaemonStats
 
 # SSH fallback for node discovery when P2P is unavailable (Dec 2025)
 try:
-    from app.sync.cluster_hosts import get_cluster_nodes as get_configured_hosts, ClusterNode
+    from app.config.cluster_config import get_cluster_nodes as get_configured_hosts, ClusterNode
     from app.execution.executor import SSHExecutor
     HAS_SSH_FALLBACK = True
 except ImportError:

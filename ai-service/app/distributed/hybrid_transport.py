@@ -490,7 +490,7 @@ class HybridTransport:
 
         # Check cluster_hosts.yaml for SSH config
         try:
-            from app.sync.cluster_hosts import get_cluster_nodes
+            from app.config.cluster_config import get_cluster_nodes
             configured_hosts = get_cluster_nodes()
             host_config = configured_hosts.get(node_id)
 

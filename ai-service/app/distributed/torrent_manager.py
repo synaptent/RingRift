@@ -517,7 +517,7 @@ def get_default_web_seeds(
 
     # Try to get cluster nodes from config
     try:
-        from app.sync.cluster_hosts import get_cluster_nodes
+        from app.config.cluster_config import get_cluster_nodes
         nodes = get_cluster_nodes()
     except ImportError:
         # Fall back to reading config directly

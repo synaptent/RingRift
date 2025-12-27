@@ -258,7 +258,7 @@ class SSHTransport:
 
         # Dec 2025: Try cluster_hosts.yaml first (most complete SSH config)
         try:
-            from app.sync.cluster_hosts import get_cluster_nodes
+            from app.config.cluster_config import get_cluster_nodes
             configured_hosts = get_cluster_nodes()
             host_config = configured_hosts.get(node_id)
 

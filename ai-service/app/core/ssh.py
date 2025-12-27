@@ -104,22 +104,22 @@ class SSHConfig:
     def from_cluster_node(cls, node_id: str) -> SSHConfig | None:
         """Load SSH configuration from cluster_hosts.yaml."""
         try:
-            from app.sync.cluster_hosts import get_cluster_nodes
+            from app.config.cluster_config import get_cluster_nodes
             nodes = get_cluster_nodes()
             if node_id not in nodes:
                 return None
 
             node = nodes[node_id]
             return cls(
-                host=node.get("ssh_host", node.get("tailscale_ip", "")),
-                port=node.get("ssh_port", 22),
-                user=node.get("ssh_user", "ubuntu"),
-                key_path=node.get("ssh_key"),
-                tailscale_ip=node.get("tailscale_ip"),
-                work_dir=node.get("ringrift_path", "~/ringrift/ai-service"),
-                cloudflare_tunnel=node.get("cloudflare_tunnel"),
-                cloudflare_service_token_id=node.get("cloudflare_service_token_id"),
-                cloudflare_service_token_secret=node.get("cloudflare_service_token_secret"),
+                host=node.ssh_host or node.tailscale_ip or "",
+                port=node.ssh_port,
+                user=node.ssh_user,
+                key_path=node.ssh_key,
+                tailscale_ip=node.tailscale_ip,
+                work_dir=node.ringrift_path,
+                cloudflare_tunnel=getattr(node, "cloudflare_tunnel", None),
+                cloudflare_service_token_id=getattr(node, "cloudflare_service_token_id", None),
+                cloudflare_service_token_secret=getattr(node, "cloudflare_service_token_secret", None),
             )
         except Exception as e:
             logger.debug(f"Failed to load SSH config for {node_id}: {e}")
