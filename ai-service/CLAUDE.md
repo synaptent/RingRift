@@ -887,21 +887,26 @@ All managers use dependency injection for testability. See `scripts/p2p/managers
 
 ### P2P SWIM/Raft Transition (December 2025)
 
-The P2P orchestrator is transitioning to battle-tested protocols for improved reliability:
+The P2P orchestrator supports optional SWIM/Raft protocols for improved reliability.
 
-**SWIM Protocol (Membership)**
+**Current Production State**: HTTP polling (membership) + Bully election (consensus)
+
+- These are battle-tested and work reliably
+- SWIM/Raft are optional upgrades, not required for production
+
+**SWIM Protocol (Membership)** - OPTIONAL
 
 - Gossip-based membership with 5s failure detection (vs 60-90s HTTP polling)
 - Leaderless architecture - no election required for membership changes
 - O(1) bandwidth per node regardless of cluster size
-- Status: Integration ready, pending `swim-p2p>=1.2.0` installation
+- Status: Code ready, requires `swim-p2p>=1.2.0` (not installed in production)
 
-**Raft Protocol (Consensus)**
+**Raft Protocol (Consensus)** - OPTIONAL
 
 - Replicated work queue with sub-second leader failover
 - Distributed locks for exclusive job claims
 - Automatic state machine replication across voters
-- Status: Integration ready, pending `pysyncobj>=0.3.14` installation
+- Status: Code ready, requires `pysyncobj>=0.3.14` (not installed in production)
 
 **Feature Flags**
 
@@ -1025,3 +1030,125 @@ Current state of `app/ai/gpu_parallel_games.py`:
 - `dynamic_data_distribution.py` - 5min cycle
 - `dynamic_space_manager.py` - 30min cycle
 - `scheduled_npz_export.py` - 2hr cycle
+
+### Orphan Games Detection & Recovery (Dec 27, 2025)
+
+New event-driven system for detecting and recovering "orphan" games (games generated on nodes that later become unreachable):
+
+**Event Flow:**
+
+```
+OrphanDetectionDaemon
+    ↓ (emits ORPHAN_GAMES_DETECTED)
+DataPipelineOrchestrator._on_orphan_games_detected()
+    ↓ (triggers priority sync)
+SyncFacade.trigger_priority_sync()
+    ↓ (syncs data, emits DATA_SYNC_COMPLETED)
+DataPipelineOrchestrator._on_orphan_games_registered()
+    ↓ (emits NEW_GAMES_AVAILABLE)
+Downstream consumers (export, training)
+```
+
+**Key Files:**
+
+- `app/coordination/data_pipeline_orchestrator.py:800-808` - Event subscriptions
+- `app/coordination/data_pipeline_orchestrator.py:1053-1136` - Handler implementations
+- `app/coordination/sync_facade.py:474-522` - `trigger_priority_sync()` method
+
+**Usage:**
+
+```python
+from app.coordination.sync_facade import get_sync_facade
+
+# Trigger urgent sync for orphan game recovery
+facade = get_sync_facade()
+response = await facade.trigger_priority_sync(
+    reason="orphan_games_recovery",
+    source_node="vast-12345",
+    config_key="hex8_2p",
+    data_type="games",
+)
+```
+
+### Async Cluster Status (Dec 27, 2025)
+
+The `ClusterMonitor` now has async versions of status methods to avoid blocking the event loop:
+
+**New Methods:**
+
+- `_async_run_ssh_command()` - Uses `asyncio.create_subprocess_exec`
+- `_async_check_host_connectivity()` - Async connectivity check
+- `get_node_status_async()` - Single node status (async)
+- `get_cluster_status_async()` - Full cluster status (async)
+
+**Usage:**
+
+```python
+from app.coordination.cluster_status_monitor import ClusterMonitor
+
+monitor = ClusterMonitor()
+
+# Async context (preferred for daemons)
+status = await monitor.get_cluster_status_async()
+
+# Sync context (for scripts)
+status = monitor.get_cluster_status()
+```
+
+The `run_forever()` loop now uses `get_cluster_status_async()` to avoid blocking.
+
+### Centralized Paths (Dec 27, 2025)
+
+Extended `app/utils/paths.py` with additional path constants:
+
+```python
+from app.utils.paths import (
+    # Core paths
+    AI_SERVICE_ROOT,
+    DATA_DIR,
+    GAMES_DIR,
+    TRAINING_DIR,       # NPZ training data (NEW)
+    COORDINATION_DIR,   # Coordination state DBs (NEW)
+    MODELS_DIR,
+    LOGS_DIR,
+
+    # Helper functions
+    get_games_db_path,
+    get_selfplay_db_path,
+    get_training_npz_path,  # NEW - returns TRAINING_DIR / f"{config_key}.npz"
+)
+
+# Environment variable overrides
+# AI_SERVICE_DATA_DIR - Override DATA_DIR and all subdirs
+# AI_SERVICE_MODELS_DIR - Override MODELS_DIR
+# AI_SERVICE_LOGS_DIR - Override LOGS_DIR
+```
+
+### Coordination Defaults (Dec 27, 2025)
+
+Centralized timeout and configuration values in `app/config/coordination_defaults.py`:
+
+```python
+from app.config.coordination_defaults import (
+    TransportDefaults,   # HTTP_TIMEOUT, SSH_TIMEOUT, CONNECT_TIMEOUT
+    LockDefaults,        # LOCK_TIMEOUT, ACQUIRE_TIMEOUT
+    SyncDefaults,        # LOCK_TIMEOUT
+    get_timeout,         # Convenience function
+)
+
+# Usage
+http_timeout = get_timeout("http")   # TransportDefaults.HTTP_TIMEOUT
+ssh_timeout = get_timeout("ssh")     # TransportDefaults.SSH_TIMEOUT
+```
+
+### Smoke Tests for Coordination (Dec 27, 2025)
+
+Added `tests/unit/coordination/test_coordination_smoke.py` with 11 tests:
+
+- `TestEventSubscriptionWiring` - Verifies DataPipelineOrchestrator subscriptions
+- `TestClusterStatusMonitorAsync` - Verifies async method availability
+- `TestPathConfiguration` - Verifies paths.py exports
+- `TestCoordinationDefaults` - Verifies timeout configuration
+- `TestDataEventTypes` - Verifies ORPHAN_GAMES events exist
+
+Run with: `pytest tests/unit/coordination/test_coordination_smoke.py -v`
