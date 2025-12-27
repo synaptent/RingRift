@@ -1900,10 +1900,10 @@ Used by some training utilities and debugging flows.
 | Required | No                                          |
 
 Enable syncing the unified Elo database from the legacy hard-coded Vast.ai
-instance list in `EloSyncManager.VAST_INSTANCES`. This is **disabled by default**
-because many listed endpoints are retired or ephemeral. When disabled, Elo sync
-still uses P2P discovery and the YAML cluster config; it simply skips the static
-Vast.ai fallback list.
+instance list in `EloSyncManager.VAST_INSTANCES` and includes Vast.ai nodes
+discovered from cluster config. This is **disabled by default** because many
+listed endpoints are retired or ephemeral. When disabled, Elo sync still uses
+P2P discovery and the YAML cluster config but **filters out** Vast.ai hosts.
 
 ### `RINGRIFT_MINIMAX_ZERO_SUM_EVAL`
 

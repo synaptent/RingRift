@@ -313,6 +313,12 @@ class EloSyncManager(DatabaseSyncManager):
         """Initialize the sync manager."""
         self._load_elo_state()
         await self.discover_nodes()
+        if not ENABLE_VAST_ELO_SYNC:
+            self.nodes = {
+                name: node
+                for name, node in self.nodes.items()
+                if not self._is_vast_node(name, node)
+            }
         # Add known Vast instances
         if ENABLE_VAST_ELO_SYNC:
             for name, info in self.VAST_INSTANCES.items():
@@ -327,6 +333,11 @@ class EloSyncManager(DatabaseSyncManager):
             logger.debug("VAST ELO sync disabled; skipping VAST instance discovery")
         self._update_local_stats()
         logger.info(f"EloSyncManager initialized: {self._elo_state.local_record_count} local matches")
+
+    @staticmethod
+    def _is_vast_node(name: str, node: SyncNodeInfo) -> bool:
+        host = (node.ssh_host or node.vast_ssh_host or "").lower()
+        return name.startswith("vast-") or host.endswith("vast.ai")
 
     async def start_background_sync(self) -> None:
         """Start background sync loop."""
