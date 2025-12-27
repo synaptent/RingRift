@@ -3,7 +3,7 @@
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
 **Last updated:** December 27, 2025
-**Total Daemon Types:** 68 (64 documented)
+**Total Daemon Types:** 65 registered runners (see `daemon_runners.py`)
 
 > **Architecture Note (December 2025):** Factory methods have been extracted from `daemon_manager.py` to `daemon_runners.py`. Factory methods named `create_*()` are in `daemon_runners.py`; methods named `_create_*()` remain in `daemon_manager.py` for legacy or special cases.
 
@@ -803,6 +803,34 @@ Daemon-related environment variables (via `app.config.env`):
 - `RINGRIFT_SKIP_DAEMONS` - Comma-separated list of daemons to skip
 - `RINGRIFT_P2P_STARTUP_GRACE_PERIOD` - Grace period for P2P startup (default: 120s)
 
+### Coordination Defaults (December 2025)
+
+Configuration defaults are centralized in `app/config/coordination_defaults.py`. Key classes:
+
+| Class                  | Purpose            | Key Settings                                                      |
+| ---------------------- | ------------------ | ----------------------------------------------------------------- |
+| `P2PDefaults`          | P2P network config | `DEFAULT_PORT=8770`, `HEARTBEAT_INTERVAL=15s`, `PEER_TIMEOUT=60s` |
+| `JobTimeoutDefaults`   | Per-job timeouts   | `GPU_SELFPLAY=1hr`, `TRAINING=4hr`, `TOURNAMENT=1hr`              |
+| `BackpressureDefaults` | Spawn rate control | Component weights, queue thresholds, multipliers                  |
+| `DaemonHealthDefaults` | Health monitoring  | `CHECK_INTERVAL=60s`, `MAX_FAILURES=3`                            |
+| `SQLiteDefaults`       | Database timeouts  | `READ=5s`, `WRITE=30s`, `HEAVY=60s`                               |
+
+```python
+from app.config.coordination_defaults import (
+    P2PDefaults,
+    JobTimeoutDefaults,
+    BackpressureDefaults,
+    get_p2p_port,
+    get_job_timeout,
+)
+
+# Get P2P port (env override: RINGRIFT_P2P_PORT)
+port = get_p2p_port()  # 8770
+
+# Get job timeout (env override: RINGRIFT_JOB_TIMEOUT_TRAINING)
+timeout = get_job_timeout("training")  # 14400 seconds
+```
+
 ---
 
 ## Deprecation Notices
@@ -824,8 +852,10 @@ Daemon-related environment variables (via `app.config.env`):
 ## See Also
 
 - `daemon_manager.py` - Main daemon lifecycle management
+- `daemon_runners.py` - 65+ async runner functions for daemon types
 - `daemon_types.py` - Type definitions and enums
 - `daemon_factory.py` - Centralized daemon creation factory
 - `daemon_adapters.py` - Daemon wrappers for legacy code
+- `app/config/coordination_defaults.py` - Centralized configuration defaults (Dec 2025)
 - `CONFIG_REFERENCE.md` - Environment variable configuration
 - `CLAUDE.md` - Cluster infrastructure overview

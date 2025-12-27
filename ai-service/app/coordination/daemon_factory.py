@@ -320,6 +320,20 @@ def _build_registry() -> dict[str, DaemonSpec]:
             import_path="app.coordination.data_cleanup_daemon",
             class_name="DataCleanupDaemon",
         ),
+        DaemonType.DATA_CONSOLIDATION.name: DaemonSpec(
+            import_path="app.coordination.data_consolidation_daemon",
+            class_name="DataConsolidationDaemon",
+            factory_fn="get_consolidation_daemon",
+        ),
+        DaemonType.DISK_SPACE_MANAGER.name: DaemonSpec(
+            import_path="app.coordination.disk_space_manager_daemon",
+            class_name="DiskSpaceManagerDaemon",
+        ),
+        DaemonType.COORDINATOR_DISK_MANAGER.name: DaemonSpec(
+            import_path="app.coordination.disk_space_manager_daemon",
+            class_name="CoordinatorDiskManager",
+            factory_fn="get_coordinator_disk_daemon",
+        ),
         DaemonType.DLQ_RETRY.name: DaemonSpec(
             import_path="app.coordination.dead_letter_queue",
             class_name="DLQRetryDaemon",

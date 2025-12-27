@@ -1112,7 +1112,9 @@ class AutoSyncDaemon:
             ssh_host = node.best_ip
             ssh_user = node.ssh_user or "ubuntu"
             ssh_key = node.ssh_key or "~/.ssh/id_cluster"
-            remote_path = "~/ringrift/ai-service"  # Standard path
+
+            # Dec 2025: Use storage path from node config (supports OWC routing)
+            remote_games_path = node.get_storage_path("games")
 
             # Get bandwidth limit for this node
             bwlimit_args = []
@@ -1127,7 +1129,7 @@ class AutoSyncDaemon:
                 return False
 
             ssh_key = os.path.expanduser(ssh_key)
-            remote_full = f"{ssh_user}@{ssh_host}:{remote_path}/data/games/"
+            remote_full = f"{ssh_user}@{ssh_host}:{remote_games_path}/"
 
             rsync_cmd = [
                 "rsync",
@@ -1528,8 +1530,18 @@ class AutoSyncDaemon:
             target.get("provider", "default"),
         )
 
+        # Dec 2025: Get storage path from cluster config (supports OWC routing)
+        from app.config.cluster_config import get_cluster_nodes
+        cluster_nodes = get_cluster_nodes()
+        node_config = cluster_nodes.get(target["node_id"])
+        if node_config:
+            games_path = node_config.get_storage_path("games")
+        else:
+            games_path = "~/ringrift/ai-service/data/games"
+
         # Build rsync command
-        target_path = f"ubuntu@{target['host']}:~/ringrift/ai-service/data/games/synced/"
+        ssh_user = node_config.ssh_user if node_config else "ubuntu"
+        target_path = f"{ssh_user}@{target['host']}:{games_path}/synced/"
         ssh_opts = (
             "ssh -i ~/.ssh/id_cluster "
             "-o StrictHostKeyChecking=no "

@@ -603,18 +603,21 @@ Three main options - use the recommended one:
 
 Major consolidation effort completed December 2025:
 
-| Original Modules                                              | Consolidated To                          | LOC Saved  | Status   |
-| ------------------------------------------------------------- | ---------------------------------------- | ---------- | -------- |
-| `model_distribution_daemon.py` + `npz_distribution_daemon.py` | `unified_distribution_daemon.py`         | ~1,100     | Complete |
-| `lambda_idle_daemon.py` + `vast_idle_daemon.py`               | `unified_idle_shutdown_daemon.py`        | ~318       | Complete |
-| `replication_monitor.py` + `replication_repair_daemon.py`     | `unified_replication_daemon.py`          | ~600       | Complete |
-| `system_health_monitor.py` (scoring)                          | `unified_health_manager.py`              | ~200       | Complete |
-| 3× GumbelAction/GumbelNode copies                             | `gumbel_common.py`                       | ~150       | Complete |
-| `distributed/cluster_monitor.py`                              | `coordination/cluster_status_monitor.py` | ~40 (shim) | Complete |
-| `EloSyncManager` + `RegistrySyncManager`                      | `DatabaseSyncManager` base class         | ~567       | Complete |
-| 28 `_init_*()` functions in `coordination_bootstrap.py`       | `COORDINATOR_REGISTRY` + generic handler | ~17        | Complete |
-| 5× NodeStatus definitions                                     | `node_status.py`                         | ~200       | Complete |
-| DaemonManager factory methods (62 of 63)                      | `daemon_runners.py`                      | ~1,580     | Complete |
+| Original Modules                                                                         | Consolidated To                          | LOC Saved       | Status   |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------- | --------------- | -------- |
+| `model_distribution_daemon.py` + `npz_distribution_daemon.py`                            | `unified_distribution_daemon.py`         | ~1,100          | Complete |
+| `lambda_idle_daemon.py` + `vast_idle_daemon.py`                                          | `unified_idle_shutdown_daemon.py`        | ~318            | Complete |
+| `replication_monitor.py` + `replication_repair_daemon.py`                                | `unified_replication_daemon.py`          | ~600            | Complete |
+| `system_health_monitor.py` (scoring)                                                     | `unified_health_manager.py`              | ~200            | Complete |
+| 3× GumbelAction/GumbelNode copies                                                        | `gumbel_common.py`                       | ~150            | Complete |
+| `distributed/cluster_monitor.py`                                                         | `coordination/cluster_status_monitor.py` | ~40 (shim)      | Complete |
+| `EloSyncManager` + `RegistrySyncManager`                                                 | `DatabaseSyncManager` base class         | ~567            | Complete |
+| 28 `_init_*()` functions in `coordination_bootstrap.py`                                  | `COORDINATOR_REGISTRY` + generic handler | ~17             | Complete |
+| 5× NodeStatus definitions                                                                | `node_status.py`                         | ~200            | Complete |
+| DaemonManager factory methods (62 of 63)                                                 | `daemon_runners.py`                      | ~1,580          | Complete |
+| `tracing.py` + `distributed_lock.py` + `optional_imports.py` + `yaml_utils.py`           | `core_utils.py`                          | ~0 (re-exports) | Complete |
+| `coordinator_base.py` + `coordinator_dependencies.py`                                    | `core_base.py`                           | ~0 (re-exports) | Complete |
+| `event_router.py` + `event_mappings.py` + `event_emitters.py` + `event_normalization.py` | `core_events.py`                         | ~0 (re-exports) | Complete |
 
 **New Canonical Modules (December 2025 Wave 2):**
 
@@ -637,6 +640,67 @@ Major consolidation effort completed December 2025:
 - `get_all_runners()` - Get full registry of all runners
 - Only `_create_health_server()` remains in daemon_manager.py (needs `self` access)
 - Benefits: Reduced daemon_manager.py from ~3,600 to ~2,000 LOC, runners testable in isolation
+
+**New Canonical Modules (Phase 5 - 157→15 Consolidation):**
+
+| Module           | Exports | Purpose                                                     |
+| ---------------- | ------- | ----------------------------------------------------------- |
+| `core_utils.py`  | 57      | Tracing, locking, optional imports, YAML utilities          |
+| `core_base.py`   | 23      | Coordinator base classes, protocols, registry, dependencies |
+| `core_events.py` | 127     | Event router, mappings, emitters, normalization             |
+
+**`core_utils.py`** consolidates utility modules:
+
+```python
+from app.coordination.core_utils import (
+    # Tracing
+    TraceContext, new_trace, span, traced, get_trace_id, set_trace_id,
+    # Locking
+    DistributedLock, training_lock, acquire_training_lock,
+    # Optional imports
+    TORCH_AVAILABLE, CUDA_AVAILABLE, get_module, require_module,
+    # YAML
+    load_yaml, safe_load_yaml, dump_yaml,
+)
+```
+
+**`core_base.py`** consolidates coordinator infrastructure:
+
+```python
+from app.coordination.core_base import (
+    # Base classes
+    CoordinatorBase, CoordinatorStats, HealthCheckResult,
+    # Protocols and enums
+    CoordinatorProtocol, CoordinatorStatus,
+    # Mixins
+    SQLitePersistenceMixin, SingletonMixin, CallbackMixin, EventDrivenMonitorMixin,
+    # Registry
+    CoordinatorRegistry, get_coordinator_registry, get_all_coordinators, shutdown_all_coordinators,
+    # Dependencies
+    CoordinatorDependencyGraph, validate_dependencies, get_initialization_order,
+)
+```
+
+**`core_events.py`** consolidates event system:
+
+```python
+from app.coordination.core_events import (
+    # Router core
+    UnifiedEventRouter, get_router, publish, subscribe, unsubscribe,
+    # Event types
+    DataEventType, DataEvent, StageEvent, EventBus,
+    # Bus access
+    get_event_bus, get_stage_event_bus, get_cross_process_queue,
+    # Mappings
+    STAGE_TO_DATA_EVENT_MAP, DATA_TO_CROSS_PROCESS_MAP,
+    # Typed emitters (70+)
+    emit_training_complete, emit_selfplay_complete, emit_sync_complete,
+    # Normalization
+    normalize_event_type, CANONICAL_EVENT_NAMES, is_canonical,
+)
+```
+
+Old imports still work for backward compatibility but will emit DeprecationWarning in Q1 2026.
 
 **Infrastructure Improvements (December 2025 Wave 2):**
 

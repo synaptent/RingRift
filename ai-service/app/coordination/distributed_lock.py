@@ -203,7 +203,7 @@ class DistributedLock:
                 self._redis_client = redis.Redis.from_url(REDIS_URL, socket_timeout=5)
                 self._redis_client.ping()
                 logger.debug(f"Using Redis for lock: {name}")
-            except Exception as e:
+            except (ConnectionError, TimeoutError, OSError, redis.RedisError) as e:
                 logger.debug(f"Redis not available, using file lock: {e}")
                 self._redis_client = None
 
@@ -310,7 +310,7 @@ class DistributedLock:
                 logger.debug(f"Acquired Redis lock: {self.name}")
                 return True
             return False
-        except Exception as e:
+        except (ConnectionError, TimeoutError, redis.RedisError) as e:
             logger.warning(f"Redis lock acquire failed: {e}")
             return False
 

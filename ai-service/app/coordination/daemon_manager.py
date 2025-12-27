@@ -179,333 +179,37 @@ class DaemonManager:
         cls._instance = None
 
     def _register_default_factories(self) -> None:
-        """Register default daemon factories.
+        """Register default daemon factories from the declarative registry.
 
-        December 2025: Runner functions extracted to daemon_runners.py module.
-        This method now references the extracted runners, reducing code duplication.
-        Only _create_health_server remains in this class (needs self access).
+        December 2025: Refactored to data-driven pattern using daemon_registry.py.
+        All daemon specifications are now declarative, reducing code duplication
+        and making configuration easier to test and introspect.
+
+        Only _create_health_server remains inline (needs self access).
         """
-        # =================================================================
-        # Sync Daemons
-        # =================================================================
-        self.register_factory(DaemonType.SYNC_COORDINATOR, daemon_runners.create_sync_coordinator)
-        self.register_factory(DaemonType.HIGH_QUALITY_SYNC, daemon_runners.create_high_quality_sync)
-        self.register_factory(DaemonType.ELO_SYNC, daemon_runners.create_elo_sync)
+        from app.coordination.daemon_registry import DAEMON_REGISTRY
 
-        # Auto sync (December 2025) - emits 12+ event types including DATA_SYNC_*
-        # CRITICAL: Must depend on DATA_PIPELINE and FEEDBACK_LOOP to ensure
-        # event handlers are subscribed before AUTO_SYNC emits events.
-        self.register_factory(
-            DaemonType.AUTO_SYNC,
-            daemon_runners.create_auto_sync,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE, DaemonType.FEEDBACK_LOOP],
-        )
+        # Register all daemons from the declarative registry
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            # Get the runner function from daemon_runners module
+            runner = getattr(daemon_runners, spec.runner_name, None)
+            if runner is None:
+                logger.warning(
+                    f"[DaemonManager] Runner '{spec.runner_name}' not found for {daemon_type.name}"
+                )
+                continue
 
-        # Training node watcher (Phase 6)
-        self.register_factory(
-            DaemonType.TRAINING_NODE_WATCHER,
-            daemon_runners.create_training_node_watcher,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE],
-        )
-
-        # Ephemeral sync for Vast.ai (Phase 4)
-        self.register_factory(
-            DaemonType.EPHEMERAL_SYNC,
-            daemon_runners.create_ephemeral_sync,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE],
-        )
-
-        self.register_factory(DaemonType.GOSSIP_SYNC, daemon_runners.create_gossip_sync)
-
-        # =================================================================
-        # Event Processing
-        # =================================================================
-        self.register_factory(DaemonType.EVENT_ROUTER, daemon_runners.create_event_router)
-        self.register_factory(DaemonType.CROSS_PROCESS_POLLER, daemon_runners.create_cross_process_poller)
-        self.register_factory(
-            DaemonType.DLQ_RETRY,
-            daemon_runners.create_dlq_retry,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Health & Monitoring
-        # =================================================================
-        self.register_factory(DaemonType.HEALTH_CHECK, daemon_runners.create_health_check)
-        self.register_factory(DaemonType.QUEUE_MONITOR, daemon_runners.create_queue_monitor)
-        self.register_factory(
-            DaemonType.DAEMON_WATCHDOG,
-            daemon_runners.create_daemon_watchdog,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.NODE_HEALTH_MONITOR,
-            daemon_runners.create_node_health_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.SYSTEM_HEALTH_MONITOR,
-            daemon_runners.create_system_health_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR],
-        )
-        self.register_factory(
-            DaemonType.QUALITY_MONITOR,
-            daemon_runners.create_quality_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.MODEL_PERFORMANCE_WATCHDOG,
-            daemon_runners.create_model_performance_watchdog,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.CLUSTER_MONITOR,
-            daemon_runners.create_cluster_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(DaemonType.CLUSTER_WATCHDOG, daemon_runners.create_cluster_watchdog)
-        self.register_factory(
-            DaemonType.COORDINATOR_HEALTH_MONITOR,
-            daemon_runners.create_coordinator_health_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.WORK_QUEUE_MONITOR,
-            daemon_runners.create_work_queue_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.QUEUE_POPULATOR],
-        )
+            self.register_factory(
+                daemon_type,
+                runner,
+                depends_on=list(spec.depends_on) if spec.depends_on else None,
+                health_check_interval=spec.health_check_interval,
+                auto_restart=spec.auto_restart,
+                max_restarts=spec.max_restarts,
+            )
 
         # Health server needs self access - kept inline
         self.register_factory(DaemonType.HEALTH_SERVER, self._create_health_server)
-
-        # =================================================================
-        # Training & Pipeline
-        # =================================================================
-        self.register_factory(
-            DaemonType.DATA_PIPELINE,
-            daemon_runners.create_data_pipeline,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.CONTINUOUS_TRAINING_LOOP,
-            daemon_runners.create_continuous_training_loop,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.SELFPLAY_COORDINATOR,
-            daemon_runners.create_selfplay_coordinator,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.TRAINING_TRIGGER,
-            daemon_runners.create_training_trigger,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.AUTO_EXPORT],
-        )
-        self.register_factory(
-            DaemonType.AUTO_EXPORT,
-            daemon_runners.create_auto_export,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.TOURNAMENT_DAEMON,
-            daemon_runners.create_tournament_daemon,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Evaluation & Promotion
-        # =================================================================
-        self.register_factory(
-            DaemonType.EVALUATION,
-            daemon_runners.create_evaluation_daemon,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.AUTO_PROMOTION,
-            daemon_runners.create_auto_promotion,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.EVALUATION],
-        )
-        self.register_factory(
-            DaemonType.UNIFIED_PROMOTION,
-            daemon_runners.create_unified_promotion,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.GAUNTLET_FEEDBACK,
-            daemon_runners.create_gauntlet_feedback,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Distribution
-        # =================================================================
-        self.register_factory(
-            DaemonType.MODEL_SYNC,
-            daemon_runners.create_model_sync,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.MODEL_DISTRIBUTION,
-            daemon_runners.create_model_distribution,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.NPZ_DISTRIBUTION,
-            daemon_runners.create_npz_distribution,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(DaemonType.DATA_SERVER, daemon_runners.create_data_server)
-
-        # =================================================================
-        # Replication
-        # =================================================================
-        self.register_factory(
-            DaemonType.REPLICATION_MONITOR,
-            daemon_runners.create_replication_monitor,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.REPLICATION_REPAIR,
-            daemon_runners.create_replication_repair,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Resource Management
-        # =================================================================
-        self.register_factory(
-            DaemonType.IDLE_RESOURCE,
-            daemon_runners.create_idle_resource,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.NODE_RECOVERY,
-            daemon_runners.create_node_recovery,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.RESOURCE_OPTIMIZER,
-            daemon_runners.create_resource_optimizer,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.JOB_SCHEDULER],
-        )
-        self.register_factory(
-            DaemonType.UTILIZATION_OPTIMIZER,
-            daemon_runners.create_utilization_optimizer,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE],
-        )
-        self.register_factory(
-            DaemonType.ADAPTIVE_RESOURCES,
-            daemon_runners.create_adaptive_resources,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
-        )
-
-        # =================================================================
-        # Provider-Specific
-        # =================================================================
-        self.register_factory(
-            DaemonType.LAMBDA_IDLE,
-            daemon_runners.create_lambda_idle,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
-        )
-        self.register_factory(
-            DaemonType.VAST_IDLE,
-            daemon_runners.create_vast_idle,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
-        )
-        self.register_factory(
-            DaemonType.MULTI_PROVIDER,
-            daemon_runners.create_multi_provider,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
-        )
-
-        # =================================================================
-        # Queue & Job Management
-        # =================================================================
-        self.register_factory(
-            DaemonType.QUEUE_POPULATOR,
-            daemon_runners.create_queue_populator,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.SELFPLAY_COORDINATOR],
-        )
-        self.register_factory(
-            DaemonType.JOB_SCHEDULER,
-            daemon_runners.create_job_scheduler,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Feedback & Curriculum
-        # =================================================================
-        self.register_factory(
-            DaemonType.FEEDBACK_LOOP,
-            daemon_runners.create_feedback_loop,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.CURRICULUM_INTEGRATION,
-            daemon_runners.create_curriculum_integration,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Recovery & Maintenance
-        # =================================================================
-        self.register_factory(
-            DaemonType.RECOVERY_ORCHESTRATOR,
-            daemon_runners.create_recovery_orchestrator,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR],
-        )
-        self.register_factory(
-            DaemonType.CACHE_COORDINATION,
-            daemon_runners.create_cache_coordination,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
-        )
-        self.register_factory(DaemonType.MAINTENANCE, daemon_runners.create_maintenance)
-        self.register_factory(
-            DaemonType.ORPHAN_DETECTION,
-            daemon_runners.create_orphan_detection,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.DATA_CLEANUP,
-            daemon_runners.create_data_cleanup,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-
-        # =================================================================
-        # Miscellaneous
-        # =================================================================
-        self.register_factory(
-            DaemonType.S3_BACKUP,
-            daemon_runners.create_s3_backup,
-            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.MODEL_DISTRIBUTION],
-        )
-        self.register_factory(
-            DaemonType.DISTILLATION,
-            daemon_runners.create_distillation,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(DaemonType.EXTERNAL_DRIVE_SYNC, daemon_runners.create_external_drive_sync)
-        self.register_factory(DaemonType.VAST_CPU_PIPELINE, daemon_runners.create_vast_cpu_pipeline)
-        self.register_factory(
-            DaemonType.CLUSTER_DATA_SYNC,
-            daemon_runners.create_cluster_data_sync,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.P2P_BACKEND,
-            daemon_runners.create_p2p_backend,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.P2P_AUTO_DEPLOY,
-            daemon_runners.create_p2p_auto_deploy,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
-        self.register_factory(
-            DaemonType.METRICS_ANALYSIS,
-            daemon_runners.create_metrics_analysis,
-            depends_on=[DaemonType.EVENT_ROUTER],
-        )
 
     def register_factory(
         self,

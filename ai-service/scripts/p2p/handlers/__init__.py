@@ -47,10 +47,14 @@ Handler Categories:
     Network Discovery (December 2025):
         - NetworkDiscoveryMixin: Local IP/Tailscale detection, partition recovery
 
+    Data Delivery (December 2025):
+        - DeliveryHandlersMixin: Delivery verification and status endpoints
+
 See individual handler modules for endpoint documentation.
 """
 
 from .admin import AdminHandlersMixin
+from .delivery import DeliveryHandlersMixin
 from .network_discovery import NetworkDiscoveryMixin
 from .cmaes import CMAESHandlersMixin
 from .election import ElectionHandlersMixin
@@ -67,6 +71,7 @@ from .work_queue import WorkQueueHandlersMixin
 __all__ = [
     "AdminHandlersMixin",
     "CMAESHandlersMixin",
+    "DeliveryHandlersMixin",
     "ElectionHandlersMixin",
     "EloSyncHandlersMixin",
     "GauntletHandlersMixin",

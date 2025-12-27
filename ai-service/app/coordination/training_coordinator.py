@@ -562,16 +562,15 @@ class TrainingCoordinator:
                 )
 
     def _on_regression_detected(self, event: Any) -> None:
-        """Handle REGRESSION_DETECTED event - consider pausing training.
+        """Handle REGRESSION_DETECTED event - pause training and rollback if severe.
 
         December 2025: Closes the feedback loop from model evaluation.
-        When a model regresses (Elo drops), we may need to pause training
-        and investigate before wasting more compute.
+        When a model regresses (Elo drops), we take action based on severity.
 
         Behavior:
         - Elo drop < 30: Log warning, continue training
         - Elo drop 30-50: Reduce cluster capacity for this config
-        - Elo drop > 50: Pause training for this config
+        - Elo drop > 50: Pause training AND trigger model rollback (Dec 2025 fix)
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
@@ -618,12 +617,21 @@ class TrainingCoordinator:
                 elo_drop=elo_drop,
             )
         else:
-            # Severe regression - pause training for this config
+            # Severe regression - pause training and rollback model
             logger.error(
                 f"[TrainingCoordinator] SEVERE regression for {config_key}: "
-                f"Elo drop {elo_drop:.0f}, pausing training"
+                f"Elo drop {elo_drop:.0f}, pausing training and triggering rollback"
             )
             self._pause_training_for_config(config_key, reason=f"severe_regression_elo_drop_{elo_drop:.0f}")
+
+            # December 2025: Also trigger rollback for severe regressions (not just critical)
+            # A 50+ Elo drop indicates a problematic model that should be rolled back
+            if model_id:
+                self._trigger_model_rollback(config_key, model_id, elo_drop)
+            else:
+                logger.warning(
+                    f"[TrainingCoordinator] Cannot rollback {config_key}: no model_id in event"
+                )
 
     def _on_regression_critical(self, event: Any) -> None:
         """Handle REGRESSION_CRITICAL event - immediately pause training.

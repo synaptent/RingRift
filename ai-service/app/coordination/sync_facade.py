@@ -170,32 +170,59 @@ class SyncFacade:
             f"(targets={request.targets}, priority={request.priority})"
         )
 
-        # Execute sync
-        try:
-            response = await self._execute_sync(backend, request)
-            response.duration_seconds = time.time() - start_time
+        # Execute sync with backend fallback (Dec 27, 2025)
+        # If primary backend fails, try fallback chain to ensure sync completes
+        fallback_chain = self._get_backend_fallback_chain(backend)
+        all_errors: list[str] = []
 
-            # Update stats
-            self._stats["total_syncs"] += 1
-            self._stats["by_backend"][backend.value] = (
-                self._stats["by_backend"].get(backend.value, 0) + 1
-            )
-            self._stats["total_bytes"] += response.bytes_transferred
+        for attempt_backend in fallback_chain:
+            try:
+                response = await self._execute_sync(attempt_backend, request)
+                response.duration_seconds = time.time() - start_time
 
-            if not response.success:
-                self._stats["total_errors"] += 1
+                # Update stats
+                self._stats["total_syncs"] += 1
+                self._stats["by_backend"][attempt_backend.value] = (
+                    self._stats["by_backend"].get(attempt_backend.value, 0) + 1
+                )
+                self._stats["total_bytes"] += response.bytes_transferred
 
-            return response
+                if response.success:
+                    if attempt_backend != backend:
+                        logger.info(
+                            f"[SyncFacade] Sync succeeded with fallback backend "
+                            f"{attempt_backend.value} (primary was {backend.value})"
+                        )
+                    return response
 
-        except Exception as e:
-            logger.error(f"[SyncFacade] Sync failed with {backend.value}: {e}")
-            self._stats["total_errors"] += 1
-            return SyncResponse(
-                success=False,
-                backend_used=backend,
-                duration_seconds=time.time() - start_time,
-                errors=[str(e)],
-            )
+                # Backend returned failure but didn't throw
+                all_errors.append(
+                    f"{attempt_backend.value}: {', '.join(response.errors or ['unknown error'])}"
+                )
+                logger.warning(
+                    f"[SyncFacade] {attempt_backend.value} returned failure, "
+                    f"trying next backend"
+                )
+
+            except Exception as e:
+                all_errors.append(f"{attempt_backend.value}: {e}")
+                logger.warning(
+                    f"[SyncFacade] {attempt_backend.value} raised exception: {e}, "
+                    f"trying next backend"
+                )
+
+        # All backends failed
+        self._stats["total_errors"] += 1
+        logger.error(
+            f"[SyncFacade] All backends failed for {request.data_type} sync. "
+            f"Errors: {all_errors}"
+        )
+        return SyncResponse(
+            success=False,
+            backend_used=backend,
+            duration_seconds=time.time() - start_time,
+            errors=all_errors,
+        )
 
     def _select_backend(self, request: SyncRequest) -> SyncBackend:
         """Select appropriate backend for sync request.
@@ -221,6 +248,69 @@ class SyncFacade:
 
         # Default to auto-sync daemon (P2P gossip)
         return SyncBackend.AUTO_SYNC
+
+    def _get_backend_fallback_chain(self, primary: SyncBackend) -> list[SyncBackend]:
+        """Get fallback chain for a backend.
+
+        December 27, 2025: Provides fallback backends to try if primary fails.
+        This ensures sync completes even if one backend is unavailable.
+
+        Fallback logic:
+        - AUTO_SYNC → ROUTER → DISTRIBUTED (P2P → intelligent routing → raw transport)
+        - CLUSTER_SYNC → AUTO_SYNC → DISTRIBUTED (push → gossip → raw)
+        - ROUTER → DISTRIBUTED → AUTO_SYNC (routing → raw → gossip)
+        - DISTRIBUTED → AUTO_SYNC (raw → gossip)
+        - EPHEMERAL → AUTO_SYNC → DISTRIBUTED (ephemeral → gossip → raw)
+
+        Args:
+            primary: Primary backend that was selected
+
+        Returns:
+            List of backends to try in order (includes primary first)
+        """
+        # Define fallback chains per primary backend
+        fallback_chains: dict[SyncBackend, list[SyncBackend]] = {
+            SyncBackend.AUTO_SYNC: [
+                SyncBackend.AUTO_SYNC,
+                SyncBackend.ROUTER,
+                SyncBackend.DISTRIBUTED,
+            ],
+            SyncBackend.CLUSTER_SYNC: [
+                SyncBackend.CLUSTER_SYNC,
+                SyncBackend.AUTO_SYNC,
+                SyncBackend.DISTRIBUTED,
+            ],
+            SyncBackend.ROUTER: [
+                SyncBackend.ROUTER,
+                SyncBackend.DISTRIBUTED,
+                SyncBackend.AUTO_SYNC,
+            ],
+            SyncBackend.DISTRIBUTED: [
+                SyncBackend.DISTRIBUTED,
+                SyncBackend.AUTO_SYNC,
+            ],
+            SyncBackend.EPHEMERAL: [
+                SyncBackend.EPHEMERAL,
+                SyncBackend.AUTO_SYNC,
+                SyncBackend.DISTRIBUTED,
+            ],
+            # Deprecated backends get mapped to their replacements
+            SyncBackend.SCHEDULER: [
+                SyncBackend.AUTO_SYNC,
+                SyncBackend.DISTRIBUTED,
+            ],
+            SyncBackend.UNIFIED: [
+                SyncBackend.DISTRIBUTED,
+                SyncBackend.AUTO_SYNC,
+            ],
+            SyncBackend.ORCHESTRATOR: [
+                SyncBackend.ORCHESTRATOR,
+                SyncBackend.DISTRIBUTED,
+                SyncBackend.AUTO_SYNC,
+            ],
+        }
+
+        return fallback_chains.get(primary, [primary, SyncBackend.DISTRIBUTED])
 
     async def _execute_sync(
         self,

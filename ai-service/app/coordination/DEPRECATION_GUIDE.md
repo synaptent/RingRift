@@ -16,6 +16,101 @@ This guide documents all deprecated modules in `app/coordination/` and their rep
 | `sync_coordinator.py` (class SyncCoordinator) | `SyncScheduler` (same file)                         | Alias exists        |
 | `bandwidth_manager.py`                        | `resources/bandwidth.py`                            | Emits warning       |
 | `system_health_monitor.py` (scoring)          | `unified_health_manager.py`                         | Partial deprecation |
+| `tracing.py`                                  | `core_utils.py`                                     | Emits warning       |
+| `distributed_lock.py`                         | `core_utils.py`                                     | Emits warning       |
+| `coordinator_dependencies.py`                 | `core_base.py`                                      | Pending warning     |
+| `event_mappings.py`                           | `core_events.py`                                    | Emits warning       |
+| `event_normalization.py`                      | `core_events.py`                                    | Emits warning       |
+
+## Phase 5: Module Consolidation (December 2025)
+
+Three new consolidated modules reduce the 157→15 module target:
+
+### core_utils.py (Consolidated)
+
+**Consolidates:** `tracing.py`, `distributed_lock.py`, `optional_imports.py`, `yaml_utils.py`
+
+**Old:**
+
+```python
+from app.coordination.tracing import TraceContext, new_trace
+from app.coordination.distributed_lock import DistributedLock
+from app.utils.optional_imports import TORCH_AVAILABLE
+from app.utils.yaml_utils import load_yaml
+```
+
+**New:**
+
+```python
+from app.coordination.core_utils import (
+    # Tracing
+    TraceContext, new_trace, span, get_trace_id, set_trace_id,
+    # Locking
+    DistributedLock, training_lock, acquire_training_lock,
+    # Optional imports
+    TORCH_AVAILABLE, CUDA_AVAILABLE, get_module,
+    # YAML
+    load_yaml, safe_load_yaml, dump_yaml,
+)
+```
+
+### core_base.py (Consolidated)
+
+**Consolidates:** `coordinator_base.py`, `coordinator_dependencies.py`
+
+**Old:**
+
+```python
+from app.coordination.coordinator_base import CoordinatorBase, CoordinatorStatus
+from app.coordination.coordinator_dependencies import get_initialization_order
+```
+
+**New:**
+
+```python
+from app.coordination.core_base import (
+    # Base classes
+    CoordinatorBase, CoordinatorStats,
+    # Protocols and enums
+    CoordinatorProtocol, CoordinatorStatus, HealthCheckResult,
+    # Mixins
+    SQLitePersistenceMixin, SingletonMixin, CallbackMixin,
+    # Registry
+    CoordinatorRegistry, get_coordinator_registry,
+    # Dependencies
+    CoordinatorDependencyGraph, get_initialization_order,
+)
+```
+
+### core_events.py (Consolidated)
+
+**Consolidates:** `event_router.py`, `event_mappings.py`, `event_emitters.py`, `event_normalization.py`
+
+**Old:**
+
+```python
+from app.coordination.event_router import UnifiedEventRouter, get_router
+from app.coordination.event_mappings import STAGE_TO_DATA_EVENT_MAP
+from app.coordination.event_emitters import emit_training_complete
+from app.coordination.event_normalization import normalize_event_type
+```
+
+**New:**
+
+```python
+from app.coordination.core_events import (
+    # Router core
+    UnifiedEventRouter, get_router, publish, subscribe,
+    # Event types
+    DataEventType, DataEvent, EventBus, StageEvent,
+    # Mappings
+    STAGE_TO_DATA_EVENT_MAP, DATA_TO_CROSS_PROCESS_MAP,
+    # Typed emitters (70+)
+    emit_training_complete, emit_selfplay_complete, emit_sync_complete,
+    # Normalization
+    normalize_event_type, CANONICAL_EVENT_NAMES,
+)
+```
 
 ## Detailed Migration
 

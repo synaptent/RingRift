@@ -769,9 +769,61 @@ class ClusterManifest:
                 ('created_at', '{time.time()}', {time.time()});
         """)
         conn.commit()
+
+        # December 2025: Migrate existing databases to add new columns
+        # This handles databases created before is_consolidated was added
+        self._migrate_schema(conn)
+
         conn.close()
 
         logger.debug(f"Initialized cluster manifest at {self.db_path}")
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        """Apply schema migrations for existing databases.
+
+        This handles databases created before new columns were added.
+        Uses safe ALTER TABLE IF NOT EXISTS pattern.
+        """
+        cursor = conn.cursor()
+
+        # Check existing columns in game_locations
+        cursor.execute("PRAGMA table_info(game_locations)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Add is_consolidated column if missing (December 2025)
+        if 'is_consolidated' not in existing_columns:
+            try:
+                cursor.execute("""
+                    ALTER TABLE game_locations
+                    ADD COLUMN is_consolidated INTEGER DEFAULT 0
+                """)
+                logger.info("Migrated game_locations: added is_consolidated column")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+        # Add consolidated_at column if missing (December 2025)
+        if 'consolidated_at' not in existing_columns:
+            try:
+                cursor.execute("""
+                    ALTER TABLE game_locations
+                    ADD COLUMN consolidated_at REAL DEFAULT 0
+                """)
+                logger.info("Migrated game_locations: added consolidated_at column")
+            except sqlite3.OperationalError:
+                pass
+
+        # Add canonical_db column if missing (December 2025)
+        if 'canonical_db' not in existing_columns:
+            try:
+                cursor.execute("""
+                    ALTER TABLE game_locations
+                    ADD COLUMN canonical_db TEXT
+                """)
+                logger.info("Migrated game_locations: added canonical_db column")
+            except sqlite3.OperationalError:
+                pass
+
+        conn.commit()
 
     # =========================================================================
     # Game Location Registry

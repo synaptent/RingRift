@@ -42,6 +42,7 @@ from typing import Any
 
 from app.config.cluster_config import get_host_provider
 from app.config.env import env
+from app.coordination.contracts import HealthCheckResult
 from app.coordination.protocols import (
     CoordinatorStatus,
     register_coordinator,
@@ -2281,13 +2282,17 @@ class IdleResourceDaemon:
         }
 
     # CoordinatorProtocol methods
-    async def health_check(self) -> dict[str, Any]:
-        """Perform health check."""
-        return {
-            "healthy": self._running,
-            "status": self._coordinator_status.value,
-            "stats": self.get_stats(),
-        }
+    async def health_check(self) -> HealthCheckResult:
+        """Perform health check for protocol compliance."""
+        is_healthy = self._running and self._coordinator_status == CoordinatorStatus.RUNNING
+        message = f"Idle resource daemon: {self._coordinator_status.value}"
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=self._coordinator_status,
+            message=message,
+            details=self.get_stats(),
+        )
 
     def get_status(self) -> CoordinatorStatus:
         """Get coordinator status."""

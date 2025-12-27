@@ -1024,6 +1024,7 @@ from scripts.p2p.cluster_config import (
 from scripts.p2p.handlers import (
     AdminHandlersMixin,
     CMAESHandlersMixin,
+    DeliveryHandlersMixin,
     ElectionHandlersMixin,
     EloSyncHandlersMixin,
     GauntletHandlersMixin,
@@ -1727,6 +1728,7 @@ class P2POrchestrator(
     TournamentHandlersMixin,
     CMAESHandlersMixin,
     SSHTournamentHandlersMixin,
+    DeliveryHandlersMixin,  # Phase 3: Delivery verification (Dec 27, 2025)
     NetworkUtilsMixin,
     PeerManagerMixin,
     LeaderElectionMixin,
@@ -27204,6 +27206,10 @@ print(json.dumps({{
             app.router.add_get('/data_manifest', self.handle_data_manifest)
             app.router.add_get('/cluster_data_manifest', self.handle_cluster_data_manifest)
             app.router.add_post('/refresh_manifest', self.handle_refresh_manifest)
+
+            # Phase 3: Delivery verification routes (Dec 27, 2025)
+            app.router.add_post('/delivery/verify', self.handle_delivery_verify)
+            app.router.add_get('/delivery/status/{node_id}', self.handle_delivery_status)
 
             # Distributed CMA-ES routes
             app.router.add_post('/cmaes/start', self.handle_cmaes_start)

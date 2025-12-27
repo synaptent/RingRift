@@ -42,6 +42,8 @@ from pathlib import Path
 from typing import Any, Callable, Awaitable
 
 from app.core.async_context import safe_create_task
+from app.coordination.contracts import HealthCheckResult
+from app.coordination.protocols import CoordinatorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -699,19 +701,11 @@ class DLQRetryDaemon:
             "running": self._running,
         }
 
-    def health_check(self) -> dict:
+    def health_check(self) -> HealthCheckResult:
         """Health check for DaemonManager integration.
 
         December 2025: Added for daemon health monitoring.
-
-        Returns:
-            Dictionary with health status including:
-            - healthy: bool indicating if daemon is functioning
-            - running: whether the daemon loop is active
-            - cycles: number of retry cycles completed
-            - total_recovered: total events successfully retried
-            - total_failed: total retry failures
-            - message: human-readable status
+        Returns HealthCheckResult for protocol compliance.
         """
         metrics = self._metrics.copy()
         dlq_stats = self.dlq.get_stats() if self.dlq else {}
@@ -722,16 +716,22 @@ class DLQRetryDaemon:
             # Task crashed unexpectedly
             is_healthy = False
 
-        return {
-            "healthy": is_healthy,
-            "running": self._running,
-            "cycles": metrics.get("cycles", 0),
-            "total_recovered": metrics.get("total_recovered", 0),
-            "total_failed": metrics.get("total_failed", 0),
-            "total_abandoned": metrics.get("total_abandoned", 0),
-            "pending_events": dlq_stats.get("pending", 0),
-            "message": "DLQ retry daemon running" if is_healthy else "DLQ retry daemon not running",
-        }
+        status = CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.STOPPED
+        message = "DLQ retry daemon running" if is_healthy else "DLQ retry daemon not running"
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=message,
+            details={
+                "running": self._running,
+                "cycles": metrics.get("cycles", 0),
+                "total_recovered": metrics.get("total_recovered", 0),
+                "total_failed": metrics.get("total_failed", 0),
+                "total_abandoned": metrics.get("total_abandoned", 0),
+                "pending_events": dlq_stats.get("pending", 0),
+            },
+        )
 
 
 # Daemon factory for DaemonManager integration

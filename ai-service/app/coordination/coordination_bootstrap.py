@@ -641,6 +641,9 @@ _OPTIONAL_MODULES = [
     ("app.coordination.sync_bandwidth", "Bandwidth management"),
     ("app.coordination.auto_sync_daemon", "Ephemeral host sync"),  # Migrated from ephemeral_sync
     ("app.coordination.training_freshness", "Data freshness checks"),
+    ("app.coordination.backpressure", "Backpressure monitoring"),  # Lazy imports handled gracefully
+    ("app.coordination.queue_monitor", "Queue depth monitoring"),
+    ("app.coordination.p2p_integration", "P2P status integration"),
 ]
 
 

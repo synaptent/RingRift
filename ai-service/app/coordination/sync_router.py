@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.config.cluster_config import load_cluster_config, get_host_provider
+from app.config.cluster_config import load_cluster_config, get_host_provider, get_cluster_nodes
 from app.distributed.cluster_manifest import (
     ClusterManifest,
     DataType,
@@ -269,8 +269,16 @@ class SyncRouter:
 
         targets: list[SyncTarget] = []
 
+        # Dec 2025: Load cluster nodes for storage routing checks
+        cluster_nodes = get_cluster_nodes()
+
         for node_id, cap in self._node_capabilities.items():
             if node_id in exclude:
+                continue
+
+            # Dec 2025: Check if node should receive sync data
+            node_config = cluster_nodes.get(node_id)
+            if node_config and not node_config.should_receive_sync():
                 continue
 
             # Check if node can receive this data type

@@ -198,7 +198,7 @@ class CoordinationFacade:
                     started_at=task.started_at,
                     runtime_seconds=task.runtime_seconds(),
                 )
-        except Exception as e:
+        except (KeyError, AttributeError, ValueError, RuntimeError) as e:
             logger.debug(f"Failed to get task status: {e}")
 
         return None
@@ -219,7 +219,7 @@ class CoordinationFacade:
         try:
             coordinator.registry.update_task_status(task_id, "cancelled")
             return True
-        except Exception as e:
+        except (KeyError, ValueError, RuntimeError, OSError) as e:
             logger.error(f"Failed to cancel task: {e}")
             return False
 
@@ -252,7 +252,7 @@ class CoordinationFacade:
                 )
                 for t in tasks
             ]
-        except Exception as e:
+        except (KeyError, AttributeError, RuntimeError) as e:
             logger.debug(f"Failed to get active tasks: {e}")
             return []
 
@@ -317,7 +317,7 @@ class CoordinationFacade:
                 return TrainingStatus.RUNNING
             elif status and status.get("completed"):
                 return TrainingStatus.COMPLETED
-        except Exception as e:
+        except (KeyError, AttributeError, RuntimeError) as e:
             logger.debug(f"Could not get training status for {config_key}: {e}")
 
         return TrainingStatus.NOT_STARTED
@@ -457,7 +457,7 @@ class CoordinationFacade:
 
         try:
             return router.subscribe(event_type, callback)
-        except Exception as e:
+        except (ValueError, TypeError, RuntimeError, KeyError) as e:
             logger.error(f"Failed to subscribe: {e}")
             return ""
 
@@ -477,7 +477,7 @@ class CoordinationFacade:
         try:
             router.unsubscribe(subscription_id)
             return True
-        except Exception as e:
+        except (KeyError, ValueError, RuntimeError) as e:
             logger.debug(f"Could not unsubscribe {subscription_id}: {e}")
             return False
 
