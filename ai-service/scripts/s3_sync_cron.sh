@@ -12,6 +12,9 @@
 
 set -e
 
+# Add custom paths for AWS CLI (cron environment has minimal PATH)
+export PATH="/Users/armand/local/aws-cli:/usr/local/bin:/usr/bin:/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_SERVICE_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$AI_SERVICE_ROOT/logs/s3_backup.log"
