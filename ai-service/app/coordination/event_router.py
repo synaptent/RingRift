@@ -50,7 +50,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from app.core.async_context import fire_and_forget, safe_create_task
 
@@ -59,13 +59,15 @@ logger = logging.getLogger(__name__)
 # Import event normalization (December 2025)
 from app.coordination.event_normalization import normalize_event_type
 
+if TYPE_CHECKING:
+    from app.coordination.protocols import HealthCheckResult
+
 # Import the 3 event systems
 try:
     from app.distributed.data_events import (
         DataEvent,
         DataEventType,
         EventBus,
-        get_event_bus as get_data_event_bus,
         # Emit functions used by coordination modules (December 2025 consolidation)
         emit_cluster_capacity_changed,
         emit_curriculum_advanced,
@@ -88,6 +90,7 @@ try:
         emit_training_early_stopped,
         emit_training_loss_anomaly,
         emit_training_loss_trend,
+        get_event_bus as get_data_event_bus,
     )
     HAS_DATA_EVENTS = True
 except ImportError:
@@ -664,7 +667,7 @@ class UnifiedEventRouter:
                             f"[EventRouter] Handler timeout for {event.event_type}: "
                             f"{callback_name} exceeded {DEFAULT_HANDLER_TIMEOUT_SECONDS}s"
                         )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 callback_name = getattr(callback, "__name__", str(callback))
                 logger.error(f"[EventRouter] Callback error for {event.event_type}: {e}")
                 # Capture to DLQ for retry/analysis (December 2025)
@@ -759,7 +762,7 @@ class UnifiedEventRouter:
                         """Run async callback in a new thread with its own event loop."""
                         try:
                             asyncio.run(coro)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"[EventRouter] Async callback failed: {e}")
 
                     # Use thread pool (initialized in __init__)
@@ -768,7 +771,7 @@ class UnifiedEventRouter:
                         f"[EventRouter] Dispatched async callback {callback.__name__} "
                         f"for {event.event_type} to thread pool"
                     )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 callback_name = getattr(callback, "__name__", str(callback))
                 logger.error(f"[EventRouter] Callback error for {event.event_type}: {e}")
                 # Capture to DLQ for retry/analysis (December 2025)
@@ -940,9 +943,9 @@ class UnifiedEventRouter:
         orphaned = emitted_types - subscribed_types
 
         return {
-            "emitted_no_subscribers": sorted(list(orphaned)),
-            "subscribed_event_types": sorted(list(subscribed_types)),
-            "emitted_event_types": sorted(list(emitted_types)),
+            "emitted_no_subscribers": sorted(orphaned),
+            "subscribed_event_types": sorted(subscribed_types),
+            "emitted_event_types": sorted(emitted_types),
         }
 
     def validate_event_flow(self) -> dict[str, Any]:
@@ -1021,13 +1024,13 @@ class UnifiedEventRouter:
             "orphaned_events": orphaned,  # December 2025: Include full orphan analysis
         }
 
-    def health_check(self) -> "HealthCheckResult":
+    def health_check(self) -> HealthCheckResult:
         """Perform health check for CoordinatorProtocol compliance (Dec 2025).
 
         Returns:
             HealthCheckResult with healthy status and diagnostics
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
         validation = self.validate_event_flow()
         stats = self.get_stats()
@@ -1143,6 +1146,7 @@ def validate_event_flow() -> dict[str, Any]:
     - Whether events are being routed
     - Bus availability
     - Recent event types
+    - Orphaned events (emitted but no subscribers)
     - Any issues detected
 
     Usage:
@@ -1150,8 +1154,28 @@ def validate_event_flow() -> dict[str, Any]:
         result = validate_event_flow()
         if not result["healthy"]:
             print("Issues:", result["issues"])
+        if result["orphaned_events"]["emitted_no_subscribers"]:
+            print("Orphaned:", result["orphaned_events"]["emitted_no_subscribers"])
     """
     return get_router().validate_event_flow()
+
+
+def get_orphaned_events() -> dict[str, list[str]]:
+    """Identify events that are emitted but have no subscribers (December 2025).
+
+    Returns:
+        Dictionary with:
+        - "emitted_no_subscribers": Events that have been routed but have no subscribers
+        - "subscribed_event_types": All event types that have subscribers
+        - "emitted_event_types": All event types that have been routed
+
+    Usage:
+        from app.coordination.event_router import get_orphaned_events
+        orphaned = get_orphaned_events()
+        for ev in orphaned["emitted_no_subscribers"]:
+            print(f"Event {ev} has no subscribers")
+    """
+    return get_router().get_orphaned_events()
 
 
 def get_event_stats() -> dict[str, Any]:
@@ -1159,7 +1183,7 @@ def get_event_stats() -> dict[str, Any]:
     return get_router().get_stats()
 
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     "DATA_TO_STAGE_EVENT_MAP",
     # Event type mappings
     "STAGE_TO_DATA_EVENT_MAP",
@@ -1176,6 +1200,7 @@ __all__ = [
     "subscribe",
     "unsubscribe",
     "validate_event_flow",
+    "get_orphaned_events",
     "get_event_stats",
     # Re-exports from data_events for backward compatibility
     "DataEvent",
@@ -1465,7 +1490,7 @@ def emit_training_started_sync(
     """Sync version of emit_training_started for non-async contexts."""
     try:
         # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         fire_and_forget(
             emit_training_started(config_key, node_name, **extra_payload),
             name=f"emit_training_started_{config_key}",
@@ -1485,7 +1510,7 @@ def emit_training_completed_sync(
     """Sync version of emit_training_completed."""
     try:
         # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         fire_and_forget(
             emit_training_completed(config_key, model_id, val_loss, epochs, **extra_payload),
             name=f"emit_training_completed_{config_key}",

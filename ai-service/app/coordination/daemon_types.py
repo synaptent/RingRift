@@ -192,7 +192,7 @@ class DaemonType(Enum):
     # Adaptive resource manager (December 2025) - dynamic resource scaling based on workload
     ADAPTIVE_RESOURCES = "adaptive_resources"
 
-    # Multi-provider orchestrator (December 2025) - coordinates across Lambda/Vast/etc
+    # Multi-provider orchestrator (December 2025) - coordinates across Vast/RunPod/Nebius/etc
     MULTI_PROVIDER = "multi_provider"
 
     # DEPRECATED (Dec 2025): Use unified_health_manager.get_system_health_score() - removal Q2 2026
@@ -209,7 +209,8 @@ class DaemonType(Enum):
     UTILIZATION_OPTIMIZER = "utilization_optimizer"
 
     # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
-    # NOTE: Lambda account suspended pending support ticket resolution - keep code for restoration
+    # DEPRECATED: Lambda Labs account permanently terminated Dec 2025. No Lambda nodes remain.
+    # Code retained for historical reference. Use VAST_IDLE or other provider daemons instead.
     LAMBDA_IDLE = "lambda_idle"
 
     # Vast.ai idle shutdown (December 2025) - terminates idle Vast.ai nodes to save costs

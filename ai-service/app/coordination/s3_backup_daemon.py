@@ -126,6 +126,39 @@ class S3BackupDaemon:
         """Check if the daemon is currently running."""
         return self._running
 
+    async def health_check(self) -> bool:
+        """Check if the daemon is healthy.
+
+        Returns True if the daemon is running and functioning properly.
+        Used by DaemonManager for crash detection and auto-restart.
+        """
+        if not self._running:
+            return False
+
+        # Check if we have excessive pending backups (indicates processing stall)
+        with self._pending_lock:
+            pending_count = len(self._pending_promotions)
+
+        # If we have > 10 pending promotions, something is stuck
+        if pending_count > 10:
+            logger.warning(
+                f"S3BackupDaemon health check failed: {pending_count} pending promotions"
+            )
+            return False
+
+        # Check if last backup was too long ago (if we have pending items)
+        if pending_count > 0 and self._last_backup_time > 0:
+            time_since_backup = time.time() - self._last_backup_time
+            # If we have pending items and haven't backed up in 30 minutes, unhealthy
+            if time_since_backup > 1800:
+                logger.warning(
+                    f"S3BackupDaemon health check failed: "
+                    f"{time_since_backup:.0f}s since last backup with {pending_count} pending"
+                )
+                return False
+
+        return True
+
     def get_metrics(self) -> dict[str, Any]:
         """Get daemon metrics."""
         uptime = time.time() - self._start_time if self._start_time > 0 else 0.0

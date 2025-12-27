@@ -49,7 +49,7 @@ import signal
 import sys
 import time
 import urllib.request
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -113,7 +113,7 @@ class NodeConfig:
     enabled: bool = True
 
     @classmethod
-    def from_yaml_entry(cls, name: str, entry: dict) -> "NodeConfig":
+    def from_yaml_entry(cls, name: str, entry: dict) -> NodeConfig:
         """Create from distributed_hosts.yaml entry."""
         # Handle various SSH formats
         ssh = entry.get("ssh", "")
@@ -231,7 +231,7 @@ class DataDistributionDaemon:
                     logger.info(f"Loaded {len(self._nodes)} nodes from {config_path}")
                     return
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to load config from {config_path}: {e}")
 
         # Fallback to hardcoded defaults
@@ -288,7 +288,7 @@ class DataDistributionDaemon:
             return proc.returncode or 0, stdout.decode(), stderr.decode()
         except asyncio.TimeoutError:
             return 1, "", "SSH timeout"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return 1, "", str(e)
 
     async def _check_node_status(self, node: NodeConfig) -> NodeStatus:
@@ -352,7 +352,7 @@ class DataDistributionDaemon:
 
             return files
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to list {source_key} from {url}: {e}")
             return []
 
@@ -395,14 +395,20 @@ class DataDistributionDaemon:
             stats.files_distributed += 1
             return True
 
-        # Fallback 2: Try curl with resume support
-        logger.warning(f"  aria2 failed for {filename}, trying curl...")
-        curl_cmd = f"mkdir -p {dest_path} && curl -sS -C - -o {dest_path}{filename} '{file_info['url']}'"
+        # Fallback 2: Try curl WITHOUT resume (HTTP server may not support byte ranges)
+        logger.warning(f"  aria2 failed for {filename}, trying curl (no resume)...")
+        curl_cmd = f"mkdir -p {dest_path} && curl -sS -o {dest_path}{filename} '{file_info['url']}'"
         code, _, stderr = await self._run_ssh_command(node, curl_cmd, timeout=timeout * 2)
 
         if code == 0:
             logger.info(f"  Downloaded {filename} to {node.name} (via curl)")
             stats.files_distributed += 1
+            return True
+
+        # Fallback 3: Use rsync from mac-studio (most reliable for large files)
+        logger.warning(f"  curl failed for {filename}, trying rsync...")
+        rsync_result = await self._download_large_file_rsync(node, file_info, stats)
+        if rsync_result:
             return True
 
         logger.error(f"  Failed to download {filename} to {node.name}: {stderr}")
@@ -452,7 +458,7 @@ class DataDistributionDaemon:
 
         except subprocess.TimeoutExpired:
             logger.error(f"  rsync timeout for {filename}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"  rsync error for {filename}: {e}")
 
         stats.errors.append(f"{node.name}:{filename}:rsync_failed")
@@ -583,7 +589,7 @@ class DataDistributionDaemon:
             )
         except ImportError:
             pass  # event_router not available
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to emit event: {e}")
 
     async def run_daemon(self, interval: int = 300) -> None:
@@ -649,7 +655,7 @@ class DataDistributionDaemon:
 
         # Check data source
         print("Data Source Status:")
-        for source_key, source in DATA_SOURCES.items():
+        for source_key, _source in DATA_SOURCES.items():
             files = await self._get_available_files(source_key)
             print(f"  {source_key}: {len(files)} files")
 

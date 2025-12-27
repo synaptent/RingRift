@@ -35,6 +35,8 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+# December 2025: Use consolidated daemon stats base class
+from app.coordination.daemon_stats import SyncDaemonStats
 from app.coordination.protocols import (
     CoordinatorStatus,
     HealthCheckResult,
@@ -44,9 +46,6 @@ from app.coordination.protocols import (
 from app.coordination.sync_integrity import check_sqlite_integrity
 from app.coordination.sync_mutex import acquire_sync_lock, release_sync_lock
 from app.core.async_context import fire_and_forget, safe_create_task
-
-# December 2025: Use consolidated daemon stats base class
-from app.coordination.daemon_stats import SyncDaemonStats
 
 # Circuit breaker for fault-tolerant sync operations (December 2025)
 try:
@@ -466,6 +465,7 @@ class AutoSyncDaemon:
         """
         try:
             from urllib.request import Request, urlopen
+
             from app.config.ports import get_p2p_status_url
 
             url = get_p2p_status_url()
@@ -1129,7 +1129,7 @@ class AutoSyncDaemon:
         December 2025: Consolidated from ephemeral_sync.py
         """
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
             if router:
@@ -1245,43 +1245,26 @@ class AutoSyncDaemon:
     def get_bandwidth_for_node(self, node_id: str, provider: str = "default") -> int:
         """Get bandwidth limit in KB/s for a specific node.
 
-        December 2025: Consolidated from cluster_data_sync.py
-        Uses PROVIDER_BANDWIDTH_HINTS for per-provider limits.
+        December 2025: Consolidated to use cluster_config.get_node_bandwidth_kbs()
+        which provides a unified source of truth for bandwidth limits.
 
         Args:
             node_id: Target node ID
-            provider: Provider name (lambda, runpod, vast, etc.)
+            provider: Provider name (unused, kept for backward compatibility)
 
         Returns:
             Bandwidth limit in KB/s
         """
         try:
-            from app.coordination.sync_bandwidth import PROVIDER_BANDWIDTH_HINTS
+            from app.config.cluster_config import get_node_bandwidth_kbs
+
+            bw = get_node_bandwidth_kbs(node_id)
+            logger.debug(f"[AutoSyncDaemon] Using bandwidth {bw}KB/s for {node_id}")
+            return bw
         except ImportError:
-            # Default bandwidth hints if module not available
-            PROVIDER_BANDWIDTH_HINTS = {
-                "default": 20_000,
-                "runpod": 100_000,
-                "nebius": 100_000,
-                "vast": 50_000,
-                "vultr": 50_000,
-                "lambda": 50_000,
-                "hetzner": 30_000,
-            }
-
-        node_lower = node_id.lower()
-
-        # Check node_id for provider hints
-        for prov, bw in PROVIDER_BANDWIDTH_HINTS.items():
-            if prov in node_lower:
-                logger.debug(f"[AutoSyncDaemon] Using {prov} bandwidth {bw}KB/s for {node_id}")
-                return bw
-
-        # Use explicit provider if set
-        if provider and provider in PROVIDER_BANDWIDTH_HINTS:
-            return PROVIDER_BANDWIDTH_HINTS[provider]
-
-        return PROVIDER_BANDWIDTH_HINTS.get("default", 20_000)
+            # Fallback if cluster_config not available
+            logger.warning("[AutoSyncDaemon] cluster_config not available, using defaults")
+            return 20_000  # Conservative default
 
     async def get_broadcast_targets(self) -> list[dict[str, Any]]:
         """Get nodes eligible to receive broadcast sync data.
@@ -2066,7 +2049,7 @@ class AutoSyncDaemon:
     async def _emit_sync_completed(self, games_synced: int, bytes_transferred: int = 0) -> None:
         """Emit DATA_SYNC_COMPLETED event for feedback loop coupling."""
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
             if router:
@@ -2616,7 +2599,7 @@ class AutoSyncDaemon:
     async def _emit_sync_verification_failed(self, db_name: str, error: str) -> None:
         """Emit SYNC_VERIFICATION_FAILED event for feedback loop."""
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
             if router:
@@ -2928,7 +2911,7 @@ def get_cluster_data_sync_daemon() -> AutoSyncDaemon:
     return get_auto_sync_daemon()
 
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # Core classes
     "AutoSyncConfig",
     "AutoSyncDaemon",

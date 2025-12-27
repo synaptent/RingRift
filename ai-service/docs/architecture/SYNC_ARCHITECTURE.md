@@ -1,6 +1,32 @@
 # Sync Architecture Documentation
 
-This document clarifies the responsibilities and relationships between the 13 sync-related modules in the RingRift AI service.
+**Last updated:** December 27, 2025
+
+This document clarifies the responsibilities and relationships between the sync-related modules in the RingRift AI service.
+
+## December 2025 Consolidation
+
+Major consolidation of sync managers:
+
+| Module                     | Status      | Notes                                      |
+| -------------------------- | ----------- | ------------------------------------------ |
+| `auto_sync_daemon.py`      | **PRIMARY** | Main sync daemon                           |
+| `database_sync_manager.py` | **NEW**     | Unified base class for Elo/Registry sync   |
+| `sync_router.py`           | **ACTIVE**  | Intelligent routing                        |
+| `sync_bandwidth.py`        | **ACTIVE**  | Bandwidth coordination                     |
+| `sync_facade.py`           | **ACTIVE**  | Programmatic entry point                   |
+| `cluster_data_sync.py`     | DEPRECATED  | Use `AutoSyncDaemon(strategy="broadcast")` |
+| `ephemeral_sync.py`        | DEPRECATED  | Use `AutoSyncDaemon(strategy="ephemeral")` |
+| `sync_coordinator.py`      | DEPRECATED  | Use `auto_sync_daemon.py`                  |
+
+**DatabaseSyncManager** (new, ~670 LOC) provides:
+
+- Multi-transport failover (Tailscale → SSH → Vast.ai SSH → HTTP)
+- Rsync-based database transfers with merge support
+- Node discovery from P2P or YAML config
+- Circuit breaker per-node fault tolerance
+
+Subclasses: `EloSyncManager`, `RegistrySyncManager`
 
 ## Overview
 

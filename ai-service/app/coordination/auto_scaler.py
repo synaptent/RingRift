@@ -577,7 +577,7 @@ class MonitoringAwareAutoScaler(AutoScaler):
         except ImportError:
             logger.warning("[MonitoringAwareAutoScaler] Event bus not available")
             return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"[MonitoringAwareAutoScaler] Failed to subscribe: {e}")
             return False
 
@@ -720,6 +720,7 @@ def create_monitoring_aware_scaler(
     config: ScalingConfig | None = None,
     vast_client: Any | None = None,
     subscribe_events: bool = True,
+    require_subscription: bool = False,
 ) -> MonitoringAwareAutoScaler:
     """Create an AutoScaler with monitoring event integration.
 
@@ -727,14 +728,28 @@ def create_monitoring_aware_scaler(
         config: Scaling configuration
         vast_client: Vast.ai client for instance management
         subscribe_events: Whether to subscribe to monitoring events
+        require_subscription: If True, raise if subscription fails
 
     Returns:
         MonitoringAwareAutoScaler instance
+
+    Raises:
+        RuntimeError: If require_subscription=True and subscription fails
     """
     scaler = MonitoringAwareAutoScaler(config, vast_client)
 
     if subscribe_events:
-        scaler.subscribe_to_monitoring_events()
+        success = scaler.subscribe_to_monitoring_events()
+        if not success and require_subscription:
+            raise RuntimeError(
+                "[MonitoringAwareAutoScaler] Event subscription required but failed. "
+                "Ensure event_router is initialized before creating scaler."
+            )
+        elif not success:
+            logger.warning(
+                "[MonitoringAwareAutoScaler] Running without event integration. "
+                "Scaling decisions may not reflect real-time cluster state."
+            )
 
     return scaler
 

@@ -18,7 +18,7 @@ Usage:
 
 from __future__ import annotations
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # Enums
     "BoardType",
     "WorkloadType",
@@ -197,7 +197,7 @@ def load_gpu_profiles_from_config() -> dict[str, dict[str, BoardType]]:
 
     except ImportError:
         logger.debug("[UtilizationOptimizer] cluster_config not available, using static profiles")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"[UtilizationOptimizer] Failed to load dynamic GPU profiles: {e}")
 
     return profiles
@@ -445,10 +445,8 @@ class UtilizationOptimizer:
         # Determine work directory based on provider
         if health.provider == Provider.VAST:
             work_dir = "/root/ringrift/ai-service"
-            ssh_user = "root"
         else:
             work_dir = "~/ringrift/ai-service"
-            ssh_user = "ubuntu"
 
         # Build selfplay command
         db_name = f"selfplay_{board_type.value}_{num_players}p_{node_id}"
@@ -556,7 +554,7 @@ pkill -f 'run_self_play_soak' 2>/dev/null || true
 sleep 1
 echo "CPU_SELFPLAY_STOPPED"
 """
-        code, stdout, stderr = await manager.run_ssh_command(health.instance, cmd, timeout=30)
+        _code, stdout, stderr = await manager.run_ssh_command(health.instance, cmd, timeout=30)
 
         if "CPU_SELFPLAY_STOPPED" in stdout:
             logger.info(f"[UtilizationOptimizer] Stopped CPU selfplay on {node_id}")
@@ -588,16 +586,19 @@ echo "CPU_SELFPLAY_STOPPED"
 
         # First pass: Stop CPU selfplay on GPU nodes
         for node_id, health in self.health_orchestrator.node_health.items():
-            if health.provider in self.GPU_SELFPLAY_PROVIDERS and health.is_available():
-                # Check if running heuristic selfplay (low GPU + high CPU)
-                if health.gpu_percent < 20 and health.cpu_percent > 50:
-                    logger.info(
-                        f"[UtilizationOptimizer] Node {node_id} running CPU selfplay "
-                        f"(GPU={health.gpu_percent:.0f}%, CPU={health.cpu_percent:.0f}%)"
-                    )
-                    result = await self.stop_cpu_selfplay_on_gpu_nodes(node_id, health)
-                    results.append(result)
-                    await asyncio.sleep(1)
+            if (
+                health.provider in self.GPU_SELFPLAY_PROVIDERS
+                and health.is_available()
+                and health.gpu_percent < 20
+                and health.cpu_percent > 50
+            ):
+                logger.info(
+                    f"[UtilizationOptimizer] Node {node_id} running CPU selfplay "
+                    f"(GPU={health.gpu_percent:.0f}%, CPU={health.cpu_percent:.0f}%)"
+                )
+                result = await self.stop_cpu_selfplay_on_gpu_nodes(node_id, health)
+                results.append(result)
+                await asyncio.sleep(1)
 
         # Get underutilized nodes
         underutilized = await self.get_underutilized_nodes()
@@ -640,7 +641,6 @@ echo "CPU_SELFPLAY_STOPPED"
             await asyncio.sleep(0.5)
 
         # Summary
-        successful = sum(1 for r in results if r.success)
         stopped = sum(1 for r in results if r.action == "stop_cpu_selfplay" and r.success)
         spawned = sum(1 for r in results if r.action == "spawn_selfplay" and r.success)
         logger.info(
@@ -688,7 +688,7 @@ echo "CPU_SELFPLAY_STOPPED"
                     distribution["total_training_jobs"] += 1
 
         # Calculate average utilization per provider
-        for provider, stats in distribution["by_provider"].items():
+        for _provider, stats in distribution["by_provider"].items():
             if stats["nodes"] > 0:
                 stats["avg_gpu_utilization"] = stats["gpu_utilization"] / stats["nodes"]
 

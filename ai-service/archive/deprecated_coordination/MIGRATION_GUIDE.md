@@ -15,8 +15,8 @@ This guide provides a timeline and migration paths for deprecated coordination m
 
 | Deprecated Module                    | Replacement                            | Status                          | Migration Priority |
 | ------------------------------------ | -------------------------------------- | ------------------------------- | ------------------ |
-| `cluster_data_sync.py`               | `AutoSyncDaemon(strategy="broadcast")` | Deprecated - migrate by Q2 2026 | HIGH               |
-| `ephemeral_sync.py`                  | `AutoSyncDaemon(strategy="ephemeral")` | Deprecated - migrate by Q2 2026 | HIGH               |
+| `cluster_data_sync.py`               | `AutoSyncDaemon(strategy="broadcast")` | Archived Dec 2025               | COMPLETE           |
+| `ephemeral_sync.py`                  | `AutoSyncDaemon(strategy="ephemeral")` | Archived Dec 2025               | COMPLETE           |
 | `system_health_monitor.py`           | `health_facade.get_system_health()`    | Deprecated - migrate by Q2 2026 | MEDIUM             |
 | `node_health_monitor.py`             | `health_check_orchestrator.py`         | Deprecated - migrate by Q2 2026 | LOW                |
 | `sync_coordinator.py` (coordination) | `AutoSyncDaemon`, `SyncFacade`         | Archived Dec 2025               | COMPLETE           |

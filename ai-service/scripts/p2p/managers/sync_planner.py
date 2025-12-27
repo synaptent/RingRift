@@ -1049,7 +1049,15 @@ class SyncPlanner:
         manifest = cluster_manifest
         if not manifest:
             logger.info("Collecting fresh cluster manifest for training sync...")
-            manifest = await collect_manifest()
+            # Dec 2025: Add 5-minute timeout for manifest collection
+            try:
+                manifest = await asyncio.wait_for(
+                    collect_manifest(),
+                    timeout=300.0  # 5 minutes max
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Manifest collection timed out after 5 minutes")
+                manifest = None
 
         if not manifest:
             return {"success": False, "error": "Failed to collect cluster manifest"}

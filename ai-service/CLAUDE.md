@@ -410,10 +410,35 @@ Unified training pipeline orchestration:
 
 **Daemon Management:**
 
-- **`daemon_manager.py`**: Lifecycle management for 30+ daemon types
-- **`daemon_adapters.py`**: Wrappers for existing daemons (sync, promotion, distillation)
+The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGISTRY.md` for full reference.
+
+| Category  | Key Daemon Types                              | Purpose                      |
+| --------- | --------------------------------------------- | ---------------------------- |
+| Core      | `EVENT_ROUTER`, `DAEMON_WATCHDOG`             | Event bus, health monitoring |
+| Sync      | `AUTO_SYNC`, `MODEL_DISTRIBUTION`, `ELO_SYNC` | Data/model synchronization   |
+| Training  | `DATA_PIPELINE`, `SELFPLAY_COORDINATOR`       | Pipeline orchestration       |
+| Eval      | `EVALUATION`, `AUTO_PROMOTION`                | Model evaluation/promotion   |
+| Health    | `NODE_HEALTH_MONITOR`, `QUALITY_MONITOR`      | Cluster health               |
+| Resources | `IDLE_RESOURCE`, `NODE_RECOVERY`              | GPU utilization, recovery    |
+
+**Key files:**
+
+- **`daemon_manager.py`**: Lifecycle management, health checks, auto-restart
+- **`daemon_factory.py`**: Factory methods for all daemon types
+- **`daemon_types.py`**: `DaemonType` enum with all 60+ types
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
+
+**Launching daemons:**
+
+```bash
+# Full automation (recommended)
+python scripts/master_loop.py
+
+# Specific daemons
+python scripts/launch_daemons.py --all
+python scripts/launch_daemons.py --status
+```
 
 **Data Distribution (Dec 2025):**
 
@@ -607,6 +632,8 @@ All 7 P2P managers fully delegated (100% coverage):
 
 Total: ~1,990 LOC removed from p2p_orchestrator.py (27,889 → 25,899 lines)
 
+See `scripts/P2P_ORCHESTRATOR_REMOVED_CODE.md` for detailed registry of all 22 removed methods (~1,255 LOC).
+
 **Circular Dependency Fixes (December 27, 2025):**
 
 - `selfplay_scheduler.py:84` - backpressure import converted to lazy loading
@@ -625,8 +652,15 @@ Daemon health check coverage and code quality improvements:
 | TRAINING_TRIGGER health_check     | Added to `training_trigger_daemon.py`                  | ✅ Complete         |
 | facade.py exception handling      | Specific exception types (ValueError, OSError, etc.)   | ✅ Complete         |
 | Startup validation                | `_validate_critical_subsystems()` in daemon_manager.py | ✅ Complete         |
+| CLUSTER_WATCHDOG health_check     | Added to `cluster_watchdog_daemon.py`                  | ✅ Complete         |
+| NODE_RECOVERY health_check        | Added to `node_recovery_daemon.py`                     | ✅ Complete         |
+| EVALUATION get_status()           | Added to `evaluation_daemon.py`                        | ✅ Complete         |
+| Hardcoded port 8770 fix           | `p2p_integration.py` now uses `get_p2p_port()`         | ✅ Complete         |
+| DB connection leak fix            | `auto_sync_daemon.py` uses context managers            | ✅ Complete         |
+| SyncRouter NODE_RECOVERED         | Added event subscription for node recovery             | ✅ Complete         |
+| FeedbackLoopController fix        | `_subscribed` flag now reset in `finally` block        | ✅ Complete         |
 
-Daemon health check coverage increased from 22% to ~50%+ for critical daemons.
+Daemon health check coverage increased from 22% to ~60%+ for critical daemons.
 
 **Integration Verification (December 27, 2025):**
 

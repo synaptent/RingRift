@@ -1,3 +1,40 @@
+"""Game environment for selfplay and AI training.
+
+This module provides the GameEnvironment class that wraps the game engine
+for use in training pipelines, selfplay generation, and AI evaluation.
+
+Key Components:
+    GameEnvironment: Wraps GameEngine with training-specific features:
+        - Move generation with legal move validation
+        - Episode step/reset for RL-style training loops
+        - Move count limits to prevent runaway games
+        - Integration with heuristic evaluation
+
+    Game Limits: Board-type-specific move count limits based on empirical
+        observation (see THEORETICAL_MAX_MOVES).
+
+    Training Presets: Canonical configurations for heuristic optimization
+        (CMA-ES, GA) including multi-board and multi-start evaluation.
+
+Usage:
+    from app.training.env import GameEnvironment
+
+    # Create environment
+    env = GameEnvironment(board_type=BoardType.HEX8, num_players=2)
+
+    # Reset to initial state
+    state = env.reset()
+
+    # Take a step
+    next_state, done = env.step(move)
+
+    # Get legal moves
+    moves = env.get_legal_moves()
+
+See Also:
+    app.training.selfplay_runner: Higher-level selfplay orchestration
+    app.training.train: Neural network training pipeline
+"""
 import logging
 import os
 from dataclasses import dataclass

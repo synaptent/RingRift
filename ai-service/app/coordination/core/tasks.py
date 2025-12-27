@@ -1,13 +1,22 @@
 """Task coordination (December 2025).
 
+DEPRECATED: Import directly from app.coordination.task_coordinator
+and app.coordination.task_decorators instead.
+This module will be removed in Q2 2026.
+
 Consolidates task-related functionality from:
 - task_coordinator.py (task lifecycle)
 - task_decorators.py (task decorators)
 
-This module re-exports all task-related APIs for unified access.
-
-Usage:
+Usage (DEPRECATED):
     from app.coordination.core.tasks import (
+        TaskCoordinator,
+        CoordinatedTask,
+        TaskInfo,
+    )
+
+Recommended:
+    from app.coordination.task_coordinator import (
         TaskCoordinator,
         CoordinatedTask,
         TaskInfo,
@@ -15,6 +24,16 @@ Usage:
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "app.coordination.core.tasks is deprecated. "
+    "Import from app.coordination.task_coordinator instead. "
+    "This module will be removed in Q2 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Re-export from task_coordinator
 from app.coordination.task_coordinator import (

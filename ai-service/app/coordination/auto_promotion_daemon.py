@@ -22,11 +22,9 @@ Integration with DaemonManager:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -107,8 +105,9 @@ class AutoPromotionDaemon:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                from app.coordination.event_router import get_router, DataEventType
                 import asyncio
+
+                from app.coordination.event_router import DataEventType, get_router
 
                 router = get_router()
                 if not router:
@@ -126,7 +125,11 @@ class AutoPromotionDaemon:
                 self._subscribed = True
                 logger.info("[AutoPromotion] Subscribed to EVALUATION_COMPLETED")
                 return
-            except Exception as e:
+            except ImportError as e:
+                logger.warning(f"[AutoPromotion] Event system not available: {e}")
+                self._subscribed = False
+                return
+            except (RuntimeError, AttributeError, TypeError) as e:
                 if attempt == max_retries - 1:
                     logger.warning(f"[AutoPromotion] Failed to subscribe after retries: {e}")
                     self._subscribed = False
@@ -145,7 +148,7 @@ class AutoPromotionDaemon:
         try:
             payload = event.payload if hasattr(event, "payload") else event
             await self._process_evaluation(payload)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Error processing evaluation: {e}")
 
     async def _process_evaluation(self, payload: dict[str, Any]) -> None:
@@ -336,7 +339,7 @@ class AutoPromotionDaemon:
                 "emitting event only"
             )
             await self._emit_promotion_event(candidate)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Promotion error for {config_key}: {e}")
 
             # Emit PROMOTION_FAILED event on exception
@@ -349,7 +352,7 @@ class AutoPromotionDaemon:
             candidate: PromotionCandidate that was promoted
         """
         try:
-            from app.coordination.event_router import get_router, DataEventType, emit_curriculum_advanced
+            from app.coordination.event_router import DataEventType, emit_curriculum_advanced, get_router
 
             router = get_router()
             if router:
@@ -388,7 +391,7 @@ class AutoPromotionDaemon:
                         f"[AutoPromotion] Emitted CURRICULUM_ADVANCED for {candidate.config_key}: "
                         f"{old_tier} → {new_tier}"
                     )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit promotion event: {e}")
 
     async def _emit_promotion_failed(
@@ -424,7 +427,7 @@ class AutoPromotionDaemon:
                 logger.info(
                     f"[AutoPromotion] Emitted PROMOTION_FAILED for {candidate.config_key}: {error}"
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit PROMOTION_FAILED event: {e}")
 
     def get_status(self) -> dict[str, Any]:
@@ -455,7 +458,7 @@ class AutoPromotionDaemon:
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
         if not self._running:
             return HealthCheckResult(

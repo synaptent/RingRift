@@ -287,11 +287,13 @@ class EnvConfig:
     @property
     def idle_check_interval(self) -> int:
         """Interval between idle checks (seconds)."""
-        return get_int("RINGRIFT_IDLE_CHECK_INTERVAL", 30)
+        return get_int("RINGRIFT_IDLE_CHECK_INTERVAL", 60)
 
     @property
     def idle_gpu_threshold(self) -> int:
         """GPU utilization threshold for considering a node idle (%)."""
+        if os.environ.get("RINGRIFT_IDLE_THRESHOLD") is not None:
+            return get_int("RINGRIFT_IDLE_THRESHOLD", 10)
         return get_int("RINGRIFT_IDLE_GPU_THRESHOLD", 10)
 
     @property

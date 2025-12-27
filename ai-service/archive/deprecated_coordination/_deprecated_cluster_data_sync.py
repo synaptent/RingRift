@@ -1,3 +1,4 @@
+# ruff: noqa
 """Cluster Data Sync Daemon - Ensures game data is available on all eligible nodes.
 
 .. deprecated:: December 2025
@@ -122,7 +123,7 @@ class EligibleSyncNode:
     node_id: str
     host: str
     disk_free_gb: float
-    is_nfs: bool = False  # Lambda nodes share NFS, skip rsync between them
+    is_nfs: bool = False  # NFS-connected nodes share storage (formerly Lambda, terminated Dec 2025)
     provider: str = "default"  # December 2025: Provider for bandwidth hints
 
 
@@ -224,7 +225,7 @@ def get_sync_targets() -> list["EligibleSyncNode"]:
             logger.debug(f"Skipping {node_id}: stale heartbeat")
             continue
 
-        # Determine if NFS-connected (Lambda nodes share storage)
+        # Determine if NFS-connected (formerly Lambda, terminated Dec 2025)
         is_nfs = info.get("nfs_accessible", False)
 
         # Get host address
@@ -238,7 +239,7 @@ def get_sync_targets() -> list["EligibleSyncNode"]:
             # Infer from node_id or host
             node_lower = node_id.lower()
             if "lambda" in node_lower:
-                provider = "lambda"
+                provider = "lambda"  # DEPRECATED: No Lambda nodes remain (Dec 2025)
             elif "runpod" in node_lower:
                 provider = "runpod"
             elif "nebius" in node_lower:
@@ -295,15 +296,17 @@ def discover_local_databases() -> list[Path]:
 async def sync_to_target(source: Path, target: EligibleSyncNode) -> SyncResult:
     """Push a database to a target node using rsync.
 
-    For NFS-connected nodes (Lambda cluster), this is a no-op since they
-    share storage. For other nodes, uses rsync over SSH.
+    For NFS-connected nodes, this is a no-op since they share storage.
+    For other nodes, uses rsync over SSH.
+
+    Note: NFS was formerly used by Lambda cluster (terminated Dec 2025).
 
     Uses sync mutex to prevent concurrent syncs to the same destination file,
     which could cause corruption or race conditions (December 2025 fix).
     """
     start_time = time.time()
 
-    # NFS optimization: Lambda nodes share storage, no sync needed
+    # NFS optimization: NFS-connected nodes share storage, no sync needed
     if target.is_nfs:
         logger.debug(f"Skipping sync to {target.node_id}: NFS-connected")
         return SyncResult(

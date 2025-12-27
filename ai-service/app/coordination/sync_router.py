@@ -669,6 +669,8 @@ class SyncRouter:
         - NEW_GAMES_AVAILABLE: Route new games to appropriate nodes
         - TRAINING_STARTED: Prioritize training nodes
         - HOST_ONLINE/OFFLINE: Update node capabilities
+        - NODE_RECOVERED: Re-enable sync to recovered nodes (Dec 2025)
+        - CLUSTER_CAPACITY_CHANGED: React to cluster membership changes
         """
         try:
             from app.coordination.event_router import DataEventType, get_router
@@ -697,6 +699,12 @@ class SyncRouter:
                 self._on_host_offline,
             )
 
+            # Dec 2025: Subscribe to NODE_RECOVERED to re-enable sync
+            router.subscribe(
+                DataEventType.NODE_RECOVERED.value,
+                self._on_node_recovered,
+            )
+
             # Subscribe to cluster capacity changes (Dec 2025 - P2P integration)
             router.subscribe(
                 DataEventType.CLUSTER_CAPACITY_CHANGED.value,
@@ -705,7 +713,8 @@ class SyncRouter:
 
             logger.info(
                 "[SyncRouter] Wired to event router "
-                "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE, CLUSTER_CAPACITY_CHANGED)"
+                "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE, "
+                "NODE_RECOVERED, CLUSTER_CAPACITY_CHANGED)"
             )
 
         except ImportError as e:
@@ -791,6 +800,35 @@ class SyncRouter:
 
         except Exception as e:
             logger.debug(f"[SyncRouter] Error handling host offline: {e}")
+
+    async def _on_node_recovered(self, event: Any) -> None:
+        """Handle NODE_RECOVERED event - re-enable sync to recovered node.
+
+        December 2025: Added to complete health event integration.
+        When a node recovers after being offline, restore its sync capabilities.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            node_id = payload.get("node_id") or payload.get("host")
+
+            if node_id and node_id in self._node_capabilities:
+                cap = self._node_capabilities[node_id]
+                # Re-enable based on original policy from manifest
+                policy = self._manifest.get_sync_policy(node_id)
+                cap.can_receive_games = policy.receive_games
+                cap.can_receive_models = policy.receive_models
+                cap.can_receive_npz = policy.receive_npz
+                logger.info(
+                    f"[SyncRouter] Restored sync capabilities for recovered node: {node_id}"
+                )
+            elif node_id:
+                # New node recovered - add with default capabilities
+                cap = NodeSyncCapability(node_id=node_id)
+                self._node_capabilities[node_id] = cap
+                logger.info(f"[SyncRouter] Added recovered node: {node_id}")
+
+        except Exception as e:
+            logger.debug(f"[SyncRouter] Error handling node recovered: {e}")
 
     async def _on_cluster_capacity_changed(self, event: Any) -> None:
         """Handle CLUSTER_CAPACITY_CHANGED event - refresh capacity data and recalculate routes.

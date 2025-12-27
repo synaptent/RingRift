@@ -1,5 +1,10 @@
 """Lambda Labs cloud provider implementation.
 
+DEPRECATED (December 2025): Lambda Labs account permanently terminated.
+This module is retained for historical reference only. All Lambda nodes
+have been removed from the cluster. Use Vast.ai, RunPod, or Nebius instead.
+
+Original description:
 Lambda provides GPU cloud instances with GH200, H100, A100, and A10 GPUs.
 Uses the Lambda Cloud API for instance management.
 
@@ -7,6 +12,15 @@ Configuration:
     Environment variable: LAMBDA_API_KEY
     Or direct initialization with api_key parameter
 """
+
+import warnings
+
+warnings.warn(
+    "Lambda Labs account terminated Dec 2025. "
+    "lambda_provider.py is deprecated. Use VastProvider, RunPodProvider, or NebiusProvider.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from __future__ import annotations
 

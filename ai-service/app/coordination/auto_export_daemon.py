@@ -24,8 +24,8 @@ December 2025: Created as part of Phase 1 automation improvements.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -93,6 +93,10 @@ class AutoExportDaemon:
         # December 2025: Deduplication guard - when StageEvent subscriptions are active,
         # skip DataEventType handlers to prevent double-counting games
         self._stage_events_active = False
+        # December 2025 Phase 3: Track configs pending sync completion.
+        # Export is gated on sync completion to prevent race conditions where
+        # export starts before data from other nodes has arrived.
+        self._pending_sync_configs: set[str] = set()
 
     async def start(self) -> None:
         """Start the auto export daemon."""
@@ -134,17 +138,15 @@ class AutoExportDaemon:
 
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
 
         # Unsubscribe from events
         for unsub in self._event_subscriptions:
             try:
                 if callable(unsub):
                     unsub()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"[AutoExportDaemon] Error unsubscribing: {e}")
 
         logger.info("[AutoExportDaemon] Stopped")
@@ -197,7 +199,7 @@ class AutoExportDaemon:
 
             logger.info(f"[AutoExportDaemon] State database initialized: {db_path}")
 
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"[AutoExportDaemon] Failed to initialize state DB: {e}")
             self._state_db_initialized = False
 
@@ -241,7 +243,7 @@ class AutoExportDaemon:
                     f"[AutoExportDaemon] Loaded {loaded_count} config states from persistence"
                 )
 
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"[AutoExportDaemon] Failed to load state: {e}")
 
     def _save_state(self, config_key: str) -> None:
@@ -283,7 +285,7 @@ class AutoExportDaemon:
 
                 conn.commit()
 
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.debug(f"[AutoExportDaemon] Failed to save state for {config_key}: {e}")
 
     # ========== Event Subscriptions ==========
@@ -331,7 +333,12 @@ class AutoExportDaemon:
             logger.warning("[AutoExportDaemon] Data events not available")
 
     async def _on_selfplay_complete(self, result: Any) -> None:
-        """Handle selfplay completion event."""
+        """Handle selfplay completion event.
+
+        December 2025 Phase 3: Mark config as pending sync before recording games.
+        This prevents export from starting before sync has completed, avoiding
+        race conditions where export uses incomplete data.
+        """
         try:
             # Extract config info from result
             board_type = getattr(result, "board_type", None)
@@ -349,9 +356,17 @@ class AutoExportDaemon:
                 return
 
             config_key = f"{board_type}_{num_players}p"
+
+            # Phase 3: Mark config as pending sync - export will wait for DATA_SYNC_COMPLETED
+            self._pending_sync_configs.add(config_key)
+            logger.debug(
+                f"[AutoExportDaemon] {config_key}: Marked as pending sync "
+                "(export gated on DATA_SYNC_COMPLETED)"
+            )
+
             await self._record_games(config_key, board_type, num_players, games_generated)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoExportDaemon] Error handling selfplay complete: {e}")
 
     async def _on_sync_complete(self, result: Any) -> None:
@@ -378,7 +393,7 @@ class AutoExportDaemon:
             )
             await self._record_games(config_key, board_type, num_players, games_synced)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoExportDaemon] Error handling sync complete: {e}")
 
     async def _on_new_games(self, event: Any) -> None:
@@ -393,7 +408,7 @@ class AutoExportDaemon:
                 config_key = f"{board_type}_{num_players}p"
                 await self._record_games(config_key, board_type, num_players, new_games)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoExportDaemon] Error handling new games event: {e}")
 
     async def _on_selfplay_complete_event(self, event: Any) -> None:
@@ -423,11 +438,15 @@ class AutoExportDaemon:
                 return
 
             await self._record_games(config_key, board_type, num_players, games_generated)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoExportDaemon] Error handling SELFPLAY_COMPLETE event: {e}")
 
     async def _on_data_sync_completed(self, event: Any) -> None:
-        """Handle DATA_SYNC_COMPLETED data events."""
+        """Handle DATA_SYNC_COMPLETED data events.
+
+        December 2025 Phase 3: Clear pending sync flag and allow export to proceed.
+        This completes the sync-gating mechanism that prevents export race conditions.
+        """
         try:
             payload = getattr(event, "payload", {}) or {}
             config_key = payload.get("config") or payload.get("config_key")
@@ -439,8 +458,17 @@ class AutoExportDaemon:
             if not board_type or not num_players:
                 return
 
+            # Phase 3: Clear pending sync flag - export can now proceed safely
+            was_pending = config_key in self._pending_sync_configs
+            self._pending_sync_configs.discard(config_key)
+            if was_pending:
+                logger.info(
+                    f"[AutoExportDaemon] {config_key}: Sync completed, export now allowed "
+                    f"({games_synced} games synced)"
+                )
+
             await self._record_games(config_key, board_type, num_players, games_synced)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoExportDaemon] Error handling DATA_SYNC_COMPLETED event: {e}")
 
     def _parse_config_key(self, config_key: str) -> tuple[str | None, int | None]:
@@ -488,6 +516,15 @@ class AutoExportDaemon:
         """Check conditions and trigger export if appropriate."""
         state = self._export_states.get(config_key)
         if not state:
+            return
+
+        # Phase 3: Check if sync is still pending for this config
+        # Export is gated on DATA_SYNC_COMPLETED to prevent race conditions
+        if config_key in self._pending_sync_configs:
+            logger.debug(
+                f"[AutoExportDaemon] {config_key}: Export deferred - waiting for sync completion "
+                f"(games pending: {state.games_since_last_export})"
+            )
             return
 
         # Check if already exporting
@@ -612,7 +649,7 @@ class AutoExportDaemon:
                     )
                     return False
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 state.consecutive_failures += 1
                 logger.error(f"[AutoExportDaemon] Export error for {config_key}: {e}")
                 return False
@@ -647,8 +684,8 @@ class AutoExportDaemon:
         """Emit NPZ_EXPORT_STARTED event."""
         try:
             from app.coordination.event_router import (
-                StageEvent,
                 StageCompletionResult,
+                StageEvent,
                 get_stage_event_bus,
             )
 
@@ -673,7 +710,7 @@ class AutoExportDaemon:
             )
             logger.debug(f"[AutoExportDaemon] Emitted NPZ_EXPORT_STARTED for {config_key}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"[AutoExportDaemon] Failed to emit export started event: {e}")
 
     async def _emit_export_complete(
@@ -682,8 +719,8 @@ class AutoExportDaemon:
         """Emit NPZ_EXPORT_COMPLETE event."""
         try:
             from app.coordination.event_router import (
-                StageEvent,
                 StageCompletionResult,
+                StageEvent,
                 get_stage_event_bus,
             )
 
@@ -711,7 +748,7 @@ class AutoExportDaemon:
             )
             logger.debug(f"[AutoExportDaemon] Emitted NPZ_EXPORT_COMPLETE for {config_key}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"[AutoExportDaemon] Failed to emit export complete event: {e}")
 
     async def _monitor_loop(self) -> None:
@@ -726,7 +763,7 @@ class AutoExportDaemon:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"[AutoExportDaemon] Monitor loop error: {e}")
                 await asyncio.sleep(60)
 
@@ -763,7 +800,7 @@ class AutoExportDaemon:
 
         except ImportError:
             logger.debug("[AutoExportDaemon] GameDiscovery not available")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoExportDaemon] Error scanning databases: {e}")
 
     def get_status(self) -> dict[str, Any]:
@@ -790,7 +827,7 @@ class AutoExportDaemon:
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
         if not self._running:
             return HealthCheckResult(

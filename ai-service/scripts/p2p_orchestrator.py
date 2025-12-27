@@ -89,7 +89,7 @@ def get_auto_scaler():
         except ImportError:
             logger.debug("[P2P] auto_scaler module not available")
             _auto_scaler = None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"[P2P] Failed to initialize auto_scaler: {e}")
             _auto_scaler = None
     return _auto_scaler
@@ -258,7 +258,7 @@ def get_loop_manager() -> "LoopManager | None":
             from scripts.p2p.loops import LoopManager
             _loop_manager_instance = LoopManager(name="p2p_loops")
             logger.info("LoopManager: initialized for extracted background loops")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"LoopManager: failed to initialize: {e}")
             return None
     return _loop_manager_instance
@@ -352,7 +352,7 @@ async def _emit_p2p_host_offline(node_id: str, reason: str = "timeout", last_see
             source="p2p_orchestrator",
         )
         logger.debug(f"[P2P Event] Emitted HOST_OFFLINE for {node_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit HOST_OFFLINE: {e}")
 
 
@@ -374,7 +374,7 @@ async def _emit_p2p_host_online(node_id: str, capabilities: list[str] | None = N
             source="p2p_orchestrator",
         )
         logger.debug(f"[P2P Event] Emitted HOST_ONLINE for {node_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit HOST_ONLINE: {e}")
 
 
@@ -396,7 +396,7 @@ async def _emit_p2p_leader_elected(leader_id: str, term: int = 0) -> None:
             source="p2p_orchestrator",
         )
         logger.info(f"[P2P Event] Emitted LEADER_ELECTED for {leader_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit LEADER_ELECTED: {e}")
 
 
@@ -421,7 +421,7 @@ async def _emit_p2p_leader_lost(old_leader_id: str, reason: str = "") -> None:
             source="p2p_orchestrator",
         )
         logger.info(f"[P2P Event] Emitted LEADER_LOST for {old_leader_id} (reason: {reason})")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit LEADER_LOST: {e}")
 
 
@@ -481,6 +481,66 @@ def _emit_p2p_host_online_sync(node_id: str, capabilities: list[str] | None = No
         pass
 
 
+async def _emit_p2p_node_dead(
+    node_id: str,
+    reason: str = "timeout",
+    last_seen: float | None = None,
+    offline_duration_seconds: float = 0.0,
+) -> None:
+    """Emit P2P_NODE_DEAD event when a node is confirmed dead (not just offline).
+
+    December 2025: This is distinct from HOST_OFFLINE - it indicates a node that
+    has failed multiple heartbeats and is confirmed dead. Subscribers use this
+    to reassign work and update node availability tracking.
+
+    Args:
+        node_id: The confirmed dead node ID
+        reason: Why node is considered dead (timeout, retired, error)
+        last_seen: Timestamp when node was last seen
+        offline_duration_seconds: How long the node has been offline
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        from app.coordination.event_emitters import emit_p2p_node_dead
+        await emit_p2p_node_dead(
+            node_id=node_id,
+            reason=reason,
+            last_seen=last_seen,
+            offline_duration_seconds=offline_duration_seconds,
+            source="p2p_orchestrator",
+        )
+        logger.info(f"[P2P Event] Emitted P2P_NODE_DEAD for {node_id} (reason: {reason})")
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[P2P Event] Failed to emit P2P_NODE_DEAD: {e}")
+
+
+def _emit_p2p_node_dead_sync(
+    node_id: str,
+    reason: str = "timeout",
+    last_seen: float | None = None,
+    offline_duration_seconds: float = 0.0,
+) -> None:
+    """Synchronous version: emit P2P_NODE_DEAD via fire-and-forget task.
+
+    For use in sync code paths like _check_dead_peers().
+    """
+    if not _check_event_emitters():
+        return
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(
+                _emit_p2p_node_dead(node_id, reason, last_seen, offline_duration_seconds)
+            )
+        else:
+            pass
+    except RuntimeError:
+        pass
+
+
 async def _emit_cluster_capacity_changed(
     change_type: str,
     node_id: str,
@@ -518,7 +578,7 @@ async def _emit_cluster_capacity_changed(
                 f"[P2P Event] Emitted CLUSTER_CAPACITY_CHANGED: {change_type} "
                 f"node={node_id}, total={total_nodes}, gpu={gpu_nodes}"
             )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit CLUSTER_CAPACITY_CHANGED: {e}")
 
 
@@ -574,7 +634,7 @@ async def _emit_task_abandoned(
         logger.debug(f"[P2P Event] Emitted TASK_ABANDONED for {task_id}")
     except ImportError:
         pass  # Event emitters not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit TASK_ABANDONED: {e}")
 
 
@@ -605,7 +665,7 @@ async def _emit_data_sync_started(
         logger.debug(f"[P2P Event] Emitted DATA_SYNC_STARTED for {host} ({sync_type})")
     except ImportError:
         pass  # Data events module not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_STARTED: {e}")
 
 
@@ -645,7 +705,7 @@ async def _emit_data_sync_completed(
         )
     except ImportError:
         pass  # Data events module not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_COMPLETED: {e}")
 
 
@@ -682,7 +742,7 @@ async def _emit_data_sync_failed(
         )
     except ImportError:
         pass  # Data events module not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit DATA_SYNC_FAILED: {e}")
 
 
@@ -716,7 +776,7 @@ async def _emit_model_distribution_started(
         )
     except ImportError:
         pass  # Data events module not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_STARTED: {e}")
 
 
@@ -756,7 +816,7 @@ async def _emit_model_distribution_complete(
         )
     except ImportError:
         pass  # Data events module not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_COMPLETE: {e}")
 
 
@@ -790,7 +850,7 @@ async def _emit_model_distribution_failed(
         )
     except ImportError:
         pass  # Data events module not available
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_FAILED: {e}")
 
 
@@ -1532,7 +1592,7 @@ class WebhookNotifier:
                     async with session.post(self.slack_webhook, json=slack_payload) as resp:
                         if resp.status != 200:
                             logger.warning(f"[Webhook] Slack alert failed: {resp.status}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"[Webhook] Slack error: {e}")
 
             # Send to Discord
@@ -1556,10 +1616,10 @@ class WebhookNotifier:
                     async with session.post(self.discord_webhook, json=discord_payload) as resp:
                         if resp.status not in (200, 204):
                             logger.warning(f"[Webhook] Discord alert failed: {resp.status}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"[Webhook] Discord error: {e}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[Webhook] Alert send error: {e}")
 
     async def close(self):
@@ -1706,7 +1766,7 @@ class P2POrchestrator(
             if token_file:
                 try:
                     token = Path(token_file).read_text().strip()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.info(f"Auth: failed to read {AUTH_TOKEN_FILE_ENV}={token_file}: {e}")
 
         self.auth_token = token.strip()
@@ -1810,7 +1870,7 @@ class P2POrchestrator(
                     ringrift_path=self.ringrift_path,
                 )
                 logger.info("ImprovementCycleManager initialized")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to initialize ImprovementCycleManager: {e}")
         self.last_improvement_cycle_check: float = 0.0
 
@@ -1825,7 +1885,7 @@ class P2POrchestrator(
                     config_dir=Path(self.ringrift_path) / "monitoring",
                 )
                 logger.info("MonitoringManager initialized")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to initialize MonitoringManager: {e}")
         self._monitoring_was_leader = False  # Track leadership changes
         self.improvement_cycle_check_interval: float = 600.0  # Check every 10 minutes
@@ -1896,7 +1956,7 @@ class P2POrchestrator(
                     sync_interval=300,  # Sync every 5 minutes
                 )
                 logger.info(f"EloSyncManager initialized (db: {db_path})")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to initialize EloSyncManager: {e}")
 
         # Queue Populator - Maintains 50+ work items until 2000 Elo target met
@@ -1915,7 +1975,7 @@ class P2POrchestrator(
                         recency_weight=0.15,
                     )
                 logger.info(f"PFSP opponent pools initialized for {len(self.pfsp_pools)} configs")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to initialize PFSP pools: {e}")
 
         # CMA-ES Auto-Tuner (leader-only)
@@ -1937,7 +1997,7 @@ class P2POrchestrator(
                         max_auto_tunes=3,
                     )
                 logger.info(f"CMA-ES auto-tuners initialized for {len(self.cmaes_auto_tuners)} configs")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to initialize CMA-ES auto-tuners: {e}")
 
         # Locks for thread safety
@@ -2017,7 +2077,7 @@ class P2POrchestrator(
                 raft_ok = self._init_raft_consensus()
                 if raft_ok:
                     logger.info("Raft consensus initialized (will sync with peers in run())")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Early Raft initialization failed (will retry later): {e}")
 
         # State persistence (Phase 1 refactoring: delegated to StateManager)
@@ -2220,7 +2280,7 @@ class P2POrchestrator(
             try:
                 self.hybrid_transport = get_hybrid_transport()
                 logger.info("HybridTransport: enabled (HTTP with SSH fallback for Vast)")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"HybridTransport: failed to initialize: {e}")
 
         # SWIM-based leaderless membership (gossip protocol)
@@ -2315,7 +2375,7 @@ class P2POrchestrator(
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
             return True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"LoopManager: failed to register loops: {e}")
             return False
 
@@ -2327,7 +2387,7 @@ class P2POrchestrator(
             try:
                 self._sync_router = get_sync_router()
                 logger.info("SyncRouter: initialized for intelligent data routing")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"SyncRouter: failed to initialize: {e}")
                 return None
         return self._sync_router
@@ -2345,7 +2405,7 @@ class P2POrchestrator(
                 self._sync_router_wired = True
                 logger.info("SyncRouter: wired to event system")
                 return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"SyncRouter: failed to wire events: {e}")
         return False
 
@@ -2375,7 +2435,7 @@ class P2POrchestrator(
         except ImportError as e:
             logger.debug(f"Feedback loops: curriculum_integration not available: {e}")
             return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Feedback loops: failed to wire: {e}")
             return False
 
@@ -2416,7 +2476,7 @@ class P2POrchestrator(
                         logger.warning(
                             f"Daemon {daemon_name} on {hostname} {new_status}: {error}"
                         )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling daemon status event: {e}")
 
             subscribe("DAEMON_STATUS_CHANGED", handle_daemon_status)
@@ -2425,7 +2485,7 @@ class P2POrchestrator(
         except ImportError as e:
             logger.debug(f"Daemon events: event_router not available: {e}")
             return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Daemon events: failed to subscribe: {e}")
             return False
 
@@ -2457,7 +2517,7 @@ class P2POrchestrator(
                         f"Quality degraded for {config_key}: {quality_score:.2f} < {threshold:.2f}"
                     )
                     # Could pause selfplay for this config or trigger data cleanup
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling quality degraded event: {e}")
 
             def handle_elo_velocity_changed(event) -> None:
@@ -2471,7 +2531,7 @@ class P2POrchestrator(
                         logger.warning(f"Elo regression for {config_key}: velocity={velocity}")
                     elif velocity > 50:  # Good progress
                         logger.info(f"Elo progress for {config_key}: velocity={velocity}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling Elo velocity event: {e}")
 
             def handle_evaluation_completed(event) -> None:
@@ -2485,7 +2545,7 @@ class P2POrchestrator(
                     logger.info(
                         f"Evaluation completed for {config_key}: {win_rate:.1%} vs {opponent}"
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling evaluation completed event: {e}")
 
             def handle_plateau_detected(event) -> None:
@@ -2498,7 +2558,7 @@ class P2POrchestrator(
                     logger.warning(
                         f"Training plateau for {config_key}: stalled {epochs_stalled} epochs"
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling plateau detected event: {e}")
 
             def handle_exploration_boost(event) -> None:
@@ -2526,7 +2586,7 @@ class P2POrchestrator(
                         self.selfplay_scheduler.set_exploration_boost(
                             config_key, boost_factor, duration
                         )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling exploration boost event: {e}")
 
             # Subscribe to all feedback signals
@@ -2541,7 +2601,7 @@ class P2POrchestrator(
         except ImportError as e:
             logger.debug(f"Feedback signals: event_router not available: {e}")
             return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Feedback signals: failed to subscribe: {e}")
             return False
 
@@ -2573,7 +2633,7 @@ class P2POrchestrator(
                         "node_id": node_id,
                         "started_at": time.time(),
                     }
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling training started event: {e}")
 
             def handle_training_completed(event) -> None:
@@ -2593,7 +2653,7 @@ class P2POrchestrator(
                     # Trigger selfplay allocation refresh
                     if hasattr(self, "selfplay_scheduler"):
                         self.selfplay_scheduler.on_training_complete(config_key)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling training completed event: {e}")
 
             def handle_task_spawned(event) -> None:
@@ -2604,7 +2664,7 @@ class P2POrchestrator(
                     job_type = payload.get("job_type", "unknown")
                     node_id = payload.get("node_id", "unknown")
                     logger.debug(f"[P2P] Task spawned: {job_type} {job_id} on {node_id}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling task spawned event: {e}")
 
             def handle_task_completed(event) -> None:
@@ -2615,7 +2675,7 @@ class P2POrchestrator(
                     job_type = payload.get("job_type", "unknown")
                     duration = payload.get("duration", 0)
                     logger.debug(f"[P2P] Task completed: {job_type} {job_id} ({duration:.1f}s)")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling task completed event: {e}")
 
             def handle_task_failed(event) -> None:
@@ -2627,7 +2687,7 @@ class P2POrchestrator(
                     error = payload.get("error", "unknown error")
                     logger.warning(f"[P2P] Task failed: {job_type} {job_id} - {error}")
                     # Could trigger recovery or rebalancing here
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling task failed event: {e}")
 
             def handle_data_sync_started(event) -> None:
@@ -2637,7 +2697,7 @@ class P2POrchestrator(
                     sync_type = payload.get("sync_type", "unknown")
                     target_count = payload.get("target_nodes", 0)
                     logger.info(f"[P2P] Data sync started: {sync_type} to {target_count} nodes")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling data sync started event: {e}")
 
             def handle_data_sync_completed(event) -> None:
@@ -2652,7 +2712,7 @@ class P2POrchestrator(
                         f"({files_synced} files in {duration:.1f}s)"
                     )
                     # Could trigger training readiness check here
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling data sync completed event: {e}")
 
             # P2P Health event handlers (Dec 2025)
@@ -2666,7 +2726,7 @@ class P2POrchestrator(
                     # Mark node as unhealthy for job routing
                     if hasattr(self, "node_selector") and self.node_selector:
                         self.node_selector.mark_node_unhealthy(node_id, reason)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling node unhealthy event: {e}")
 
             def handle_node_recovered(event) -> None:
@@ -2678,7 +2738,7 @@ class P2POrchestrator(
                     # Mark node as healthy for job routing
                     if hasattr(self, "node_selector") and self.node_selector:
                         self.node_selector.mark_node_healthy(node_id)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling node recovered event: {e}")
 
             def handle_cluster_healthy(event) -> None:
@@ -2686,7 +2746,7 @@ class P2POrchestrator(
                 try:
                     logger.info("[P2P] Cluster is healthy - resuming normal operations")
                     self._cluster_health_degraded = False
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling cluster healthy event: {e}")
 
             def handle_cluster_unhealthy(event) -> None:
@@ -2699,7 +2759,7 @@ class P2POrchestrator(
                         f"[P2P] Cluster unhealthy: {reason} (alive_nodes={alive_nodes})"
                     )
                     self._cluster_health_degraded = True
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling cluster unhealthy event: {e}")
 
             # Subscribe to all manager events
@@ -2722,7 +2782,7 @@ class P2POrchestrator(
         except ImportError as e:
             logger.debug(f"Manager events: event_router not available: {e}")
             return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Manager events: failed to subscribe: {e}")
             return False
 
@@ -2826,7 +2886,7 @@ class P2POrchestrator(
             # This prevents "Task exception was never retrieved" log pollution
             logger.debug(f"Task '{task_name}' received SystemExit (orchestrator shutdown)")
             return
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Log but don't propagate - other tasks continue running
             logger.error(f"Task '{task_name}' crashed: {e}", exc_info=True)
             # Optionally restart the task after a delay
@@ -3148,7 +3208,7 @@ class P2POrchestrator(
                 return voters
         except ImportError:
             logger.debug("[P2P] cluster_config not available, falling back to direct YAML load")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"[P2P] Failed to load voters via cluster_config: {e}")
 
         # Priority 3: Fallback - direct YAML load for legacy compatibility
@@ -3837,7 +3897,7 @@ class P2POrchestrator(
                 try:
                     info = NodeInfo.from_dict(info_dict)
                     self.peers[node_id] = info
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to load peer {node_id}: {e}")
 
             # Apply loaded jobs
@@ -3855,7 +3915,7 @@ class P2POrchestrator(
                         status=job_dict.get("status", "running"),
                     )
                     self.local_jobs[job.job_id] = job
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to load job: {e}")
 
             # Apply leader state
@@ -3900,7 +3960,7 @@ class P2POrchestrator(
                 self.last_lease_renewal = 0.0
 
             logger.info(f"Loaded state: {len(self.peers)} peers, {len(self.local_jobs)} jobs")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load state: {e}")
 
     def _save_state(self):
@@ -3935,7 +3995,7 @@ class P2POrchestrator(
                 peers_lock=self.peers_lock,
                 jobs_lock=self.jobs_lock,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to save state: {e}")
 
     # =========================================================================
@@ -4063,7 +4123,7 @@ class P2POrchestrator(
                     "metadata": json.loads(row[4]) if row[4] else None,
                 })
             return results
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to get metrics history: {e}")
             return []
         finally:
@@ -4109,7 +4169,7 @@ class P2POrchestrator(
                     summary[row[0]]["latest_time"] = row[2]
 
             return {"period_hours": hours, "since": since, "metrics": summary}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to get metrics summary: {e}")
             return {}
         finally:
@@ -4392,7 +4452,7 @@ class P2POrchestrator(
                 # Silently ignore nvidia-smi errors (not all nodes have GPUs)
                 pass
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Resource check error: {e}")
 
         return result
@@ -4459,7 +4519,7 @@ class P2POrchestrator(
                 except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError):
                     pass
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"External work detection error: {e}")
 
         return result
@@ -4628,7 +4688,7 @@ class P2POrchestrator(
                     except (ValueError, subprocess.TimeoutExpired):
                         continue
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"Error checking pattern {pattern}: {e}")
                 continue
 
@@ -4671,7 +4731,7 @@ class P2POrchestrator(
                 while chunk := f.read(chunk_size):
                     md5.update(chunk)
             return md5.hexdigest()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"hashing file {file_path}: {e}")
             return ""
 
@@ -4708,7 +4768,7 @@ class P2POrchestrator(
             else:
                 # If no loop is running, use asyncio.run
                 return asyncio.run(self._request_peer_manifest(peer_info))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to request manifest from {peer_id}: {e}")
             return None
 
@@ -4729,7 +4789,7 @@ class P2POrchestrator(
                         return NodeDataManifest.from_dict((data or {}).get("manifest", {}))
                     except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                         continue
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"requesting manifest from {peer_info.node_id}: {e}")
         return None
 
@@ -4909,7 +4969,7 @@ class P2POrchestrator(
                                     continue
                                 result = await resp.json()
                                 break
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             last_err = str(e)
                             continue
                     if result is None:
@@ -4935,7 +4995,7 @@ class P2POrchestrator(
 
             return ok
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             job.status = "failed"
             job.error_message = str(e)
             job.completed_at = time.time()
@@ -5063,7 +5123,7 @@ class P2POrchestrator(
                                 success = True
                                 break
 
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             last_err = str(e)
                             continue
                     if success:
@@ -5170,7 +5230,7 @@ class P2POrchestrator(
 
             logger.error(f"Failed to dispatch gauntlet to {cpu_node.node_id}")
             return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"dispatching gauntlet: {e}")
             return None
 
@@ -5229,12 +5289,12 @@ class P2POrchestrator(
                             freed_bytes = result.get("freed_bytes", 0)
                             logger.info(f"Cleanup on {node_id}: freed {freed_bytes / 1e6:.1f}MB")
                             return True
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         last_err = str(e)
                         continue
                 if last_err:
                     logger.info(f"Cleanup files request failed on {node_id}: {last_err}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to cleanup files on {node_id}: {e}")
         return False
 
@@ -5268,8 +5328,15 @@ class P2POrchestrator(
             self.last_training_sync_time = time.time()
             # Refresh manifest after sync
             if not manifest:
-                self.cluster_data_manifest = await self._collect_cluster_manifest()
-                self.last_manifest_collection = time.time()
+                # Dec 2025: Add 5-minute timeout for manifest collection
+                try:
+                    self.cluster_data_manifest = await asyncio.wait_for(
+                        self._collect_cluster_manifest(),
+                        timeout=300.0  # 5 minutes max
+                    )
+                    self.last_manifest_collection = time.time()
+                except asyncio.TimeoutError:
+                    logger.warning("Post-sync manifest collection timed out after 5 minutes")
 
         return result
 
@@ -5289,7 +5356,7 @@ class P2POrchestrator(
                     job.completed_at = time.time()
                 else:
                     job.status = "failed"
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Sync job {job.job_id} failed: {e}")
                 job.status = "failed"
                 job.error_message = str(e)
@@ -5329,7 +5396,15 @@ class P2POrchestrator(
                     source="p2p_training_sync_loop",
                 )
 
-                result = await self._sync_selfplay_to_training_nodes()
+                # Dec 2025: Add 10-minute timeout budget to prevent indefinite hangs
+                try:
+                    result = await asyncio.wait_for(
+                        self._sync_selfplay_to_training_nodes(),
+                        timeout=600.0  # 10 minutes max
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Training sync timed out after 10 minutes")
+                    result = {"success": False, "error": "Sync timeout after 600s"}
                 sync_duration = time.time() - sync_start_time
 
                 if result.get("success"):
@@ -5356,7 +5431,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Training sync loop error: {e}")
                 await asyncio.sleep(60)  # Wait before retrying
 
@@ -5385,7 +5460,7 @@ class P2POrchestrator(
             if updated > 0:
                 logger.info(f"Tailscale refresh: {updated} IPs updated")
                 total_updated += updated
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Tailscale refresh error: {e}")
 
         # Refresh Vast IPs
@@ -5395,7 +5470,7 @@ class P2POrchestrator(
             if updated > 0:
                 logger.info(f"Vast refresh: {updated} IPs updated")
                 total_updated += updated
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Vast refresh error: {e}")
 
         # Refresh AWS IPs
@@ -5405,7 +5480,7 @@ class P2POrchestrator(
             if updated > 0:
                 logger.info(f"AWS refresh: {updated} IPs updated")
                 total_updated += updated
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"AWS refresh error: {e}")
 
         if total_updated > 0:
@@ -5434,7 +5509,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Vast IP update loop error: {e}")
                 await asyncio.sleep(60)
 
@@ -5460,7 +5535,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"AWS IP update loop error: {e}")
                 await asyncio.sleep(60)
 
@@ -5486,7 +5561,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Tailscale IP update loop error: {e}")
                 await asyncio.sleep(60)
 
@@ -5544,7 +5619,7 @@ class P2POrchestrator(
                     if result.returncode != 0:
                         continue
                     ts_data = json.loads(result.stdout)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Tailscale status failed: {e}")
                     continue
 
@@ -5591,12 +5666,12 @@ class P2POrchestrator(
                                         logger.info(f"  Connected to {node_id}, sending join request")
                                         # Send heartbeat to register
                                         await self._send_heartbeat_to_peer(ip, DEFAULT_PORT)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.debug(f"  Failed to connect to {hostname}: {e}")
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Tailscale peer recovery loop error: {e}")
                 await asyncio.sleep(60)
 
@@ -5680,7 +5755,7 @@ class P2POrchestrator(
 
         except FileNotFoundError:
             logger.debug("Tailscale not installed on this node")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Tailscale discovery error: {e}")
 
     async def _convert_jsonl_to_db(self, data_dir: Path, games_dir: Path) -> int:
@@ -5761,7 +5836,7 @@ class P2POrchestrator(
                         stderr=subprocess.STDOUT,
                         cwd=str(self.ringrift_path / "ai-service"),
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to spawn background converter: {e}")
 
         # Group files by board type
@@ -5872,7 +5947,7 @@ class P2POrchestrator(
                             games_added += len(chunk_buffer)
 
                         newly_converted.append(file_key)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"converting {jsonl_file.name}: {e}")
                         continue
 
@@ -5882,7 +5957,7 @@ class P2POrchestrator(
                 if games_added > 0:
                     logger.info(f"Converted {games_added} games to {db_path.name}")
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"creating DB for {board_key}: {e}")
             finally:
                 if conn:
@@ -6034,7 +6109,7 @@ class P2POrchestrator(
                     logger.info(f"JSONL→NPZ conversion failed for {config_key}: {result.stderr[:200] if result.stderr else 'no error'}")
             except subprocess.TimeoutExpired:
                 logger.info(f"JSONL→NPZ conversion timeout for {config_key}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"JSONL→NPZ conversion error for {config_key}: {e}")
 
         # Update marker file
@@ -6183,7 +6258,7 @@ class P2POrchestrator(
                                 current_exports += 1
                                 logger.info(f"Started export job for {db_file.name}")
 
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 logger.error(f"Failed to start export for {db_file.name}: {e}")
 
                 # 2. Calculate total training data size
@@ -6211,7 +6286,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Data management loop error: {e}")
                 import traceback
                 traceback.print_exc()
@@ -6277,7 +6352,7 @@ class P2POrchestrator(
 
                         return collected, distributed, errors, total_models, len(hosts)
 
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         return 0, 0, [str(e)], 0, 0
 
                 # Get estimated host count for started event
@@ -6345,7 +6420,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Model sync loop error: {e}")
                 import traceback
                 traceback.print_exc()
@@ -6506,7 +6581,7 @@ class P2POrchestrator(
                         asyncio.get_event_loop().call_later(
                             1800, lambda: setattr(self, "_npz_export_running", False)
                         )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.info(f"NPZ export check error: {e}")
 
             # --- PART 2: Merge job DBs (CPU selfplay output) ---
@@ -6550,7 +6625,7 @@ class P2POrchestrator(
                     )
                     logger.info(f"Started DB merge (PID: {proc.pid})")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Data consolidation error: {e}")
 
     async def _start_auto_training(self, data_path: str):
@@ -6583,7 +6658,7 @@ class P2POrchestrator(
             logger.info(f"Started auto-training job in {run_dir}")
             self.self_info.training_jobs += 1
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start auto-training: {e}")
 
     async def _request_data_from_peers(self):
@@ -6683,7 +6758,7 @@ class P2POrchestrator(
 
                 except subprocess.TimeoutExpired:
                     logger.info(f"Timeout checking training data on {host_name}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"syncing from {host_name}: {e}")
 
             if synced_from:
@@ -6695,7 +6770,7 @@ class P2POrchestrator(
 
             self._last_training_data_sync = time.time()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Data sync request error: {e}")
             import traceback
             traceback.print_exc()
@@ -6714,7 +6789,7 @@ class P2POrchestrator(
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to get local git commit: {e}")
         return None
 
@@ -6728,7 +6803,7 @@ class P2POrchestrator(
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to get local git branch: {e}")
         return None
 
@@ -6753,7 +6828,7 @@ class P2POrchestrator(
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to get remote git commit: {e}")
         return None
 
@@ -6781,7 +6856,7 @@ class P2POrchestrator(
             )
             if result.returncode == 0:
                 return int(result.stdout.strip())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to count commits behind: {e}")
         return 0
 
@@ -6803,7 +6878,7 @@ class P2POrchestrator(
             if result.returncode == 0:
                 # If there's output, there are uncommitted changes
                 return bool(result.stdout.strip())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to check local changes: {e}")
         return True  # Assume changes exist on error (safer)
 
@@ -6824,7 +6899,7 @@ class P2POrchestrator(
                 except ProcessLookupError:
                     # Process already gone
                     job.status = "stopped"
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to stop job {job_id}: {e}")
 
         # Wait for processes to terminate gracefully
@@ -6877,7 +6952,7 @@ class P2POrchestrator(
 
         except subprocess.TimeoutExpired:
             return False, "Git pull timed out"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return False, f"Git pull error: {e}"
 
     async def _restart_orchestrator(self):
@@ -6932,7 +7007,7 @@ class P2POrchestrator(
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Git update loop error: {e}")
                 await asyncio.sleep(60)  # Wait before retry on error
 
@@ -7055,7 +7130,7 @@ class P2POrchestrator(
                 payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
                 payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
             return web.json_response(payload)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_status(self, request: web.Request) -> web.Response:
@@ -7123,7 +7198,7 @@ class P2POrchestrator(
         if self.improvement_cycle_manager:
             try:
                 improvement_status = self.improvement_cycle_manager.get_status()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 improvement_status = {"error": str(e)}
 
         # Get diversity metrics (delegated to SelfplayScheduler)
@@ -7149,23 +7224,23 @@ class P2POrchestrator(
         node_recovery = self._get_node_recovery_metrics()
         try:
             leader_consensus = self._get_cluster_leader_consensus()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             leader_consensus = {"error": str(e)}
         try:
             peer_reputation = self._get_cluster_peer_reputation()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             peer_reputation = {"error": str(e)}
         try:
             sync_intervals = self._get_sync_interval_summary()  # ADAPTIVE SYNC INTERVALS
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             sync_intervals = {"error": str(e)}
         try:
             tournament_scheduling = self._get_distributed_tournament_summary()  # DISTRIBUTED TOURNAMENTS
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             tournament_scheduling = {"error": str(e)}
         try:
             data_dedup = self._get_dedup_summary()  # DATA DEDUPLICATION
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             data_dedup = {"error": str(e)}
 
         # Phase 5: SWIM/Raft protocol status (Dec 26, 2025)
@@ -7354,7 +7429,7 @@ class P2POrchestrator(
                 "node_id": self.node_id,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error processing Serf event: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
@@ -7543,7 +7618,7 @@ class P2POrchestrator(
                 "peer_count": len(alive_peers),
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error getting SWIM status: {e}")
             return web.json_response({
                 "status": "error",
@@ -7594,7 +7669,7 @@ class P2POrchestrator(
                                 self.peers[peer_id]["last_seen"] = now
                                 self.peers[peer_id]["swim_alive"] = True
 
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"SWIM sync error: {e}")
 
                 await asyncio.sleep(10)  # Sync every 10 seconds
@@ -7602,13 +7677,13 @@ class P2POrchestrator(
         except asyncio.CancelledError:
             logger.info("SWIM membership loop: cancelled")
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"SWIM membership loop error: {e}", exc_info=True)
         finally:
             if self._swim_manager and self._swim_started:
                 try:
                     await self._swim_manager.stop()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Error stopping SWIM manager: {e}")
                 self._swim_started = False
 
@@ -7702,7 +7777,7 @@ class P2POrchestrator(
 
             self._save_state()
             return web.json_response({"accepted": True})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_start_job(self, request: web.Request) -> web.Response:
@@ -7741,7 +7816,7 @@ class P2POrchestrator(
                 return web.json_response({"success": True, "job": job.to_dict()})
             else:
                 return web.json_response({"success": False, "error": "Failed to start job"}, status=500)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_stop_job(self, request: web.Request) -> web.Response:
@@ -7761,7 +7836,7 @@ class P2POrchestrator(
                     return web.json_response({"success": True})
 
             return web.json_response({"success": False, "error": "Job not found"}, status=404)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_job_kill(self, request: web.Request) -> web.Response:
@@ -7788,7 +7863,7 @@ class P2POrchestrator(
                             job.status = "killed"
                             killed += 1
                             logger.info(f"Killed job {job_id} (pid {job.pid}): {reason}")
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"Failed to kill job {job_id}: {e}")
 
             # Kill by job_type pattern (for stuck training, etc.)
@@ -7808,7 +7883,7 @@ class P2POrchestrator(
                         if result.returncode == 0:
                             killed += 1
                             logger.info(f"Killed processes matching '{pattern}': {reason}")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.info(f"pkill error for {pattern}: {e}")
 
             return web.json_response({
@@ -7817,7 +7892,7 @@ class P2POrchestrator(
                 "reason": reason,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_cleanup(self, request: web.Request) -> web.Response:
@@ -7839,7 +7914,7 @@ class P2POrchestrator(
                 "disk_percent_before": usage["disk_percent"],
                 "message": "Cleanup initiated",
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_restart_stuck_jobs(self, request: web.Request) -> web.Response:
@@ -7858,7 +7933,7 @@ class P2POrchestrator(
                 "success": True,
                 "message": "Stuck job restart initiated",
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_reduce_selfplay(self, request: web.Request) -> web.Response:
@@ -7878,7 +7953,7 @@ class P2POrchestrator(
 
             result = await self._reduce_local_selfplay_jobs(target, reason=reason)
             return web.json_response({"success": True, **result})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=400)
 
     async def handle_selfplay_start(self, request: web.Request) -> web.Response:
@@ -7924,7 +7999,7 @@ class P2POrchestrator(
                 "num_games": num_games,
                 "node_id": self.node_id,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start selfplay: {e}")
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
@@ -7969,7 +8044,7 @@ class P2POrchestrator(
                         resolved.unlink()
                         freed_bytes += size
                         deleted_count += 1
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to delete {file_path}: {e}")
 
             logger.info(f"Cleanup complete: {deleted_count} files, {freed_bytes / 1e6:.1f}MB freed")
@@ -7979,7 +8054,7 @@ class P2POrchestrator(
                 "freed_bytes": freed_bytes,
                 "deleted_count": deleted_count,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_purge_retired_peers(self, request: web.Request) -> web.Response:
@@ -8015,7 +8090,7 @@ class P2POrchestrator(
                 "purged_count": len(retired_peers),
                 "purged_peers": retired_peers,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_purge_stale_peers(self, request: web.Request) -> web.Response:
@@ -8075,7 +8150,7 @@ class P2POrchestrator(
                 "stale_peers": stale_peers,
                 "purged_peers": purged_ids,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_admin_unretire(self, request: web.Request) -> web.Response:
@@ -8135,7 +8210,7 @@ class P2POrchestrator(
                 "host": getattr(peer_info, "host", ""),
                 "gpu_name": getattr(peer_info, "gpu_name", ""),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_training_sync(self, request: web.Request) -> web.Response:
@@ -8146,7 +8221,7 @@ class P2POrchestrator(
         try:
             result = await self._sync_selfplay_to_training_nodes()
             return web.json_response(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_gpu_rankings(self, request: web.Request) -> web.Response:
@@ -8164,7 +8239,7 @@ class P2POrchestrator(
                 "training_primary_nodes": [n.node_id for n in training_nodes],
                 "training_node_count": TRAINING_NODE_COUNT,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_health(self, request: web.Request) -> web.Response:
@@ -8219,7 +8294,7 @@ class P2POrchestrator(
                     pass
 
             return web.json_response(response)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e), "healthy": False}, status=500)
 
     async def handle_cluster_health(self, request: web.Request) -> web.Response:
@@ -8308,7 +8383,7 @@ class P2POrchestrator(
                     "nfs_issues": nfs_issues,
                 },
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Cluster health check error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
@@ -8367,7 +8442,7 @@ class P2POrchestrator(
                     "error": "Registration failed"
                 }, status=500)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_registry_status(self, request: web.Request) -> web.Response:
@@ -8395,7 +8470,7 @@ class P2POrchestrator(
                 "nodes": nodes_status,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_registry_update_vast(self, request: web.Request) -> web.Response:
@@ -8417,7 +8492,7 @@ class P2POrchestrator(
                 "nodes_updated": updated,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_registry_update_aws(self, request: web.Request) -> web.Response:
@@ -8433,7 +8508,7 @@ class P2POrchestrator(
             registry = get_registry()
             updated = await registry.update_aws_ips()
             return web.json_response({"success": True, "nodes_updated": updated})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_registry_update_tailscale(self, request: web.Request) -> web.Response:
@@ -8449,7 +8524,7 @@ class P2POrchestrator(
             registry = get_registry()
             updated = await registry.update_tailscale_ips()
             return web.json_response({"success": True, "nodes_updated": updated})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_registry_save_yaml(self, request: web.Request) -> web.Response:
@@ -8472,7 +8547,7 @@ class P2POrchestrator(
                 "config_updated": updated,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     # ============================================
@@ -8508,7 +8583,7 @@ class P2POrchestrator(
                     "http_reachable": info is not None,
                     "hybrid_transport_available": False,
                 })
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 return web.json_response({
                     "node_id": node_id,
                     "http_reachable": False,
@@ -8519,7 +8594,7 @@ class P2POrchestrator(
         try:
             diagnosis = await diagnose_node_connectivity(node_id, peer.host, peer.port)
             return web.json_response(diagnosis)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_transport_stats(self, request: web.Request) -> web.Response:
@@ -8540,7 +8615,7 @@ class P2POrchestrator(
                 "node_count": len(stats),
                 "nodes": stats,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_probe_vast_nodes(self, request: web.Request) -> web.Response:
@@ -8567,7 +8642,7 @@ class P2POrchestrator(
                     for node_id, (r, msg) in results.items()
                 },
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     # Gauntlet Handlers moved to scripts/p2p/handlers/gauntlet.py
@@ -8596,7 +8671,7 @@ class P2POrchestrator(
                 "node_id": self.node_id,
                 "manifest": local_manifest.to_dict(),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_cluster_data_manifest(self, request: web.Request) -> web.Response:
@@ -8644,7 +8719,7 @@ class P2POrchestrator(
                 "cluster_manifest": cluster_manifest.to_dict(),
                 "cached": False,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_refresh_manifest(self, request: web.Request) -> web.Response:
@@ -8661,7 +8736,7 @@ class P2POrchestrator(
                 "total_size_bytes": local_manifest.total_size_bytes,
                 "selfplay_games": local_manifest.selfplay_games,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     # CMA-ES Handlers moved to scripts/p2p/handlers/cmaes.py
@@ -8756,7 +8831,7 @@ class P2POrchestrator(
                                         "board_type": state.board_type,
                                         "num_players": state.num_players,
                                     }, headers=self._auth_headers())
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"Failed to send eval to {worker_id}: {e}")
                             # Fall back to local evaluation
                             fitness = await self._evaluate_cmaes_weights_local(
@@ -8835,10 +8910,10 @@ class P2POrchestrator(
                     asyncio.create_task(self._propagate_cmaes_weights(
                         state.board_type, state.num_players, state.best_weights
                     ))
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to register CMA-ES weights: {e}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             import traceback
             logger.info(f"CMA-ES coordinator error: {e}")
             traceback.print_exc()
@@ -8925,7 +9000,7 @@ print(wins / total)
                     logger.info(f"Local eval error: {stderr.decode()}")
                     return 0.5
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Local CMA-ES evaluation error: {e}")
             return 0.5
 
@@ -8959,10 +9034,10 @@ print(wins / total)
                                 "weights": weights,
                                 "worker_id": self.node_id,
                             }, headers=self._auth_headers())
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to report CMA-ES result to leader: {e}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"CMA-ES evaluation error: {e}")
 
     # Tournament Handlers moved to scripts/p2p/handlers/tournament.py
@@ -9123,7 +9198,7 @@ print(wins / total)
             logger.info(f"Elo match {match_id} complete: {agents_desc} -> {response['winner']} ({result.get('game_length', 0)} moves)")
             return web.json_response(response)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             import traceback
             logger.info(f"Elo match error: {e}")
             traceback.print_exc()
@@ -9257,7 +9332,7 @@ print(wins / total)
                     try:
                         from scripts.run_model_elo_tournament import create_ai_from_model
                         return create_ai_from_model(agent_config, player_num, board_type)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to create NN AI {ai_type}: {e}, falling back to heuristic")
                         from app.ai.heuristic_ai import HeuristicAI
                         config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=7, rng_seed=rng_seed)
@@ -9416,7 +9491,7 @@ print(wins / total)
                         match_seed=match_seed,
                         agent_configs=agent_configs,
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to save tournament game for training: {e}")
 
             return {
@@ -9426,7 +9501,7 @@ print(wins / total)
                 "duration_sec": duration,
             }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             import traceback
             logger.info(f"_play_elo_match_sync error: {e}")
             traceback.print_exc()
@@ -9521,7 +9596,7 @@ print(wins / total)
 
             logger.info(f"Saved tournament game {game_id} to {daily_file} ({len(moves)} moves, winner={final_state.winner})")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             import traceback
             logger.warning(f"Failed to build/save tournament game record: {e}")
             traceback.print_exc()
@@ -9548,7 +9623,7 @@ print(wins / total)
             async with get_client_session(timeout) as session:
                 url = self._url_for_peer(worker, "/tournament/match")
                 await session.post(url, json={"job_id": job_id, "match": match}, headers=self._auth_headers())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send match to worker {worker_id}: {e}")
 
     async def _play_tournament_match(self, job_id: str, match_info: dict):
@@ -9688,7 +9763,7 @@ print(json.dumps(result))
                                 "result": result,
                                 "worker_id": self.node_id,
                             }, headers=self._auth_headers())
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to report tournament result to leader: {e}")
             else:
                 # We are the leader, update state directly
@@ -9700,7 +9775,7 @@ print(json.dumps(result))
 
         except asyncio.TimeoutError:
             logger.info(f"Tournament match timed out: {match_info}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Tournament match error: {e}")
 
     def _calculate_tournament_ratings(self, state: DistributedTournamentState):
@@ -9822,7 +9897,7 @@ print(json.dumps(result))
             # Trigger Elo sync to propagate matches to cluster
             if HAS_ELO_SYNC and self.elo_sync_manager:
                 asyncio.create_task(self._trigger_elo_sync_after_matches(len(state.results)))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to persist to unified Elo database: {e}")
 
     # ============================================
@@ -9865,7 +9940,7 @@ print(json.dumps(result))
                     if approved_rate != requested_games:
                         logger.info(f"games_per_iteration adjusted: {requested_games} -> {approved_rate} (utilization-based)")
                     requested_games = approved_rate
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.info(f"Rate negotiation failed, using default: {e}")
 
             state = ImprovementLoopState(
@@ -9908,7 +9983,7 @@ print(json.dumps(result))
                     "games_per_iteration": state.games_per_iteration,
                 },
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_improvement_status(self, request: web.Request) -> web.Response:
@@ -9926,7 +10001,7 @@ print(json.dumps(result))
                 job_id: state.to_dict()
                 for job_id, state in self.improvement_loop_state.items()
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_improvement_phase_complete(self, request: web.Request) -> web.Response:
@@ -9964,7 +10039,7 @@ print(json.dumps(result))
                 "phase": state.phase,
                 "iteration": state.current_iteration,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     # =========================================================================
@@ -9990,7 +10065,7 @@ print(json.dumps(result))
 
             result = await self.start_cluster_sync()
             return web.json_response(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"in handle_sync_start: {e}")
             import traceback
             traceback.print_exc()
@@ -10024,7 +10099,7 @@ print(json.dumps(result))
                 "active_sync_jobs": active_jobs_dict,
                 "pending_sync_requests": len(self.pending_sync_requests),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"in handle_sync_status: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
@@ -10069,7 +10144,7 @@ print(json.dumps(result))
                                 "count": len(handlers),
                                 "handlers": handler_names[:10],  # Limit to first 10
                             }
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 router_info["error"] = str(e)
 
             # Define critical events for feedback loop
@@ -10109,7 +10184,7 @@ print(json.dumps(result))
                 "phase": "Phase 5 - December 2025",
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"in handle_subscriptions: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
@@ -10173,7 +10248,7 @@ print(json.dumps(result))
             )
 
             return web.json_response(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"in handle_sync_pull: {e}")
             import traceback
             traceback.print_exc()
@@ -10224,7 +10299,7 @@ print(json.dumps(result))
                     await resp.write(chunk)
             await resp.write_eof()
             return resp
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_sync_job_update(self, request: web.Request) -> web.Response:
@@ -10284,7 +10359,7 @@ print(json.dumps(result))
                 "job_id": job_id,
                 "status": status,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"in handle_sync_job_update: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
@@ -10328,7 +10403,7 @@ print(json.dumps(result))
             state.phase = "idle"
             logger.info(f"Improvement loop {job_id} completed after {state.current_iteration} iterations")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Improvement loop error: {e}")
             if job_id in self.improvement_loop_state:
                 self.improvement_loop_state[job_id].status = f"error: {e}"
@@ -10665,14 +10740,14 @@ print(json.dumps(result))
                             cycle_id, "idle", error_message=result.get("error", "Training failed to start")
                         )
                         return
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         last_err = str(e)
                         continue
                 self.improvement_cycle_manager.update_cycle_phase(
                     cycle_id, "idle", error_message=last_err or "dispatch_failed"
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"ImprovementCycle {cycle_id}: Training dispatch failed: {e}")
             self.improvement_cycle_manager.update_cycle_phase(
                 cycle_id, "idle", error_message=str(e)
@@ -10715,7 +10790,7 @@ print(json.dumps(result))
                     "error": "No suitable worker available"
                 })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def handle_training_status(self, request: web.Request) -> web.Response:
@@ -10799,7 +10874,7 @@ print(json.dumps(result))
 
             return web.json_response({"success": True})
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     # NOTE: _handle_training_job_completion() removed Dec 2025 (9 LOC).
@@ -10847,7 +10922,7 @@ print(json.dumps(result))
             # Return median model (middle of sorted list)
             median_idx = len(rows) // 2
             return rows[median_idx][0]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"getting median model: {e}")
             return None
 
@@ -10876,7 +10951,7 @@ print(json.dumps(result))
         try:
             shutil.move(model_path, archive_path)
             logger.info(f"Archived {model_name} to {archive_dir} ({reason})")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"moving model to archive: {e}")
             return
 
@@ -10896,7 +10971,7 @@ print(json.dumps(result))
                 """, (time.time(), reason, model_id, board_type, num_players))
                 conn.commit()
                 conn.close()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"updating ELO database for archived model: {e}")
 
     async def handle_nnue_start(self, request: web.Request) -> web.Response:
@@ -11023,7 +11098,7 @@ print(json.dumps(result))
                 "pid": proc.pid,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def _trigger_auto_cmaes(self, board_type: str, num_players: int):
@@ -11096,7 +11171,7 @@ print(json.dumps(result))
                 )
                 logger.info(f"Started local CMA-ES optimization (PID {proc.pid})")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Auto CMA-ES trigger failed: {e}")
 
     async def handle_cmaes_start_auto(self, request: web.Request) -> web.Response:
@@ -11201,7 +11276,7 @@ print(json.dumps(result))
                     "pid": proc.pid,
                 })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def _monitor_training_process(self, job_id: str, proc, output_path: str):
@@ -11229,7 +11304,7 @@ print(json.dumps(result))
                                 "error": stderr.decode()[:500] if not success else "",
                             }
                             await session.post(url, json=payload, headers=self._auth_headers())
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to report training completion to leader: {e}")
             else:
                 # We are the leader, update directly
@@ -11260,7 +11335,7 @@ print(json.dumps(result))
                                         win_rate=0.5,
                                     )
                                     logger.info(f"[PFSP] Added {model_id} to opponent pool for {config_key}")
-                                except Exception as e:
+                                except Exception as e:  # noqa: BLE001
                                     logger.error(f"[PFSP] Error adding model to pool: {e}")
                             # CMA-ES: Check for Elo plateau and trigger auto-tuning
                             asyncio.create_task(self._check_cmaes_auto_tuning(config_key))
@@ -11273,7 +11348,7 @@ print(json.dumps(result))
 
         except asyncio.TimeoutError:
             logger.info(f"Training job {job_id} timed out")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Training monitor error for {job_id}: {e}")
 
     async def _monitor_gpu_selfplay_and_validate(
@@ -11421,7 +11496,7 @@ print(json.dumps(result))
                 job = self.local_jobs.get(job_id)
                 if job:
                     job.status = "failed"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"GPU selfplay monitor error for {job_id}: {e}")
             with self.jobs_lock:
                 job = self.local_jobs.get(job_id)
@@ -11479,7 +11554,7 @@ print(json.dumps(result))
             }
             asyncio.create_task(self._run_model_comparison_tournament(tournament_config))
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Model comparison scheduling error: {e}")
 
     async def _run_model_comparison_tournament(self, config: dict):
@@ -11551,7 +11626,7 @@ print(json.dumps(result))
                     self.ssh_tournament_runs[tournament_id].status = "completed"
                     self.ssh_tournament_runs[tournament_id].completed_at = time.time()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Tournament {tournament_id} error: {e}")
             with self.ssh_tournament_lock:
                 if tournament_id in self.ssh_tournament_runs:
@@ -11574,7 +11649,7 @@ print(json.dumps(result))
             shutil.copy2(model_path, baseline_path)
             logger.info(f"Promoted {model_path} to baseline at {baseline_path}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Baseline promotion error: {e}")
 
     async def _check_cmaes_auto_tuning(self, config_key: str):
@@ -11626,7 +11701,7 @@ print(json.dumps(result))
                 # Trigger CMA-ES via existing distributed infrastructure
                 await self._trigger_auto_cmaes(board_type, num_players)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"[CMA-ES] Auto-tuning check error for {config_key}: {e}")
 
     def get_pfsp_opponent(self, config_key: str) -> str | None:
@@ -11643,7 +11718,7 @@ print(json.dumps(result))
             opponent = pool.sample_opponent()
             if opponent:
                 return opponent.model_path
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[PFSP] Error sampling opponent: {e}")
         return None
 
@@ -11658,7 +11733,7 @@ print(json.dumps(result))
         try:
             self.pfsp_pools[config_key].update_stats(model_id, win_rate=win_rate, elo=elo)
             logger.info(f"[PFSP] Updated stats for {model_id}: win_rate={win_rate:.2f}, elo={elo:.0f}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[PFSP] Error updating stats: {e}")
 
     async def _handle_tournament_completion(
@@ -11705,7 +11780,7 @@ print(json.dumps(result))
                 # Trigger Elo sync to propagate to cluster
                 if HAS_ELO_SYNC and self.elo_sync_manager:
                     asyncio.create_task(self._trigger_elo_sync_after_matches(1))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Elo database update failed (non-fatal): {e}")
 
             # 3. Update diversity metrics
@@ -11753,7 +11828,7 @@ print(json.dumps(result))
                     node_id=self.node_id,
                 ))
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Tournament completion handler error: {e}")
             asyncio.create_task(self.notifier.send(
                 title="Tournament Handler Error",
@@ -11786,7 +11861,7 @@ print(json.dumps(result))
                     }
                 }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Selfplay boost error: {e}")
 
     async def _propagate_cmaes_weights(
@@ -11847,7 +11922,7 @@ print(json.dumps(result))
 
             logger.info(f"Weight propagation complete for {config_key}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"CMA-ES weight propagation error: {e}")
 
     async def _stop_local_job(self, job_id: str):
@@ -11858,7 +11933,7 @@ print(json.dumps(result))
                 if job and hasattr(job, 'process') and job.process:
                     job.process.terminate()
                     job.status = "stopped"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"stopping job {job_id}: {e}")
 
     async def _import_gpu_selfplay_to_canonical(
@@ -11991,7 +12066,7 @@ print(json.dumps(result))
             if self.improvement_cycle_manager and imported > 0:
                 self.improvement_cycle_manager.record_games(board_type, num_players, imported)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"GPU selfplay import error: {e}")
             import traceback
             traceback.print_exc()
@@ -12018,7 +12093,7 @@ print(json.dumps(result))
                 **status,
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def handle_improvement_cycles_leaderboard(self, request: web.Request) -> web.Response:
@@ -12045,7 +12120,7 @@ print(json.dumps(result))
                 "total_models": len(leaderboard),
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def handle_metrics(self, request: web.Request) -> web.Response:
@@ -12095,7 +12170,7 @@ print(json.dumps(result))
                     **summary,
                 })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def handle_metrics_prometheus(self, request: web.Request) -> web.Response:
@@ -12844,7 +12919,7 @@ print(json.dumps(result))
                 charset="utf-8",
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def handle_improvement_training_complete(self, request: web.Request) -> web.Response:
@@ -12870,7 +12945,7 @@ print(json.dumps(result))
 
             return web.json_response({"success": True})
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def handle_improvement_evaluation_complete(self, request: web.Request) -> web.Response:
@@ -12896,7 +12971,7 @@ print(json.dumps(result))
 
             return web.json_response({"success": True})
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
 
     async def _schedule_improvement_evaluation(self, cycle_id: str, new_model_id: str):
@@ -12944,7 +13019,7 @@ print(json.dumps(result))
                 wins=new_model_wins, losses=baseline_wins, draws=draws,
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"ImprovementCycle {cycle_id}: Evaluation scheduling failed: {e}")
             if self.improvement_cycle_manager:
                 self.improvement_cycle_manager.update_cycle_phase(cycle_id, "idle", error_message=str(e))
@@ -13051,7 +13126,7 @@ print(json.dumps(result))
             return {"success": False, "error": f"SSH evaluation timed out after {timeout_seconds}s"}
         except json.JSONDecodeError as e:
             return {"success": False, "error": f"Failed to parse evaluation result: {e}"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"success": False, "error": str(e)}
 
     async def _auto_deploy_model(self, model_path: str, board_type: str, num_players: int):
@@ -13082,7 +13157,7 @@ print(json.dumps(result))
             else:
                 logger.info(f"Model deployment failed: {result.stderr}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Auto-deploy error: {e}")
 
     # Canonical Pipeline Integration (for pipeline_orchestrator.py)
@@ -13119,7 +13194,7 @@ print(json.dumps(result))
                 return web.json_response({"success": False,
                     "error": f"Unknown phase: {phase}. Supported: canonical_selfplay, parity_validation, npz_export"}, status=400)
             return web.json_response(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Pipeline start error: {e}")
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
@@ -13142,7 +13217,7 @@ print(json.dumps(result))
                 data.get("num_games", 500), data.get("seed", 0)))
             return web.json_response({"success": True, "job_id": data.get("job_id"),
                                      "message": f"Started canonical selfplay: {data.get('num_games', 500)} games"})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def _start_canonical_selfplay_pipeline(
@@ -13218,7 +13293,7 @@ print(json.dumps(result))
                                             break
                                 except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
                                     continue
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to dispatch selfplay to {node_id}: {e}")
 
         self._pipeline_status = {"job_id": job_id, "phase": "canonical_selfplay", "status": "running",
@@ -13254,7 +13329,7 @@ print(json.dumps(result))
                 logger.info(f"Canonical selfplay job {job_id} completed successfully")
             else:
                 logger.info(f"Canonical selfplay job {job_id} failed: {stderr.decode()[:500]}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Canonical selfplay job {job_id} error: {e}")
 
     async def _start_parity_validation_pipeline(self, board_type: str, num_players: int,
@@ -13300,7 +13375,7 @@ print(json.dumps(result))
                 logger.info(f"Parity validation job {job_id} failed: {stderr.decode()[:500]}")
                 self._pipeline_status["status"] = "failed"
                 self._pipeline_status["error"] = stderr.decode()[:500]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Parity validation job {job_id} error: {e}")
             self._pipeline_status["status"] = "failed"
             self._pipeline_status["error"] = str(e)
@@ -13348,7 +13423,7 @@ print(json.dumps(result))
                 logger.info(f"NPZ export job {job_id} failed: {stderr.decode()[:500]}")
                 self._pipeline_status["status"] = "failed"
                 self._pipeline_status["error"] = stderr.decode()[:500]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"NPZ export job {job_id} error: {e}")
             self._pipeline_status["status"] = "failed"
             self._pipeline_status["error"] = str(e)
@@ -13542,7 +13617,7 @@ print(json.dumps(result))
                 "data_manifests": manifest_info,
                 "timestamp": time.time(),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_cluster_git_update(self, request: web.Request) -> web.Response:
@@ -13682,7 +13757,7 @@ print(json.dumps(result))
                     "timestamp": time.time(),
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_selfplay_stats(self, request: web.Request) -> web.Response:
@@ -13733,7 +13808,7 @@ print(json.dumps(result))
                     "timestamp": time.time(),
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_elo_leaderboard(self, request: web.Request) -> web.Response:
@@ -13824,7 +13899,7 @@ print(json.dumps(result))
                 "timestamp": time.time(),
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_elo_table(self, request: web.Request) -> web.Response:
@@ -13995,7 +14070,7 @@ print(json.dumps(result))
 
         except ImportError:
             return web.json_response([{"error": "Elo database module not available"}])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_nodes_table(self, request: web.Request) -> web.Response:
@@ -14062,7 +14137,7 @@ print(json.dumps(result))
 
             return web.json_response(nodes)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def _get_victory_type_stats(self) -> dict[tuple[str, int, str], int]:
@@ -15153,7 +15228,7 @@ print(json.dumps(result))
                 node_id=self.node_id,
             ))
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             result["message"] = f"Rollback failed: {e!s}"
 
         return result
@@ -15179,7 +15254,7 @@ print(json.dumps(result))
                     executed.append(result)
                     if result["success"]:
                         logger.warning(f"[AUTO-ROLLBACK] Executed for {config}: {reasons}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"[AUTO-ROLLBACK] Error: {e}")
 
         return executed
@@ -15351,7 +15426,7 @@ print(json.dumps(result))
 
             return web.json_response(table_data)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_elo_history(self, request: web.Request) -> web.Response:
@@ -15478,7 +15553,7 @@ print(json.dumps(result))
 
             return web.json_response(data)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     # Elo Sync Handlers moved to scripts/p2p/handlers/elo_sync.py
@@ -15566,7 +15641,7 @@ print(json.dumps(result))
                     # Report completion/failure
                     await self._report_work_result(work_item, success)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug(f"Worker pull loop error: {e}")
 
             await asyncio.sleep(PULL_INTERVAL)
@@ -15593,7 +15668,7 @@ print(json.dumps(result))
                         data = await resp.json()
                         if data.get("status") == "claimed":
                             return data.get("work")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to claim work from leader: {e}")
 
         return None
@@ -15653,7 +15728,7 @@ print(json.dumps(result))
                 logger.warning(f"Unknown work type: {work_type}")
                 return False
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error executing work {work_id}: {e}")
             return False
 
@@ -15685,7 +15760,7 @@ print(json.dumps(result))
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
                     if resp.status == 200:
                         logger.debug(f"Reported work {work_id} result: {'success' if success else 'failed'}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to report work result: {e}")
 
     async def _work_queue_maintenance_loop(self):
@@ -15726,7 +15801,7 @@ print(json.dumps(result))
 
                 await asyncio.sleep(MAINTENANCE_INTERVAL)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Work queue maintenance error: {e}")
                 await asyncio.sleep(MAINTENANCE_INTERVAL)
 
@@ -15970,7 +16045,7 @@ print(json.dumps(result))
                 logger.info(f"Auto-started {started}/{num_processes} diverse selfplay on {peer.node_id} "
                            f"[engines: {profile_summary}] [boards: {board_summary}]")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Auto-start request failed for {peer.node_id}: {e}")
 
     # =========================================================================
@@ -16050,7 +16125,7 @@ print(json.dumps(result))
                             if m.get('updated_at')
                         )
                         last_training = latest_update.timestamp()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Model registry lookup failed, using defaults: {e}")
 
                 alerts = await alert_manager.run_all_checks(
@@ -16072,12 +16147,12 @@ print(json.dumps(result))
                             },
                             node_id=alert.target_id,
                         )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.warning(f"Failed to send proactive alert: {e}")
 
                 await asyncio.sleep(MONITOR_INTERVAL)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Predictive monitoring loop error: {e}")
                 await asyncio.sleep(MONITOR_INTERVAL)
 
@@ -16103,7 +16178,7 @@ print(json.dumps(result))
                         killed = self._cleanup_stale_processes()
                         if killed > 0:
                             logger.info(f"Cleaned up {killed} stale processes")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.debug(f"Stale process cleanup error: {e}")
                     last_stale_check = now
 
@@ -16149,7 +16224,7 @@ print(json.dumps(result))
 
                 await asyncio.sleep(HEALING_INTERVAL)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Self-healing loop error: {e}")
                 await asyncio.sleep(HEALING_INTERVAL)
 
@@ -16176,7 +16251,7 @@ print(json.dumps(result))
                             "user": ssh.get("user", "ubuntu"),
                             "key": ssh.get("key", ""),
                         }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Error loading SSH config for reaper: {e}")
 
         return ssh_config
@@ -16203,7 +16278,7 @@ print(json.dumps(result))
                 try:
                     from app.training.model_registry import ModelRegistry
                     registry = ModelRegistry()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Model registry not available: {e}")
                     await asyncio.sleep(VALIDATION_INTERVAL)
                     continue
@@ -16256,7 +16331,7 @@ print(json.dumps(result))
                             severity="info",
                             context={"baselines": baselines, "games_per_matchup": games_per}
                         )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to queue validation for {model_id}:v{version}: {e}")
 
                 # Also check for models without validation entries
@@ -16270,7 +16345,7 @@ print(json.dumps(result))
 
                 await asyncio.sleep(VALIDATION_INTERVAL)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Validation loop error: {e}")
                 await asyncio.sleep(VALIDATION_INTERVAL)
 
@@ -16384,7 +16459,7 @@ print(json.dumps(result))
 
             return web.json_response(analytics)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_training_metrics(self, request: web.Request) -> web.Response:
@@ -16459,7 +16534,7 @@ print(json.dumps(result))
 
             return web.json_response(metrics)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_holdout_metrics(self, request: web.Request) -> web.Response:
@@ -16484,7 +16559,7 @@ print(json.dumps(result))
 
             return web.json_response(metrics)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_holdout_table(self, request: web.Request) -> web.Response:
@@ -16510,7 +16585,7 @@ print(json.dumps(result))
 
             return web.json_response(table_data)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_mcts_stats(self, request: web.Request) -> web.Response:
@@ -16522,7 +16597,7 @@ print(json.dumps(result))
             stats = await self._get_mcts_stats_cached()
             return web.json_response(stats)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_mcts_table(self, request: web.Request) -> web.Response:
@@ -16559,7 +16634,7 @@ print(json.dumps(result))
 
             return web.json_response(table_data)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     # =========================================================================
@@ -16571,7 +16646,7 @@ print(json.dumps(result))
         try:
             matrix = await self._get_matchup_matrix_cached()
             return web.json_response(matrix)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_matchup_table(self, request: web.Request) -> web.Response:
@@ -16590,7 +16665,7 @@ print(json.dumps(result))
                     "AWinRate": round(matchup["a_win_rate"] * 100, 1),
                 })
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_model_lineage(self, request: web.Request) -> web.Response:
@@ -16598,7 +16673,7 @@ print(json.dumps(result))
         try:
             lineage = await self._get_model_lineage_cached()
             return web.json_response(lineage)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_model_lineage_table(self, request: web.Request) -> web.Response:
@@ -16615,7 +16690,7 @@ print(json.dumps(result))
                     "AgeHours": model["age_hours"],
                 })
             return web.json_response(sorted(table_data, key=lambda x: (-x["Generation"], x["Config"])))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_data_quality(self, request: web.Request) -> web.Response:
@@ -16623,7 +16698,7 @@ print(json.dumps(result))
         try:
             quality = await self._get_data_quality_cached()
             return web.json_response(quality)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_data_quality_table(self, request: web.Request) -> web.Response:
@@ -16647,7 +16722,7 @@ print(json.dumps(result))
                     "Status": status,
                 })
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_data_quality_issues(self, request: web.Request) -> web.Response:
@@ -16655,7 +16730,7 @@ print(json.dumps(result))
         try:
             quality = await self._get_data_quality_cached()
             return web.json_response(quality.get("issues", []))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_training_efficiency(self, request: web.Request) -> web.Response:
@@ -16663,7 +16738,7 @@ print(json.dumps(result))
         try:
             efficiency = await self._get_training_efficiency_cached()
             return web.json_response(efficiency)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_training_efficiency_table(self, request: web.Request) -> web.Response:
@@ -16681,7 +16756,7 @@ print(json.dumps(result))
                     "CostPerElo": metrics["cost_per_elo_point"],
                 })
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_rollback_status(self, request: web.Request) -> web.Response:
@@ -16689,7 +16764,7 @@ print(json.dumps(result))
         try:
             status = await self._check_rollback_conditions()
             return web.json_response(status)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_rollback_candidates(self, request: web.Request) -> web.Response:
@@ -16704,7 +16779,7 @@ print(json.dumps(result))
                     "Recommended": "YES" if candidate["rollback_recommended"] else "NO",
                 })
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_rollback_execute(self, request: web.Request) -> web.Response:
@@ -16724,7 +16799,7 @@ print(json.dumps(result))
             result = await self._execute_rollback(config, dry_run=dry_run)
             status_code = 200 if result["success"] else 400
             return web.json_response(result, status=status_code)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_rollback_auto(self, request: web.Request) -> web.Response:
@@ -16750,7 +16825,7 @@ print(json.dumps(result))
                 "executed_rollbacks": executed,
                 "count": len(executed),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_autoscale_metrics(self, request: web.Request) -> web.Response:
@@ -16758,7 +16833,7 @@ print(json.dumps(result))
         try:
             metrics = await self._get_autoscaling_metrics()
             return web.json_response(metrics)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
     async def handle_autoscale_recommendations(self, request: web.Request) -> web.Response:
@@ -16779,7 +16854,7 @@ print(json.dumps(result))
                     "SuggestedWorkers": metrics.get("current_state", {}).get("total_nodes", 1),
                 })
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_resource_optimizer(self, request: web.Request) -> web.Response:
@@ -16824,7 +16899,7 @@ print(json.dumps(result))
                            if cluster_state.gpu_node_count > 0 else True,
                 },
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e), "available": False}, status=500)
 
     async def handle_resource_utilization_history(self, request: web.Request) -> web.Response:
@@ -16884,7 +16959,7 @@ print(json.dumps(result))
                 "message": f"Test notification sent to {'Slack' if has_slack else ''}{' and ' if has_slack and has_discord else ''}{'Discord' if has_discord else ''}",
                 "level": level,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_trends_summary(self, request: web.Request) -> web.Response:
@@ -16897,7 +16972,7 @@ print(json.dumps(result))
             hours = float(request.query.get("hours", "24"))
             summary = self.get_metrics_summary(hours)
             return web.json_response(summary)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_trends_history(self, request: web.Request) -> web.Response:
@@ -16934,7 +17009,7 @@ print(json.dumps(result))
                 "count": len(history),
                 "data": history,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_trends_table(self, request: web.Request) -> web.Response:
@@ -16965,7 +17040,7 @@ print(json.dumps(result))
                 })
 
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     # ==================== A/B Testing Framework ====================
@@ -17063,7 +17138,7 @@ print(json.dumps(result))
                 "statistically_significant": statistically_significant,
                 "avg_game_length": round(avg_game_length, 1),
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
     async def handle_abtest_create(self, request: web.Request) -> web.Response:
@@ -17138,7 +17213,7 @@ print(json.dumps(result))
                 "status": "created",
                 "message": f"A/B test '{data['name']}' created. Submit game results via POST /abtest/result",
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_abtest_result(self, request: web.Request) -> web.Response:
@@ -17241,7 +17316,7 @@ print(json.dumps(result))
                 "stats": stats,
                 "concluded": should_conclude,
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_abtest_status(self, request: web.Request) -> web.Response:
@@ -17285,7 +17360,7 @@ print(json.dumps(result))
             test_data["stats"] = self._calculate_ab_test_stats(test_id)
 
             return web.json_response(test_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_abtest_list(self, request: web.Request) -> web.Response:
@@ -17339,7 +17414,7 @@ print(json.dumps(result))
                 })
 
             return web.json_response({"tests": tests, "count": len(tests)})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_abtest_cancel(self, request: web.Request) -> web.Response:
@@ -17376,7 +17451,7 @@ print(json.dumps(result))
             conn.close()
 
             return web.json_response({"test_id": test_id, "status": "cancelled"})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_abtest_table(self, request: web.Request) -> web.Response:
@@ -17429,7 +17504,7 @@ print(json.dumps(result))
                 })
 
             return web.json_response(table_data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response([{"error": str(e)}])
 
     async def handle_abtest_run(self, request: web.Request) -> web.Response:
@@ -17493,7 +17568,7 @@ print(json.dumps(result))
                 "message": f"Use tournament infrastructure to run {games_remaining} games between models",
                 "hint": "Games should be submitted via POST /abtest/result as they complete",
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
     async def handle_api_training_status(self, request: web.Request) -> web.Response:
@@ -17619,7 +17694,7 @@ print(json.dumps(result))
                 "timestamp": time.time(),
             })
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     def _canonical_slug_for_board(self, board_type: str) -> str:
@@ -17652,7 +17727,7 @@ print(json.dumps(result))
                 data = f.read().decode("utf-8", errors="replace")
             lines = data.splitlines()
             return "\n".join(lines[-int(max_lines) :])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return f"[tail_error] {e}"
 
     async def handle_api_canonical_health(self, request: web.Request) -> web.Response:
@@ -17706,7 +17781,7 @@ print(json.dumps(result))
                     "timestamp": time.time(),
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_canonical_jobs_list(self, request: web.Request) -> web.Response:
@@ -17727,7 +17802,7 @@ print(json.dumps(result))
                     "timestamp": time.time(),
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_canonical_job_get(self, request: web.Request) -> web.Response:
@@ -17744,7 +17819,7 @@ print(json.dumps(result))
             if not job:
                 return web.json_response({"success": False, "error": f"Job {job_id} not found"}, status=404)
             return web.json_response({"success": True, "job": job})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_canonical_job_log(self, request: web.Request) -> web.Response:
@@ -17767,7 +17842,7 @@ print(json.dumps(result))
             log_path = Path(str(job.get("log_path") or ""))
             text = self._tail_text_file(log_path, max_lines=tail_lines)
             return web.json_response({"success": True, "job_id": job_id, "log_tail": text})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     def _canonical_gate_log_dir(self) -> Path:
@@ -17811,7 +17886,7 @@ print(json.dumps(result))
                     "timestamp": time.time(),
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_canonical_log_tail(self, request: web.Request) -> web.Response:
@@ -17847,7 +17922,7 @@ print(json.dumps(result))
                     "timestamp": time.time(),
                 }
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def _monitor_canonical_gate_job(self, job_id: str, proc: asyncio.subprocess.Process, summary_path: Path) -> None:
@@ -17999,7 +18074,7 @@ print(json.dumps(result))
             asyncio.create_task(self._monitor_canonical_gate_job(job_id, proc, summary_path))
 
             return web.json_response({"success": True, "job": job})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_canonical_job_cancel(self, request: web.Request) -> web.Response:
@@ -18038,7 +18113,7 @@ print(json.dumps(result))
                 self.canonical_gate_jobs[job_id] = job
 
             return web.json_response({"success": True, "message": f"Cancel signaled for {job_id}", "job": job})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_jobs_list(self, request: web.Request) -> web.Response:
@@ -18123,7 +18198,7 @@ print(json.dumps(result))
                 "jobs": all_jobs,
                 "total": len(all_jobs),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_jobs_submit(self, request: web.Request) -> web.Response:
@@ -18212,7 +18287,7 @@ print(json.dumps(result))
                 status=400,
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_job_get(self, request: web.Request) -> web.Response:
@@ -18299,7 +18374,7 @@ print(json.dumps(result))
                 "error": f"Job {job_id} not found",
             }, status=404)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_api_job_cancel(self, request: web.Request) -> web.Response:
@@ -18391,7 +18466,7 @@ print(json.dumps(result))
                 "error": f"Job {job_id} not found",
             }, status=404)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def handle_dashboard(self, request: web.Request) -> web.Response:
@@ -18399,7 +18474,7 @@ print(json.dumps(result))
         dashboard_path = Path(__file__).resolve().parent / "dashboard_assets" / "dashboard.html"
         try:
             html = dashboard_path.read_text(encoding="utf-8")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             html = (
                 "<!doctype html><html><body style='font-family:monospace'>"
                 f"<h3>Dashboard asset unavailable</h3><pre>{e}</pre>"
@@ -18422,7 +18497,7 @@ print(json.dumps(result))
         dashboard_path = Path(__file__).resolve().parent / "dashboard_assets" / "work_queue_dashboard.html"
         try:
             html = dashboard_path.read_text(encoding="utf-8")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             html = (
                 "<!doctype html><html><body style='font-family:monospace'>"
                 f"<h3>Work Queue Dashboard unavailable</h3><pre>{e}</pre>"
@@ -18554,7 +18629,7 @@ print(json.dumps({{
         except asyncio.TimeoutError:
             logger.info("Evaluation timed out")
             state.evaluation_winrate = 0.5
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Evaluation error: {e}")
             state.evaluation_winrate = 0.5
 
@@ -18677,6 +18752,31 @@ print(json.dumps({{
                 optimizer.report_node_resources(node_resources)
             except (ValueError, KeyError, IndexError, AttributeError):
                 pass  # Don't fail heartbeat if optimizer unavailable
+
+        # December 2025: Emit NODE_CAPACITY_UPDATED for backpressure detection
+        # Throttled to every 30 seconds to avoid event spam
+        now = time.time()
+        last_emit = getattr(self, "_last_capacity_emit_time", 0)
+        if now - last_emit >= 30:  # 30s throttle matches backpressure cooldown
+            self._last_capacity_emit_time = now
+            try:
+                from app.coordination.event_router import get_event_bus
+                from app.distributed.data_events import DataEventType
+
+                bus = get_event_bus()
+                if bus:
+                    bus.emit(DataEventType.NODE_CAPACITY_UPDATED, {
+                        "node_id": self.node_id,
+                        "gpu_utilization": usage["gpu_percent"],
+                        "cpu_utilization": usage["cpu_percent"],
+                        "memory_used_percent": usage["memory_percent"],
+                        "disk_used_percent": usage["disk_percent"],
+                        "gpu_memory_percent": usage["gpu_memory_percent"],
+                        "task_slots_available": max(0, self._get_max_selfplay_jobs() - selfplay - training),
+                        "task_slots_total": self._get_max_selfplay_jobs(),
+                    })
+            except (ImportError, RuntimeError):
+                pass  # Event system not available or no event loop
 
     async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http", timeout: int = 10) -> NodeInfo | None:
         """Send heartbeat to a peer and return their info.
@@ -18824,7 +18924,7 @@ print(json.dumps({{
                 logger.debug(f"[P2P] SSH fallback heartbeat successful to {node_id}")
                 return info
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"[P2P] SSH fallback heartbeat failed for {node_id}: {e}")
 
         return None
@@ -19085,7 +19185,7 @@ print(json.dumps({{
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Error in continuous bootstrap loop: {e}")
                 await asyncio.sleep(30)  # Back off on errors
 
@@ -19203,7 +19303,7 @@ print(json.dumps({{
                 except asyncio.TimeoutError:
                     self._update_peer_reputation(seed_addr, success=False)
                     continue
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     self._update_peer_reputation(seed_addr, success=False)
                     if self.verbose:
                         logger.debug(f"Bootstrap seed {seed_addr} failed: {e}")
@@ -19272,7 +19372,7 @@ print(json.dumps({{
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Error in follower discovery loop: {e}")
                 await asyncio.sleep(60)
 
@@ -19361,7 +19461,7 @@ print(json.dumps({{
                         "leader_id": leader_id,
                         "commands_received": len(commands) if isinstance(commands, list) else 0,
                     }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"success": False, "error": str(e)}
 
     async def _execute_relay_commands(self, commands: list[dict[str, Any]]) -> None:
@@ -19732,7 +19832,7 @@ print(json.dumps({{
                 # Save state periodically
                 self._save_state()
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Heartbeat error: {e}")
 
             # Notify systemd watchdog that we're still alive
@@ -19802,7 +19902,7 @@ print(json.dumps({{
                     last_voter_mesh_refresh = now
                     await self._refresh_voter_mesh()
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Voter heartbeat error: {e}")
 
             await asyncio.sleep(VOTER_HEARTBEAT_INTERVAL)
@@ -19943,7 +20043,7 @@ print(json.dumps({{
                 # Update relay preferences based on connectivity
                 await self._update_relay_preferences()
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"NAT management error: {e}")
 
             await asyncio.sleep(NAT_BLOCKED_PROBE_INTERVAL)
@@ -20111,7 +20211,7 @@ print(json.dumps({{
                             self.improvement_cycle_manager.update_from_cluster_totals(
                                 cluster_manifest.by_board_type
                             )
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.info(f"ImprovementCycleManager update error: {e}")
                 else:
                     local_manifest = await asyncio.to_thread(self._collect_local_data_manifest)
@@ -20120,7 +20220,7 @@ print(json.dumps({{
 
                 self.last_manifest_collection = time.time()
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Manifest collection error: {e}")
 
             await asyncio.sleep(self.manifest_collection_interval)
@@ -20339,6 +20439,10 @@ print(json.dumps({{
                         # CRITICAL: Emit HOST_OFFLINE event (Dec 2025 fix)
                         last_hb = getattr(info, "last_heartbeat", None)
                         asyncio.create_task(_emit_p2p_host_offline(node_id, "retired", last_hb))
+                        # CRITICAL: Emit P2P_NODE_DEAD for work reassignment (Dec 2025)
+                        asyncio.create_task(_emit_p2p_node_dead(
+                            node_id, "retired", last_hb, dead_for
+                        ))
                         # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
                         alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
                         gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
@@ -20446,6 +20550,8 @@ print(json.dumps({{
                         # CRITICAL: Emit HOST_OFFLINE event (Dec 2025 fix) - sync version
                         last_hb = getattr(info, "last_heartbeat", None)
                         _emit_p2p_host_offline_sync(node_id, "retired", last_hb)
+                        # CRITICAL: Emit P2P_NODE_DEAD for work reassignment (Dec 2025) - sync version
+                        _emit_p2p_node_dead_sync(node_id, "retired", last_hb, dead_for)
                         # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
                         alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
                         gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
@@ -21069,7 +21175,7 @@ print(json.dumps({{
             finally:
                 self.sync_in_progress = False
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"P2P SYNC: Error: {e}")
             self._record_sync_result_for_adaptive("data", False)  # ADAPTIVE: record failure
             self._record_p2p_sync_result(best_peer, False)
@@ -21167,7 +21273,7 @@ print(json.dumps({{
                     logger.info(f"MODEL SYNC: Got {len(models_to_sync)} models from {best_peer}")
             finally:
                 self.sync_in_progress = False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"MODEL SYNC: Error: {e}")
             self._record_sync_result_for_adaptive("model", False)  # ADAPTIVE: record failure
             self.sync_in_progress = False
@@ -21292,7 +21398,7 @@ print(json.dumps({{
                     logger.info(f"TRAINING DB SYNC: Got {len(dbs_to_sync)} training DBs from {best_peer}")
             finally:
                 self.sync_in_progress = False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"TRAINING DB SYNC: Error: {e}")
             self._record_sync_result_for_adaptive("training_db", False)  # ADAPTIVE: record failure
             self.sync_in_progress = False
@@ -21591,7 +21697,7 @@ print(json.dumps({{
                     info.node_id, host, port,
                     str(getattr(info, "tailscale_ip", "") or "")
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if self.verbose:
                 logger.debug(f"Failed to connect to gossip-learned peer {node_id}: {e}")
 
@@ -21906,10 +22012,7 @@ print(json.dumps({{
             del self._training_trigger_cache[h]
 
         # Check if duplicate
-        if trigger_hash in self._training_trigger_cache:
-            return True
-
-        return False
+        return trigger_hash in self._training_trigger_cache
 
     def _record_training_trigger(self, trigger_hash: str) -> None:
         """Record a training trigger for deduplication."""
@@ -22224,7 +22327,7 @@ print(json.dumps({{
         except asyncio.TimeoutError:
             logger.info(f"NODE RECOVERY: SSH timeout for {node_id}")
             return False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"NODE RECOVERY: Error recovering {node_id}: {e}")
             return False
 
@@ -22869,7 +22972,7 @@ print(json.dumps({{
         gradual migration from HTTP/Bully to SWIM/Raft.
         """
         try:
-            from scripts.p2p.constants import (
+            from scripts.p2p.constants import (  # noqa: I001
                 SWIM_ENABLED, RAFT_ENABLED, MEMBERSHIP_MODE, CONSENSUS_MODE
             )
         except ImportError:
@@ -22900,7 +23003,7 @@ print(json.dumps({{
                 })
         except ImportError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             swim_status["error"] = str(e)
 
         # Check Raft status
@@ -22932,7 +23035,7 @@ print(json.dumps({{
                     }
         except ImportError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             raft_status["error"] = str(e)
 
         return {
@@ -23270,7 +23373,7 @@ print(json.dumps({{
                 self._monitoring_was_leader = True
             else:
                 logger.error("Failed to start monitoring services")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"starting monitoring services: {e}")
 
     async def _stop_monitoring_if_not_leader(self):
@@ -23285,7 +23388,7 @@ print(json.dumps({{
                 await self.monitoring_manager.stop()
                 logger.info("Monitoring services stopped (no longer leader)")
                 self._monitoring_was_leader = False
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"stopping monitoring services: {e}")
 
     async def _start_p2p_auto_deployer(self):
@@ -23314,7 +23417,7 @@ print(json.dumps({{
                 name="p2p_auto_deployer"
             )
             logger.info("P2P Auto-Deployer started (leader responsibility)")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start P2P auto-deployer: {e}")
 
     async def _stop_p2p_auto_deployer(self):
@@ -23323,10 +23426,8 @@ print(json.dumps({{
             self.p2p_auto_deployer.stop()
         if self._auto_deployer_task:
             self._auto_deployer_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._auto_deployer_task
-            except asyncio.CancelledError:
-                pass
             self._auto_deployer_task = None
         self.p2p_auto_deployer = None
         logger.info("P2P Auto-Deployer stopped")
@@ -23347,7 +23448,7 @@ print(json.dumps({{
                 ]
             self.monitoring_manager.update_peers(peer_list)
             await self.monitoring_manager.reload_config()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"updating monitoring peers: {e}")
 
     async def _renew_leader_lease(self):
@@ -23428,7 +23529,7 @@ print(json.dumps({{
                             }, headers=self._auth_headers())
                         except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError):
                             pass  # Network errors expected during lease renewal
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Lease renewal error: {e}")
 
     def _is_leader_lease_valid(self) -> bool:
@@ -23635,7 +23736,7 @@ print(json.dumps({{
                     await self._sweep_nat_recovery()
                     # Self-healing: detect and recover stuck nodes via SSH restart
                     await self._check_node_recovery()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.info(f"Job management error: {e}")
 
             await asyncio.sleep(JOB_CHECK_INTERVAL)
@@ -23776,7 +23877,7 @@ print(json.dumps({{
                             for jid in gpu_jobs:
                                 del self.local_jobs[jid]
                         self._local_last_gpu_active = now
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.info(f"LOCAL: Failed to kill stuck processes: {e}")
         elif has_gpu and gpu_percent >= 5:
             self._local_last_gpu_active = now
@@ -23823,7 +23924,7 @@ print(json.dumps({{
                 payload = {"job_id": job_id, "job_type": job_type, "reason": "stuck"}
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
                     return resp.status == 200
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to kill stuck job on {target_node}: {e}")
             return False
 
@@ -23898,7 +23999,7 @@ print(json.dumps({{
                         )
                         if job:
                             changes += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.info(f"LOCAL: Failed to start selfplay: {e}")
                     break
 
@@ -23987,7 +24088,7 @@ print(json.dumps({{
                             )
                             if job:
                                 started += 1
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.info(f"LOCAL: Failed to start diverse selfplay: {e}")
                         break
 
@@ -24151,7 +24252,7 @@ print(json.dumps({{
                     job = await self._schedule_diverse_selfplay_on_node(node_id)
                     if job:
                         started += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to start diverse selfplay on {node_id}: {e}")
                     break
 
@@ -24343,7 +24444,7 @@ print(json.dumps({{
                         logger.warning(f"Failed to dispatch work to {peer.node_id}: {error}")
                         return False
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error dispatching work to {peer.node_id}: {e}")
             return False
 
@@ -24414,7 +24515,7 @@ print(json.dumps({{
                         error = await resp.text()
                         logger.info(f"Diverse selfplay start failed on {node_id}: {error}")
                         return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to schedule diverse selfplay on {node_id}: {e}")
             return None
 
@@ -24552,7 +24653,7 @@ print(json.dumps({{
                 "actions": rebalance_actions,
             }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Cluster balance check error: {e}")
             return {"action": "error", "error": str(e)}
 
@@ -24998,7 +25099,7 @@ print(json.dumps({{
                             logfile.unlink()
                             logger.info(f"Cleaned old log: {logfile}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.info(f"Disk cleanup error: {e}")
 
     async def _request_remote_cleanup(self, node: NodeInfo):
@@ -25021,12 +25122,12 @@ print(json.dumps({{
                                 logger.info(f"Cleanup requested on {node.node_id}")
                                 return
                             last_err = f"http_{resp.status}"
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         last_err = str(e)
                         continue
                 if last_err:
                     logger.info(f"Cleanup request failed on {node.node_id}: {last_err}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to request cleanup from {node.node_id}: {e}")
 
     async def _reduce_local_selfplay_jobs(self, target_selfplay_jobs: int, *, reason: str) -> dict[str, Any]:
@@ -25188,7 +25289,7 @@ print(json.dumps({{
                             logger.info(f"Requested load shedding on {node.node_id} (target={target}, reason={reason})")
                             return
                         last_err = f"http_{resp.status}"
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     last_err = str(e)
                     continue
             if last_err:
@@ -25259,7 +25360,7 @@ print(json.dumps({{
                     self.local_jobs.pop(job_id, None)
 
             logger.info(f"Killed {killed} processes, cleared {len(jobs_to_clear)} job records")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"killing stuck processes: {e}")
 
     async def _request_job_restart(self, node: NodeInfo):
@@ -25286,12 +25387,12 @@ print(json.dumps({{
                                 logger.info(f"Job restart requested on {node.node_id}")
                                 return
                             last_err = str(data.get("error") or "restart_failed")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         last_err = str(e)
                         continue
                 if last_err:
                     logger.info(f"Job restart request failed on {node.node_id}: {last_err}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to request job restart from {node.node_id}: {e}")
 
     async def _start_local_job(
@@ -25419,7 +25520,7 @@ print(json.dumps({{
                     logger.info(f"BLOCKED selfplay spawn: {spawn_reason}")
                     return None
 
-                log_handle = open(output_dir / "run.log", "a")
+                log_handle = open(output_dir / "run.log", "a")  # noqa: SIM115
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -25515,7 +25616,7 @@ print(json.dumps({{
                     logger.info(f"BLOCKED CPU selfplay spawn: {spawn_reason}")
                     return None
 
-                log_handle = open(output_dir / "run.log", "a")
+                log_handle = open(output_dir / "run.log", "a")  # noqa: SIM115
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -25625,7 +25726,7 @@ print(json.dumps({{
                     logger.info(f"BLOCKED GPU selfplay spawn: {spawn_reason}")
                     return None
 
-                log_handle = open(output_dir / "gpu_run.log", "a")
+                log_handle = open(output_dir / "gpu_run.log", "a")  # noqa: SIM115
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -25776,7 +25877,7 @@ print(json.dumps({{
                     logger.info(f"BLOCKED hybrid selfplay spawn: {spawn_reason}")
                     return None
 
-                log_handle = open(output_dir / "hybrid_run.log", "a")
+                log_handle = open(output_dir / "hybrid_run.log", "a")  # noqa: SIM115
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -25906,7 +26007,7 @@ print(json.dumps({{
                     logger.info(f"BLOCKED gumbel selfplay spawn: {spawn_reason}")
                     return None
 
-                log_handle = open(output_dir / "gumbel_run.log", "a")
+                log_handle = open(output_dir / "gumbel_run.log", "a")  # noqa: SIM115
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -26009,7 +26110,7 @@ print(json.dumps({{
                 env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
 
                 log_path = output_dir / f"export_{job_id}.log"
-                log_handle = open(log_path, "w")
+                log_handle = open(log_path, "w")  # noqa: SIM115
                 try:
                     proc = subprocess.Popen(
                         cmd,
@@ -26040,7 +26141,7 @@ print(json.dumps({{
                 self._save_state()
                 return job
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start job: {e}")
         return None
 
@@ -26099,13 +26200,13 @@ print(json.dumps({{
                                 last_err = result.get("error", "unknown")
                             else:
                                 last_err = f"http_{resp.status}"
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         last_err = str(e)
 
                 if last_err:
                     logger.info(f"Export job dispatch failed to {node.node_id}: {last_err}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to dispatch export job to {node.node_id}: {e}")
 
     async def _request_remote_job(
@@ -26171,12 +26272,12 @@ print(json.dumps({{
                                 logger.info(f"Started remote {board_type} {num_players}p job on {node.node_id}")
                                 return
                             last_err = str(data.get("error") or "start_failed")
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         last_err = str(e)
                         continue
                 if last_err:
                     logger.error(f"Failed to start remote job on {node.node_id}: {last_err}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to request remote job from {node.node_id}: {e}")
 
     def _enqueue_relay_command(self, node_id: str, cmd_type: str, payload: dict[str, Any]) -> str | None:
@@ -26269,7 +26370,7 @@ print(json.dumps({{
                                 if data.get("success"):
                                     return str(data.get("id") or "")
                                 last_err = str(data.get("error") or "enqueue_failed")
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             last_err = str(e)
                             continue
                     if last_err:
@@ -26295,10 +26396,8 @@ print(json.dumps({{
                     "port": self.port,
                 }).encode()
 
-                try:
-                    sock.sendto(message, ('<broadcast>', DISCOVERY_PORT))
-                except OSError:
-                    pass  # Broadcast may fail on some networks
+                with contextlib.suppress(OSError):
+                    sock.sendto(message, ("<broadcast>", DISCOVERY_PORT))
 
                 # Listen for responses
                 try:
@@ -26573,7 +26672,7 @@ print(json.dumps({{
                 logger.warning("NFS sync verification found mismatches - check logs for details")
         except ImportError:
             logger.debug("NFS sync verification not available")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"NFS sync verification failed: {e}")
 
         # Wire SyncRouter to event system for real-time sync triggers (December 2025)
@@ -26717,7 +26816,7 @@ print(json.dumps({{
                     results = await loop_manager.stop_all(timeout=15.0)
                     stopped = sum(1 for ok in results.values() if ok)
                     logger.info(f"LoopManager: stopped {stopped}/{len(results)} loops")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"LoopManager: stop failed: {e}")
             try:
                 await asyncio.wait_for(runner.cleanup(), timeout=30)
@@ -26782,7 +26881,7 @@ def main():
             sync_to_disk_interval=args.sync_to_disk_interval,
         )
         logger.info(f"P2P orchestrator initialized successfully: {args.node_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.exception(f"Failed to initialize P2P orchestrator: {e}")
         sys.exit(1)
 
@@ -26826,7 +26925,7 @@ def main():
     try:
         logger.info(f"Starting P2P orchestrator main loop: {args.node_id}")
         asyncio.run(orchestrator.run())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.exception(f"P2P orchestrator crashed: {e}")
         sys.exit(1)
     finally:
@@ -26835,7 +26934,7 @@ def main():
             try:
                 orchestrator.stop_ramdrive_syncer(final_sync=True)
                 logger.info("Ramdrive sync completed on shutdown")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Ramdrive sync on shutdown failed: {e}")
             # December 2025: Close webhook notifier to prevent memory leaks
             try:

@@ -1419,6 +1419,66 @@ class SelfplayOrchestrator:
         self._completed_history.clear()
         return count
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check orchestrator health status.
+
+        December 2025: Added for daemon health monitoring coverage (Phase 13).
+
+        Returns:
+            HealthCheckResult indicating orchestrator health
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        stats = self.get_stats()
+        now = time.time()
+
+        # Check if subscribed to events
+        if not self._subscribed:
+            return HealthCheckResult.degraded(
+                "Not subscribed to events",
+                subscribed=False,
+                active_tasks=stats.active_tasks,
+            )
+
+        # Check if paused for regression
+        if self._paused_for_regression:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.PAUSED,
+                message="Paused for model regression investigation",
+                details={
+                    "paused_for_regression": True,
+                    "active_tasks": stats.active_tasks,
+                },
+            )
+
+        # Check staleness - if no activity for more than stats_window
+        if stats.last_activity_time > 0:
+            activity_age = now - stats.last_activity_time
+            if activity_age > self.stats_window_seconds * 2:
+                return HealthCheckResult.degraded(
+                    f"No selfplay activity for {activity_age:.0f}s",
+                    last_activity_seconds_ago=activity_age,
+                    active_tasks=stats.active_tasks,
+                    completed_tasks=stats.completed_tasks,
+                )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Tracking {stats.active_tasks} active, {stats.completed_tasks} completed tasks",
+            details={
+                "subscribed": self._subscribed,
+                "active_tasks": stats.active_tasks,
+                "completed_tasks": stats.completed_tasks,
+                "failed_tasks": stats.failed_tasks,
+                "total_games_generated": stats.total_games_generated,
+                "average_games_per_second": stats.average_games_per_second,
+                "nodes_under_backpressure": len(self._backpressure_nodes),
+            },
+        )
+
 
 # =============================================================================
 # Singleton and convenience functions

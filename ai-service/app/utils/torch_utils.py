@@ -219,6 +219,19 @@ def safe_load_checkpoint(
     if verify_checksum:
         valid, computed = verify_model_checksum(path, strict=strict_checksum)
         if not valid:
+            # Dec 2025: Emit model corrupted event for downstream systems
+            try:
+                import asyncio
+                from app.coordination.event_emitters import emit_model_corrupted
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(emit_model_corrupted(
+                        model_id=path.stem,
+                        model_path=str(path),
+                        corruption_type="checksum_mismatch",
+                    ))
+            except Exception:
+                pass  # Best-effort event emission
             raise ModelCorruptionError(
                 f"Model checksum verification failed for {path}. "
                 "The model file may be corrupted or tampered with."

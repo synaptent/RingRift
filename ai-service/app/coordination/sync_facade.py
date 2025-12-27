@@ -471,6 +471,56 @@ class SyncFacade:
                 errors=[f"SyncOrchestrator not available: {e}"],
             )
 
+    async def trigger_priority_sync(
+        self,
+        reason: str = "priority_sync",
+        source_node: str | None = None,
+        config_key: str | None = None,
+        data_type: str = "games",
+    ) -> SyncResponse:
+        """Trigger a priority sync for urgent data recovery.
+
+        This is used for critical sync scenarios like orphan game recovery
+        where data needs to be synced immediately before potential loss.
+
+        Args:
+            reason: Reason for priority sync (for logging)
+            source_node: Node to pull data from (if known)
+            config_key: Config key to filter sync (e.g., "hex8_2p")
+            data_type: Type of data to sync
+
+        Returns:
+            SyncResponse from the sync operation
+        """
+        logger.info(
+            f"[SyncFacade] Priority sync triggered: reason={reason}, "
+            f"source={source_node}, config={config_key}"
+        )
+
+        # Parse board_type and num_players from config_key if provided
+        board_type = None
+        num_players = None
+        if config_key and "_" in config_key:
+            parts = config_key.rsplit("_", 1)
+            if len(parts) == 2 and parts[1].endswith("p"):
+                board_type = parts[0]
+                try:
+                    num_players = int(parts[1][:-1])
+                except ValueError:
+                    pass
+
+        # Build request with high priority
+        request = SyncRequest(
+            data_type=data_type,
+            targets=[source_node] if source_node else None,
+            board_type=board_type,
+            num_players=num_players,
+            priority="critical",  # Use critical priority for immediate handling
+            require_confirmation=True,
+        )
+
+        return await self.sync(request)
+
     def get_stats(self) -> dict[str, Any]:
         """Get sync statistics."""
         return {

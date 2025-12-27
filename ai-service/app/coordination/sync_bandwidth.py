@@ -45,25 +45,37 @@ logger = logging.getLogger(__name__)
 
 
 # December 2025: Provider-specific bandwidth hints (KB/s)
-# These are conservative defaults to avoid triggering rate limits or
-# connection resets on various cloud providers.
-PROVIDER_BANDWIDTH_HINTS = {
-    # High-bandwidth providers
-    "lambda": 100000,  # 100 MB/s - Lambda Labs internal network is fast
-    "runpod": 100000,  # 100 MB/s - RunPod has good connectivity
-    "tailscale": 100000,  # 100 MB/s - Internal Tailscale mesh
+# Consolidated to use cluster_config as the single source of truth.
+# This re-export is for backward compatibility with existing imports.
+def _get_provider_bandwidth_hints() -> dict[str, int]:
+    """Get provider bandwidth hints from cluster_config.
 
-    # Medium-bandwidth providers
-    "hetzner": 80000,  # 80 MB/s - Hetzner dedicated servers
-    "vultr": 80000,  # 80 MB/s - Vultr cloud
+    December 2025: Consolidated to single source of truth in cluster_config.py
+    This function provides backward compatibility for existing imports.
+    """
+    try:
+        from app.config.cluster_config import _PROVIDER_BANDWIDTH_DEFAULTS_KBS
+        # Add tailscale as high-bandwidth provider (not tracked in cluster_config)
+        hints = dict(_PROVIDER_BANDWIDTH_DEFAULTS_KBS)
+        hints.setdefault("tailscale", 100_000)  # 100 MB/s for Tailscale mesh
+        return hints
+    except ImportError:
+        # Fallback if cluster_config not available
+        return {
+            "lambda": 100_000,
+            "runpod": 100_000,
+            "nebius": 50_000,
+            "vast": 50_000,
+            "vultr": 50_000,
+            "hetzner": 80_000,
+            "tailscale": 100_000,
+            "default": 20_000,
+        }
 
-    # Conservative providers (rate limits or flaky connections)
-    "nebius": 50000,  # 50 MB/s - Has rate limits, can cause connection resets
-    "vast": 50000,  # 50 MB/s - Varies by instance, use conservative default
 
-    # Default fallback
-    "default": 20000,  # 20 MB/s - Conservative default
-}
+# Backward compatibility: expose as module-level dict
+# Note: For new code, use cluster_config.get_node_bandwidth_kbs() instead
+PROVIDER_BANDWIDTH_HINTS = _get_provider_bandwidth_hints()
 
 
 class TransferPriority(Enum):

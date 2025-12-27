@@ -766,6 +766,10 @@ LOW_QUALITY_THRESHOLD = 0.4
 # Minimum quality score for priority sync (higher than training minimum)
 MIN_QUALITY_FOR_PRIORITY_SYNC = 0.5
 
+# Minimum games before sync is worthwhile (Phase 3 Dec 2025)
+# Below this threshold, sync overhead exceeds benefit
+MIN_GAMES_FOR_SYNC = 50
+
 # Medium quality threshold - baseline for "acceptable" quality
 MEDIUM_QUALITY_THRESHOLD = 0.6
 

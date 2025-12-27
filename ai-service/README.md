@@ -112,7 +112,7 @@ See `scripts/ARCHIVE_INDEX.md` and `scripts/DEPRECATED.md` for the curated list 
 
 ## Configuration
 
-The unified loop reads configuration from `config/unified_loop.yaml`. Key settings:
+`master_loop.py` reads configuration from `config/unified_loop.yaml`. Key settings:
 
 - Data sync intervals
 - Training thresholds

@@ -39,7 +39,7 @@ import os
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
@@ -317,7 +317,7 @@ class UnifiedDistributionDaemon:
     def _subscribe_to_events(self) -> None:
         """Subscribe to MODEL_PROMOTED and NPZ_EXPORT_COMPLETE events."""
         try:
-            from app.coordination.event_router import subscribe, DataEventType
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Model events
             subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
@@ -491,15 +491,14 @@ class UnifiedDistributionDaemon:
                 continue
 
             # Validate NPZ structure before distribution
-            if self.config.validate_npz_structure:
-                if not await self._validate_npz(npz_file):
-                    logger.error(f"NPZ validation failed: {npz_path}")
-                    self._failed_distributions += 1
-                    # Emit failure event for validation failure (Dec 2025)
-                    await self._emit_failure_event(
-                        DataType.NPZ, [item], f"NPZ validation failed: {npz_path}"
-                    )
-                    continue
+            if self.config.validate_npz_structure and not await self._validate_npz(npz_file):
+                logger.error(f"NPZ validation failed: {npz_path}")
+                self._failed_distributions += 1
+                # Emit failure event for validation failure (Dec 2025)
+                await self._emit_failure_event(
+                    DataType.NPZ, [item], f"NPZ validation failed: {npz_path}"
+                )
+                continue
 
             success = await self._run_smart_distribution(
                 [npz_file], target_nodes, DataType.NPZ
@@ -553,47 +552,48 @@ class UnifiedDistributionDaemon:
                 start_time = time.time()
 
                 # Try BitTorrent for large files
-                if use_bittorrent:
-                    if await self._distribute_via_bittorrent(file_path, target):
+                if use_bittorrent and await self._distribute_via_bittorrent(file_path, target):
+                    success_count += 1
+                    self._record_delivery(
+                        node_id, node_host, str(file_path), data_type,
+                        True, True, time.time() - start_time, "bittorrent"
+                    )
+                    continue
+
+                # Try HTTP
+                if self.config.use_http_distribution and await self._distribute_via_http(
+                    file_path, target, data_type
+                ):
+                    # Verify checksum
+                    checksum_ok = True
+                    if source_checksum:
+                        checksum_ok = await self._verify_remote_checksum(
+                            target, file_path, source_checksum, data_type
+                        )
+                    if checksum_ok:
                         success_count += 1
                         self._record_delivery(
                             node_id, node_host, str(file_path), data_type,
-                            True, True, time.time() - start_time, "bittorrent"
+                            True, checksum_ok, time.time() - start_time, "http"
                         )
                         continue
 
-                # Try HTTP
-                if self.config.use_http_distribution:
-                    if await self._distribute_via_http(file_path, target, data_type):
-                        # Verify checksum
-                        checksum_ok = True
-                        if source_checksum:
-                            checksum_ok = await self._verify_remote_checksum(
-                                target, file_path, source_checksum, data_type
-                            )
-                        if checksum_ok:
-                            success_count += 1
-                            self._record_delivery(
-                                node_id, node_host, str(file_path), data_type,
-                                True, checksum_ok, time.time() - start_time, "http"
-                            )
-                            continue
-
                 # Fallback to rsync
-                if self.config.fallback_to_rsync:
-                    if await self._distribute_via_rsync(file_path, target, data_type):
-                        checksum_ok = True
-                        if source_checksum:
-                            checksum_ok = await self._verify_remote_checksum(
-                                target, file_path, source_checksum, data_type
-                            )
-                        if checksum_ok:
-                            success_count += 1
-                            self._record_delivery(
-                                node_id, node_host, str(file_path), data_type,
-                                True, checksum_ok, time.time() - start_time, "rsync"
-                            )
-                            continue
+                if self.config.fallback_to_rsync and await self._distribute_via_rsync(
+                    file_path, target, data_type
+                ):
+                    checksum_ok = True
+                    if source_checksum:
+                        checksum_ok = await self._verify_remote_checksum(
+                            target, file_path, source_checksum, data_type
+                        )
+                    if checksum_ok:
+                        success_count += 1
+                        self._record_delivery(
+                            node_id, node_host, str(file_path), data_type,
+                            True, checksum_ok, time.time() - start_time, "rsync"
+                        )
+                        continue
 
                 # All methods failed
                 self._record_delivery(
@@ -699,10 +699,10 @@ class UnifiedDistributionDaemon:
     ) -> bool:
         """Distribute file via BitTorrent."""
         try:
-            from app.distributed.aria2_transport import Aria2Transport, Aria2Config
+            from app.distributed.aria2_transport import Aria2Config, Aria2Transport
 
             transport = Aria2Transport(Aria2Config(enable_bittorrent=True))
-            torrent_path, info_hash, error = await transport.create_and_register_torrent(file_path)
+            torrent_path, info_hash, _error = await transport.create_and_register_torrent(file_path)
 
             if not info_hash:
                 return False
@@ -732,7 +732,7 @@ class UnifiedDistributionDaemon:
             return None
 
         try:
-            from app.utils.checksum_utils import compute_file_checksum, LARGE_CHUNK_SIZE
+            from app.utils.checksum_utils import LARGE_CHUNK_SIZE, compute_file_checksum
             loop = asyncio.get_running_loop()
             checksum = await loop.run_in_executor(
                 None,
@@ -816,61 +816,55 @@ class UnifiedDistributionDaemon:
             return False
 
     def _get_distribution_targets(self) -> list[str]:
-        """Get list of target nodes for model distribution."""
-        try:
-            import yaml
-            config_path = ROOT / "config" / "distributed_hosts.yaml"
-            if not config_path.exists():
-                return []
+        """Get list of target nodes for model distribution.
 
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
+        December 2025: Migrated to use cluster_config helpers instead of inline YAML.
+        """
+        try:
+            from app.config.cluster_config import get_active_nodes
 
             targets = []
-            for name, host_config in config.get("hosts", {}).items():
-                status = host_config.get("status", "ready")
-                if status not in ("ready", "active"):
+            for node in get_active_nodes():
+                # Only include nodes with "ready" or "active" status
+                if node.status not in ("ready", "active"):
                     continue
-                host = (
-                    host_config.get("ssh_host")
-                    or host_config.get("tailscale_ip")
-                    or host_config.get("host")
-                )
+                host = node.best_ip
                 if host:
                     targets.append(host)
             return targets
 
-        except (OSError, yaml.YAMLError, KeyError, TypeError) as e:
+        except (ImportError, OSError, KeyError, TypeError) as e:
             logger.warning(f"Failed to get distribution targets: {e}")
             return []
 
     async def _get_training_nodes(self) -> list[dict[str, Any]]:
-        """Get list of training-capable nodes."""
+        """Get list of training-capable nodes.
+
+        December 2025: Fallback migrated to use cluster_config helpers instead of inline YAML.
+        """
         try:
-            from app.coordination.sync_router import get_sync_router, DataType as SRDataType
+            from app.coordination.sync_router import (
+                DataType as SRDataType,
+                get_sync_router,
+            )
             router = get_sync_router()
             return router.get_sync_targets(SRDataType.NPZ)
         except ImportError:
-            # Fallback to config
+            # Fallback to cluster_config helpers (Dec 2025)
             try:
-                import yaml
-                config_path = ROOT / "config" / "distributed_hosts.yaml"
-                if not config_path.exists():
-                    return []
-
-                with open(config_path) as f:
-                    config = yaml.safe_load(f)
+                from app.config.cluster_config import get_cluster_nodes
 
                 nodes = []
-                for node_id, node_cfg in config.get("hosts", {}).items():
-                    if node_cfg.get("type") in ("training", "selfplay"):
+                for node_id, node in get_cluster_nodes().items():
+                    # Training and selfplay roles are eligible for NPZ distribution
+                    if node.role in ("training", "selfplay"):
                         nodes.append({
                             "node_id": node_id,
-                            "host": node_cfg.get("host"),
-                            "user": node_cfg.get("user", "ubuntu"),
+                            "host": node.best_ip,
+                            "user": node.ssh_user,
                         })
                 return nodes
-            except (OSError, yaml.YAMLError, KeyError, TypeError):
+            except (ImportError, OSError, KeyError, TypeError):
                 return []
 
     async def _create_model_symlinks(self, model_paths: list[Path]) -> None:
@@ -1142,7 +1136,7 @@ async def wait_for_model_distribution(
 
     # Subscribe to distribution events
     try:
-        from app.coordination.event_router import subscribe, DataEventType
+        from app.coordination.event_router import DataEventType, subscribe
 
         subscribe(DataEventType.MODEL_DISTRIBUTION_COMPLETE, on_distribution_complete)
 

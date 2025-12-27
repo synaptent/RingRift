@@ -164,10 +164,14 @@ class EphemeralDataGuard:
         if not hasattr(self._local, "conn") or self._local.conn is None:
             self._local.conn = sqlite3.connect(
                 str(self.db_path),
-                timeout=10,
+                timeout=30,  # Dec 2025: Increased from 10s for ephemeral host resilience
                 check_same_thread=False
             )
             self._local.conn.row_factory = sqlite3.Row
+            # Dec 2025: Enable WAL mode for better crash recovery on ephemeral hosts
+            # WAL mode survives power loss better than DELETE journal mode
+            self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA synchronous=NORMAL")  # Balance durability/speed
         return self._local.conn
 
     def _init_db(self) -> None:
@@ -477,9 +481,17 @@ class EphemeralDataGuard:
 
         total_unsynced = sum(c.unsynced_games for c in ephemeral_hosts)
 
+        # Dec 2025: Track games at risk of being lost if ephemeral hosts terminate
+        # This metric should be monitored and kept low via aggressive sync
+        games_at_risk = sum(
+            c.unsynced_games for c in ephemeral_hosts
+            if c.seconds_since_heartbeat > CHECKPOINT_INTERVAL * 2  # Stale heartbeat
+        )
+
         return {
             "ephemeral_hosts": len(ephemeral_hosts),
             "total_unsynced_games": total_unsynced,
+            "games_at_risk_on_termination": games_at_risk,  # Dec 2025: New metric
             "evacuation_candidates": [c.host for c in evacuation_candidates],
             "pending_write_throughs": pending_write_throughs,
             "hosts": {

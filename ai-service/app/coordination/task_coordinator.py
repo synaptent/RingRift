@@ -1737,6 +1737,87 @@ class TaskCoordinator:
 
         return {"verified": verified, "removed": removed}
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check task coordinator health status.
+
+        December 2025: Added for daemon health monitoring coverage (Phase 13).
+
+        Returns:
+            HealthCheckResult indicating coordinator health
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        stats = self.get_stats()
+
+        # Map CoordinatorState to HealthCheckResult status
+        state_to_status = {
+            CoordinatorState.RUNNING: CoordinatorStatus.RUNNING,
+            CoordinatorState.PAUSED: CoordinatorStatus.PAUSED,
+            CoordinatorState.DRAINING: CoordinatorStatus.STOPPING,
+            CoordinatorState.EMERGENCY: CoordinatorStatus.ERROR,
+            CoordinatorState.STOPPED: CoordinatorStatus.STOPPED,
+        }
+
+        # Check state
+        if self.state == CoordinatorState.EMERGENCY:
+            return HealthCheckResult.unhealthy(
+                "Emergency stop active",
+                state=self.state.value,
+                total_tasks=stats["total_tasks"],
+            )
+
+        if self.state == CoordinatorState.STOPPED:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Coordinator stopped",
+                details={"state": self.state.value},
+            )
+
+        # Check if paused due to resources
+        if self._paused_due_to_resources:
+            return HealthCheckResult(
+                healthy=True,  # Paused but operational
+                status=CoordinatorStatus.PAUSED,
+                message="Paused for resource recovery",
+                details={
+                    "state": self.state.value,
+                    "paused_due_to_resources": True,
+                    "total_tasks": stats["total_tasks"],
+                },
+            )
+
+        # Check for critical resource exhaustion
+        for node_id, resources in self._resource_cache.items():
+            if resources.get("disk_percent", 0) >= self.limits.halt_on_disk_percent:
+                return HealthCheckResult.degraded(
+                    f"Critical disk usage on {node_id}: {resources['disk_percent']:.0f}%",
+                    critical_node=node_id,
+                    disk_percent=resources["disk_percent"],
+                )
+            if resources.get("memory_percent", 0) >= self.limits.halt_on_memory_percent:
+                return HealthCheckResult.degraded(
+                    f"Critical memory usage on {node_id}: {resources['memory_percent']:.0f}%",
+                    critical_node=node_id,
+                    memory_percent=resources["memory_percent"],
+                )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=state_to_status.get(self.state, CoordinatorStatus.RUNNING),
+            message=f"Managing {stats['total_tasks']} tasks across {len(stats['by_node'])} nodes",
+            details={
+                "state": self.state.value,
+                "total_tasks": stats["total_tasks"],
+                "tasks_by_type": stats["by_type"],
+                "tasks_by_node": stats["by_node"],
+                "spawns_last_minute": stats["spawns_last_minute"],
+                "rate_limiter_tokens": stats["rate_limiter_tokens"],
+                "gauntlet_reserved": len(self._gauntlet_reserved),
+            },
+        )
+
 
 # ============================================
 # Context Manager for Coordinated Tasks

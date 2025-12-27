@@ -151,6 +151,8 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
         self._nodes: dict[str, WatchdogNodeStatus] = {}
         self._config_index = 0  # Cycle through selfplay configs
         self._last_cycle_stats: WatchdogCycleStats | None = None
+        # December 2025: Track cluster health for spawn decisions
+        self._cluster_healthy: bool = True
 
         # Path to cluster_activator.py for node discovery
         self._activator_path = Path(__file__).parent.parent.parent / "scripts" / "cluster_activator.py"
@@ -178,6 +180,9 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             router = get_event_router()
             router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
             router.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
+            # December 2025: Subscribe to cluster health for spawn pause
+            router.subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY, self._on_cluster_unhealthy)
+            router.subscribe(DataEventType.P2P_CLUSTER_HEALTHY, self._on_cluster_healthy)
             logger.info(f"[{self._get_daemon_name()}] Subscribed to cluster events")
         except ImportError:
             logger.debug(f"[{self._get_daemon_name()}] Event router not available")
@@ -202,9 +207,32 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
         except Exception as e:
             logger.debug(f"[{self._get_daemon_name()}] Error handling host online: {e}")
 
+    async def _on_cluster_unhealthy(self, event) -> None:
+        """Handle cluster becoming unhealthy - pause spawning."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            reason = payload.get("reason", "unknown")
+            logger.warning(f"[{self._get_daemon_name()}] Cluster unhealthy: {reason} - pausing spawning")
+            self._cluster_healthy = False
+        except Exception as e:
+            logger.debug(f"[{self._get_daemon_name()}] Error handling cluster unhealthy: {e}")
+
+    async def _on_cluster_healthy(self, event) -> None:
+        """Handle cluster becoming healthy - resume spawning."""
+        try:
+            logger.info(f"[{self._get_daemon_name()}] Cluster healthy - resuming spawning")
+            self._cluster_healthy = True
+        except Exception as e:
+            logger.debug(f"[{self._get_daemon_name()}] Error handling cluster healthy: {e}")
+
     async def _run_cycle(self) -> None:
         """Run a single watchdog cycle."""
         stats = WatchdogCycleStats(cycle_start=time.time())
+
+        # December 2025: Skip spawning when cluster is unhealthy
+        if not self._cluster_healthy:
+            logger.info("[ClusterWatchdog] Skipping cycle - cluster unhealthy")
+            return
 
         try:
             # Step 1: Discover nodes from all providers

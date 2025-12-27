@@ -1822,6 +1822,40 @@ class UnifiedHealthManager(CoordinatorBase):
         })
         return base_stats
 
+    async def health_check(self) -> bool:
+        """Check if the health manager is healthy.
+
+        Returns True if running and functioning properly.
+        Used by DaemonManager for crash detection and auto-restart.
+        """
+        if self.status != CoordinatorStatus.READY:
+            return False
+
+        # Check event subscription is active
+        if not self._subscribed:
+            logger.warning(
+                "[UnifiedHealthManager] health_check failed: not subscribed to events"
+            )
+            return False
+
+        # Check we haven't accumulated too many unrecovered errors
+        unrecovered = self._total_errors - self._successful_recoveries
+        if unrecovered > 100:
+            logger.warning(
+                f"[UnifiedHealthManager] health_check warning: "
+                f"{unrecovered} unrecovered errors"
+            )
+
+        # Check we don't have too many open circuits (indicates system stress)
+        health_stats = self.get_health_stats()
+        if health_stats.circuit_breakers_open > 5:
+            logger.warning(
+                f"[UnifiedHealthManager] health_check warning: "
+                f"{health_stats.circuit_breakers_open} circuit breakers open"
+            )
+
+        return True
+
     def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring (sync version)."""
         health_stats = self.get_health_stats()

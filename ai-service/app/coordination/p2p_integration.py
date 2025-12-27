@@ -61,6 +61,13 @@ except ImportError:
     discover_p2p_leader_url = None  # type: ignore
     get_p2p_backend = None  # type: ignore
 
+# Dec 2025: Use centralized P2P port config
+try:
+    from app.config.cluster_config import get_p2p_port
+except ImportError:
+    def get_p2p_port() -> int:
+        return int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
+
 # Try to import aiohttp directly for raw HTTP calls
 if not HAS_AIOHTTP:
     try:
@@ -99,7 +106,7 @@ class P2PNodeStatus:
         return cls(
             node_id=data.get("node_id", ""),
             host=data.get("host", ""),
-            port=data.get("port", 8770),
+            port=data.get("port", get_p2p_port()),  # Dec 2025: Use centralized config
             is_alive=data.get("is_alive", True),
             is_healthy=data.get("is_healthy", True),
             gpu_utilization=data.get("gpu_utilization", 0.0),

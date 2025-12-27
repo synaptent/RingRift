@@ -896,6 +896,8 @@ async def emit_quality_updated(
     **metadata,
 ) -> bool:
     """Emit quality score updated event via DataEventBus."""
+    if not HAS_DATA_EVENTS:
+        return False
     return await _emit_data_event(
         DataEventType.QUALITY_SCORE_UPDATED,
         {
@@ -1046,6 +1048,8 @@ async def emit_optimization_triggered(
     **metadata,
 ) -> bool:
     """Emit CMAES_TRIGGERED or NAS_TRIGGERED event."""
+    if not HAS_DATA_EVENTS:
+        return False
     event_type = (
         DataEventType.CMAES_TRIGGERED
         if optimization_type.lower() == "cmaes"
@@ -1078,6 +1082,8 @@ async def emit_plateau_detected(
     **metadata,
 ) -> bool:
     """Emit PLATEAU_DETECTED event."""
+    if not HAS_DATA_EVENTS:
+        return False
     return await _emit_data_event(
         DataEventType.PLATEAU_DETECTED,
         {
@@ -1150,6 +1156,8 @@ async def emit_backpressure_activated(
     **metadata,
 ) -> bool:
     """Emit BACKPRESSURE_ACTIVATED event."""
+    if not HAS_DATA_EVENTS:
+        return False
     return await _emit_data_event(
         DataEventType.BACKPRESSURE_ACTIVATED,
         {
@@ -1196,6 +1204,8 @@ async def emit_cache_invalidated(
     **metadata,
 ) -> bool:
     """Emit CACHE_INVALIDATED event."""
+    if not HAS_DATA_EVENTS:
+        return False
     return await _emit_data_event(
         DataEventType.CACHE_INVALIDATED,
         {
@@ -1221,6 +1231,8 @@ async def emit_host_online(
     **metadata,
 ) -> bool:
     """Emit HOST_ONLINE event."""
+    if not HAS_DATA_EVENTS:
+        return False
     return await _emit_data_event(
         DataEventType.HOST_ONLINE,
         {
@@ -1399,6 +1411,80 @@ async def emit_coordinator_heartbeat(
             "events_processed": events_processed,
             **metadata,
         },
+    )
+
+
+async def emit_coordinator_healthy(
+    coordinator_name: str,
+    *,
+    health_score: float = 1.0,
+    uptime_seconds: float = 0.0,
+    subscribed: bool = True,
+    source: str = "",
+) -> bool:
+    """Emit COORDINATOR_HEALTHY event when coordinator initializes successfully.
+
+    December 2025: Added for coordination_bootstrap integration to track
+    successful coordinator initialization and recovery.
+
+    Args:
+        coordinator_name: Name of the coordinator
+        health_score: Health score (0.0-1.0), defaults to 1.0 for newly initialized
+        uptime_seconds: Seconds since initialization
+        subscribed: Whether coordinator is subscribed to its events
+        source: Event source identifier
+
+    Returns:
+        True if emitted successfully
+    """
+    return await _emit_data_event(
+        DataEventType.COORDINATOR_HEALTHY,
+        {
+            "coordinator_name": coordinator_name,
+            "health_score": health_score,
+            "uptime_seconds": uptime_seconds,
+            "subscribed": subscribed,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted coordinator_healthy: {coordinator_name}",
+        log_level="info",
+    )
+
+
+async def emit_coordinator_unhealthy(
+    coordinator_name: str,
+    *,
+    reason: str = "initialization_failed",
+    error: str | None = None,
+    health_score: float = 0.0,
+    source: str = "",
+) -> bool:
+    """Emit COORDINATOR_UNHEALTHY event when coordinator fails to initialize.
+
+    December 2025: Added for coordination_bootstrap integration to track
+    coordinator initialization failures and health degradation.
+
+    Args:
+        coordinator_name: Name of the coordinator
+        reason: Reason for unhealthy status
+        error: Error message if available
+        health_score: Health score (0.0-1.0)
+        source: Event source identifier
+
+    Returns:
+        True if emitted successfully
+    """
+    return await _emit_data_event(
+        DataEventType.COORDINATOR_UNHEALTHY,
+        {
+            "coordinator_name": coordinator_name,
+            "reason": reason,
+            "error": error or "",
+            "health_score": health_score,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted coordinator_unhealthy: {coordinator_name} - {reason}",
+        log_level="warning",
     )
 
 
@@ -1703,6 +1789,36 @@ async def emit_p2p_cluster_unhealthy(
     )
 
 
+async def emit_p2p_node_dead(
+    node_id: str,
+    *,
+    reason: str = "timeout",
+    last_seen: float | None = None,
+    offline_duration_seconds: float = 0.0,
+    source: str = "",
+) -> bool:
+    """Emit P2P_NODE_DEAD event when a node is confirmed dead.
+
+    December 2025: Distinct from HOST_OFFLINE - this indicates a node that
+    has been confirmed dead (not just temporarily offline) and requires
+    work reassignment. Subscribers use this for:
+    - SelfplayScheduler: Mark node as unavailable for selfplay allocation
+    - UnifiedQueuePopulator: Reassign jobs from dead node
+    """
+    return await _emit_data_event(
+        DataEventType.P2P_NODE_DEAD,
+        {
+            "node_id": node_id,
+            "reason": reason,
+            "last_seen": last_seen or time.time(),
+            "offline_duration_seconds": offline_duration_seconds,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted p2p_node_dead for {node_id}: {reason}",
+        log_level="warning",
+    )
+
+
 __all__ = [
     # Backpressure events (December 2025)
     "emit_backpressure_activated",
@@ -1710,8 +1826,10 @@ __all__ = [
     # Cache events (December 2025)
     "emit_cache_invalidated",
     "emit_coordinator_health_degraded",
+    "emit_coordinator_healthy",
     "emit_coordinator_heartbeat",
     "emit_coordinator_shutdown",
+    "emit_coordinator_unhealthy",
     # Curriculum events (December 2025)
     "emit_curriculum_rebalanced",
     "emit_curriculum_updated",
@@ -1734,6 +1852,7 @@ __all__ = [
     "emit_health_check_failed",
     "emit_p2p_cluster_healthy",
     "emit_p2p_cluster_unhealthy",
+    "emit_p2p_node_dead",
     # Optimization events (December 2025)
     "emit_optimization_triggered",
     # Metrics events (December 2025)

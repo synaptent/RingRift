@@ -797,6 +797,23 @@ class DataPipelineOrchestrator:
                 self._on_data_model_promoted,
             )
 
+            # Orphan games detection - triggers sync and registration (Dec 2025)
+            router.subscribe(
+                DataEventType.ORPHAN_GAMES_DETECTED.value,
+                self._on_orphan_games_detected,
+            )
+            router.subscribe(
+                DataEventType.ORPHAN_GAMES_REGISTERED.value,
+                self._on_orphan_games_registered,
+            )
+
+            # December 2025: Subscribe to GAME_SYNCED for export triggering
+            # When games are synced to training nodes, this can trigger NPZ export
+            router.subscribe(
+                DataEventType.GAME_SYNCED.value,
+                self._on_game_synced,
+            )
+
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
             return True
 
@@ -1039,6 +1056,91 @@ class DataPipelineOrchestrator:
             metadata=metadata,
         )
         await self._on_promotion_complete(result)
+
+    async def _on_orphan_games_detected(self, event: Any) -> None:
+        """Handle ORPHAN_GAMES_DETECTED events - trigger sync to recover orphan games.
+
+        Orphan games are selfplay games stored on ephemeral nodes that haven't been
+        synced to training nodes. This event is emitted by OrphanDetectionDaemon
+        when it finds unsynced games. We trigger a priority sync to recover them.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        orphan_count = payload.get("orphan_count", 0)
+        source_node = payload.get("source_node")
+        config_key = payload.get("config_key")
+
+        if orphan_count == 0:
+            return
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Orphan games detected: "
+            f"{orphan_count} games from {source_node} ({config_key})"
+        )
+
+        # Record as pending work that needs sync
+        self._orphan_games_pending = getattr(self, "_orphan_games_pending", 0) + orphan_count
+
+        # Trigger priority sync if auto-trigger enabled
+        if self.auto_trigger and self.auto_trigger_sync:
+            try:
+                from app.coordination.sync_facade import get_sync_facade
+
+                facade = get_sync_facade()
+                if facade:
+                    # Priority sync for orphan recovery
+                    await facade.trigger_priority_sync(
+                        reason="orphan_games_recovery",
+                        source_node=source_node,
+                        config_key=config_key,
+                    )
+                    logger.info(
+                        f"[DataPipelineOrchestrator] Triggered priority sync for orphan recovery"
+                    )
+            except Exception as e:
+                logger.warning(f"[DataPipelineOrchestrator] Failed to trigger orphan sync: {e}")
+
+    async def _on_orphan_games_registered(self, event: Any) -> None:
+        """Handle ORPHAN_GAMES_REGISTERED events - update pipeline state.
+
+        This event is emitted after orphan games are successfully synced and
+        registered in the training data catalog. We can now proceed with export.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        registered_count = payload.get("registered_count", 0)
+        config_key = payload.get("config_key")
+        board_type = payload.get("board_type")
+        num_players = payload.get("num_players")
+
+        if registered_count == 0:
+            return
+
+        logger.info(
+            f"[DataPipelineOrchestrator] Orphan games registered: "
+            f"{registered_count} games for {config_key}"
+        )
+
+        # Update pending count
+        pending = getattr(self, "_orphan_games_pending", 0)
+        self._orphan_games_pending = max(0, pending - registered_count)
+
+        # Emit NEW_GAMES_AVAILABLE for downstream consumers (e.g., export triggers)
+        try:
+            from app.distributed.data_events import emit_data_event, DataEventType
+
+            await emit_data_event(
+                event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                payload={
+                    "board_type": board_type or "unknown",
+                    "num_players": num_players or 2,
+                    "games_count": registered_count,
+                    "source": "orphan_recovery",
+                    "config_key": config_key,
+                },
+            )
+        except ImportError:
+            pass  # data_events not available
+        except Exception as e:
+            logger.debug(f"[DataPipelineOrchestrator] Failed to emit new_games_available: {e}")
 
     async def _on_selfplay_complete(self, result) -> None:
         """Handle selfplay completion."""
@@ -2007,6 +2109,51 @@ class DataPipelineOrchestrator:
         if (self._paused and "Backpressure" in (self._pause_reason or "")
                 and not self._has_critical_constraints()):
             await self._resume_pipeline()
+
+    async def _on_game_synced(self, event) -> None:
+        """Handle GAME_SYNCED - games synced to training nodes.
+
+        December 2025: Wire previously orphaned event. When games are synced
+        to training nodes (via AutoSyncDaemon), this can trigger NPZ export
+        if sufficient games have accumulated.
+
+        Actions:
+        - Track total games synced for metrics
+        - Optionally trigger export if auto_trigger_export enabled and
+          games synced exceed threshold
+        """
+        payload = event.payload if hasattr(event, 'payload') else event
+
+        node_id = payload.get("node_id", "unknown")
+        games_pushed = payload.get("games_pushed", 0)
+        target_nodes = payload.get("target_nodes", [])
+        is_ephemeral = payload.get("is_ephemeral", False)
+
+        # Track cumulative games synced
+        if not hasattr(self, "_games_synced_count"):
+            self._games_synced_count = 0
+        self._games_synced_count += games_pushed
+
+        logger.debug(
+            f"[DataPipelineOrchestrator] Games synced: {games_pushed} from {node_id} "
+            f"to {len(target_nodes)} nodes (ephemeral={is_ephemeral})"
+        )
+
+        # If in SYNC stage and auto-trigger is enabled, consider triggering export
+        if (self._current_stage == PipelineStage.SYNC
+                and self.auto_trigger
+                and self.auto_trigger_export):
+            # Transition to NPZ_EXPORT stage
+            self._transition_to(
+                PipelineStage.NPZ_EXPORT,
+                self._current_iteration,
+                metadata={
+                    "games_synced": games_pushed,
+                    "source_node": node_id,
+                    "target_nodes": target_nodes,
+                },
+            )
+            await self._auto_trigger_export(self._current_iteration)
 
     async def _on_promotion_candidate(self, event) -> None:
         """Handle PROMOTION_CANDIDATE - model ready for promotion evaluation.

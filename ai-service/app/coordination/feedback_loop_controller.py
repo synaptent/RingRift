@@ -371,9 +371,11 @@ class FeedbackLoopController:
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                 bus.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
-            self._subscribed = False
         except (AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"[FeedbackLoopController] Error unsubscribing: {e}")
+        finally:
+            # Dec 2025: Always reset _subscribed to allow re-subscription after restart
+            self._subscribed = False
 
     def _wire_curriculum_feedback(self) -> None:
         """Wire all curriculum feedback integrations."""

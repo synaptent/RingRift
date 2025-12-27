@@ -47,6 +47,81 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Event Emission Helper (December 2025)
+# =============================================================================
+
+
+def _emit_coordinator_health_event(status: "BootstrapCoordinatorStatus") -> None:
+    """Emit coordinator health event based on initialization status.
+
+    December 2025: Added to track coordinator initialization success/failure
+    via the unified event system.
+
+    Args:
+        status: The BootstrapCoordinatorStatus from initialization
+    """
+    try:
+        from app.utils.async_utils import fire_and_forget
+        import asyncio
+
+        # Check if we're in an async context
+        try:
+            asyncio.get_running_loop()
+            in_async = True
+        except RuntimeError:
+            in_async = False
+
+        if status.initialized:
+            # Emit healthy event
+            from app.coordination.event_emitters import emit_coordinator_healthy
+
+            async def _emit_healthy():
+                await emit_coordinator_healthy(
+                    coordinator_name=status.name,
+                    health_score=1.0 if status.subscribed else 0.8,
+                    uptime_seconds=0.0,
+                    subscribed=status.subscribed,
+                    source="coordination_bootstrap",
+                )
+
+            if in_async:
+                fire_and_forget(_emit_healthy(), name=f"emit_healthy_{status.name}")
+            else:
+                # Try to create a task anyway - may work in some contexts
+                try:
+                    fire_and_forget(_emit_healthy(), name=f"emit_healthy_{status.name}")
+                except RuntimeError:
+                    logger.debug(f"[Bootstrap] Could not emit healthy event for {status.name} (no event loop)")
+        else:
+            # Emit unhealthy event
+            from app.coordination.event_emitters import emit_coordinator_unhealthy
+
+            async def _emit_unhealthy():
+                await emit_coordinator_unhealthy(
+                    coordinator_name=status.name,
+                    reason="initialization_failed",
+                    error=status.error or "Unknown error",
+                    health_score=0.0,
+                    source="coordination_bootstrap",
+                )
+
+            if in_async:
+                fire_and_forget(_emit_unhealthy(), name=f"emit_unhealthy_{status.name}")
+            else:
+                try:
+                    fire_and_forget(_emit_unhealthy(), name=f"emit_unhealthy_{status.name}")
+                except RuntimeError:
+                    logger.debug(f"[Bootstrap] Could not emit unhealthy event for {status.name} (no event loop)")
+
+    except ImportError:
+        # Event emitters not available - skip silently
+        pass
+    except Exception as e:
+        # Don't fail bootstrap due to event emission issues
+        logger.debug(f"[Bootstrap] Could not emit health event for {status.name}: {e}")
+
+
+# =============================================================================
 # Initialization State
 # =============================================================================
 
@@ -386,6 +461,14 @@ def _init_coordinator_from_spec(
             status.initialized_at = datetime.now()
             logger.info(f"[Bootstrap] {spec.display_name} initialized")
 
+            # December 2025: Surface subscription failures instead of hiding them
+            if status.initialized and not status.subscribed:
+                logger.warning(
+                    f"[Bootstrap] {spec.display_name} initialized but NOT subscribed. "
+                    "Events may be missed."
+                )
+                _state.errors.append(f"{spec.name}: initialized but not subscribed")
+
         elif spec.pattern == InitPattern.GET:
             # Call get/singleton function
             get_func = getattr(module, spec.func_name)
@@ -398,6 +481,14 @@ def _init_coordinator_from_spec(
                 status.subscribed = True
             status.initialized_at = datetime.now()
             logger.info(f"[Bootstrap] {spec.display_name} initialized")
+
+            # December 2025: Surface subscription failures instead of hiding them
+            if status.initialized and not status.subscribed:
+                logger.warning(
+                    f"[Bootstrap] {spec.display_name} initialized but NOT subscribed. "
+                    "Events may be missed."
+                )
+                _state.errors.append(f"{spec.name}: initialized but not subscribed")
 
         elif spec.pattern == InitPattern.IMPORT:
             # Just import to verify availability
@@ -436,6 +527,9 @@ def _init_coordinator_from_spec(
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize {spec.display_name}: {e}")
 
+    # December 2025: Emit coordinator health event
+    _emit_coordinator_health_event(status)
+
     return status
 
 
@@ -471,6 +565,9 @@ def _init_pipeline_orchestrator(
     except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
         logger.error(f"[Bootstrap] Failed to initialize DataPipelineOrchestrator: {e}")
+
+    # December 2025: Emit coordinator health event
+    _emit_coordinator_health_event(status)
 
     return status
 
@@ -737,8 +834,11 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             games_count = payload.get("games_count", 0)
             quality_score = payload.get("quality_score", 0.0)
 
-            QUALITY_GATE_THRESHOLD = 0.5  # Minimum quality to trigger sync
-            MIN_GAMES_FOR_SYNC = 50  # Minimum games to bother syncing
+            # Phase 3 Dec 2025: Use canonical thresholds from thresholds.py
+            from app.config.thresholds import (
+                MIN_QUALITY_FOR_PRIORITY_SYNC as QUALITY_GATE_THRESHOLD,
+                MIN_GAMES_FOR_SYNC,
+            )
 
             if quality_score > 0 and quality_score < QUALITY_GATE_THRESHOLD:
                 logger.info(
@@ -1928,6 +2028,31 @@ def run_bootstrap_smoke_test() -> dict[str, Any]:
     except (AttributeError, TypeError, RuntimeError) as e:
         checks.append(SmokeTestResult(
             name="health_manager_coordinator_lifecycle",
+            passed=False,
+            error=str(e),
+        ))
+
+    # 10. Check all coordinators are properly subscribed (December 2025)
+    # This catches silent subscription failures where a coordinator initializes
+    # but fails to subscribe to events.
+    try:
+        unsubscribed = [
+            name for name, status in _state.coordinators.items()
+            if status.initialized and not status.subscribed
+        ]
+        checks.append(SmokeTestResult(
+            name="coordinator_subscriptions_complete",
+            passed=len(unsubscribed) == 0,
+            error=f"Unsubscribed coordinators: {unsubscribed}" if unsubscribed else None,
+            details={
+                "total_initialized": sum(1 for s in _state.coordinators.values() if s.initialized),
+                "total_subscribed": sum(1 for s in _state.coordinators.values() if s.subscribed),
+                "unsubscribed": unsubscribed,
+            },
+        ))
+    except (AttributeError, TypeError, RuntimeError) as e:
+        checks.append(SmokeTestResult(
+            name="coordinator_subscriptions_complete",
             passed=False,
             error=str(e),
         ))

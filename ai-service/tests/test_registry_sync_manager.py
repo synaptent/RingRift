@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.distributed.circuit_breaker import CircuitBreaker
 from app.training.registry_sync_manager import (
-    CircuitBreaker,
     NodeInfo,
     RegistrySyncManager,
     SyncState,

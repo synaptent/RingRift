@@ -26,6 +26,7 @@ __all__ = [
     "BACKUP_DIR",
     # Configuration directories
     "CONFIG_DIR",
+    "COORDINATION_DIR",
     # Data directories
     "DATA_DIR",
     "DEPLOYMENT_LOGS_DIR",
@@ -47,6 +48,7 @@ __all__ = [
     "RUNS_DIR",
     "SCRIPTS_DIR",
     "SELFPLAY_DIR",
+    "TRAINING_DIR",
     "TRAINING_LOGS_DIR",
     "TRAINING_METRICS_DB",
     # Database paths
@@ -63,6 +65,7 @@ __all__ = [
     "get_models_dir",
     "get_project_root",
     "get_selfplay_db_path",
+    "get_training_npz_path",
 ]
 
 # =============================================================================
@@ -89,11 +92,13 @@ AI_SERVICE_ROOT = get_project_root()
 # Data directories
 DATA_DIR = AI_SERVICE_ROOT / "data"
 GAMES_DIR = DATA_DIR / "games"
+TRAINING_DIR = DATA_DIR / "training"  # NPZ training data
 SELFPLAY_DIR = DATA_DIR / "selfplay"
 METRICS_DIR = DATA_DIR / "metrics"
 HOLDOUT_DIR = DATA_DIR / "holdouts"
 QUARANTINE_DIR = DATA_DIR / "quarantine"
 BACKUP_DIR = DATA_DIR / "backups"
+COORDINATION_DIR = DATA_DIR / "coordination"  # Coordination state DBs
 
 # Model directories
 MODELS_DIR = AI_SERVICE_ROOT / "models"
@@ -188,6 +193,18 @@ def get_selfplay_db_path(config_key: str) -> Path:
     return SELFPLAY_DIR / f"selfplay_{config_key}.db"
 
 
+def get_training_npz_path(config_key: str) -> Path:
+    """Get the path to a training NPZ file for a config.
+
+    Args:
+        config_key: Configuration key (e.g., 'hex8_2p')
+
+    Returns:
+        Path to the training NPZ file
+    """
+    return TRAINING_DIR / f"{config_key}.npz"
+
+
 def get_model_path(model_name: str, board_type: str | None = None) -> Path:
     """Get the path to a model file.
 
@@ -266,9 +283,11 @@ def get_env_path(env_var: str, default: Path) -> Path:
 if os.environ.get("AI_SERVICE_DATA_DIR"):
     DATA_DIR = Path(os.environ["AI_SERVICE_DATA_DIR"])
     GAMES_DIR = DATA_DIR / "games"
+    TRAINING_DIR = DATA_DIR / "training"
     SELFPLAY_DIR = DATA_DIR / "selfplay"
     METRICS_DIR = DATA_DIR / "metrics"
     HOLDOUT_DIR = DATA_DIR / "holdouts"
+    COORDINATION_DIR = DATA_DIR / "coordination"
 
 if os.environ.get("AI_SERVICE_MODELS_DIR"):
     MODELS_DIR = Path(os.environ["AI_SERVICE_MODELS_DIR"])

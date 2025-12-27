@@ -1491,6 +1491,7 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
         # Check if difficulty or adaptive params changed and reinitialize MCTS instances if needed
         combined_difficulty = self._curriculum_difficulty * self._promotion_difficulty_boost
         adaptive_budget_mult = getattr(self, "_adaptive_search_budget_multiplier", 1.0)
+        opponent_strength = getattr(self, "_adaptive_opponent_strength", 1.0)
         new_budget = int(self._base_budget * combined_difficulty * adaptive_budget_mult)
         if new_budget != self._current_budget:
             logger.info(
@@ -1501,12 +1502,18 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
             from ..ai.factory import create_mcts
             self._current_budget = new_budget
             for p in range(1, self.config.num_players + 1):
+                # Dec 2025: Apply opponent_strength to non-player-1 MCTS
+                # This completes ADAPTIVE_PARAMS_CHANGED feedback loop
+                if p == 1:
+                    player_budget = new_budget
+                else:
+                    player_budget = max(16, int(new_budget * opponent_strength))
                 self._mcts_instances[p] = create_mcts(
                     board_type=self.config.board_type,
                     num_players=self.config.num_players,
                     player_number=p,
                     mode="standard",
-                    simulation_budget=new_budget,
+                    simulation_budget=player_budget,
                     device=self.config.device or "cuda",
                 )
 

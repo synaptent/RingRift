@@ -1052,6 +1052,13 @@ class UnifiedQueuePopulatorDaemon:
 
     async def _subscribe_to_data_events(self) -> None:
         """Subscribe to data/training events."""
+        global _events_wired
+
+        # Skip if already wired (by wire_queue_populator_events() or another daemon)
+        if _events_wired:
+            logger.debug("[QueuePopulatorDaemon] Events already wired, skipping")
+            return
+
         try:
             from app.coordination.event_router import DataEventType, get_router
 
@@ -1192,6 +1199,7 @@ class UnifiedQueuePopulatorDaemon:
             if hasattr(DataEventType, 'WORK_TIMEOUT'):
                 router.subscribe(DataEventType.WORK_TIMEOUT.value, _on_work_timeout)
 
+            _events_wired = True
             logger.info("[QueuePopulatorDaemon] Subscribed to data events (incl. WORK_FAILED/TIMEOUT)")
 
         except ImportError:
@@ -1327,6 +1335,7 @@ class UnifiedQueuePopulatorDaemon:
 
 _populator: UnifiedQueuePopulator | None = None
 _daemon: UnifiedQueuePopulatorDaemon | None = None
+_events_wired: bool = False  # Track if events already subscribed to prevent duplicates
 
 
 def get_queue_populator(
@@ -1354,9 +1363,10 @@ def get_queue_populator_daemon(
 
 def reset_queue_populator() -> None:
     """Reset singletons for testing."""
-    global _populator, _daemon
+    global _populator, _daemon, _events_wired
     _populator = None
     _daemon = None
+    _events_wired = False
 
 
 async def start_queue_populator_daemon(
@@ -1373,8 +1383,17 @@ def wire_queue_populator_events() -> UnifiedQueuePopulator:
 
     This is a synchronous convenience function for non-daemon usage.
     For full async support, use UnifiedQueuePopulatorDaemon instead.
+
+    Note: If UnifiedQueuePopulatorDaemon is already running, this is a no-op
+    to prevent duplicate event handlers.
     """
+    global _events_wired
     populator = get_queue_populator()
+
+    # Skip if already wired (by daemon or previous call)
+    if _events_wired:
+        logger.debug("[QueuePopulator] Events already wired, skipping")
+        return populator
 
     try:
         from app.coordination.event_router import DataEventType, get_router
@@ -1414,6 +1433,7 @@ def wire_queue_populator_events() -> UnifiedQueuePopulator:
         router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
         router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
 
+        _events_wired = True
         logger.info("[QueuePopulator] Wired to event bus")
 
     except ImportError:

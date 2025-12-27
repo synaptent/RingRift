@@ -371,7 +371,7 @@ ai-service/docs/infrastructure/GPU_RULES_PARITY_AUDIT.md
 ai-service/docs/planning/NEXT_AREAS_EXECUTION_PLAN.md
 # Removed from gitignore (Dec 27, 2025) - valuable cluster documentation:
 # ai-service/app/distributed/CLUSTER_MONITOR_QUICKSTART.md
-# ai-service/app/distributed/README_cluster_monitor.md
+ai-service/app/distributed/README_cluster_monitor.md
 ai-service/TRAINING_DATA_REGISTRY.md
 ai-service/data/.manifest_cache.json
 ai-service/config/robust_cmaes_extended.json

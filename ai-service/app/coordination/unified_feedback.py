@@ -286,6 +286,36 @@ class UnifiedFeedbackOrchestrator:
         self._unsubscribe_from_events()
         logger.info("[UnifiedFeedbackOrchestrator] Stopped")
 
+    async def health_check(self) -> bool:
+        """Check if the orchestrator is healthy.
+
+        Returns True if running and functioning properly.
+        Used by DaemonManager for crash detection and auto-restart.
+        """
+        if not self._running:
+            return False
+
+        # Check we have at least processed some configs
+        # (indicates event subscription is working)
+        if not self._subscribed:
+            logger.warning(
+                "[UnifiedFeedbackOrchestrator] health_check failed: not subscribed to events"
+            )
+            return False
+
+        # Check for stale adjustments (if we should be adjusting but haven't)
+        if self._total_adjustments == 0 and len(self._states) > 0:
+            # We have states but no adjustments - might be stuck
+            # Only warn if we've been running for a while
+            uptime = time.time() - self._last_adjustment_time if self._last_adjustment_time > 0 else 0
+            if uptime > 3600:  # 1 hour without adjustments is concerning
+                logger.warning(
+                    f"[UnifiedFeedbackOrchestrator] health_check warning: "
+                    f"no adjustments in {uptime:.0f}s with {len(self._states)} active states"
+                )
+
+        return True
+
     def _subscribe_to_events(self) -> None:
         """Subscribe to all relevant events."""
         if self._subscribed:

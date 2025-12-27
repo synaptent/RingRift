@@ -105,6 +105,15 @@ except ImportError:
     unified_check_disk = None
     RESOURCE_LIMITS = None
 
+# Bandwidth limit helper - Dec 2025: Enforce rsync --bwlimit from centralized config
+try:
+    from app.config.cluster_config import get_node_bandwidth_kbs
+    HAS_BANDWIDTH_CONFIG = True
+except ImportError:
+    HAS_BANDWIDTH_CONFIG = False
+    def get_node_bandwidth_kbs(node_name: str, config_path=None) -> int:
+        return 100 * 1024  # Default 100 MB/s in KB/s
+
 # Wrapper functions for backwards compatibility
 def acquire_sync_lock(host: str, timeout: float = 30.0) -> bool:
     return acquire_sync_lock_safe(host, timeout)

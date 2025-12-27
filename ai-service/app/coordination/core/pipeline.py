@@ -1,24 +1,39 @@
 """Training pipeline orchestration (December 2025).
 
+DEPRECATED: Import directly from app.coordination.data_pipeline_orchestrator
+and app.coordination.pipeline_actions instead.
+This module will be removed in Q2 2026.
+
 Consolidates pipeline-related functionality from:
 - data_pipeline_orchestrator.py (pipeline orchestration)
 - pipeline_actions.py (stage action invokers)
 
-This module re-exports all pipeline-related APIs for unified access.
-
-Usage:
+Usage (DEPRECATED):
     from app.coordination.core.pipeline import (
         DataPipelineOrchestrator,
         get_pipeline_orchestrator,
         PipelineStage,
     )
 
-    # Trigger a training pipeline
-    orchestrator = get_pipeline_orchestrator()
-    orchestrator.advance_stage(PipelineStage.EXPORT)
+Recommended:
+    from app.coordination.data_pipeline_orchestrator import (
+        DataPipelineOrchestrator,
+        get_pipeline_orchestrator,
+        PipelineStage,
+    )
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "app.coordination.core.pipeline is deprecated. "
+    "Import from app.coordination.data_pipeline_orchestrator instead. "
+    "This module will be removed in Q2 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Re-export from data_pipeline_orchestrator
 from app.coordination.data_pipeline_orchestrator import (

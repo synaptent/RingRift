@@ -32,6 +32,7 @@ Note:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import subprocess
@@ -217,6 +218,166 @@ class ClusterMonitor:
             logger.info(f"Loaded {len(self._hosts)} hosts from config")
         except Exception as e:
             logger.error(f"Error loading hosts config: {e}")
+
+    async def _async_run_ssh_command(
+        self,
+        host_name: str,
+        command: str,
+        timeout: float | None = None,
+    ) -> tuple[int, str, str]:
+        """Run SSH command asynchronously using asyncio.create_subprocess_exec.
+
+        This is used for async contexts (e.g., run_forever) to avoid blocking
+        the event loop. For sync contexts, use subprocess.run directly.
+
+        Args:
+            host_name: Host to connect to
+            command: Command to run on remote host
+            timeout: Optional timeout (default: self.ssh_timeout)
+
+        Returns:
+            Tuple of (returncode, stdout, stderr)
+        """
+        host_info = self._hosts.get(host_name, {})
+        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
+        ssh_user = host_info.get("ssh_user", "ubuntu")
+        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
+        ssh_port = host_info.get("ssh_port", 22)
+
+        if timeout is None:
+            timeout = self.ssh_timeout
+
+        cmd = [
+            "ssh",
+            "-i", os.path.expanduser(ssh_key),
+            "-p", str(ssh_port),
+            "-o", f"ConnectTimeout={min(int(timeout), 10)}",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "BatchMode=yes",
+            "-o", "LogLevel=ERROR",
+            f"{ssh_user}@{ssh_host}",
+            command,
+        ]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=timeout,
+                )
+                return (
+                    proc.returncode or 0,
+                    stdout.decode("utf-8", errors="replace"),
+                    stderr.decode("utf-8", errors="replace"),
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return -1, "", "Timeout"
+
+        except Exception as e:
+            logger.debug(f"Async SSH command failed for {host_name}: {e}")
+            return -1, "", str(e)
+
+    async def _async_check_host_connectivity(self, host_name: str) -> bool:
+        """Async version of connectivity check."""
+        returncode, _, _ = await self._async_run_ssh_command(
+            host_name,
+            "true",
+            timeout=min(self.ssh_timeout, 5),
+        )
+        return returncode == 0
+
+    async def get_node_status_async(
+        self,
+        host_name: str,
+        include_game_counts: bool = True,
+        include_training_status: bool = True,
+        include_disk_usage: bool = True,
+        include_sync_status: bool = False,
+    ) -> NodeStatus:
+        """Get status for a single node asynchronously.
+
+        This is the async version of get_node_status, used in run_forever.
+        """
+        # Run sync version in thread pool to avoid code duplication
+        # while still being non-blocking
+        return await asyncio.to_thread(
+            self.get_node_status,
+            host_name,
+            include_game_counts=include_game_counts,
+            include_training_status=include_training_status,
+            include_disk_usage=include_disk_usage,
+            include_sync_status=include_sync_status,
+        )
+
+    async def get_cluster_status_async(
+        self,
+        hosts: list[str] | None = None,
+        include_game_counts: bool = True,
+        include_training_status: bool = True,
+        include_disk_usage: bool = True,
+        include_sync_status: bool = False,
+    ) -> ClusterStatus:
+        """Get comprehensive cluster status asynchronously.
+
+        This is the async version of get_cluster_status, used in run_forever.
+        Uses asyncio.gather for parallel execution.
+        """
+        if hosts is None:
+            hosts = self.get_active_hosts()
+
+        status = ClusterStatus(total_nodes=len(hosts))
+
+        # Run all node queries in parallel
+        tasks = [
+            self.get_node_status_async(
+                host,
+                include_game_counts=include_game_counts,
+                include_training_status=include_training_status,
+                include_disk_usage=include_disk_usage,
+                include_sync_status=include_sync_status,
+            )
+            for host in hosts
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for host, result in zip(hosts, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error querying {host}: {result}")
+                status.nodes[host] = NodeStatus(
+                    host_name=host,
+                    reachable=False,
+                    error=str(result),
+                )
+            else:
+                status.nodes[host] = result
+
+        # Aggregate statistics (same as sync version)
+        status.active_nodes = sum(1 for n in status.nodes.values() if n.reachable)
+        status.unreachable_nodes = status.total_nodes - status.active_nodes
+
+        for node in status.nodes.values():
+            if node.reachable:
+                status.total_games += node.total_games
+                for config, count in node.game_counts.items():
+                    status.games_by_config[config] = (
+                        status.games_by_config.get(config, 0) + count
+                    )
+
+        status.nodes_training = sum(1 for n in status.nodes.values() if n.training_active)
+        status.total_training_processes = sum(
+            len(n.training_processes) for n in status.nodes.values()
+        )
+
+        return status
 
     def get_active_hosts(self) -> list[str]:
         """Get list of hosts marked as active/ready in config."""
@@ -855,14 +1016,18 @@ class ClusterMonitor:
 
         Args:
             interval: Seconds between checks
+
+        Note:
+            Uses get_cluster_status_async() to avoid blocking the event loop
+            with subprocess.run calls (Dec 2025 fix).
         """
-        import asyncio
         self._running = True
         logger.info(f"[ClusterMonitor] Starting background monitoring (interval={interval}s)")
 
         while self._running:
             try:
-                status = self.get_cluster_status()
+                # Use async version to avoid blocking event loop
+                status = await self.get_cluster_status_async()
                 # Log summary instead of printing
                 logger.debug(
                     f"[ClusterMonitor] {status.total_nodes} nodes, "
