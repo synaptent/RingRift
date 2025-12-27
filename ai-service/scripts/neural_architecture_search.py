@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import logging
 import math
 import os
 import random
@@ -48,7 +49,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -56,10 +57,11 @@ import numpy as np
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
-# Unified logging setup
-from scripts.lib.logging_config import setup_script_logging
-
-logger = setup_script_logging("neural_architecture_search")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 # Architecture search space definition
@@ -109,13 +111,13 @@ DEFAULT_ELITE_FRACTION = 0.1
 class Architecture:
     """A candidate neural network architecture."""
     arch_id: str
-    params: dict[str, Any]
+    params: Dict[str, Any]
     performance: float = 0.0  # Validation metric (e.g., policy accuracy)
     flops: int = 0  # Estimated FLOPs
     param_count: int = 0  # Number of parameters
     latency_ms: float = 0.0  # Inference latency
     generations_survived: int = 0
-    parent_ids: list[str] = field(default_factory=list)
+    parent_ids: List[str] = field(default_factory=list)
     created_at: str = ""
     evaluated: bool = False
 
@@ -127,18 +129,18 @@ class NASState:
     strategy: str
     board_type: str
     num_players: int
-    search_space: dict[str, Any]
-    population: list[Architecture]
+    search_space: Dict[str, Any]
+    population: List[Architecture]
     generation: int = 0
     total_evaluations: int = 0
     best_performance: float = 0.0
-    best_architecture: dict[str, Any] | None = None
-    pareto_front: list[dict[str, Any]] = field(default_factory=list)
-    history: list[dict[str, Any]] = field(default_factory=list)
+    best_architecture: Optional[Dict[str, Any]] = None
+    pareto_front: List[Dict[str, Any]] = field(default_factory=list)
+    history: List[Dict[str, Any]] = field(default_factory=list)
     created_at: str = ""
 
 
-def sample_architecture(arch_id: str, search_space: dict[str, Any] = SEARCH_SPACE) -> Architecture:
+def sample_architecture(arch_id: str, search_space: Dict[str, Any] = SEARCH_SPACE) -> Architecture:
     """Sample a random architecture from the search space."""
     params = {}
 
@@ -165,7 +167,7 @@ def mutate_architecture(
     arch: Architecture,
     new_id: str,
     mutation_rate: float = DEFAULT_MUTATION_RATE,
-    search_space: dict[str, Any] = SEARCH_SPACE,
+    search_space: Dict[str, Any] = SEARCH_SPACE,
 ) -> Architecture:
     """Mutate an architecture by randomly changing some parameters."""
     new_params = copy.deepcopy(arch.params)
@@ -178,7 +180,7 @@ def mutate_architecture(
                 # Gaussian mutation with clipping
                 current = new_params.get(name, spec["default"])
                 delta = random.gauss(0, (spec["max"] - spec["min"]) / 6)
-                new_val = round(current + delta)
+                new_val = int(round(current + delta))
                 new_params[name] = max(spec["min"], min(spec["max"], new_val))
             elif param_type == "float":
                 current = new_params.get(name, spec["default"])
@@ -202,7 +204,7 @@ def crossover_architectures(
     parent1: Architecture,
     parent2: Architecture,
     new_id: str,
-    search_space: dict[str, Any] = SEARCH_SPACE,
+    search_space: Dict[str, Any] = SEARCH_SPACE,
 ) -> Architecture:
     """Create child architecture by crossing over two parents."""
     new_params = {}
@@ -222,7 +224,7 @@ def crossover_architectures(
     )
 
 
-def estimate_architecture_cost(arch: Architecture) -> tuple[int, int]:
+def estimate_architecture_cost(arch: Architecture) -> Tuple[int, int]:
     """Estimate FLOPs and parameter count for an architecture.
 
     Returns:
@@ -274,7 +276,7 @@ def estimate_architecture_cost(arch: Architecture) -> tuple[int, int]:
     # Attention layers
     if p.get("use_attention", False):
         attention_layers = p.get("attention_layers", 0)
-        p.get("attention_heads", 4)
+        heads = p.get("attention_heads", 4)
         # Self-attention: Q, K, V projections + attention + output projection
         attn_flops = attention_layers * 4 * board_size * channels * channels
         attn_params = attention_layers * 4 * channels * channels
@@ -312,6 +314,7 @@ def evaluate_architecture(arch: Architecture, quick_eval: bool = True) -> float:
     import os
     use_real_training = os.environ.get("RINGRIFT_NAS_REAL_TRAINING", "0") == "1"
 
+    p = arch.params
 
     # Estimate cost
     flops, param_count = estimate_architecture_cost(arch)
@@ -327,14 +330,15 @@ def evaluate_architecture(arch: Architecture, quick_eval: bool = True) -> float:
 
 def _evaluate_architecture_real(arch: Architecture, quick_eval: bool = True) -> float:
     """Evaluate architecture with actual training."""
-    import os
     import subprocess
     import tempfile
+    import os
 
     p = arch.params
     board_type = os.environ.get("RINGRIFT_NAS_BOARD", "square8")
     num_players = int(os.environ.get("RINGRIFT_NAS_PLAYERS", "2"))
     epochs = 3 if quick_eval else 10
+    max_samples = 10000 if quick_eval else 50000
 
     # Create temp directory for this evaluation
     with tempfile.TemporaryDirectory(prefix=f"nas_{arch.arch_id}_") as tmpdir:
@@ -418,7 +422,7 @@ def _evaluate_architecture_simulated(arch: Architecture) -> float:
 
 
 def tournament_selection(
-    population: list[Architecture],
+    population: List[Architecture],
     tournament_size: int = 3,
 ) -> Architecture:
     """Select architecture via tournament selection."""
@@ -426,18 +430,19 @@ def tournament_selection(
     return max(contestants, key=lambda a: a.performance)
 
 
-def is_pareto_dominated(arch: Architecture, others: list[Architecture]) -> bool:
+def is_pareto_dominated(arch: Architecture, others: List[Architecture]) -> bool:
     """Check if architecture is dominated by any other (worse on all objectives)."""
     for other in others:
         if other.arch_id == arch.arch_id:
             continue
         # Multi-objective: performance (higher better), latency (lower better)
-        if (other.performance >= arch.performance and other.latency_ms <= arch.latency_ms and other.performance > arch.performance) or other.latency_ms < arch.latency_ms:
-            return True
+        if other.performance >= arch.performance and other.latency_ms <= arch.latency_ms:
+            if other.performance > arch.performance or other.latency_ms < arch.latency_ms:
+                return True
     return False
 
 
-def update_pareto_front(population: list[Architecture]) -> list[dict[str, Any]]:
+def update_pareto_front(population: List[Architecture]) -> List[Dict[str, Any]]:
     """Extract non-dominated architectures (Pareto front)."""
     evaluated = [a for a in population if a.evaluated]
     pareto = []
@@ -562,8 +567,8 @@ def random_search_step(state: NASState, batch_size: int = 5) -> NASState:
 
 
 def bayesian_acquisition(
-    evaluated: list[Architecture],
-    search_space: dict[str, Any],
+    evaluated: List[Architecture],
+    search_space: Dict[str, Any],
     num_candidates: int = 100,
 ) -> Architecture:
     """Simple acquisition function for Bayesian-style search.

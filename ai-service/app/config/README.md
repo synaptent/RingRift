@@ -101,12 +101,12 @@ for level in ladder.levels:
 
 ## Configuration Files
 
-| File                          | Purpose                        |
-| ----------------------------- | ------------------------------ |
-| `config/unified_loop.yaml`    | Main training loop config      |
+| File                            | Purpose                         |
+| ------------------------------- | ------------------------------- |
+| `config/unified_loop.yaml`      | Main training loop config       |
 | `config/distributed_hosts.yaml` | Cluster node definitions (SSoT) |
-| `config/hyperparameters.json` | Neural network hyperparameters |
-| `config/resource_limits.yaml` | Resource constraints           |
+| `config/hyperparameters.json`   | Neural network hyperparameters  |
+| `config/resource_limits.yaml`   | Resource constraints            |
 
 ## Environment Variables
 
