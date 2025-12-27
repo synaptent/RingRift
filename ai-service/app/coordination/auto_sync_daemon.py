@@ -12,10 +12,58 @@ Key features:
 - Uses ClusterManifest for disk capacity and exclusion rules
 - Automatic disk cleanup when usage exceeds threshold
 
+Module Structure
+----------------
+Classes:
+    SyncStrategy          - Enum-like class for sync mode selection (lines 98-113)
+    AutoSyncConfig        - Configuration dataclass with all sync settings (lines 127-260)
+    SyncStats             - Statistics tracking (extends SyncDaemonStats) (lines 262-330)
+    AutoSyncDaemon        - Main daemon class (lines 332-3524)
+
+Factory Functions (lines 3526-3665):
+    get_auto_sync_daemon()           - Singleton accessor
+    reset_auto_sync_daemon()         - Reset singleton for testing
+    create_ephemeral_sync_daemon()   - Factory for Vast.ai/spot nodes
+    create_cluster_data_sync_daemon() - Factory for broadcast strategy
+    create_training_sync_daemon()    - Factory for training-priority sync
+    get_ephemeral_sync_daemon()      - Deprecated: Use AutoSyncDaemon(strategy=EPHEMERAL)
+    get_cluster_data_sync_daemon()   - Deprecated: Use AutoSyncDaemon(strategy=BROADCAST)
+    is_ephemeral_host()              - Detect if running on ephemeral node
+
+AutoSyncDaemon Key Methods
+--------------------------
+Lifecycle:
+    start()                  - Start background sync loops (lines ~450-550)
+    stop()                   - Graceful shutdown with final sync (lines ~550-650)
+    health_check()           - Return HealthCheckResult for monitoring (lines ~650-750)
+
+Sync Operations:
+    sync_to_node()           - Sync databases to a specific node
+    sync_from_node()         - Pull databases from a specific node
+    broadcast_sync()         - Push to all eligible nodes
+    trigger_priority_sync()  - Immediate sync for urgent data
+
+Background Loops:
+    _sync_loop()             - Main sync cycle (respects interval)
+    _gossip_loop()           - Gossip-based replication cycle
+    _cleanup_loop()          - Disk cleanup when usage high
+
+Node Selection:
+    _get_eligible_targets()  - Filter nodes by disk/NFS/exclusion rules
+    _prioritize_targets()    - Sort by ephemeral, training activity
+
+Event Integration:
+    - Subscribes to: NEW_GAMES_AVAILABLE, TRAINING_STARTED, NODE_RECOVERED
+    - Emits: DATA_SYNC_STARTED, DATA_SYNC_COMPLETED, DATA_SYNC_FAILED
+
 Usage:
     from app.coordination.auto_sync_daemon import AutoSyncDaemon
 
     daemon = AutoSyncDaemon()
+    await daemon.start()
+
+    # Or with specific strategy
+    daemon = AutoSyncDaemon(strategy=SyncStrategy.EPHEMERAL)
     await daemon.start()
 """
 

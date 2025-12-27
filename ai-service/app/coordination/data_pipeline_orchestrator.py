@@ -4,16 +4,78 @@ This module provides centralized monitoring and coordination of the self-improve
 pipeline stages. It tracks stage transitions, coordinates downstream triggering,
 and provides pipeline-wide observability.
 
-Event Integration:
-- Subscribes to SELFPLAY_COMPLETE: Start data sync
-- Subscribes to SYNC_COMPLETE: Trigger NPZ export
-- Subscribes to NPZ_EXPORT_COMPLETE: Ready for training
-- Subscribes to TRAINING_COMPLETE: Start evaluation
-- Subscribes to EVALUATION_COMPLETE: Consider promotion
-- Subscribes to PROMOTION_COMPLETE: Update curriculum
-
 Pipeline Stages:
     SELFPLAY -> SYNC -> NPZ_EXPORT -> TRAINING -> EVALUATION -> PROMOTION
+
+Module Structure
+----------------
+Classes:
+    PipelineCircuitBreaker  - Fault tolerance for stage failures (lines 82-227)
+    PipelineStage           - Enum of pipeline stages (lines 228-241)
+    StageTransition         - Record of stage transition (lines 242-254)
+    IterationRecord         - Record of complete pipeline iteration (lines 255-277)
+    PipelineStats           - Statistics tracking dataclass (lines 278-290)
+    DataPipelineOrchestrator - Main orchestrator class (lines 291-3418)
+
+Module Functions (lines 3420-3505):
+    get_pipeline_orchestrator()   - Singleton accessor
+    wire_pipeline_events()        - Wire all event subscriptions
+    get_pipeline_status()         - Get current status dict
+    get_current_pipeline_stage()  - Get current PipelineStage
+    get_pipeline_health()         - Get health metrics
+    is_pipeline_healthy()         - Check overall health
+
+DataPipelineOrchestrator Key Methods
+------------------------------------
+Lifecycle:
+    start()                      - Subscribe to events, start monitoring
+    stop()                       - Unsubscribe, cleanup resources
+    health_check()               - Return HealthCheckResult
+
+Stage Management:
+    get_status()                 - Current pipeline status dict
+    get_stage_metrics()          - Timing/count per stage
+    get_current_stage()          - Current active stage
+    get_pending_stages()         - Stages waiting for triggers
+
+Stage Triggering:
+    trigger_export()             - Trigger NPZ export for config
+    trigger_training()           - Trigger training for config
+    trigger_evaluation()         - Trigger gauntlet evaluation
+    trigger_promotion()          - Trigger model promotion
+
+Event Handlers (subscribed automatically):
+    _on_selfplay_complete()      - Handle SELFPLAY_COMPLETE
+    _on_sync_completed()         - Handle DATA_SYNC_COMPLETED
+    _on_npz_export_complete()    - Handle NPZ_EXPORT_COMPLETE
+    _on_training_completed()     - Handle TRAINING_COMPLETED
+    _on_evaluation_completed()   - Handle EVALUATION_COMPLETED
+    _on_promotion_completed()    - Handle PROMOTION_COMPLETE
+    _on_new_games_available()    - Handle NEW_GAMES_AVAILABLE
+    _on_orphan_games_detected()  - Handle ORPHAN_GAMES_DETECTED
+    _on_regression_detected()    - Handle REGRESSION_DETECTED
+    _on_promotion_failed()       - Handle PROMOTION_FAILED
+
+Event Integration
+-----------------
+Subscribes to (30+ events):
+    Core Pipeline:
+    - SELFPLAY_COMPLETE, DATA_SYNC_COMPLETED, NPZ_EXPORT_COMPLETE
+    - TRAINING_COMPLETED, EVALUATION_COMPLETED, PROMOTION_COMPLETE
+
+    Data Events:
+    - NEW_GAMES_AVAILABLE, ORPHAN_GAMES_DETECTED, ORPHAN_GAMES_REGISTERED
+
+    Quality/Feedback:
+    - QUALITY_SCORE_UPDATED, REGRESSION_DETECTED, PROMOTION_FAILED
+    - CURRICULUM_REBALANCED, CURRICULUM_ADVANCED
+
+    Infrastructure:
+    - REPAIR_COMPLETED, REPAIR_FAILED
+
+Emits:
+    - Pipeline stage transitions (via internal state)
+    - Triggers downstream actions via stage handlers
 
 Usage:
     from app.coordination.data_pipeline_orchestrator import (

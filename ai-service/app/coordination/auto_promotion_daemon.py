@@ -47,8 +47,8 @@ class AutoPromotionConfig:
     promotion_cooldown_seconds: float = 300.0  # 5 minutes
     # Whether to wait for both RANDOM and HEURISTIC results
     require_both_baselines: bool = True
-    # Safety: require consecutive successful evaluations
-    consecutive_passes_required: int = 1
+    # Safety: require consecutive successful evaluations (2+ reduces false positives)
+    consecutive_passes_required: int = 2
     # Dry run mode - log but don't actually promote
     dry_run: bool = False
 

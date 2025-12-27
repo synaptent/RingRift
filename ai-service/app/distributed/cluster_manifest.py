@@ -2237,8 +2237,8 @@ class ClusterManifest:
             cursor.execute("""
                 SELECT node_id, total_bytes, used_bytes, free_bytes
                 FROM node_capacity
-                WHERE updated_at > datetime('now', '-1 hour')
-            """)
+                WHERE last_updated > ?
+            """, (time.time() - 3600,))
             capacity_rows = cursor.fetchall()
 
         for row in capacity_rows:
