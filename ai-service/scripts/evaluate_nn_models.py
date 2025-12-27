@@ -100,7 +100,7 @@ def create_ai(
         return AIFactory.create(AIType.MCTS, player_number=player_number, config=config)
 
     elif model_type == "gmo":
-        from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
+        from app.ai.gmo_ai import GMOAI, GMOConfig
         gmo_config = GMOConfig(device=device)
         ai = GMOAI(
             player_number=player_number,
@@ -112,7 +112,7 @@ def create_ai(
         return ai
 
     elif model_type == "gmo_v2":
-        from archive.deprecated_ai.gmo_v2 import create_gmo_v2
+        from app.ai.gmo_v2 import create_gmo_v2
         return create_gmo_v2(
             player_number=player_number,
             device=device,
@@ -120,7 +120,7 @@ def create_ai(
         )
 
     elif model_type == "ig_gmo":
-        from archive.deprecated_ai.ig_gmo import create_ig_gmo
+        from app.ai.ig_gmo import create_ig_gmo
         path = Path(checkpoint_path) if checkpoint_path else None
         return create_ig_gmo(
             player_number=player_number,
@@ -129,7 +129,7 @@ def create_ai(
         )
 
     elif model_type == "ebmo":
-        from archive.deprecated_ai.ebmo_ai import create_ebmo_ai
+        from app.ai.ebmo_ai import create_ebmo_ai
         ebmo_config = AIConfig(difficulty=6)
         return create_ebmo_ai(
             player_number=player_number,
@@ -139,7 +139,7 @@ def create_ai(
 
     elif model_type == "cnn":
         # Standalone CNN/NNUE neural network (no MCTS)
-        from archive.deprecated_ai._neural_net_legacy import NeuralNetAI
+        from app.ai._neural_net_legacy import NeuralNetAI
         config = AIConfig(difficulty=6, nn_model_id=checkpoint_path)
         return NeuralNetAI(
             player_number=player_number,

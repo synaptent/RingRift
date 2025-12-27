@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from archive.deprecated_ai.ebmo_network import ActionFeatureExtractor
+from app.ai.ebmo_network import ActionFeatureExtractor
 from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 from app.ai.neural_net import NeuralNetAI
 from app.game_engine import GameEngine

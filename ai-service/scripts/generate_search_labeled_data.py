@@ -29,7 +29,7 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from archive.deprecated_ai.ebmo_network import ActionFeatureExtractor
+from app.ai.ebmo_network import ActionFeatureExtractor
 from app.ai.factory import AIFactory
 from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 from app.ai.heuristic_ai import HeuristicAI

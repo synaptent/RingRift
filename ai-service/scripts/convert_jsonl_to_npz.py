@@ -12,7 +12,7 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from archive.deprecated_ai.ebmo_network import ActionFeatureExtractor
+from app.ai.ebmo_network import ActionFeatureExtractor
 from app.models import BoardType, Move, Position
 
 

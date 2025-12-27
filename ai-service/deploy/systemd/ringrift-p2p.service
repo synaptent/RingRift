@@ -2,9 +2,15 @@
 Description=RingRift P2P Orchestrator
 After=network-online.target
 Wants=network-online.target
+# Dec 2025: Added failure handling - will be picked up by monitoring
+OnFailure=systemd-failure-handler@%n.service
 
 [Service]
 Type=simple
+# Prevent restart loops - max 5 restarts in 10 minutes
+StartLimitInterval=600
+StartLimitBurst=5
+StartLimitAction=none
 User=root
 WorkingDirectory=/root/ringrift/ai-service
 Environment=PYTHONPATH=/root/ringrift/ai-service

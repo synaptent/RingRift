@@ -23,7 +23,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from app.ai.factory import AIFactory
-from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
+from app.ai.gmo_ai import GMOAI, GMOConfig
 from app.game_engine import GameEngine
 from app.models import AIConfig, AIType, BoardType, Move
 from app.training.train_gmo_selfplay import create_initial_state

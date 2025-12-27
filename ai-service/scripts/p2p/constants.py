@@ -31,9 +31,10 @@ except ImportError:
 
 DEFAULT_PORT = 8770
 HEARTBEAT_INTERVAL = 30  # seconds
-# LEARNED LESSONS: Increased from 90s to 180s - cross-cloud network latency
-# between Lambda, Vast, Hetzner can cause intermittent connectivity
-PEER_TIMEOUT = 180  # seconds without heartbeat = node considered dead
+# Dec 2025: Reduced from 180s to 90s for faster failure detection
+# Trade-off: 180s was too slow (2+ min to detect dead nodes), but 60s caused
+# false positives on slow networks. 90s is a balanced middle ground.
+PEER_TIMEOUT = 90  # seconds without heartbeat = node considered dead
 ELECTION_TIMEOUT = 10  # seconds to wait for election responses
 
 # Leader lease must be comfortably larger than the heartbeat cadence

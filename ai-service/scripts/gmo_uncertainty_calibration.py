@@ -31,7 +31,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import numpy as np
 import torch
 
-from archive.deprecated_ai.gmo_ai import GMOAI, GMOConfig
+from app.ai.gmo_ai import GMOAI, GMOConfig
 from app.game_engine import GameEngine
 from app.models import AIConfig, BoardType, GameStatus
 from app.training.initial_state import create_initial_state
