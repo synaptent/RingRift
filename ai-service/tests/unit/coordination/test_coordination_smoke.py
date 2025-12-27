@@ -53,6 +53,17 @@ class TestEventSubscriptionWiring:
         assert hasattr(facade, "_select_backend")
         assert hasattr(facade, "_execute_sync")
 
+    def test_sync_router_node_recovery_handlers(self):
+        """SyncRouter handles node recovery events."""
+        from app.coordination.sync_router import SyncRouter
+
+        router = SyncRouter()
+
+        # Check node recovery handlers exist (Dec 2025 fix)
+        assert hasattr(router, "_on_node_recovered")
+        assert hasattr(router, "_on_host_online")
+        assert hasattr(router, "_on_host_offline")
+
     def test_daemon_factory_has_all_types(self):
         """DaemonFactory has specs for critical daemon types."""
         from app.coordination.daemon_factory import get_daemon_factory
