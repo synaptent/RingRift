@@ -10,6 +10,7 @@ Event Integration:
 - Subscribes to BACKPRESSURE_ACTIVATED: Track backpressure engagement
 - Subscribes to BACKPRESSURE_RELEASED: Track backpressure release
 - Subscribes to RESOURCE_CONSTRAINT: Track resource pressure events
+- Subscribes to JOB_PREEMPTED: Track job preemptions for contention analysis
 
 Key Responsibilities:
 1. Track resource utilization across all nodes
@@ -209,6 +210,7 @@ class ResourceMonitoringCoordinator:
             router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, self._on_backpressure_activated)
             router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
             router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, self._on_resource_constraint)
+            router.subscribe(DataEventType.JOB_PREEMPTED.value, self._on_job_preempted)
 
             self._subscribed = True
             logger.info("[ResourceMonitoringCoordinator] Subscribed to resource events")
@@ -376,6 +378,36 @@ class ResourceMonitoringCoordinator:
             f"[ResourceMonitoringCoordinator] Resource constraint on {node_id}: "
             f"{constraint_type} - {message}"
         )
+
+    async def _on_job_preempted(self, event) -> None:
+        """Handle JOB_PREEMPTED event.
+
+        Tracks job preemptions for resource contention analysis.
+        Preemptions indicate that higher priority work is displacing lower priority work,
+        which is useful for capacity planning and detecting resource pressure patterns.
+        """
+        payload = event.payload
+        host = payload.get("host", "")
+        preempted_job_type = payload.get("preempted_job_type", "")
+        preempting_job_type = payload.get("preempting_job_type", "")
+        runtime_seconds = payload.get("runtime_seconds", 0)
+
+        # Track preemption count
+        self._preemption_counts = getattr(self, "_preemption_counts", {})
+        self._preemption_counts[host] = self._preemption_counts.get(host, 0) + 1
+
+        # Preemption after short runtime may indicate scheduling inefficiency
+        if runtime_seconds < 60:
+            logger.warning(
+                f"[ResourceMonitoringCoordinator] Quick preemption on {host}: "
+                f"{preempted_job_type} after only {runtime_seconds:.0f}s "
+                f"(preempted by {preempting_job_type})"
+            )
+        else:
+            logger.info(
+                f"[ResourceMonitoringCoordinator] Job preempted on {host}: "
+                f"{preempted_job_type} -> {preempting_job_type}"
+            )
 
     def _check_node_thresholds(self, node: NodeResourceState) -> None:
         """Check if node exceeds backpressure thresholds."""
