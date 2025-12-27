@@ -16533,91 +16533,11 @@ print(json.dumps(result))
     # Now runs via LoopManager as EloSyncLoop.
     # See scripts/p2p/loops/elo_sync_loop.py for implementation.
 
-    async def _worker_pull_loop(self):
-        """Background loop for workers to poll leader for work (pull model).
-
-        .. deprecated::
-            December 2025 - This method is deprecated and now runs via LoopManager
-            as WorkerPullLoop. See scripts/p2p/loops/job_loops.py.
-            This inline version is kept for fallback compatibility but is no longer
-            invoked by default. Will be removed Q2 2026.
-
-        This implements a worker pull model where nodes periodically check
-        if they are idle and pull work from the leader's work queue.
-
-        Benefits:
-        - Workers claim work at their own pace
-        - Naturally load balances across the cluster
-        - Works with NAT-blocked nodes (they initiate connections)
-        - No need to track worker connectivity for pushing
-        """
-        PULL_INTERVAL = 30  # Check every 30 seconds
-        GPU_IDLE_THRESHOLD = 15.0  # Consider idle if GPU < 15%
-        CPU_IDLE_THRESHOLD = 30.0  # Consider idle if CPU < 30%
-
-        await asyncio.sleep(30)  # Initial delay for cluster stabilization
-
-        logger.info("Worker pull loop started")
-
-        while self.running:
-            try:
-                # Skip if we are the leader (leader pushes, doesn't pull)
-                if self.role == NodeRole.LEADER:
-                    await asyncio.sleep(PULL_INTERVAL)
-                    continue
-
-                # Skip if no leader known
-                if not self.leader_id:
-                    await asyncio.sleep(PULL_INTERVAL)
-                    continue
-
-                # Check if we're idle enough to take on work
-                self._update_self_info()
-                gpu_percent = float(getattr(self.self_info, "gpu_percent", 0) or 0)
-                cpu_percent = float(getattr(self.self_info, "cpu_percent", 0) or 0)
-                training_jobs = int(getattr(self.self_info, "training_jobs", 0) or 0)
-                has_gpu = bool(getattr(self.self_info, "has_gpu", False))
-
-                # Don't pull work if already running training
-                if training_jobs > 0:
-                    await asyncio.sleep(PULL_INTERVAL)
-                    continue
-
-                # Check if we're actually idle
-                is_idle = False
-                if has_gpu:
-                    is_idle = gpu_percent < GPU_IDLE_THRESHOLD
-                else:
-                    is_idle = cpu_percent < CPU_IDLE_THRESHOLD
-
-                if not is_idle:
-                    await asyncio.sleep(PULL_INTERVAL)
-                    continue
-
-                # Get allowed work types from policy
-                capabilities = ["selfplay", "training", "gpu_cmaes", "tournament"]
-                try:
-                    from app.coordination.node_policies import get_policy_manager
-                    pm = get_policy_manager()
-                    capabilities = list(pm.get_allowed_work_types(self.node_id))
-                except ImportError:
-                    pass
-
-                # Try to claim work from the leader
-                work_item = await self._claim_work_from_leader(capabilities)
-                if work_item:
-                    logger.info(f"Claimed work {work_item.get('work_id')}: {work_item.get('work_type')}")
-
-                    # Execute the work
-                    success = await self._execute_claimed_work(work_item)
-
-                    # Report completion/failure
-                    await self._report_work_result(work_item, success)
-
-            except Exception as e:  # noqa: BLE001
-                logger.debug(f"Worker pull loop error: {e}")
-
-            await asyncio.sleep(PULL_INTERVAL)
+    # NOTE: _worker_pull_loop() removed Dec 2025 (85 LOC).
+    # Now runs via LoopManager as WorkerPullLoop.
+    # See scripts/p2p/loops/job_loops.py for implementation.
+    # Helper methods _claim_work_from_leader, _execute_claimed_work, _report_work_result
+    # are retained and passed as callbacks to WorkerPullLoop.
 
     async def _claim_work_from_leader(self, capabilities: list[str]) -> dict[str, Any] | None:
         """Claim work from the leader's work queue."""
