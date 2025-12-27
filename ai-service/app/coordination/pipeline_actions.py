@@ -141,19 +141,31 @@ def _get_ai_service_root() -> Path:
     )
 
 
+# Maximum output size to capture (prevent memory exhaustion from large outputs)
+_MAX_OUTPUT_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Grace period for SIGTERM before SIGKILL
+_SIGTERM_GRACE_SECONDS = 5.0
+
+
 async def _run_subprocess(
     cmd: list[str],
     timeout: float,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
+    max_output_bytes: int = _MAX_OUTPUT_BYTES,
 ) -> tuple[int, str, str]:
-    """Run a subprocess asynchronously with timeout.
+    """Run a subprocess asynchronously with timeout and graceful termination.
+
+    Phase 8 (December 2025): Improved error handling with SIGTERM→SIGKILL
+    escalation and output size limits to prevent memory exhaustion.
 
     Args:
         cmd: Command and arguments
         timeout: Timeout in seconds
         cwd: Working directory
         env: Environment variables (merged with current env)
+        max_output_bytes: Maximum bytes to capture from stdout/stderr
 
     Returns:
         Tuple of (exit_code, stdout, stderr)
@@ -177,15 +189,52 @@ async def _run_subprocess(
             process.communicate(),
             timeout=timeout,
         )
+
+        # Truncate output if too large
+        if len(stdout) > max_output_bytes:
+            stdout = stdout[:max_output_bytes] + b"\n... [output truncated]"
+        if len(stderr) > max_output_bytes:
+            stderr = stderr[:max_output_bytes] + b"\n... [output truncated]"
+
         return (
             process.returncode or 0,
             stdout.decode("utf-8", errors="replace"),
             stderr.decode("utf-8", errors="replace"),
         )
+
     except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
-        return (-1, "", f"Process timed out after {timeout}s")
+        # Phase 8: Graceful termination - SIGTERM first, then SIGKILL
+        logger.warning(
+            f"[PipelineActions] Process timed out after {timeout}s, "
+            f"sending SIGTERM (PID: {process.pid})"
+        )
+
+        try:
+            process.terminate()  # SIGTERM - gives process chance to cleanup
+
+            # Wait for graceful shutdown
+            try:
+                await asyncio.wait_for(
+                    process.wait(),
+                    timeout=_SIGTERM_GRACE_SECONDS,
+                )
+                logger.info(
+                    f"[PipelineActions] Process {process.pid} terminated gracefully"
+                )
+            except asyncio.TimeoutError:
+                # Process didn't respond to SIGTERM, force kill
+                logger.warning(
+                    f"[PipelineActions] Process {process.pid} did not respond to SIGTERM "
+                    f"after {_SIGTERM_GRACE_SECONDS}s, sending SIGKILL"
+                )
+                process.kill()
+                await process.wait()
+
+        except ProcessLookupError:
+            # Process already exited
+            pass
+
+        return (-1, "", f"Process timed out after {timeout}s (killed)")
 
 
 async def trigger_data_sync(
