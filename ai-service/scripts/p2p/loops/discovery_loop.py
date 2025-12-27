@@ -150,8 +150,8 @@ class UdpDiscoveryLoop(BaseLoop):
             if sock:
                 try:
                     sock.close()
-                except Exception:
-                    pass
+                except OSError:
+                    pass  # Socket cleanup - ignore close errors
 
     def get_discovery_stats(self) -> dict[str, Any]:
         """Get discovery statistics."""

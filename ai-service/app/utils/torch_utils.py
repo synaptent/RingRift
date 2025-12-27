@@ -230,8 +230,8 @@ def safe_load_checkpoint(
                         model_path=str(path),
                         corruption_type="checksum_mismatch",
                     ))
-            except Exception:
-                pass  # Best-effort event emission
+            except (ImportError, RuntimeError, AttributeError, OSError):
+                pass  # Best-effort event emission - don't block checkpoint loading
             raise ModelCorruptionError(
                 f"Model checksum verification failed for {path}. "
                 "The model file may be corrupted or tampered with."
