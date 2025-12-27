@@ -414,8 +414,8 @@ class WorkerPullLoop(BaseLoop):
         if self._get_allowed_work_types:
             try:
                 capabilities = self._get_allowed_work_types()
-            except Exception:
-                pass
+            except (RuntimeError, ValueError, TypeError, AttributeError):
+                pass  # Use default capabilities on callback failure
 
         # Try to claim work from the leader
         work_item = await self._claim_work(capabilities)
