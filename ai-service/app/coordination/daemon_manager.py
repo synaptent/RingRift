@@ -882,6 +882,10 @@ class DaemonManager:
         except (ImportError, RuntimeError) as e:
             logger.warning(f"Failed to start daemon watchdog: {e}")
 
+        # Phase 8 (Dec 2025): Wire ALL coordination event subscriptions at startup
+        # This ensures daemons receive events they need before verification
+        await self._wire_coordination_events()
+
         # Phase 5: Subscribe to REGRESSION_CRITICAL events for centralized handling
         await self._subscribe_to_critical_events()
 

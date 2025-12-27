@@ -488,6 +488,11 @@ class EvaluationDaemon:
             "active_evaluations": len(self._active_evaluations),
             "total_games_played": self.stats.total_games_played,
             "average_evaluation_time": round(self.stats.average_evaluation_time, 1),
+            # December 2025: Deduplication stats
+            "dedup_cooldown_skips": self._dedup_stats["cooldown_skips"],
+            "dedup_content_hash_skips": self._dedup_stats["content_hash_skips"],
+            "dedup_concurrent_skips": self._dedup_stats["concurrent_skips"],
+            "tracked_recently_evaluated": len(self._recently_evaluated),
         }
 
     def health_check(self):

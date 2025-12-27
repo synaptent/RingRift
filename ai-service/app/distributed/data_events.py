@@ -197,6 +197,11 @@ class DataEventType(Enum):
     ORPHAN_GAMES_DETECTED = "orphan_games_detected"  # Unregistered game databases found
     ORPHAN_GAMES_REGISTERED = "orphan_games_registered"  # Orphans auto-registered
 
+    # Replication repair events (December 2025)
+    REPAIR_STARTED = "repair_started"  # Repair job started for under-replicated game
+    REPAIR_COMPLETED = "repair_completed"  # Repair job succeeded
+    REPAIR_FAILED = "repair_failed"  # Repair job failed
+
     # Database lifecycle events (Phase 4A.3 - December 2025)
     DATABASE_CREATED = "database_created"  # New database file created - immediate registration
 

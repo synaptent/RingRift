@@ -403,15 +403,21 @@ class ReplicationRepairDaemon:
                         f"Repair completed: {job.game_id} "
                         f"({job.current_copies} -> {job.current_copies + len(job.target_nodes)} copies)"
                     )
+                    # Emit REPAIR_COMPLETED event (December 2025)
+                    await self._emit_repair_event(job, success=True)
                 else:
                     self._stats.total_repairs_failed += 1
                     logger.warning(f"Repair failed: {job.game_id}: {job.error}")
+                    # Emit REPAIR_FAILED event (December 2025)
+                    await self._emit_repair_event(job, success=False)
 
             except Exception as e:
                 job.success = False
                 job.error = str(e)
                 self._stats.total_repairs_failed += 1
                 logger.error(f"Repair error for {job.game_id}: {e}")
+                # Emit REPAIR_FAILED event (December 2025)
+                await self._emit_repair_event(job, success=False)
 
             finally:
                 job.completed_at = time.time()
