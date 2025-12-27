@@ -327,7 +327,7 @@ class TournamentDaemon:
                 break
             except Exception as e:
                 logger.error(f"Error in evaluation worker: {e}")
-                self._stats.errors.append(str(e))
+                self._stats.record_failure(str(e))
 
     async def _periodic_ladder_loop(self) -> None:
         """Periodic ladder tournament loop."""
@@ -345,7 +345,7 @@ class TournamentDaemon:
                 break
             except Exception as e:
                 logger.error(f"Error in periodic ladder: {e}")
-                self._stats.errors.append(str(e))
+                self._stats.record_failure(str(e))
 
     async def _run_evaluation(
         self,
@@ -421,7 +421,7 @@ class TournamentDaemon:
         except asyncio.TimeoutError:
             logger.error(f"Evaluation timeout: {model_path}")
             results["error"] = "timeout"
-            self._stats.errors.append(f"Evaluation timeout: {model_path}")
+            self._stats.record_failure(f"Evaluation timeout: {model_path}")
 
         except ImportError as e:
             logger.warning(f"GameGauntlet not available: {e}")
@@ -433,7 +433,7 @@ class TournamentDaemon:
         except Exception as e:
             logger.error(f"Evaluation failed: {e}")
             results["error"] = str(e)
-            self._stats.errors.append(str(e))
+            self._stats.record_failure(str(e))
 
         results["duration_seconds"] = time.time() - start_time
 
@@ -710,11 +710,11 @@ class TournamentDaemon:
             )
 
         # Check for high error rate
-        if len(self._stats.errors) > 10:
+        if self._stats.errors_count > 10:
             return HealthCheckResult(
                 healthy=False,
                 status=CoordinatorStatus.DEGRADED,
-                message=f"Tournament daemon has {len(self._stats.errors)} errors",
+                message=f"Tournament daemon has {self._stats.errors_count} errors",
                 details=self.get_status(),
             )
 

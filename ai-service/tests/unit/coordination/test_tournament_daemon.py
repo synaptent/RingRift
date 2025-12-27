@@ -293,14 +293,14 @@ class TestTournamentDaemon:
     def test_health_check_high_errors(self, daemon):
         """Test health check with high error count."""
         daemon._running = True
-        # Simulate many errors
+        # Simulate many errors (errors_count > 10 triggers degraded status)
         for i in range(15):
-            daemon._stats.record_tournament_failure(f"Error {i}")
+            daemon._stats.record_failure(f"Error {i}")
 
         result = daemon.health_check()
 
         assert result.healthy is False
-        assert "errors" in result.message.lower()
+        assert "15 errors" in result.message
 
     @pytest.mark.asyncio
     async def test_emit_evaluation_completed(self, daemon):
@@ -347,11 +347,13 @@ class TestTournamentDaemon:
     @pytest.mark.asyncio
     async def test_run_evaluation_timeout(self, daemon):
         """Test evaluation timeout handling."""
-        daemon.config.evaluation_timeout_seconds = 0.01  # Very short timeout
+        daemon.config.evaluation_timeout_seconds = 0.05  # Very short timeout
 
         with patch("app.training.game_gauntlet.run_baseline_gauntlet") as mock_gauntlet:
-            async def slow_gauntlet(*args, **kwargs):
-                await asyncio.sleep(1.0)
+            import time as time_module
+            def slow_gauntlet(*args, **kwargs):
+                # Sync sleep (runs in thread via asyncio.to_thread)
+                time_module.sleep(1.0)
                 return MagicMock()
 
             mock_gauntlet.side_effect = slow_gauntlet
@@ -364,6 +366,7 @@ class TestTournamentDaemon:
                 )
 
         assert results["success"] is False
+        assert results.get("error") == "timeout"
 
 
 class TestTournamentDaemonSingleton:
@@ -493,8 +496,8 @@ class TestTournamentDaemonEvaluationWorker:
             except asyncio.CancelledError:
                 pass
 
-            # Error should be recorded
-            assert len(daemon._stats.errors) > 0
+            # Error should be recorded via record_failure()
+            assert daemon._stats.errors_count > 0
 
 
 class TestTournamentDaemonEloUpdate:
