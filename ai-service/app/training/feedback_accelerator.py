@@ -78,10 +78,10 @@ ELO_STRONG_IMPROVEMENT = 25.0  # OPTIMIZED: Lower bar for strong improvement (wa
 ELO_MODERATE_IMPROVEMENT = 12.0  # OPTIMIZED: Lower bar for moderate improvement (was 15)
 ELO_PLATEAU_THRESHOLD = 5.0  # Less than this = plateau
 
-# Training trigger thresholds
-MIN_GAMES_FOR_TRAINING = int(os.environ.get("RINGRIFT_MIN_GAMES_TRAINING", "300"))  # OPTIMIZED: 300 (was 500)
-ACCELERATED_MIN_GAMES = int(os.environ.get("RINGRIFT_ACCEL_MIN_GAMES", "150"))  # OPTIMIZED: 150 (was 250)
-HOT_PATH_MIN_GAMES = int(os.environ.get("RINGRIFT_HOT_MIN_GAMES", "75"))  # OPTIMIZED: 75 games for maximum speed
+# Training trigger thresholds - Dec 27, 2025: Lowered to accelerate training
+MIN_GAMES_FOR_TRAINING = int(os.environ.get("RINGRIFT_MIN_GAMES_TRAINING", "100"))  # OPTIMIZED: 100 (was 300)
+ACCELERATED_MIN_GAMES = int(os.environ.get("RINGRIFT_ACCEL_MIN_GAMES", "75"))  # OPTIMIZED: 75 (was 150)
+HOT_PATH_MIN_GAMES = int(os.environ.get("RINGRIFT_HOT_MIN_GAMES", "50"))  # OPTIMIZED: 50 games for maximum speed
 
 # Intensity multipliers
 MAX_INTENSITY_MULTIPLIER = 2.5  # OPTIMIZED: Higher ceiling for accelerating models (was 2.0)

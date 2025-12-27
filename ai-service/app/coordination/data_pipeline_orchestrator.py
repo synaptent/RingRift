@@ -1571,19 +1571,61 @@ class DataPipelineOrchestrator:
             self._curriculum_tiers: dict = {}
         self._curriculum_tiers[config_key] = new_tier
 
+    def _extract_stage_result(self, event_or_result) -> Any:
+        """Extract StageCompletionResult from RouterEvent or return as-is.
+
+        December 27, 2025: Fix for RouterEvent.iteration AttributeError.
+        When subscribers are called via the unified router, they may receive
+        either a StageCompletionResult directly or a RouterEvent wrapper.
+        This helper extracts the underlying result for consistent handling.
+        """
+        # If it's a RouterEvent, extract the stage_result
+        if hasattr(event_or_result, "stage_result") and event_or_result.stage_result is not None:
+            return event_or_result.stage_result
+
+        # If it's a RouterEvent without stage_result, try payload
+        if hasattr(event_or_result, "payload") and hasattr(event_or_result, "event_type"):
+            # It's a RouterEvent - create a minimal result-like object from payload
+            payload = event_or_result.payload or {}
+
+            # Create a SimpleNamespace to mimic StageCompletionResult
+            from types import SimpleNamespace
+            return SimpleNamespace(
+                iteration=payload.get("iteration", 0),
+                success=payload.get("success", True),
+                games_generated=payload.get("games_generated", payload.get("games_count", 0)),
+                board_type=payload.get("board_type"),
+                num_players=payload.get("num_players"),
+                error=payload.get("error"),
+                metadata=payload.get("metadata", {}),
+                model_path=payload.get("model_path"),
+                train_loss=payload.get("train_loss"),
+                val_loss=payload.get("val_loss"),
+                win_rate=payload.get("win_rate"),
+                elo_delta=payload.get("elo_delta"),
+                promoted=payload.get("promoted", False),
+            )
+
+        # It's already a StageCompletionResult or similar
+        return event_or_result
+
     async def _on_selfplay_complete(self, result) -> None:
         """Handle selfplay completion."""
-        iteration = result.iteration
+        # December 27, 2025: Handle both RouterEvent and StageCompletionResult
+        result = self._extract_stage_result(result)
+
+        iteration = getattr(result, "iteration", 0)
         self._ensure_iteration_record(iteration)
 
         # Track board configuration for downstream stages
         self._current_board_type = getattr(result, "board_type", None)
         self._current_num_players = getattr(result, "num_players", None)
 
-        self._iteration_records[iteration].games_generated = result.games_generated
-        self._total_games += result.games_generated
+        games_generated = getattr(result, "games_generated", 0)
+        self._iteration_records[iteration].games_generated = games_generated
+        self._total_games += games_generated
 
-        if result.success:
+        if getattr(result, "success", True):
             self._transition_to(
                 PipelineStage.DATA_SYNC,
                 iteration,
@@ -1598,7 +1640,7 @@ class DataPipelineOrchestrator:
                 PipelineStage.IDLE,
                 iteration,
                 success=False,
-                metadata={"error": result.error},
+                metadata={"error": getattr(result, "error", "Unknown error")},
             )
 
     async def _auto_trigger_sync(self, iteration: int) -> None:
@@ -1633,13 +1675,16 @@ class DataPipelineOrchestrator:
 
     async def _on_sync_complete(self, result) -> None:
         """Handle data sync completion."""
-        iteration = result.iteration
+        # December 27, 2025: Handle both RouterEvent and StageCompletionResult
+        result = self._extract_stage_result(result)
 
-        if result.success:
+        iteration = getattr(result, "iteration", 0)
+
+        if getattr(result, "success", True):
             self._transition_to(
                 PipelineStage.NPZ_EXPORT,
                 iteration,
-                metadata=result.metadata,
+                metadata=getattr(result, "metadata", {}),
             )
 
             # Auto-trigger NPZ export if enabled (December 2025)
@@ -1650,7 +1695,7 @@ class DataPipelineOrchestrator:
                 PipelineStage.IDLE,
                 iteration,
                 success=False,
-                metadata={"error": result.error},
+                metadata={"error": getattr(result, "error", "Unknown error")},
             )
 
     async def _auto_trigger_export(self, iteration: int) -> None:
@@ -1689,11 +1734,15 @@ class DataPipelineOrchestrator:
 
     async def _on_npz_export_complete(self, result) -> None:
         """Handle NPZ export completion."""
-        iteration = result.iteration
+        # December 27, 2025: Handle both RouterEvent and StageCompletionResult
+        result = self._extract_stage_result(result)
 
-        if result.success:
+        iteration = getattr(result, "iteration", 0)
+
+        if getattr(result, "success", True):
             # Quality gate check before training (December 2025 - Phase 14)
-            npz_path = getattr(result, "output_path", None) or result.metadata.get("output_path")
+            metadata = getattr(result, "metadata", {}) or {}
+            npz_path = getattr(result, "output_path", None) or metadata.get("output_path")
             if self.quality_gate_enabled and npz_path:
                 quality_ok = await self._check_training_data_quality(npz_path, iteration)
                 if not quality_ok:
