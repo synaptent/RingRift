@@ -27303,7 +27303,21 @@ print(json.dumps({{
         # Increase backlog to handle burst of connections from many nodes
         # Default is ~128, which can overflow when many vast nodes heartbeat simultaneously
         site = web.TCPSite(runner, self.host, self.port, reuse_address=True, backlog=1024)
-        await site.start()
+        try:
+            await site.start()
+        except OSError as e:
+            if "Address already in use" in str(e) or e.errno == 98:  # EADDRINUSE
+                logger.error(f"Port {self.port} already in use. Is another P2P instance running?")
+                logger.error(f"Try: lsof -i :{self.port} or pkill -f p2p_orchestrator")
+                raise RuntimeError(f"Port {self.port} already bound - cannot start P2P daemon") from e
+            elif "Invalid argument" in str(e):
+                # macOS TCP keepalive socket option issue
+                logger.warning(f"TCP socket configuration failed on {self.host}:{self.port}: {e}")
+                logger.warning("This may be a macOS TCP keepalive compatibility issue")
+                raise
+            else:
+                logger.error(f"Failed to bind to {self.host}:{self.port}: {e}")
+                raise
 
         logger.info(f"HTTP server started on {self.host}:{self.port} (backlog=1024)")
 
