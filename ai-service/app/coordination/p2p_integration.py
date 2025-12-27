@@ -415,6 +415,128 @@ class P2POrchestratorShim:
 _shim_instance: P2POrchestratorShim | None = None
 
 
+class P2PIntegration:
+    """P2P Integration daemon for DaemonManager (December 2025).
+
+    This class provides the daemon interface (start/stop/health_check) needed
+    by daemon_runners.py for the P2P_BACKEND daemon type.
+
+    It wraps the P2P status checking functionality and provides health monitoring
+    for the P2P cluster connection.
+    """
+
+    def __init__(self):
+        """Initialize P2P integration."""
+        self._running = False
+        self._last_status_check: float = 0.0
+        self._last_status: dict[str, Any] | None = None
+        self._error_count = 0
+        self._check_interval = 30.0  # Check status every 30 seconds
+        self._check_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        """Start the P2P integration daemon."""
+        if self._running:
+            logger.debug("[P2PIntegration] Already running")
+            return
+
+        logger.info("[P2PIntegration] Starting P2P integration daemon")
+        self._running = True
+        self._error_count = 0
+
+        # Start background status check loop
+        self._check_task = asyncio.create_task(self._status_check_loop())
+        logger.info("[P2PIntegration] Started")
+
+    async def stop(self) -> None:
+        """Stop the P2P integration daemon."""
+        if not self._running:
+            return
+
+        logger.info("[P2PIntegration] Stopping P2P integration daemon")
+        self._running = False
+
+        if self._check_task:
+            self._check_task.cancel()
+            try:
+                await self._check_task
+            except asyncio.CancelledError:
+                pass
+            self._check_task = None
+
+        logger.info("[P2PIntegration] Stopped")
+
+    async def _status_check_loop(self) -> None:
+        """Background loop to periodically check P2P status."""
+        while self._running:
+            try:
+                status = await get_p2p_status()
+                self._last_status = status
+                self._last_status_check = time.time()
+                if status:
+                    self._error_count = 0
+                else:
+                    self._error_count += 1
+            except asyncio.CancelledError:
+                break
+            except (ConnectionError, TimeoutError, OSError) as e:
+                logger.warning(f"[P2PIntegration] Status check failed: {e}")
+                self._error_count += 1
+            except Exception as e:
+                logger.error(f"[P2PIntegration] Unexpected error in status check: {e}")
+                self._error_count += 1
+
+            await asyncio.sleep(self._check_interval)
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of P2P integration.
+
+        Returns:
+            HealthCheckResult with health status
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="P2P integration not running",
+            )
+
+        # Check if we've had successful status checks recently
+        time_since_check = time.time() - self._last_status_check
+        if time_since_check > self._check_interval * 3:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"No P2P status check in {time_since_check:.0f}s",
+                details={"error_count": self._error_count},
+            )
+
+        if self._error_count > 5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"P2P status checks failing ({self._error_count} errors)",
+                details={"error_count": self._error_count},
+            )
+
+        leader_id = self._last_status.get("leader_id", "unknown") if self._last_status else "unknown"
+        alive_count = self._last_status.get("alive_peers", 0) if self._last_status else 0
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Connected to P2P cluster (leader: {leader_id}, peers: {alive_count})",
+            details={
+                "leader_id": leader_id,
+                "alive_peers": alive_count,
+                "error_count": self._error_count,
+                "last_check": self._last_status_check,
+            },
+        )
+
+
 def get_p2p_orchestrator() -> P2POrchestratorShim | None:
     """Get P2P orchestrator shim.
 
@@ -456,4 +578,6 @@ __all__ = [
     # Compatibility shim
     "get_p2p_orchestrator",
     "P2POrchestratorShim",
+    # Daemon interface
+    "P2PIntegration",
 ]

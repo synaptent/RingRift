@@ -41,9 +41,8 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 from app.core.async_context import fire_and_forget
 
@@ -53,21 +52,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# December 2025 Phase 11: Import canonical CoordinatorStatus from protocols.py
-# This module previously defined its own CoordinatorStatus enum.
+# December 2025 Phase 11: Import canonical definitions from protocols.py
+# This module previously defined its own CoordinatorStatus enum and CoordinatorProtocol.
 # For backward compatibility, we import and re-export from protocols.py.
-from app.coordination.protocols import CoordinatorStatus  # noqa: F401
-
-# Backward compatibility alias with deprecation warning
-def _deprecated_coordinator_status():
-    """DEPRECATED: Import CoordinatorStatus from app.coordination.protocols instead."""
-    import warnings
-    warnings.warn(
-        "coordinator_base.CoordinatorStatus is deprecated. "
-        "Import from app.coordination.protocols instead.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
+from app.coordination.protocols import (
+    CoordinatorStatus,  # noqa: F401
+    CoordinatorProtocol as _CanonicalCoordinatorProtocol,  # noqa: F401
+)
 
 
 @dataclass
@@ -97,44 +88,10 @@ class CoordinatorStats:
         }
 
 
-@runtime_checkable
-class CoordinatorProtocol(Protocol):
-    """Protocol for coordinator classes.
-
-    This defines the common interface that all coordinators should implement.
-    Using Protocol allows structural subtyping - classes that have these methods
-    are considered coordinators even without explicit inheritance.
-    """
-
-    @property
-    def status(self) -> CoordinatorStatus:
-        """Current status of the coordinator."""
-        ...
-
-    @property
-    def is_running(self) -> bool:
-        """Whether the coordinator is actively running."""
-        ...
-
-    async def initialize(self) -> None:
-        """Initialize the coordinator (async setup)."""
-        ...
-
-    async def start(self) -> None:
-        """Start the coordinator's main operation."""
-        ...
-
-    async def stop(self) -> None:
-        """Stop the coordinator gracefully."""
-        ...
-
-    async def shutdown(self) -> None:
-        """Shutdown and cleanup resources."""
-        ...
-
-    async def get_stats(self) -> dict[str, Any]:
-        """Get current statistics."""
-        ...
+# December 2025 Phase 11: CoordinatorProtocol is now imported from protocols.py
+# The canonical definition is in app.coordination.protocols
+# This alias provides backward compatibility for existing imports
+CoordinatorProtocol = _CanonicalCoordinatorProtocol
 
 
 class CoordinatorBase(ABC):

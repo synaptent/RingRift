@@ -1134,6 +1134,75 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["promotion_rejected_handler"] = False
         logger.warning(f"[Bootstrap] Failed to wire promotion rejected: {e}")
 
+    # 14. Wire DATA_SYNC_FAILED to backpressure activation (December 2025)
+    try:
+        from app.coordination.event_router import DataEventType, get_event_bus
+
+        bus = get_event_bus()
+
+        async def on_sync_failed(event):
+            """Handle DATA_SYNC_FAILED - activate backpressure, retry with different transport."""
+            payload = event.payload if hasattr(event, "payload") else {}
+            error = payload.get("error", "unknown")
+            target_node = payload.get("target_node", "unknown")
+
+            logger.warning(f"[Bootstrap] Sync failed to {target_node}: {error}")
+
+            # Try to activate backpressure via SelfplayScheduler
+            try:
+                from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+                scheduler = get_selfplay_scheduler()
+                if hasattr(scheduler, "activate_backpressure"):
+                    scheduler.activate_backpressure(
+                        reason=f"sync_failed:{target_node}",
+                        duration_seconds=300,  # 5 minute backpressure
+                    )
+            except (ImportError, AttributeError):
+                pass  # Scheduler not available
+
+        bus.subscribe(DataEventType.DATA_SYNC_FAILED, on_sync_failed)
+        results["sync_failed_handler"] = True
+        logger.debug("[Bootstrap] Wired DATA_SYNC_FAILED -> backpressure activation")
+
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
+        results["sync_failed_handler"] = False
+        logger.warning(f"[Bootstrap] Failed to wire sync failed: {e}")
+
+    # 15. Wire SYNC_STALLED to escalation (December 2025)
+    try:
+        from app.coordination.event_router import DataEventType, get_event_bus
+
+        bus = get_event_bus()
+
+        async def on_sync_stalled(event):
+            """Handle SYNC_STALLED - try different transport, extend timeout."""
+            payload = event.payload if hasattr(event, "payload") else {}
+            target_node = payload.get("target_node", "unknown")
+            duration = payload.get("stall_duration_seconds", 0)
+
+            logger.warning(
+                f"[Bootstrap] Sync stalled to {target_node} after {duration:.0f}s"
+            )
+
+            # Try to escalate to different transport via SyncRouter
+            try:
+                from app.coordination.sync_router import get_sync_router
+
+                router = get_sync_router()
+                if hasattr(router, "mark_transport_failed"):
+                    router.mark_transport_failed(target_node, reason="stall")
+            except (ImportError, AttributeError):
+                pass  # Router not available
+
+        bus.subscribe(DataEventType.SYNC_STALLED, on_sync_stalled)
+        results["sync_stalled_handler"] = True
+        logger.debug("[Bootstrap] Wired SYNC_STALLED -> transport escalation")
+
+    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
+        results["sync_stalled_handler"] = False
+        logger.warning(f"[Bootstrap] Failed to wire sync stalled: {e}")
+
     wired = sum(1 for v in results.values() if v)
     total = len(results)
     logger.info(f"[Bootstrap] Wired {wired}/{total} missing event subscriptions")

@@ -492,6 +492,58 @@ class GossipSyncDaemon:
             writer.close()
             await writer.wait_closed()
 
+    def health_check(self):
+        """Check daemon health status.
+
+        December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        try:
+            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        except ImportError:
+            # Fallback if protocols not available
+            return {"healthy": self._running, "message": "GossipSyncDaemon running" if self._running else "not running"}
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="GossipSyncDaemon not running",
+            )
+
+        # Check if sync cycles are happening
+        now = time.time()
+        if self.state.last_sync_time > 0:
+            time_since_sync = now - self.state.last_sync_time
+            # Warning if no sync in 3x the interval
+            if time_since_sync > SYNC_INTERVAL * 3:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"GossipSyncDaemon sync stale ({time_since_sync:.0f}s since last sync)",
+                    details=self.get_status(),
+                )
+
+        # Check peer health
+        healthy_peers = sum(1 for p in self.state.peers.values() if p.is_healthy)
+        total_peers = len(self.state.peers)
+        if total_peers > 0 and healthy_peers == 0:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"No healthy peers ({total_peers} peers all unhealthy)",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"GossipSyncDaemon running ({self.state.sync_cycles} cycles, {healthy_peers}/{total_peers} healthy peers)",
+            details=self.get_status(),
+        )
+
     def get_status(self) -> dict[str, Any]:
         """Get current sync status."""
         return {

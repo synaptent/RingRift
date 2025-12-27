@@ -129,6 +129,9 @@ class MoveType(str, Enum):
     # Skip recovery: player chooses to pass their turn without moving a marker
     # or extracting a buried ring. Per RR-CANON-R112 skip option.
     SKIP_RECOVERY = "skip_recovery"
+    # Game termination: player forfeits or runs out of time.
+    RESIGN = "resign"
+    TIMEOUT = "timeout"
 
 
 class AIType(str, Enum):
