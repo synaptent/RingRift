@@ -701,6 +701,54 @@ class CrossProcessEventPoller:
             self._thread.join(timeout=timeout)
             self._thread = None
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check poller health for daemon monitoring.
+
+        Returns:
+            HealthCheckResult with polling status and handler metrics.
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        # If not running, report as stopped (healthy but inactive)
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="CrossProcessEventPoller is stopped",
+            )
+
+        # Check if thread is alive
+        if self._thread and not self._thread.is_alive():
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message="Polling thread is not alive (crashed or stopped unexpectedly)",
+            )
+
+        # Check if subscriber is registered
+        if not self._subscriber_id:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message="No subscriber ID assigned",
+            )
+
+        # All checks passed - running healthy
+        handler_count = len(self._handlers)
+        global_handler_count = len(self._global_handlers)
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Poller running, {handler_count} handler types, {global_handler_count} global handlers",
+            details={
+                "handler_types": handler_count,
+                "global_handlers": global_handler_count,
+                "subscriber_id": self._subscriber_id,
+                "poll_interval": self.poll_interval,
+            },
+        )
+
     def _poll_loop(self) -> None:
         """Internal polling loop."""
         queue = get_event_queue(self.db_path)

@@ -818,24 +818,56 @@ class HighQualityDataSyncWatcher:
                     f"Failed to check freshness for {board_type}_{num_players}p: {e}"
                 )
 
-    def health_check(self) -> dict[str, Any]:
-        """Return health status for DaemonManager integration."""
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for DaemonManager integration.
+
+        December 2025: Updated to return HealthCheckResult for protocol compliance.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
         uptime = time.time() - self._start_time if self._start_time > 0 else 0
-        return {
-            "healthy": self._running and self._errors < 10,
-            "status": "running" if self._running else "stopped",
-            "uptime_seconds": uptime,
-            "checks_completed": self._checks_completed,
-            "syncs_triggered": self._syncs_triggered,
-            "errors": self._errors,
-            "check_interval": self.config.check_interval_seconds,
-        }
+        is_healthy = self._running and self._errors < 10
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,  # Stopped is not unhealthy
+                status=CoordinatorStatus.STOPPED,
+                message="HighQualityDataSyncWatcher not running",
+            )
+
+        if self._errors >= 10:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Too many errors ({self._errors})",
+                details={
+                    "uptime_seconds": uptime,
+                    "checks_completed": self._checks_completed,
+                    "syncs_triggered": self._syncs_triggered,
+                    "errors": self._errors,
+                    "check_interval": self.config.check_interval_seconds,
+                },
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Checks: {self._checks_completed}, Syncs: {self._syncs_triggered}",
+            details={
+                "uptime_seconds": uptime,
+                "checks_completed": self._checks_completed,
+                "syncs_triggered": self._syncs_triggered,
+                "errors": self._errors,
+                "check_interval": self.config.check_interval_seconds,
+            },
+        )
 
     def get_status(self) -> dict[str, Any]:
         """Get watcher status."""
+        health = self.health_check()
         return {
             "running": self._running,
-            **self.health_check(),
+            **health.to_dict(),
             "config": {
                 "check_interval_seconds": self.config.check_interval_seconds,
                 "max_age_hours": self.config.max_age_hours,

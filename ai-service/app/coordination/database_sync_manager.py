@@ -33,9 +33,11 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
+import urllib.request
 from abc import abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -759,7 +761,7 @@ class DatabaseSyncManager(SyncManagerBase):
                     return True
         except urllib.error.URLError:
             pass
-        except Exception:
+        except (socket.error, socket.timeout, TimeoutError, ConnectionError, OSError):
             pass
         return False
 

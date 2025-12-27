@@ -1944,7 +1944,7 @@ class ResourceOptimizer:
                 with self._get_connection() as conn:
                     conn.execute("SELECT 1")
                 db_ok = True
-            except Exception:
+            except (sqlite3.DatabaseError, sqlite3.OperationalError, OSError):
                 db_ok = False
 
             if not db_ok:

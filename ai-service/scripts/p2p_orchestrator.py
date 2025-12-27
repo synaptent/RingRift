@@ -2826,7 +2826,7 @@ class P2POrchestrator(
                         )
                         await proc.wait()
                         return proc.returncode == 0
-                    except Exception:
+                    except (asyncio.TimeoutError, OSError, subprocess.SubprocessError, ValueError):
                         return False
 
                 model_sync = ModelSyncLoop(
@@ -27378,7 +27378,7 @@ print(json.dumps({{
                                     reachable_count += 1
                                     continue
                     status["voters"]["unreachable"].append(voter_id)
-                except Exception:
+                except (socket.error, socket.timeout, OSError, TimeoutError, ConnectionRefusedError):
                     status["voters"]["unreachable"].append(voter_id)
 
             status["voters"]["reachable"] = reachable_count

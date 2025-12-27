@@ -143,7 +143,13 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
                 router.subscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
 
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED")
+            # December 2025 Phase 2: Subscribe to MODEL_PROMOTED to rebalance curriculum
+            # when a new model is promoted. This ensures curriculum weights are adjusted
+            # based on the latest model strength.
+            if hasattr(DataEventType, 'MODEL_PROMOTED'):
+                router.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED")
             return True
 
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
@@ -177,6 +183,9 @@ class MomentumToCurriculumBridge:
                 # December 2025: Unsubscribe from SELFPLAY_ALLOCATION_UPDATED
                 if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
                     router.unsubscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
+                # December 2025 Phase 2: Unsubscribe from MODEL_PROMOTED
+                if hasattr(DataEventType, 'MODEL_PROMOTED'):
+                    router.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -320,6 +329,62 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.debug(f"[MomentumToCurriculumBridge] Error handling allocation update: {e}")
+
+    def _on_model_promoted(self, event) -> None:
+        """Handle MODEL_PROMOTED event - rebalance curriculum weights.
+
+        December 2025 Phase 2: When a model is promoted, curriculum weights should
+        be recalculated based on the new model's strength. This ensures:
+        - Curriculum reflects the promoted model's capabilities
+        - Exploration/exploitation is rebalanced for the new baseline
+        - Other configs' relative weights are adjusted accordingly
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            board_type = payload.get("board_type", "")
+            num_players = payload.get("num_players", 0)
+            model_id = payload.get("model_id", "")
+            elo_improvement = payload.get("elo_improvement", 0.0)
+
+            if not board_type or not num_players:
+                return
+
+            config_key = f"{board_type}_{num_players}p"
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] MODEL_PROMOTED for {config_key}: "
+                f"model={model_id}, elo_improvement={elo_improvement:+.1f}"
+            )
+
+            # Trigger full curriculum weight sync after promotion
+            # The new model represents a new baseline for training
+            self._sync_weights()
+
+            # Emit curriculum rebalanced event for downstream consumers
+            try:
+                from app.coordination.event_emitters import emit_curriculum_rebalanced
+                import asyncio
+
+                async def _emit():
+                    await emit_curriculum_rebalanced(
+                        trigger="model_promoted",
+                        configs_affected=[config_key],
+                        source="curriculum_integration",
+                    )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_emit())
+                except RuntimeError:
+                    # No running loop - skip async emission
+                    pass
+
+            except ImportError:
+                pass
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling model promotion: {e}")
 
     def _sync_weights_for_momentum(
         self,

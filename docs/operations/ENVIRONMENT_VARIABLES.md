@@ -574,30 +574,74 @@ Seconds to wait before SIGKILL after SIGTERM when shutting down jobs.
 
 These are high-impact coordination/P2P knobs used by the Python AI service. The
 full auto-extracted list lives in `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
+Defaults below are sourced from `ai-service/app/config/coordination_defaults.py`
+and `ai-service/app/config/env.py` unless noted.
 
-| Variable                                  | Default | Description                                                 | Status   |
-| ----------------------------------------- | ------- | ----------------------------------------------------------- | -------- |
-| `RINGRIFT_SYNC_LOCK_TIMEOUT`              | `120`   | Sync mutex lock timeout (seconds).                          | Advanced |
-| `RINGRIFT_MAX_SYNCS_PER_HOST`             | `2`     | Max concurrent syncs per host.                              | Advanced |
-| `RINGRIFT_MAX_SYNCS_CLUSTER`              | `10`    | Max concurrent syncs cluster-wide.                          | Advanced |
-| `RINGRIFT_BACKPRESSURE_GPU_THRESHOLD`     | `90.0`  | GPU utilization (%) threshold to trigger backpressure.      | Advanced |
-| `RINGRIFT_BACKPRESSURE_MEMORY_THRESHOLD`  | `85.0`  | Memory utilization (%) threshold to trigger backpressure.   | Advanced |
-| `RINGRIFT_BACKPRESSURE_DISK_THRESHOLD`    | `90.0`  | Disk utilization (%) threshold to trigger backpressure.     | Advanced |
-| `RINGRIFT_BACKPRESSURE_COOLDOWN`          | `30`    | Backpressure cooldown (seconds) before re-evaluating.       | Advanced |
-| `RINGRIFT_DAEMON_HEALTH_INTERVAL`         | `60`    | Health check interval for daemons (seconds).                | Advanced |
-| `RINGRIFT_DAEMON_CRITICAL_CHECK_INTERVAL` | `30`    | Health check interval for critical daemons (seconds).       | Advanced |
-| `RINGRIFT_DAEMON_STARTUP_TIMEOUT`         | `30`    | Startup timeout before a daemon is marked unhealthy.        | Advanced |
-| `RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT`        | `10`    | Shutdown timeout before forcing stop.                       | Advanced |
-| `RINGRIFT_P2P_HEARTBEAT_INTERVAL`         | `15`    | P2P heartbeat interval (seconds).                           | Advanced |
-| `RINGRIFT_P2P_GOSSIP_INTERVAL`            | `15`    | P2P gossip interval (seconds).                              | Advanced |
-| `RINGRIFT_P2P_ELECTION_TIMEOUT`           | `30`    | Leader election timeout (seconds).                          | Advanced |
-| `RINGRIFT_P2P_PEER_TIMEOUT`               | `60`    | Peer timeout before marking offline (seconds).              | Advanced |
-| `RINGRIFT_P2P_MAX_PEERS`                  | `100`   | Max P2P peers tracked per node.                             | Advanced |
-| `RINGRIFT_P2P_QUORUM`                     | `3`     | Minimum quorum size for leader election.                    | Advanced |
-| `RINGRIFT_JOB_TIMEOUT_GPU_SELFPLAY`       | `3600`  | GPU selfplay job timeout (seconds).                         | Advanced |
-| `RINGRIFT_JOB_TIMEOUT_TRAINING`           | `14400` | Training job timeout (seconds).                             | Advanced |
-| `RINGRIFT_NPX_PATH`                       | unset   | Override path for `npx` used in TS replay parity checks.    | Tooling  |
-| `RINGRIFT_SKIP_SCRIPT_INIT_IMPORTS`       | unset   | Skip heavy imports in `scripts/__init__.py` (parity/tools). | Tooling  |
+| Variable                                  | Default            | Description                                                 | Status   |
+| ----------------------------------------- | ------------------ | ----------------------------------------------------------- | -------- |
+| `RINGRIFT_SYNC_LOCK_TIMEOUT`              | `120`              | Sync mutex lock timeout (seconds).                          | Advanced |
+| `RINGRIFT_MAX_SYNCS_PER_HOST`             | `2`                | Max concurrent syncs per host.                              | Advanced |
+| `RINGRIFT_MAX_SYNCS_CLUSTER`              | `10`               | Max concurrent syncs cluster-wide.                          | Advanced |
+| `RINGRIFT_DATA_SYNC_INTERVAL`             | `120`              | Data sync interval (seconds).                               | Advanced |
+| `RINGRIFT_MODEL_SYNC_INTERVAL`            | `600`              | Model sync interval (seconds).                              | Advanced |
+| `RINGRIFT_ELO_SYNC_INTERVAL`              | `60`               | ELO sync interval (seconds).                                | Advanced |
+| `RINGRIFT_REGISTRY_SYNC_INTERVAL`         | `120`              | Registry sync interval (seconds).                           | Advanced |
+| `RINGRIFT_SYNC_FRESHNESS_INTERVAL`        | `60`               | Sync freshness check interval (seconds).                    | Advanced |
+| `RINGRIFT_SYNC_FULL_INTERVAL`             | `3600`             | Full sync interval (seconds).                               | Advanced |
+| `RINGRIFT_SYNC_CRITICAL_STALE`            | `3600`             | Critical staleness threshold before forcing sync (seconds). | Advanced |
+| `RINGRIFT_BACKPRESSURE_GPU_THRESHOLD`     | `90.0`             | GPU utilization (%) threshold to trigger backpressure.      | Advanced |
+| `RINGRIFT_BACKPRESSURE_MEMORY_THRESHOLD`  | `85.0`             | Memory utilization (%) threshold to trigger backpressure.   | Advanced |
+| `RINGRIFT_BACKPRESSURE_DISK_THRESHOLD`    | `90.0`             | Disk utilization (%) threshold to trigger backpressure.     | Advanced |
+| `RINGRIFT_BACKPRESSURE_COOLDOWN`          | `30`               | Backpressure cooldown (seconds) before re-evaluating.       | Advanced |
+| `RINGRIFT_DAEMON_CHECK_INTERVAL`          | `300`              | Daemon supervisor check interval (seconds).                 | Advanced |
+| `RINGRIFT_DAEMON_HEALTH_INTERVAL`         | `60`               | Health check interval for daemons (seconds).                | Advanced |
+| `RINGRIFT_DAEMON_CRITICAL_CHECK_INTERVAL` | `30`               | Health check interval for critical daemons (seconds).       | Advanced |
+| `RINGRIFT_DAEMON_HEALTH_TIMEOUT`          | `5.0`              | Daemon health check timeout (seconds).                      | Advanced |
+| `RINGRIFT_DAEMON_ERROR_BACKOFF_BASE`      | `5.0`              | Daemon restart backoff base (seconds).                      | Advanced |
+| `RINGRIFT_DAEMON_ERROR_BACKOFF_MAX`       | `300.0`            | Daemon restart backoff max (seconds).                       | Advanced |
+| `RINGRIFT_DAEMON_MAX_CONSECUTIVE_ERRORS`  | `5`                | Max consecutive daemon errors before restart.               | Advanced |
+| `RINGRIFT_DAEMON_ERROR_RATE_THRESHOLD`    | `0.5`              | Error-rate threshold triggering daemon restart.             | Advanced |
+| `RINGRIFT_DAEMON_STARTUP_TIMEOUT`         | `30`               | Startup timeout before a daemon is marked unhealthy.        | Advanced |
+| `RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT`        | `10`               | Shutdown timeout before forcing stop.                       | Advanced |
+| `RINGRIFT_HEARTBEAT_INTERVAL`             | `30`               | Coordinator heartbeat interval (seconds).                   | Advanced |
+| `RINGRIFT_HEARTBEAT_TIMEOUT`              | `90`               | Heartbeat timeout before marking a node stale (seconds).    | Advanced |
+| `RINGRIFT_STALE_CLEANUP_INTERVAL`         | `60`               | Stale heartbeat cleanup interval (seconds).                 | Advanced |
+| `RINGRIFT_CLUSTER_CHECK_INTERVAL`         | `60`               | Cluster health check interval (seconds).                    | Advanced |
+| `RINGRIFT_ALERT_COOLDOWN`                 | `300`              | Alert cooldown window (seconds).                            | Advanced |
+| `RINGRIFT_ALERT_LEVEL`                    | `warning`          | Minimum alert level for p2p orchestrator alerts.            | Advanced |
+| `RINGRIFT_CONNECT_TIMEOUT`                | `45`               | Node connect timeout (seconds).                             | Advanced |
+| `RINGRIFT_OPERATION_TIMEOUT`              | `180`              | Default operation timeout (seconds).                        | Advanced |
+| `RINGRIFT_HTTP_TIMEOUT`                   | `30`               | HTTP request timeout (seconds).                             | Advanced |
+| `RINGRIFT_SSH_TIMEOUT`                    | `60`               | SSH command timeout (seconds).                              | Advanced |
+| `RINGRIFT_MAX_RETRIES`                    | `3`                | Default retry count for coordination operations.            | Advanced |
+| `RINGRIFT_P2P_HEARTBEAT_INTERVAL`         | `15`               | P2P heartbeat interval (seconds).                           | Advanced |
+| `RINGRIFT_P2P_GOSSIP_INTERVAL`            | `15`               | P2P gossip interval (seconds).                              | Advanced |
+| `RINGRIFT_P2P_ELECTION_TIMEOUT`           | `30`               | Leader election timeout (seconds).                          | Advanced |
+| `RINGRIFT_P2P_PEER_TIMEOUT`               | `60`               | Peer timeout before marking offline (seconds).              | Advanced |
+| `RINGRIFT_P2P_MAX_PEERS`                  | `100`              | Max P2P peers tracked per node.                             | Advanced |
+| `RINGRIFT_P2P_QUORUM`                     | `3`                | Minimum quorum size for leader election.                    | Advanced |
+| `RINGRIFT_P2P_PORT`                       | `8770`             | P2P protocol port.                                          | Advanced |
+| `RINGRIFT_P2P_HEALTH_PORT`                | `8770`             | P2P health endpoint port.                                   | Advanced |
+| `RINGRIFT_DATA_SERVER_PORT`               | `8780`             | Data server port for sync payloads.                         | Advanced |
+| `RINGRIFT_P2P_STARTUP_GRACE_PERIOD`       | `120`              | Startup grace period before P2P peer checks (seconds).      | Advanced |
+| `RINGRIFT_CLUSTER_NAME`                   | `ringrift-cluster` | P2P cluster name/namespace.                                 | Advanced |
+| `RINGRIFT_ARBITER_URL`                    | `COORDINATOR_URL`  | Override arbiter URL (defaults to coordinator).             | Advanced |
+| `RINGRIFT_CLUSTER_API`                    | unset              | Override cluster status API base URL.                       | Advanced |
+| `RINGRIFT_ADMIN_TOKEN`                    | unset              | Admin token required for privileged P2P admin actions.      | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_GPU_SELFPLAY`       | `3600`             | GPU selfplay job timeout (seconds).                         | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_CPU_SELFPLAY`       | `7200`             | CPU selfplay job timeout (seconds).                         | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_TRAINING`           | `14400`            | Training job timeout (seconds).                             | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_TOURNAMENT`         | `3600`             | Tournament job timeout (seconds).                           | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_EVALUATION`         | `3600`             | Evaluation job timeout (seconds).                           | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_MODEL_SYNC`         | `1800`             | Model sync job timeout (seconds).                           | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_DATA_EXPORT`        | `1800`             | Data export job timeout (seconds).                          | Advanced |
+| `RINGRIFT_JOB_TIMEOUT_CMAES`              | `28800`            | CMA-ES job timeout (seconds).                               | Advanced |
+| `RINGRIFT_MAX_TRAINING_SAME_CONFIG`       | `1`                | Max concurrent training jobs per config.                    | Advanced |
+| `RINGRIFT_MAX_TRAINING_TOTAL`             | `3`                | Max concurrent training jobs cluster-wide.                  | Advanced |
+| `RINGRIFT_TRAINING_TIMEOUT_HOURS`         | `24.0`             | Training timeout in hours.                                  | Advanced |
+| `RINGRIFT_TRAINING_MIN_INTERVAL`          | `1200`             | Min seconds between training launches per config.           | Advanced |
+| `RINGRIFT_NPX_PATH`                       | unset              | Override path for `npx` used in TS replay parity checks.    | Tooling  |
+| `RINGRIFT_SKIP_SCRIPT_INIT_IMPORTS`       | unset              | Skip heavy imports in `scripts/__init__.py` (parity/tools). | Tooling  |
 
 ### `RINGRIFT_GPU_IDLE_THRESHOLD`
 

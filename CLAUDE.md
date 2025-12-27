@@ -142,20 +142,20 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 ## Cluster Infrastructure
 
-RingRift uses a P2P mesh network for distributed training across ~52 configured nodes (Dec 2025).
+RingRift uses a P2P mesh network for distributed training across ~32 configured nodes (Dec 2025).
 
-### Active Cluster (Dec 2025)
+### Active Cluster (Dec 27, 2025)
 
-**Lambda Labs account terminated Dec 2025. All Lambda nodes permanently removed.**
+**Note:** Lambda Labs account terminated Dec 2025 - all Lambda nodes permanently removed.
 
-| Provider | Nodes | GPUs                               | Status |
-| -------- | ----- | ---------------------------------- | ------ |
-| Vast.ai  | ~30   | RTX 5090, 4090, 3090, A40, 4060 Ti | Active |
-| RunPod   | 6     | H100, A100, L40S, RTX 3090 Ti      | Active |
-| Nebius   | 4     | H100 (80GB), L40S                  | Active |
-| Vultr    | 3     | A100 (20GB vGPU)                   | Active |
-| Hetzner  | 4     | CPU only (P2P voters)              | Active |
-| Local    | 2     | Mac Studio M3 (coordinator)        | Active |
+| Provider | Nodes | GPUs                                        | Status |
+| -------- | ----- | ------------------------------------------- | ------ |
+| Vast.ai  | 14    | RTX 5090/5080, 4090, 3090, A40, 3060/4060Ti | Active |
+| RunPod   | 8     | H100, A100 (5x), L40S, RTX 3090 Ti          | Active |
+| Nebius   | 3     | H100 80GB (2x), L40S backbone               | Active |
+| Vultr    | 2     | A100 20GB vGPU                              | Active |
+| Hetzner  | 3     | CPU only (P2P voters)                       | Active |
+| Local    | 2     | Mac Studio M3 (coordinator)                 | Active |
 
 ### Cluster Management
 

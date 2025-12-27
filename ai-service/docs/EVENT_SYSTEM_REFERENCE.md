@@ -90,6 +90,10 @@ await bus.publish(DataEvent(
 | `SYNC_TRIGGERED`         | `sync_triggered`         | TrainingFreshness              | SyncRouter                                  | Force immediate sync  |
 | `CONSOLIDATION_STARTED`  | `consolidation_started`  | DatabaseConsolidator           | ProgressTracker                             | Track consolidation   |
 | `CONSOLIDATION_COMPLETE` | `consolidation_complete` | DatabaseConsolidator           | DataPipelineOrchestrator                    | Trigger export        |
+| `ORPHAN_GAMES_DETECTED`  | `orphan_games_detected`  | OrphanDetectionDaemon          | DataPipelineOrchestrator                    | Trigger priority sync |
+| `REPAIR_COMPLETED`       | `repair_completed`       | RecoveryOrchestrator           | DataPipelineOrchestrator                    | Retrigger sync        |
+| `REPAIR_FAILED`          | `repair_failed`          | RecoveryOrchestrator           | DataPipelineOrchestrator                    | Track repair failures |
+| `TASK_ABANDONED`         | `task_abandoned`         | P2POrchestrator                | SelfplayOrchestrator                        | Track cancelled jobs  |
 
 ### Training Events
 

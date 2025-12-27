@@ -491,6 +491,81 @@ class QueueMonitor:
             ],
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check queue monitor health for daemon monitoring.
+
+        Returns:
+            HealthCheckResult with queue status and backpressure metrics.
+        """
+        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+
+        try:
+            # Get all queue statuses
+            all_statuses = self.get_all_status()
+
+            if not all_statuses:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.RUNNING,
+                    message="Queue monitor running, no queues configured",
+                )
+
+            # Check for CRITICAL/STOP backpressure (unhealthy)
+            critical_queues = [
+                name for name, status in all_statuses.items()
+                if status and status.backpressure == BackpressureLevel.STOP
+            ]
+
+            if critical_queues:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"STOP backpressure on: {', '.join(critical_queues)}",
+                    details={
+                        "critical_queues": critical_queues,
+                        "queue_count": len(all_statuses),
+                    },
+                )
+
+            # Check for HARD backpressure (degraded but healthy)
+            hard_queues = [
+                name for name, status in all_statuses.items()
+                if status and status.backpressure == BackpressureLevel.HARD
+            ]
+
+            if hard_queues:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"HARD backpressure on: {', '.join(hard_queues)}",
+                    details={
+                        "hard_queues": hard_queues,
+                        "queue_count": len(all_statuses),
+                    },
+                )
+
+            # All healthy
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"Queue monitor healthy: {len(all_statuses)} queues monitored",
+                details={
+                    "queue_count": len(all_statuses),
+                    "throttled_queues": [
+                        name for name, status in all_statuses.items()
+                        if status and status.backpressure != BackpressureLevel.NONE
+                    ],
+                },
+            )
+
+        except Exception as e:
+            logger.error(f"Error checking QueueMonitor health: {e}")
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check error: {e}",
+            )
+
     def close(self) -> None:
         """Close database connection."""
         if hasattr(self._local, "conn") and self._local.conn:

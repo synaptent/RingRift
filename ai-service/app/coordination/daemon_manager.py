@@ -595,7 +595,7 @@ class DaemonManager:
                     if status == "unhealthy":
                         await asyncio.sleep(0.5)
                         continue
-                except Exception:
+                except (AttributeError, ValueError, RuntimeError, asyncio.TimeoutError):
                     # No health check available, just check running state
                     pass
                 # Running but no health check or unknown status - consider ready
