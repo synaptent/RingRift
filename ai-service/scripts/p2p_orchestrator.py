@@ -1608,6 +1608,41 @@ class P2POrchestrator(
         self._swim_manager = get_swim_manager(node_id=node_id, bind_port=7947)
         self._swim_started = False
 
+        # SyncRouter: Intelligent data routing with quality-based priority (December 2025)
+        # Lazy-loaded to avoid import overhead on startup
+        self._sync_router: SyncRouter | None = None
+        self._sync_router_wired = False
+
+    def _get_sync_router(self) -> SyncRouter | None:
+        """Lazy-load SyncRouter singleton for intelligent sync routing."""
+        if not HAS_SYNC_ROUTER:
+            return None
+        if self._sync_router is None:
+            try:
+                self._sync_router = get_sync_router()
+                logger.info("SyncRouter: initialized for intelligent data routing")
+            except Exception as e:
+                logger.warning(f"SyncRouter: failed to initialize: {e}")
+                return None
+        return self._sync_router
+
+    def _wire_sync_router_events(self) -> bool:
+        """Wire SyncRouter to event system for real-time sync triggers."""
+        if self._sync_router_wired:
+            return True
+        router = self._get_sync_router()
+        if router is None:
+            return False
+        try:
+            if hasattr(router, 'wire_to_event_router'):
+                router.wire_to_event_router()
+                self._sync_router_wired = True
+                logger.info("SyncRouter: wired to event system")
+                return True
+        except Exception as e:
+            logger.warning(f"SyncRouter: failed to wire events: {e}")
+        return False
+
     def _is_leader(self) -> bool:
         """Check if this node is the current cluster leader with valid lease."""
         if self.leader_id != self.node_id:
@@ -4508,7 +4543,40 @@ class P2POrchestrator(
             return {"success": False, "error": "No training nodes available"}
 
         # Filter out nodes with critical disk space
-        eligible_training_nodes = [n for n in training_nodes if self._should_sync_to_node(n)]
+        # Try SyncRouter first for quality-based routing (December 2025)
+        router = self._get_sync_router()
+        if router is not None:
+            try:
+                # Refresh capacity data before routing
+                if hasattr(router, 'refresh_all_capacity'):
+                    router.refresh_all_capacity()
+
+                # Get sync targets with quality-based priority
+                targets = router.get_sync_targets(
+                    data_type="game",
+                    exclude_nodes=[self.node_id],  # Don't sync to self
+                    max_targets=len(training_nodes),
+                )
+                if targets:
+                    # Filter to training nodes only
+                    training_node_ids = {n.node_id for n in training_nodes}
+                    eligible_training_nodes = [
+                        n for n in training_nodes
+                        if any(t.node_id == n.node_id for t in targets)
+                    ]
+                    if eligible_training_nodes:
+                        logger.info(f"SyncRouter: selected {len(eligible_training_nodes)} training nodes with quality-based routing")
+                    else:
+                        # Fallback to disk-based filtering
+                        eligible_training_nodes = [n for n in training_nodes if self._should_sync_to_node(n)]
+                else:
+                    eligible_training_nodes = [n for n in training_nodes if self._should_sync_to_node(n)]
+            except Exception as e:
+                logger.debug(f"SyncRouter fallback: {e}")
+                eligible_training_nodes = [n for n in training_nodes if self._should_sync_to_node(n)]
+        else:
+            eligible_training_nodes = [n for n in training_nodes if self._should_sync_to_node(n)]
+
         if not eligible_training_nodes:
             return {"success": False, "error": "All training nodes have critical disk usage"}
 
@@ -27381,6 +27449,9 @@ print(json.dumps({{
             logger.debug("NFS sync verification not available")
         except Exception as e:
             logger.warning(f"NFS sync verification failed: {e}")
+
+        # Wire SyncRouter to event system for real-time sync triggers (December 2025)
+        self._wire_sync_router_events()
 
         # Increase backlog to handle burst of connections from many nodes
         # Default is ~128, which can overflow when many vast nodes heartbeat simultaneously
