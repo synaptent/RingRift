@@ -29,6 +29,13 @@ from app.config.thresholds import PROMOTION_WIN_RATE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "ModelPerformance",
+    "ModelPerformanceWatchdog",
+    "get_watchdog",
+    "create_model_performance_watchdog",
+]
+
 
 @dataclass
 class ModelPerformance:
@@ -295,18 +302,29 @@ _watchdog: ModelPerformanceWatchdog | None = None
 
 
 def get_watchdog() -> ModelPerformanceWatchdog:
-    """Get or create the singleton watchdog instance."""
+    """Get or create the singleton watchdog instance.
+
+    Returns:
+        ModelPerformanceWatchdog: The singleton watchdog instance.
+
+    Example:
+        watchdog = get_watchdog()
+        await watchdog.start()
+    """
     global _watchdog
     if _watchdog is None:
         _watchdog = ModelPerformanceWatchdog()
     return _watchdog
 
 
-# Factory function for DaemonManager integration
 async def create_model_performance_watchdog() -> None:
-    """Factory function for DaemonManager.
+    """Factory function for DaemonManager integration.
 
     Creates and runs the model performance watchdog until cancelled.
+    Used by DaemonManager.start(DaemonType.MODEL_PERFORMANCE_WATCHDOG).
+
+    Raises:
+        asyncio.CancelledError: When the daemon is stopped.
     """
     watchdog = get_watchdog()
     await watchdog.start()

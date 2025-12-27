@@ -39,6 +39,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "EvaluationStats",
+    "EvaluationConfig",
+    "EvaluationDaemon",
+    "get_evaluation_daemon",
+    "start_evaluation_daemon",
+]
+
 # Singleton instance
 _daemon: "EvaluationDaemon | None" = None
 
@@ -528,7 +536,14 @@ class EvaluationDaemon:
 
 
 def get_evaluation_daemon(config: EvaluationConfig | None = None) -> EvaluationDaemon:
-    """Get or create the singleton evaluation daemon."""
+    """Get or create the singleton evaluation daemon.
+
+    Args:
+        config: Optional configuration. Only used on first call.
+
+    Returns:
+        EvaluationDaemon: The singleton daemon instance.
+    """
     global _daemon
     if _daemon is None:
         _daemon = EvaluationDaemon(config)
@@ -536,7 +551,16 @@ def get_evaluation_daemon(config: EvaluationConfig | None = None) -> EvaluationD
 
 
 async def start_evaluation_daemon(config: EvaluationConfig | None = None) -> EvaluationDaemon:
-    """Start the evaluation daemon (convenience function)."""
+    """Start the evaluation daemon (convenience function).
+
+    Combines get_evaluation_daemon() and start() in one call.
+
+    Args:
+        config: Optional configuration. Only used on first call.
+
+    Returns:
+        EvaluationDaemon: The started daemon instance.
+    """
     daemon = get_evaluation_daemon(config)
     await daemon.start()
     return daemon

@@ -29,6 +29,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "QualityState",
+    "QualityMonitorConfig",
+    "QualityMonitorDaemon",
+    "create_quality_monitor",
+]
+
 
 class QualityState(Enum):
     """State of data quality."""
@@ -375,11 +382,17 @@ class QualityMonitorDaemon:
         )
 
 
-# Factory function for DaemonManager integration
 async def create_quality_monitor() -> None:
-    """Factory function for DaemonManager.
+    """Factory function for DaemonManager integration.
 
     Creates and runs the quality monitor daemon until cancelled.
+    Used by DaemonManager.start(DaemonType.QUALITY_MONITOR).
+
+    The daemon monitors selfplay data quality and emits events when
+    quality changes significantly, enabling the feedback loop to react.
+
+    Raises:
+        asyncio.CancelledError: When the daemon is stopped.
     """
     daemon = QualityMonitorDaemon()
     await daemon.start()
