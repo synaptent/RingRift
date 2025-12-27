@@ -4,7 +4,7 @@
 **Last Updated:** December 13, 2025 (Documentation Hygiene Pass)
 **Based on:** Full project review including TODO.md, KNOWN_ISSUES.md, STRATEGIC_ROADMAP.md, docs/archive/historical/CURRENT_STATE_ASSESSMENT.md, PROJECT_GOALS.md
 
-> **Dec 13, 2025 Engine Review Summary:** Comprehensive architecture review confirms both TypeScript (A-) and Python (A) engines demonstrate excellent separation of concerns, strong canonical rules adherence, and mature parity testing. 90 contract vectors with 0 mismatches. Orchestrator at 100% rollout. See [[`../archive/historical/CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md)](CURRENT_STATE_ASSESSMENT.md#-engine-architecture--refactoring-status-dec-2025-review) for detailed findings.
+> **Dec 13, 2025 Engine Review Summary:** Comprehensive architecture review confirms both TypeScript (A-) and Python (A) engines demonstrate excellent separation of concerns, strong canonical rules adherence, and mature parity testing. 90 contract vectors with 0 mismatches. Orchestrator at 100% rollout. See [`CURRENT_STATE_ASSESSMENT.md`](../archive/historical/CURRENT_STATE_ASSESSMENT.md#-engine-architecture--refactoring-status-dec-2025-review) for detailed findings.
 
 ---
 
