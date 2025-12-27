@@ -580,8 +580,7 @@ class ClusterActivator:
             node: Activated node configuration
         """
         try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEvent, DataEventType
+            from app.coordination.event_router import get_event_bus, DataEvent, DataEventType
 
             bus = get_event_bus()
             if bus:
