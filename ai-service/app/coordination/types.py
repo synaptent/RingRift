@@ -49,6 +49,9 @@ __all__ = [
     # Coordination types
     "BackpressureLevel",
     "TaskType",
+    "BoardType",
+    "WorkStatus",
+    "HealthLevel",
 ]
 
 
@@ -159,3 +162,78 @@ class TaskType(str, Enum):
 
     # Fallback
     UNKNOWN = "unknown"  # Unknown/other task type
+
+
+class BoardType(str, Enum):
+    """Canonical board types for all configurations.
+
+    December 2025: Consolidated from utilization_optimizer.py, unified_queue_populator.py
+    """
+
+    HEX8 = "hex8"           # Small hexagonal, 61 cells
+    SQUARE8 = "square8"     # Standard 8x8, 64 cells
+    SQUARE19 = "square19"   # Large square (Go-sized), 361 cells
+    HEXAGONAL = "hexagonal" # Large hexagonal, 469 cells
+
+    @property
+    def cell_count(self) -> int:
+        """Approximate cell count for this board type."""
+        return {
+            BoardType.HEX8: 61,
+            BoardType.SQUARE8: 64,
+            BoardType.SQUARE19: 361,
+            BoardType.HEXAGONAL: 469,
+        }[self]
+
+    @property
+    def vram_requirement_gb(self) -> float:
+        """Approximate VRAM requirement for training/inference."""
+        return {
+            BoardType.HEX8: 4.0,
+            BoardType.SQUARE8: 4.0,
+            BoardType.SQUARE19: 8.0,
+            BoardType.HEXAGONAL: 12.0,
+        }[self]
+
+    @classmethod
+    def from_string(cls, s: str) -> "BoardType":
+        """Parse board type from string, handling common variations."""
+        s = s.lower().replace("-", "").replace("_", "")
+        mapping = {
+            "hex8": cls.HEX8,
+            "hexsmall": cls.HEX8,
+            "square8": cls.SQUARE8,
+            "sq8": cls.SQUARE8,
+            "square19": cls.SQUARE19,
+            "sq19": cls.SQUARE19,
+            "hexagonal": cls.HEXAGONAL,
+            "hexlarge": cls.HEXAGONAL,
+        }
+        if s in mapping:
+            return mapping[s]
+        raise ValueError(f"Unknown board type: {s}")
+
+
+class WorkStatus(str, Enum):
+    """Status of work items in the work queue."""
+
+    PENDING = "pending"
+    CLAIMED = "claimed"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+
+
+class HealthLevel(str, Enum):
+    """System health levels.
+
+    Used by health monitors and daemon managers.
+    """
+
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+    CRITICAL = "critical"
+    UNKNOWN = "unknown"
