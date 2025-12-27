@@ -153,8 +153,8 @@ class EphemeralDataGuard:
     def reset_instance(cls) -> None:
         """Reset singleton for testing."""
         with cls._lock:
-            if cls._instance is not None:
-                cls._instance._save_state()
+            # Note: No need to save state - checkpoints are persisted to SQLite
+            # immediately via _save_checkpoint() when created/updated
             cls._instance = None
 
     # =========================================================================

@@ -713,7 +713,18 @@ class DaemonManager:
                 router.subscribe(DataEventType.LEADER_ELECTED.value, self._on_leader_elected)
                 logger.debug("[DaemonManager] Subscribed to LEADER_ELECTED")
 
-            logger.info("[DaemonManager] Subscribed to critical events (Phase 5, P0.3, P2P cluster)")
+            # December 2025: Backpressure events for daemon workload coordination
+            # BACKPRESSURE_ACTIVATED - pause non-essential daemons to reduce load
+            if hasattr(DataEventType, 'BACKPRESSURE_ACTIVATED'):
+                router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, self._on_backpressure_activated)
+                logger.debug("[DaemonManager] Subscribed to BACKPRESSURE_ACTIVATED")
+
+            # BACKPRESSURE_RELEASED - resume normal daemon operations
+            if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
+                router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
+                logger.debug("[DaemonManager] Subscribed to BACKPRESSURE_RELEASED")
+
+            logger.info("[DaemonManager] Subscribed to critical events (Phase 5, P0.3, P2P cluster, backpressure)")
 
             # Phase 7: Wire AutoRollbackHandler to actually perform model rollbacks
             # Without this, REGRESSION_CRITICAL events are logged but no rollback happens
@@ -1077,6 +1088,125 @@ class DaemonManager:
 
         except (RuntimeError, OSError, AttributeError, KeyError) as e:
             logger.debug(f"[DaemonManager] Error handling LEADER_ELECTED: {e}")
+
+    async def _on_backpressure_activated(self, event) -> None:
+        """Handle BACKPRESSURE_ACTIVATED event - reduce daemon workload.
+
+        December 2025: When backpressure is activated (queue depth exceeds threshold
+        or resource contention detected), pause non-essential daemons to reduce load.
+
+        Essential daemons that must keep running:
+        - EVENT_ROUTER - core event bus (always needed)
+        - DAEMON_WATCHDOG - health monitoring (always needed)
+        - QUEUE_MONITOR - needs to track when to release backpressure
+        - CLUSTER_WATCHDOG - cluster health (always needed)
+
+        Non-essential daemons that can be paused:
+        - IDLE_RESOURCE - spawns new selfplay jobs
+        - SELFPLAY_COORDINATOR - schedules selfplay
+        - TRAINING_ACTIVITY - detects training (informational)
+        - AUTO_SYNC - can wait until backpressure clears
+
+        Args:
+            event: The BACKPRESSURE_ACTIVATED event with payload containing
+                   reason, threshold, current_value, etc.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            reason = payload.get("reason", "unknown")
+            threshold = payload.get("threshold", 0)
+            current_value = payload.get("current_value", 0)
+
+            logger.warning(
+                f"[DaemonManager] BACKPRESSURE_ACTIVATED: {reason} "
+                f"(value: {current_value}, threshold: {threshold})"
+            )
+
+            # Non-essential daemons that can be paused during backpressure
+            pausable_daemons = [
+                DaemonType.IDLE_RESOURCE,
+                DaemonType.SELFPLAY_COORDINATOR,
+                DaemonType.TRAINING_ACTIVITY,
+                DaemonType.AUTO_SYNC,
+            ]
+
+            paused_count = 0
+            for daemon_type in pausable_daemons:
+                if daemon_type in self._daemons:
+                    info = self._daemons[daemon_type]
+                    if info.state == DaemonState.RUNNING:
+                        # Mark as paused (don't fully stop - just suspend work)
+                        daemon = getattr(info, 'instance', None)
+                        if daemon and hasattr(daemon, 'pause'):
+                            try:
+                                daemon.pause()
+                                paused_count += 1
+                                logger.debug(
+                                    f"[DaemonManager] Paused {daemon_type.value} due to backpressure"
+                                )
+                            except (RuntimeError, OSError) as e:
+                                logger.debug(
+                                    f"[DaemonManager] Failed to pause {daemon_type.value}: {e}"
+                                )
+
+            if paused_count > 0:
+                logger.info(
+                    f"[DaemonManager] Paused {paused_count} daemons due to backpressure"
+                )
+
+        except (RuntimeError, OSError, AttributeError, KeyError) as e:
+            logger.debug(f"[DaemonManager] Error handling BACKPRESSURE_ACTIVATED: {e}")
+
+    async def _on_backpressure_released(self, event) -> None:
+        """Handle BACKPRESSURE_RELEASED event - resume normal daemon operations.
+
+        December 2025: When backpressure is released (queue depth dropped below
+        threshold and resources recovered), resume paused daemons.
+
+        Args:
+            event: The BACKPRESSURE_RELEASED event with payload containing
+                   duration_seconds, peak_value, etc.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            duration = payload.get("duration_seconds", 0)
+
+            logger.info(
+                f"[DaemonManager] BACKPRESSURE_RELEASED after {duration:.1f}s"
+            )
+
+            # Resume daemons that were paused
+            resumable_daemons = [
+                DaemonType.IDLE_RESOURCE,
+                DaemonType.SELFPLAY_COORDINATOR,
+                DaemonType.TRAINING_ACTIVITY,
+                DaemonType.AUTO_SYNC,
+            ]
+
+            resumed_count = 0
+            for daemon_type in resumable_daemons:
+                if daemon_type in self._daemons:
+                    info = self._daemons[daemon_type]
+                    daemon = getattr(info, 'instance', None)
+                    if daemon and hasattr(daemon, 'resume'):
+                        try:
+                            daemon.resume()
+                            resumed_count += 1
+                            logger.debug(
+                                f"[DaemonManager] Resumed {daemon_type.value} after backpressure"
+                            )
+                        except (RuntimeError, OSError) as e:
+                            logger.debug(
+                                f"[DaemonManager] Failed to resume {daemon_type.value}: {e}"
+                            )
+
+            if resumed_count > 0:
+                logger.info(
+                    f"[DaemonManager] Resumed {resumed_count} daemons after backpressure release"
+                )
+
+        except (RuntimeError, OSError, AttributeError, KeyError) as e:
+            logger.debug(f"[DaemonManager] Error handling BACKPRESSURE_RELEASED: {e}")
 
     async def _ensure_coordination_wired(self) -> None:
         """Ensure coordination events are wired exactly once.

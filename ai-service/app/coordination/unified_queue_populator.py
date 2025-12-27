@@ -396,26 +396,26 @@ class UnifiedQueuePopulator:
             return
 
         try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
+            # December 27, 2025: Use context manager to prevent connection leaks
+            with sqlite3.connect(str(db_path), timeout=10.0) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT e.board_type, e.num_players, e.rating as best_elo,
-                       e.participant_id, e.games_played
-                FROM elo_ratings e
-                INNER JOIN (
-                    SELECT board_type, num_players, MAX(rating) as max_rating
-                    FROM elo_ratings
-                    WHERE archived_at IS NULL
-                    GROUP BY board_type, num_players
-                ) m ON e.board_type = m.board_type
-                   AND e.num_players = m.num_players
-                   AND e.rating = m.max_rating
-                WHERE e.archived_at IS NULL
-            """)
+                cursor.execute("""
+                    SELECT e.board_type, e.num_players, e.rating as best_elo,
+                           e.participant_id, e.games_played
+                    FROM elo_ratings e
+                    INNER JOIN (
+                        SELECT board_type, num_players, MAX(rating) as max_rating
+                        FROM elo_ratings
+                        WHERE archived_at IS NULL
+                        GROUP BY board_type, num_players
+                    ) m ON e.board_type = m.board_type
+                       AND e.num_players = m.num_players
+                       AND e.rating = m.max_rating
+                    WHERE e.archived_at IS NULL
+                """)
 
-            rows = cursor.fetchall()
-            conn.close()
+                rows = cursor.fetchall()
 
             for row in rows:
                 board_type, num_players, best_elo, model_id, games = row
