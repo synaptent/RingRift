@@ -2432,7 +2432,7 @@ Before starting any AI training run:
 
 ### Environment
 
-- [ ] Python version matches requirements (3.11+)
+- [ ] Python version matches requirements (3.10+; Docker/CI uses 3.11)
 - [ ] PyTorch version matches requirements (2.6.0)
 - [ ] GPU/MPS drivers up to date
 - [ ] Memory limits configured via `RINGRIFT_MAX_MEMORY_GB`

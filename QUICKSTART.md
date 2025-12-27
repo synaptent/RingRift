@@ -7,7 +7,7 @@ This guide gets the TypeScript backend + React client and the Python AI service 
 
 ## Fast path (backend + frontend)
 
-1. Install Node.js >= 18 and npm >= 9 (see `package.json`), Python 3.11+ for the AI service, and Docker + Docker Compose for Postgres/Redis.
+1. Install Node.js >= 18 and npm >= 9 (see `package.json`), Python 3.10+ for the AI service (Docker/CI uses 3.11), and Docker + Docker Compose for Postgres/Redis.
 2. Install dependencies: `npm install`.
 3. Copy env and set secrets: `cp .env.example .env`; set `DATABASE_URL`, `REDIS_URL`, JWT secrets, and `AI_SERVICE_URL` (use `http://localhost:8001` for a locally running AI service).
 4. Start Postgres + Redis: `docker compose up -d postgres redis` (add `ai-service` here if you want the containerised AI service).

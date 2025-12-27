@@ -45,7 +45,7 @@ This guide walks you through setting up your own GPU cluster for distributed AI 
 ### Software Requirements
 
 - Ubuntu 22.04 LTS (recommended) or similar Linux
-- Python 3.11+
+- Python 3.10+ (Docker/CI uses 3.11)
 - CUDA 12.0+ with cuDNN
 - PyTorch 2.0+
 - SSH server with key-based authentication

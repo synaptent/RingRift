@@ -106,7 +106,7 @@ Rule of thumb:
 
 The AI system operates as a dedicated microservice (`ai-service`) built with Python/FastAPI, communicating with the main Node.js backend via HTTP.
 
-- **Microservice:** `ai-service/` (Python 3.11+)
+- **Microservice:** `ai-service/` (Python 3.10+; Docker/CI uses 3.11)
 - **Communication:** REST API (`/ai/move`, `/ai/evaluate`, `/rules/evaluate_move`)
 - **Integration:**
   - [`AIEngine`](../../src/server/game/ai/AIEngine.ts) (TypeScript) delegates to [`AIServiceClient`](../../src/server/services/AIServiceClient.ts) for AI moves.

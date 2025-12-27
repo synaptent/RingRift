@@ -22,14 +22,14 @@ RingRift is an abstract strategy game with zero randomness — every outcome is 
 
 ### Core Mechanics
 
-| Mechanic                    | Description                                                 |
-| --------------------------- | ----------------------------------------------------------- |
-| **Ring Stacking**           | Build and move stacks; the top ring determines control      |
-| **Movement**                | Move in straight lines, leaving markers behind              |
-| **Overtaking Captures**     | Jump over enemy stacks to claim their top ring              |
-| **Chain Captures**          | Once you start capturing, continue until no captures remain |
-| **Line Formation**          | Create lines of 4+ markers to collapse them into territory  |
-| **Territory Disconnection** | Cut off regions of the board to claim them entirely         |
+| Mechanic                    | Description                                                                 |
+| --------------------------- | --------------------------------------------------------------------------- |
+| **Ring Stacking**           | Build and move stacks; the top ring determines control                      |
+| **Movement**                | Move in straight lines, leaving markers behind                              |
+| **Overtaking Captures**     | Jump over enemy stacks to claim their top ring                              |
+| **Chain Captures**          | Once you start capturing, continue until no captures remain                 |
+| **Line Formation**          | Create lines of 3-4+ markers (line length varies by board and player count) |
+| **Territory Disconnection** | Cut off regions of the board to claim them entirely                         |
 
 ### Victory Conditions
 

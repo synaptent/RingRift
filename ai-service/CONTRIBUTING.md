@@ -23,7 +23,7 @@ Thank you for your interest in contributing to RingRift! This document provides 
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+ (Docker/CI uses 3.11)
 - Git
 - (Optional) NVIDIA GPU with CUDA for training
 

@@ -13,7 +13,7 @@ Canonical selfplay generates game databases that pass:
 **Critical Requirements:**
 
 - **Node.js 18+** is required for TS↔Python parity checks (uses `npx ts-node`)
-- **Python 3.11+** with the ai-service dependencies
+- **Python 3.10+** with the ai-service dependencies (Docker/CI uses 3.11)
 - **npm dependencies** installed at repo root level
 
 ## Vast.ai Instance Selection

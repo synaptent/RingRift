@@ -32,7 +32,7 @@ This runbook provides step-by-step instructions for executing training data gene
 
 - SSH access to target cluster nodes (Runpod/Vast/etc.)
 - Sufficient disk space (>50GB recommended)
-- Python 3.11+ installed
+- Python 3.10+ installed (Docker/CI uses 3.11)
 - Node.js 18+ installed (for TS↔Python parity checks)
 
 ### 2. Python Environment Setup
