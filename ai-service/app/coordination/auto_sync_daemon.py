@@ -1393,6 +1393,87 @@ class AutoSyncDaemon:
         logger.info(f"[AutoSyncDaemon] Found {len(targets)} broadcast targets")
         return targets
 
+    async def sync_to_target_with_retry(
+        self,
+        source: Path,
+        target: dict[str, Any],
+        max_retries: int | None = None,
+    ) -> dict[str, Any]:
+        """Sync database to target with exponential backoff retry.
+
+        December 2025: Added for improved sync reliability.
+
+        Args:
+            source: Source database path
+            target: Target node info dict
+            max_retries: Max retry attempts (default: SYNC_MAX_RETRIES)
+
+        Returns:
+            Sync result dict with success, bytes_transferred, duration, error
+        """
+        # Get retry defaults
+        try:
+            from app.config.coordination_defaults import RetryDefaults
+            max_retries = max_retries or RetryDefaults.SYNC_MAX_RETRIES
+            base_delay = RetryDefaults.SYNC_BASE_DELAY
+            max_delay = RetryDefaults.SYNC_MAX_DELAY
+            backoff_multiplier = RetryDefaults.BACKOFF_MULTIPLIER
+        except ImportError:
+            max_retries = max_retries or 3
+            base_delay = 2.0
+            max_delay = 30.0
+            backoff_multiplier = 2.0
+
+        last_result = None
+        target_id = target.get("node_id", "unknown")
+
+        for attempt in range(max_retries):
+            # Try the sync
+            result = await self.broadcast_sync_to_target(source, target)
+
+            if result.get("success"):
+                if attempt > 0:
+                    logger.info(
+                        f"[AutoSyncDaemon] Sync to {target_id} succeeded on attempt {attempt + 1}"
+                    )
+                return result
+
+            last_result = result
+            error = result.get("error", "Unknown")
+
+            # Check if we should retry (not for all errors)
+            if "Connection refused" in str(error) or "No route to host" in str(error):
+                logger.debug(f"[AutoSyncDaemon] Not retrying {target_id}: host unreachable")
+                break
+
+            if attempt < max_retries - 1:
+                # Calculate delay with exponential backoff
+                delay = min(base_delay * (backoff_multiplier ** attempt), max_delay)
+                # Add jitter (±10%)
+                import random
+                jitter = delay * 0.1 * (random.random() * 2 - 1)
+                delay = delay + jitter
+
+                logger.debug(
+                    f"[AutoSyncDaemon] Sync to {target_id} failed (attempt {attempt + 1}), "
+                    f"retrying in {delay:.1f}s: {error}"
+                )
+                await asyncio.sleep(delay)
+
+        # All retries exhausted
+        if last_result and max_retries > 1:
+            logger.warning(
+                f"[AutoSyncDaemon] Sync to {target_id} failed after {max_retries} attempts: "
+                f"{last_result.get('error', 'Unknown')}"
+            )
+
+        return last_result or {
+            "source": str(source),
+            "target": target_id,
+            "success": False,
+            "error": "Max retries exhausted",
+        }
+
     async def broadcast_sync_to_target(
         self,
         source: Path,
@@ -1604,13 +1685,14 @@ class AutoSyncDaemon:
             logger.info("[AutoSyncDaemon] No databases to sync")
             return 0
 
-        # Sync each database to each target (with concurrency limit)
+        # Sync each database to each target (with concurrency limit and retry)
         results: list[dict[str, Any]] = []
         semaphore = asyncio.Semaphore(self.config.max_concurrent_syncs)
 
         async def sync_with_limit(db: Path, target: dict[str, Any]) -> dict[str, Any]:
             async with semaphore:
-                return await self.broadcast_sync_to_target(db, target)
+                # December 2025: Use retry wrapper for improved reliability
+                return await self.sync_to_target_with_retry(db, target)
 
         # Create all sync tasks
         tasks = []

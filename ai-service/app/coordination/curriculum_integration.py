@@ -130,8 +130,12 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
                 router.subscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, self._on_selfplay_rate_changed)
 
+            # December 2025: Subscribe to ELO_SIGNIFICANT_CHANGE for curriculum rebalance triggers
+            if hasattr(DataEventType, 'ELO_SIGNIFICANT_CHANGE'):
+                router.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE.value, self._on_elo_significant_change)
+
             self._event_subscribed = True
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED")
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE")
             return True
 
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
@@ -156,6 +160,8 @@ class MomentumToCurriculumBridge:
                 router.unsubscribe(DataEventType.EVALUATION_COMPLETED.value, self._on_evaluation_completed)
                 if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
                     router.unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, self._on_selfplay_rate_changed)
+                if hasattr(DataEventType, 'ELO_SIGNIFICANT_CHANGE'):
+                    router.unsubscribe(DataEventType.ELO_SIGNIFICANT_CHANGE.value, self._on_elo_significant_change)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -215,6 +221,45 @@ class MomentumToCurriculumBridge:
             # TypeError: invalid data types
             # ValueError: invalid percentage value
             logger.warning(f"[MomentumToCurriculumBridge] Error handling rate change: {e}")
+
+    def _on_elo_significant_change(self, event) -> None:
+        """Handle ELO_SIGNIFICANT_CHANGE event - trigger curriculum rebalancing.
+
+        December 2025: Wire ELO_SIGNIFICANT_CHANGE to curriculum weights.
+        When a config's Elo changes significantly (±30 from baseline), we
+        rebalance curriculum weights to either capitalize on momentum or
+        reduce focus on stalled configs.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            config_key = payload.get("config", payload.get("config_key", ""))
+            old_elo = payload.get("old_elo", 0)
+            new_elo = payload.get("new_elo", payload.get("elo", 0))
+            delta = payload.get("delta", new_elo - old_elo if old_elo else 0)
+            significance = payload.get("significance", "unknown")
+
+            if not config_key:
+                return
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] ELO_SIGNIFICANT_CHANGE for {config_key}: "
+                f"Δ={delta:+.1f} ({significance})"
+            )
+
+            # Determine momentum direction
+            if delta > 30:
+                momentum_state = "accelerating"
+            elif delta < -30:
+                momentum_state = "decelerating"
+            else:
+                momentum_state = "stable"
+
+            # Sync curriculum weights based on Elo momentum
+            self._sync_weights_for_momentum(config_key, momentum_state, delta)
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling Elo change: {e}")
 
     def _sync_weights_for_momentum(
         self,

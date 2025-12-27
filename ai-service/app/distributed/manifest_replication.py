@@ -38,6 +38,14 @@ from app.utils.yaml_utils import safe_load_yaml
 
 logger = logging.getLogger(__name__)
 
+# Import bandwidth limiting from cluster_config (December 2025)
+try:
+    from app.config.cluster_config import get_node_bandwidth_kbs
+    HAS_BANDWIDTH_CONFIG = True
+except ImportError:
+    HAS_BANDWIDTH_CONFIG = False
+    get_node_bandwidth_kbs = None
+
 
 @dataclass
 class ReplicaHost:
@@ -154,14 +162,23 @@ class ManifestReplicator:
             logger.warning(f"Failed to create remote dir on {host.name}: {e}")
             return False
 
-        # SCP the manifest
-        # Use -P for scp port (different from ssh -p)
-        scp_port_arg = f"-P {host.ssh_port}" if host.ssh_port != 22 else ""
-        scp_cmd = f'scp -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no {scp_port_arg} {self.local_path} {host.ssh_user}@{host.ssh_host}:{host.remote_path}'
+        # December 2025: Use rsync instead of SCP for bandwidth limiting support
+        # Build rsync command with bandwidth limiting
+        bwlimit_arg = ""
+        if HAS_BANDWIDTH_CONFIG and get_node_bandwidth_kbs:
+            try:
+                bwlimit_kbs = get_node_bandwidth_kbs(host.name)
+                if bwlimit_kbs > 0:
+                    bwlimit_arg = f"--bwlimit={bwlimit_kbs}"
+            except (KeyError, ValueError):
+                pass
+
+        ssh_port_opt = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
+        rsync_cmd = f'rsync -az --timeout={self.ssh_timeout} {bwlimit_arg} -e "ssh {ssh_port_opt} -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no" {self.local_path} {host.ssh_user}@{host.ssh_host}:{host.remote_path}'
 
         try:
             process = await asyncio.create_subprocess_shell(
-                scp_cmd,
+                rsync_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -171,7 +188,7 @@ class ManifestReplicator:
             )
 
             if process.returncode != 0:
-                logger.warning(f"SCP to {host.name} failed: {stderr.decode()}")
+                logger.warning(f"Rsync to {host.name} failed: {stderr.decode()}")
                 return False
 
             # Verify checksum on remote
@@ -445,9 +462,18 @@ class ManifestReplicator:
             shutil.copy2(self.local_path, backup_path)
             logger.info(f"Backed up existing manifest to {backup_path}")
 
-        # SCP from remote
-        scp_port_arg = f"-P {host.ssh_port}" if host.ssh_port != 22 else ""
-        scp_cmd = f'scp -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no {scp_port_arg} {host.ssh_user}@{host.ssh_host}:{host.remote_path} {self.local_path}'
+        # December 2025: Use rsync instead of SCP for bandwidth limiting support
+        bwlimit_arg = ""
+        if HAS_BANDWIDTH_CONFIG and get_node_bandwidth_kbs:
+            try:
+                bwlimit_kbs = get_node_bandwidth_kbs(host.name)
+                if bwlimit_kbs > 0:
+                    bwlimit_arg = f"--bwlimit={bwlimit_kbs}"
+            except (KeyError, ValueError):
+                pass
+
+        ssh_port_opt = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
+        rsync_cmd = f'rsync -az --timeout={self.ssh_timeout} {bwlimit_arg} -e "ssh {ssh_port_opt} -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no" {host.ssh_user}@{host.ssh_host}:{host.remote_path} {self.local_path}'
 
         try:
             # Ensure local directory exists

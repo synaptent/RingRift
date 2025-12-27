@@ -199,6 +199,7 @@ class ModelLifecycleCoordinator:
             router.subscribe(DataEventType.CHECKPOINT_LOADED.value, self._on_checkpoint_loaded)
             router.subscribe(DataEventType.MODEL_PROMOTED.value, self._on_model_promoted)
             router.subscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
+            router.subscribe(DataEventType.PROMOTION_FAILED.value, self._on_promotion_failed)
             router.subscribe(DataEventType.TRAINING_COMPLETED.value, self._on_training_completed)
             router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
             router.subscribe(DataEventType.MODEL_CORRUPTED.value, self._on_model_corrupted)
@@ -413,6 +414,50 @@ class ModelLifecycleCoordinator:
             f"[ModelLifecycleCoordinator] Promotion rolled back: "
             f"{from_model} -> {to_model}"
         )
+
+    async def _on_promotion_failed(self, event) -> None:
+        """Handle PROMOTION_FAILED event - track failed promotions.
+
+        December 2025: Wire PROMOTION_FAILED to track failed promotions and
+        update model state history. This enables visibility into promotion
+        failures and triggers potential remediation actions.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+        model_id = payload.get("model_id", "")
+        config_key = payload.get("config_key", payload.get("config", ""))
+        error = payload.get("error", "unknown")
+        reason = payload.get("reason", error)
+
+        # Track the failure in model state
+        if model_id:
+            model = self._ensure_model_record(model_id)
+            self._record_state_transition(
+                model, ModelState.EVALUATING, f"promotion_failed: {reason}"
+            )
+
+        logger.warning(
+            f"[ModelLifecycleCoordinator] Promotion failed for {model_id or config_key}: "
+            f"{reason}"
+        )
+
+        # Notify ImprovementOptimizer of promotion failure for negative feedback
+        try:
+            from app.training.improvement_optimizer import record_promotion_failure
+
+            if config_key:
+                record_promotion_failure(
+                    config_key=config_key,
+                    model_id=model_id,
+                    reason=reason,
+                )
+                logger.debug(
+                    f"[ModelLifecycleCoordinator] Recorded promotion failure for {config_key} "
+                    f"in ImprovementOptimizer"
+                )
+        except ImportError:
+            pass  # ImprovementOptimizer not available
+        except Exception as e:
+            logger.debug(f"[ModelLifecycleCoordinator] Could not update ImprovementOptimizer: {e}")
 
     async def _on_training_completed(self, event) -> None:
         """Handle TRAINING_COMPLETED event."""

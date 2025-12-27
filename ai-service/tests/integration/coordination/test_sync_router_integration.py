@@ -253,16 +253,15 @@ class TestShouldSyncDecisions:
 
     def test_should_sync_blocks_coordinator_for_games(self, router):
         """Should not sync games to coordinator nodes."""
-        with patch.object(router, "_is_excluded", return_value=False):
-            # Mark node as coordinator
-            router._node_capabilities["coordinator"] = NodeSyncCapability(
-                node_id="coordinator",
-                can_receive_games=False,  # Coordinators don't receive games
-            )
+        # Mark node as coordinator with can_receive_games=False
+        router._node_capabilities["coordinator"] = NodeSyncCapability(
+            node_id="coordinator",
+            can_receive_games=False,  # Coordinators don't receive games
+        )
 
-            result = router.should_sync_to_node("coordinator", DataType.GAME)
+        result = router.should_sync_to_node("coordinator", DataType.GAME)
 
-            assert result is False
+        assert result is False
 
     def test_should_sync_blocks_same_source_target(self, router):
         """Should not sync to same node as source."""
@@ -276,8 +275,7 @@ class TestShouldSyncDecisions:
 
     def test_should_sync_allows_different_nodes(self, router, mock_manifest):
         """Should allow sync between different nodes."""
-        mock_manifest.should_replicate.return_value = True
-        mock_manifest.get_disk_usage.return_value = 30.0
+        mock_manifest.can_receive_data.return_value = True
 
         router._node_capabilities["training-node"] = NodeSyncCapability(
             node_id="training-node",
@@ -285,7 +283,8 @@ class TestShouldSyncDecisions:
             is_training_node=True,
         )
 
-        with patch.object(router, "_is_excluded", return_value=False):
+        # Mock _check_node_capacity to return True (has capacity)
+        with patch.object(router, "_check_node_capacity", return_value=True):
             result = router.should_sync_to_node(
                 "training-node",
                 DataType.GAME,
@@ -293,7 +292,7 @@ class TestShouldSyncDecisions:
             )
 
             # With proper config, should allow
-            assert isinstance(result, bool)
+            assert result is True
 
 
 # =============================================================================
@@ -360,19 +359,23 @@ class TestEventWiring:
 
     def test_wire_to_event_router_subscribes(self, router):
         """wire_to_event_router should subscribe to events."""
-        with patch("app.coordination.sync_router.subscribe") as mock_subscribe:
+        mock_event_router = MagicMock()
+        with patch("app.coordination.sync_router.get_router", return_value=mock_event_router):
             router.wire_to_event_router()
 
-            # Should have subscribed to various events
-            assert mock_subscribe.called
-            call_args = [call[0][0] for call in mock_subscribe.call_args_list]
+            # Should have subscribed to various events via router.subscribe()
+            assert mock_event_router.subscribe.called
+            call_args = [call[0][0] for call in mock_event_router.subscribe.call_args_list]
 
-            # Check that we subscribed to key events (by name or constant)
+            # Check that we subscribed to key events
             assert len(call_args) > 0
+            # Should subscribe to at least NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE, etc.
+            assert any("new_games" in arg.lower() or "NEW_GAMES" in arg for arg in call_args)
 
     def test_wire_to_event_router_idempotent(self, router):
         """Calling wire_to_event_router twice should be safe."""
-        with patch("app.coordination.sync_router.subscribe"):
+        mock_event_router = MagicMock()
+        with patch("app.coordination.sync_router.get_router", return_value=mock_event_router):
             # Should not raise on second call
             router.wire_to_event_router()
             router.wire_to_event_router()
@@ -419,14 +422,15 @@ class TestMultiNodeCoordination:
             can_receive_games=True,
         )
 
-        with patch.object(router, "_is_excluded", return_value=False):
+        # Mock capacity check to pass
+        with patch.object(router, "_check_node_capacity", return_value=True):
             result = router.should_sync_to_node(
                 "ephemeral-gpu",
                 DataType.GAME,
             )
 
             # Should allow (ephemeral nodes need game data for selfplay)
-            assert isinstance(result, bool)
+            assert result is True
 
 
 # =============================================================================
@@ -446,9 +450,8 @@ class TestCapacityAwareness:
             can_receive_games=True,
         )
 
-        mock_manifest.get_disk_usage.return_value = 85.0
-
-        with patch.object(router, "_check_disk_capacity", return_value=False):
+        # Mock _check_node_capacity to return False (no capacity)
+        with patch.object(router, "_check_node_capacity", return_value=False):
             result = router.should_sync_to_node("full-node", DataType.GAME)
 
             assert result is False
@@ -461,11 +464,8 @@ class TestCapacityAwareness:
             can_receive_games=True,
         )
 
-        mock_manifest.get_disk_usage.return_value = 30.0
-        mock_manifest.should_replicate.return_value = True
-
-        with patch.object(router, "_is_excluded", return_value=False), \
-             patch.object(router, "_check_disk_capacity", return_value=True):
+        # Mock _check_node_capacity to return True (has capacity)
+        with patch.object(router, "_check_node_capacity", return_value=True):
             result = router.should_sync_to_node("empty-node", DataType.GAME)
 
             assert result is True

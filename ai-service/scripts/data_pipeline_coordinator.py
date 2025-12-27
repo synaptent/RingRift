@@ -42,6 +42,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import bandwidth limiting from cluster_config (December 2025)
+try:
+    from app.config.cluster_config import get_node_bandwidth_kbs
+    HAS_BANDWIDTH_CONFIG = True
+except ImportError:
+    HAS_BANDWIDTH_CONFIG = False
+    get_node_bandwidth_kbs = None
+
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
@@ -231,15 +239,24 @@ def collect_data_from_node(
             if local_path.exists():
                 continue
 
-            # Download file
-            scp_cmd = [
-                "scp", "-i", SSH_KEY,
-                "-o", "StrictHostKeyChecking=no",
-                "-P", str(port),
+            # December 2025: Use rsync instead of SCP for bandwidth limiting support
+            bwlimit_args = []
+            if HAS_BANDWIDTH_CONFIG and get_node_bandwidth_kbs:
+                try:
+                    bwlimit_kbs = get_node_bandwidth_kbs(instance_id)
+                    if bwlimit_kbs > 0:
+                        bwlimit_args = [f"--bwlimit={bwlimit_kbs}"]
+                except (KeyError, ValueError):
+                    pass
+
+            rsync_cmd = [
+                "rsync", "-az", "--timeout=60",
+                "-e", f"ssh -i {SSH_KEY} -o StrictHostKeyChecking=no -p {port}",
+                *bwlimit_args,
                 f"root@{host}:{remote_file}",
                 str(local_path),
             ]
-            result = subprocess.run(scp_cmd, capture_output=True, timeout=120)
+            result = subprocess.run(rsync_cmd, capture_output=True, timeout=120)
             if result.returncode == 0:
                 collected_files.append(local_filename)
                 # Count games in file
