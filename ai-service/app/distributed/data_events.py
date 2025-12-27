@@ -170,6 +170,10 @@ class DataEventType(Enum):
     EXPLORATION_ADJUSTED = "exploration_adjusted"  # Exploration strategy changed (from FeedbackSignals)
     OPPONENT_MASTERED = "opponent_mastered"  # Opponent mastered → advance curriculum
 
+    # Training loss monitoring events (December 2025)
+    TRAINING_LOSS_ANOMALY = "training_loss_anomaly"  # Unusual loss spike/drop detected
+    TRAINING_LOSS_TREND = "training_loss_trend"  # Loss trend changed (improving/degrading)
+
     # Registry & metrics events
     REGISTRY_UPDATED = "registry_updated"
     METRICS_UPDATED = "metrics_updated"
@@ -189,6 +193,7 @@ class DataEventType(Enum):
     MODEL_DISTRIBUTION_COMPLETE = "model_distribution_complete"  # Dec 2025: Model distributed to cluster
     P2P_CLUSTER_HEALTHY = "p2p_cluster_healthy"
     P2P_CLUSTER_UNHEALTHY = "p2p_cluster_unhealthy"
+    SYNC_STALLED = "sync_stalled"  # December 2025: Sync operation stalled/timed out
     P2P_NODE_DEAD = "p2p_node_dead"  # Dec 2025: Single node dead (vs P2P_NODES_DEAD for batch)
     P2P_NODES_DEAD = "p2p_nodes_dead"
     P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"
@@ -298,10 +303,7 @@ class DataEventType(Enum):
     COORDINATOR_HEARTBEAT = "coordinator_heartbeat"  # Liveness signal from coordinator
 
     # Phase 3 feedback loop events (December 2025)
-    TRAINING_LOSS_ANOMALY = "training_loss_anomaly"  # Training loss spike detected
-    SYNC_STALLED = "sync_stalled"  # Sync operation stalled/timed out
-    NODE_OVERLOADED = "node_overloaded"  # Node CPU/GPU utilization critical
-    TRAINING_LOSS_TREND = "training_loss_trend"  # Training loss trend (improving/stalled/degrading)
+    # Note: SYNC_STALLED, NODE_OVERLOADED, TRAINING_LOSS_TREND already defined above
     TRAINING_EARLY_STOPPED = "training_early_stopped"  # Early stopping triggered (stagnation/regression)
 
 

@@ -11,15 +11,18 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.config.ports import GOSSIP_PORT, P2P_DEFAULT_PORT
+
 # Network Configuration
-DEFAULT_PORT = 8770
+# NOTE: Using canonical port constants from app/config/ports.py
+DEFAULT_PORT = P2P_DEFAULT_PORT
 HEARTBEAT_INTERVAL = 30  # seconds
 PEER_TIMEOUT = 90  # seconds without heartbeat = node considered dead
 ELECTION_TIMEOUT = 10  # seconds to wait for election responses
 LEADER_LEASE_DURATION = 90  # seconds
 LEADER_LEASE_RENEW_INTERVAL = 10  # How often leader renews lease
 JOB_CHECK_INTERVAL = 60  # seconds between job status checks
-DISCOVERY_PORT = 8771  # UDP port for peer discovery
+DISCOVERY_PORT = GOSSIP_PORT  # UDP port for peer discovery
 DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
 
 # GPU Power Rankings for training node priority

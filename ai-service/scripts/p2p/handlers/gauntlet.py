@@ -423,6 +423,19 @@ class GauntletHandlersMixin:
             win_rate = wins / total_games if total_games > 0 else 0
             passed = win_rate >= 0.50
 
+            # Emit gauntlet completion event to coordination EventRouter
+            if HAS_EVENT_BRIDGE:
+                await emit_p2p_gauntlet_completed(
+                    model_id=model_id,
+                    baseline_id=baseline_id,
+                    config_key=config_key,
+                    wins=wins,
+                    total_games=total_games,
+                    win_rate=win_rate,
+                    passed=passed,
+                    node_id=self.node_id,
+                )
+
             return web.json_response({
                 "success": True,
                 "node_id": self.node_id,

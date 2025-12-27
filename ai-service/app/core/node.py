@@ -260,8 +260,15 @@ class ConnectionInfo:
 
 
 @dataclass
-class HealthStatus:
-    """Health status and failure tracking for a node."""
+class NodeHealthStatus:
+    """Health status and failure tracking for a node.
+
+    Dec 2025: Renamed from HealthStatus to avoid confusion with
+    app.monitoring.base.HealthStatus (the simple enum).
+
+    This dataclass tracks detailed node health over time, while the
+    monitoring.base.HealthStatus enum is for simple status values.
+    """
     health: NodeHealth = NodeHealth.UNKNOWN
     state: NodeState = NodeState.UNKNOWN
     last_heartbeat: float = 0.0
@@ -299,7 +306,7 @@ class HealthStatus:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> HealthStatus:
+    def from_dict(cls, data: dict[str, Any]) -> NodeHealthStatus:
         data = data.copy()
         if "health" in data and isinstance(data["health"], str):
             data["health"] = NodeHealth(data["health"])
@@ -307,6 +314,10 @@ class HealthStatus:
             data["state"] = NodeState(data["state"])
         valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
         return cls(**{k: v for k, v in data.items() if k in valid_keys})
+
+
+# Backwards compatibility alias
+HealthStatus = NodeHealthStatus
 
 
 @dataclass

@@ -147,6 +147,12 @@ class DaemonManager:
         # Health monitoring
         self.register_factory(DaemonType.HEALTH_CHECK, self._create_health_check)
         self.register_factory(DaemonType.QUEUE_MONITOR, self._create_queue_monitor)
+        # Daemon watchdog (December 2025) - monitors daemon health & restarts stuck daemons
+        self.register_factory(
+            DaemonType.DAEMON_WATCHDOG,
+            self._create_daemon_watchdog,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
 
         # P2P services
         self.register_factory(DaemonType.GOSSIP_SYNC, self._create_gossip_sync)
@@ -1754,6 +1760,21 @@ class DaemonManager:
             await monitor.start()
         except ImportError as e:
             logger.error(f"QueueMonitor not available: {e}")
+            raise  # Propagate error so DaemonManager marks as FAILED
+
+    async def _create_daemon_watchdog(self) -> None:
+        """Create and run daemon watchdog (December 2025).
+
+        Monitors daemon health and restarts stuck/crashed daemons.
+        Uses DaemonWatchdog from daemon_watchdog.py.
+        """
+        try:
+            from app.coordination.daemon_watchdog import DaemonWatchdog
+
+            watchdog = DaemonWatchdog(manager=self)
+            await watchdog.start()
+        except ImportError as e:
+            logger.error(f"DaemonWatchdog not available: {e}")
             raise  # Propagate error so DaemonManager marks as FAILED
 
     async def _create_gossip_sync(self) -> None:

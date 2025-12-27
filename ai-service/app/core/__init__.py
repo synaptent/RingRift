@@ -170,14 +170,15 @@ def __getattr__(name: str):
         return _lazy_cache["marshalling"][name]
 
     # Node dataclass (lightweight but lazy for consistency)
-    if name in ("ConnectionInfo", "GPUInfo", "HealthStatus", "JobStatus",
-                "NodeHealth", "NodeInfo", "NodeRole", "NodeState",
+    if name in ("ConnectionInfo", "GPUInfo", "HealthStatus", "NodeHealthStatus",
+                "JobStatus", "NodeHealth", "NodeInfo", "NodeRole", "NodeState",
                 "Provider", "ProviderInfo", "ResourceMetrics"):
         if "node" not in _lazy_cache:
             from app.core.node import (
                 ConnectionInfo as _CI,
                 GPUInfo as _GI,
-                HealthStatus as _HS,
+                HealthStatus as _HS,  # Alias for NodeHealthStatus
+                NodeHealthStatus as _NHS,
                 JobStatus as _JS,
                 NodeHealth as _NH,
                 NodeInfo as _NI,
@@ -190,7 +191,8 @@ def __getattr__(name: str):
             _lazy_cache["node"] = {
                 "ConnectionInfo": _CI,
                 "GPUInfo": _GI,
-                "HealthStatus": _HS,
+                "HealthStatus": _HS,  # Backwards compatibility
+                "NodeHealthStatus": _NHS,  # New canonical name
                 "JobStatus": _JS,
                 "NodeHealth": _NH,
                 "NodeInfo": _NI,

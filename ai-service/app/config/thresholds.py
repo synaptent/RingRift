@@ -810,7 +810,9 @@ RTX_BATCH_MULTIPLIER = 4     # RTX 4090/3090 (24GB)
 IDLE_GPU_THRESHOLD = 10
 
 # Default P2P communication port
-P2P_DEFAULT_PORT = 8770
+# NOTE: Canonical location is app/config/ports.py - import from there for new code
+# Kept for backward compatibility; may be removed in future versions
+from app.config.ports import P2P_DEFAULT_PORT  # noqa: F401
 
 # Ephemeral data evacuation threshold (games)
 EVACUATION_THRESHOLD = 50
