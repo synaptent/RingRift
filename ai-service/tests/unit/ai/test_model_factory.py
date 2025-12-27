@@ -22,13 +22,13 @@ from app.models import BoardType
 class TestGetMemoryTier:
     """Tests for get_memory_tier function."""
 
-    def test_default_tier_is_high(self):
-        """Default memory tier should be 'high'."""
+    def test_default_tier_is_v4(self):
+        """Default memory tier should be 'v4' (NAS-optimized architecture)."""
         with patch.dict(os.environ, {}, clear=True):
             # Remove the env var if it exists
             os.environ.pop("RINGRIFT_NN_MEMORY_TIER", None)
             tier = get_memory_tier()
-            assert tier == "high"
+            assert tier == "v4"
 
     def test_reads_from_environment(self):
         """Should read tier from environment variable."""
@@ -43,11 +43,11 @@ class TestGetMemoryTier:
                 tier = get_memory_tier()
                 assert tier == valid_tier
 
-    def test_invalid_tier_defaults_to_high(self):
-        """Invalid tier should default to 'high' with warning."""
+    def test_invalid_tier_defaults_to_v4(self):
+        """Invalid tier should default to 'v4' with warning."""
         with patch.dict(os.environ, {"RINGRIFT_NN_MEMORY_TIER": "invalid_tier"}):
             tier = get_memory_tier()
-            assert tier == "high"
+            assert tier == "v4"
 
     def test_case_insensitive(self):
         """Tier name should be case insensitive."""

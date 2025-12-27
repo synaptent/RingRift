@@ -364,11 +364,26 @@ from app.coordination.daemon_manager import (
     setup_signal_handlers,
 )
 
+# DaemonFactory - centralized lazy daemon creation (December 2025 - Phase 1.2)
+from app.coordination.daemon_factory import (
+    DaemonFactory,
+    DaemonSpec,
+    get_daemon_factory,
+    reset_daemon_factory,
+)
+
 # LambdaIdleDaemon - monitors and terminates idle Lambda GPU nodes (December 2025)
 from app.coordination.lambda_idle_daemon import (
     LambdaIdleConfig,
     LambdaIdleDaemon,
     LambdaNodeStatus,
+)
+
+# VastIdleDaemon - monitors and terminates idle Vast.ai GPU instances (December 2025)
+from app.coordination.vast_idle_daemon import (
+    VastIdleConfig,
+    VastIdleDaemon,
+    VastNodeStatus,
 )
 
 # DataPipelineOrchestrator - unified pipeline stage coordination
@@ -826,6 +841,27 @@ from app.coordination.sync_integrity import (
     verify_checksum,
     verify_sync_integrity,
 )
+
+# Sync Bloom Filter (December 2025 - Efficient P2P set membership testing)
+from app.coordination.sync_bloom_filter import (
+    BloomFilter,
+    BloomFilterStats,
+    SyncBloomFilter,
+    create_event_dedup_filter,
+    create_game_id_filter,
+    create_model_hash_filter,
+)
+
+# Unified Sync Safety (December 2025 - Single import for all reliability features)
+# NOTE: This module re-exports everything from the 4 modules above.
+# Use this for convenience when you need multiple safety features:
+#   from app.coordination.sync_safety import (
+#       SyncWAL, DeadLetterQueue,           # Durability
+#       verify_sync_integrity,              # Integrity
+#       SyncStallHandler,                   # Stall detection
+#       SyncBloomFilter, create_game_id_filter,  # Bloom filters
+#   )
+# Individual modules remain available for backward compatibility.
 
 # Module-level singleton placeholders for cleanup in shutdown_all_coordinators
 _selfplay_orchestrator = None
@@ -1636,6 +1672,9 @@ __all__ = [
     "LambdaIdleConfig",
     "LambdaIdleDaemon",
     "LambdaNodeStatus",
+    "VastIdleConfig",
+    "VastIdleDaemon",
+    "VastNodeStatus",
     "MergeOperation",
     "MergeTransaction",
     "MetricTracker",

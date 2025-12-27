@@ -284,6 +284,19 @@ except ImportError:
     compute_per_sample_loss = None
     HAS_HARD_EXAMPLE_MINING = False
 
+# Unified training enhancements facade (2025-12)
+# Consolidates: hard example mining, per-sample loss, curriculum LR, freshness weighting
+try:
+    from app.training.enhancements.training_facade import (
+        FacadeConfig,
+        TrainingEnhancementsFacade,
+    )
+    HAS_TRAINING_FACADE = True
+except ImportError:
+    FacadeConfig = None
+    TrainingEnhancementsFacade = None
+    HAS_TRAINING_FACADE = False
+
 # DataCatalog for cluster-wide training data discovery (2025-12)
 try:
     from app.distributed.data_catalog import DataCatalog, get_data_catalog
@@ -292,6 +305,22 @@ except ImportError:
     DataCatalog = None
     get_data_catalog = None
     HAS_DATA_CATALOG = False
+
+# Quality-weighted training (2025-12) - resurrected from ebmo_network.py
+try:
+    from app.training.quality_weighted_loss import (
+        QualityWeightedTrainer,
+        compute_quality_weights,
+        quality_weighted_policy_loss,
+        ranking_loss_from_quality,
+    )
+    HAS_QUALITY_WEIGHTING = True
+except ImportError:
+    QualityWeightedTrainer = None
+    compute_quality_weights = None
+    quality_weighted_policy_loss = None
+    ranking_loss_from_quality = None
+    HAS_QUALITY_WEIGHTING = False
 
 # Auto-streaming threshold: datasets larger than this will automatically use
 # StreamingDataLoader to avoid OOM. Default 5GB.
@@ -310,11 +339,58 @@ from app.training.tier_eval_config import (
 )
 
 # Heuristic tuning utilities (extracted Dec 2025)
+# NOTE: Some helper functions are re-exported for backwards compatibility with
+# integration tests and older tooling.
+#
+# IMPORTANT: Unit tests monkeypatch
+# [`app.training.train.evaluate_heuristic_candidate`](ai-service/app/training/train.py:1)
+# to avoid running the expensive eval-pool harness. To keep that patching
+# surface stable after the refactor to `heuristic_tuning.py`, we expose thin
+# wrappers here and pass the wrapper into the underlying implementation.
 from app.training.heuristic_tuning import (
-    evaluate_heuristic_candidate,
-    run_cmaes_heuristic_optimization,
+    _flatten_heuristic_weights,
+    _reconstruct_heuristic_profile,
+    evaluate_heuristic_candidate as _evaluate_heuristic_candidate,
+    run_cmaes_heuristic_optimization as _run_cmaes_heuristic_optimization,
     temporary_heuristic_profile,
 )
+
+
+def evaluate_heuristic_candidate(
+    tier_spec: HeuristicTierSpec,
+    base_profile_id: str,
+    keys: Sequence[str],
+    candidate_vector: Sequence[float],
+    rng_seed: int,
+    games_per_candidate: int | None = None,
+) -> tuple[float, dict[str, Any]]:
+    return _evaluate_heuristic_candidate(
+        tier_spec=tier_spec,
+        base_profile_id=base_profile_id,
+        keys=keys,
+        candidate_vector=candidate_vector,
+        rng_seed=rng_seed,
+        games_per_candidate=games_per_candidate,
+    )
+
+
+def run_cmaes_heuristic_optimization(
+    tier_id: str,
+    base_profile_id: str,
+    generations: int = 5,
+    population_size: int = 8,
+    rng_seed: int = 1,
+    games_per_candidate: int | None = None,
+) -> dict[str, Any]:
+    return _run_cmaes_heuristic_optimization(
+        tier_id=tier_id,
+        base_profile_id=base_profile_id,
+        generations=generations,
+        population_size=population_size,
+        rng_seed=rng_seed,
+        games_per_candidate=games_per_candidate,
+        evaluate_fn=evaluate_heuristic_candidate,
+    )
 
 # Configure logging
 logging.basicConfig(
@@ -505,6 +581,11 @@ def train_model(
     adaptive_warmup: bool = False,
     hard_example_mining: bool = False,
     hard_example_top_k: float = 0.3,
+    # Outcome-weighted policy loss (2025-12)
+    # Weights policy loss by game outcome: winner's moves → higher weight, loser's → lower
+    # Inspired by EBMO outcome-contrastive loss for improved move quality learning
+    enable_outcome_weighted_policy: bool = False,
+    outcome_weight_scale: float = 0.5,  # How much to scale by outcome (0=no effect, 1=full)
     auto_tune_batch_size: bool = True,  # Enabled by default for 15-30% better throughput
     track_calibration: bool = False,
     # 2024-12 Hot Data Buffer and Integrated Enhancements
@@ -556,6 +637,10 @@ def train_model(
     # Averages last N checkpoints at end of training for +10-20 Elo improvement
     enable_checkpoint_averaging: bool = True,
     num_checkpoints_to_average: int = 5,
+    # Quality-weighted training (2025-12) - resurrected from ebmo_network.py
+    enable_quality_weighting: bool = False,
+    quality_weight_blend: float = 0.5,
+    quality_ranking_weight: float = 0.1,
 ):
     """
     Train the RingRift neural network model.
@@ -1024,6 +1109,51 @@ def train_model(
         )
     elif hard_example_mining and not HAS_HARD_EXAMPLE_MINING:
         logger.warning("[Hard Example Mining] Requested but HardExampleMiner not available (import failed)")
+
+    # Initialize unified training enhancements facade (2025-12)
+    # Consolidates hard example mining, per-sample loss, curriculum LR, freshness weighting
+    # This is the recommended way to use all training enhancements together (+80-165 Elo)
+    training_facade: TrainingEnhancementsFacade | None = None
+    if HAS_TRAINING_FACADE and TrainingEnhancementsFacade is not None:
+        facade_config = FacadeConfig(
+            enable_hard_mining=hard_example_mining,
+            hard_fraction=hard_example_top_k,
+            hard_buffer_size=50000,
+            hard_min_samples_before_mining=5000,
+            track_per_sample_loss=True,
+            enable_curriculum_lr=enable_curriculum,
+            curriculum_lr_min_scale=0.8,
+            curriculum_lr_max_scale=1.2,
+            enable_freshness_weighting=enable_elo_weighting,
+            freshness_decay_hours=24.0,
+            policy_weight=config.policy_weight,
+        )
+        training_facade = TrainingEnhancementsFacade(config=facade_config)
+        training_facade.set_total_epochs(config.epochs_per_iter)
+        logger.info(
+            f"[Training Facade] Enabled: hard_mining={hard_example_mining}, "
+            f"curriculum_lr={enable_curriculum}, freshness={enable_elo_weighting}"
+        )
+    elif hard_example_mining and not HAS_TRAINING_FACADE:
+        logger.info("[Training Facade] Not available, falling back to standalone HardExampleMiner")
+
+    # Quality-weighted training (2025-12) - resurrected from ebmo_network.py
+    # Weights samples by MCTS visit counts for better learning signal
+    quality_trainer: QualityWeightedTrainer | None = None
+    if enable_quality_weighting and HAS_QUALITY_WEIGHTING:
+        quality_trainer = QualityWeightedTrainer(
+            quality_weight=quality_weight_blend,
+            ranking_weight=quality_ranking_weight,
+            ranking_margin=0.5,  # Default margin for ranking loss
+            min_quality_weight=0.1,
+            temperature=1.0,
+        )
+        logger.info(
+            f"[Quality Weighting] Enabled: blend={quality_weight_blend:.2f}, "
+            f"ranking_weight={quality_ranking_weight:.2f}"
+        )
+    elif enable_quality_weighting and not HAS_QUALITY_WEIGHTING:
+        logger.warning("[Quality Weighting] Requested but module not available")
 
     # Mixed precision setup (CUDA-only for now)
     amp_enabled = bool(mixed_precision and device.type == 'cuda')
@@ -3009,9 +3139,11 @@ def train_model(
     _training_start_time = time.time()
     _final_checkpoint_path: str | None = None  # Track for event emission
 
+    # Define config_label unconditionally (used for metrics and event logging)
+    config_label = f"{config.board_type.value}_{num_players}p"
+
     # Report batch size metric at start of training
     if HAS_PROMETHEUS and (not distributed or is_main_process()):
-        config_label = f"{config.board_type.value}_{num_players}p"
         BATCH_SIZE.labels(config=config_label).set(config.batch_size)
 
     # Start integrated enhancements background services (evaluation, etc.)
@@ -3728,6 +3860,56 @@ def train_model(
                         policy_targets,
                     )
 
+                    # Outcome-weighted policy loss (2025-12)
+                    # Weight policy loss by game outcome: winner's moves get higher weight
+                    # This focuses learning on moves that lead to winning outcomes
+                    if enable_outcome_weighted_policy and outcome_weight_scale > 0:
+                        # Compute per-sample outcome weights from value targets
+                        # value_targets > 0 → winning position → weight > 1
+                        # value_targets < 0 → losing position → weight < 1
+                        with torch.no_grad():
+                            if value_targets.ndim == 2:
+                                # Multi-player: use mean value per sample
+                                outcome_signal = value_targets.mean(dim=1)
+                            else:
+                                outcome_signal = value_targets.reshape(-1)
+
+                            # Compute weights: 1 + outcome_weight_scale * sign(outcome)
+                            # Winners: 1 + scale, Losers: 1 - scale
+                            outcome_weights = 1.0 + outcome_weight_scale * outcome_signal.sign()
+                            outcome_weights = outcome_weights.clamp(min=0.1)  # Prevent zero/negative weights
+
+                        # Compute per-sample policy loss and apply weights
+                        per_sample_policy = -(policy_targets * policy_log_probs).sum(dim=1)
+                        valid_mask = policy_targets.sum(dim=1) > 0
+                        if valid_mask.any():
+                            weighted_policy = (per_sample_policy[valid_mask] * outcome_weights[valid_mask]).mean()
+                            policy_loss = weighted_policy
+
+                    # Quality-weighted training (2025-12) - resurrected from ebmo_network.py
+                    # Weights samples by MCTS visit counts to focus on high-quality moves
+                    quality_ranking_loss = torch.tensor(0.0, device=device)
+                    if quality_trainer is not None:
+                        # Use policy targets as quality proxy (MCTS visit-derived probabilities)
+                        # Higher entropy in targets = less certain position = lower quality
+                        with torch.no_grad():
+                            target_entropy = -(policy_targets * (policy_targets + 1e-8).log()).sum(dim=1)
+                            # Invert: low entropy = high quality
+                            quality_scores = 1.0 / (1.0 + target_entropy)
+                            # Normalize to [0, 1]
+                            quality_scores = (quality_scores - quality_scores.min()) / (
+                                quality_scores.max() - quality_scores.min() + 1e-8
+                            )
+
+                        # Compute ranking loss to enforce quality ordering
+                        if quality_trainer.ranking_weight > 0:
+                            quality_ranking_loss = ranking_loss_from_quality(
+                                policy_log_probs,
+                                quality_scores,
+                                margin=quality_trainer.ranking_margin,
+                            )
+                            quality_trainer.quality_stats["ranking_loss"] = quality_ranking_loss.item()
+
                     # Entropy regularization to prevent policy collapse
                     # H(p) = -sum(p * log(p)); higher entropy = more exploration
                     # We add -entropy_weight * H to encourage exploration
@@ -3766,6 +3948,10 @@ def train_model(
                             rank_loss = per_player_loss[rank_mask].mean()
                             task_losses["rank"] = config.rank_dist_weight * rank_loss
 
+                    # Add quality ranking loss if enabled (2025-12)
+                    if quality_trainer is not None and quality_ranking_loss.item() > 0:
+                        task_losses["quality_ranking"] = quality_trainer.ranking_weight * quality_ranking_loss
+
                     # Auxiliary task loss (outcome prediction from value targets)
                     aux_loss = None
                     if use_aux_tasks and backbone_features is not None:
@@ -3795,9 +3981,58 @@ def train_model(
                     # Compute combined loss for metrics (always needed)
                     loss = sum(task_losses.values())
 
-                    # Hard example mining: record per-sample losses (2025-12)
-                    # Computes lightweight per-sample losses for curriculum learning
-                    if hard_example_miner is not None and compute_per_sample_loss is not None:
+                    # Training facade: per-sample loss, hard example mining, weighted loss (2025-12)
+                    # Uses unified facade when available for +80-165 Elo improvement
+                    if training_facade is not None:
+                        try:
+                            # Create batch indices: batch_idx * batch_size + sample_idx
+                            batch_size = features.size(0)
+                            batch_indices = torch.arange(
+                                i * config.batch_size,
+                                i * config.batch_size + batch_size,
+                                device=device,
+                            )
+
+                            # Compute per-sample losses for mining
+                            with torch.no_grad():
+                                per_sample_losses = training_facade.compute_per_sample_loss(
+                                    policy_logits=policy_pred,
+                                    policy_targets=policy_targets,
+                                    value_pred=value_pred[:, 0] if value_pred.ndim == 2 else value_pred,
+                                    value_targets=value_targets[:, 0] if value_targets.ndim == 2 else value_targets,
+                                    reduction="none",
+                                )
+
+                                # Compute uncertainty from policy entropy
+                                policy_probs = torch.softmax(policy_pred, dim=1)
+                                policy_entropy = -(policy_probs * (policy_probs + 1e-8).log()).sum(dim=1)
+
+                            # Record batch and get weighted loss
+                            training_facade.record_batch(
+                                batch_indices=batch_indices,
+                                per_sample_losses=per_sample_losses,
+                                uncertainties=policy_entropy,
+                            )
+
+                            # Apply hard example weighting to loss (upweights difficult samples)
+                            # This focuses training on samples the model struggles with
+                            if training_facade.is_mining_active:
+                                loss = training_facade.get_weighted_loss(
+                                    per_sample_losses=per_sample_losses,
+                                    batch_indices=batch_indices,
+                                )
+                                # Add auxiliary losses back (they use original weighting)
+                                for key in ['aux', 'rank']:
+                                    if key in task_losses:
+                                        loss = loss + task_losses[key]
+                        except (RuntimeError, ValueError) as e:
+                            # Don't fail training on facade errors
+                            if i % 500 == 0:
+                                logger.debug(f"[Training Facade] Batch {i} skipped: {e}")
+
+                    # Fallback: standalone hard example miner (2025-12)
+                    # Used when training facade is not available
+                    elif hard_example_miner is not None and compute_per_sample_loss is not None:
                         try:
                             # Compute per-sample losses (no reduction)
                             with torch.no_grad():
@@ -4238,6 +4473,24 @@ def train_model(
             elif plateau_scheduler is not None:
                 plateau_scheduler.step(avg_val_loss)
 
+            # Apply curriculum LR scaling from training facade (December 2025)
+            # Scales LR based on training progress: warmup → 1.0 → max_scale
+            if training_facade is not None and training_facade.config.enable_curriculum_lr:
+                try:
+                    curriculum_scale = training_facade.get_curriculum_lr_scale()
+                    if abs(curriculum_scale - 1.0) > 0.01:  # Only apply if meaningfully different
+                        base_lr = optimizer.param_groups[0]['lr']
+                        adjusted_lr = base_lr * curriculum_scale
+                        for param_group in optimizer.param_groups:
+                            param_group['lr'] = adjusted_lr
+                        if (epoch + 1) % 5 == 0:  # Log every 5 epochs
+                            logger.debug(
+                                f"[Curriculum LR] Epoch {epoch+1}: scale={curriculum_scale:.3f}, "
+                                f"lr={adjusted_lr:.2e}"
+                            )
+                except (AttributeError, ValueError) as e:
+                    logger.debug(f"[Curriculum LR] Failed to apply: {e}")
+
             # Apply evaluation feedback LR adjustment (December 2025)
             # This responds to EVALUATION_COMPLETED events and adjusts LR based on Elo trends
             if eval_feedback_handler is not None and eval_feedback_handler.should_adjust_lr():
@@ -4362,8 +4615,29 @@ def train_model(
 
             epoch_losses.append(epoch_record)
 
-            # Log hard example mining statistics (2025-12)
-            if hard_example_miner is not None and (not distributed or is_main_process()):
+            # Training facade: log statistics and prepare for next epoch (2025-12)
+            # Provides unified stats for hard mining, curriculum LR, and freshness weighting
+            if training_facade is not None and (not distributed or is_main_process()):
+                try:
+                    facade_stats = training_facade.on_epoch_end()
+                    if facade_stats.get('mining_active', False):
+                        logger.info(
+                            f"  [Training Facade] "
+                            f"tracked={facade_stats.get('tracked_samples', 0)}, "
+                            f"hard_frac={facade_stats.get('hard_examples_fraction', 0):.1%}, "
+                            f"mean_loss={facade_stats.get('mean_per_sample_loss', 0):.4f}, "
+                            f"lr_scale={facade_stats.get('curriculum_lr_scale', 1.0):.3f}"
+                        )
+                    # Add to epoch record for analysis
+                    epoch_record['facade_mean_loss'] = facade_stats.get('mean_loss', 0)
+                    epoch_record['facade_hard_fraction'] = facade_stats.get('hard_examples_fraction', 0)
+                    epoch_record['facade_curriculum_lr_scale'] = facade_stats.get('curriculum_lr_scale', 1.0)
+                    epoch_record['facade_mining_active'] = facade_stats.get('mining_active', False)
+                except (AttributeError, ValueError) as e:
+                    logger.debug(f"[Training Facade] on_epoch_end error: {e}")
+
+            # Fallback: Log hard example mining statistics (2025-12)
+            elif hard_example_miner is not None and (not distributed or is_main_process()):
                 mining_stats = hard_example_miner.get_statistics()
                 if mining_stats.get('mining_active', False):
                     logger.info(

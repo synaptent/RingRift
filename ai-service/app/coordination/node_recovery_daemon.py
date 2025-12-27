@@ -43,6 +43,18 @@ from app.core.async_context import safe_create_task
 
 logger = logging.getLogger(__name__)
 
+# Health event emission imports (December 2025 - Phase 21)
+try:
+    from app.distributed.data_events import (
+        emit_node_unhealthy,
+        emit_node_recovered,
+    )
+    HAS_HEALTH_EVENTS = True
+except ImportError:
+    HAS_HEALTH_EVENTS = False
+    emit_node_unhealthy = None
+    emit_node_recovered = None
+
 
 class RecoveryAction(Enum):
     """Types of recovery actions."""
@@ -768,6 +780,51 @@ class NodeRecoveryDaemon:
             )
         except Exception as e:
             logger.debug(f"Could not publish recovery event: {e}")
+
+        # Emit standard health events (December 2025 - Phase 21)
+        if HAS_HEALTH_EVENTS:
+            self._emit_health_event(node, action, success)
+
+    def _emit_health_event(
+        self,
+        node: NodeInfo,
+        action: RecoveryAction,
+        success: bool,
+    ) -> None:
+        """Emit standard cluster health events for coordination."""
+        import asyncio
+
+        async def _emit():
+            try:
+                if success and action in (RecoveryAction.RESTART, RecoveryAction.PREEMPTIVE_RESTART):
+                    # Node was successfully recovered
+                    await emit_node_recovered(
+                        node_id=node.node_id,
+                        node_ip=node.host,
+                        recovery_time_seconds=0.0,  # Could track this if needed
+                        source="node_recovery_daemon",
+                    )
+                elif not success or node.status in ("terminated", "failed", "unreachable"):
+                    # Node is unhealthy
+                    await emit_node_unhealthy(
+                        node_id=node.node_id,
+                        reason=f"Status: {node.status}, Action: {action.value}",
+                        node_ip=node.host,
+                        consecutive_failures=node.consecutive_failures,
+                        source="node_recovery_daemon",
+                    )
+            except Exception as e:
+                logger.debug(f"Could not emit health event: {e}")
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_emit())
+        except RuntimeError:
+            # No running loop - try to run directly
+            try:
+                asyncio.run(_emit())
+            except Exception:
+                pass  # Best effort
 
     def get_stats(self) -> dict[str, Any]:
         """Get daemon statistics."""

@@ -83,8 +83,17 @@ class GossipSyncState:
 SyncState = GossipSyncState
 
 
-class BloomFilter:
-    """Simple bloom filter for efficient set membership testing."""
+# Import enhanced BloomFilter from centralized module (December 2025)
+# This provides additional features: compression, merge, stats, optimal sizing
+from app.coordination.sync_bloom_filter import SyncBloomFilter as BloomFilter  # noqa: E402
+
+
+class _LegacyBloomFilter:
+    """Legacy bloom filter - DEPRECATED. Use app.coordination.sync_bloom_filter instead.
+
+    Kept for reference only. This class is not used; BloomFilter is imported from
+    the centralized sync_bloom_filter module which provides additional features.
+    """
 
     def __init__(self, size: int = BLOOM_FILTER_SIZE, hash_count: int = BLOOM_HASH_COUNT):
         self.size = size

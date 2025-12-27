@@ -84,6 +84,32 @@ except ImportError:
     HAS_CIRCUIT_BREAKER = False
     get_operation_breaker = None
 
+# Unified backpressure monitoring (Phase 21.5 - December 2025)
+# Consolidates queue, training, disk, sync, and memory pressure signals
+try:
+    from app.coordination.backpressure import (
+        BackpressureMonitor,
+        get_backpressure_monitor,
+    )
+    HAS_BACKPRESSURE = True
+except ImportError:
+    HAS_BACKPRESSURE = False
+    BackpressureMonitor = None
+    get_backpressure_monitor = None
+
+# Job stall detection (Phase 21.5 - December 2025)
+# Detects stalled jobs and manages node penalties with exponential backoff
+try:
+    from app.coordination.stall_detection import (
+        JobStallDetector,
+        get_stall_detector,
+    )
+    HAS_STALL_DETECTION = True
+except ImportError:
+    HAS_STALL_DETECTION = False
+    JobStallDetector = None
+    get_stall_detector = None
+
 
 @dataclass
 class IdleResourceConfig:
@@ -1232,9 +1258,63 @@ class IdleResourceDaemon:
             return False
 
         # =======================================================================
-        # Queue Backpressure (December 2025)
+        # Stall Detection Check (Phase 21.5 - December 2025)
         # =======================================================================
-        # Stop spawning if queue is overloaded to prevent system overwhelm
+        # Skip nodes that are penalized due to previous job stalls
+        if HAS_STALL_DETECTION and get_stall_detector:
+            try:
+                detector = get_stall_detector()
+                if detector.is_node_penalized(node.node_id):
+                    remaining = detector.get_penalty_remaining(node.node_id)
+                    logger.debug(
+                        f"[IdleResourceDaemon] Skipping {node.node_id}: "
+                        f"stall penalty active ({remaining:.0f}s remaining)"
+                    )
+                    return False
+                # Also check if node is unhealthy due to too many stalls
+                if detector.is_node_unhealthy(node.node_id):
+                    logger.warning(
+                        f"[IdleResourceDaemon] Skipping {node.node_id}: "
+                        f"marked unhealthy due to repeated stalls"
+                    )
+                    return False
+            except Exception as e:
+                logger.debug(f"[IdleResourceDaemon] Stall detector check failed: {e}")
+
+        # =======================================================================
+        # Unified Backpressure Check (Phase 21.5 - December 2025)
+        # =======================================================================
+        # Use unified backpressure signal for comprehensive pressure monitoring
+        if HAS_BACKPRESSURE and get_backpressure_monitor:
+            try:
+                monitor = get_backpressure_monitor()
+                # Use cached signal (non-blocking) since this is a sync method
+                signal = monitor.get_cached_signal()
+                if signal is not None:
+                    if signal.should_pause:
+                        logger.info(
+                            f"[IdleResourceDaemon] Unified backpressure pause: "
+                            f"pressure={signal.overall_pressure:.2f}, "
+                            f"skipping spawn on {node.node_id}"
+                        )
+                        return False
+                    elif signal.spawn_rate_multiplier < 0.5:
+                        # Probabilistically skip based on spawn rate multiplier
+                        import random
+                        if random.random() > signal.spawn_rate_multiplier:
+                            logger.debug(
+                                f"[IdleResourceDaemon] Backpressure throttle: "
+                                f"multiplier={signal.spawn_rate_multiplier:.2f}, "
+                                f"skipping {node.node_id}"
+                            )
+                            return False
+            except Exception as e:
+                logger.debug(f"[IdleResourceDaemon] Backpressure check failed: {e}")
+
+        # =======================================================================
+        # Queue Backpressure Fallback (December 2025)
+        # =======================================================================
+        # Simple queue depth check as fallback if unified backpressure unavailable
         if queue_depth > self.config.max_queue_depth:
             logger.info(
                 f"[IdleResourceDaemon] Queue backpressure: depth {queue_depth} > "
@@ -1437,6 +1517,15 @@ class IdleResourceDaemon:
                     except Exception as e:
                         logger.debug(f"[IdleResourceDaemon] JobScheduler integration failed: {e}")
 
+                # Phase 21.5: Register job with stall detector for progress tracking
+                job_id = f"selfplay_{node.node_id}_{config_key}_{int(start_time)}"
+                if HAS_STALL_DETECTION and get_stall_detector:
+                    try:
+                        detector = get_stall_detector()
+                        detector.register_job(job_id, node.node_id)
+                    except Exception as e:
+                        logger.debug(f"[IdleResourceDaemon] Stall detector registration failed: {e}")
+
                 # Spawn via P2P job distribution
                 success = await self._distribute_job(node, config_key, games)
                 duration = time.time() - start_time
@@ -1458,6 +1547,14 @@ class IdleResourceDaemon:
                     # Phase 4: Record circuit breaker success
                     if HAS_CIRCUIT_BREAKER and get_operation_breaker:
                         get_operation_breaker().record_success("selfplay_spawn")
+
+                    # Phase 21.5: Mark job complete for stall detector (reduces node penalty)
+                    if HAS_STALL_DETECTION and get_stall_detector:
+                        try:
+                            detector = get_stall_detector()
+                            detector.complete_job(job_id, success=True)
+                        except Exception as e:
+                            logger.debug(f"[IdleResourceDaemon] Stall detector completion failed: {e}")
 
                     # Emit event
                     self._emit_spawn_event(node, config_key, games)
@@ -1481,6 +1578,15 @@ class IdleResourceDaemon:
                     # Phase 4: Record circuit breaker failure
                     if HAS_CIRCUIT_BREAKER and get_operation_breaker:
                         get_operation_breaker().record_failure("selfplay_spawn")
+
+                    # Phase 21.5: Report stall to detector (applies node penalty)
+                    if HAS_STALL_DETECTION and get_stall_detector:
+                        try:
+                            detector = get_stall_detector()
+                            detector.report_stall(job_id, node.node_id, duration)
+                        except Exception as e:
+                            logger.debug(f"[IdleResourceDaemon] Stall detector report failed: {e}")
+
                     return False
 
             except Exception as e:
@@ -1499,6 +1605,15 @@ class IdleResourceDaemon:
                 # Phase 4: Record circuit breaker failure on exception
                 if HAS_CIRCUIT_BREAKER and get_operation_breaker:
                     get_operation_breaker().record_failure("selfplay_spawn")
+
+                # Phase 21.5: Report stall on exception (applies node penalty)
+                if HAS_STALL_DETECTION and get_stall_detector:
+                    try:
+                        detector = get_stall_detector()
+                        detector.report_stall(job_id, node.node_id, duration)
+                    except Exception as ex:
+                        logger.debug(f"[IdleResourceDaemon] Stall detector report failed: {ex}")
+
                 logger.error(f"Failed to spawn selfplay on {node.node_id}: {e}")
                 return False
 

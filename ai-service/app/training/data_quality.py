@@ -461,11 +461,14 @@ class DatabaseQualityChecker:
             return False
 
     def check_games_with_moves(self, db_path: str | Path) -> tuple[bool, dict[str, Any]]:
-        """Check if games have move data in game_moves table.
+        """Check if games have move data (either in game_moves table or games.moves column).
 
-        This is CRITICAL for training data export - games without moves in
-        the game_moves table will produce zero training samples, causing
-        silent export failures.
+        This is CRITICAL for training data export - games without moves
+        will produce zero training samples, causing silent export failures.
+
+        Supports both database schemas:
+        - New schema: moves in separate game_moves table
+        - Old schema: moves as JSON in games.moves column
 
         Args:
             db_path: Path to SQLite database
@@ -473,9 +476,10 @@ class DatabaseQualityChecker:
         Returns:
             Tuple of (passes_check, stats_dict) where stats_dict contains:
             - total_games: Total games in database
-            - games_with_moves: Games that have entries in game_moves table
-            - games_without_moves: Games missing from game_moves table
+            - games_with_moves: Games that have move data
+            - games_without_moves: Games missing move data
             - coverage_percent: Percentage of games with moves
+            - schema_type: 'game_moves_table' or 'moves_column'
             - issue: Description of issue if check fails (None if passes)
         """
         db_path = Path(db_path)
@@ -484,6 +488,7 @@ class DatabaseQualityChecker:
             "games_with_moves": 0,
             "games_without_moves": 0,
             "coverage_percent": 0.0,
+            "schema_type": None,
             "issue": None,
         }
 
@@ -499,8 +504,15 @@ class DatabaseQualityChecker:
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
             )
-            if not cursor.fetchone():
-                stats["issue"] = "No game_moves table in database"
+            has_game_moves_table = cursor.fetchone() is not None
+
+            # Check if games table has moves column (old schema)
+            cursor.execute("PRAGMA table_info(games)")
+            columns = [row[1] for row in cursor.fetchall()]
+            has_moves_column = "moves" in columns
+
+            if not has_game_moves_table and not has_moves_column:
+                stats["issue"] = "No game_moves table and no moves column in games table"
                 conn.close()
                 return False, stats
 
@@ -514,15 +526,27 @@ class DatabaseQualityChecker:
                 conn.close()
                 return False, stats
 
-            # Count games that have at least one move in game_moves
-            cursor.execute("""
-                SELECT COUNT(DISTINCT g.game_id)
-                FROM games g
-                WHERE EXISTS (
-                    SELECT 1 FROM game_moves m WHERE m.game_id = g.game_id
-                )
-            """)
-            games_with_moves = cursor.fetchone()[0]
+            # Count games with moves based on schema type
+            if has_game_moves_table:
+                # New schema: check game_moves table
+                stats["schema_type"] = "game_moves_table"
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT g.game_id)
+                    FROM games g
+                    WHERE EXISTS (
+                        SELECT 1 FROM game_moves m WHERE m.game_id = g.game_id
+                    )
+                """)
+                games_with_moves = cursor.fetchone()[0]
+            else:
+                # Old schema: check moves column is non-empty
+                stats["schema_type"] = "moves_column"
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM games
+                    WHERE moves IS NOT NULL AND moves != '' AND moves != '[]'
+                """)
+                games_with_moves = cursor.fetchone()[0]
             stats["games_with_moves"] = games_with_moves
             stats["games_without_moves"] = total_games - games_with_moves
             stats["coverage_percent"] = 100.0 * games_with_moves / total_games

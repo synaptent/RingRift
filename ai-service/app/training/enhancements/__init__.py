@@ -66,6 +66,13 @@ from app.training.enhancements.per_sample_loss import (
     compute_per_sample_loss,
 )
 
+# Phase 5 exports: Unified Training Facade (December 2025)
+from app.training.enhancements.training_facade import (
+    EpochStatistics,
+    FacadeConfig,
+    TrainingEnhancementsFacade,
+)
+
 __all__ = [
     # Training configuration
     "TrainingConfig",
@@ -101,4 +108,8 @@ __all__ = [
     # Hard example mining (Phase 4 - December 2025)
     "HardExample",
     "HardExampleMiner",
+    # Unified Training Facade (Phase 5 - December 2025)
+    "FacadeConfig",
+    "EpochStatistics",
+    "TrainingEnhancementsFacade",
 ]

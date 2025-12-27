@@ -112,6 +112,7 @@ class OptimizationResult:
 
 
 # GPU capability mapping - determines which boards a GPU can handle efficiently
+# This is the static default; dynamic profiles from distributed_hosts.yaml augment this
 GPU_CAPABILITIES = {
     # Small GPUs (8-12GB) - hex8, square8
     "RTX 3060": {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8},
@@ -134,7 +135,139 @@ GPU_CAPABILITIES = {
     "H100": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
     "GH200": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
     "A100": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    # New GPUs added dynamically (December 2025)
+    "L40S": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
+    "RTX 4090": {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL},
 }
+
+
+def _infer_capability_from_vram(vram_gb: float) -> dict[str, BoardType]:
+    """Infer GPU capability from VRAM size.
+
+    Args:
+        vram_gb: GPU VRAM in gigabytes
+
+    Returns:
+        Dict with max_board and preferred BoardType
+    """
+    if vram_gb >= 40:
+        return {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL}
+    elif vram_gb >= 20:
+        return {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE19}
+    elif vram_gb >= 12:
+        return {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE8}
+    elif vram_gb >= 8:
+        return {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8}
+    else:
+        return {"max_board": BoardType.HEX8, "preferred": BoardType.HEX8}
+
+
+def load_gpu_profiles_from_config() -> dict[str, dict[str, BoardType]]:
+    """Load GPU profiles dynamically from distributed_hosts.yaml.
+
+    This augments the static GPU_CAPABILITIES with host-specific profiles
+    from the cluster configuration, ensuring new GPU types are automatically
+    supported based on their VRAM specs.
+
+    Returns:
+        Dict mapping GPU names to capability dicts
+    """
+    from pathlib import Path
+
+    profiles: dict[str, dict[str, BoardType]] = {}
+
+    # Try multiple config paths
+    config_paths = [
+        Path("config/distributed_hosts.yaml"),
+        Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml",
+        Path.home() / "ringrift" / "ai-service" / "config" / "distributed_hosts.yaml",
+    ]
+
+    config_path = None
+    for path in config_paths:
+        if path.exists():
+            config_path = path
+            break
+
+    if not config_path:
+        logger.debug("[UtilizationOptimizer] No distributed_hosts.yaml found, using static profiles")
+        return profiles
+
+    try:
+        import yaml
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        hosts = config.get("hosts", {})
+        seen_gpus: set[str] = set()
+
+        for host_id, host_config in hosts.items():
+            gpu = host_config.get("gpu", "")
+            gpu_vram = host_config.get("gpu_vram_gb", 0)
+
+            if not gpu or gpu == "none" or gpu_vram <= 0:
+                continue
+
+            # Parse GPU name (handle "2x RTX 5090" format)
+            gpu_name = gpu
+            if "x " in gpu:
+                # Extract GPU model from "Nx GPU_MODEL" format
+                parts = gpu.split("x ", 1)
+                if len(parts) == 2:
+                    gpu_name = parts[1]
+
+            # Skip if we've already seen this GPU
+            if gpu_name in seen_gpus:
+                continue
+            seen_gpus.add(gpu_name)
+
+            # Skip if already in static capabilities
+            if gpu_name in GPU_CAPABILITIES:
+                continue
+
+            # Infer capability from VRAM
+            capability = _infer_capability_from_vram(gpu_vram)
+            profiles[gpu_name] = capability
+
+            logger.debug(
+                f"[UtilizationOptimizer] Added dynamic GPU profile: {gpu_name} "
+                f"(vram={gpu_vram}GB) -> max={capability['max_board'].value}"
+            )
+
+        if profiles:
+            logger.info(
+                f"[UtilizationOptimizer] Loaded {len(profiles)} dynamic GPU profiles "
+                f"from {config_path}"
+            )
+
+    except ImportError:
+        logger.debug("[UtilizationOptimizer] PyYAML not available, using static profiles")
+    except Exception as e:
+        logger.warning(f"[UtilizationOptimizer] Failed to load dynamic GPU profiles: {e}")
+
+    return profiles
+
+
+# Load dynamic profiles on module import
+_DYNAMIC_GPU_PROFILES: dict[str, dict[str, BoardType]] = {}
+
+
+def get_gpu_capabilities() -> dict[str, dict[str, Any]]:
+    """Get combined static and dynamic GPU capabilities.
+
+    Returns:
+        Dict mapping GPU names to capability dicts
+    """
+    global _DYNAMIC_GPU_PROFILES
+
+    # Lazy load dynamic profiles
+    if not _DYNAMIC_GPU_PROFILES:
+        _DYNAMIC_GPU_PROFILES = load_gpu_profiles_from_config()
+
+    # Combine static and dynamic profiles (static takes precedence)
+    combined = {**_DYNAMIC_GPU_PROFILES, **GPU_CAPABILITIES}
+    return combined
 
 # Default priority for board types (what we need most training data for)
 BOARD_PRIORITIES = {
@@ -193,26 +326,32 @@ class UtilizationOptimizer:
         }
 
     def _get_gpu_capability(self, health: NodeHealthDetails) -> dict[str, Any] | None:
-        """Get GPU capability info for a node."""
+        """Get GPU capability info for a node.
+
+        Uses combined static and dynamic profiles from distributed_hosts.yaml.
+        Falls back to VRAM-based inference for unknown GPUs.
+        """
         if not health.instance:
             return None
 
         gpu_type = health.instance.gpu_type or ""
 
-        # Try to match GPU type
-        for gpu_name, caps in GPU_CAPABILITIES.items():
+        # Get combined static and dynamic capabilities
+        capabilities = get_gpu_capabilities()
+
+        # Try to match GPU type against known profiles
+        for gpu_name, caps in capabilities.items():
             if gpu_name.lower() in gpu_type.lower():
                 return caps
 
-        # Default for unknown GPUs based on memory
-        if health.instance.gpu_memory_gb >= 40:
-            return {"max_board": BoardType.HEXAGONAL, "preferred": BoardType.HEXAGONAL}
-        elif health.instance.gpu_memory_gb >= 16:
-            return {"max_board": BoardType.SQUARE19, "preferred": BoardType.SQUARE8}
-        elif health.instance.gpu_memory_gb >= 8:
-            return {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8}
-        else:
-            return {"max_board": BoardType.HEX8, "preferred": BoardType.HEX8}
+        # Fallback: infer capability from VRAM for unknown GPUs
+        # This ensures new GPU types work automatically
+        vram_gb = health.instance.gpu_memory_gb or 0
+        if vram_gb > 0:
+            return _infer_capability_from_vram(vram_gb)
+
+        # Ultimate fallback for unknown GPUs with no VRAM info
+        return {"max_board": BoardType.SQUARE8, "preferred": BoardType.HEX8}
 
     def _select_board_for_node(self, health: NodeHealthDetails) -> BoardType:
         """Select the best board type for a node based on its capabilities."""

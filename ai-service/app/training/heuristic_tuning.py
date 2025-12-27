@@ -9,7 +9,7 @@ Extracted from train.py to improve modularity (Dec 2025).
 import contextlib
 import math
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -174,6 +174,7 @@ def run_cmaes_heuristic_optimization(
     population_size: int = 8,
     rng_seed: int = 1,
     games_per_candidate: int | None = None,
+    evaluate_fn: Callable[..., tuple[float, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """
     Run a small CMA-ES-style optimisation loop over heuristic weights.
@@ -191,6 +192,8 @@ def run_cmaes_heuristic_optimization(
     seed_all(rng_seed)
     py_rng = random.Random(rng_seed)
     np_rng = np.random.default_rng(rng_seed + 1)
+
+    evaluate = evaluate_fn or evaluate_heuristic_candidate
 
     tier_spec = _get_heuristic_tier_by_id(tier_id)
 
@@ -226,7 +229,7 @@ def run_cmaes_heuristic_optimization(
             vector: list[float] = [float(x) for x in tmp]
 
             eval_seed = py_rng.randint(1, 2**31 - 1)
-            fitness, raw = evaluate_heuristic_candidate(
+            fitness, raw = evaluate(
                 tier_spec=tier_spec,
                 base_profile_id=base_profile_id,
                 keys=keys,

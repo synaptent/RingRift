@@ -634,16 +634,26 @@ def _evaluate_single_opponent(
     early_stopping: bool,
     early_stopping_confidence: float,
     early_stopping_min_games: int,
+    model_id: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a model against a single baseline opponent.
 
     Returns:
         Dict with keys: baseline_name, wins, games, losses, draws, win_rate,
-        early_stopped, games_saved
+        early_stopped, games_saved, model_id
     """
     baseline_name = baseline.value
+
+    # Derive model_id if not provided
+    effective_model_id = model_id
+    if effective_model_id is None and model_path is not None:
+        effective_model_id = Path(model_path).stem
+    if effective_model_id is None:
+        effective_model_id = "candidate_model"
+
     result = {
         "baseline_name": baseline_name,
+        "model_id": effective_model_id,
         "wins": 0,
         "games": 0,
         "losses": 0,
@@ -700,6 +710,39 @@ def _evaluate_single_opponent(
                 result["losses"] += 1
             else:
                 result["draws"] += 1
+
+            # Record match to unified Elo database (December 2025 fix for 3p/4p tracking)
+            # This ensures gauntlet games are counted toward Elo ratings for ALL configs
+            try:
+                from app.training.elo_service import get_elo_service
+
+                elo_service = get_elo_service()
+                board_value = getattr(board_type, "value", str(board_type))
+
+                # Derive model_id from result context or use placeholder
+                model_id = result.get("model_id", "candidate_model")
+
+                # Determine winner for Elo calculation
+                if game_result.candidate_won:
+                    winner_id = model_id
+                elif game_result.winner is not None:
+                    winner_id = baseline_name
+                else:
+                    winner_id = None  # Draw
+
+                elo_service.record_match(
+                    participant_a=model_id,
+                    participant_b=baseline_name,
+                    winner=winner_id,
+                    board_type=board_value,
+                    num_players=num_players,
+                    game_length=game_result.move_count,
+                    tournament_id=f"gauntlet_{board_value}_{num_players}p",
+                )
+            except ImportError:
+                pass  # EloService not available
+            except Exception as elo_err:
+                logger.debug(f"[gauntlet] Failed to record Elo: {elo_err}")
 
             if verbose:
                 outcome = "WIN" if game_result.candidate_won else "LOSS"
@@ -854,6 +897,11 @@ def run_baseline_gauntlet(
         logger.debug("[gauntlet] Parallel opponent evaluation disabled (unsafe multiprocessing context)")
         parallel_opponents = False
 
+    # Derive effective_model_id early so it can be passed to evaluators
+    effective_model_id = model_id
+    if effective_model_id is None and model_path is not None:
+        effective_model_id = Path(model_path).stem
+
     if parallel_opponents and len(opponents) > 1:
         # Parallel evaluation using ThreadPoolExecutor
         logger.info(f"[gauntlet] Running parallel evaluation vs {len(opponents)} opponents")
@@ -872,6 +920,7 @@ def run_baseline_gauntlet(
                     early_stopping,
                     early_stopping_confidence,
                     early_stopping_min_games,
+                    effective_model_id,
                 ): baseline
                 for baseline in opponents
             }
@@ -909,6 +958,7 @@ def run_baseline_gauntlet(
                 early_stopping,
                 early_stopping_confidence,
                 early_stopping_min_games,
+                effective_model_id,
             )
             opponent_eval_results.append(eval_result)
 

@@ -72,6 +72,9 @@ class ExtensionConfig:
     checkpoint_interval_epochs: int = 1
     max_training_retries: int = 3
 
+    # Event wiring
+    strict_events: bool = False
+
 
 @dataclass
 class ExtensionState:
@@ -99,6 +102,10 @@ class ExtensionState:
 
     # Dashboard state
     last_dashboard_update: float = 0.0
+
+    # Event wiring state
+    events_wired: bool = False
+    events_error: str | None = None
 
 
 class UnifiedLoopExtensions:
@@ -134,31 +141,51 @@ class UnifiedLoopExtensions:
 
     def _setup_event_handlers(self):
         """Subscribe to events from the unified loop."""
-        if hasattr(self.loop, 'event_bus'):
-            try:
-                from app.coordination.event_router import DataEventType
-                if DataEventType is None:
-                    raise ImportError("DataEventType unavailable")
+        if not hasattr(self.loop, "event_bus"):
+            self.state.events_wired = False
+            self.state.events_error = "event_bus attribute not present"
+            return
 
-                # Subscribe to training completion for calibration
-                self.loop.event_bus.subscribe(
-                    DataEventType.TRAINING_COMPLETED,
-                    self._on_training_completed
-                )
+        bus = getattr(self.loop, "event_bus", None)
+        if bus is None:
+            self.state.events_wired = False
+            self.state.events_error = "event_bus is None"
+            if self.config.strict_events:
+                raise RuntimeError("Event bus unavailable for unified loop extensions")
+            logger.warning("Event bus unavailable for unified loop extensions")
+            return
 
-                # Subscribe to evaluation for Elo tracking
-                self.loop.event_bus.subscribe(
-                    DataEventType.EVALUATION_COMPLETED,
-                    self._on_evaluation_completed
-                )
+        try:
+            from app.coordination.event_router import DataEventType
+            if DataEventType is None:
+                raise ImportError("DataEventType unavailable")
 
-                # Subscribe to promotion for benchmarking
-                self.loop.event_bus.subscribe(
-                    DataEventType.MODEL_PROMOTED,
-                    self._on_model_promoted
-                )
-            except ImportError:
-                logger.warning("Could not import DataEventType for event subscriptions")
+            # Subscribe to training completion for calibration
+            bus.subscribe(
+                DataEventType.TRAINING_COMPLETED,
+                self._on_training_completed
+            )
+
+            # Subscribe to evaluation for Elo tracking
+            bus.subscribe(
+                DataEventType.EVALUATION_COMPLETED,
+                self._on_evaluation_completed
+            )
+
+            # Subscribe to promotion for benchmarking
+            bus.subscribe(
+                DataEventType.MODEL_PROMOTED,
+                self._on_model_promoted
+            )
+
+            self.state.events_wired = True
+            self.state.events_error = None
+        except Exception as exc:
+            self.state.events_wired = False
+            self.state.events_error = f"{type(exc).__name__}: {exc}"
+            logger.exception("Failed to wire unified loop event handlers")
+            if self.config.strict_events:
+                raise
 
     # =========================================================================
     # Lazy Component Initialization

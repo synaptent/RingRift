@@ -58,19 +58,22 @@ elo_sync:
   - http
 
 # P2P voter configuration - stable nodes for leader election
-# Quorum requires 3 voters.
+# Quorum requires 3 voters (majority of 5).
 #
 # IMPORTANT: This list is the single source of truth for voter nodes.
 # Do NOT set p2p_voter: true on individual nodes - it will be ignored.
 # The p2p_voters list below is the authoritative voter configuration.
-# Dec 26, 2025: Simplified voters to Nebius nodes only
-# RunPod pods don't expose port 8770 externally, causing network segmentation
-# With 3 voters, quorum = 2 (majority)
-# Updated Dec 26 late: Replaced deleted nodes with new H100s
+#
+# Dec 26, 2025: Diversified voters across providers for resilience
+# - Local: mac-studio (coordinator, always available)
+# - Nebius: 2 H100 nodes (stable backbone)
+# - Vast.ai: 1 node (different provider/region)
+# With 5 voters, quorum = 3 (majority)
 p2p_voters:
-  - nebius-backbone-1
-  - nebius-h100-1
-  - nebius-h100-3
+  - mac-studio        # Local coordinator (always reachable)
+  - nebius-backbone-1 # Nebius (EU)
+  - nebius-h100-1     # Nebius (EU)
+  - vast-29129529     # Vast.ai 8x RTX 4090 (different provider)
 
 hosts:
   # ============================================================
@@ -90,6 +93,23 @@ hosts:
     status: ready
     selfplay_enabled: false
     training_enabled: false
+    p2p_enabled: true
+
+  # Dec 26, 2025: Added local-mac as coordinator-only (MacBook Pro)
+  # This prevents local machine from being assigned training/selfplay tasks
+  local-mac:
+    ssh_host: localhost
+    ssh_user: armand
+    ringrift_path: /Users/armand/Development/RingRift/ai-service
+    memory_gb: 36
+    cpus: 10
+    gpu: none
+    role: coordinator
+    status: ready
+    selfplay_enabled: false
+    training_enabled: false
+    gauntlet_enabled: false
+    export_enabled: false
     p2p_enabled: true
 
   # ============================================================

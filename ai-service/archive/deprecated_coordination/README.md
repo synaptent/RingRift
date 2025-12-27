@@ -59,6 +59,134 @@ grep -r "from app.coordination.sync_coordination_core import" --include="*.py" .
 
 ---
 
+## sync_coordinator.py
+
+**Archived**: December 26, 2025
+
+**Reason**: Functionality split into more focused modules as part of coordination layer consolidation.
+
+**Superseded By**:
+
+The sync coordination functionality is now handled by these specialized modules:
+
+- `app/coordination/auto_sync_daemon.py` - Automated P2P data sync (push-from-generator + gossip)
+- `app/coordination/sync_facade.py` - Unified API for manual sync operations
+- `app/coordination/sync_router.py` - Intelligent routing and source selection
+- `app/coordination/sync_bandwidth.py` - Bandwidth-coordinated transfers
+- `app/distributed/cluster_manifest.py` - Central registry for data locations
+
+**Original Purpose**:
+
+Smart Sync Coordinator (aka SyncScheduler) for cluster-wide data synchronization:
+
+- Unified view of data state across all hosts
+- Priority-based sync scheduling (ephemeral hosts prioritized)
+- Bandwidth-aware transfer management
+- Automatic recovery from sync failures
+- Host state tracking (games, sync times, failures)
+- Cluster health scoring
+
+Key features that needed to be preserved:
+
+- Priority scoring for hosts (ephemeral hosts get 3x priority)
+- Games-behind and time-since-sync weighting
+- Backpressure integration with queue monitoring
+- Sync history tracking in SQLite
+
+**Migration**:
+
+The old `SyncCoordinator`/`SyncScheduler` tried to do too much (1,400+ lines):
+
+- Sync scheduling AND execution
+- Host state tracking AND sync operations
+- Event bridging AND data routing
+
+This led to tight coupling and overlapping functionality with:
+
+- `app.distributed.sync_coordinator.SyncCoordinator` (execution layer)
+- `SyncRouter`, `SyncBandwidth` (routing and bandwidth)
+- `ClusterManifest` (data location tracking)
+
+**New Architecture** (separation of concerns):
+
+1. **AutoSyncDaemon** - Automated background sync scheduling
+2. **SyncFacade** - Simple API for manual sync requests
+3. **SyncRouter** - Intelligent routing and source selection
+4. **SyncBandwidth** - Bandwidth management during transfers
+5. **ClusterManifest** - Centralized data location tracking
+
+### Migration Examples
+
+**Automated Background Sync:**
+
+```python
+# OLD
+from app.coordination.sync_coordinator import get_sync_scheduler, execute_priority_sync
+scheduler = get_sync_scheduler()
+await execute_priority_sync(max_syncs=3)
+
+# NEW
+from app.coordination.auto_sync_daemon import AutoSyncDaemon
+daemon = AutoSyncDaemon()
+await daemon.start()  # Handles all scheduling automatically
+```
+
+**Manual Sync Requests:**
+
+```python
+# OLD
+from app.coordination.sync_coordinator import get_sync_recommendations
+recommendations = get_sync_recommendations(max_recommendations=5)
+
+# NEW
+from app.coordination.sync_facade import sync
+await sync('games', priority='high')
+```
+
+**Cluster Data Tracking:**
+
+```python
+# OLD
+from app.coordination.sync_coordinator import get_cluster_data_status
+status = get_cluster_data_status()
+print(f"Stale hosts: {status.stale_hosts}")
+
+# NEW
+from app.distributed.cluster_manifest import get_cluster_manifest
+manifest = get_cluster_manifest()
+stale = manifest.find_stale_data(max_age_hours=1)
+```
+
+**Active Imports** (as of December 26, 2025):
+
+- `app/metrics/coordinator.py` - Uses SyncScheduler for metrics
+- `app/coordination/coordination_bootstrap.py` - Uses wire_sync_events
+- `app/coordination/cluster/sync.py` - Imports SyncScheduler
+- `app/coordination/__init__.py` - Re-exports with deprecation warnings suppressed
+- `app/distributed/sync_orchestrator.py` - Uses get_sync_scheduler
+- `tests/unit/coordination/test_sync_coordinator.py` - Unit tests
+
+**Migration Plan**:
+
+1. Update `app/metrics/coordinator.py` to use ClusterManifest
+2. Update `coordination_bootstrap.py` to wire AutoSyncDaemon
+3. Update `cluster/sync.py` to use SyncFacade
+4. Update `sync_orchestrator.py` to use AutoSyncDaemon
+5. Update tests to test new components
+6. Delete original file after Q2 2026 verification
+
+**Verification Commands**:
+
+```bash
+# Check for active imports
+grep -r "from app.coordination.sync_coordinator import" --include="*.py" .
+
+# Check for direct references
+grep -r "SyncScheduler\|get_sync_coordinator" --include="*.py" . | grep -v deprecated
+```
+
+---
+
 ## unified_event_coordinator.py
 
 **Archived**: December 2025

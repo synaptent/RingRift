@@ -432,6 +432,14 @@ class DaemonManager:
             depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
         )
 
+        # Vast.ai idle shutdown (December 2025) - terminates idle Vast nodes to save costs
+        # Important for ephemeral marketplace instances with hourly billing
+        self.register_factory(
+            DaemonType.VAST_IDLE,
+            self._create_vast_idle,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR],
+        )
+
         # Cluster watchdog (December 2025) - self-healing cluster utilization monitor
         self.register_factory(
             DaemonType.CLUSTER_WATCHDOG,
@@ -1344,6 +1352,104 @@ class DaemonManager:
             "readiness": self.readiness_probe(),
             "timestamp": time.time(),
         }
+
+    def render_metrics(self) -> str:
+        """Render Prometheus-style metrics for the health server."""
+        summary = self.health_summary()
+
+        running = summary.get("running", 0)
+        failed = summary.get("failed", 0)
+        total = summary.get("total", 0)
+        stopped = max(0, total - running - failed)
+        health_score = summary.get("score", 0.0)
+
+        lines = [
+            "# HELP daemon_count Number of daemons",
+            "# TYPE daemon_count gauge",
+            f'daemon_count{{state="running"}} {running}',
+            f'daemon_count{{state="stopped"}} {stopped}',
+            f'daemon_count{{state="failed"}} {failed}',
+            "",
+            "# HELP daemon_health_score Overall health score (0-1)",
+            "# TYPE daemon_health_score gauge",
+            f"daemon_health_score {health_score}",
+            "",
+            "# HELP daemon_uptime_seconds Daemon manager uptime",
+            "# TYPE daemon_uptime_seconds counter",
+            f'daemon_uptime_seconds {summary.get("liveness", {}).get("uptime_seconds", 0)}',
+        ]
+
+        # Selfplay throughput metrics
+        try:
+            from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+            metrics = get_selfplay_scheduler().get_metrics()
+            lines.extend([
+                "",
+                "# HELP selfplay_games_allocated_total Total selfplay games allocated",
+                "# TYPE selfplay_games_allocated_total counter",
+                f"selfplay_games_allocated_total {metrics.get('games_allocated_total', 0)}",
+                "# HELP selfplay_games_allocated_last_hour Selfplay games allocated in last hour",
+                "# TYPE selfplay_games_allocated_last_hour gauge",
+                f"selfplay_games_allocated_last_hour {metrics.get('games_allocated_last_hour', 0)}",
+                "# HELP selfplay_games_per_hour Current selfplay allocation rate",
+                "# TYPE selfplay_games_per_hour gauge",
+                f"selfplay_games_per_hour {metrics.get('games_per_hour', 0.0)}",
+            ])
+        except Exception:
+            pass
+
+        # Cluster sync throughput metrics
+        try:
+            from app.coordination.cluster_data_sync import get_cluster_data_sync_daemon
+
+            metrics = get_cluster_data_sync_daemon().get_metrics()
+            lines.extend([
+                "",
+                "# HELP cluster_sync_count_total Total sync cycles executed",
+                "# TYPE cluster_sync_count_total counter",
+                f"cluster_sync_count_total {metrics.get('sync_count', 0)}",
+                "# HELP cluster_sync_bytes_last_cycle Bytes synced in last cycle",
+                "# TYPE cluster_sync_bytes_last_cycle gauge",
+                f"cluster_sync_bytes_last_cycle {metrics.get('last_sync_bytes', 0)}",
+                "# HELP cluster_sync_throughput_bytes_per_sec Last cycle throughput (bytes/sec)",
+                "# TYPE cluster_sync_throughput_bytes_per_sec gauge",
+                f"cluster_sync_throughput_bytes_per_sec {metrics.get('last_sync_throughput_bps', 0.0)}",
+                "# HELP cluster_sync_total_bytes Total bytes synced",
+                "# TYPE cluster_sync_total_bytes counter",
+                f"cluster_sync_total_bytes {metrics.get('total_bytes_synced', 0)}",
+            ])
+        except Exception:
+            pass
+
+        # Event router metrics
+        try:
+            from app.coordination.event_router import get_router
+
+            stats = get_router().get_stats()
+            lines.extend([
+                "",
+                "# HELP event_router_events_routed_total Total events routed",
+                "# TYPE event_router_events_routed_total counter",
+                f"event_router_events_routed_total {stats.get('total_events_routed', 0)}",
+                "# HELP event_router_duplicates_prevented_total Duplicate events prevented",
+                "# TYPE event_router_duplicates_prevented_total counter",
+                f"event_router_duplicates_prevented_total {stats.get('duplicates_prevented', 0)}",
+                "# HELP event_router_content_duplicates_prevented_total Content-hash duplicates prevented",
+                "# TYPE event_router_content_duplicates_prevented_total counter",
+                f"event_router_content_duplicates_prevented_total {stats.get('content_duplicates_prevented', 0)}",
+                "# HELP event_router_events_routed_by_type_total Events routed by type",
+                "# TYPE event_router_events_routed_by_type_total counter",
+            ])
+            for event_type, count in stats.get("events_routed_by_type", {}).items():
+                safe_event = str(event_type).replace('"', "'")
+                lines.append(
+                    f'event_router_events_routed_by_type_total{{event="{safe_event}"}} {count}'
+                )
+        except Exception:
+            pass
+
+        return "\n".join(lines)
 
     # =========================================================================
     # Default Daemon Factories
@@ -2474,95 +2580,7 @@ class DaemonManager:
 
         async def handle_metrics(request):
             """Prometheus-style metrics."""
-            summary = self.health_summary()
-
-            # Format as Prometheus metrics
-            lines = [
-                f'# HELP daemon_count Number of daemons',
-                f'# TYPE daemon_count gauge',
-                f'daemon_count{{state="running"}} {summary.get("running", 0)}',
-                f'daemon_count{{state="stopped"}} {summary.get("stopped", 0)}',
-                f'daemon_count{{state="failed"}} {summary.get("failed", 0)}',
-                f'',
-                f'# HELP daemon_health_score Overall health score (0-1)',
-                f'# TYPE daemon_health_score gauge',
-                f'daemon_health_score {summary.get("health_score", 0.0)}',
-                f'',
-                f'# HELP daemon_uptime_seconds Daemon manager uptime',
-                f'# TYPE daemon_uptime_seconds counter',
-                f'daemon_uptime_seconds {summary.get("liveness", {}).get("uptime_seconds", 0)}',
-            ]
-
-            # Selfplay throughput metrics
-            try:
-                from app.coordination.selfplay_scheduler import get_selfplay_scheduler
-
-                metrics = get_selfplay_scheduler().get_metrics()
-                lines.extend([
-                    '',
-                    '# HELP selfplay_games_allocated_total Total selfplay games allocated',
-                    '# TYPE selfplay_games_allocated_total counter',
-                    f"selfplay_games_allocated_total {metrics.get('games_allocated_total', 0)}",
-                    '# HELP selfplay_games_allocated_last_hour Selfplay games allocated in last hour',
-                    '# TYPE selfplay_games_allocated_last_hour gauge',
-                    f"selfplay_games_allocated_last_hour {metrics.get('games_allocated_last_hour', 0)}",
-                    '# HELP selfplay_games_per_hour Current selfplay allocation rate',
-                    '# TYPE selfplay_games_per_hour gauge',
-                    f"selfplay_games_per_hour {metrics.get('games_per_hour', 0.0)}",
-                ])
-            except Exception:
-                pass
-
-            # Cluster sync throughput metrics
-            try:
-                from app.coordination.cluster_data_sync import get_cluster_data_sync_daemon
-
-                metrics = get_cluster_data_sync_daemon().get_metrics()
-                lines.extend([
-                    '',
-                    '# HELP cluster_sync_count_total Total sync cycles executed',
-                    '# TYPE cluster_sync_count_total counter',
-                    f"cluster_sync_count_total {metrics.get('sync_count', 0)}",
-                    '# HELP cluster_sync_bytes_last_cycle Bytes synced in last cycle',
-                    '# TYPE cluster_sync_bytes_last_cycle gauge',
-                    f"cluster_sync_bytes_last_cycle {metrics.get('last_sync_bytes', 0)}",
-                    '# HELP cluster_sync_throughput_bytes_per_sec Last cycle throughput (bytes/sec)',
-                    '# TYPE cluster_sync_throughput_bytes_per_sec gauge',
-                    f"cluster_sync_throughput_bytes_per_sec {metrics.get('last_sync_throughput_bps', 0.0)}",
-                    '# HELP cluster_sync_total_bytes Total bytes synced',
-                    '# TYPE cluster_sync_total_bytes counter',
-                    f"cluster_sync_total_bytes {metrics.get('total_bytes_synced', 0)}",
-                ])
-            except Exception:
-                pass
-
-            # Event router metrics
-            try:
-                from app.coordination.event_router import get_router
-
-                stats = get_router().get_stats()
-                lines.extend([
-                    '',
-                    '# HELP event_router_events_routed_total Total events routed',
-                    '# TYPE event_router_events_routed_total counter',
-                    f"event_router_events_routed_total {stats.get('total_events_routed', 0)}",
-                    '# HELP event_router_duplicates_prevented_total Duplicate events prevented',
-                    '# TYPE event_router_duplicates_prevented_total counter',
-                    f"event_router_duplicates_prevented_total {stats.get('duplicates_prevented', 0)}",
-                    '# HELP event_router_content_duplicates_prevented_total Content-hash duplicates prevented',
-                    '# TYPE event_router_content_duplicates_prevented_total counter',
-                    f"event_router_content_duplicates_prevented_total {stats.get('content_duplicates_prevented', 0)}",
-                    '# HELP event_router_events_routed_by_type_total Events routed by type',
-                    '# TYPE event_router_events_routed_by_type_total counter',
-                ])
-                for event_type, count in stats.get("events_routed_by_type", {}).items():
-                    safe_event = str(event_type).replace('"', "'")
-                    lines.append(
-                        f"event_router_events_routed_by_type_total{{event=\"{safe_event}\"}} {count}"
-                    )
-            except Exception:
-                pass
-            return web.Response(text='\n'.join(lines), content_type='text/plain')
+            return web.Response(text=self.render_metrics(), content_type="text/plain")
 
         async def handle_status(request):
             """Detailed daemon status."""
@@ -2856,6 +2874,40 @@ class DaemonManager:
             logger.warning(f"LambdaIdleDaemon dependencies not available: {e}")
         except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"LambdaIdleDaemon failed: {e}")
+
+    async def _create_vast_idle(self) -> None:
+        """Create and run Vast.ai idle shutdown daemon (December 2025).
+
+        Monitors Vast.ai GPU instances for idle detection and automatically
+        terminates them to reduce costs. Features:
+        - 15-minute idle threshold (shorter due to hourly billing)
+        - Pending work check before termination
+        - Minimum node retention
+        - Graceful shutdown with drain period
+        - Prioritize terminating expensive instances first
+
+        This daemon should only run on the coordinator node.
+        """
+        try:
+            from app.coordination.vast_idle_daemon import (
+                VastIdleDaemon,
+                VastIdleConfig,
+            )
+
+            config = VastIdleConfig.from_env()
+            daemon = VastIdleDaemon(config=config)
+            await daemon.start()
+
+            logger.info("[VastIdleDaemon] Started, monitoring for idle Vast.ai nodes")
+
+            # Keep daemon running until cancelled
+            while True:
+                await asyncio.sleep(3600)
+
+        except ImportError as e:
+            logger.warning(f"VastIdleDaemon dependencies not available: {e}")
+        except (RuntimeError, OSError, ConnectionError) as e:
+            logger.error(f"VastIdleDaemon failed: {e}")
 
     async def _create_cluster_watchdog(self) -> None:
         """Create and run cluster watchdog daemon (December 2025).

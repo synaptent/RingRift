@@ -322,3 +322,101 @@ class NetworkUtilsMixin:
         Override this in subclass to provide actual implementation.
         """
         return False
+
+    def _get_tailscale_ip_for_peer(self, node_id: str) -> str:
+        """Look up a peer's Tailscale IP from dynamic registry or cluster.yaml.
+
+        Enables automatic fallback to Tailscale mesh when public IPs fail.
+        Falls back to static config in cluster.yaml if dynamic registry unavailable.
+
+        Args:
+            node_id: The peer's node identifier
+
+        Returns:
+            Tailscale IP (100.x.x.x) if available, else empty string
+        """
+        # Try dynamic registry first
+        try:
+            from app.distributed.dynamic_registry import get_registry
+            registry = get_registry()
+            if registry is not None:
+                with registry._lock:
+                    if node_id in registry._nodes:
+                        ts_ip = registry._nodes[node_id].tailscale_ip or ""
+                        if ts_ip:
+                            return ts_ip
+        except (ImportError, KeyError, IndexError, AttributeError):
+            pass
+
+        # Fall back to static cluster.yaml config
+        try:
+            from scripts.p2p.cluster_config import get_cluster_config
+            cluster_config = get_cluster_config()
+            ts_ip = cluster_config.get_tailscale_ip(node_id)
+            if ts_ip:
+                return ts_ip
+        except (ImportError, AttributeError):
+            pass
+
+        return ""
+
+    def _tailscale_urls_for_voter(self, voter: "NodeInfo", path: str) -> list[str]:
+        """Return Tailscale-exclusive URLs for voter communication.
+
+        For election/lease operations between voter nodes, NAT-blocked public IPs
+        cause split-brain issues. This method ensures voter communication uses only
+        Tailscale mesh IPs (100.x.x.x) which bypass NAT.
+
+        Falls back to regular `_urls_for_peer()` if no Tailscale IP is available.
+
+        Args:
+            voter: NodeInfo of the voter peer
+            path: URL path (e.g., "/lease/request")
+
+        Returns:
+            List of Tailscale-only URLs, or fallback to regular URLs
+        """
+        import contextlib
+
+        scheme = (getattr(voter, "scheme", None) or "http").lower()
+        urls: list[str] = []
+
+        voter_id = str(getattr(voter, "node_id", "") or "").strip()
+        port = 0
+        with contextlib.suppress(Exception):
+            port = int(getattr(voter, "port", 0) or 0)
+        if port <= 0:
+            try:
+                port = int(getattr(voter, "reported_port", DEFAULT_PORT) or DEFAULT_PORT)
+            except ValueError:
+                port = DEFAULT_PORT
+
+        # Priority 1: Dynamic registry Tailscale IP lookup
+        ts_ip = self._get_tailscale_ip_for_peer(voter_id)
+        if ts_ip:
+            urls.append(f"{scheme}://{ts_ip}:{port}{path}")
+
+        # Priority 2: Check if reported_host is a Tailscale IP
+        rh = str(getattr(voter, "reported_host", "") or "").strip()
+        if rh and self._is_tailscale_host(rh):
+            try:
+                rp = int(getattr(voter, "reported_port", 0) or 0)
+            except ValueError:
+                rp = 0
+            if rp > 0:
+                url = f"{scheme}://{rh}:{rp}{path}"
+                if url not in urls:
+                    urls.append(url)
+
+        # Priority 3: Check if host is a Tailscale IP
+        host = str(getattr(voter, "host", "") or "").strip()
+        if host and self._is_tailscale_host(host):
+            url = f"{scheme}://{host}:{port}{path}"
+            if url not in urls:
+                urls.append(url)
+
+        # If no Tailscale URLs found, fall back to regular method
+        if not urls:
+            return self._urls_for_peer(voter, path)
+
+        return urls

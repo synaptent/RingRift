@@ -526,7 +526,7 @@ class SelfplayScheduler:
 
             populator = get_queue_populator()
             if populator:
-                for config_key, target in populator._configs.items():
+                for config_key, target in populator._targets.items():
                     result[config_key] = target.elo_velocity
         except ImportError:
             pass

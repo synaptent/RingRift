@@ -76,6 +76,7 @@ class DaemonType(Enum):
     EVENT_ROUTER = "event_router"
     CROSS_PROCESS_POLLER = "cross_process_poller"
     DLQ_RETRY = "dlq_retry"
+    DAEMON_WATCHDOG = "daemon_watchdog"  # Monitors daemon health & restarts
 
     # Pipeline daemons
     DATA_PIPELINE = "data_pipeline"
@@ -148,6 +149,7 @@ class DaemonType(Enum):
 
     # Job scheduler (December 2025) - centralized job scheduling with PID-based resource allocation
     JOB_SCHEDULER = "job_scheduler"
+    RESOURCE_OPTIMIZER = "resource_optimizer"  # Optimizes resource allocation
 
     # Idle resource daemon (December 2025 - Phase 20) - monitors idle GPUs and spawns selfplay
     IDLE_RESOURCE = "idle_resource"
@@ -201,6 +203,10 @@ class DaemonType(Enum):
     # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
     # NOTE: Lambda account suspended pending support ticket resolution - keep code for restoration
     LAMBDA_IDLE = "lambda_idle"
+
+    # Vast.ai idle shutdown (December 2025) - terminates idle Vast.ai nodes to save costs
+    # Important for ephemeral marketplace instances with hourly billing
+    VAST_IDLE = "vast_idle"
 
     # Cluster watchdog (December 2025) - self-healing cluster utilization monitor
     CLUSTER_WATCHDOG = "cluster_watchdog"

@@ -135,13 +135,28 @@ class RingRiftDataset(Dataset):
                                 'in_channels', 'export_version', 'encoder_type',
                                 'base_channels', 'spatial_size', 'policy_head_size'}
                 self.data = {}
+                pickle_reload_needed = False
                 for k in npz_data.keys():
                     if k in training_keys:
                         try:
                             self.data[k] = np.asarray(npz_data[k])
                         except (ValueError, TypeError) as e:
-                            # Skip arrays that fail to load (e.g., object arrays)
-                            logger.debug(f"Skipping array '{k}' due to load error: {e}")
+                            # Object arrays (like policy_indices/policy_values) need allow_pickle=True
+                            if "allow_pickle=False" in str(e) or "pickle" in str(e).lower():
+                                pickle_reload_needed = True
+                            else:
+                                logger.debug(f"Skipping array '{k}' due to load error: {e}")
+
+                # If we had pickle errors, reload with allow_pickle=True
+                if pickle_reload_needed:
+                    logger.info(f"Reloading {data_path} with allow_pickle=True for object arrays")
+                    npz_data = np.load(data_path, allow_pickle=True)
+                    for k in npz_data.keys():
+                        if k in training_keys and k not in self.data:
+                            try:
+                                self.data[k] = np.asarray(npz_data[k])
+                            except Exception as e:
+                                logger.debug(f"Skipping array '{k}' after pickle reload: {e}")
                     # else: skip metadata arrays like game_ids, phases, move_types
 
                 # ================================================================

@@ -58,40 +58,87 @@ Extract handlers into `scripts/p2p/handlers/`:
 | ---------------------- | ----- | ------- | ------------ |
 | `metrics_manager.py`   | 268   | 6       | ✅ Extracted |
 | `resource_detector.py` | 340   | 8       | ✅ Extracted |
-| `network_utils.py`     | 310   | 9       | ✅ Extracted |
+| `network_utils.py`     | 422   | 11      | ✅ Extracted |
+| `leader_election.py`   | 198   | 5       | ✅ Extracted |
 
-**Progress: 27,522 → 27,586 lines (after mixin integration)**
-**Total reduction: 29,767 → 27,586 lines (-2,181 lines, ~7.3%)**
+**Progress: 27,522 → 27,320 lines (Phase 2 continued)**
+**Total reduction: 29,767 → 27,320 lines (-2,447 lines, ~8.2%)**
+
+### Dec 26, 2025 Session Summary
+
+**Extracted Modules:**
+| Module | Lines | Methods | Purpose |
+|--------|-------|---------|---------|
+| `network_utils.py` | 422 | 11 | URL building, Tailscale detection |
+| `leader_election.py` | 198 | 5 | Voter quorum, consistency checks |
+| `peer_manager.py` | 353 | 8 | Peer cache, reputation |
+| `metrics_manager.py` | 318 | 6 | Metrics recording |
+| `resource_detector.py` | 451 | 8 | System resource detection |
+
+**Key Improvements:**
+
+1. Eliminated dynamic `importlib` loading in `app/metrics/__init__.py`
+2. Added 20 unit tests for `leader_election.py`
+3. Tailscale URL building now in reusable mixin
+
+**Remaining Large Methods (for future extraction):**
+
+- `_gossip_state_to_peers` (line 21548) - State synchronization
+- `_check_dead_peers_async` (line 20749) - Dead peer detection
+- `_dispatch_training_job` (line 10015) - Job dispatch
+- `_run_gpu_selfplay_job` (line 6980) - GPU selfplay
+
+These methods have complex state dependencies requiring careful extraction.
 
 ### Mixin Integration (Dec 26, 2025)
 
-P2POrchestrator now inherits from NetworkUtilsMixin, removing duplicated methods:
+P2POrchestrator now inherits from:
+
+**NetworkUtilsMixin** - Peer address parsing, URL building, Tailscale detection:
 
 - `_parse_peer_address` → provided by mixin
 - `_url_for_peer` → provided by mixin
 - `_urls_for_peer` → provided by mixin
 - `_is_tailscale_host` → provided by mixin
+- `_get_tailscale_ip_for_peer` → provided by mixin (Dec 26)
+- `_tailscale_urls_for_voter` → provided by mixin (Dec 26)
 - `_local_has_tailscale` → P2POrchestrator-specific override retained
+
+**PeerManagerMixin** - Peer cache and reputation management:
+
+- `_update_peer_reputation` → provided by mixin (EMA-based reputation)
+- `_save_peer_to_cache` → provided by mixin (SQLite persistence with pruning)
+- `_get_bootstrap_peers_by_reputation` → provided by mixin (prioritized peer list)
+- `_get_cached_peer_count`, `_clear_peer_cache`, `_prune_stale_peers` → utility methods
+- `_get_peer_health_score`, `_record_p2p_sync_result` → orchestrator overrides (use full peer state + circuit breaker)
+
+**LeaderElectionMixin** - Core leader election logic (Dec 26):
+
+- `_has_voter_quorum` → provided by mixin (fixed min 3 quorum)
+- `_release_voter_grant_if_self` → provided by mixin
+- `_get_voter_quorum_status` → provided by mixin (debug helper)
+- `_check_leader_consistency` → provided by mixin
+- `_is_leader_lease_valid` → orchestrator override (with grace period)
 
 **Note:** `data_sync.py` handlers skipped - they depend on internal methods (`check_disk_has_capacity`, `_handle_sync_pull_request`) and peer lookup state that would require significant refactoring.
 
 ### Phase 2: Core Logic Extraction (TARGET: ~10,000 lines)
 
-**Status: Planning (Dec 26, 2025)**
-**Current orchestrator size: 27,586 lines**
+**Status: In Progress (Dec 26, 2025)**
+**Current orchestrator size: 27,320 lines**
 
 #### 2.1 `peer_manager.py` - Peer Discovery & Management (~3,000 lines)
 
-**Status: ✅ Initial Extraction Complete (Dec 26, 2025)**
+**Status: ✅ Mixin Integrated (Dec 26, 2025)**
 
-Extracted methods (PeerManagerMixin):
+PeerManagerMixin provides peer cache management. Orchestrator-specific methods remain:
 | Method | Status | Description |
 | ------------------------------------ | ------------ | -------------------------- |
-| `_update_peer_reputation` | ✅ Extracted | Track peer success/failure |
-| `_save_peer_to_cache` | ✅ Extracted | SQLite peer persistence |
-| `_get_bootstrap_peers_by_reputation` | ✅ Extracted | Prioritized peer list |
-| `_get_peer_health_score` | ✅ Extracted | Health scoring |
-| `_record_p2p_sync_result` | ✅ Extracted | Sync metrics |
+| `_update_peer_reputation` | ✅ Mixin | Track peer success/failure |
+| `_save_peer_to_cache` | ✅ Mixin | SQLite peer persistence |
+| `_get_bootstrap_peers_by_reputation` | ✅ Mixin | Prioritized peer list |
+| `_get_peer_health_score` | Override | Uses full peer state + circuit breaker |
+| `_record_p2p_sync_result` | Override | Circuit breaker + detailed metrics |
 | `_get_cached_peer_count` | ✅ Extracted | Cache count |
 | `_clear_peer_cache` | ✅ Extracted | Clear non-seed peers |
 | `_prune_stale_peers` | ✅ Extracted | Prune old peers |

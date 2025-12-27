@@ -85,6 +85,9 @@ def load_games_from_db(
         "board_type": board_type,
         "num_players": num_players,
         "require_moves": require_moves,
+        # Use max_games as limit for database query, default to 500000
+        # (iterate_games defaults to 10000 which is too low for large datasets)
+        "limit": max_games if max_games else 500000,
     }
     if min_moves is not None:
         query_filters["min_moves"] = min_moves
@@ -162,6 +165,8 @@ def export_parallel(
     require_moves: bool = True,
     use_cache: bool = False,
     force_export: bool = False,
+    include_heuristics: bool = False,
+    full_heuristics: bool = False,
 ) -> int:
     """
     Export training samples using parallel encoding.
@@ -243,6 +248,8 @@ def export_parallel(
         history_length=history_length,
         sample_every=sample_every,
         use_board_aware_encoding=use_board_aware_encoding,
+        include_heuristics=include_heuristics,
+        full_heuristics=full_heuristics,
     ) as encoder:
         samples, errors = encoder.encode_games_batch(
             games, num_players, show_progress=True
@@ -274,6 +281,12 @@ def export_parallel(
     arrays["encoder_version"] = np.asarray(effective_encoder)
     arrays["in_channels"] = np.asarray(int(arrays["features"].shape[1]))
     arrays["export_version"] = np.asarray("2.1")
+
+    # Heuristic metadata (Dec 2025 - v5_heavy training)
+    if include_heuristics and "heuristics" in arrays:
+        num_heuristics = 49 if full_heuristics else 21
+        arrays["num_heuristic_features"] = np.asarray(int(num_heuristics))
+        logger.info(f"Included {num_heuristics} heuristic features per sample")
 
     # Save
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

@@ -13,6 +13,9 @@ Usage:
     python scripts/launch_daemons.py --training    # Training daemons only
     python scripts/launch_daemons.py --monitoring  # Monitoring daemons only
 
+    # Start daemon profile (canonical from daemon_manager)
+    python scripts/launch_daemons.py --profile coordinator
+
     # Start specific daemons
     python scripts/launch_daemons.py --daemon sync_coordinator --daemon event_router
 
@@ -39,6 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.coordination.daemon_manager import (
+    DAEMON_PROFILES,
     DaemonManager,
     DaemonManagerConfig,
     DaemonType,
@@ -76,7 +80,7 @@ DAEMON_CATEGORIES = {
         DaemonType.EVALUATION,  # Auto-evaluate models after training completes (Dec 2025)
     ],
     "monitoring": [
-        DaemonType.HEALTH_CHECK,
+        DaemonType.HEALTH_SERVER,
         DaemonType.CLUSTER_MONITOR,
         DaemonType.QUEUE_MONITOR,
         DaemonType.REPLICATION_MONITOR,  # Monitor data replication health
@@ -98,6 +102,8 @@ DAEMON_CATEGORIES = {
         DaemonType.VAST_CPU_PIPELINE,
     ],
 }
+
+PROFILE_CHOICES = sorted(DAEMON_PROFILES.keys())
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,6 +136,11 @@ Examples:
     group.add_argument(
         "--daemon", action="append", dest="daemons",
         help="Start specific daemon(s) by name (can repeat)",
+    )
+    group.add_argument(
+        "--profile",
+        choices=PROFILE_CHOICES,
+        help="Start a daemon profile from daemon_manager (overrides categories)",
     )
 
     # Category shortcuts
@@ -177,6 +188,22 @@ Examples:
 def get_daemons_to_start(args: argparse.Namespace) -> list[DaemonType]:
     """Determine which daemons to start based on arguments."""
     daemons: set[DaemonType] = set()
+
+    if args.profile:
+        daemons.update(DAEMON_PROFILES.get(args.profile, []))
+
+        if args.all or args.sync or args.training or args.monitoring or args.events or args.p2p or args.external:
+            logger.info("--profile set; ignoring category flags")
+
+        if args.daemons:
+            for name in args.daemons:
+                try:
+                    daemon_type = DaemonType(name)
+                    daemons.add(daemon_type)
+                except ValueError:
+                    logger.warning(f"Unknown daemon type: {name}")
+
+        return list(daemons)
 
     # Handle --all
     if args.all:

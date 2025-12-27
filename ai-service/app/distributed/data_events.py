@@ -55,6 +55,13 @@ __all__ = [
     "EventBus",
     "get_event_bus",
     "reset_event_bus",
+    # Cluster health emitters (December 2025 - Phase 21)
+    "emit_node_unhealthy",
+    "emit_node_recovered",
+    "emit_health_check_passed",
+    "emit_health_check_failed",
+    "emit_p2p_cluster_healthy",
+    "emit_p2p_cluster_unhealthy",
 ]
 
 # Global singleton instance
@@ -226,6 +233,7 @@ class DataEventType(Enum):
     NODE_UNHEALTHY = "node_unhealthy"
     NODE_RECOVERED = "node_recovered"
     NODE_ACTIVATED = "node_activated"  # Node activated by cluster activator
+    NODE_TERMINATED = "node_terminated"  # Node terminated/deprovisioned
 
     # Lock/Synchronization events (December 2025)
     LOCK_ACQUIRED = "lock_acquired"
@@ -2480,6 +2488,185 @@ async def emit_weight_updated(
             "new_weight": new_weight,
             "reason": reason,
             "trigger_event": trigger_event,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Cluster Health Event Emitters (December 2025 - Phase 21)
+# =============================================================================
+# These enable key daemons to emit cluster health events for visibility.
+
+
+async def emit_node_unhealthy(
+    node_id: str,
+    reason: str,
+    *,
+    node_ip: str = "",
+    gpu_utilization: float | None = None,
+    disk_used_percent: float | None = None,
+    consecutive_failures: int = 0,
+    source: str = "",
+) -> None:
+    """Emit NODE_UNHEALTHY event when a node is detected as unhealthy.
+
+    Args:
+        node_id: Identifier for the node
+        reason: Why the node is unhealthy
+        node_ip: Node IP address
+        gpu_utilization: GPU utilization percentage (0-100)
+        disk_used_percent: Disk usage percentage (0-100)
+        consecutive_failures: Number of consecutive health check failures
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.NODE_UNHEALTHY,
+        payload={
+            "node_id": node_id,
+            "reason": reason,
+            "node_ip": node_ip,
+            "gpu_utilization": gpu_utilization,
+            "disk_used_percent": disk_used_percent,
+            "consecutive_failures": consecutive_failures,
+        },
+        source=source,
+    ))
+
+
+async def emit_node_recovered(
+    node_id: str,
+    *,
+    node_ip: str = "",
+    recovery_time_seconds: float = 0.0,
+    source: str = "",
+) -> None:
+    """Emit NODE_RECOVERED event when a node recovers to healthy state.
+
+    Args:
+        node_id: Identifier for the node
+        node_ip: Node IP address
+        recovery_time_seconds: How long recovery took
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.NODE_RECOVERED,
+        payload={
+            "node_id": node_id,
+            "node_ip": node_ip,
+            "recovery_time_seconds": recovery_time_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_health_check_passed(
+    node_id: str,
+    *,
+    node_ip: str = "",
+    check_type: str = "general",
+    latency_ms: float | None = None,
+    source: str = "",
+) -> None:
+    """Emit HEALTH_CHECK_PASSED event after successful health check.
+
+    Args:
+        node_id: Identifier for the node
+        node_ip: Node IP address
+        check_type: Type of health check (ssh, p2p, gpu, general)
+        latency_ms: Health check latency in milliseconds
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.HEALTH_CHECK_PASSED,
+        payload={
+            "node_id": node_id,
+            "node_ip": node_ip,
+            "check_type": check_type,
+            "latency_ms": latency_ms,
+        },
+        source=source,
+    ))
+
+
+async def emit_health_check_failed(
+    node_id: str,
+    reason: str,
+    *,
+    node_ip: str = "",
+    check_type: str = "general",
+    error: str = "",
+    source: str = "",
+) -> None:
+    """Emit HEALTH_CHECK_FAILED event after failed health check.
+
+    Args:
+        node_id: Identifier for the node
+        reason: Why the health check failed
+        node_ip: Node IP address
+        check_type: Type of health check (ssh, p2p, gpu, general)
+        error: Error message if any
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.HEALTH_CHECK_FAILED,
+        payload={
+            "node_id": node_id,
+            "reason": reason,
+            "node_ip": node_ip,
+            "check_type": check_type,
+            "error": error,
+        },
+        source=source,
+    ))
+
+
+async def emit_p2p_cluster_healthy(
+    healthy_nodes: int,
+    node_count: int,
+    *,
+    source: str = "",
+) -> None:
+    """Emit P2P_CLUSTER_HEALTHY event when cluster becomes healthy.
+
+    Args:
+        healthy_nodes: Number of healthy nodes
+        node_count: Total node count
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.P2P_CLUSTER_HEALTHY,
+        payload={
+            "healthy": True,
+            "healthy_nodes": healthy_nodes,
+            "node_count": node_count,
+        },
+        source=source,
+    ))
+
+
+async def emit_p2p_cluster_unhealthy(
+    healthy_nodes: int,
+    node_count: int,
+    *,
+    alerts: list[str] | None = None,
+    source: str = "",
+) -> None:
+    """Emit P2P_CLUSTER_UNHEALTHY event when cluster becomes unhealthy.
+
+    Args:
+        healthy_nodes: Number of healthy nodes
+        node_count: Total node count
+        alerts: List of alert messages
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.P2P_CLUSTER_UNHEALTHY,
+        payload={
+            "healthy": False,
+            "healthy_nodes": healthy_nodes,
+            "node_count": node_count,
+            "alerts": alerts or [],
         },
         source=source,
     ))

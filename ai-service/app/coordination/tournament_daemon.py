@@ -520,7 +520,13 @@ class TournamentDaemon:
         num_players: int,
         gauntlet_results: Any,
     ) -> None:
-        """Update ELO ratings based on gauntlet results."""
+        """Update ELO ratings based on gauntlet results.
+
+        NOTE (December 2025): Match recording is now done inline in
+        game_gauntlet._evaluate_single_opponent(). This method now only
+        ensures model registration - individual matches are NOT re-recorded
+        to avoid double-counting Elo changes.
+        """
         try:
             from app.training.elo_service import get_elo_service
 
@@ -535,46 +541,22 @@ class TournamentDaemon:
                 model_path=model_path,
             )
 
-            # Record matches from gauntlet
+            # December 2025: Match recording moved to game_gauntlet.py
+            # Games are now recorded inline during gauntlet evaluation
+            # to ensure ALL configs (including 3p/4p) are tracked.
+            # Previously, only games through tournament_daemon were recorded.
             if hasattr(gauntlet_results, "opponent_results"):
-                recorded = 0
-                for opponent_id, stats in gauntlet_results.opponent_results.items():
-                    wins = int(stats.get("wins", 0))
-                    games = int(stats.get("games", 0))
-                    draws = int(stats.get("draws", 0))
-                    losses = max(0, games - wins - draws)
-
-                    for _ in range(wins):
-                        elo_service.record_match(
-                            participant_a=model_id,
-                            participant_b=opponent_id,
-                            winner=model_id,
-                            board_type=board_type,
-                            num_players=num_players,
-                        )
-                        recorded += 1
-                    for _ in range(losses):
-                        elo_service.record_match(
-                            participant_a=model_id,
-                            participant_b=opponent_id,
-                            winner=opponent_id,
-                            board_type=board_type,
-                            num_players=num_players,
-                        )
-                        recorded += 1
-                    for _ in range(draws):
-                        elo_service.record_match(
-                            participant_a=model_id,
-                            participant_b=opponent_id,
-                            winner=None,
-                            board_type=board_type,
-                            num_players=num_players,
-                        )
-                        recorded += 1
-
-                logger.info(f"Updated ELO for {model_id} with {recorded} baseline matches")
+                total_games = sum(
+                    int(stats.get("games", 0))
+                    for stats in gauntlet_results.opponent_results.values()
+                )
+                logger.info(
+                    f"ELO for {model_id}: {total_games} games already recorded inline "
+                    f"(estimated_elo={gauntlet_results.estimated_elo:.0f})"
+                )
                 return
 
+            # Legacy path for older gauntlet result formats (now deprecated)
             match_results = gauntlet_results.get("matches", [])
             for match in match_results:
                 opponent_id = match.get("opponent")

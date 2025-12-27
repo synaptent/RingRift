@@ -480,7 +480,21 @@ def augment_data(
         if len(indices) == 0:
             return indices, values
 
-        from archive.deprecated_ai._neural_net_legacy import transform_policy_index_square
+        use_legacy = os.environ.get("RINGRIFT_LEGACY_POLICY_TRANSFORM", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if use_legacy:
+            logger.warning(
+                "RINGRIFT_LEGACY_POLICY_TRANSFORM enabled; using legacy transform for policy indices."
+            )
+            from archive.deprecated_ai._neural_net_legacy import (
+                transform_policy_index_square,
+            )
+        else:
+            from app.ai.neural_net import transform_policy_index_square
 
         new_indices = []
         new_values = []

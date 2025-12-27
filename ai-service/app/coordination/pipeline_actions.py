@@ -94,7 +94,7 @@ class ActionConfig:
     """Configuration for pipeline actions."""
 
     # Script paths (relative to ai-service/)
-    sync_script: str = "scripts/sync_cluster_data.py"
+    sync_script: str = "scripts/unified_data_sync.py"  # Unified sync (replaces deprecated scripts)
     export_script: str = "scripts/export_replay_dataset.py"
     train_module: str = "app.training.train"
     evaluate_script: str = "scripts/quick_gauntlet.py"

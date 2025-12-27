@@ -33,45 +33,33 @@ import directly from app.metrics_base (the renamed app/metrics.py).
 
 from __future__ import annotations
 
-import importlib.util
 import logging
-import os
 import threading
 
 logger = logging.getLogger(__name__)
 
-# Import orchestrator metrics
-# Re-export app-level metrics from the standalone metrics module
-# These are used by app/main.py for API request metrics
-
-# Load app/metrics.py directly (it exists alongside this package)
-_metrics_file = __file__.replace("__init__.py", "").rstrip("/").rstrip("\\") + ".py"
-_spec = importlib.util.spec_from_file_location("app.metrics_base", _metrics_file.replace("/metrics/", "/metrics"))
-if _spec and _spec.loader:
-    # The actual file is at app/metrics.py (parent dir + metrics.py)
-    _parent = os.path.dirname(os.path.dirname(__file__))
-    _metrics_py = os.path.join(_parent, "metrics.py")
-    if os.path.exists(_metrics_py):
-        _spec = importlib.util.spec_from_file_location("_metrics_base", _metrics_py)
-        if _spec and _spec.loader:
-            _metrics_base = importlib.util.module_from_spec(_spec)
-            _spec.loader.exec_module(_metrics_base)
-            # Export the app-level metrics
-            AI_MOVE_REQUESTS = _metrics_base.AI_MOVE_REQUESTS
-            AI_MOVE_LATENCY = _metrics_base.AI_MOVE_LATENCY
-            AI_ERRORS = _metrics_base.AI_ERRORS
-            AI_FALLBACKS = _metrics_base.AI_FALLBACKS
-            AI_INSTANCE_CACHE_SIZE = _metrics_base.AI_INSTANCE_CACHE_SIZE
-            AI_INSTANCE_CACHE_LOOKUPS = _metrics_base.AI_INSTANCE_CACHE_LOOKUPS
-            PYTHON_INVARIANT_VIOLATIONS = _metrics_base.PYTHON_INVARIANT_VIOLATIONS
-            observe_ai_move_start = _metrics_base.observe_ai_move_start
-            record_ai_error = _metrics_base.record_ai_error
-            record_ai_fallback = _metrics_base.record_ai_fallback
-            # Export promotion and Elo reconciliation metrics
-            record_promotion_decision = _metrics_base.record_promotion_decision
-            record_promotion_execution = _metrics_base.record_promotion_execution
-            record_elo_sync = _metrics_base.record_elo_sync
-            record_elo_drift = _metrics_base.record_elo_drift
+# Dec 26, 2025: Eliminated dynamic importlib loading
+# Now directly importing from app.metrics_base (renamed from app/metrics.py)
+from app.metrics_base import (
+    # Prometheus metric objects
+    AI_ERRORS,
+    AI_FALLBACKS,
+    AI_INSTANCE_CACHE_LOOKUPS,
+    AI_INSTANCE_CACHE_SIZE,
+    AI_MOVE_LATENCY,
+    AI_MOVE_REQUESTS,
+    PYTHON_INVARIANT_VIOLATIONS,
+    # Helper functions
+    observe_ai_move_start,
+    record_ai_error,
+    record_ai_fallback,
+    # Promotion metrics
+    record_promotion_decision,
+    record_promotion_execution,
+    # Elo reconciliation metrics
+    record_elo_drift,
+    record_elo_sync,
+)
 
 # Import coordinator metrics
 from app.metrics.coordinator import (

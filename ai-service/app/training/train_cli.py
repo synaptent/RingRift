@@ -156,6 +156,21 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Enable background Elo evaluation during training'
     )
 
+    # Quality-weighted training (December 2025)
+    # Resurrected from archive/deprecated_ai/ebmo_network.py
+    parser.add_argument(
+        '--enable-quality-weighting', action='store_true',
+        help='Enable quality-weighted training (weight samples by MCTS visit counts)'
+    )
+    parser.add_argument(
+        '--quality-weight-blend', type=float, default=0.5,
+        help='Blend factor for quality weighting [0=uniform, 1=fully quality-weighted] (default: 0.5)'
+    )
+    parser.add_argument(
+        '--quality-ranking-weight', type=float, default=0.1,
+        help='Weight for ranking loss term (default: 0.1)'
+    )
+
     parser.add_argument(
         '--learning-rate', type=float, default=None,
         help='Initial learning rate'
@@ -392,6 +407,18 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         '--hard-example-top-k', type=float, default=0.3,
         help='Fraction of hard examples to prioritize (default: 0.3 = top 30%%)'
+    )
+
+    # Outcome-weighted policy loss (2025-12)
+    # Inspired by EBMO outcome-contrastive loss
+    parser.add_argument(
+        '--enable-outcome-weighted-policy', action='store_true',
+        help='Enable outcome-weighted policy loss. Winners moves get higher weight, '
+             'losers lower. Improves move quality learning (+5-10 Elo expected).'
+    )
+    parser.add_argument(
+        '--outcome-weight-scale', type=float, default=0.5,
+        help='Scale for outcome weighting (0=no effect, 1=full). Default: 0.5'
     )
 
     # Regularization (2025-12)
@@ -875,6 +902,10 @@ def main() -> None:
         enable_auxiliary_tasks=getattr(args, 'enable_auxiliary_tasks', True),  # Dec 2025: Enable for +5-15 Elo
         enable_batch_scheduling=getattr(args, 'enable_batch_scheduling', False),
         enable_background_eval=getattr(args, 'enable_background_eval', True),  # Dec 2025: Enable for feedback loop
+        # Quality-weighted training (Dec 2025) - resurrected from ebmo_network.py
+        enable_quality_weighting=getattr(args, 'enable_quality_weighting', False),
+        quality_weight_blend=getattr(args, 'quality_weight_blend', 0.5),
+        quality_ranking_weight=getattr(args, 'quality_ranking_weight', 0.1),
         # Fault tolerance (2025-12)
         enable_circuit_breaker=not getattr(args, 'disable_circuit_breaker', False),
         enable_anomaly_detection=not getattr(args, 'disable_anomaly_detection', False),
@@ -896,6 +927,9 @@ def main() -> None:
         # Hard example mining for curriculum learning (2025-12)
         hard_example_mining=getattr(args, 'enable_hard_example_mining', False),
         hard_example_top_k=getattr(args, 'hard_example_top_k', 0.3),
+        # Outcome-weighted policy loss (2025-12)
+        enable_outcome_weighted_policy=getattr(args, 'enable_outcome_weighted_policy', False),
+        outcome_weight_scale=getattr(args, 'outcome_weight_scale', 0.5),
     )
 
 

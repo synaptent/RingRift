@@ -25,6 +25,9 @@ Complete reference of all background daemons in the RingRift AI training infrast
 
 Daemons are grouped into profiles for different node roles:
 
+Canonical definitions live in `app/coordination/daemon_manager.py` as
+`DAEMON_PROFILES` and are used by `scripts/launch_daemons.py --profile`.
+
 ### Coordinator Profile (mac-studio)
 
 Primary orchestration node - runs most daemons:

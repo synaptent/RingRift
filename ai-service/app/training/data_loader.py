@@ -78,8 +78,9 @@ class FileHandle:
 
         if ext in ('.npz', '.npy'):
             self._format = 'npz'
-            # Use mmap_mode='r' for memory-efficient access
-            # safe_load_npz tries without pickle first, falls back if needed
+            # Use mmap_mode='r' for memory-efficient access.
+            # Note: For NPZ archives, arrays are still loaded lazily; mmap_mode
+            # mainly applies to NPY.
             self._data = safe_load_npz(
                 self.path,
                 mmap_mode='r',
@@ -93,9 +94,31 @@ class FileHandle:
 
             self._total_samples = len(self._data['values'])
 
-            # Build valid indices (filtering empty policies if requested)
+            # Build valid indices (filtering empty policies if requested).
+            # Some legacy datasets store sparse policies as object arrays, which
+            # require allow_pickle=True at access time. safe_load_npz can only
+            # fall back when np.load raises immediately, but NpzFile is lazy and
+            # may not raise until the object array is accessed.
             if self.filter_empty_policies and 'policy_indices' in self._data:
-                policy_indices_arr = self._data['policy_indices']
+                try:
+                    policy_indices_arr = self._data['policy_indices']
+                except ValueError as e:
+                    msg = str(e)
+                    if "allow_pickle=False" in msg or "pickle" in msg.lower():
+                        logger.warning(
+                            "[StreamingDataLoader] Reloading NPZ with allow_pickle=True "
+                            "to access object policy arrays: %s",
+                            self.path,
+                        )
+                        try:
+                            self._data.close()
+                        except Exception:
+                            pass
+                        self._data = np.load(self.path, mmap_mode=None, allow_pickle=True)
+                        policy_indices_arr = self._data['policy_indices']
+                    else:
+                        raise
+
                 self._valid_indices = np.array([
                     i for i in range(self._total_samples)
                     if len(policy_indices_arr[i]) > 0

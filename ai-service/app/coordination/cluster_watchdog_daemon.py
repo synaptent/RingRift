@@ -42,6 +42,20 @@ from app.core.async_context import safe_create_task
 
 logger = logging.getLogger(__name__)
 
+# Health event emission imports (December 2025 - Phase 21)
+try:
+    from app.distributed.data_events import (
+        emit_health_check_failed,
+        emit_health_check_passed,
+        emit_node_unhealthy,
+    )
+    HAS_HEALTH_EVENTS = True
+except ImportError:
+    HAS_HEALTH_EVENTS = False
+    emit_health_check_failed = None
+    emit_health_check_passed = None
+    emit_node_unhealthy = None
+
 
 # =============================================================================
 # Configuration
@@ -289,6 +303,18 @@ class ClusterWatchdogDaemon:
                         stats.errors.append(
                             f"Persistent failure on {node.node_id}: {node.error}"
                         )
+                        # Emit NODE_UNHEALTHY event (December 2025 - Phase 21)
+                        if HAS_HEALTH_EVENTS:
+                            try:
+                                await emit_node_unhealthy(
+                                    node_id=node.node_id,
+                                    reason=f"Persistent failures: {node.error}",
+                                    gpu_utilization=node.gpu_utilization,
+                                    consecutive_failures=node.consecutive_failures,
+                                    source="cluster_watchdog_daemon",
+                                )
+                            except Exception as e:
+                                logger.debug(f"[ClusterWatchdog] Failed to emit node unhealthy: {e}")
 
             stats.cycle_end = time.time()
             self._last_cycle_stats = stats
@@ -543,12 +569,40 @@ class ClusterWatchdogDaemon:
             node.is_reachable = True
             node.error = ""
 
+            # Emit health check passed event (December 2025 - Phase 21)
+            if HAS_HEALTH_EVENTS:
+                try:
+                    await emit_health_check_passed(
+                        node_id=node.node_id,
+                        check_type="ssh_gpu",
+                        source="cluster_watchdog_daemon",
+                    )
+                except Exception as e:
+                    logger.debug(f"[ClusterWatchdog] Failed to emit health event: {e}")
+
         except subprocess.TimeoutExpired:
             node.is_reachable = False
             node.error = "SSH timeout"
+            await self._emit_health_failure(node, "SSH timeout")
         except Exception as e:
             node.is_reachable = False
             node.error = str(e)
+            await self._emit_health_failure(node, str(e))
+
+    async def _emit_health_failure(self, node: WatchdogNodeStatus, reason: str) -> None:
+        """Emit health check failure event."""
+        if not HAS_HEALTH_EVENTS:
+            return
+        try:
+            await emit_health_check_failed(
+                node_id=node.node_id,
+                reason=reason,
+                check_type="ssh_gpu",
+                error=node.error,
+                source="cluster_watchdog_daemon",
+            )
+        except Exception as e:
+            logger.debug(f"[ClusterWatchdog] Failed to emit health failure event: {e}")
 
     async def _activate_node(self, node: WatchdogNodeStatus) -> bool:
         """Spawn selfplay on an idle node."""

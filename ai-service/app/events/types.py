@@ -967,6 +967,15 @@ CROSS_PROCESS_EVENT_TYPES = {
     RingRiftEventType.DAEMON_STOPPED,
     RingRiftEventType.DAEMON_STATUS_CHANGED,
 
+    # Cluster health events (December 2025 - Phase 21)
+    RingRiftEventType.NODE_UNHEALTHY,
+    RingRiftEventType.NODE_RECOVERED,
+    RingRiftEventType.P2P_CLUSTER_HEALTHY,
+    RingRiftEventType.P2P_CLUSTER_UNHEALTHY,
+    RingRiftEventType.HEALTH_CHECK_PASSED,
+    RingRiftEventType.HEALTH_CHECK_FAILED,
+    RingRiftEventType.HEALTH_ALERT,
+
     # Trigger events
     RingRiftEventType.CMAES_TRIGGERED,
     RingRiftEventType.NAS_TRIGGERED,

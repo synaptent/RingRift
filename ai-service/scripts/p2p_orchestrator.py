@@ -254,6 +254,8 @@ from scripts.p2p.handlers import (
 )
 from scripts.p2p.network_utils import NetworkUtilsMixin
 from scripts.p2p.peer_manager import PeerManagerMixin
+from scripts.p2p.leader_election import LeaderElectionMixin
+from scripts.p2p.gossip_metrics import GossipMetricsMixin
 
 # Import constants from the refactored module (Phase 2 refactoring - consolidated)
 from scripts.p2p.constants import (
@@ -899,6 +901,8 @@ class P2POrchestrator(
     SSHTournamentHandlersMixin,
     NetworkUtilsMixin,
     PeerManagerMixin,
+    LeaderElectionMixin,
+    GossipMetricsMixin,
 ):
     """Main P2P orchestrator class that runs on each node.
 
@@ -1740,44 +1744,8 @@ class P2POrchestrator(
         )
         return True
 
-    def _has_voter_quorum(self) -> bool:
-        """Return True if we currently see enough voter nodes alive.
-
-        SIMPLIFIED QUORUM: Uses fixed minimum of 3 voters instead of majority.
-        This makes leader election more resilient - as long as 3 voters agree,
-        leadership can be established regardless of total voter count.
-        """
-        voters = list(getattr(self, "voter_node_ids", []) or [])
-        if not voters:
-            return True
-
-        # Use fixed minimum quorum of 3 (or fewer if we have fewer voters)
-        quorum = min(VOTER_MIN_QUORUM, len(voters))
-
-        alive = 0
-        with self.peers_lock:
-            peers = dict(self.peers)
-        for node_id in voters:
-            if node_id == self.node_id:
-                alive += 1
-                continue
-            peer = peers.get(node_id)
-            if peer and peer.is_alive():
-                alive += 1
-        return alive >= quorum
-
-    def _release_voter_grant_if_self(self) -> None:
-        """Release our voter-side lease grant when stepping down.
-
-        This shortens failover time when the leader voluntarily steps down (e.g.
-        lost quorum) by not forcing other candidates to wait for the full lease
-        TTL to expire.
-        """
-        if str(getattr(self, "voter_grant_leader_id", "") or "") != self.node_id:
-            return
-        self.voter_grant_leader_id = ""
-        self.voter_grant_lease_id = ""
-        self.voter_grant_expires = 0.0
+    # _has_voter_quorum: Provided by LeaderElectionMixin
+    # _release_voter_grant_if_self: Provided by LeaderElectionMixin
 
     def _enable_partition_local_election(self) -> bool:
         """Enable local leader election for partitioned nodes.
@@ -2991,40 +2959,7 @@ class P2POrchestrator(
         except (AttributeError):
             return False
 
-    def _get_tailscale_ip_for_peer(self, node_id: str) -> str:
-        """Look up a peer's Tailscale IP from the dynamic registry or cluster.yaml.
-
-        This enables automatic fallback to Tailscale mesh when public IPs fail.
-        Falls back to static config in cluster.yaml if dynamic registry unavailable.
-
-        Args:
-            node_id: The peer's node identifier
-
-        Returns:
-            Tailscale IP (100.x.x.x) if available, else empty string
-        """
-        # Try dynamic registry first
-        if HAS_DYNAMIC_REGISTRY and get_registry is not None:
-            try:
-                registry = get_registry()
-                with registry._lock:
-                    if node_id in registry._nodes:
-                        ts_ip = registry._nodes[node_id].tailscale_ip or ""
-                        if ts_ip:
-                            return ts_ip
-            except (KeyError, IndexError, AttributeError):
-                pass
-
-        # Fall back to static cluster.yaml config
-        try:
-            cluster_config = get_cluster_config()
-            ts_ip = cluster_config.get_tailscale_ip(node_id)
-            if ts_ip:
-                return ts_ip
-        except (AttributeError):
-            pass
-
-        return ""
+    # _get_tailscale_ip_for_peer: Provided by NetworkUtilsMixin
 
     def _detect_network_partition(self) -> bool:
         """Detect if we're in a network partition (>50% peers unreachable via primary IP).
@@ -3071,58 +3006,7 @@ class P2POrchestrator(
             logger.info("Disabling Tailscale-priority mode (connectivity recovered)")
             self._tailscale_priority = False
 
-    def _tailscale_urls_for_voter(self, voter: NodeInfo, path: str) -> list[str]:
-        """Return Tailscale-exclusive URLs for voter communication.
-
-        For election/lease operations between voter nodes, NAT-blocked public IPs
-        cause split-brain issues. This method ensures voter communication uses only
-        Tailscale mesh IPs (100.x.x.x) which bypass NAT.
-
-        Falls back to regular `_urls_for_peer()` if no Tailscale IP is available.
-        """
-        scheme = (getattr(voter, "scheme", None) or "http").lower()
-        urls: list[str] = []
-
-        voter_id = str(getattr(voter, "node_id", "") or "").strip()
-        port = 0
-        with contextlib.suppress(Exception):
-            port = int(getattr(voter, "port", 0) or 0)
-        if port <= 0:
-            try:
-                port = int(getattr(voter, "reported_port", DEFAULT_PORT) or DEFAULT_PORT)
-            except (ValueError):
-                port = DEFAULT_PORT
-
-        # Priority 1: Dynamic registry Tailscale IP lookup
-        ts_ip = self._get_tailscale_ip_for_peer(voter_id)
-        if ts_ip:
-            urls.append(f"{scheme}://{ts_ip}:{port}{path}")
-
-        # Priority 2: Check if reported_host is a Tailscale IP
-        rh = str(getattr(voter, "reported_host", "") or "").strip()
-        if rh and self._is_tailscale_host(rh):
-            try:
-                rp = int(getattr(voter, "reported_port", 0) or 0)
-            except (ValueError):
-                rp = 0
-            if rp > 0:
-                url = f"{scheme}://{rh}:{rp}{path}"
-                if url not in urls:
-                    urls.append(url)
-
-        # Priority 3: Check if host is a Tailscale IP
-        host = str(getattr(voter, "host", "") or "").strip()
-        if host and self._is_tailscale_host(host):
-            url = f"{scheme}://{host}:{port}{path}"
-            if url not in urls:
-                urls.append(url)
-
-        # If no Tailscale URLs found, fall back to regular method
-        # (allows graceful degradation if Tailscale not available)
-        if not urls:
-            return self._urls_for_peer(voter, path)
-
-        return urls
+    # _tailscale_urls_for_voter: Provided by NetworkUtilsMixin
 
     def _is_in_startup_grace_period(self) -> bool:
         """Check if we're still in the startup grace period.
@@ -21983,116 +21867,10 @@ print(json.dumps({{
                     self.role = NodeRole.FOLLOWER
                 self.leader_id = incoming_leader
 
-    def _record_gossip_metrics(self, event: str, peer_id: str | None = None, latency_ms: float = 0):
-        """Record gossip protocol metrics for monitoring.
-
-        GOSSIP METRICS: Track propagation efficiency and protocol health.
-        - message_sent: Gossip messages sent
-        - message_received: Gossip messages received
-        - state_updates: Number of state updates from gossip
-        - propagation_delay_ms: Average latency for gossip messages
-        - anti_entropy_repairs: Full state reconciliations triggered
-        """
-        if not hasattr(self, "_gossip_metrics"):
-            self._gossip_metrics = {
-                "message_sent": 0,
-                "message_received": 0,
-                "state_updates": 0,
-                "propagation_delay_ms": [],
-                "anti_entropy_repairs": 0,
-                "stale_states_detected": 0,
-                "last_reset": time.time(),
-            }
-
-        metrics = self._gossip_metrics
-
-        if event == "sent":
-            metrics["message_sent"] += 1
-        elif event == "received":
-            metrics["message_received"] += 1
-        elif event == "update":
-            metrics["state_updates"] += 1
-        elif event == "anti_entropy":
-            metrics["anti_entropy_repairs"] += 1
-        elif event == "stale":
-            metrics["stale_states_detected"] += 1
-        elif event == "latency":
-            # Keep last 100 latency measurements
-            metrics["propagation_delay_ms"].append(latency_ms)
-            if len(metrics["propagation_delay_ms"]) > 100:
-                metrics["propagation_delay_ms"] = metrics["propagation_delay_ms"][-100:]
-
-        # Reset metrics every hour
-        if time.time() - metrics["last_reset"] > 3600:
-            old_metrics = metrics.copy()
-            self._gossip_metrics = {
-                "message_sent": 0,
-                "message_received": 0,
-                "state_updates": 0,
-                "propagation_delay_ms": [],
-                "anti_entropy_repairs": 0,
-                "stale_states_detected": 0,
-                "last_reset": time.time(),
-            }
-            # Log metrics before reset
-            avg_latency = sum(old_metrics["propagation_delay_ms"]) / max(1, len(old_metrics["propagation_delay_ms"]))
-            logger.debug(f"[GOSSIP] Hourly: sent={old_metrics['message_sent']} recv={old_metrics['message_received']} "
-                  f"updates={old_metrics['state_updates']} repairs={old_metrics['anti_entropy_repairs']} "
-                  f"stale={old_metrics['stale_states_detected']} avg_latency={avg_latency:.1f}ms")
-            # ALERTING: Notify on high gossip latency (>1000ms average)
-            if avg_latency > 1000 and len(old_metrics["propagation_delay_ms"]) > 10:
-                asyncio.create_task(self.notifier.send(
-                    title="High Gossip Latency",
-                    message=f"Average gossip latency {avg_latency:.0f}ms exceeds 1000ms threshold",
-                    level="warning",
-                    fields={
-                        "Avg Latency": f"{avg_latency:.0f}ms",
-                        "Messages Sent": str(old_metrics['message_sent']),
-                        "Stale States": str(old_metrics['stale_states_detected']),
-                        "Repairs": str(old_metrics['anti_entropy_repairs']),
-                    },
-                    node_id=self.node_id,
-                ))
-
-    def _record_gossip_compression(self, original_size: int, compressed_size: int):
-        """Record gossip compression metrics.
-
-        COMPRESSION METRICS: Track how effective compression is for gossip messages.
-        Typical JSON gossip payloads compress 60-80% with gzip level 6.
-        """
-        if not hasattr(self, "_gossip_compression_stats"):
-            self._gossip_compression_stats = {
-                "total_original_bytes": 0,
-                "total_compressed_bytes": 0,
-                "messages_compressed": 0,
-            }
-
-        stats = self._gossip_compression_stats
-        stats["total_original_bytes"] += original_size
-        stats["total_compressed_bytes"] += compressed_size
-        stats["messages_compressed"] += 1
-
-    def _get_gossip_metrics_summary(self) -> dict:
-        """Get summary of gossip metrics for /status endpoint."""
-        metrics = getattr(self, "_gossip_metrics", {})
-        delays = metrics.get("propagation_delay_ms", [])
-
-        # Include compression stats
-        compression = getattr(self, "_gossip_compression_stats", {})
-        original = compression.get("total_original_bytes", 0)
-        compressed = compression.get("total_compressed_bytes", 0)
-        compression_ratio = 1.0 - (compressed / original) if original > 0 else 0
-
-        return {
-            "message_sent": metrics.get("message_sent", 0),
-            "message_received": metrics.get("message_received", 0),
-            "state_updates": metrics.get("state_updates", 0),
-            "anti_entropy_repairs": metrics.get("anti_entropy_repairs", 0),
-            "stale_states_detected": metrics.get("stale_states_detected", 0),
-            "avg_latency_ms": sum(delays) / max(1, len(delays)) if delays else 0,
-            "compression_ratio": round(compression_ratio, 3),
-            "bytes_saved_kb": round((original - compressed) / 1024, 2),
-        }
+    # _record_gossip_metrics: Provided by GossipMetricsMixin
+    # _record_gossip_compression: Provided by GossipMetricsMixin
+    # _get_gossip_metrics_summary: Provided by GossipMetricsMixin
+    # _get_gossip_health_status: Provided by GossipMetricsMixin (NEW: health monitoring)
 
     async def _gossip_anti_entropy_repair(self):
         """DECENTRALIZED: Periodic full state reconciliation with random peer.

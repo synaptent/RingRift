@@ -411,6 +411,7 @@ def export_replay_dataset_multi(
     games_skipped = 0
     games_deduplicated = 0
     games_skipped_recovery = 0
+    games_partial = 0  # Games where replay failed but samples were extracted using DB winner
 
     # Build query filters
     query_filters: dict[str, Any] = {
@@ -558,6 +559,10 @@ def export_replay_dataset_multi(
             # Use 1500.0 as default (baseline ELO) if not available
             opponent_elo = float(meta.get("opponent_elo", meta.get("model_elo", 1500.0)))
 
+            # Store database winner for partial game handling (December 2025)
+            # This allows us to extract training samples even when replay fails partway
+            db_winner = meta.get("winner")
+
             total_moves = meta.get("total_moves")
             if total_moves is None:
                 total_moves = len(moves) if moves else 0
@@ -692,18 +697,39 @@ def export_replay_dataset_multi(
                     move_index, phase_str, move_type_str, heuristic_vec
                 ))
 
-            # Skip this game if replay failed
-            if not replay_succeeded or not game_samples:
+            # Handle partial games (December 2025 fix)
+            # Key insight: If replay fails but we collected samples AND have winner from DB,
+            # we can still use those samples for training. This fixes the hex8_4p export
+            # issue where chain capture FSM mismatches caused all games to be skipped.
+            if not game_samples:
                 games_skipped += 1
                 continue
 
             # Now we have final_state = current_state from incremental replay
             final_state = current_state
 
+            # Determine winner: prefer replayed final_state, fallback to database winner
+            effective_winner = getattr(final_state, 'winner', None)
+            if effective_winner is None or effective_winner == 0:
+                effective_winner = db_winner
+
             # Skip games without a valid winner - these produce value=0 which corrupts training
-            if getattr(final_state, 'winner', None) is None or final_state.winner == 0:
+            if effective_winner is None or effective_winner == 0:
                 games_skipped += 1
                 continue
+
+            # For partial games, patch the winner into final_state for value computation
+            if not replay_succeeded and effective_winner is not None:
+                # Create a mock final state with the correct winner for value computation
+                # This allows value_from_final_winner/ranking to work correctly
+                final_state = type(final_state)(
+                    **{**final_state.__dict__, 'winner': effective_winner}
+                )
+                games_partial += 1
+                logger.debug(
+                    f"Game {game_id}: Partial replay ({len(game_samples)} samples) "
+                    f"using DB winner {effective_winner}"
+                )
 
             # Compute values using the final replayed state
             if use_rank_aware_values:
@@ -990,7 +1016,9 @@ def export_replay_dataset_multi(
     gumbel_pct = 100 * gumbel_count / total_samples if total_samples > 0 else 0
 
     print(f"Exported {features_arr.shape[0]} samples from {games_processed} games "
-          f"({games_deduplicated} deduplicated) into {output_path}")
+          f"({games_deduplicated} deduplicated, {games_partial} partial) into {output_path}")
+    if games_partial > 0:
+        print(f"  Partial games: {games_partial} games had replay errors but samples extracted using DB winner")
     print(f"Engine modes: {dict(mode_counts)} | Gumbel/MCTS: {gumbel_pct:.1f}% (3x weight in training)")
 
     # Phase 4A.4: Register NPZ file with ClusterManifest for cluster-wide discovery
@@ -1318,7 +1346,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Include heuristic features for v5/v5-heavy model training. "
             "Extracts 21 component scores per state from the heuristic AI "
             "(territory, threats, connectivity, mobility, etc). Fast O(1) extraction. "
-            "Adds 'heuristics' array to NPZ output. Only for single-threaded mode."
+            "Adds 'heuristics' array to NPZ output. Works in both parallel and single-threaded mode."
         ),
     )
     parser.add_argument(
@@ -1427,10 +1455,8 @@ def main(argv: list[str] | None = None) -> int:
     # Determine parallelism: default is parallel unless --single-threaded or --workers=1
     use_parallel = not args.single_threaded and (args.workers is None or args.workers > 1)
 
-    # Force single-threaded mode for heuristic extraction (not yet parallelized)
-    if args.include_heuristics and use_parallel:
-        print("[HEURISTICS] --include-heuristics requires single-threaded mode, switching...")
-        use_parallel = False
+    # NOTE: As of Dec 2025, heuristics are now supported in parallel mode!
+    # The parallel encoder extracts heuristics in worker processes (10-20x faster).
 
     # Use parallel export by default (10-20x faster on multi-core systems)
     if use_parallel:
@@ -1457,6 +1483,8 @@ def main(argv: list[str] | None = None) -> int:
             require_moves=not args.no_require_moves,
             use_cache=args.use_cache,
             force_export=args.force_export,
+            include_heuristics=args.include_heuristics,
+            full_heuristics=args.full_heuristics,
         )
         return 0 if result else 1
 

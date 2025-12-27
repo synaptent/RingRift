@@ -103,6 +103,45 @@ def _get_neural_net_encoder(board_type_str: str, feature_version: int = 2):
     return _ENCODER_CACHE[cache_key]
 
 
+# Heuristic extraction cache (lazy loaded in worker processes)
+_HEURISTIC_EXTRACTOR_CACHE: dict[str, Any] = {}
+
+
+def _get_heuristic_extractor(full_mode: bool = False):
+    """Get cached heuristic extraction function.
+
+    Args:
+        full_mode: If True, use full 49-feature extraction. If False, use fast 21-feature.
+
+    Returns:
+        Tuple of (extractor_func, num_features)
+    """
+    cache_key = "full" if full_mode else "fast"
+    if cache_key not in _HEURISTIC_EXTRACTOR_CACHE:
+        try:
+            from app.training.fast_heuristic_features import (
+                extract_heuristic_features,
+                extract_full_heuristic_features,
+                NUM_HEURISTIC_FEATURES,
+                NUM_HEURISTIC_FEATURES_FULL,
+            )
+            if full_mode:
+                _HEURISTIC_EXTRACTOR_CACHE[cache_key] = (
+                    extract_full_heuristic_features,
+                    NUM_HEURISTIC_FEATURES_FULL,
+                )
+            else:
+                _HEURISTIC_EXTRACTOR_CACHE[cache_key] = (
+                    extract_heuristic_features,
+                    NUM_HEURISTIC_FEATURES,
+                )
+        except ImportError:
+            # Fallback if heuristic module not available
+            _HEURISTIC_EXTRACTOR_CACHE[cache_key] = (None, 21 if not full_mode else 49)
+
+    return _HEURISTIC_EXTRACTOR_CACHE[cache_key]
+
+
 @dataclass
 class EncodedSample:
     """A single encoded training sample."""
@@ -118,6 +157,7 @@ class EncodedSample:
     num_players: int
     game_id: str = ""  # Added for NNUE compatibility
     move_type: str = "unknown"  # For chain-aware sample weighting
+    heuristics: np.ndarray | None = None  # For v5_heavy heuristic conditioning
 
 
 @dataclass
@@ -137,6 +177,8 @@ def _encode_single_game(
     history_length: int,
     sample_every: int,
     use_board_aware_encoding: bool,
+    include_heuristics: bool = False,
+    full_heuristics: bool = False,
 ) -> GameEncodingResult:
     """
     Encode a single game into training samples.
@@ -145,6 +187,7 @@ def _encode_single_game(
     1. Replaying the game from initial_state using moves
     2. Encoding each state into features
     3. Computing final_state for value targets (if not provided)
+    4. Optionally extracting heuristic features for v5_heavy models
 
     Args:
         game_data: Dict containing 'initial_state', 'moves', 'game_id', 'final_state'
@@ -154,6 +197,8 @@ def _encode_single_game(
         history_length: Number of history frames
         sample_every: Sample every Nth move
         use_board_aware_encoding: Use board-specific policy encoding
+        include_heuristics: If True, extract heuristic features for each sample
+        full_heuristics: If True, use full 49-feature extraction (slower). If False, use fast 21-feature.
 
     Returns:
         GameEncodingResult with encoded samples or error
@@ -198,8 +243,17 @@ def _encode_single_game(
                 feature_version=feature_version,
             )
 
+        # Get heuristic extractor if needed
+        heuristic_extractor = None
+        num_heuristic_features = 0
+        if include_heuristics:
+            heuristic_extractor, num_heuristic_features = _get_heuristic_extractor(full_heuristics)
+            if heuristic_extractor is None:
+                logger.warning("Heuristic extraction requested but module not available")
+
         # First pass: replay game and collect samples (without values yet)
-        pending_samples: list[tuple[np.ndarray, np.ndarray, int, int, int, str, int]] = []
+        # Tuple: (stacked, globals_vec, idx, move_idx, perspective, phase_str, num_players, move_type_str, heuristics)
+        pending_samples: list[tuple[np.ndarray, np.ndarray, int, int, int, str, int, str, np.ndarray | None]] = []
         history_frames: list[np.ndarray] = []
         current_state = initial_state
         total_moves = len(moves)
@@ -257,6 +311,16 @@ def _encode_single_game(
             else:
                 move_type_str = str(move_type_raw) if move_type_raw else "unknown"
 
+            # Extract heuristic features if requested
+            heuristics_arr: np.ndarray | None = None
+            if heuristic_extractor is not None:
+                try:
+                    heuristics_arr = heuristic_extractor(state_before)
+                except Exception as e:
+                    # Log but don't fail on heuristic extraction errors
+                    logger.debug(f"Heuristic extraction failed: {e}")
+                    heuristics_arr = np.zeros(num_heuristic_features, dtype=np.float32)
+
             perspective = state_before.current_player
             pending_samples.append((
                 stacked.astype(np.float32),
@@ -267,6 +331,7 @@ def _encode_single_game(
                 phase_str,
                 num_players,
                 move_type_str,
+                heuristics_arr,
             ))
 
         # Use current_state as final_state if not provided (computed during replay)
@@ -291,7 +356,7 @@ def _encode_single_game(
 
         # Build final samples with computed values
         samples: list[EncodedSample] = []
-        for stacked, globals_vec, idx, move_idx, perspective, phase_str, n_players, move_type_str in pending_samples:
+        for stacked, globals_vec, idx, move_idx, perspective, phase_str, n_players, move_type_str, heuristics_arr in pending_samples:
             value = _value_from_final_ranking(final_state, perspective, num_players) if final_state else 0.0
 
             samples.append(EncodedSample(
@@ -307,6 +372,7 @@ def _encode_single_game(
                 num_players=n_players,
                 game_id=game_id,
                 move_type=move_type_str,
+                heuristics=heuristics_arr,
             ))
 
         return GameEncodingResult(game_id=game_id, samples=samples)
@@ -441,6 +507,8 @@ class ParallelEncoder:
         history_length: int = 3,
         sample_every: int = 1,
         use_board_aware_encoding: bool = False,
+        include_heuristics: bool = False,
+        full_heuristics: bool = False,
     ):
         """
         Initialize the parallel encoder.
@@ -453,6 +521,8 @@ class ParallelEncoder:
             history_length: Number of history frames to stack
             sample_every: Sample every Nth move
             use_board_aware_encoding: Use board-specific policy encoding
+            include_heuristics: If True, extract heuristic features for v5_heavy training
+            full_heuristics: If True, use full 49-feature extraction. If False, use fast 21-feature.
         """
 
         self.board_type = board_type
@@ -462,6 +532,8 @@ class ParallelEncoder:
         self.history_length = history_length
         self.sample_every = sample_every
         self.use_board_aware_encoding = use_board_aware_encoding
+        self.include_heuristics = include_heuristics
+        self.full_heuristics = full_heuristics
 
         # Determine worker count
         if num_workers is None:
@@ -519,6 +591,8 @@ class ParallelEncoder:
             history_length=self.history_length,
             sample_every=self.sample_every,
             use_board_aware_encoding=self.use_board_aware_encoding,
+            include_heuristics=self.include_heuristics,
+            full_heuristics=self.full_heuristics,
         )
 
         all_samples: list[EncodedSample] = []
@@ -625,7 +699,8 @@ def samples_to_arrays(
     Returns dict with keys:
         features, globals, values, values_mp, policy_indices, policy_values,
         move_numbers, total_game_moves, phases, num_players,
-        player_numbers, game_ids (for NNUE compatibility)
+        player_numbers, game_ids (for NNUE compatibility),
+        heuristics (if present in samples, for v5_heavy training)
     """
     if not samples:
         return {}
@@ -652,7 +727,7 @@ def samples_to_arrays(
     # Chain-aware sample weighting
     move_types = np.array([s.move_type for s in samples], dtype=object)
 
-    return {
+    result = {
         "features": features,
         "globals": globals_arr,
         "values": values,
@@ -670,6 +745,17 @@ def samples_to_arrays(
         "move_types": move_types,
     }
 
+    # Add heuristics if present in samples (for v5_heavy training)
+    if samples and samples[0].heuristics is not None:
+        heuristics_list = [
+            s.heuristics if s.heuristics is not None
+            else np.zeros_like(samples[0].heuristics)
+            for s in samples
+        ]
+        result["heuristics"] = np.stack(heuristics_list, axis=0)
+
+    return result
+
 
 # Convenience function for direct use
 def parallel_encode_games(
@@ -682,6 +768,8 @@ def parallel_encode_games(
     history_length: int = 3,
     sample_every: int = 1,
     use_board_aware_encoding: bool = False,
+    include_heuristics: bool = False,
+    full_heuristics: bool = False,
 ) -> dict[str, np.ndarray]:
     """
     Convenience function to parallel encode games and return arrays.
@@ -696,6 +784,8 @@ def parallel_encode_games(
         history_length: History frame count
         sample_every: Sample every Nth move
         use_board_aware_encoding: Use board-specific encoding
+        include_heuristics: If True, extract heuristic features for v5_heavy training
+        full_heuristics: If True, use full 49-feature extraction. If False, use fast 21-feature.
 
     Returns:
         Dict of numpy arrays ready for np.savez_compressed()
@@ -708,6 +798,8 @@ def parallel_encode_games(
         history_length=history_length,
         sample_every=sample_every,
         use_board_aware_encoding=use_board_aware_encoding,
+        include_heuristics=include_heuristics,
+        full_heuristics=full_heuristics,
     ) as encoder:
         samples, errors = encoder.encode_games_batch(games, num_players)
 

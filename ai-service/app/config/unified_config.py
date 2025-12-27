@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -116,16 +116,384 @@ class TrainingConfig:
     min_interval_seconds: int = 1200  # 20 minutes
     max_concurrent_jobs: int = 1
     prefer_gpu_hosts: bool = True
-    nn_training_script: str = "scripts/run_nn_training_baseline.py"
-    export_script: str = "scripts/export_replay_dataset.py"
-    hex_encoder_version: str = "v3"
     warm_start: bool = True
     validation_split: float = 0.1
-
     # NNUE-specific thresholds (higher requirements)
     nnue_min_games: int = 10000
     nnue_policy_min_games: int = 5000
     cmaes_min_games: int = 20000
+    nnue_training_script: str = "scripts/train_nnue.py"
+    nn_training_script: str = "scripts/run_nn_training_baseline.py"
+    export_script: str = "scripts/export_replay_dataset.py"
+    # Encoder version for hex boards: "v3" uses HexStateEncoderV3 (16 channels)
+    hex_encoder_version: str = "v3"
+    # Simplified 3-signal trigger system (2024-12)
+    use_simplified_triggers: bool = True  # Use 3-signal system instead of 8+ signals
+    staleness_hours: float = 6.0  # Hours before config is "stale"
+    min_win_rate_threshold: float = 0.45  # Below this triggers urgent training
+    bootstrap_threshold: int = 50  # Low threshold for configs with 0 models
+    # Verbose logging for training scheduler
+    verbose: bool = False
+    # Optimized training settings
+    batch_size: int = 256  # Higher batch size for better GPU utilization
+    sampling_weights: str = "victory_type"  # Balance across victory types
+    warmup_epochs: int = 5  # LR warmup for stability
+    use_optimized_hyperparams: bool = True  # Load from hyperparameters.json
+    # Advanced training optimizations (2024-12 improvements)
+    use_spectral_norm: bool = True  # Gradient stability via spectral normalization
+    use_lars: bool = False  # LARS optimizer for distributed large-batch training
+    use_cyclic_lr: bool = True  # Cyclic LR with triangular waves
+    cyclic_lr_period: int = 5  # Cycle period in epochs
+    use_gradient_profiling: bool = False  # Track gradient norms for diagnostics
+    use_mixed_precision: bool = True  # FP16/BF16 mixed precision training
+    amp_dtype: str = "bfloat16"  # Prefer BF16 for stability
+    gradient_accumulation: int = 1  # Gradient accumulation steps
+    # Knowledge distillation (optional)
+    use_knowledge_distill: bool = False  # Train from teacher model
+    teacher_model_path: str | None = None  # Path to teacher model
+    distill_alpha: float = 0.5  # Blend weight (0=pure label, 1=pure teacher)
+    distill_temperature: float = 2.0  # Softening temperature
+    # Advanced NNUE policy training options (2024-12)
+    use_swa: bool = True  # Stochastic Weight Averaging for better generalization
+    swa_start_fraction: float = 0.75  # Start SWA at 75% of epochs
+    use_ema: bool = True  # Exponential Moving Average for smoother weights
+    ema_decay: float = 0.999  # EMA decay rate
+    use_progressive_batch: bool = True  # Progressive batch sizing
+    min_batch_size: int = 64  # Starting batch size
+    max_batch_size: int = 512  # Maximum batch size
+    focal_gamma: float = 2.0  # Focal loss gamma for hard sample mining
+    label_smoothing_warmup: int = 5  # Warmup epochs for label smoothing
+    policy_label_smoothing: float = 0.05  # Policy label smoothing factor (0.05-0.1 recommended)
+    use_hex_augmentation: bool = True  # D6 symmetry augmentation for hex boards
+    hex_augment_count: int = 6  # Number of D6 symmetry augmentations (1-12)
+    policy_dropout: float = 0.1  # Dropout rate for policy head regularization
+    # Learning rate finder (auto-discovers optimal LR before training)
+    use_lr_finder: bool = False  # Run LR finder before training
+    lr_finder_iterations: int = 100  # Number of iterations for LR sweep
+    # 2024-12 Advanced Training Improvements
+    use_value_whitening: bool = True  # Value head whitening for stable training
+    value_whitening_momentum: float = 0.99  # Momentum for running stats
+    use_stochastic_depth: bool = True  # Stochastic depth regularization
+    stochastic_depth_prob: float = 0.1  # Drop probability
+    use_adaptive_warmup: bool = True  # Adaptive warmup based on dataset size
+    use_hard_example_mining: bool = True  # Focus on difficult examples
+    hard_example_top_k: float = 0.3  # Top 30% hardest examples
+    use_dynamic_batch: bool = False  # Dynamic batch scheduling (optional)
+    dynamic_batch_schedule: str = "linear"  # linear, exponential, or step
+    transfer_from_model: str | None = None  # Cross-board transfer learning
+    transfer_freeze_epochs: int = 5  # Freeze transferred layers for N epochs
+    # Advanced optimizer enhancements
+    use_lookahead: bool = True  # Lookahead optimizer wrapper
+    lookahead_k: int = 5  # Slow weight update interval
+    lookahead_alpha: float = 0.5  # Interpolation factor
+    use_adaptive_clip: bool = True  # Adaptive gradient clipping
+    use_gradient_noise: bool = False  # Gradient noise injection (optional)
+    gradient_noise_variance: float = 0.01  # Initial noise variance
+    # Architecture search and pretraining
+    use_board_nas: bool = True  # Board-specific neural architecture search
+    use_self_supervised: bool = False  # Self-supervised pre-training (optional)
+    ss_epochs: int = 10  # Self-supervised pre-training epochs
+    ss_projection_dim: int = 128  # Projection dimension for contrastive learning
+    ss_temperature: float = 0.07  # Contrastive loss temperature
+    use_online_bootstrap: bool = True  # Online bootstrapping with soft labels
+    bootstrap_temperature: float = 1.5  # Soft label temperature
+    bootstrap_start_epoch: int = 10  # Epoch to start bootstrapping
+    # Phase 2 Advanced Training (2024-12)
+    use_prefetch_gpu: bool = True  # GPU prefetching for improved throughput
+    use_attention: bool = False  # Positional attention (experimental)
+    attention_heads: int = 4  # Number of attention heads
+    use_moe: bool = False  # Mixture of Experts (experimental)
+    moe_experts: int = 4  # Number of experts
+    moe_top_k: int = 2  # Top-k expert selection
+    use_multitask: bool = False  # Multi-task learning heads
+    multitask_weight: float = 0.1  # Auxiliary task weight
+    use_difficulty_curriculum: bool = True  # Difficulty-aware curriculum
+    curriculum_initial_threshold: float = 0.9  # Start with easy samples
+    curriculum_final_threshold: float = 0.3  # End with all samples
+    use_lamb: bool = False  # LAMB optimizer for large batch
+    use_gradient_compression: bool = False  # Gradient compression for distributed
+    compression_ratio: float = 0.1  # Keep top 10% of gradients
+    use_quantized_eval: bool = True  # Quantized inference for validation
+    use_contrastive: bool = False  # Contrastive representation learning
+    contrastive_weight: float = 0.1  # Contrastive loss weight
+    # Phase 3 Advanced Training (2024-12)
+    use_sam: bool = False  # Sharpness-Aware Minimization for better generalization
+    sam_rho: float = 0.05  # SAM neighborhood size
+    use_td_lambda: bool = False  # TD(lambda) value learning
+    td_lambda_value: float = 0.95  # Lambda value for TD learning
+    use_dynamic_batch_gradient: bool = False  # Gradient noise-based batch sizing
+    dynamic_batch_max: int = 4096  # Maximum batch size for dynamic batching
+    use_pruning: bool = False  # Structured pruning after training
+    pruning_ratio: float = 0.3  # Fraction of neurons to prune
+    use_game_phase_network: bool = False  # Phase-specialized sub-networks
+    use_auxiliary_targets: bool = False  # Auxiliary value targets
+    auxiliary_weight: float = 0.1  # Auxiliary loss weight
+    use_grokking_detection: bool = True  # Monitor for delayed generalization
+    use_self_play: bool = False  # Integrated self-play data generation
+    self_play_buffer: int = 100000  # Self-play position buffer size
+    use_distillation: bool = False  # Knowledge distillation
+    distillation_teacher_path: str | None = None  # Path to teacher model
+    distillation_temp: float = 4.0  # Distillation temperature
+    distillation_alpha: float = 0.7  # Soft vs hard targets weight
+    # NNUE policy training script
+    nnue_policy_script: str = "scripts/train_nnue_policy.py"
+    nnue_curriculum_script: str = "scripts/train_nnue_policy_curriculum.py"
+    # =========================================================================
+    # Advanced Training Utilities (2025-12)
+    # =========================================================================
+    # Gradient Checkpointing - trade compute for memory
+    use_gradient_checkpointing: bool = False  # Enable for large models
+    gradient_checkpoint_layers: list[str] | None = None  # Specific layers to checkpoint
+    # PFSP Opponent Pool - Prioritized Fictitious Self-Play
+    use_pfsp: bool = True  # Enable diverse opponent selection
+    pfsp_max_pool_size: int = 20  # Maximum opponents in pool
+    pfsp_hard_opponent_weight: float = 0.7  # Weight for hard opponents (0-1)
+    pfsp_diversity_weight: float = 0.2  # Weight for opponent diversity
+    pfsp_recency_weight: float = 0.1  # Weight for recent opponents
+    # CMA-ES Auto-Tuning - Automatic HP optimization on plateau
+    use_cmaes_auto_tuning: bool = True  # Enable auto HP optimization
+    cmaes_plateau_patience: int = 10  # Epochs without improvement before triggering
+    cmaes_min_epochs_between: int = 50  # Minimum epochs between auto-tunes
+    cmaes_max_auto_tunes: int = 3  # Maximum auto-tunes per training run
+    cmaes_generations: int = 30  # CMA-ES generations per optimization
+    cmaes_population_size: int = 15  # CMA-ES population size
+    # LR Finder - Optimal learning rate detection
+    lr_finder_min_lr: float = 1e-7  # Minimum LR to test
+    lr_finder_max_lr: float = 10.0  # Maximum LR to test
+    lr_finder_smooth_factor: float = 0.05  # Loss smoothing factor
+    # =========================================================================
+    # Phase 4: Training Stability & Acceleration (2024-12)
+    # =========================================================================
+    # Training Stability Monitor - Auto-detect and recover from instabilities
+    use_stability_monitor: bool = True  # Monitor gradient/loss health
+    stability_auto_recover: bool = True  # Auto-reduce LR on instability
+    gradient_clip_threshold: float = 10.0  # Gradient norm threshold
+    loss_spike_threshold: float = 3.0  # Std devs for spike detection
+    # Adaptive Precision - Dynamic FP16/BF16/FP32 switching
+    use_adaptive_precision: bool = False  # Auto-switch precision
+    initial_precision: str = "bf16"  # Starting precision
+    precision_auto_downgrade: bool = True  # Downgrade on overflow
+    # Progressive Layer Unfreezing - For fine-tuning
+    use_progressive_unfreezing: bool = False  # Gradually unfreeze layers
+    unfreezing_num_stages: int = 4  # Number of unfreezing stages
+    # SWA with Restarts - Better generalization
+    use_swa_restarts: bool = True  # SWA with warm restarts
+    swa_start_fraction: float = 0.75  # Start SWA at 75% progress
+    swa_restart_period: int = 10  # Epochs between restarts
+    swa_num_restarts: int = 3  # Number of restarts
+    # Smart Checkpointing - Adaptive checkpoint frequency
+    use_smart_checkpoints: bool = True  # Adaptive checkpointing
+    checkpoint_top_k: int = 3  # Keep top-k checkpoints
+    checkpoint_min_interval: int = 1  # Min epochs between checkpoints
+    checkpoint_improvement_threshold: float = 0.01  # Save on X% improvement
+    # =========================================================================
+    # Phase 5: Production Optimization (2024-12)
+    # =========================================================================
+    # Gradient Accumulation Scheduling - Dynamic accumulation based on memory
+    use_adaptive_accumulation: bool = False  # Auto-adjust accumulation steps
+    accumulation_target_memory: float = 0.85  # Target GPU memory utilization
+    accumulation_max_steps: int = 16  # Maximum accumulation steps
+    # Activation Checkpointing - Trade compute for memory
+    use_activation_checkpointing: bool = False  # Checkpoint activations
+    checkpoint_ratio: float = 0.5  # Fraction of layers to checkpoint
+    # Flash Attention - Memory-efficient attention
+    use_flash_attention: bool = False  # Use Flash Attention 2
+    # Dynamic Loss Scaling - Adaptive mixed precision
+    use_dynamic_loss_scaling: bool = False  # Adaptive loss scaling
+    # Elastic Training - Dynamic worker scaling
+    use_elastic_training: bool = False  # Support worker join/leave
+    elastic_min_workers: int = 1  # Minimum workers
+    elastic_max_workers: int = 8  # Maximum workers
+    # Streaming NPZ - Large dataset support
+    use_streaming_npz: bool = False  # Stream from S3/GCS
+    streaming_chunk_size: int = 10000  # Samples per chunk
+    # Profiling - Performance analysis
+    use_profiling: bool = False  # Enable PyTorch Profiler
+    profile_dir: str | None = None  # Profiler output directory
+    # A/B Testing - Model comparison
+    use_ab_testing: bool = False  # Enable A/B model testing
+    ab_min_games: int = 100  # Minimum games for significance
+    # =========================================================================
+    # Bottleneck Fix Integration (2025-12)
+    # =========================================================================
+    # Streaming Pipeline - Real-time data ingestion with async DB polling
+    use_streaming_pipeline: bool = True  # Enable streaming data pipelines
+    streaming_poll_interval: float = 5.0  # Seconds between DB polls
+    streaming_buffer_size: int = 10000  # Samples in streaming buffer
+    selfplay_db_path: Path = field(default_factory=lambda: Path("data/games"))
+    # =========================================================================
+    # Parallel Selfplay Temperature Scheduling (2025-12)
+    # =========================================================================
+    # Local parallel selfplay engine selection
+    selfplay_engine: str = "gumbel"  # "descent", "mcts", or "gumbel"
+    selfplay_num_workers: int | None = None  # Default: CPU count - 1
+    selfplay_games_per_batch: int = 20  # Games per local selfplay batch
+    # Temperature scheduling for exploration/exploitation tradeoff
+    selfplay_temperature: float = 1.0  # Base move selection temperature
+    selfplay_use_temperature_decay: bool = True  # Enable temperature decay per game
+    selfplay_move_temp_threshold: int = 30  # Use higher temp for first N moves
+    selfplay_opening_temperature: float = 1.5  # Temperature for opening moves
+    # Gumbel-MCTS specific parameters
+    gumbel_simulations: int = 800  # Simulations per move for Gumbel-MCTS
+    gumbel_top_k: int = 16  # Top-k actions for sequential halving
+    # Value calibration tracking
+    track_calibration: bool = True  # Track value head calibration metrics
+    calibration_window_size: int = 5000  # Rolling window for calibration
+    # Async Shadow Validation - Non-blocking GPU/CPU parity checking
+    use_async_validation: bool = True  # Enable async validation
+    validation_sample_rate: float = 0.05  # Fraction of moves to validate (5%)
+    parity_failure_threshold: float = 0.10  # Block training above 10% failures
+    # Data Quality Gate Enforcement (2025-12)
+    enforce_data_quality_gate: bool = True  # Block training on quality failures even without feedback controller
+    min_data_quality_for_training: float = 0.7  # Minimum quality score to allow training
+    validate_training_data: bool = True  # Validate NPZ files before training
+    fail_on_invalid_training_data: bool = False  # Hard-fail vs warn on invalid data
+    # Connection Pooling - Thread-local DB connection reuse
+    use_connection_pool: bool = True  # Enable connection pooling for WAL
+    # Training Auto-Recovery (Phase 7)
+    training_max_retries: int = 3  # Max retry attempts on failure
+    training_retry_backoff_base: float = 60.0  # Base delay between retries (seconds)
+    training_retry_backoff_multiplier: float = 2.0  # Exponential backoff multiplier
+    # Post-Promotion Warmup (Phase 7)
+    warmup_games_after_promotion: int = 100  # Games to collect before retraining
+    warmup_time_after_promotion: float = 1800.0  # Min seconds after promotion (30 min)
+    # Training Checkpointing (Phase 7)
+    checkpoint_enabled: bool = True  # Save training state for crash recovery
+    checkpoint_interval_seconds: float = 300.0  # Save checkpoint every 5 minutes
+    checkpoint_path: str | None = None  # Path to checkpoint file (default: data/training_checkpoint.json)
+    # A/B Testing for Hyperparameters (Phase 7)
+    ab_testing_enabled: bool = False  # Enable A/B testing for new configs
+    ab_test_fraction: float = 0.3  # Fraction of configs to use test hyperparameters
+    # =========================================================================
+    # Phase 7: Training Enhancements Integration (2025-12)
+    # =========================================================================
+    # Training Anomaly Detection - Auto-halt on NaN/Inf/gradient explosion
+    halt_on_nan: bool = True  # Halt training on NaN/Inf loss
+    halt_on_gradient_explosion: bool = False  # Halt on gradient norm > threshold
+    gradient_norm_threshold: float = 100.0  # Gradient explosion threshold
+    max_consecutive_anomalies: int = 5  # Max anomalies before forced halt
+    # Configurable Validation Intervals - More frequent validation during training
+    validation_interval_steps: int | None = 1000  # Validate every N steps (None=epoch only)
+    validation_interval_epochs: float | None = None  # Validate every N epochs (overrides steps)
+    validation_subset_size: float = 1.0  # Fraction of val data for fast validation
+    adaptive_validation_interval: bool = False  # Adjust interval by loss variance
+    # Warm Restarts Learning Rate - SGDR (cosine annealing with warm restarts)
+    use_warm_restarts: bool = False  # Enable SGDR schedule
+    warm_restart_t0: int = 10  # Initial period (epochs)
+    warm_restart_t_mult: int = 2  # Period multiplier after each restart
+    warm_restart_eta_min: float = 1e-6  # Minimum learning rate
+    # Seed Management - Reproducibility
+    training_seed: int | None = None  # Random seed (None=random)
+    deterministic_training: bool = False  # Enable CuDNN deterministic mode (slower)
+    # Data Quality Freshness - Time-based sample weighting
+    freshness_decay_hours: float = 24.0  # Freshness half-life in hours
+    freshness_weight: float = 0.2  # Freshness weight in quality score (0-1)
+    # Hard Example Mining (enhanced) - Buffer and percentile settings
+    hard_example_buffer_size: int = 10000  # Max examples to track
+    hard_example_percentile: float = 80.0  # Percentile threshold for hardness
+    min_samples_before_mining: int = 1000  # Warmup before mining starts
+    # =========================================================================
+    # Integrated Training Enhancements (December 2025)
+    # =========================================================================
+    # Master toggle for integrated enhancements system
+    use_integrated_enhancements: bool = True
+    # Auxiliary Tasks (Multi-Task Learning) - predict game length, piece count
+    auxiliary_tasks_enabled: bool = False
+    aux_game_length_weight: float = 0.1
+    aux_piece_count_weight: float = 0.1
+    aux_outcome_weight: float = 0.05
+    # Gradient Surgery (PCGrad) - resolve conflicting gradients
+    gradient_surgery_enabled: bool = False
+    gradient_surgery_method: str = "pcgrad"  # "pcgrad" or "cagrad"
+    # Batch Scheduling - dynamic batch size during training
+    batch_scheduling_enabled: bool = False
+    batch_initial_size: int = 64
+    batch_final_size: int = 512
+    batch_schedule_type: str = "linear"
+    # Background Evaluation - continuous Elo tracking
+    background_eval_enabled: bool = False
+    eval_interval_steps: int = 1000
+    eval_elo_checkpoint_threshold: float = 10.0
+    # ELO Weighting - weight samples by opponent strength
+    elo_weighting_enabled: bool = True
+    elo_base_rating: float = INITIAL_ELO_RATING
+    elo_weight_scale: float = 400.0
+    elo_min_weight: float = 0.5
+    elo_max_weight: float = 2.0
+    # Curriculum Learning - progressive difficulty
+    curriculum_enabled: bool = True
+    curriculum_auto_advance: bool = True
+    # Data Augmentation - board symmetry transforms
+    augmentation_enabled: bool = True
+    augmentation_mode: str = "all"  # "all", "random", "light"
+    # Reanalysis - re-evaluate games with current model
+    reanalysis_enabled: bool = False
+    reanalysis_blend_ratio: float = 0.5
+    # =========================================================================
+    # Fault Tolerance (2025-12)
+    # =========================================================================
+    # Circuit breaker for training operations
+    enable_circuit_breaker: bool = True  # Enable training circuit breaker
+    # Anomaly detection during training
+    enable_anomaly_detection: bool = True  # Detect NaN/Inf and loss spikes
+    anomaly_spike_threshold: float = 3.0  # Std devs for spike detection
+    anomaly_gradient_threshold: float = 100.0  # Gradient explosion threshold
+    # Gradient clipping mode
+    gradient_clip_mode: str = "adaptive"  # "adaptive" or "fixed"
+    gradient_clip_max_norm: float = 1.0  # Max norm for fixed clipping
+    # Graceful shutdown
+    enable_graceful_shutdown: bool = True  # Emergency checkpoints on SIGTERM
+
+    def __post_init__(self):
+        """Validate TrainingConfig fields after initialization."""
+        errors = []
+
+        # Validate thresholds
+        if self.trigger_threshold_games < 1:
+            errors.append(f"trigger_threshold_games must be >= 1, got {self.trigger_threshold_games}")
+        if self.min_interval_seconds < 0:
+            errors.append(f"min_interval_seconds must be >= 0, got {self.min_interval_seconds}")
+        if self.max_concurrent_jobs < 1:
+            errors.append(f"max_concurrent_jobs must be >= 1, got {self.max_concurrent_jobs}")
+
+        # Validate batch sizes
+        if self.batch_size < 1:
+            errors.append(f"batch_size must be >= 1, got {self.batch_size}")
+        if self.min_batch_size < 1:
+            errors.append(f"min_batch_size must be >= 1, got {self.min_batch_size}")
+        if self.max_batch_size < self.min_batch_size:
+            errors.append(f"max_batch_size ({self.max_batch_size}) must be >= min_batch_size ({self.min_batch_size})")
+
+        # Validate ratios (0-1)
+        ratio_fields = [
+            ("swa_start_fraction", self.swa_start_fraction),
+            ("ema_decay", self.ema_decay),
+            ("distill_alpha", self.distill_alpha),
+            ("validation_sample_rate", self.validation_sample_rate),
+            ("parity_failure_threshold", self.parity_failure_threshold),
+            ("min_data_quality_for_training", self.min_data_quality_for_training),
+        ]
+        for name, value in ratio_fields:
+            if not 0.0 <= value <= 1.0:
+                errors.append(f"{name} must be between 0.0 and 1.0, got {value}")
+
+        # Validate retry settings
+        if self.training_max_retries < 0:
+            errors.append(f"training_max_retries must be >= 0, got {self.training_max_retries}")
+        if self.training_retry_backoff_base <= 0:
+            errors.append(f"training_retry_backoff_base must be > 0, got {self.training_retry_backoff_base}")
+        if self.training_retry_backoff_multiplier < 1.0:
+            errors.append(
+                "training_retry_backoff_multiplier must be >= 1.0, "
+                f"got {self.training_retry_backoff_multiplier}"
+            )
+
+        # Validate epoch settings
+        if self.warmup_epochs < 0:
+            errors.append(f"warmup_epochs must be >= 0, got {self.warmup_epochs}")
+
+        if errors:
+            raise ValueError("TrainingConfig validation failed:\n  " + "\n  ".join(errors))
 
 
 @dataclass
@@ -138,6 +506,10 @@ class EvaluationConfig:
     baseline_models: list[str] = field(default_factory=lambda: ["random", "heuristic", "mcts_100", "mcts_500"])
     min_games_for_elo: int = 30
     elo_k_factor: int = 32
+    # Adaptive interval settings - go faster when cluster is healthy
+    adaptive_interval_enabled: bool = False
+    adaptive_interval_min_seconds: int = 120  # Can go as low as 2 min
+    adaptive_interval_max_seconds: int = 600  # Cap at 10 min during high load
 
 
 @dataclass
@@ -854,6 +1226,13 @@ class UnifiedConfig:
         """Create config from dictionary."""
         config = cls()
 
+        def _load_dataclass(dc_type: type[Any], payload: dict[str, Any] | None) -> Any:
+            if not payload:
+                return dc_type()
+            allowed = {f.name for f in fields(dc_type)}
+            filtered = {k: v for k, v in payload.items() if k in allowed}
+            return dc_type(**filtered)
+
         # Load version
         config.version = data.get("version", config.version)
         config.execution_backend = data.get("execution_backend", config.execution_backend)
@@ -870,7 +1249,7 @@ class UnifiedConfig:
                         "use data_ingestion.poll_interval_seconds instead."
                     )
                 data_ingestion.pop("sync_interval_seconds", None)
-            config.data_ingestion = DataIngestionConfig(**data_ingestion)
+            config.data_ingestion = _load_dataclass(DataIngestionConfig, data_ingestion)
 
         if "training" in data:
             training_data = data["training"]

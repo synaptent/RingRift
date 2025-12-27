@@ -112,6 +112,15 @@ class EnhancementConfig:
     hot_buffer_mix_ratio: float = 0.3
     external_hot_buffer: Any | None = None
 
+    # Quality-weighted training (December 2025)
+    # Resurrected from archive/deprecated_ai/ebmo_network.py
+    enable_quality_weighting: bool = False
+    quality_weight_blend: float = 0.5  # 0 = uniform, 1 = fully quality-weighted
+    quality_ranking_weight: float = 0.1  # Weight for ranking loss term
+    quality_ranking_margin: float = 0.5  # Margin for ranking loss
+    quality_min_weight: float = 0.1  # Minimum sample weight
+    quality_temperature: float = 1.0  # Temperature for weight computation
+
 
 @dataclass
 class FaultToleranceConfig:
