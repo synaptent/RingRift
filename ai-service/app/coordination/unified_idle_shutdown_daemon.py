@@ -283,6 +283,9 @@ class UnifiedIdleShutdownDaemon:
         try:
             await self._run_loop()
         finally:
+            self._running = False
+            if HAS_PROTOCOLS:
+                unregister_coordinator(self._daemon_name)
 
     async def _subscribe_to_events(self) -> None:
         """Subscribe to events that affect idle detection."""
@@ -313,9 +316,6 @@ class UnifiedIdleShutdownDaemon:
             logger.debug(f"[{self._daemon_name}] Selfplay completed event")
         except Exception as e:
             logger.debug(f"[{self._daemon_name}] Error handling selfplay event: {e}")
-            self._running = False
-            if HAS_PROTOCOLS:
-                unregister_coordinator(self._daemon_name)
 
     async def stop(self) -> None:
         """Stop the daemon."""

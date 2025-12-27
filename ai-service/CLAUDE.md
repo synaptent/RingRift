@@ -223,6 +223,38 @@ kp, ki, kd = env.pid_kp, env.pid_ki, env.pid_kd
 
 All RINGRIFT\_\* environment variables accessible via typed cached properties.
 
+### Cluster Configuration (`app/config/cluster_config.py`)
+
+Consolidated helpers for distributed_hosts.yaml access:
+
+```python
+from app.config.cluster_config import (
+    load_cluster_config,
+    get_sync_routing,
+    get_auto_sync_config,
+    get_host_bandwidth_limit,
+    get_host_provider,
+    filter_hosts_by_status,
+)
+
+# Get sync routing config
+sync_cfg = get_sync_routing()
+max_disk = sync_cfg.max_disk_usage_percent  # 70.0
+priority_hosts = sync_cfg.priority_hosts    # ["runpod-a100-1", ...]
+
+# Get bandwidth limit for a host (uses glob patterns)
+limit = get_host_bandwidth_limit("vast-12345")  # Returns 50 MB/s
+
+# Get provider from host name
+provider = get_host_provider("nebius-h100")  # Returns "nebius"
+
+# Filter hosts by status
+ready = filter_hosts_by_status(["ready"])
+```
+
+Dataclasses: `SyncRoutingConfig`, `AutoSyncConfig`, `EloSyncConfig`, `ClusterConfig`
+Eliminates ~40 inline yaml.safe_load calls across the codebase.
+
 ### Unified SSH (`app/core/ssh.py`)
 
 Canonical SSH utility for all cluster operations:

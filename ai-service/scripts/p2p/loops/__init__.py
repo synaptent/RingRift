@@ -8,14 +8,15 @@ for better modularity and testability.
 Loop Categories:
 - base.py: BaseLoop abstract class with error handling and backoff
 - queue_populator_loop.py: Work queue population for selfplay jobs
-- data_loops.py: JSONL conversion, model sync (TODO)
-- network_loops.py: IP updates, Tailscale recovery (TODO)
-- coordination_loops.py: Elo sync, auto-scaling (TODO)
-- job_loops.py: Job reaper, idle detection (TODO)
+- elo_sync_loop.py: Elo rating synchronization across cluster
+- data_loops.py: Model sync, data aggregation
+- network_loops.py: IP updates, Tailscale recovery
+- coordination_loops.py: Auto-scaling, health aggregation
+- job_loops.py: Job reaper, idle detection
 
 Usage:
     from scripts.p2p.loops import BaseLoop, BackoffConfig, LoopManager, LoopStats
-    from scripts.p2p.loops import QueuePopulatorLoop
+    from scripts.p2p.loops import QueuePopulatorLoop, JobReaperLoop
 
     class MyLoop(BaseLoop):
         async def _run_once(self) -> None:
@@ -44,14 +45,61 @@ from .base import (
     LoopManager,
     LoopStats,
 )
+from .coordination_loops import (
+    AutoScalingConfig,
+    AutoScalingLoop,
+    HealthAggregationConfig,
+    HealthAggregationLoop,
+)
+from .data_loops import (
+    DataAggregationConfig,
+    DataAggregationLoop,
+    ModelSyncConfig,
+    ModelSyncLoop,
+)
 from .elo_sync_loop import EloSyncLoop
+from .job_loops import (
+    IdleDetectionConfig,
+    IdleDetectionLoop,
+    JobReaperConfig,
+    JobReaperLoop,
+)
+from .network_loops import (
+    IpDiscoveryConfig,
+    IpDiscoveryLoop,
+    TailscaleRecoveryConfig,
+    TailscaleRecoveryLoop,
+)
 from .queue_populator_loop import QueuePopulatorLoop
 
 __all__ = [
+    # Base
     "BackoffConfig",
     "BaseLoop",
-    "EloSyncLoop",
     "LoopManager",
     "LoopStats",
+    # Queue
     "QueuePopulatorLoop",
+    # Elo
+    "EloSyncLoop",
+    # Coordination
+    "AutoScalingConfig",
+    "AutoScalingLoop",
+    "HealthAggregationConfig",
+    "HealthAggregationLoop",
+    # Data
+    "DataAggregationConfig",
+    "DataAggregationLoop",
+    "ModelSyncConfig",
+    "ModelSyncLoop",
+    # Network
+    "IpDiscoveryConfig",
+    "IpDiscoveryLoop",
+    "TailscaleRecoveryConfig",
+    "TailscaleRecoveryLoop",
+    # Jobs
+    "IdleDetectionConfig",
+    "IdleDetectionLoop",
+    "JobReaperConfig",
+    "JobReaperLoop",
 ]

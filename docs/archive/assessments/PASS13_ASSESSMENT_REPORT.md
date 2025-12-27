@@ -93,34 +93,20 @@ Pass 13 conducted a comprehensive assessment across four key areas. Key findings
 
 The following React test files already exist in `tests/unit/`:
 
-<<<<<<< Updated upstream
 | Test File                                                                        | Target Component | Status    |
 | -------------------------------------------------------------------------------- | ---------------- | --------- |
-=======
-| Test File                                                                              | Target Component | Status    |
-| -------------------------------------------------------------------------------------- | ---------------- | --------- |
->>>>>>> Stashed changes
-| [`GameHUD.test.tsx`](../../../tests/unit/GameHUD.test.tsx)                             | GameHUD.tsx      | ✅ EXISTS |
-| [`GameHUD.snapshot.test.tsx`](../../../tests/unit/GameHUD.snapshot.test.tsx)           | GameHUD.tsx      | ✅ EXISTS |
-| [`VictoryModal.test.tsx`](../../../tests/unit/VictoryModal.test.tsx)                   | VictoryModal.tsx | ✅ EXISTS |
-| [`VictoryModal.logic.test.ts`](../../../tests/unit/VictoryModal.logic.test.ts)         | VictoryModal.tsx | ✅ EXISTS |
+| [`GameHUD.test.tsx`](../../../tests/unit/GameHUD.test.tsx)                        | GameHUD.tsx      | ✅ EXISTS |
+| [`GameHUD.snapshot.test.tsx`](../../../tests/unit/GameHUD.snapshot.test.tsx)      | GameHUD.tsx      | ✅ EXISTS |
+| [`VictoryModal.test.tsx`](../../../tests/unit/VictoryModal.test.tsx)              | VictoryModal.tsx | ✅ EXISTS |
+| [`VictoryModal.logic.test.ts`](../../../tests/unit/VictoryModal.logic.test.ts)    | VictoryModal.tsx | ✅ EXISTS |
 | [`GameEventLog.snapshot.test.tsx`](../../../tests/unit/GameEventLog.snapshot.test.tsx) | GameEventLog.tsx | ✅ EXISTS |
-<<<<<<< Updated upstream
-| [`GameContext.reconnect.test.tsx`](../tests/unit/GameContext.reconnect.test.tsx) | GameContext.tsx  | ✅ EXISTS |
-=======
-| [`GameContext.reconnect.test.tsx`](../tests/unit/GameContext.reconnect.test.tsx)       | GameContext.tsx  | ✅ EXISTS |
->>>>>>> Stashed changes
-| [`LobbyPage.test.tsx`](../../../tests/unit/LobbyPage.test.tsx)                         | LobbyPage.tsx    | ✅ EXISTS |
+| [`GameContext.test.tsx`](../../../tests/unit/GameContext.test.tsx:501)            | GameContext.tsx  | ✅ EXISTS |
+| [`LobbyPage.test.tsx`](../../../tests/unit/LobbyPage.test.tsx)                    | LobbyPage.tsx    | ✅ EXISTS |
 
 **Component Tests in `tests/unit/components/`:**
 
-<<<<<<< Updated upstream
 | Test File                                                                     | Target Component   | Status                |
 | ----------------------------------------------------------------------------- | ------------------ | --------------------- |
-=======
-| Test File                                                                           | Target Component   | Status                |
-| ----------------------------------------------------------------------------------- | ------------------ | --------------------- |
->>>>>>> Stashed changes
 | [`BoardView.test.tsx`](../../../tests/unit/components/BoardView.test.tsx)           | BoardView.tsx      | ✅ EXISTS (318 lines) |
 | [`ErrorBoundary.test.tsx`](../../../tests/unit/components/ErrorBoundary.test.tsx)   | ErrorBoundary.tsx  | ✅ EXISTS             |
 | [`Layout.test.tsx`](../../../tests/unit/components/Layout.test.tsx)                 | Layout.tsx         | ✅ EXISTS             |
@@ -132,39 +118,24 @@ The following React test files already exist in `tests/unit/`:
 
 ### Components Still Needing Tests
 
-<<<<<<< Updated upstream
 | Component                                                       | Lines | Complexity | Priority |
 | --------------------------------------------------------------- | ----- | ---------- | -------- |
-=======
-| Component                                                             | Lines | Complexity | Priority |
-| --------------------------------------------------------------------- | ----- | ---------- | -------- |
->>>>>>> Stashed changes
 | [`AIDebugView.tsx`](../../../src/client/components/AIDebugView.tsx)   | 77    | Low        | P2       |
 | [`ChoiceDialog.tsx`](../../../src/client/components/ChoiceDialog.tsx) | 246   | Medium     | P1       |
 | [`ui/Badge.tsx`](../../../src/client/components/ui/Badge.tsx)         | 23    | Low        | P2       |
 
 ### Hooks Still Needing Tests
 
-<<<<<<< Updated upstream
 | Hook                                                               | Lines | Key Exports                                                                    | Priority |
 | ------------------------------------------------------------------ | ----- | ------------------------------------------------------------------------------ | -------- |
-=======
-| Hook                                                                     | Lines | Key Exports                                                                    | Priority |
-| ------------------------------------------------------------------------ | ----- | ------------------------------------------------------------------------------ | -------- |
->>>>>>> Stashed changes
 | [`useGameActions.ts`](../../../src/client/hooks/useGameActions.ts)       | 388   | `useGameActions`, `usePendingChoice`, `useChatMessages`, `useValidMoves`       | P1       |
 | [`useGameConnection.ts`](../../../src/client/hooks/useGameConnection.ts) | 290   | `useGameConnection`, `useConnectionStatus`, `useIsConnected`                   | P1       |
 | [`useGameState.ts`](../../../src/client/hooks/useGameState.ts)           | 300   | `useGameState`, `useHUDViewModel`, `useBoardViewModel`, `useEventLogViewModel` | P1       |
 
 ### Contexts Still Needing Tests
 
-<<<<<<< Updated upstream
 | Context                                                     | Lines | Key Features                                                                 | Priority |
 | ----------------------------------------------------------- | ----- | ---------------------------------------------------------------------------- | -------- |
-=======
-| Context                                                           | Lines | Key Features                                                                 | Priority |
-| ----------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------- | -------- |
->>>>>>> Stashed changes
 | [`AuthContext.tsx`](../../../src/client/contexts/AuthContext.tsx) | 103   | localStorage token handling, login/register/logout                           | P1       |
 | [`GameContext.tsx`](../../../src/client/contexts/GameContext.tsx) | 493   | WebSocket, hydration, choice handling (partial coverage via reconnect tests) | P1       |
 
@@ -176,22 +147,13 @@ The following React test files already exist in `tests/unit/`:
 
 | Document                                                                                                                            | Status     | Last Updated    | Issues                                   |
 | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------- | ---------------------------------------- |
-<<<<<<< Updated upstream
-| [`README.md`](../../../README.md)                                                                                                         | ✅ Current | Nov 26-27, 2025 | Minor: Remove Playwright workers default |
-| [`QUICKSTART.md`](../../../QUICKSTART.md)                                                                                                 | ✅ Current | Nov 26-27, 2025 | None - comprehensive 685 lines           |
-| [`docs/architecture/../../architecture/API_REFERENCE.md`](../../architecture/API_REFERENCE.md)                                                                                         | ✅ Current | Nov 27, 2025    | None - well-structured                   |
-| [`docs/architecture/../../architecture/CANONICAL_ENGINE_API.md`](../../architecture/CANONICAL_ENGINE_API.md)                                                                           | ✅ Current | Recent          | None - 1313 lines comprehensive          |
-| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md)                                                                                             | ✅ Current | Nov 27, 2025    | None - 708 lines detailed                |
-| [`ARCHITECTURE_ASSESSMENT.md`](../plans/ARCHITECTURE_ASSESSMENT.md)                                                                       | ✅ Current | Nov 27, 2025    | None - updated with Phase 4 completion   |
-=======
 | [`README.md`](../../../README.md)                                                                                                   | ✅ Current | Nov 26-27, 2025 | Minor: Remove Playwright workers default |
 | [`QUICKSTART.md`](../../../QUICKSTART.md)                                                                                           | ✅ Current | Nov 26-27, 2025 | None - comprehensive 685 lines           |
-| [`docs/architecture/../../architecture/API_REFERENCE.md`](../../architecture/API_REFERENCE.md)                                      | ✅ Current | Nov 27, 2025    | None - well-structured                   |
-| [`docs/architecture/../../architecture/CANONICAL_ENGINE_API.md`](../../architecture/CANONICAL_ENGINE_API.md)                        | ✅ Current | Recent          | None - 1313 lines comprehensive          |
+| [`docs/architecture/API_REFERENCE.md`](../../architecture/API_REFERENCE.md)                                                        | ✅ Current | Nov 27, 2025    | None - well-structured                   |
+| [`docs/architecture/CANONICAL_ENGINE_API.md`](../../architecture/CANONICAL_ENGINE_API.md)                                          | ✅ Current | Recent          | None - 1313 lines comprehensive          |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md)                                                                                       | ✅ Current | Nov 27, 2025    | None - 708 lines detailed                |
 | [`ARCHITECTURE_ASSESSMENT.md`](../plans/ARCHITECTURE_ASSESSMENT.md)                                                                 | ✅ Current | Nov 27, 2025    | None - updated with Phase 4 completion   |
->>>>>>> Stashed changes
-| [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md)(../historical/CURRENT_STATE_ASSESSMENT.md) | ⚠️ Minor   | Nov 26, 2025    | Update test counts after Pass 12-13      |
+| [`CURRENT_STATE_ASSESSMENT.md`](../../historical/CURRENT_STATE_ASSESSMENT.md)                                                       | ⚠️ Minor   | Nov 26, 2025    | Update test counts after Pass 12-13      |
 
 ### Stale Documents to Update
 
