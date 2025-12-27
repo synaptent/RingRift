@@ -24,9 +24,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Constants
-MIN_MEMORY_GB_FOR_TASKS = 8
-LEADERLESS_TRAINING_TIMEOUT = 180  # 3 minutes
+# Import constants from canonical source to avoid duplication
+try:
+    from scripts.p2p.constants import (
+        LEADERLESS_TRAINING_TIMEOUT,
+        MIN_MEMORY_GB_FOR_TRAINING,
+    )
+    # Use training-specific memory constant
+    MIN_MEMORY_GB_FOR_TASKS = MIN_MEMORY_GB_FOR_TRAINING
+except ImportError:
+    # Fallback for testing/standalone use
+    MIN_MEMORY_GB_FOR_TASKS = 8
+    LEADERLESS_TRAINING_TIMEOUT = 30  # Match constants.py
 
 
 class TrainingCoordinator:

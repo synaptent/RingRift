@@ -13,12 +13,28 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from ..models import ClusterJob, ImprovementLoopState, NodeInfo
 
 logger = logging.getLogger(__name__)
+
+# Event emission helper - imported lazily to avoid circular imports
+_emit_event: Callable[[str, dict], None] | None = None
+
+
+def _get_event_emitter() -> Callable[[str, dict], None] | None:
+    """Get the event emitter function, initializing if needed."""
+    global _emit_event
+    if _emit_event is None:
+        try:
+            from app.coordination.event_router import emit_sync
+            _emit_event = emit_sync
+        except ImportError:
+            # Event system not available
+            pass
+    return _emit_event
 
 
 class JobManager:
@@ -92,6 +108,33 @@ class JobManager:
         self.jobs_lock = jobs_lock
         self.improvement_loop_state = improvement_loop_state or {}
         self.distributed_tournament_state = distributed_tournament_state or {}
+
+    def _emit_task_event(self, event_type: str, job_id: str, job_type: str, **kwargs) -> None:
+        """Emit a task lifecycle event if the event system is available.
+
+        Args:
+            event_type: One of TASK_SPAWNED, TASK_COMPLETED, TASK_FAILED
+            job_id: Unique job identifier
+            job_type: Type of job (selfplay, training, etc.)
+            **kwargs: Additional event data
+        """
+        emitter = _get_event_emitter()
+        if emitter is None:
+            return
+
+        payload = {
+            "job_id": job_id,
+            "job_type": job_type,
+            "node_id": self.node_id,
+            "timestamp": time.time(),
+            **kwargs,
+        }
+
+        try:
+            emitter(event_type, payload)
+            logger.debug(f"Emitted {event_type} for job {job_id}")
+        except Exception as e:
+            logger.debug(f"Failed to emit {event_type}: {e}")
 
     # =========================================================================
     # Selfplay Job Methods
@@ -198,16 +241,47 @@ class JobManager:
                     "pid": proc.pid,
                 }
 
+            # Emit TASK_SPAWNED event for pipeline coordination
+            self._emit_task_event(
+                "TASK_SPAWNED",
+                job_id,
+                "selfplay",
+                board_type=board_type,
+                num_players=num_players,
+                num_games=num_games,
+                engine_mode=effective_mode,
+            )
+
             _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=7200)  # 2 hour max
 
-            # Update job status
+            # Update job status and emit completion event
+            duration = time.time() - self.active_jobs.get("selfplay", {}).get(job_id, {}).get("started_at", time.time())
             with self.jobs_lock:
                 if job_id in self.active_jobs.get("selfplay", {}):
                     if proc.returncode == 0:
                         self.active_jobs["selfplay"][job_id]["status"] = "completed"
+                        self._emit_task_event(
+                            "TASK_COMPLETED",
+                            job_id,
+                            "selfplay",
+                            board_type=board_type,
+                            num_players=num_players,
+                            num_games=num_games,
+                            duration_seconds=duration,
+                        )
                     else:
-                        logger.warning(f"Selfplay job {job_id} failed: {stderr.decode()[:500]}")
+                        error_msg = stderr.decode()[:500]
+                        logger.warning(f"Selfplay job {job_id} failed: {error_msg}")
                         self.active_jobs["selfplay"][job_id]["status"] = "failed"
+                        self._emit_task_event(
+                            "TASK_FAILED",
+                            job_id,
+                            "selfplay",
+                            board_type=board_type,
+                            num_players=num_players,
+                            error=error_msg,
+                            duration_seconds=duration,
+                        )
                     # Remove from active jobs
                     del self.active_jobs["selfplay"][job_id]
 
@@ -217,12 +291,14 @@ class JobManager:
                     self.active_jobs["selfplay"][job_id]["status"] = "timeout"
                     del self.active_jobs["selfplay"][job_id]
             logger.warning(f"Selfplay job {job_id} timed out")
+            self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="timeout", board_type=board_type)
         except Exception as e:
             with self.jobs_lock:
                 if job_id in self.active_jobs.get("selfplay", {}):
                     self.active_jobs["selfplay"][job_id]["status"] = "error"
                     del self.active_jobs["selfplay"][job_id]
             logger.error(f"Error running selfplay job {job_id}: {e}")
+            self._emit_task_event("TASK_FAILED", job_id, "selfplay", error=str(e), board_type=board_type)
 
     async def run_distributed_selfplay(self, job_id: str) -> None:
         """Coordinate distributed selfplay for improvement loop.

@@ -20,12 +20,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Minimum memory requirement for selfplay tasks (GB)
-MIN_MEMORY_GB_FOR_TASKS = 16
-
-# Resource pressure thresholds
-DISK_WARNING_THRESHOLD = 90  # Disk usage %
-MEMORY_WARNING_THRESHOLD = 90  # Memory usage %
+# Import constants from canonical source to avoid duplication
+try:
+    from scripts.p2p.constants import (
+        DISK_WARNING_THRESHOLD,
+        MEMORY_WARNING_THRESHOLD,
+        MIN_MEMORY_GB_FOR_TASKS,
+    )
+except ImportError:
+    # Fallback for testing/standalone use
+    MIN_MEMORY_GB_FOR_TASKS = 16
+    DISK_WARNING_THRESHOLD = 65  # Conservative: match constants.py
+    MEMORY_WARNING_THRESHOLD = 75  # Conservative: match constants.py
 
 
 @dataclass

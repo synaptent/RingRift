@@ -44,11 +44,13 @@ from .base import (
     LoopManager,
     LoopStats,
 )
+from .elo_sync_loop import EloSyncLoop
 from .queue_populator_loop import QueuePopulatorLoop
 
 __all__ = [
     "BackoffConfig",
     "BaseLoop",
+    "EloSyncLoop",
     "LoopManager",
     "LoopStats",
     "QueuePopulatorLoop",
