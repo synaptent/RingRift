@@ -10361,6 +10361,11 @@ else:
 
         Finds a GPU worker and delegates training to it, or runs locally
         if this node has a GPU.
+
+        .. deprecated:: December 2025
+            This method duplicates JobManager.run_training().
+            Future versions should delegate to self.job_manager.run_training().
+            Scheduled for removal in Q2 2026.
         """
 
         state = self.improvement_loop_state.get(job_id)
@@ -10417,7 +10422,13 @@ else:
         state.candidate_model_path = new_model_path
 
     async def _run_local_training(self, config: dict):
-        """Run training locally using subprocess."""
+        """Run training locally using subprocess.
+
+        .. deprecated:: December 2025
+            This method duplicates JobManager.run_local_training().
+            Future versions should delegate to self.job_manager.run_local_training().
+            Scheduled for removal in Q2 2026.
+        """
         import sys
 
         logger.info("Running local training")

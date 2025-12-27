@@ -353,6 +353,90 @@ class JobManager:
                 state.best_model_path, iteration_dir
             )
 
+    async def _dispatch_selfplay_to_workers(
+        self,
+        job_id: str,
+        workers: list[Any],
+        games_per_worker: int,
+        remainder: int,
+        board_type: str,
+        num_players: int,
+        model_path: str | None,
+        output_dir: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Dispatch selfplay tasks to worker nodes via HTTP.
+
+        Args:
+            job_id: Job ID for tracking
+            workers: List of worker node info objects
+            games_per_worker: Base games per worker
+            remainder: Extra games to distribute to first workers
+            board_type: Board type
+            num_players: Number of players
+            model_path: Path to model file (or None for heuristic)
+            output_dir: Directory for output files
+
+        Returns:
+            Dict of worker_id -> dispatch result
+        """
+        results: dict[str, dict[str, Any]] = {}
+
+        try:
+            from scripts.p2p.network import get_client_session
+            from aiohttp import ClientTimeout
+        except ImportError:
+            logger.warning("aiohttp not available for distributed dispatch")
+            return results
+
+        timeout = ClientTimeout(total=30)
+
+        async with get_client_session(timeout) as session:
+            for i, worker in enumerate(workers):
+                worker_id = getattr(worker, "node_id", str(worker))
+                games = games_per_worker + (1 if i < remainder else 0)
+
+                # Get worker endpoint
+                worker_ip = getattr(worker, "best_ip", None) or getattr(worker, "ip", None)
+                worker_port = getattr(worker, "port", 8770)
+
+                if not worker_ip:
+                    results[worker_id] = {"success": False, "error": "no_ip"}
+                    continue
+
+                url = f"http://{worker_ip}:{worker_port}/run-selfplay"
+                payload = {
+                    "job_id": f"{job_id}_{worker_id}",
+                    "parent_job_id": job_id,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "num_games": games,
+                    "model_path": model_path,
+                    "output_dir": output_dir,
+                    "engine_mode": "gumbel-mcts" if model_path else "heuristic-only",
+                }
+
+                try:
+                    async with session.post(url, json=payload, timeout=timeout) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            results[worker_id] = {
+                                "success": result.get("success", True),
+                                "games": games,
+                            }
+                            logger.debug(f"Dispatched {games} games to {worker_id}")
+                        else:
+                            results[worker_id] = {
+                                "success": False,
+                                "error": f"http_{resp.status}",
+                            }
+                except asyncio.TimeoutError:
+                    results[worker_id] = {"success": False, "error": "timeout"}
+                except Exception as e:
+                    results[worker_id] = {"success": False, "error": str(e)}
+                    logger.debug(f"Failed to dispatch to {worker_id}: {e}")
+
+        return results
+
     async def run_local_selfplay(
         self,
         job_id: str,
