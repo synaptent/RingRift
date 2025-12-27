@@ -20567,38 +20567,9 @@ print(json.dumps({{
             for voter_id in missing_voters:
                 await self._discover_voter_peer(voter_id)
 
-    async def _nat_management_loop(self):
-        """
-        Advanced NAT management loop.
-
-        IMPROVEMENTS:
-        - STUN-like probing to detect NAT type
-        - Symmetric NAT detection (which breaks direct connectivity)
-        - Intelligent relay selection
-        - Hole-punch coordination
-        """
-        logger.info("Starting advanced NAT management loop")
-        last_stun_probe = 0.0
-
-        while self.running:
-            try:
-                now = time.time()
-
-                # Periodic STUN-like probe to detect external IP and NAT type
-                if NAT_SYMMETRIC_DETECTION_ENABLED and now - last_stun_probe > NAT_STUN_LIKE_PROBE_INTERVAL:
-                    last_stun_probe = now
-                    await self._detect_nat_type()
-
-                # Probe NAT-blocked peers for recovery
-                await self._probe_nat_blocked_peers()
-
-                # Update relay preferences based on connectivity
-                await self._update_relay_preferences()
-
-            except Exception as e:  # noqa: BLE001
-                logger.info(f"NAT management error: {e}")
-
-            await asyncio.sleep(NAT_BLOCKED_PROBE_INTERVAL)
+    # NOTE: _nat_management_loop() removed Dec 2025 (32 LOC).
+    # Now runs via LoopManager as NATManagementLoop.
+    # See scripts/p2p/loops/network_loops.py for implementation.
 
     async def _detect_nat_type(self):
         """

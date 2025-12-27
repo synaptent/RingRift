@@ -199,17 +199,8 @@ async def emit_p2p_work_completed(
     # Dec 2025: Validate config_key before emission (logs warning if invalid)
     _validate_config_key(config_key, f"emit_p2p_work_completed({work_type})")
 
-    # Parse config_key into board_type and num_players
-    board_type = ""
-    num_players = 0
-    if config_key and "_" in config_key:
-        parts = config_key.rsplit("_", 1)
-        if len(parts) == 2:
-            board_type = parts[0]
-            try:
-                num_players = int(parts[1].rstrip("p"))
-            except ValueError:
-                pass
+    # Parse config_key using canonical parser (December 2025 - DRY consolidation)
+    board_type, num_players = _parse_config_key_safe(config_key)
 
     timestamp = datetime.now().isoformat()
 
@@ -344,17 +335,8 @@ async def emit_p2p_gauntlet_completed(
     # Dec 2025: Validate config_key before emission (logs warning if invalid)
     _validate_config_key(config_key, "emit_p2p_gauntlet_completed")
 
-    # Parse config_key
-    board_type = ""
-    num_players = 0
-    if config_key and "_" in config_key:
-        parts = config_key.rsplit("_", 1)
-        if len(parts) == 2:
-            board_type = parts[0]
-            try:
-                num_players = int(parts[1].rstrip("p"))
-            except ValueError:
-                pass
+    # Parse config_key using canonical parser (December 2025 - DRY consolidation)
+    board_type, num_players = _parse_config_key_safe(config_key)
 
     try:
         await publish(
