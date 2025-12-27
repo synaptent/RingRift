@@ -27,9 +27,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _check_daemon_running(daemon: Any) -> bool:
+    """Check if a daemon is running, handling different daemon implementations.
+
+    Supports:
+    - Daemons with is_running property (BaseDaemon pattern)
+    - Daemons with is_running() method
+    - Daemons with _running attribute (legacy pattern)
+    """
+    # Try is_running as property or method
+    if hasattr(daemon, "is_running"):
+        attr = getattr(daemon, "is_running")
+        if callable(attr):
+            return attr()
+        return attr
+    # Fall back to _running attribute
+    if hasattr(daemon, "_running"):
+        return daemon._running
+    # Default: assume not running if we can't determine
+    return False
+
+
 async def _wait_for_daemon(daemon: Any, check_interval: float = 10.0) -> None:
     """Wait for a daemon to complete or be stopped."""
-    while daemon.is_running():
+    while _check_daemon_running(daemon):
         await asyncio.sleep(check_interval)
 
 
