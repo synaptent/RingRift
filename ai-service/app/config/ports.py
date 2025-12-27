@@ -21,6 +21,10 @@ P2P_DEFAULT_PORT = 8770
 # Gossip protocol port for P2P data replication and peer discovery
 GOSSIP_PORT = 8771
 
+# SWIM membership protocol port for gossip-based failure detection
+# Used by SwimMembershipManager for O(1) bandwidth peer health monitoring
+SWIM_PORT = 7947
+
 # =============================================================================
 # Node Health & Monitoring
 # =============================================================================

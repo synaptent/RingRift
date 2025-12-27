@@ -16724,6 +16724,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
             populator = QueuePopulator(config=populator_config)
             populator.set_work_queue(get_work_queue())
+            # Wire SelfplayScheduler for priority-based config selection (Dec 2025)
+            populator.set_selfplay_scheduler(self.selfplay_scheduler)
             self._queue_populator = populator
         except Exception as e:
             logger.error(f"Failed to initialize queue populator: {e}")
@@ -27022,8 +27024,16 @@ print(json.dumps({{
         # Serf integration routes (battle-tested SWIM gossip)
         app.router.add_post('/serf/event', self.handle_serf_event)
 
-        # Native SWIM integration (swim-p2p library)
+        # Native SWIM integration (swim-p2p library) - Phase 5 Dec 26, 2025
         app.router.add_get('/swim/status', self.handle_swim_status)
+        app.router.add_get('/swim/members', self.handle_swim_members)
+
+        # Raft consensus integration (PySyncObj) - Phase 5 Dec 26, 2025
+        app.router.add_get('/raft/status', self.handle_raft_status)
+        app.router.add_get('/raft/work', self.handle_raft_work_queue)
+        app.router.add_get('/raft/jobs', self.handle_raft_jobs)
+        app.router.add_post('/raft/lock/{name}', self.handle_raft_lock)
+        app.router.add_delete('/raft/lock/{name}', self.handle_raft_unlock)
 
         app.router.add_post('/coordinator', self.handle_coordinator)
         app.router.add_post('/start_job', self.handle_start_job)

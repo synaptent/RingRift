@@ -20,6 +20,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Event bridge import (with fallback)
+try:
+    from scripts.p2p.p2p_event_bridge import (
+        emit_p2p_work_completed,
+        emit_p2p_work_failed,
+    )
+    HAS_EVENT_BRIDGE = True
+except ImportError:
+    HAS_EVENT_BRIDGE = False
+
+    async def emit_p2p_work_completed(*args, **kwargs):
+        pass
+
+    async def emit_p2p_work_failed(*args, **kwargs):
+        pass
+
 
 # Work queue singleton (lazy import to avoid circular deps)
 _work_queue = None
@@ -281,6 +297,18 @@ class WorkQueueHandlersMixin:
 
             success = wq.complete_work(work_id, result)
 
+            # Emit event to coordination EventRouter
+            if success and HAS_EVENT_BRIDGE:
+                node_id = work_item.assigned_to if work_item else ""
+                await emit_p2p_work_completed(
+                    work_id=work_id,
+                    work_type=work_type.value if work_type else "unknown",
+                    config_key=f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
+                    result=result,
+                    node_id=node_id,
+                    duration_seconds=result.get("duration_seconds", 0.0),
+                )
+
             # Update queue populator with Elo data if applicable
             if success and self._queue_populator is not None:
                 board_type = config.get("board_type", "")
@@ -342,7 +370,24 @@ class WorkQueueHandlersMixin:
             if not work_id:
                 return web.json_response({"error": "work_id_required"}, status=400)
 
+            # Get work item info before marking as failed
+            work_item = wq.items.get(work_id)
+            work_type = work_item.work_type.value if work_item and work_item.work_type else "unknown"
+            config = work_item.config if work_item else {}
+            node_id = work_item.assigned_to if work_item else ""
+
             success = wq.fail_work(work_id, error)
+
+            # Emit failure event to coordination EventRouter
+            if success and HAS_EVENT_BRIDGE:
+                await emit_p2p_work_failed(
+                    work_id=work_id,
+                    work_type=work_type,
+                    config_key=f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
+                    error=error,
+                    node_id=node_id,
+                )
+
             return web.json_response(
                 {"status": "failed" if success else "not_found", "work_id": work_id}
             )

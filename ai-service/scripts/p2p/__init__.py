@@ -110,6 +110,12 @@ from .peer_manager import (
     set_peer_manager,
 )
 
+# Re-export SWIM + Raft integration (Dec 26, 2025 - Phase 5)
+from .membership_mixin import MembershipMixin
+from .consensus_mixin import ConsensusMixin
+from .handlers.swim import SwimHandlersMixin
+from .handlers.raft import RaftHandlersMixin
+
 # Re-export client utilities
 from .client import (
     P2PClient,
@@ -137,6 +143,11 @@ __all__ = [
     'PeerManagerMixin',
     'get_peer_manager',
     'set_peer_manager',
+    # SWIM + Raft integration (Dec 26, 2025 - Phase 5)
+    'MembershipMixin',
+    'ConsensusMixin',
+    'SwimHandlersMixin',
+    'RaftHandlersMixin',
     # Constants
     'DEFAULT_PORT',
     'DISK_CRITICAL_THRESHOLD',

@@ -23,6 +23,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Event bridge import (with fallback)
+try:
+    from scripts.p2p.p2p_event_bridge import emit_p2p_gauntlet_completed
+    HAS_EVENT_BRIDGE = True
+except ImportError:
+    HAS_EVENT_BRIDGE = False
+
+    async def emit_p2p_gauntlet_completed(*args, **kwargs):
+        pass
+
 
 class GauntletHandlersMixin:
     """Mixin providing gauntlet HTTP handlers.

@@ -86,6 +86,7 @@ def check_node_p2p_sync(node_name: str, ssh_config: Dict) -> Dict:
             )
             if curl_result.returncode == 0 and curl_result.stdout.strip():
                 result["port_responding"] = True
+                result["p2p_running"] = True
 
             # Check disk usage
             df_result = subprocess.run(
@@ -151,6 +152,7 @@ def check_node_p2p_sync(node_name: str, ssh_config: Dict) -> Dict:
         )
         if curl_result.returncode == 0 and curl_result.stdout.strip():
             result["port_responding"] = True
+            result["p2p_running"] = True
 
         # 3. Check disk usage
         df_cmd = ssh_cmd_base + ["df -h / | tail -1"]

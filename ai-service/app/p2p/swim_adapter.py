@@ -39,6 +39,8 @@ from typing import Callable, Optional
 
 import yaml
 
+from app.config.ports import SWIM_PORT
+
 logger = logging.getLogger(__name__)
 
 # Try to import swim-p2p, fall back gracefully if not available
@@ -69,7 +71,7 @@ class SwimConfig:
     """Configuration for SWIM membership protocol."""
 
     bind_host: str = "0.0.0.0"
-    bind_port: int = 7947  # Default SWIM port (different from aiohttp 8770)
+    bind_port: int = SWIM_PORT  # Default SWIM port (different from aiohttp 8770)
 
     # Failure detection tuning
     failure_timeout: float = 5.0  # Seconds before marking node as failed
@@ -101,7 +103,7 @@ class SwimMembershipManager:
     def __init__(
         self,
         node_id: str,
-        bind_port: int = 7947,
+        bind_port: int = SWIM_PORT,
         config: Optional[SwimConfig] = None,
         on_member_alive: Optional[Callable[[str], None]] = None,
         on_member_failed: Optional[Callable[[str], None]] = None,
@@ -129,7 +131,7 @@ class SwimMembershipManager:
         cls,
         node_id: str,
         config_path: Optional[Path] = None,
-        bind_port: int = 7947,
+        bind_port: int = SWIM_PORT,
     ) -> "SwimMembershipManager":
         """Create manager with seeds from distributed_hosts.yaml.
 
@@ -370,7 +372,7 @@ class HybridMembershipManager:
     def __init__(
         self,
         node_id: str,
-        swim_port: int = 7947,
+        swim_port: int = SWIM_PORT,
         http_peers: Optional[dict[str, str]] = None,  # node_id -> http_endpoint
     ):
         self.node_id = node_id

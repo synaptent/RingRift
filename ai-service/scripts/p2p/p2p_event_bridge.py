@@ -1,0 +1,538 @@
+"""P2P Event Bridge - Wires P2P orchestrator events to the coordination EventRouter.
+
+This module provides a bridge between P2P HTTP handlers and the central event system,
+enabling distributed coordination across the cluster.
+
+Usage:
+    from scripts.p2p.p2p_event_bridge import (
+        emit_p2p_work_completed,
+        emit_p2p_gauntlet_completed,
+        emit_p2p_leader_changed,
+        emit_p2p_node_online,
+        emit_p2p_node_offline,
+    )
+
+    # From work_queue handler when work completes
+    await emit_p2p_work_completed(
+        work_id="abc123",
+        work_type="selfplay",
+        config_key="hex8_2p",
+        result={"games_generated": 500},
+        node_id="runpod-h100",
+    )
+
+Events emitted:
+    - SELFPLAY_COMPLETE: When selfplay work finishes
+    - TRAINING_COMPLETED: When training work finishes
+    - EVALUATION_COMPLETED: When gauntlet/evaluation work finishes
+    - HOST_ONLINE: When a node joins the cluster
+    - HOST_OFFLINE: When a node leaves the cluster
+    - ELO_UPDATED: When Elo ratings are synced
+    - P2P_CLUSTER_HEALTHY: When cluster reaches quorum
+    - P2P_CLUSTER_UNHEALTHY: When cluster loses quorum
+
+Created: December 2025
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Event Router Import (with fallback for standalone P2P mode)
+# =============================================================================
+
+try:
+    from app.coordination.event_router import (
+        publish,
+        publish_sync,
+        get_router,
+        DataEventType,
+    )
+    HAS_EVENT_ROUTER = True
+except ImportError:
+    HAS_EVENT_ROUTER = False
+    logger.info("[P2PEventBridge] Event router not available, events will be logged only")
+
+    async def publish(*args, **kwargs):
+        pass
+
+    def publish_sync(*args, **kwargs):
+        pass
+
+    def get_router():
+        return None
+
+    DataEventType = None
+
+
+# =============================================================================
+# Work Queue Event Emitters
+# =============================================================================
+
+async def emit_p2p_work_completed(
+    work_id: str,
+    work_type: str,
+    config_key: str,
+    result: dict[str, Any],
+    node_id: str,
+    duration_seconds: float = 0.0,
+) -> None:
+    """Emit event when P2P work queue item completes.
+
+    Routes to appropriate event type based on work_type:
+    - selfplay -> SELFPLAY_COMPLETE
+    - training -> TRAINING_COMPLETED
+    - tournament/gauntlet -> EVALUATION_COMPLETED
+    """
+    if not HAS_EVENT_ROUTER:
+        logger.info(f"[P2PEventBridge] Work completed: {work_type} {config_key} on {node_id}")
+        return
+
+    # Parse config_key into board_type and num_players
+    board_type = ""
+    num_players = 0
+    if config_key and "_" in config_key:
+        parts = config_key.rsplit("_", 1)
+        if len(parts) == 2:
+            board_type = parts[0]
+            try:
+                num_players = int(parts[1].rstrip("p"))
+            except ValueError:
+                pass
+
+    timestamp = datetime.now().isoformat()
+
+    try:
+        if work_type == "selfplay":
+            await publish(
+                event_type="SELFPLAY_COMPLETE",
+                payload={
+                    "task_id": work_id,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "config_key": config_key,
+                    "games_generated": result.get("games_generated", 0),
+                    "success": True,
+                    "node_id": node_id,
+                    "duration_seconds": duration_seconds,
+                    "selfplay_type": result.get("selfplay_type", "standard"),
+                    "iteration": result.get("iteration", 0),
+                    "timestamp": timestamp,
+                },
+                source="p2p_work_queue",
+            )
+            logger.debug(f"[P2PEventBridge] Emitted SELFPLAY_COMPLETE for {config_key}")
+
+        elif work_type == "training":
+            await publish(
+                event_type="TRAINING_COMPLETED",
+                payload={
+                    "config_key": config_key,
+                    "model_id": result.get("model_id", ""),
+                    "model_path": result.get("model_path", ""),
+                    "val_loss": result.get("val_loss", 0.0),
+                    "train_loss": result.get("train_loss", 0.0),
+                    "epochs": result.get("epochs", 0),
+                    "success": True,
+                    "node_id": node_id,
+                    "duration_seconds": duration_seconds,
+                    "timestamp": timestamp,
+                },
+                source="p2p_work_queue",
+            )
+            logger.debug(f"[P2PEventBridge] Emitted TRAINING_COMPLETED for {config_key}")
+
+        elif work_type in ("tournament", "gauntlet"):
+            await publish(
+                event_type="EVALUATION_COMPLETED",
+                payload={
+                    "model_id": result.get("best_model") or result.get("model_id", ""),
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "elo": result.get("best_elo") or result.get("elo", 0.0),
+                    "win_rate": result.get("win_rate", 0.0),
+                    "games_played": result.get("games_played", 0),
+                    "elo_delta": result.get("elo_delta", 0.0),
+                    "node_id": node_id,
+                    "timestamp": timestamp,
+                },
+                source="p2p_work_queue",
+            )
+            logger.debug(f"[P2PEventBridge] Emitted EVALUATION_COMPLETED for {config_key}")
+
+        else:
+            # Generic work completion (no specific event type)
+            logger.debug(f"[P2PEventBridge] Work completed: {work_type} (no event emitted)")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit work completed event: {e}")
+
+
+async def emit_p2p_work_failed(
+    work_id: str,
+    work_type: str,
+    config_key: str,
+    error: str,
+    node_id: str,
+) -> None:
+    """Emit event when P2P work queue item fails."""
+    if not HAS_EVENT_ROUTER:
+        logger.warning(f"[P2PEventBridge] Work failed: {work_type} {config_key}: {error}")
+        return
+
+    timestamp = datetime.now().isoformat()
+
+    try:
+        if work_type == "training":
+            await publish(
+                event_type="TRAINING_FAILED",
+                payload={
+                    "config_key": config_key,
+                    "error": error,
+                    "error_details": error,
+                    "node_id": node_id,
+                    "success": False,
+                    "timestamp": timestamp,
+                },
+                source="p2p_work_queue",
+            )
+            logger.debug(f"[P2PEventBridge] Emitted TRAINING_FAILED for {config_key}")
+        else:
+            # For other work types, just log
+            logger.warning(f"[P2PEventBridge] Work failed: {work_type} {config_key}: {error}")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit work failed event: {e}")
+
+
+# =============================================================================
+# Gauntlet Event Emitters
+# =============================================================================
+
+async def emit_p2p_gauntlet_completed(
+    model_id: str,
+    baseline_id: str,
+    config_key: str,
+    wins: int,
+    total_games: int,
+    win_rate: float,
+    passed: bool,
+    node_id: str,
+) -> None:
+    """Emit EVALUATION_COMPLETED event when gauntlet finishes."""
+    if not HAS_EVENT_ROUTER:
+        logger.info(
+            f"[P2PEventBridge] Gauntlet completed: {model_id} vs {baseline_id} "
+            f"({wins}/{total_games}, {win_rate:.1%}, passed={passed})"
+        )
+        return
+
+    # Parse config_key
+    board_type = ""
+    num_players = 0
+    if config_key and "_" in config_key:
+        parts = config_key.rsplit("_", 1)
+        if len(parts) == 2:
+            board_type = parts[0]
+            try:
+                num_players = int(parts[1].rstrip("p"))
+            except ValueError:
+                pass
+
+    try:
+        await publish(
+            event_type="EVALUATION_COMPLETED",
+            payload={
+                "model_id": model_id,
+                "board_type": board_type,
+                "num_players": num_players,
+                "elo": 0.0,  # Gauntlet doesn't compute Elo directly
+                "win_rate": win_rate,
+                "games_played": total_games,
+                "elo_delta": 0.0,
+                "opponents": [baseline_id],
+                "passed": passed,
+                "node_id": node_id,
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_gauntlet",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted EVALUATION_COMPLETED for {model_id}")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit gauntlet completed event: {e}")
+
+
+# =============================================================================
+# Node Lifecycle Event Emitters
+# =============================================================================
+
+async def emit_p2p_node_online(
+    node_id: str,
+    host_type: str = "",
+    capabilities: dict[str, Any] | None = None,
+) -> None:
+    """Emit HOST_ONLINE event when a node joins the cluster."""
+    if not HAS_EVENT_ROUTER:
+        logger.info(f"[P2PEventBridge] Node online: {node_id} ({host_type})")
+        return
+
+    try:
+        await publish(
+            event_type="HOST_ONLINE",
+            payload={
+                "node_id": node_id,
+                "host_id": node_id,  # Alias for compatibility
+                "host_type": host_type,
+                "capabilities": capabilities or {},
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_gossip",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted HOST_ONLINE for {node_id}")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit node online event: {e}")
+
+
+async def emit_p2p_node_offline(
+    node_id: str,
+    reason: str = "unreachable",
+) -> None:
+    """Emit HOST_OFFLINE event when a node leaves the cluster."""
+    if not HAS_EVENT_ROUTER:
+        logger.info(f"[P2PEventBridge] Node offline: {node_id} ({reason})")
+        return
+
+    try:
+        await publish(
+            event_type="HOST_OFFLINE",
+            payload={
+                "node_id": node_id,
+                "host_id": node_id,
+                "reason": reason,
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_gossip",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted HOST_OFFLINE for {node_id}")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit node offline event: {e}")
+
+
+# =============================================================================
+# Cluster Health Event Emitters
+# =============================================================================
+
+async def emit_p2p_cluster_healthy(
+    alive_peers: int,
+    total_peers: int,
+    leader_id: str,
+    quorum: bool = True,
+) -> None:
+    """Emit P2P_CLUSTER_HEALTHY event when cluster is healthy."""
+    if not HAS_EVENT_ROUTER:
+        logger.info(f"[P2PEventBridge] Cluster healthy: {alive_peers}/{total_peers} peers, leader={leader_id}")
+        return
+
+    try:
+        await publish(
+            event_type="P2P_CLUSTER_HEALTHY",
+            payload={
+                "alive_peers": alive_peers,
+                "total_peers": total_peers,
+                "leader_id": leader_id,
+                "quorum": quorum,
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_election",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted P2P_CLUSTER_HEALTHY")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit cluster healthy event: {e}")
+
+
+async def emit_p2p_cluster_unhealthy(
+    alive_peers: int,
+    total_peers: int,
+    reason: str = "quorum_lost",
+) -> None:
+    """Emit P2P_CLUSTER_UNHEALTHY event when cluster loses quorum or leader."""
+    if not HAS_EVENT_ROUTER:
+        logger.warning(f"[P2PEventBridge] Cluster unhealthy: {alive_peers}/{total_peers} peers, reason={reason}")
+        return
+
+    try:
+        await publish(
+            event_type="P2P_CLUSTER_UNHEALTHY",
+            payload={
+                "alive_peers": alive_peers,
+                "total_peers": total_peers,
+                "reason": reason,
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_election",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted P2P_CLUSTER_UNHEALTHY")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit cluster unhealthy event: {e}")
+
+
+# =============================================================================
+# Elo Sync Event Emitters
+# =============================================================================
+
+async def emit_p2p_elo_updated(
+    model_id: str,
+    config_key: str,
+    old_elo: float,
+    new_elo: float,
+    games_played: int = 0,
+) -> None:
+    """Emit ELO_UPDATED event when Elo ratings are synced."""
+    if not HAS_EVENT_ROUTER:
+        logger.info(f"[P2PEventBridge] Elo updated: {model_id} {old_elo:.0f} -> {new_elo:.0f}")
+        return
+
+    try:
+        await publish(
+            event_type="ELO_UPDATED",
+            payload={
+                "model_id": model_id,
+                "config_key": config_key,
+                "old_elo": old_elo,
+                "new_elo": new_elo,
+                "elo_delta": new_elo - old_elo,
+                "games_played": games_played,
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_elo_sync",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted ELO_UPDATED for {model_id}")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit elo updated event: {e}")
+
+
+# =============================================================================
+# Leader Election Event Emitters
+# =============================================================================
+
+async def emit_p2p_leader_changed(
+    new_leader_id: str,
+    old_leader_id: str,
+    term: int = 0,
+) -> None:
+    """Emit LEADER_CHANGED event when P2P leader changes.
+
+    Note: This is a P2P-specific event, not in the standard catalog.
+    Consumers can subscribe to monitor cluster leadership.
+    """
+    if not HAS_EVENT_ROUTER:
+        logger.info(f"[P2PEventBridge] Leader changed: {old_leader_id} -> {new_leader_id}")
+        return
+
+    try:
+        await publish(
+            event_type="LEADER_CHANGED",
+            payload={
+                "new_leader_id": new_leader_id,
+                "old_leader_id": old_leader_id,
+                "term": term,
+                "timestamp": datetime.now().isoformat(),
+            },
+            source="p2p_election",
+        )
+        logger.debug(f"[P2PEventBridge] Emitted LEADER_CHANGED: {old_leader_id} -> {new_leader_id}")
+
+    except Exception as e:
+        logger.error(f"[P2PEventBridge] Failed to emit leader changed event: {e}")
+
+
+# =============================================================================
+# Sync versions for non-async contexts
+# =============================================================================
+
+def emit_p2p_work_completed_sync(
+    work_id: str,
+    work_type: str,
+    config_key: str,
+    result: dict[str, Any],
+    node_id: str,
+    duration_seconds: float = 0.0,
+) -> None:
+    """Synchronous version of emit_p2p_work_completed."""
+    try:
+        asyncio.get_running_loop()
+        # If we're in an async context, schedule it
+        asyncio.create_task(
+            emit_p2p_work_completed(
+                work_id, work_type, config_key, result, node_id, duration_seconds
+            )
+        )
+    except RuntimeError:
+        # No running loop - run synchronously
+        asyncio.run(
+            emit_p2p_work_completed(
+                work_id, work_type, config_key, result, node_id, duration_seconds
+            )
+        )
+
+
+def emit_p2p_node_online_sync(
+    node_id: str,
+    host_type: str = "",
+    capabilities: dict[str, Any] | None = None,
+) -> None:
+    """Synchronous version of emit_p2p_node_online."""
+    try:
+        asyncio.get_running_loop()
+        asyncio.create_task(emit_p2p_node_online(node_id, host_type, capabilities))
+    except RuntimeError:
+        asyncio.run(emit_p2p_node_online(node_id, host_type, capabilities))
+
+
+def emit_p2p_node_offline_sync(node_id: str, reason: str = "unreachable") -> None:
+    """Synchronous version of emit_p2p_node_offline."""
+    try:
+        asyncio.get_running_loop()
+        asyncio.create_task(emit_p2p_node_offline(node_id, reason))
+    except RuntimeError:
+        asyncio.run(emit_p2p_node_offline(node_id, reason))
+
+
+# =============================================================================
+# Module Exports
+# =============================================================================
+
+__all__ = [
+    # Work queue events
+    "emit_p2p_work_completed",
+    "emit_p2p_work_completed_sync",
+    "emit_p2p_work_failed",
+    # Gauntlet events
+    "emit_p2p_gauntlet_completed",
+    # Node lifecycle events
+    "emit_p2p_node_online",
+    "emit_p2p_node_online_sync",
+    "emit_p2p_node_offline",
+    "emit_p2p_node_offline_sync",
+    # Cluster health events
+    "emit_p2p_cluster_healthy",
+    "emit_p2p_cluster_unhealthy",
+    # Elo sync events
+    "emit_p2p_elo_updated",
+    # Leader election events
+    "emit_p2p_leader_changed",
+    # Constants
+    "HAS_EVENT_ROUTER",
+]
