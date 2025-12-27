@@ -57,16 +57,21 @@ __all__ = [
     "FreshnessConfig",
     "FreshnessResult",
     "DataSourceInfo",
-    # Main class
+    "WatcherConfig",
+    # Main classes
     "TrainingFreshnessChecker",
+    "HighQualityDataSyncWatcher",
     # Singleton accessors
     "get_freshness_checker",
     "reset_freshness_checker",
+    "get_high_quality_sync_watcher",
+    "reset_high_quality_sync_watcher",
     # Convenience functions
     "check_freshness_sync",
     # Constants
     "DEFAULT_MAX_AGE_HOURS",
     "DEFAULT_SYNC_TIMEOUT_SECONDS",
+    "ALL_CONFIGS",
 ]
 
 # Default freshness threshold (1 hour)
@@ -681,3 +686,180 @@ def check_freshness_sync(
     )
     checker = TrainingFreshnessChecker(config)
     return checker.check_freshness(board_type, num_players)
+
+
+# =============================================================================
+# HighQualityDataSyncWatcher Daemon
+# =============================================================================
+
+
+@dataclass
+class WatcherConfig:
+    """Configuration for HighQualityDataSyncWatcher."""
+
+    check_interval_seconds: float = 300.0  # 5 minutes
+    max_age_hours: float = 1.0
+    configs_to_watch: list[tuple[str, int]] | None = None  # None = all configs
+    trigger_sync: bool = True
+    emit_events: bool = True
+
+
+# All board configurations
+ALL_CONFIGS: list[tuple[str, int]] = [
+    ("hex8", 2), ("hex8", 3), ("hex8", 4),
+    ("square8", 2), ("square8", 3), ("square8", 4),
+    ("square19", 2), ("square19", 3), ("square19", 4),
+    ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+]
+
+
+class HighQualityDataSyncWatcher:
+    """Daemon that monitors training data freshness and triggers sync.
+
+    This daemon periodically checks all board configurations for stale
+    training data and triggers sync when needed. It integrates with
+    the coordination infrastructure for automatic data freshness.
+
+    Usage:
+        watcher = HighQualityDataSyncWatcher()
+        await watcher.start()
+        # ... runs until stopped
+        await watcher.stop()
+    """
+
+    def __init__(self, config: WatcherConfig | None = None):
+        """Initialize the watcher.
+
+        Args:
+            config: Watcher configuration
+        """
+        self.config = config or WatcherConfig()
+        self._running = False
+        self._task: asyncio.Task | None = None
+        self._checker = TrainingFreshnessChecker(
+            FreshnessConfig(
+                max_age_hours=self.config.max_age_hours,
+                trigger_sync=self.config.trigger_sync,
+                wait_for_sync=False,  # Don't block on sync
+            )
+        )
+        self._start_time = 0.0
+        self._checks_completed = 0
+        self._syncs_triggered = 0
+        self._errors = 0
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the watcher is running."""
+        return self._running
+
+    async def start(self) -> None:
+        """Start the watcher daemon."""
+        if self._running:
+            logger.warning("HighQualityDataSyncWatcher already running")
+            return
+
+        self._running = True
+        self._start_time = time.time()
+        self._task = asyncio.create_task(self._run_loop())
+        logger.info("HighQualityDataSyncWatcher started")
+
+    async def stop(self) -> None:
+        """Stop the watcher daemon."""
+        if not self._running:
+            return
+
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        logger.info("HighQualityDataSyncWatcher stopped")
+
+    async def _run_loop(self) -> None:
+        """Main watcher loop."""
+        while self._running:
+            try:
+                await self._check_all_configs()
+                self._checks_completed += 1
+            except Exception as e:
+                self._errors += 1
+                logger.error(f"Error in freshness check loop: {e}")
+
+            # Wait for next check interval
+            try:
+                await asyncio.sleep(self.config.check_interval_seconds)
+            except asyncio.CancelledError:
+                break
+
+    async def _check_all_configs(self) -> None:
+        """Check freshness for all watched configurations."""
+        configs = self.config.configs_to_watch or ALL_CONFIGS
+
+        for board_type, num_players in configs:
+            if not self._running:
+                break
+
+            try:
+                result = await self._checker.ensure_fresh_data(
+                    board_type, num_players
+                )
+                if result.sync_triggered:
+                    self._syncs_triggered += 1
+                    logger.info(
+                        f"Triggered sync for {board_type}_{num_players}p "
+                        f"(age={result.data_age_hours:.1f}h)"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check freshness for {board_type}_{num_players}p: {e}"
+                )
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration."""
+        uptime = time.time() - self._start_time if self._start_time > 0 else 0
+        return {
+            "healthy": self._running and self._errors < 10,
+            "status": "running" if self._running else "stopped",
+            "uptime_seconds": uptime,
+            "checks_completed": self._checks_completed,
+            "syncs_triggered": self._syncs_triggered,
+            "errors": self._errors,
+            "check_interval": self.config.check_interval_seconds,
+        }
+
+    def get_status(self) -> dict[str, Any]:
+        """Get watcher status."""
+        return {
+            "running": self._running,
+            **self.health_check(),
+            "config": {
+                "check_interval_seconds": self.config.check_interval_seconds,
+                "max_age_hours": self.config.max_age_hours,
+                "trigger_sync": self.config.trigger_sync,
+                "configs_count": len(self.config.configs_to_watch or ALL_CONFIGS),
+            },
+        }
+
+
+# Singleton for HighQualityDataSyncWatcher
+_watcher_instance: HighQualityDataSyncWatcher | None = None
+
+
+def get_high_quality_sync_watcher(
+    config: WatcherConfig | None = None,
+) -> HighQualityDataSyncWatcher:
+    """Get singleton HighQualityDataSyncWatcher instance."""
+    global _watcher_instance
+    if _watcher_instance is None:
+        _watcher_instance = HighQualityDataSyncWatcher(config)
+    return _watcher_instance
+
+
+def reset_high_quality_sync_watcher() -> None:
+    """Reset the singleton (for testing)."""
+    global _watcher_instance
+    _watcher_instance = None

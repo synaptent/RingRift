@@ -1843,6 +1843,9 @@ async def emit_coordinator_healthy(
     Returns:
         True if emitted successfully
     """
+    # December 27, 2025: Guard against DataEventType being None when import fails
+    if not HAS_DATA_EVENTS or DataEventType is None:
+        return False
     return await _emit_data_event(
         DataEventType.COORDINATOR_HEALTHY,
         {
@@ -1880,6 +1883,9 @@ async def emit_coordinator_unhealthy(
     Returns:
         True if emitted successfully
     """
+    # December 27, 2025: Guard against DataEventType being None when import fails
+    if not HAS_DATA_EVENTS or DataEventType is None:
+        return False
     return await _emit_data_event(
         DataEventType.COORDINATOR_UNHEALTHY,
         {

@@ -547,24 +547,24 @@ class TestHealthCheck:
 
     @pytest.mark.asyncio
     async def test_health_check_when_not_running(self, daemon):
-        """Health check returns False when not running."""
+        """Health check returns healthy=False when not running."""
         daemon._running = False
-        # health_check is async and returns bool
+        # health_check is async and returns HealthCheckResult
         result = await daemon.health_check()
-        assert result is False
+        assert result.healthy is False
 
     @pytest.mark.asyncio
     async def test_health_check_when_running(self, daemon):
-        """Health check returns True when running."""
+        """Health check returns healthy=True when running."""
         daemon._running = True
         daemon._cycles_completed = 5
         daemon._errors_count = 0
         result = await daemon.health_check()
-        assert result is True
+        assert result.healthy is True
 
     @pytest.mark.asyncio
     async def test_health_check_stale_cycle_data(self, daemon):
-        """Health check returns False for stale cycle data."""
+        """Health check returns healthy=False for stale cycle data."""
         daemon._running = True
         # Set last cycle stats to very old (stale data)
         # age = time.time() - 1.0 >> config.check_interval_seconds * 2
@@ -572,9 +572,9 @@ class TestHealthCheck:
             cycle_start=1.0,
             cycle_end=1.0,  # Ancient timestamp (year 1970)
         )
-        # Health check returns False for stale data
+        # Health check returns healthy=False for stale data
         result = await daemon.health_check()
-        assert result is False
+        assert result.healthy is False
 
 
 # =============================================================================

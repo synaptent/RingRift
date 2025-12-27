@@ -109,6 +109,7 @@ except:
             --data-path "data/training/${config}.npz" \
             --save-path "models/${config}_trained.pth" \
             --batch-size 512 --epochs 50 \
+            --model-version v2 \
             --allow-stale-data \
             >> $LOG 2>&1
 

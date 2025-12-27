@@ -1292,6 +1292,11 @@ class CrossCoordinatorHealthProtocol:
                 get_event_bus,
             )
 
+            # December 27, 2025: Guard against DataEventType being None when import fails
+            if DataEventType is None:
+                logger.debug("DataEventType not available, skipping health event")
+                return
+
             event_type = (
                 DataEventType.COORDINATOR_HEALTHY
                 if health.is_healthy

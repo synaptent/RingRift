@@ -203,15 +203,13 @@ async def create_cross_process_poller() -> None:
 async def create_dlq_retry() -> None:
     """Create and run dead-letter queue retry daemon (December 2025)."""
     try:
-        from app.coordination.event_router import get_router
-        from app.coordination.dead_letter_queue import DeadLetterQueueRetry
+        from app.coordination.dead_letter_queue import DLQRetryDaemon
 
-        router = get_router()
-        retry = DeadLetterQueueRetry(router=router)
+        retry = DLQRetryDaemon()  # Uses get_dead_letter_queue() internally
         await retry.start()
         await _wait_for_daemon(retry)
     except ImportError as e:
-        logger.error(f"DeadLetterQueueRetry not available: {e}")
+        logger.error(f"DLQRetryDaemon not available: {e}")
         raise
 
 
@@ -798,13 +796,20 @@ async def create_queue_populator() -> None:
 
 
 async def create_job_scheduler() -> None:
-    """Create and run job scheduler daemon."""
-    try:
-        from app.coordination.job_scheduler import JobScheduler
+    """Initialize the job scheduler singleton.
 
-        scheduler = JobScheduler()
-        await scheduler.start()
-        await _wait_for_daemon(scheduler)
+    Note: PriorityJobScheduler is a utility class for job prioritization,
+    not a daemon. This runner just ensures it's initialized and accessible.
+    The scheduler is used by other daemons (like IdleResourceDaemon) to
+    get job priorities.
+    """
+    try:
+        from app.coordination.job_scheduler import get_scheduler
+
+        # Initialize the singleton - it's a utility class, not a daemon
+        scheduler = get_scheduler()
+        logger.info(f"JobScheduler initialized with queue size: {scheduler.pending_count}")
+        # No daemon loop needed - other components use get_scheduler() to access it
     except ImportError as e:
         logger.error(f"JobScheduler not available: {e}")
         raise

@@ -387,6 +387,39 @@ class UnifiedEventRouter:
             self._cp_poller.register_handler(None, self._on_cross_process_event)
             self._cp_poller.start()
 
+    async def start(self) -> None:
+        """Start the event router.
+
+        Note: The router auto-initializes during __init__ via _setup_bus_bridges().
+        This method exists for consistency with the daemon lifecycle pattern,
+        allowing daemon_runners.py to call start() uniformly on all daemons.
+
+        December 27, 2025: Added to fix 'UnifiedEventRouter has no attribute start'.
+        """
+        logger.info("[UnifiedEventRouter] Router active (initialized during __init__)")
+
+    async def stop(self) -> None:
+        """Stop the event router and cleanup resources.
+
+        December 27, 2025: Added for daemon lifecycle consistency.
+        """
+        if self._cp_poller:
+            try:
+                self._cp_poller.stop()
+            except Exception as e:
+                logger.warning(f"[UnifiedEventRouter] Error stopping poller: {e}")
+
+        # Shutdown thread pool (December 2025 - prevent resource leak)
+        if hasattr(self, "_thread_pool"):
+            self._thread_pool.shutdown(wait=False)
+
+        logger.info("[UnifiedEventRouter] Router stopped")
+
+    @property
+    def is_running(self) -> bool:
+        """Check if router is running (for daemon lifecycle compatibility)."""
+        return True  # Router is always running after init
+
     async def _on_stage_event(self, result: StageCompletionResult) -> None:
         """Handle events from StageEventBus."""
         router_event = RouterEvent(

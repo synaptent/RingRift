@@ -161,6 +161,11 @@ class CoordinatorHealthMonitorDaemon:
             from app.distributed.data_events import DataEventType
             from app.coordination.event_router import get_router
 
+            # December 27, 2025: Guard against DataEventType being None
+            if DataEventType is None:
+                logger.warning("[CoordinatorHealthMonitor] DataEventType not available")
+                return False
+
             router = get_router()
 
             # Subscribe to all coordinator events
