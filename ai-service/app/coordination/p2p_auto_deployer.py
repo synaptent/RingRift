@@ -62,7 +62,7 @@ class P2PDeploymentConfig:
 
     # Health check
     p2p_port: int = 8770
-    health_check_timeout_seconds: float = 10.0
+    health_check_timeout_seconds: float = 20.0  # Increased for slow SSH connections
 
     # Paths
     hosts_config_path: str = "config/distributed_hosts.yaml"
@@ -260,7 +260,8 @@ class P2PAutoDeployer:
             )
 
             output = stdout.decode().strip()
-            if '"healthy"' in output:
+            # Check for "healthy": true (not "healthy": false)
+            if '"healthy": true' in output or '"healthy":true' in output:
                 return True
 
         except Exception as e:

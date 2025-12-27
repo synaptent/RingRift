@@ -316,13 +316,13 @@ class TestMultiProviderOrchestrator:
              patch.object(orchestrator, '_discover_vast', new_callable=AsyncMock) as mock_vast, \
              patch.object(orchestrator, '_discover_aws', new_callable=AsyncMock) as mock_aws, \
              patch.object(orchestrator, '_discover_hetzner', new_callable=AsyncMock) as mock_hetzner, \
-             patch.object(orchestrator, '_discover_lambda_from_config', new_callable=AsyncMock) as mock_lambda:
+             patch.object(orchestrator, '_discover_hosts_from_config', new_callable=AsyncMock) as mock_hosts:
 
             mock_ts.side_effect = Exception("Tailscale error")
             mock_vast.side_effect = Exception("Vast error")
             mock_aws.return_value = []
             mock_hetzner.return_value = []
-            mock_lambda.return_value = []
+            mock_hosts.return_value = []
 
             # Should not raise, should handle gracefully
             result = await orchestrator.discover_all()
@@ -335,7 +335,7 @@ class TestMultiProviderOrchestrator:
              patch.object(orchestrator, '_discover_vast', new_callable=AsyncMock, return_value=[]), \
              patch.object(orchestrator, '_discover_aws', new_callable=AsyncMock, return_value=[]), \
              patch.object(orchestrator, '_discover_hetzner', new_callable=AsyncMock, return_value=[]), \
-             patch.object(orchestrator, '_discover_lambda_from_config', new_callable=AsyncMock, return_value=[]):
+             patch.object(orchestrator, '_discover_hosts_from_config', new_callable=AsyncMock, return_value=[]):
 
             before = time.time()
             await orchestrator.discover_all()

@@ -69,12 +69,14 @@ elo_sync:
 # Selecting nodes that are: online, not NAT blocked, not retired
 # With 5 voters, quorum = 3 (majority)
 # Dec 26, 2025: Removed aws-staging (undefined host), added vultr-a100-20gb
+# Dec 27, 2025: Replaced runpod-h100 (containerized) with hetzner-cpu2 (bare metal)
+#   P2P voters should be non-containerized for stability during leader elections
 p2p_voters:
-  - nebius-backbone-1 # Nebius L40S - stable, not NAT blocked
-  - nebius-h100-3     # Nebius H100 - stable, not NAT blocked
-  - hetzner-cpu1      # Hetzner CPU - stable, not NAT blocked
-  - vultr-a100-20gb   # Vultr A100 - stable, not NAT blocked
-  - runpod-h100       # RunPod H100 - stable, high uptime
+  - nebius-backbone-1 # Nebius L40S - stable, bare metal, direct IP
+  - nebius-h100-3     # Nebius H100 - stable, bare metal, direct IP
+  - hetzner-cpu1      # Hetzner CPU - stable, bare metal, direct IP
+  - hetzner-cpu2      # Hetzner CPU - stable, bare metal, direct IP (backup)
+  - vultr-a100-20gb   # Vultr A100 - stable, VM, direct IP
 
 hosts:
   # ============================================================
@@ -156,7 +158,7 @@ hosts:
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
-    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
+    venv_activate: ":"
     memory_gb: 645
     cpus: 384
     gpu: 2x RTX 5090
@@ -614,4 +616,3 @@ hosts:
     region: eu-central
     p2p_enabled: true
     note: CPU-only node for heuristic selfplay
-

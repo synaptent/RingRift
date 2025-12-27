@@ -415,8 +415,12 @@ class NetworkUtilsMixin:
             if url not in urls:
                 urls.append(url)
 
-        # If no Tailscale URLs found, fall back to regular method
+        # VOTER COMMUNICATION FIX: Do NOT fall back to non-Tailscale URLs for voters.
+        # Voter lease operations MUST use Tailscale to avoid NAT/loopback issues.
+        # If no Tailscale URLs available, return empty list and let caller handle it
+        # (the lease request will fail gracefully and try next voter).
         if not urls:
-            return self._urls_for_peer(voter, path)
+            logger.debug(f"No Tailscale URLs found for voter {voter_id}, skipping")
+            return []
 
         return urls

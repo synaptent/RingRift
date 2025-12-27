@@ -252,6 +252,7 @@ def restart_p2p(name: str, config: dict) -> bool:
 
     ringrift_path = config.get("ringrift_path", "~/ringrift/ai-service")
     venv_activate = config.get("venv_activate", f"source {ringrift_path}/venv/bin/activate")
+    venv_activate = venv_activate.strip() or ":"
 
     # Kill existing P2P
     run_ssh_command(name, config, "pkill -f p2p_orchestrator || true")
@@ -260,7 +261,11 @@ def restart_p2p(name: str, config: dict) -> bool:
     # Start new P2P
     start_cmd = f"""
 cd {ringrift_path} && {venv_activate} && \
-screen -dmS p2p bash -c 'PYTHONPATH=. python scripts/p2p_orchestrator.py 2>&1 | tee logs/p2p.log'
+if command -v screen >/dev/null 2>&1; then
+  screen -dmS p2p bash -c 'PYTHONPATH=. python scripts/p2p_orchestrator.py 2>&1 | tee logs/p2p.log'
+else
+  nohup env PYTHONPATH=. python scripts/p2p_orchestrator.py > logs/p2p.log 2>&1 &
+fi
 """
     ok, output = run_ssh_command(name, config, start_cmd)
 
@@ -300,6 +305,7 @@ def start_selfplay(name: str, config: dict, board_type: str = "hex8", num_player
 
     ringrift_path = config.get("ringrift_path", "~/ringrift/ai-service")
     venv_activate = config.get("venv_activate", f"source {ringrift_path}/venv/bin/activate")
+    venv_activate = venv_activate.strip() or ":"
 
     start_cmd = f"""
 cd {ringrift_path} && {venv_activate} && \

@@ -544,23 +544,26 @@ def _init_auto_evaluation_daemon() -> BootstrapCoordinatorStatus:
 
     Automatically triggers model evaluation after training completes.
     Subscribes to TRAINING_COMPLETE events.
-    """
-    status = BootstrapCoordinatorStatus(name="auto_evaluation_daemon")
-    try:
-        from app.coordination.auto_evaluation_daemon import get_auto_evaluation_daemon
 
-        daemon = get_auto_evaluation_daemon()
+    December 2025: Uses canonical EvaluationDaemon (via daemon_manager.py).
+    AutoEvaluationDaemon is deprecated - use EvaluationDaemon + AutoPromotionDaemon.
+    """
+    status = BootstrapCoordinatorStatus(name="evaluation_daemon")
+    try:
+        from app.coordination.evaluation_daemon import get_evaluation_daemon
+
+        daemon = get_evaluation_daemon()
         status.initialized = True
         status.subscribed = True
         status.initialized_at = datetime.now()
-        logger.info("[Bootstrap] AutoEvaluationDaemon initialized")
+        logger.info("[Bootstrap] EvaluationDaemon initialized")
 
     except ImportError as e:
         status.error = f"Import error: {e}"
-        logger.warning(f"[Bootstrap] AutoEvaluationDaemon not available: {e}")
+        logger.warning(f"[Bootstrap] EvaluationDaemon not available: {e}")
     except (AttributeError, TypeError, ValueError, RuntimeError) as e:
         status.error = str(e)
-        logger.error(f"[Bootstrap] Failed to initialize AutoEvaluationDaemon: {e}")
+        logger.error(f"[Bootstrap] Failed to initialize EvaluationDaemon: {e}")
 
     return status
 

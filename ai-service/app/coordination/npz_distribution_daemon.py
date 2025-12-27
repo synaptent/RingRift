@@ -27,6 +27,9 @@ December 2025 Enhancements:
     - Per-node delivery confirmation tracking
     - CoordinatorProtocol integration for health checks
     - Retry with exponential backoff
+    - NPZ structure validation (array shapes, sample counts)
+    - BitTorrent priority for large files (>50MB)
+    - ResilientTransfer integration for unified transport selection
 """
 
 from __future__ import annotations
@@ -82,6 +85,14 @@ class NPZDistributionConfig:
     # Checksum verification (December 2025)
     verify_checksums: bool = True  # Enable checksum verification
     checksum_timeout_seconds: float = 30.0  # Timeout for remote checksum verification
+
+    # NPZ structure validation (December 2025)
+    validate_npz_structure: bool = True  # Validate NPZ arrays after transfer
+    max_npz_samples: int = 100_000_000  # Maximum reasonable sample count
+
+    # BitTorrent priority (December 2025)
+    prefer_bittorrent: bool = True  # Use BitTorrent for large files (>50MB)
+    bittorrent_threshold_bytes: int = 50_000_000  # 50MB threshold
 
     # HTTP distribution settings (December 2025)
     use_http_distribution: bool = True  # Prefer HTTP when available
@@ -375,6 +386,14 @@ class NPZDistributionDaemon:
                 if not npz_path:
                     continue
 
+                # Validate NPZ structure before distribution (December 2025)
+                if self.config.validate_npz_structure:
+                    npz_validation = await self._validate_npz_source(Path(npz_path))
+                    if not npz_validation:
+                        logger.error(f"NPZ validation failed, skipping distribution: {npz_path}")
+                        self._failed_distributions += 1
+                        continue
+
                 # Compute source checksum before distribution (December 2025)
                 source_checksum = None
                 if self.config.verify_checksums:
@@ -533,6 +552,55 @@ class NPZDistributionDaemon:
             logger.warning(f"Checksum verification failed on {host}: {e}")
             return False
 
+    async def _validate_npz_source(self, npz_path: Path) -> bool:
+        """Validate NPZ file structure before distribution.
+
+        December 2025: Catches corrupted NPZ files BEFORE distributing them
+        to the cluster. This prevents propagating corruption.
+
+        Args:
+            npz_path: Path to the NPZ file
+
+        Returns:
+            True if NPZ is valid, False otherwise
+        """
+        try:
+            from app.coordination.npz_validation import (
+                validate_npz_structure,
+                NPZValidationResult,
+            )
+
+            # Run validation in thread pool to avoid blocking
+            loop = asyncio.get_running_loop()
+            result: NPZValidationResult = await loop.run_in_executor(
+                None,
+                lambda: validate_npz_structure(
+                    npz_path,
+                    require_policy=True,
+                    max_samples=self.config.max_npz_samples,
+                ),
+            )
+
+            if result.valid:
+                logger.info(
+                    f"NPZ validation passed: {npz_path.name} - "
+                    f"{result.sample_count} samples, {len(result.array_shapes)} arrays"
+                )
+                return True
+            else:
+                for error in result.errors:
+                    logger.error(f"NPZ validation error: {error}")
+                for warning in result.warnings:
+                    logger.warning(f"NPZ validation warning: {warning}")
+                return False
+
+        except ImportError:
+            logger.warning("npz_validation module not available, skipping structure validation")
+            return True  # Allow distribution without validation
+        except Exception as e:
+            logger.error(f"NPZ validation failed with exception: {e}")
+            return False
+
     async def _distribute_npz_with_verification(
         self,
         npz_path: str,
@@ -563,12 +631,52 @@ class NPZDistributionDaemon:
         delivery_results: list[NPZDeliveryResult] = []
         success_count = 0
 
+        # Check file size for transport selection (December 2025)
+        file_size = npz_file.stat().st_size
+        use_bittorrent = (
+            self.config.prefer_bittorrent
+            and file_size > self.config.bittorrent_threshold_bytes
+        )
+
+        if use_bittorrent:
+            logger.info(
+                f"NPZ file {npz_file.name} is {file_size / 1024 / 1024:.1f}MB, "
+                "using BitTorrent for distribution"
+            )
+
         for node in target_nodes:
             node_id = node.get("node_id", node.get("host", "unknown"))
             host = node.get("host")
             start_time = time.time()
 
-            # Try HTTP first if enabled
+            # Try BitTorrent first for large files (December 2025)
+            if use_bittorrent:
+                bt_success = await self._distribute_via_bittorrent(npz_file, node)
+                if bt_success:
+                    # BitTorrent has piece-level verification, but verify final checksum too
+                    checksum_ok = True
+                    if source_checksum and self.config.verify_checksums:
+                        checksum_ok = await self._verify_remote_checksum(
+                            node, npz_file, source_checksum
+                        )
+
+                    delivery_results.append(NPZDeliveryResult(
+                        node_id=node_id,
+                        host=host,
+                        success=checksum_ok,
+                        checksum_verified=checksum_ok,
+                        transfer_time_seconds=time.time() - start_time,
+                        method="bittorrent",
+                    ))
+
+                    if checksum_ok:
+                        success_count += 1
+                        continue
+
+                    # BitTorrent succeeded but checksum failed - fall through to HTTP/rsync
+                    logger.warning(f"BitTorrent checksum mismatch on {host}, trying fallback")
+
+            # Try HTTP if enabled
             if self.config.use_http_distribution:
                 http_success = await self._distribute_via_http(npz_file, node)
                 if http_success:
@@ -636,6 +744,152 @@ class NPZDistributionDaemon:
 
         # Consider success if at least one node received and verified the file
         return success_count > 0, delivery_results
+
+    async def _distribute_via_bittorrent(
+        self, npz_file: Path, node: dict[str, Any]
+    ) -> bool:
+        """Distribute NPZ file to a node via BitTorrent.
+
+        December 2025: BitTorrent provides piece-level SHA1 verification,
+        making it the most reliable transport for large files.
+
+        Args:
+            npz_file: Path to the NPZ file
+            node: Node configuration dict
+
+        Returns:
+            True if download succeeded on the node, False otherwise
+        """
+        try:
+            from app.distributed.torrent_generator import TorrentGenerator
+            from app.distributed.cluster_manifest import ClusterManifest
+
+            # Get or create torrent for this file
+            manifest = ClusterManifest.get_instance()
+            generator = TorrentGenerator()
+
+            # Check if torrent already exists
+            torrent_info = None
+            try:
+                torrents = manifest.get_torrents_for_path(str(npz_file))
+                if torrents:
+                    torrent_info = torrents[0]
+            except Exception:
+                pass
+
+            # Create torrent if not exists
+            if not torrent_info:
+                logger.info(f"Creating torrent for {npz_file.name}")
+                torrent_info = generator.create_torrent(npz_file)
+                if torrent_info:
+                    manifest.register_torrent(torrent_info)
+
+            if not torrent_info:
+                logger.warning(f"Could not create torrent for {npz_file.name}")
+                return False
+
+            # Trigger download on remote node via aria2c RPC
+            host = node.get("host")
+            aria2_port = node.get("aria2_port", 6800)
+
+            # Build magnet link or use .torrent file
+            magnet_uri = torrent_info.get("magnet_uri")
+            if not magnet_uri:
+                logger.warning(f"No magnet URI for {npz_file.name}")
+                return False
+
+            # Use aria2 RPC to add the download on the remote node
+            import aiohttp
+
+            rpc_url = f"http://{host}:{aria2_port}/jsonrpc"
+            remote_path = node.get("remote_path", "~/ringrift/ai-service")
+            output_dir = f"{remote_path}/data/training"
+
+            payload = {
+                "jsonrpc": "2.0",
+                "id": "npz-dist",
+                "method": "aria2.addUri",
+                "params": [
+                    [magnet_uri],
+                    {"dir": output_dir},
+                ],
+            }
+
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=600)  # 10 min for large files
+            ) as session:
+                async with session.post(rpc_url, json=payload) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        gid = result.get("result")
+                        if gid:
+                            logger.info(
+                                f"BitTorrent download started on {host}: GID={gid}"
+                            )
+                            # Wait for download to complete
+                            return await self._wait_for_aria2_download(
+                                session, rpc_url, gid
+                            )
+                    logger.warning(f"aria2 RPC failed on {host}: {response.status}")
+                    return False
+
+        except ImportError as e:
+            logger.debug(f"BitTorrent not available: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"BitTorrent distribution failed: {e}")
+            return False
+
+    async def _wait_for_aria2_download(
+        self,
+        session: "aiohttp.ClientSession",
+        rpc_url: str,
+        gid: str,
+        poll_interval: float = 5.0,
+        max_wait: float = 600.0,
+    ) -> bool:
+        """Wait for aria2 download to complete.
+
+        Args:
+            session: aiohttp session
+            rpc_url: aria2 RPC URL
+            gid: Download GID
+            poll_interval: Seconds between status checks
+            max_wait: Maximum time to wait
+
+        Returns:
+            True if download completed successfully
+        """
+        import time
+        start = time.time()
+
+        while time.time() - start < max_wait:
+            try:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": "status",
+                    "method": "aria2.tellStatus",
+                    "params": [gid],
+                }
+                async with session.post(rpc_url, json=payload) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        status = result.get("result", {}).get("status")
+
+                        if status == "complete":
+                            return True
+                        elif status in ("error", "removed"):
+                            logger.warning(f"aria2 download failed: {status}")
+                            return False
+                        # Still active or waiting, continue polling
+
+            except Exception as e:
+                logger.debug(f"aria2 status check error: {e}")
+
+            await asyncio.sleep(poll_interval)
+
+        logger.warning("aria2 download timed out")
+        return False
 
     async def _distribute_via_http(self, npz_file: Path, node: dict[str, Any]) -> bool:
         """Distribute NPZ file to a node via HTTP upload.

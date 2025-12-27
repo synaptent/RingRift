@@ -317,6 +317,9 @@ class DataHTTPHandler(http.server.SimpleHTTPRequestHandler):
             self.send_inventory()
         elif self.path == "/health":
             self.send_health()
+        # Pre-transfer checksum endpoint (December 2025)
+        elif self.path.startswith("/checksum/"):
+            self.send_checksum(self.path[10:])
         # BitTorrent endpoints for resilient P2P sync
         elif self.path == "/torrents.json":
             self.send_torrents_inventory()

@@ -1491,6 +1491,11 @@ class P2POrchestrator(
         except asyncio.CancelledError:
             logger.debug(f"Task '{task_name}' cancelled (shutdown)")
             raise  # Re-raise CancelledError for graceful shutdown
+        except SystemExit:
+            # SystemExit from main loop exit - ignore in background tasks
+            # This prevents "Task exception was never retrieved" log pollution
+            logger.debug(f"Task '{task_name}' received SystemExit (orchestrator shutdown)")
+            return
         except Exception as e:
             # Log but don't propagate - other tasks continue running
             logger.error(f"Task '{task_name}' crashed: {e}", exc_info=True)
@@ -1729,7 +1734,13 @@ class P2POrchestrator(
         """
         if self.storage_type == "ramdrive":
             ramdrive = Path(self.ramdrive_path)
-            ramdrive.mkdir(parents=True, exist_ok=True)
+            try:
+                ramdrive.mkdir(parents=True, exist_ok=True)
+            except (PermissionError, OSError) as e:
+                # /dev/shm doesn't exist on macOS or may be inaccessible
+                logger.warning(f"Cannot create ramdrive at {ramdrive}: {e}. Falling back to disk storage.")
+                self.storage_type = "disk"
+                return Path(self.ringrift_path) / "ai-service" / "data"
 
             # Set up automatic sync to persistent storage
             if self.ramdrive_syncer is None and self.sync_to_disk_interval > 0:
@@ -1844,6 +1855,7 @@ class P2POrchestrator(
         voter set via `/coordinator` so the cluster converges.
 
         Dec 2025: Don't override if config source is 'env' or 'config' (YAML).
+        Dec 2025: Added strict validation to prevent voter set flapping.
         """
         # If explicitly configured via env var, never override
         if (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip():
@@ -1857,8 +1869,25 @@ class P2POrchestrator(
         if not normalized:
             return False
 
+        # Dec 2025: Strict validation to prevent voter set flapping
+        # Reject voter sets that are too small (need at least 3 for meaningful quorum)
+        if len(normalized) < 3:
+            return False
+
+        # Dec 2025: Canonical voters that MUST be in any valid voter set
+        # These are stable, always-on nodes that should always be voters
+        canonical_voters = {"nebius-backbone-1", "vultr-a100-20gb"}
+        has_canonical = bool(canonical_voters & set(normalized))
+        if not has_canonical:
+            # Reject voter sets that don't include any canonical voter
+            return False
+
         current = sorted(set(getattr(self, "voter_node_ids", []) or []))
         if current == normalized:
+            return False
+
+        # Dec 2025: Once we have a learned voter set with 5+ voters, don't downgrade
+        if len(current) >= 5 and len(normalized) < len(current):
             return False
 
         self.voter_node_ids = normalized
@@ -2159,7 +2188,9 @@ class P2POrchestrator(
         with self.peers_lock:
             peers_by_id = dict(self.peers)
 
-        timeout = ClientTimeout(total=5)
+        # STABILITY FIX: Use 15s timeout for voter lease operations (was 5s).
+        # Cross-geographic Tailscale connections can have latency spikes.
+        timeout = ClientTimeout(total=15)
         async with get_client_session(timeout) as session:
             for voter_id in voter_ids:
                 if acks >= quorum:
@@ -2241,7 +2272,8 @@ class P2POrchestrator(
         with self.peers_lock:
             peers_by_id = dict(self.peers)
 
-        timeout = ClientTimeout(total=5)
+        # STABILITY FIX: Use 15s timeout for voter operations (was 5s).
+        timeout = ClientTimeout(total=15)
         async with get_client_session(timeout) as session:
             for voter_id in voter_ids:
                 if voter_id == self.node_id:
@@ -6429,8 +6461,17 @@ class P2POrchestrator(
             return web.json_response({"error": str(e)}, status=400)
 
     async def handle_status(self, request: web.Request) -> web.Response:
-        """Return cluster status."""
+        """Return cluster status.
+
+        Query parameters:
+            alive_only: If "true" (default), only show alive peers. Set to "false" to include dead/stale peers.
+            include_stale_jobs: If "false" (default), dead peers show 0 jobs. Set to "true" to show stale job counts.
+        """
         self._update_self_info()
+
+        # Parse query parameters for filtering
+        alive_only = request.query.get("alive_only", "true").lower() != "false"
+        include_stale_jobs = request.query.get("include_stale_jobs", "false").lower() == "true"
 
         async with AsyncLockWrapper(self.peers_lock):
             peers_snapshot = list(self.peers.values())
@@ -6438,11 +6479,30 @@ class P2POrchestrator(
         conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
         effective_leader = self._get_leader_peer()
 
+        now = time.time()
         peers: dict[str, Any] = {}
         for node_id, info in ((p.node_id, p) for p in peers_snapshot):
+            is_alive = info.is_alive()
+
+            # Skip dead peers if alive_only is set
+            if alive_only and not is_alive:
+                continue
+
             d = info.to_dict()
             d["endpoint_conflict"] = self._endpoint_key(info) in conflict_keys
             d["leader_eligible"] = self._is_leader_eligible(info, conflict_keys, require_alive=False)
+
+            # Add explicit alive status and staleness info
+            d["is_alive"] = is_alive
+            last_hb = float(getattr(info, "last_heartbeat", 0.0) or 0.0)
+            d["seconds_since_heartbeat"] = int(now - last_hb) if last_hb > 0 else -1
+
+            # Zero out job counts for dead peers unless explicitly requested
+            if not is_alive and not include_stale_jobs:
+                d["selfplay_jobs"] = 0
+                d["training_jobs"] = 0
+                d["active_job_count"] = 0
+
             peers[node_id] = d
 
         # Convenience diagnostics: reported leaders vs eligible leaders.

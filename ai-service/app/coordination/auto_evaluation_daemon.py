@@ -1,5 +1,31 @@
 """Auto Evaluation Daemon - Automatic model evaluation (December 2025).
 
+.. deprecated:: December 2025
+    This module is deprecated and will be removed in Q2 2026.
+    Use the cleaner architecture instead:
+    - EvaluationDaemon (app.coordination.evaluation_daemon) for gauntlet evaluation
+    - AutoPromotionDaemon (app.coordination.auto_promotion_daemon) for auto-promotion
+
+    Example migration:
+        # Old (deprecated):
+        from app.coordination.auto_evaluation_daemon import AutoEvaluationDaemon
+        daemon = AutoEvaluationDaemon()
+        await daemon.start()
+
+        # New (recommended):
+        from app.coordination.evaluation_daemon import get_evaluation_daemon
+        from app.coordination.auto_promotion_daemon import get_auto_promotion_daemon
+
+        eval_daemon = get_evaluation_daemon()
+        promo_daemon = get_auto_promotion_daemon()
+        await eval_daemon.start()
+        await promo_daemon.start()
+
+    The separated architecture provides:
+    - Cleaner separation of concerns
+    - Independent configuration of evaluation vs promotion
+    - Better integration with DaemonManager
+
 This daemon automatically evaluates newly trained models via gauntlet,
 eliminating the manual evaluation step. It monitors for training completion
 and triggers gauntlet runs to validate model quality.
@@ -30,6 +56,7 @@ Usage:
     await daemon.start()
 
 December 2025: Created as part of Phase 2 automation improvements.
+December 2025: DEPRECATED - Use EvaluationDaemon + AutoPromotionDaemon instead.
 """
 
 from __future__ import annotations
@@ -37,6 +64,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,6 +72,15 @@ from typing import Any
 from app.core.async_context import safe_create_task
 
 logger = logging.getLogger(__name__)
+
+# Module-level deprecation warning
+warnings.warn(
+    "auto_evaluation_daemon is deprecated and will be removed in Q2 2026. "
+    "Use EvaluationDaemon + AutoPromotionDaemon instead. "
+    "See module docstring for migration guide.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 @dataclass
