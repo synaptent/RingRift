@@ -1,472 +1,306 @@
 # Deprecated Coordination Modules - Migration Guide
 
-This guide provides a timeline and migration paths for deprecated coordination modules.
+**Last Updated:** December 27, 2025
+**Removal Date:** Q2 2026
 
-## Timeline
+This guide documents deprecated coordination modules and their replacements.
 
-| Phase       | Date          | Action                                          |
-| ----------- | ------------- | ----------------------------------------------- |
-| Deprecation | December 2025 | Modules deprecated with warnings                |
-| Transition  | Q1 2026       | Use new APIs, deprecated imports still work     |
-| Archival    | Q2 2026       | Move remaining deprecated modules to archive/   |
-| Removal     | Q3 2026       | Delete archived files if no regression reported |
+---
 
-## Migration Matrix
+## Quick Reference
 
-| Deprecated Module                    | Replacement                            | Status                          | Migration Priority |
-| ------------------------------------ | -------------------------------------- | ------------------------------- | ------------------ |
-| `cluster_data_sync.py`               | `AutoSyncDaemon(strategy="broadcast")` | Archived Dec 2025               | COMPLETE           |
-| `ephemeral_sync.py`                  | `AutoSyncDaemon(strategy="ephemeral")` | Archived Dec 2025               | COMPLETE           |
-| `system_health_monitor.py`           | `health_facade.get_system_health()`    | Deprecated - migrate by Q2 2026 | MEDIUM             |
-| `node_health_monitor.py`             | `health_check_orchestrator.py`         | Deprecated - migrate by Q2 2026 | LOW                |
-| `sync_coordinator.py` (coordination) | `AutoSyncDaemon`, `SyncFacade`         | Archived Dec 2025               | COMPLETE           |
-| `unified_event_coordinator.py`       | `event_router.py`                      | Archived Dec 2025               | COMPLETE           |
-| `queue_populator.py` (old)           | `unified_queue_populator.py`           | Archived Dec 2025               | COMPLETE           |
-| `model_distribution_daemon.py`       | `unified_distribution_daemon.py`       | Archived Dec 2025               | COMPLETE           |
-| `npz_distribution_daemon.py`         | `unified_distribution_daemon.py`       | Archived Dec 2025               | COMPLETE           |
-| `replication_monitor.py`             | `unified_replication_daemon.py`        | Archived Dec 2025               | COMPLETE           |
-| `replication_repair_daemon.py`       | `unified_replication_daemon.py`        | Archived Dec 2025               | COMPLETE           |
-| `lambda_idle_daemon.py`              | `unified_idle_shutdown_daemon.py`      | Archived Dec 2025               | COMPLETE           |
-| `vast_idle_daemon.py`                | `unified_idle_shutdown_daemon.py`      | Archived Dec 2025               | COMPLETE           |
+| Deprecated Module              | Replacement                                         | Status     |
+| ------------------------------ | --------------------------------------------------- | ---------- |
+| `cluster_data_sync.py`         | `AutoSyncDaemon(strategy="broadcast")`              | Deprecated |
+| `ephemeral_sync.py`            | `AutoSyncDaemon(strategy="ephemeral")`              | Deprecated |
+| `node_health_monitor.py`       | `health_check_orchestrator.py`                      | Deprecated |
+| `system_health_monitor.py`     | `unified_health_manager.py`                         | Deprecated |
+| `queue_populator.py`           | `unified_queue_populator.py`                        | Deprecated |
+| `model_distribution_daemon.py` | `unified_distribution_daemon.py`                    | Deprecated |
+| `npz_distribution_daemon.py`   | `unified_distribution_daemon.py`                    | Deprecated |
+| `replication_monitor.py`       | `unified_replication_daemon.py`                     | Deprecated |
+| `replication_repair_daemon.py` | `unified_replication_daemon.py`                     | Deprecated |
+| `auto_evaluation_daemon.py`    | `evaluation_daemon.py` + `auto_promotion_daemon.py` | Deprecated |
 
-## Migration Examples
+---
 
-### Sync Modules
+## Detailed Migration Guide
 
-**cluster_data_sync.py -> AutoSyncDaemon**
+### 1. cluster_data_sync.py
+
+**Old usage:**
 
 ```python
-# OLD (deprecated)
-from app.coordination.cluster_data_sync import get_training_node_watcher
-watcher = get_training_node_watcher()
+from app.coordination.cluster_data_sync import ClusterDataSync
 
-# NEW
-from app.coordination.auto_sync_daemon import (
-    AutoSyncDaemon,
-    AutoSyncConfig,
-    SyncStrategy,
-)
+sync = ClusterDataSync()
+await sync.sync_to_nodes(targets=["node1", "node2"])
+```
 
-config = AutoSyncConfig.from_config_file()
-config.strategy = SyncStrategy.BROADCAST
-daemon = AutoSyncDaemon(config=config)
+**New usage:**
+
+```python
+from app.coordination.auto_sync_daemon import AutoSyncDaemon
+
+# For broadcast sync (push to all nodes)
+daemon = AutoSyncDaemon(strategy="broadcast")
+await daemon.start()
+
+# Or for one-time sync
+from app.coordination.sync_facade import sync
+await sync("games", targets=["node1", "node2"])
+```
+
+---
+
+### 2. ephemeral_sync.py
+
+**Old usage:**
+
+```python
+from app.coordination.ephemeral_sync import EphemeralSync
+
+sync = EphemeralSync(interval=5)
+await sync.run()
+```
+
+**New usage:**
+
+```python
+from app.coordination.auto_sync_daemon import AutoSyncDaemon
+
+# For ephemeral hosts (aggressive 5s interval)
+daemon = AutoSyncDaemon(strategy="ephemeral")
 await daemon.start()
 ```
 
-**ephemeral_sync.py -> AutoSyncDaemon**
+---
+
+### 3. node_health_monitor.py
+
+**Old usage:**
 
 ```python
-# OLD (deprecated)
-from app.coordination.ephemeral_sync import get_ephemeral_sync_daemon
-daemon = get_ephemeral_sync_daemon()
+from app.coordination.node_health_monitor import NodeHealthMonitor
 
-# NEW
-from app.coordination.auto_sync_daemon import (
-    AutoSyncDaemon,
-    AutoSyncConfig,
-    SyncStrategy,
-)
-
-config = AutoSyncConfig.from_config_file()
-config.strategy = SyncStrategy.EPHEMERAL
-daemon = AutoSyncDaemon(config=config)
-await daemon.start()
+monitor = NodeHealthMonitor()
+status = monitor.get_node_status("node-1")
 ```
 
-### Health Modules
-
-**system_health_monitor.py -> health_facade**
+**New usage:**
 
 ```python
-# OLD (deprecated)
-from app.coordination.system_health_monitor import SystemHealthMonitor
-monitor = SystemHealthMonitor()
-health = monitor.get_health()
-
-# NEW
-from app.coordination.health_facade import (
-    get_system_health_score,
-    should_pause_pipeline,
-    get_system_health,  # Backward compat - emits DeprecationWarning
-)
-
-score = get_system_health_score()
-if should_pause_pipeline():
-    # Pause training
-    pass
-```
-
-**node_health_monitor.py -> health_check_orchestrator**
-
-```python
-# OLD (deprecated)
-from app.coordination.node_health_monitor import (
-    NodeHealthMonitor,
-    get_node_health_monitor,
-)
-monitor = get_node_health_monitor()
-health = monitor.get_node_health("runpod-h100")
-
-# NEW
-from app.coordination.health_facade import (
+from app.coordination.health_check_orchestrator import (
+    HealthCheckOrchestrator,
     get_health_orchestrator,
-    get_node_health,
-    get_healthy_nodes,
-    get_unhealthy_nodes,
 )
 
 orchestrator = get_health_orchestrator()
-health = get_node_health("runpod-h100")
-healthy = get_healthy_nodes()
+status = orchestrator.get_node_health("node-1")
 ```
 
-### Distribution Daemons
+---
 
-**model_distribution_daemon.py + npz_distribution_daemon.py -> unified_distribution_daemon**
+### 4. system_health_monitor.py
+
+**Old usage:**
 
 ```python
-# OLD (deprecated)
-from app.coordination.model_distribution_daemon import ModelDistributionDaemon
-from app.coordination.npz_distribution_daemon import NPZDistributionDaemon
-model_daemon = ModelDistributionDaemon()
-npz_daemon = NPZDistributionDaemon()
-
-# NEW
-from app.coordination.unified_distribution_daemon import (
-    UnifiedDistributionDaemon,
-    DataType,
-    DistributionConfig,
-    # Factory functions for backward compat
-    create_model_distribution_daemon,
-    create_npz_distribution_daemon,
+from app.coordination.system_health_monitor import (
+    SystemHealthMonitor,
+    get_system_health_score,
 )
 
-# Unified daemon handles both
-config = DistributionConfig(data_types={DataType.MODEL, DataType.NPZ})
-daemon = UnifiedDistributionDaemon(config=config)
-
-# Or use factory functions
-model_daemon = create_model_distribution_daemon()
-npz_daemon = create_npz_distribution_daemon()
+score = get_system_health_score()
 ```
 
-### Idle Shutdown Daemons
-
-**lambda_idle_daemon.py + vast_idle_daemon.py -> unified_idle_shutdown_daemon**
+**New usage:**
 
 ```python
-# OLD (deprecated)
-from app.coordination.lambda_idle_daemon import LambdaIdleDaemon
-from app.coordination.vast_idle_daemon import VastIdleDaemon
-
-# NEW
-from app.coordination.unified_idle_shutdown_daemon import (
-    create_lambda_idle_daemon,
-    create_vast_idle_daemon,
-    create_runpod_idle_daemon,
-    UnifiedIdleShutdownDaemon,
-    IdleShutdownConfig,
+from app.coordination.unified_health_manager import (
+    UnifiedHealthManager,
+    get_unified_health_manager,
+    get_system_health_score,
+    get_system_health_level,
 )
 
-# Factory functions (backward compat)
-lambda_daemon = create_lambda_idle_daemon()
-vast_daemon = create_vast_idle_daemon()
-runpod_daemon = create_runpod_idle_daemon()  # NEW!
-
-# Or configure manually
-config = IdleShutdownConfig.for_provider("vast")
-daemon = UnifiedIdleShutdownDaemon(provider=VastProvider(), config=config)
+manager = get_unified_health_manager()
+score = get_system_health_score()
+level = get_system_health_level()
 ```
 
-### Event System
+---
 
-**unified_event_coordinator.py -> event_router**
+### 5. queue_populator.py
 
-```python
-# OLD (deprecated)
-from app.coordination.unified_event_coordinator import (
-    get_event_coordinator,
-    start_coordinator,
-)
-coord = get_event_coordinator()
-await start_coordinator()
-
-# NEW
-from app.coordination.event_router import (
-    get_router,
-    UnifiedEventRouter,
-)
-router = get_router()
-await router.start()
-```
-
-### Queue Populator
-
-**queue_populator.py (old) -> unified_queue_populator**
+**Old usage:**
 
 ```python
-# OLD (deprecated)
 from app.coordination.queue_populator import QueuePopulator
-populator = QueuePopulator()
 
-# NEW
+populator = QueuePopulator()
+await populator.populate_work_queue()
+```
+
+**New usage:**
+
+```python
 from app.coordination.unified_queue_populator import (
     UnifiedQueuePopulator,
     QueuePopulatorConfig,
 )
-config = QueuePopulatorConfig()
-populator = UnifiedQueuePopulator(config=config)
-```
 
-## Deprecation Warning Behavior
-
-All deprecated modules emit `DeprecationWarning` on import:
-
-```python
-import warnings
-
-# To see warnings in production
-warnings.filterwarnings("default", category=DeprecationWarning)
-
-# To silence warnings temporarily (not recommended)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-```
-
-## Verification Commands
-
-```bash
-# Check for deprecated imports in your code
-grep -r "from app.coordination.cluster_data_sync import" --include="*.py" .
-grep -r "from app.coordination.ephemeral_sync import" --include="*.py" .
-grep -r "from app.coordination.system_health_monitor import" --include="*.py" .
-grep -r "from app.coordination.node_health_monitor import" --include="*.py" .
-
-# Run tests to verify migration
-PYTHONPATH=. pytest tests/unit/coordination/ -v
-
-# Check import graph for deprecated usages
-python -c "
-from app.coordination import *
-import warnings
-warnings.filterwarnings('error', category=DeprecationWarning)
-"
-```
-
-## December 27, 2025 Updates
-
-### Train.py Decomposition (Phase 3)
-
-Extracted utility functions from train.py (~6,636 lines) to dedicated modules:
-
-| Extraction                         | New Location          | Lines Added | Purpose                          |
-| ---------------------------------- | --------------------- | ----------- | -------------------------------- |
-| `setup_heartbeat_monitor()`        | `train_setup.py`      | ~65         | Heartbeat monitor initialization |
-| `validate_training_data()`         | `train_validation.py` | ~230        | Unified data validation          |
-| `setup_optimizer_and_schedulers()` | `train_setup.py`      | ~100        | Optimizer + LR scheduler setup   |
-| Data loading utilities             | `train_data.py` (NEW) | ~600        | Streaming/memory data loading    |
-| Enhancement initialization         | `training_facade.py`  | ~150        | Unified enhancement setup        |
-
-**New APIs in `train_setup.py`:**
-
-```python
-from app.training.train_setup import (
-    # Heartbeat monitoring
-    setup_heartbeat_monitor,
-    # Optimizer setup
-    OptimizerConfig,
-    OptimizerComponents,
-    setup_optimizer_and_schedulers,
-    setup_parameter_freezing,
-    # Already existing
-    get_device,
-    setup_fault_tolerance,
-    setup_graceful_shutdown,
+config = QueuePopulatorConfig(
+    selfplay_ratio=0.6,
+    training_ratio=0.3,
+    tournament_ratio=0.1,
 )
+populator = UnifiedQueuePopulator(config)
+await populator.start()
 ```
-
-**New APIs in `train_validation.py`:**
-
-```python
-from app.training.train_validation import (
-    # Unified validation
-    validate_training_data,
-    DataValidationResult,
-    # Individual validators
-    validate_training_data_freshness,
-    validate_npz_structure_files,
-    validate_training_data_files,
-    validate_data_checksums,
-    # Result types
-    FreshnessResult,
-    StructureValidationResult,
-    ValidationResult,
-)
-```
-
-**New APIs in `train_data.py` (Wave 4):**
-
-```python
-from app.training.train_data import (
-    # Configuration
-    DataLoaderConfig,
-    DataLoaderResult,
-    DatasetMetadata,
-    # Path collection
-    collect_data_paths,
-    get_total_data_size,
-    should_use_streaming,
-    # Metadata
-    extract_dataset_metadata,
-    validate_dataset_metadata,
-    # Weights
-    get_sample_count,
-    load_elo_weights,
-    load_quality_weights,
-    # Loaders
-    create_streaming_loaders,
-    create_memory_loaders,
-    get_num_loader_workers,
-)
-```
-
-**Example: Data loader setup**
-
-```python
-from app.training.train_data import (
-    DataLoaderConfig,
-    collect_data_paths,
-    should_use_streaming,
-    create_streaming_loaders,
-    create_memory_loaders,
-)
-
-# Collect all data paths
-paths = collect_data_paths(
-    data_path=["data/training/hex8_2p.npz"],
-    data_dir=None,
-    discover_synced_data=True,
-    board_type="hex8",
-    num_players=2,
-)
-
-# Check if streaming should be used
-config = DataLoaderConfig(batch_size=512)
-use_streaming = should_use_streaming(paths, force_streaming=False)
-
-if use_streaming:
-    train_loader, val_loader, train_size, val_size = create_streaming_loaders(
-        data_paths=paths,
-        config=config,
-        policy_size=61,
-    )
-else:
-    train_loader, val_loader, sampler, train_size, val_size, dataset = (
-        create_memory_loaders(
-            data_path=paths[0],
-            config=config,
-            board_type=board_type,
-        )
-    )
-```
-
-**New APIs in `training_facade.py` (Wave 5):**
-
-```python
-from app.training.enhancements.training_facade import (
-    # Core facade
-    FacadeConfig,
-    EpochStatistics,
-    TrainingEnhancementsFacade,
-    # Enhanced components (December 2025)
-    EnhancementConfig,
-    EnhancementComponents,
-    initialize_all_enhancements,
-    # Singleton
-    get_facade,
-    reset_facade,
-)
-```
-
-**Example: Unified enhancement initialization**
-
-```python
-from app.training.enhancements.training_facade import (
-    initialize_all_enhancements,
-    EnhancementConfig,
-)
-
-# Initialize all enhancements with one call
-config = EnhancementConfig(
-    enable_hot_buffer=True,
-    enable_quality_bridge=True,
-    start_background_services=True,
-)
-components = initialize_all_enhancements(config, model)
-
-# Use facade in training loop
-if components.facade:
-    lr_scale = components.facade.get_curriculum_lr_scale(epoch / total_epochs)
-    per_sample_losses = components.facade.compute_per_sample_loss(
-        policy_logits, policy_targets, value_pred, value_targets
-    )
-
-# Cleanup
-components.stop_background_services()
-```
-
-**Example: Unified data validation**
-
-```python
-from app.training.train_validation import validate_training_data
-
-result = validate_training_data(
-    data_paths=["data/training/hex8_2p.npz"],
-    board_type="hex8",
-    num_players=2,
-    max_data_age_hours=1.0,
-    fail_on_invalid=True,
-)
-
-if result.all_valid:
-    print("All validations passed!")
-else:
-    for error in result.errors:
-        print(f"Error: {error}")
-```
-
-### Health Check Coverage (95%+)
-
-Added `health_check()` returning `HealthCheckResult` to remaining coordinators:
-
-| Class                         | File                              | Status                |
-| ----------------------------- | --------------------------------- | --------------------- |
-| `DaemonAdapter` (base class)  | `daemon_adapters.py`              | ✅ Added              |
-| `UnifiedResourceCoordinator`  | `unified_resource_coordinator.py` | ✅ Added              |
-| `S3BackupDaemon`              | `s3_backup_daemon.py`             | ✅ Updated (was bool) |
-| `UnifiedFeedbackOrchestrator` | `unified_feedback.py`             | ✅ Added              |
-
-All `DaemonAdapter` subclasses now inherit `health_check()` from the base class.
-
-### fire_and_forget Bug Fix
-
-Fixed `auto_sync_daemon.py` using `error_callback=` instead of `on_error=` for `fire_and_forget()` calls (9 occurrences fixed).
-
-### Integration Test Coverage
-
-Added 88 new integration tests for sync infrastructure:
-
-- `test_database_sync_manager.py` - 28 tests
-- `test_sync_router_integration.py` - 26 tests
-- `test_auto_sync_daemon_integration.py` - 34 tests
-
-## Contact
-
-For migration assistance or questions:
-
-- Check the main README.md for detailed per-module migration docs
-- Review test files for usage examples
-- Raise issues in the project tracker
 
 ---
 
-_Last updated: December 27, 2025_
+### 6. model_distribution_daemon.py / npz_distribution_daemon.py
+
+**Old usage:**
+
+```python
+from app.coordination.model_distribution_daemon import ModelDistributionDaemon
+from app.coordination.npz_distribution_daemon import NPZDistributionDaemon
+
+model_daemon = ModelDistributionDaemon()
+await model_daemon.distribute_model("models/new.pth")
+
+npz_daemon = NPZDistributionDaemon()
+await npz_daemon.distribute_npz("data/training/hex8_2p.npz")
+```
+
+**New usage:**
+
+```python
+from app.coordination.unified_distribution_daemon import (
+    UnifiedDistributionDaemon,
+    DataType,
+    DistributionConfig,
+    wait_for_model_distribution,
+    check_model_availability,
+)
+
+# Unified daemon handles both models and NPZ
+daemon = UnifiedDistributionDaemon()
+await daemon.start()
+
+# Distribute specific files
+await daemon.distribute(DataType.MODEL, "models/new.pth")
+await daemon.distribute(DataType.NPZ, "data/training/hex8_2p.npz")
+
+# Wait for model to be available on nodes
+available = await wait_for_model_distribution(
+    "models/new.pth",
+    required_nodes=5,
+    timeout=300,
+)
+```
+
+---
+
+### 7. replication_monitor.py / replication_repair_daemon.py
+
+**Old usage:**
+
+```python
+from app.coordination.replication_monitor import ReplicationMonitor
+from app.coordination.replication_repair_daemon import ReplicationRepairDaemon
+
+monitor = ReplicationMonitor()
+monitor.check_replication_status()
+
+repair = ReplicationRepairDaemon()
+repair.repair_missing_replicas()
+```
+
+**New usage:**
+
+```python
+from app.coordination.unified_replication_daemon import (
+    UnifiedReplicationDaemon,
+    ReplicationConfig,
+    create_replication_monitor,  # Backward compat
+    create_replication_repair_daemon,  # Backward compat
+)
+
+# Single daemon handles both monitoring and repair
+config = ReplicationConfig(
+    target_replicas=3,
+    repair_interval=300,
+    emergency_sync_threshold=1,
+)
+daemon = UnifiedReplicationDaemon(config)
+await daemon.start()
+```
+
+---
+
+### 8. auto_evaluation_daemon.py
+
+**Old usage:**
+
+```python
+from app.coordination.auto_evaluation_daemon import AutoEvaluationDaemon
+
+daemon = AutoEvaluationDaemon()
+await daemon.evaluate_and_promote("models/new.pth")
+```
+
+**New usage:**
+
+```python
+from app.coordination.evaluation_daemon import EvaluationDaemon
+from app.coordination.auto_promotion_daemon import AutoPromotionDaemon
+
+# Separate concerns - evaluation and promotion are now distinct
+eval_daemon = EvaluationDaemon()
+await eval_daemon.start()  # Evaluates models, emits EVALUATION_COMPLETED
+
+promo_daemon = AutoPromotionDaemon()
+await promo_daemon.start()  # Listens for eval results, promotes if passing
+```
+
+---
+
+## Backward Compatibility
+
+Most deprecated modules have shim imports that emit `DeprecationWarning`. These will continue to work until Q2 2026:
+
+```python
+# These still work but emit warnings
+from app.coordination.cluster_data_sync import ClusterDataSync  # DeprecationWarning
+from app.coordination.queue_populator import QueuePopulator  # DeprecationWarning
+```
+
+To suppress warnings during migration:
+
+```python
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="app.coordination")
+```
+
+---
+
+## Environment Variables
+
+Some deprecated modules had environment-variable-based configuration. Here are the new equivalents:
+
+| Old Variable                       | New Variable                       | Default |
+| ---------------------------------- | ---------------------------------- | ------- |
+| `RINGRIFT_CLUSTER_SYNC_INTERVAL`   | `RINGRIFT_AUTO_SYNC_INTERVAL`      | 60      |
+| `RINGRIFT_EPHEMERAL_SYNC_INTERVAL` | `RINGRIFT_EPHEMERAL_SYNC_INTERVAL` | 5       |
+| `RINGRIFT_MODEL_DIST_WORKERS`      | `RINGRIFT_DIST_WORKERS`            | 4       |
+| `RINGRIFT_REPLICATION_TARGET`      | `RINGRIFT_REPLICATION_REPLICAS`    | 3       |
+
+---
+
+## Questions?
+
+See the main CLAUDE.md for module documentation or file an issue in the repository.

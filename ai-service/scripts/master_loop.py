@@ -797,6 +797,7 @@ class MasterLoopController:
             # Dec 2025: DATA_CONSOLIDATION merges scattered selfplay games into canonical DBs
             # Must run after AUTO_SYNC (games need to be synced first) and before training
             DaemonType.DATA_CONSOLIDATION,
+            DaemonType.TRAINING_TRIGGER,  # Dec 27 2025: Added as critical daemon
             DaemonType.EVALUATION,
             DaemonType.AUTO_PROMOTION,
             DaemonType.TOURNAMENT_DAEMON,
@@ -829,6 +830,7 @@ class MasterLoopController:
                 DaemonType.IDLE_RESOURCE,           # spawns selfplay
                 DaemonType.TRAINING_NODE_WATCHER,   # monitors training
                 DaemonType.AUTO_EXPORT,             # exports training data (CPU-bound)
+                DaemonType.TRAINING_TRIGGER,        # triggers training jobs
                 DaemonType.TOURNAMENT_DAEMON,       # runs tournaments
                 DaemonType.EVALUATION,              # runs gauntlets
                 DaemonType.AUTO_PROMOTION,          # triggers promotion (can spawn gauntlet)
@@ -895,8 +897,11 @@ class MasterLoopController:
                 logger.warning(f"[MasterLoop] Failed to start {daemon_type.value}: {e}")
 
         # December 2025 - Gap 2 fix: Validate critical daemons started
-        failed_critical = CRITICAL_DAEMON_NAMES & failed_daemons
-        missing_critical = CRITICAL_DAEMON_NAMES - started_daemons - failed_daemons
+        # Only check daemons that were in the profile (coordinator mode filters some out)
+        profile_daemon_names = {d.value for d in profile_daemons}
+        expected_critical = CRITICAL_DAEMON_NAMES & profile_daemon_names
+        failed_critical = expected_critical & failed_daemons
+        missing_critical = expected_critical - started_daemons - failed_daemons
 
         if failed_critical or missing_critical:
             critical_issues = failed_critical | missing_critical
@@ -907,9 +912,16 @@ class MasterLoopController:
             # Don't raise - log warning but continue (graceful degradation)
             # In production, consider: raise RuntimeError(f"Critical daemons failed: {critical_issues}")
         else:
-            logger.info(
-                f"[MasterLoop] All critical daemons started successfully: {CRITICAL_DAEMON_NAMES}"
-            )
+            skipped_critical = CRITICAL_DAEMON_NAMES - expected_critical
+            if skipped_critical:
+                logger.info(
+                    f"[MasterLoop] All expected critical daemons started. "
+                    f"(skipped on coordinator: {skipped_critical})"
+                )
+            else:
+                logger.info(
+                    f"[MasterLoop] All critical daemons started successfully: {CRITICAL_DAEMON_NAMES}"
+                )
 
         # Start FeedbackLoopController explicitly (December 2025 - Phase 2A.1)
         # The daemon manager starts FEEDBACK_LOOP daemon, but we also need to
