@@ -4349,59 +4349,26 @@ class P2POrchestrator(
     # Use self.sync_planner.generate_sync_plan(cluster_manifest) instead.
 
     async def _execute_sync_plan(self) -> None:
-        """Leader executes the sync plan by dispatching jobs to nodes."""
+        """Leader executes the sync plan by dispatching jobs to nodes.
+
+        Delegates to SyncPlanner.execute_sync_plan() with _request_node_sync as callback.
+        Dec 2025: Refactored to delegate to SyncPlanner for consolidated logic.
+        """
         if not self.current_sync_plan:
             return
 
-        # Check disk capacity before syncing
-        has_capacity, disk_percent = check_disk_has_capacity()
-        if not has_capacity:
-            logger.info(f"SKIPPING SYNC - Disk usage {disk_percent:.1f}% exceeds limit {MAX_DISK_USAGE_PERCENT}%")
-            return
+        # Delegate to SyncPlanner with our network request callback
+        result = await self.sync_planner.execute_sync_plan(
+            plan=self.current_sync_plan,
+            execute_job_callback_async=self._request_node_sync,
+        )
 
+        # Update local state from SyncPlanner result
         with self.sync_lock:
-            if self.sync_in_progress:
-                logger.info("Sync already in progress, skipping")
-                return
-            self.sync_in_progress = True
-            self.current_sync_plan.status = "running"
+            self.last_sync_time = time.time()
 
-        try:
-            # Group jobs by target node for efficiency
-            jobs_by_target: dict[str, list[DataSyncJob]] = {}
-            for job in self.current_sync_plan.sync_jobs:
-                if job.target_node not in jobs_by_target:
-                    jobs_by_target[job.target_node] = []
-                jobs_by_target[job.target_node].append(job)
-
-            # Execute jobs for each target node
-            for target_node, jobs in jobs_by_target.items():
-                peer = self.peers.get(target_node)
-                if target_node != self.node_id and (not peer or not peer.is_alive()):
-                    logger.info(f"Target node {target_node} not available, skipping sync")
-                    for job in jobs:
-                        job.status = "failed"
-                        job.error_message = "Target node not available"
-                        self.current_sync_plan.jobs_failed += 1
-                    continue
-
-                # Send sync request to target node
-                for job in jobs:
-                    await self._request_node_sync(job)
-
-            # Update plan status
-            with self.sync_lock:
-                if self.current_sync_plan.jobs_failed == len(self.current_sync_plan.sync_jobs):
-                    self.current_sync_plan.status = "failed"
-                elif self.current_sync_plan.jobs_completed == len(self.current_sync_plan.sync_jobs):
-                    self.current_sync_plan.status = "completed"
-                else:
-                    self.current_sync_plan.status = "partial"
-
-        finally:
-            with self.sync_lock:
-                self.sync_in_progress = False
-                self.last_sync_time = time.time()
+        if not result.get("success", False):
+            logger.warning(f"Sync plan execution issue: {result.get('error', 'unknown')}")
 
     async def _request_node_sync(self, job: DataSyncJob) -> bool:
         """Request a target node to pull files from a source node."""
@@ -15393,134 +15360,9 @@ print(json.dumps(result))
                 logger.error(f"Work queue maintenance error: {e}")
                 await asyncio.sleep(MAINTENANCE_INTERVAL)
 
-    async def _idle_detection_loop(self):
-        """Background loop for leader to detect idle nodes and auto-assign work.
-
-        .. deprecated:: Dec 2025
-            Use :class:`scripts.p2p.loops.IdleDetectionLoop` via LoopManager instead.
-
-        Uses the unified inventory to discover ALL nodes (Vast, Tailscale, Lambda, Hetzner)
-        and automatically assigns work to nodes that have been idle for too long.
-
-        This ensures GPUs never sit idle waiting for manual intervention.
-        """
-        await asyncio.sleep(30)  # Initial delay to let cluster stabilize
-
-        logger.info(f"Idle detection loop started (interval={IDLE_CHECK_INTERVAL}s, threshold={IDLE_GPU_THRESHOLD}%)")
-
-        # Track how long each node has been idle (for grace period)
-        idle_since: dict[str, float] = {}
-
-        while self.running:
-            try:
-                # Only leader performs idle detection
-                if self.role != NodeRole.LEADER or not AUTO_ASSIGN_ENABLED:
-                    await asyncio.sleep(IDLE_CHECK_INTERVAL)
-                    continue
-
-                # Run unified discovery and use it as primary source for idle nodes
-                inventory_idle_nodes = []
-                if HAS_UNIFIED_INVENTORY and get_inventory:
-                    inventory = get_inventory()
-                    try:
-                        await inventory.discover_all()
-                        # Get idle nodes from unified inventory (includes Vast, Tailscale, Lambda, Hetzner)
-                        inventory_idle_nodes = inventory.get_idle_nodes(IDLE_GPU_THRESHOLD)
-                        if inventory_idle_nodes:
-                            logger.debug(f"Unified inventory found {len(inventory_idle_nodes)} idle nodes")
-                    except Exception as e:
-                        logger.debug(f"Unified discovery error: {e}")
-
-                # Get idle nodes from P2P peers (as additional source)
-                idle_nodes = []
-                now = time.time()
-                seen_node_ids = set()
-
-                # First, process inventory idle nodes (fresher data from CLI discovery)
-                for node in inventory_idle_nodes:
-                    node_id = getattr(node, "node_id", "") or ""
-                    if not node_id:
-                        continue
-                    seen_node_ids.add(node_id)
-
-                    # Track when this node became idle
-                    if node_id not in idle_since:
-                        idle_since[node_id] = now
-                        gpu_pct = float(getattr(node, "gpu_percent", 0) or 0)
-                        logger.debug(f"Node {node_id} became idle (GPU={gpu_pct:.0f}%, source=inventory)")
-
-                    # Check if idle long enough (grace period)
-                    idle_duration = now - idle_since[node_id]
-                    if idle_duration >= IDLE_GRACE_PERIOD:
-                        idle_nodes.append((node, idle_duration))
-
-                # Then, process P2P peers (for nodes not in inventory)
-                with self.peers_lock:
-                    for peer in self.peers.values():
-                        # Skip nodes already processed from inventory
-                        if peer.node_id in seen_node_ids:
-                            continue
-
-                        if not peer.is_alive() or peer.retired:
-                            # Remove from idle tracking if no longer active
-                            idle_since.pop(peer.node_id, None)
-                            continue
-
-                        # Check if node is GPU-idle: low GPU utilization, regardless of CPU job count
-                        # A node with CPU-bound selfplay jobs but idle GPU should still get GPU work
-                        gpu_pct = float(getattr(peer, "gpu_percent", 0) or 0)
-                        int(getattr(peer, "selfplay_jobs", 0) or 0)
-                        training_jobs = int(getattr(peer, "training_jobs", 0) or 0)
-                        has_external = getattr(peer, "has_external_work", lambda: False)()
-                        has_gpu = bool(getattr(peer, "gpu_name", "") or getattr(peer, "has_gpu", False))
-
-                        # GPU-idle: GPU is underutilized. Training jobs use GPU, so exclude those.
-                        # CPU selfplay jobs don't prevent GPU idleness - in fact, that's exactly
-                        # when we SHOULD start GPU work to utilize the idle GPU.
-                        is_idle = (
-                            has_gpu
-                            and gpu_pct < IDLE_GPU_THRESHOLD
-                            and training_jobs == 0  # Training uses GPU, so node isn't GPU-idle
-                            and not has_external
-                        )
-
-                        if is_idle:
-                            # Track when this node became idle
-                            if peer.node_id not in idle_since:
-                                idle_since[peer.node_id] = now
-                                logger.debug(f"Node {peer.node_id} became idle (GPU={gpu_pct:.0f}%, source=p2p)")
-
-                            # Check if idle long enough (grace period)
-                            idle_duration = now - idle_since[peer.node_id]
-                            if idle_duration >= IDLE_GRACE_PERIOD:
-                                idle_nodes.append((peer, idle_duration))
-                        else:
-                            # Node is no longer idle
-                            if peer.node_id in idle_since:
-                                logger.debug(f"Node {peer.node_id} no longer idle (GPU={gpu_pct:.0f}%)")
-                            idle_since.pop(peer.node_id, None)
-
-                # Auto-assign work to idle nodes
-                if idle_nodes:
-                    logger.info(f"Found {len(idle_nodes)} idle node(s), auto-assigning work")
-
-                    wq = get_work_queue()
-                    if wq is not None:
-                        # Ensure queue has enough work
-                        wq.ensure_work_available(len(idle_nodes), max_batch=AUTO_WORK_BATCH_SIZE)
-
-                        # Try to start selfplay on each idle node
-                        for peer, idle_duration in idle_nodes:
-                            try:
-                                await self._auto_start_selfplay(peer, idle_duration)
-                            except Exception as e:
-                                logger.warning(f"Failed to auto-start work on {peer.node_id}: {e}")
-
-                await asyncio.sleep(IDLE_CHECK_INTERVAL)
-
-            except Exception as e:
-                logger.error(f"Idle detection error: {e}")
-                await asyncio.sleep(IDLE_CHECK_INTERVAL)
+    # NOTE: _idle_detection_loop() removed Dec 2025 (128 LOC).
+    # Now runs via LoopManager as IdleDetectionLoop.
+    # See scripts/p2p/loops/job_loops.py for implementation.
 
     async def _auto_start_selfplay(self, peer, idle_duration: float):
         """Auto-start diverse hybrid selfplay on an idle node.
@@ -15766,107 +15608,9 @@ print(json.dumps(result))
     # These loops enable hands-free cluster operation
     # =========================================================================
 
-    async def _auto_scaling_loop(self):
-        """Background loop for auto-scaling Vast.ai instances based on queue depth.
-
-        .. deprecated:: Dec 2025
-            Use :class:`scripts.p2p.loops.AutoScalingLoop` via LoopManager instead.
-
-        Only runs on the leader node. Evaluates scaling decisions every 5 minutes.
-        """
-        SCALING_INTERVAL = 300  # 5 minutes
-        await asyncio.sleep(60)  # Initial delay
-
-        logger.info("Auto-scaling loop started")
-
-        while self.running:
-            try:
-                # Only leader performs scaling
-                if self.role != NodeRole.LEADER:
-                    await asyncio.sleep(SCALING_INTERVAL)
-                    continue
-
-                auto_scaler = get_auto_scaler()
-                if auto_scaler is None:
-                    await asyncio.sleep(SCALING_INTERVAL)
-                    continue
-
-                # Wire up the work queue if not already done
-                wq = get_work_queue()
-                if wq is not None:
-                    auto_scaler.set_work_queue(wq)
-
-                # Evaluate scaling decision
-                decision = await auto_scaler.evaluate()
-
-                if decision.action.value == "scale_up":
-                    logger.info(f"Auto-scaling: scale_up {decision.count} instances ({decision.reason})")
-                    try:
-                        from scripts.vast_p2p_sync import provision_instances_async
-                        created, _instance_ids = await provision_instances_async(
-                            count=decision.count,
-                            max_total_hourly=auto_scaler.config.max_hourly_cost,
-                        )
-                        if created > 0:
-                            logger.info(f"Auto-scaling: provisioned {created} new instances")
-                            auto_scaler.record_scale_event(decision, success=True)
-                            # Notify via webhook
-                            await self.notifier.send(
-                                f"🚀 Auto-scaled UP: Provisioned {created} Vast.ai instances",
-                                severity="info",
-                                context={"reason": decision.reason, "instances": created}
-                            )
-                        else:
-                            logger.warning("Auto-scaling: scale_up requested but no instances created")
-                            auto_scaler.record_scale_event(decision, success=False, error="no_instances_created")
-                    except Exception as e:
-                        logger.error(f"Auto-scaling provision failed: {e}")
-                        auto_scaler.record_scale_event(decision, success=False, error=str(e))
-
-                elif decision.action.value == "scale_down":
-                    logger.info(f"Auto-scaling: scale_down {len(decision.node_ids)} instances ({decision.reason})")
-                    try:
-                        # Get mapping from node_id to vast_instance_id
-                        from scripts.vast_p2p_sync import (
-                            deprovision_instances_async,
-                            get_node_to_vast_mapping_async,
-                        )
-                        node_to_vast = await get_node_to_vast_mapping_async()
-
-                        # Translate node_ids to vast_instance_ids
-                        vast_ids_to_remove = []
-                        for node_id in decision.node_ids:
-                            if node_id in node_to_vast:
-                                vast_ids_to_remove.append(node_to_vast[node_id])
-                            else:
-                                logger.warning(f"Auto-scaling: node {node_id} not found in Vast mapping")
-
-                        if vast_ids_to_remove:
-                            # Deprovision (stop, not destroy - safer for cost saving)
-                            removed = await deprovision_instances_async(
-                                vast_ids_to_remove,
-                                destroy=False,  # Stop instead of destroy for safety
-                            )
-                            logger.info(f"Auto-scaling: stopped {removed} instances")
-                            auto_scaler.record_scale_event(decision, success=True)
-                            # Notify via webhook
-                            await self.notifier.send(
-                                f"📉 Auto-scaled DOWN: Stopped {removed} idle Vast.ai instances",
-                                severity="info",
-                                context={"reason": decision.reason, "instances": removed}
-                            )
-                        else:
-                            logger.warning("Auto-scaling: scale_down requested but no Vast instances mapped")
-                            auto_scaler.record_scale_event(decision, success=False, error="no_vast_mapping")
-                    except Exception as e:
-                        logger.error(f"Auto-scaling deprovision failed: {e}")
-                        auto_scaler.record_scale_event(decision, success=False, error=str(e))
-
-                await asyncio.sleep(SCALING_INTERVAL)
-
-            except Exception as e:
-                logger.error(f"Auto-scaling loop error: {e}")
-                await asyncio.sleep(SCALING_INTERVAL)
+    # NOTE: _auto_scaling_loop() removed Dec 2025 (101 LOC).
+    # Now runs via LoopManager as AutoScalingLoop.
+    # See scripts/p2p/loops/coordination_loops.py for implementation.
 
     async def _predictive_monitoring_loop(self):
         """Background loop for proactive monitoring and alerting.
@@ -16039,66 +15783,9 @@ print(json.dumps(result))
                 logger.error(f"Self-healing loop error: {e}")
                 await asyncio.sleep(HEALING_INTERVAL)
 
-    async def _job_reaper_loop(self):
-        """Background loop for job timeout enforcement (leader-only).
-
-        .. deprecated:: Dec 2025
-            Use :class:`scripts.p2p.loops.JobReaperLoop` via LoopManager instead.
-
-        The JobReaperDaemon provides:
-        1. Detection of jobs that exceeded their timeout
-        2. SSH-based process termination on remote nodes
-        3. Marking timed-out jobs in the work queue
-        4. Automatic reassignment of failed work
-        5. Temporary blacklisting of repeatedly failing nodes
-        """
-        await asyncio.sleep(60)  # Initial delay
-
-        logger.info("Job reaper loop starting...")
-
-        while self.running:
-            try:
-                # Only leader runs the job reaper
-                if self.role != NodeRole.LEADER:
-                    await asyncio.sleep(30)
-                    continue
-
-                # Get work queue
-                wq = get_work_queue()
-                if wq is None:
-                    await asyncio.sleep(30)
-                    continue
-
-                # Get SSH config from cluster configuration
-                ssh_config = self._get_ssh_config_for_reaper()
-
-                # Get or create job reaper
-                reaper = get_job_reaper(work_queue=wq, ssh_config=ssh_config)
-                if reaper is None:
-                    logger.debug("JobReaperDaemon not available")
-                    await asyncio.sleep(60)
-                    continue
-
-                # Run one iteration of the reaper (it handles its own sleeping)
-                if not reaper.running:
-                    # Start the reaper - it will run its own loop
-                    logger.info("Starting JobReaperDaemon")
-                    asyncio.create_task(reaper.run())
-
-                # Check reaper stats periodically
-                stats = reaper.get_stats()
-                if stats.get("jobs_reaped", 0) > 0 or stats.get("jobs_reassigned", 0) > 0:
-                    logger.info(
-                        f"JobReaper stats: reaped={stats['jobs_reaped']}, "
-                        f"reassigned={stats['jobs_reassigned']}, "
-                        f"blacklisted={stats['currently_blacklisted']}"
-                    )
-
-                await asyncio.sleep(60)  # Check every minute
-
-            except Exception as e:
-                logger.error(f"Job reaper loop error: {e}")
-                await asyncio.sleep(60)
+    # NOTE: _job_reaper_loop() removed Dec 2025 (60 LOC).
+    # Now runs via LoopManager as JobReaperLoop.
+    # See scripts/p2p/loops/job_loops.py for implementation.
 
     def _get_ssh_config_for_reaper(self) -> dict[str, Any]:
         """Get SSH configuration for the job reaper from cluster config."""
@@ -16217,88 +15904,9 @@ print(json.dumps(result))
                 logger.error(f"Validation loop error: {e}")
                 await asyncio.sleep(VALIDATION_INTERVAL)
 
-    async def _queue_populator_loop(self):
-        """Background loop to maintain minimum work queue depth.
-
-        .. deprecated:: Dec 2025
-            Use :class:`scripts.p2p.loops.QueuePopulatorLoop` via LoopManager instead.
-
-        Ensures there are always at least 50 work items in the queue until
-        all board/player configurations reach 2000 Elo. Only runs on leader.
-        """
-        POPULATOR_INTERVAL = 60  # 1 minute
-        await asyncio.sleep(30)  # Initial delay
-
-        logger.info("Queue populator loop started")
-
-        # Initialize populator
-        try:
-            import yaml
-
-            from app.coordination.unified_queue_populator import UnifiedQueuePopulator as QueuePopulator, load_populator_config_from_yaml
-
-            # Load config from YAML
-            config_path = Path(__file__).parent.parent / "config" / "unified_loop.yaml"
-            if config_path.exists():
-                with open(config_path) as f:
-                    yaml_config = yaml.safe_load(f)
-                populator_config = load_populator_config_from_yaml(yaml_config)
-            else:
-                populator_config = None
-
-            populator = QueuePopulator(config=populator_config)
-            populator.set_work_queue(get_work_queue())
-            # Wire SelfplayScheduler for priority-based config selection (Dec 2025)
-            populator.set_selfplay_scheduler(self.selfplay_scheduler)
-            self._queue_populator = populator
-        except Exception as e:
-            logger.error(f"Failed to initialize queue populator: {e}")
-            return
-
-        while self.running:
-            try:
-                # Only leader populates work queue
-                if self.role != NodeRole.LEADER:
-                    await asyncio.sleep(POPULATOR_INTERVAL)
-                    continue
-
-                # Check if populator is enabled
-                if not populator.config.enabled:
-                    await asyncio.sleep(POPULATOR_INTERVAL)
-                    continue
-
-                # Check if all targets are met
-                if populator.all_targets_met():
-                    logger.info("All Elo targets met (2000+), queue population paused")
-                    await asyncio.sleep(POPULATOR_INTERVAL * 5)  # Check less often
-                    continue
-
-                # Populate the queue
-                items_added = populator.populate()
-                if items_added > 0:
-                    status = populator.get_status()
-                    logger.info(
-                        f"Queue populated: +{items_added} items, "
-                        f"depth={status['current_queue_depth']}, "
-                        f"unmet={status['configs_unmet']}/{status['total_configs']}"
-                    )
-
-                    # Notify if significant change
-                    if items_added >= 10:
-                        await self.notifier.send(
-                            f"📋 Queue populated: +{items_added} work items",
-                            severity="info",
-                            context={
-                                "queue_depth": status['current_queue_depth'],
-                                "configs_unmet": status['configs_unmet'],
-                            }
-                        )
-
-                await asyncio.sleep(POPULATOR_INTERVAL)
-
-            except Exception as e:
-                logger.error(f"Queue populator loop error: {e}")
-                await asyncio.sleep(POPULATOR_INTERVAL)
+    # NOTE: _queue_populator_loop() removed Dec 2025 (82 LOC).
+    # Now runs via LoopManager as QueuePopulatorLoop.
+    # See scripts/p2p/loops/queue_populator_loop.py for implementation.
 
     async def handle_games_analytics(self, request: web.Request) -> web.Response:
         """GET /games/analytics - Game statistics for dashboards.
