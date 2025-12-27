@@ -120,14 +120,15 @@ class StateManager:
         - peer_cache: Persistent peer storage with reputation
         - config: Cluster epoch and other persistent settings
         """
-        conn = sqlite3.connect(str(self.db_path), timeout=self.DB_TIMEOUT)
+        conn = sqlite3.connect(str(self.db_path), timeout=SQLiteDefaults.WRITE_TIMEOUT)
         cursor = conn.cursor()
 
         try:
             # Enable WAL mode for concurrent readers/writers
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA synchronous=NORMAL")
-            cursor.execute("PRAGMA busy_timeout=30000")
+            busy_timeout_ms = int(SQLiteDefaults.WRITE_TIMEOUT * 1000)
+            cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
 
             # Peers table
             cursor.execute("""
@@ -508,7 +509,7 @@ class StateManager:
         """
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
+            conn = sqlite3.connect(str(self.db_path), timeout=SQLiteDefaults.READ_TIMEOUT)
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM config WHERE key = 'cluster_epoch'")
             row = cursor.fetchone()
@@ -527,7 +528,7 @@ class StateManager:
         """Save cluster epoch to database."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
+            conn = sqlite3.connect(str(self.db_path), timeout=SQLiteDefaults.WRITE_TIMEOUT)
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT OR REPLACE INTO config (key, value) VALUES ('cluster_epoch', ?)",
