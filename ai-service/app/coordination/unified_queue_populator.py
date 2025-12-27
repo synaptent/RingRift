@@ -1185,6 +1185,33 @@ class UnifiedQueuePopulatorDaemon:
                             f"pending: {target.pending_selfplay_count}"
                         )
 
+            def _on_task_abandoned(event: Any) -> None:
+                """Handle TASK_ABANDONED - decrement pending count for abandoned tasks.
+
+                TASK_ABANDONED is emitted when a task is intentionally cancelled (e.g.,
+                due to backpressure, resource constraints, or pipeline requirements).
+                Unlike WORK_FAILED (unexpected errors) or WORK_TIMEOUT (deadline exceeded),
+                abandonment is a controlled termination.
+                """
+                payload = _extract_payload(event)
+                task_type = payload.get("task_type", "")
+                if "selfplay" not in task_type.lower():
+                    return
+
+                board_type = payload.get("board_type")
+                num_players = payload.get("num_players")
+                reason = payload.get("reason", "unknown")
+                config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+
+                if config_key and config_key in self._populator._targets:
+                    target = self._populator._targets[config_key]
+                    if target.pending_selfplay_count > 0:
+                        target.pending_selfplay_count -= 1
+                        logger.info(
+                            f"[QueuePopulator] Task abandoned for {config_key} ({reason}), "
+                            f"pending: {target.pending_selfplay_count}"
+                        )
+
             router.subscribe(DataEventType.ELO_UPDATED.value, _on_elo_updated)
             router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
             router.subscribe(DataEventType.NEW_GAMES_AVAILABLE.value, _on_new_games)
@@ -1193,14 +1220,16 @@ class UnifiedQueuePopulatorDaemon:
             if hasattr(DataEventType, 'SELFPLAY_COMPLETE'):
                 router.subscribe(DataEventType.SELFPLAY_COMPLETE.value, _on_selfplay_complete)
 
-            # Wire WORK_FAILED and WORK_TIMEOUT for accurate pending count tracking
+            # Wire WORK_FAILED, WORK_TIMEOUT, TASK_ABANDONED for accurate pending count tracking
             if hasattr(DataEventType, 'WORK_FAILED'):
                 router.subscribe(DataEventType.WORK_FAILED.value, _on_work_failed)
             if hasattr(DataEventType, 'WORK_TIMEOUT'):
                 router.subscribe(DataEventType.WORK_TIMEOUT.value, _on_work_timeout)
+            if hasattr(DataEventType, 'TASK_ABANDONED'):
+                router.subscribe(DataEventType.TASK_ABANDONED.value, _on_task_abandoned)
 
             _events_wired = True
-            logger.info("[QueuePopulatorDaemon] Subscribed to data events (incl. WORK_FAILED/TIMEOUT)")
+            logger.info("[QueuePopulatorDaemon] Subscribed to data events (incl. WORK_FAILED/TIMEOUT/TASK_ABANDONED)")
 
         except ImportError:
             logger.debug("[QueuePopulatorDaemon] Event router not available")

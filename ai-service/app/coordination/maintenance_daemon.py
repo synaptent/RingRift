@@ -797,7 +797,7 @@ class MaintenanceDaemon:
                             source="maintenance_daemon",
                         )
                     except (RuntimeError, OSError, ConnectionError) as emit_err:
-                        logger.debug(f"[Maintenance] Event emission failed: {emit_err}")
+                        logger.warning(f"[Maintenance] Event emission failed: {emit_err}")
 
             except (OSError, RuntimeError) as e:
                 logger.warning(f"[Maintenance] Failed to recover orphan DB {db_path}: {e}")
@@ -841,7 +841,7 @@ class MaintenanceDaemon:
             },
         }
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health status.
 
         December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.

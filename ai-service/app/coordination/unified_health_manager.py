@@ -816,8 +816,8 @@ class UnifiedHealthManager(CoordinatorBase):
                             "reason": "auto_regression_critical",
                         }
                     )
-                except Exception as e:
-                    logger.debug(f"Could not emit rollback event: {e}")
+                except (RuntimeError, OSError, ConnectionError) as e:
+                    logger.warning(f"Could not emit rollback event: {e}")
             else:
                 logger.error(
                     f"[UnifiedHealthManager] Rollback failed for {config_key}: "
@@ -1882,39 +1882,54 @@ class UnifiedHealthManager(CoordinatorBase):
         })
         return base_stats
 
-    async def health_check(self) -> bool:
-        """Check if the health manager is healthy.
+    def health_check(self) -> "HealthCheckResult":
+        """Check if the health manager is healthy (CoordinatorProtocol compliance).
 
-        Returns True if running and functioning properly.
-        Used by DaemonManager for crash detection and auto-restart.
+        Returns HealthCheckResult for consistent health monitoring interface.
         """
+        from app.coordination.protocols import HealthCheckResult
+
         if self.status != CoordinatorStatus.READY:
-            return False
+            return HealthCheckResult(
+                healthy=False,
+                status=self.status,
+                message="Health manager not ready",
+            )
 
         # Check event subscription is active
         if not self._subscribed:
-            logger.warning(
-                "[UnifiedHealthManager] health_check failed: not subscribed to events"
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="Not subscribed to events",
             )
-            return False
 
         # Check we haven't accumulated too many unrecovered errors
         unrecovered = self._total_errors - self._successful_recoveries
         if unrecovered > 100:
-            logger.warning(
-                f"[UnifiedHealthManager] health_check warning: "
-                f"{unrecovered} unrecovered errors"
+            return HealthCheckResult(
+                healthy=True,  # Still operational but degraded
+                status=CoordinatorStatus.DEGRADED,
+                message=f"{unrecovered} unrecovered errors",
+                details={"unrecovered_errors": unrecovered},
             )
 
         # Check we don't have too many open circuits (indicates system stress)
         health_stats = self.get_health_stats()
         if health_stats.circuit_breakers_open > 5:
-            logger.warning(
-                f"[UnifiedHealthManager] health_check warning: "
-                f"{health_stats.circuit_breakers_open} circuit breakers open"
+            return HealthCheckResult(
+                healthy=True,  # Still operational but stressed
+                status=CoordinatorStatus.DEGRADED,
+                message=f"{health_stats.circuit_breakers_open} circuit breakers open",
+                details={"circuit_breakers_open": health_stats.circuit_breakers_open},
             )
 
-        return True
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.READY,
+            message="Health manager running",
+            details={"subscribed": self._subscribed, "total_errors": self._total_errors},
+        )
 
     def get_status(self) -> dict[str, Any]:
         """Get coordinator status for monitoring (sync version)."""

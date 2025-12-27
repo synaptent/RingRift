@@ -432,7 +432,7 @@ class OrphanDetectionDaemon:
         """Force an immediate orphan scan."""
         return await self._run_scan()
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check daemon health status.
 
         December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
