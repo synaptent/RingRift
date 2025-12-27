@@ -45,15 +45,15 @@
 
 Migration: Use `app/core/ssh` for new code, SSHTransport for P2P.
 
-### Daemon Types: Defined vs Used (Updated Dec 26, 2025)
+### Daemon Types: Defined vs Used (Updated Dec 27, 2025)
 
-| Metric                  | Count    | Status             |
-| ----------------------- | -------- | ------------------ |
-| Total DaemonType values | 61       |                    |
-| Registered in factory   | 49 (80%) | ✅ Good            |
-| Unregistered (orphaned) | 12 (20%) | ⚠️ Needs attention |
-| Deprecated (Q2 2026)    | 2        | Migrated           |
-| Critical daemons        | 5        | ✅ All registered  |
+| Metric                  | Count     | Status            |
+| ----------------------- | --------- | ----------------- |
+| Total DaemonType values | 66        | ✅ All accounted  |
+| Registered in factory   | 66 (100%) | ✅ Complete       |
+| Unregistered (orphaned) | 0         | ✅ None           |
+| Deprecated (Q2 2026)    | 2         | Migrated          |
+| Critical daemons        | 5         | ✅ All registered |
 
 **Profile Startup Risk (Unregistered daemons block startup):**
 

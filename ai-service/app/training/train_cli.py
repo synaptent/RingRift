@@ -307,10 +307,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Apply hex symmetry augmentation during training'
     )
     parser.add_argument(
-        '--sampling-weights', type=str, default='uniform',
+        # Dec 27 2025: Changed default to combined_source for ML acceleration
+        '--sampling-weights', type=str, default='combined_source',
         choices=['uniform', 'recency', 'policy_entropy', 'late_game', 'source', 'combined_source'],
-        help='Sample weighting strategy. Use "source" for Gumbel 3x weight, '
-             '"combined_source" for combined late_game + phase + source weighting (recommended)'
+        help='Sample weighting strategy. "combined_source" combines late_game + phase + '
+             'source weighting (default, recommended). Use "uniform" for no weighting.'
     )
 
     # Distributed training

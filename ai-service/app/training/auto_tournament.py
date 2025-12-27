@@ -36,7 +36,8 @@ try:
 except ImportError:
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
-    # Candidate must demonstrate superiority in head-to-head (decisive win rate)
+    # Candidate must demonstrate superiority in head-to-head
+    # (decisive win rate).
     WIN_RATE_BEAT_BEST = 0.55
 
 logger = logging.getLogger(__name__)
@@ -288,8 +289,8 @@ class AutoTournamentPipeline:
     """
 
     # Promotion thresholds - use canonical values from app.config.thresholds
-    # NOTE: This tournament pipeline promotes based on head-to-head decisive win rate,
-    # not the broader "production promotion" gates.
+    # NOTE: Promotion uses head-to-head decisive win rate
+    # (not the broader "production promotion" gates).
     WIN_RATE_THRESHOLD = float(WIN_RATE_BEAT_BEST)
     PROMOTION_SIGNIFICANCE_LEVEL = 0.05  # p-value threshold
     DEFAULT_ELO = float(INITIAL_ELO_RATING)
@@ -566,7 +567,8 @@ class AutoTournamentPipeline:
 
                 # Aggregate victory reasons (tolerate legacy/new keys)
                 for reason, count in tournament.victory_reasons.items():
-                    victory_reasons[reason] = victory_reasons.get(reason, 0) + count
+                    prev = victory_reasons.get(reason, 0)
+                    victory_reasons[reason] = prev + count
 
                 # Update Elo ratings
                 model_a.elo_rating = tournament.ratings["A"]
@@ -851,7 +853,9 @@ class AutoTournamentPipeline:
 
         champion = self.get_champion()
         if champion:
-            wins, losses, draws = champion.wins, champion.losses, champion.draws
+            wins = champion.wins
+            losses = champion.losses
+            draws = champion.draws
             record = f"{wins}W / {losses}L / {draws}D"
             arch_ver = champion.metadata.architecture_version
             lines.extend([
