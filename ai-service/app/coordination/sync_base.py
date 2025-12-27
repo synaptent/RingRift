@@ -278,10 +278,15 @@ class SyncManagerBase(ABC):
         Returns:
             Status dict with state, circuit breaker info, etc.
         """
+        # Get all circuit breaker states (targets tracked internally)
+        cb_states = self._circuit_breaker.get_all_states()
         return {
             "running": self._running,
             "state": self._state.to_dict(),
-            "circuit_breaker": self._circuit_breaker.get_status(),
+            "circuit_breaker": {
+                target: status.state.value if hasattr(status.state, 'value') else str(status.state)
+                for target, status in cb_states.items()
+            } if cb_states else {},
         }
 
 

@@ -122,8 +122,12 @@ class CoordinationFacade:
             tt = TaskType(task_type) if task_type in [t.value for t in TaskType] else None
             if tt:
                 return coordinator.can_spawn(tt, node_id)
-        except Exception as e:
-            logger.debug(f"Task spawn check failed: {e}")
+        except ValueError as e:
+            # Invalid task type value
+            logger.debug(f"Invalid task type {task_type}: {e}")
+        except (ImportError, ModuleNotFoundError) as e:
+            # TaskType not importable (rare but possible)
+            logger.warning(f"TaskType import failed, allowing spawn: {e}")
 
         return True
 
@@ -498,7 +502,7 @@ class CoordinationFacade:
             try:
                 from app.coordination.task_coordinator import get_task_coordinator
                 self._task_coordinator = get_task_coordinator()
-            except Exception as e:
+            except (ImportError, ModuleNotFoundError) as e:
                 logger.debug(f"Could not load task coordinator: {e}")
         return self._task_coordinator
 
@@ -512,7 +516,7 @@ class CoordinationFacade:
             try:
                 from app.coordination.training_coordinator import get_training_coordinator
                 self._training_coordinator = get_training_coordinator()
-            except Exception as e:
+            except (ImportError, ModuleNotFoundError) as e:
                 logger.debug(f"Could not load training coordinator: {e}")
         return self._training_coordinator
 
@@ -531,7 +535,7 @@ class CoordinationFacade:
                 # Dec 2025: Use health_facade (unified interface)
                 from app.coordination.health_facade import get_health_orchestrator
                 self._node_monitor = get_health_orchestrator()
-            except Exception as e:
+            except (ImportError, ModuleNotFoundError) as e:
                 logger.debug(f"Could not load health orchestrator: {e}")
         return self._node_monitor
 
@@ -545,7 +549,7 @@ class CoordinationFacade:
             try:
                 from app.coordination.event_router import get_event_router
                 self._event_router = get_event_router()
-            except Exception as e:
+            except (ImportError, ModuleNotFoundError) as e:
                 logger.debug(f"Could not load event router: {e}")
         return self._event_router
 
