@@ -413,13 +413,18 @@ class DatabaseSyncManager(SyncManagerBase):
 
             # Build rsync command (Dec 2025: use centralized timeout)
             from app.config.thresholds import RSYNC_TIMEOUT
+            from app.utils.env_config import get_str
+            ssh_user = get_str("RINGRIFT_SSH_USER", "root")
+            ssh_key = get_str("RINGRIFT_SSH_KEY", "")
             ssh_cmd = f"ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+            if ssh_key:
+                ssh_cmd += f" -i {ssh_key}"
             rsync_cmd = [
                 "rsync",
                 "-avz",
                 f"--timeout={RSYNC_TIMEOUT}",
                 "-e", ssh_cmd,
-                f"root@{host}:{remote_path}",
+                f"{ssh_user}@{host}:{remote_path}",
                 str(tmp_path),
             ]
 
@@ -491,14 +496,19 @@ class DatabaseSyncManager(SyncManagerBase):
 
             # Build rsync command (Dec 2025: use centralized timeout)
             from app.config.thresholds import RSYNC_TIMEOUT
+            from app.utils.env_config import get_str
+            ssh_user = get_str("RINGRIFT_SSH_USER", "root")
+            ssh_key = get_str("RINGRIFT_SSH_KEY", "")
             ssh_cmd = f"ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
+            if ssh_key:
+                ssh_cmd += f" -i {ssh_key}"
             rsync_cmd = [
                 "rsync",
                 "-avz",
                 f"--timeout={RSYNC_TIMEOUT}",
                 "-e", ssh_cmd,
                 str(self.db_path),
-                f"root@{host}:{remote_path}",
+                f"{ssh_user}@{host}:{remote_path}",
             ]
 
             # Run rsync
