@@ -207,7 +207,7 @@ python scripts/cluster_submit.py gpu-selfplay --board hex8 --players 2 --games 5
                     |
                     v (rsync/P2P)
     Mac Studio (Data Aggregator)
-      - OWC Drive: /Volumes/RingRift-Data (7.3TB)
+      - External Drive: /Volumes/RingRift-Data (7.3TB)
       - Runs: unified_data_sync.py
       - Runs: data_aggregator.py
                     |

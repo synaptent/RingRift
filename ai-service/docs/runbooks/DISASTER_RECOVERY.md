@@ -84,7 +84,7 @@ curl -s http://localhost:8770/jobs | jq '.active_jobs | length'
 
 ```bash
 # Check which nodes are reachable via SSH
-for host in nebius-backbone-1 runpod-h100 runpod-a100-1; do
+for host in nebius-backbone-1 nebius-h100-3 hetzner-cpu1; do
   echo -n "$host: "
   timeout 5 ssh $host "echo OK" 2>/dev/null || echo "UNREACHABLE"
 done
@@ -102,16 +102,16 @@ ssh nebius-backbone-1 "curl -s --connect-timeout 5 http://localhost:8770/health"
 # Step 1: Restart P2P on coordinator/leader node first
 ssh nebius-backbone-1 "cd ~/ringrift/ai-service && \
   pkill -f p2p_orchestrator; \
-  nohup python -m app.p2p.orchestrator > logs/p2p.log 2>&1 &"
+  PYTHONPATH=. nohup venv/bin/python scripts/p2p_orchestrator.py --node-id nebius-backbone-1 --port 8770 --peers <coordinator_urls> > logs/p2p.log 2>&1 &"
 
 # Step 2: Wait for coordinator to stabilize (30 seconds)
 sleep 30
 
 # Step 3: Restart P2P on other voter nodes
-for host in runpod-h100 runpod-a100-1 runpod-a100-2; do
-  ssh $host "cd /workspace/ringrift/ai-service && \
+for host in nebius-h100-3 hetzner-cpu1 hetzner-cpu2 vultr-a100-20gb; do
+  ssh $host "cd ~/ringrift/ai-service && \
     pkill -f p2p_orchestrator; \
-    nohup python -m app.p2p.orchestrator > logs/p2p.log 2>&1 &" &
+    PYTHONPATH=. nohup venv/bin/python scripts/p2p_orchestrator.py --node-id $host --port 8770 --peers <coordinator_urls> > logs/p2p.log 2>&1 &" &
 done
 wait
 
@@ -315,13 +315,13 @@ cp models/backup/canonical_hex8_2p.pth models/canonical_hex8_2p.pth
 
 # Option 2: Pull from cluster
 # Find healthy model copy on cluster
-for host in nebius-backbone-1 runpod-h100; do
+for host in nebius-backbone-1 nebius-h100-3; do
   echo -n "$host: "
-  ssh $host "ls -la /workspace/ringrift/ai-service/models/canonical_hex8_2p.pth" 2>/dev/null && break
+  ssh $host "ls -la ~/ringrift/ai-service/models/canonical_hex8_2p.pth" 2>/dev/null && break
 done
 
 # Copy from healthy node
-scp $HEALTHY_HOST:/workspace/ringrift/ai-service/models/canonical_hex8_2p.pth \
+scp $HEALTHY_HOST:~/ringrift/ai-service/models/canonical_hex8_2p.pth \
   models/canonical_hex8_2p.pth
 
 # Option 3: Retrain from checkpoint

@@ -235,7 +235,7 @@ GPU/CPU resource optimization.
 | `NODE_RECOVERY`         | MEDIUM       | Auto-recovers terminated cluster nodes.                                                       | EVENT_ROUTER                  |
 | `UTILIZATION_OPTIMIZER` | HIGH         | Matches GPU capabilities to board sizes. Stops CPU selfplay on GPU nodes.                     | EVENT_ROUTER, IDLE_RESOURCE   |
 | `ADAPTIVE_RESOURCES`    | MEDIUM       | Dynamic resource scaling based on workload.                                                   | EVENT_ROUTER, CLUSTER_MONITOR |
-| `MULTI_PROVIDER`        | MEDIUM       | Coordinates workloads across Lambda/Vast/Nebius/RunPod/Vultr providers.                       | EVENT_ROUTER, CLUSTER_MONITOR |
+| `MULTI_PROVIDER`        | MEDIUM       | Coordinates workloads across Vast/Nebius/RunPod/Vultr providers (Lambda legacy).              | EVENT_ROUTER, CLUSTER_MONITOR |
 
 **Factory Methods:**
 
@@ -290,10 +290,10 @@ System-level maintenance and monitoring.
 
 Cloud provider cost management.
 
-| Daemon Type   | Priority | Description                                                                                                                                               | Dependencies                  |
-| ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `LAMBDA_IDLE` | LOW      | Auto-terminates idle Lambda nodes to save costs. (NOTE: Lambda account currently suspended pending support ticket resolution - code kept for restoration) | EVENT_ROUTER, CLUSTER_MONITOR |
-| `VAST_IDLE`   | MEDIUM   | Auto-terminates idle Vast.ai nodes to save costs. Important for ephemeral marketplace instances.                                                          | EVENT_ROUTER, CLUSTER_MONITOR |
+| Daemon Type   | Priority | Description                                                                                                              | Dependencies                  |
+| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| `LAMBDA_IDLE` | LOW      | Auto-terminates idle Lambda nodes to save costs. (NOTE: Lambda account terminated; code kept for historical restoration) | EVENT_ROUTER, CLUSTER_MONITOR |
+| `VAST_IDLE`   | MEDIUM   | Auto-terminates idle Vast.ai nodes to save costs. Important for ephemeral marketplace instances.                         | EVENT_ROUTER, CLUSTER_MONITOR |
 
 **Factory Methods:**
 
@@ -369,7 +369,7 @@ Runs on the central coordinator node (typically MacBook M3).
 
 ### Training Node Profile
 
-Runs on GPU training nodes (Lambda GH200, H100, Nebius, RunPod, Vultr).
+Runs on GPU training nodes (H100, Nebius, RunPod, Vultr; Lambda legacy).
 
 **Daemon Count:** 18
 

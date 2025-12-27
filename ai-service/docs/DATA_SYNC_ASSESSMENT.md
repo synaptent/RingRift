@@ -177,12 +177,12 @@ ssh -p 19528 root@ssh6.vast.ai "tar czf - ~/ringrift/ai-service/data/games/*.db"
 # On mac-studio
 cd ~/Development/RingRift/ai-service
 
-# Start external drive sync
-nohup python scripts/external_drive_sync_daemon.py --foreground > logs/external_sync.log 2>&1 &
+# Start unified data sync
+PYTHONPATH=. nohup ./venv/bin/python scripts/unified_data_sync.py --watchdog --http-port 8765 > logs/external_sync.log 2>&1 &
 
 # Start S3 backup daemon
 export RINGRIFT_S3_BUCKET=ringrift-models-20251214
-nohup python -m app.coordination.s3_backup_daemon > logs/s3_backup.log 2>&1 &
+PYTHONPATH=. nohup ./venv/bin/python -m app.coordination.s3_backup_daemon > logs/s3_backup.log 2>&1 &
 ```
 
 ### Phase 3: Fix Configuration
@@ -260,7 +260,7 @@ def check_sync_health():
         issues.append(f"WARNING: Last sync was {latest_sync}")
 
     # Check daemon status
-    daemons = ["external_drive_sync", "s3_backup", "auto_sync"]
+    daemons = ["unified_data_sync", "s3_backup", "auto_sync"]
     for d in daemons:
         if not is_daemon_running(d):
             issues.append(f"CRITICAL: {d} daemon not running")
@@ -271,7 +271,7 @@ def check_sync_health():
 ### 3. Add Automated Cleanup
 
 ```python
-# In external_drive_sync_daemon.py
+# In unified_data_sync.py
 async def cleanup_old_data(self):
     """Archive data older than 30 days."""
     threshold = datetime.now() - timedelta(days=30)
@@ -317,12 +317,12 @@ await router.publish(
 
 ## Files to Modify
 
-| File                                    | Change                               |
-| --------------------------------------- | ------------------------------------ |
-| `config/distributed_hosts.yaml`         | Fix contradiction, adjust thresholds |
-| `app/coordination/s3_backup_daemon.py`  | Enable database backup               |
-| `scripts/external_drive_sync_daemon.py` | Add auto-cleanup                     |
-| NEW: `scripts/sync_health_check.py`     | Monitoring script                    |
+| File                                   | Change                               |
+| -------------------------------------- | ------------------------------------ |
+| `config/distributed_hosts.yaml`        | Fix contradiction, adjust thresholds |
+| `app/coordination/s3_backup_daemon.py` | Enable database backup               |
+| `scripts/unified_data_sync.py`         | Add auto-cleanup                     |
+| NEW: `scripts/sync_health_check.py`    | Monitoring script                    |
 
 ---
 
@@ -331,7 +331,7 @@ await router.publish(
 After implementing fixes:
 
 - [ ] Mac-studio disk < 70%
-- [ ] `external_drive_sync_daemon` running on mac-studio
+- [ ] `unified_data_sync` running on mac-studio
 - [ ] `s3_backup_daemon` running
 - [ ] Fresh data (< 1 day old) on mac-studio
 - [ ] Training nodes have matching NPZ files

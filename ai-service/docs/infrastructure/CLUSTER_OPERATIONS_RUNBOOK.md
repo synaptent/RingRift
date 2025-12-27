@@ -364,7 +364,7 @@ done
    ```bash
    # Start P2P orchestrator on primary node
    ssh gpu-primary 'cd ~/ringrift/ai-service && \
-     nohup venv/bin/python scripts/p2p_orchestrator.py \
+     PYTHONPATH=. nohup venv/bin/python scripts/p2p_orchestrator.py \
        --node-id gpu-node-1 --port 8770 \
        --ringrift-path ~/ringrift/ai-service > /tmp/p2p_orchestrator.log 2>&1 &'
 

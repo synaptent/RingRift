@@ -317,25 +317,25 @@ The codebase has several data synchronization tools. To avoid confusion and redu
 
 ### Active Sync Tools (Use These)
 
-| Tool                                    | Purpose                       | When to Use                                            |
-| --------------------------------------- | ----------------------------- | ------------------------------------------------------ |
-| `scripts/unified_data_sync.py`          | Primary data sync service     | General game/training data sync                        |
-| `scripts/sync_models.py`                | Model checkpoint distribution | Deploying models to cluster (`--use-sync-coordinator`) |
-| `scripts/aria2_data_sync.py`            | High-speed parallel downloads | Large file transfers, resumable                        |
-| `scripts/external_drive_sync_daemon.py` | External storage sync + QA    | Archiving to external drives                           |
-| `scripts/elo_db_sync.py`                | Elo database sync CLI         | Manual/daemon Elo sync                                 |
-| `app/tournament/elo_sync_manager.py`    | Elo sync library              | Programmatic Elo sync in Python                        |
-| `app/p2p/gossip_sync.py`                | Decentralized P2P protocol    | NAT-traversing peer discovery                          |
+| Tool                                 | Purpose                       | When to Use                                            |
+| ------------------------------------ | ----------------------------- | ------------------------------------------------------ |
+| `scripts/unified_data_sync.py`       | Primary data sync service     | General game/training data sync                        |
+| `scripts/sync_models.py`             | Model checkpoint distribution | Deploying models to cluster (`--use-sync-coordinator`) |
+| `scripts/aria2_data_sync.py`         | High-speed parallel downloads | Large file transfers, resumable                        |
+| `scripts/elo_db_sync.py`             | Elo database sync CLI         | Manual/daemon Elo sync                                 |
+| `app/tournament/elo_sync_manager.py` | Elo sync library              | Programmatic Elo sync in Python                        |
+| `app/p2p/gossip_sync.py`             | Decentralized P2P protocol    | NAT-traversing peer discovery                          |
 
 ### Deprecated/Removed Sync Tools (Do Not Use)
 
-| Tool                                    | Replacement            | Reason                         |
-| --------------------------------------- | ---------------------- | ------------------------------ |
-| `cluster_sync_integration.py` (removed) | `unified_data_sync.py` | Consolidated into unified sync |
-| `p2p_model_sync.py` (removed)           | `sync_models.py`       | Model sync is centralized      |
-| `streaming_data_collector.py` (removed) | `unified_data_sync.py` | Merged into unified service    |
-| `collector_watchdog.py` (removed)       | `unified_data_sync.py` | Merged into unified service    |
-| `sync_all_data.py` (removed)            | `unified_data_sync.py` | Merged into unified service    |
+| Tool                                         | Replacement            | Reason                             |
+| -------------------------------------------- | ---------------------- | ---------------------------------- |
+| `cluster_sync_integration.py` (removed)      | `unified_data_sync.py` | Consolidated into unified sync     |
+| `p2p_model_sync.py` (removed)                | `sync_models.py`       | Model sync is centralized          |
+| `streaming_data_collector.py` (removed)      | `unified_data_sync.py` | Merged into unified service        |
+| `collector_watchdog.py` (removed)            | `unified_data_sync.py` | Merged into unified service        |
+| `sync_all_data.py` (removed)                 | `unified_data_sync.py` | Merged into unified service        |
+| `external_drive_sync_daemon.py` (deprecated) | `unified_data_sync.py` | External storage sync consolidated |
 
 ### Migration Guide
 
@@ -364,7 +364,7 @@ distributed SyncCoordinator (aria2/SSH/P2P + NFS-aware) for model collection.
 │  elo_db_sync.py ─────────────────────── Elo Database           │
 │  elo_sync_manager.py (library)                                  │
 │                                                                 │
-│  external_drive_sync_daemon.py ──────── Archive Storage        │
+│  unified_data_sync.py ──────────────── External Storage        │
 │                                                                 │
 │  gossip_sync.py ─────────────────────── P2P Discovery          │
 │                                                                 │

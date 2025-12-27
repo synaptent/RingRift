@@ -124,9 +124,9 @@ EOF
 ```bash
 ssh ubuntu@<node-ip> << 'EOF'
   cd ~/ringrift/ai-service
-  pkill -f "p2p_daemon" || true
+  pkill -f "p2p_orchestrator" || true
   sleep 2
-  nohup python -m app.distributed.p2p_daemon > logs/p2p.log 2>&1 &
+  PYTHONPATH=. nohup venv/bin/python scripts/p2p_orchestrator.py --node-id <node-id> --port 8770 --peers <coordinator_urls> > logs/p2p.log 2>&1 &
   sleep 3
   curl -s localhost:8770/status | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status", "unknown"))'
 EOF
@@ -160,9 +160,9 @@ Or restart P2P on voter nodes to trigger election:
 
 ```bash
 # Restart P2P on all voter nodes (defined in distributed_hosts.yaml)
-for voter in nebius-backbone-1 runpod-h100 runpod-a100-1 runpod-a100-2 vultr-a100-20gb; do
+for voter in nebius-backbone-1 nebius-h100-3 hetzner-cpu1 hetzner-cpu2 vultr-a100-20gb; do
   echo "Restarting P2P on $voter..."
-  ssh ubuntu@$voter "pkill -f p2p_daemon; cd ~/ringrift/ai-service && nohup python -m app.distributed.p2p_daemon &" &
+  ssh ubuntu@$voter "pkill -f p2p_orchestrator; cd ~/ringrift/ai-service && PYTHONPATH=. nohup venv/bin/python scripts/p2p_orchestrator.py --node-id $voter --port 8770 --peers <coordinator_urls> > logs/p2p.log 2>&1 &" &
 done
 wait
 ```
@@ -205,8 +205,8 @@ ssh ubuntu@<node-ip> << 'EOF'
 
   # Restart P2P daemon
   cd ~/ringrift/ai-service
-  pkill -f p2p_daemon
-  nohup python -m app.distributed.p2p_daemon > logs/p2p.log 2>&1 &
+  pkill -f p2p_orchestrator
+  PYTHONPATH=. nohup venv/bin/python scripts/p2p_orchestrator.py --node-id <node-id> --port 8770 --peers <coordinator_urls> > logs/p2p.log 2>&1 &
 EOF
 ```
 
@@ -373,11 +373,11 @@ python -m app.distributed.cluster_monitor --watch --interval 5
 Defined in `config/distributed_hosts.yaml`:
 
 ```yaml
-voter_nodes:
+p2p_voters:
   - nebius-backbone-1
-  - runpod-h100
-  - runpod-a100-1
-  - runpod-a100-2
+  - nebius-h100-3
+  - hetzner-cpu1
+  - hetzner-cpu2
   - vultr-a100-20gb
 ```
 

@@ -185,7 +185,7 @@ Edit `config/distributed_hosts.yaml`:
 
 ```yaml
 hosts:
-  # Example: Lambda GH200 GPU node
+  # Example: Nebius H100 GPU node
   lambda-gh200-a:
     ssh_host: '100.88.35.19' # Tailscale IP or public IP
     ssh_user: 'ubuntu' # SSH username

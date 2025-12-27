@@ -126,7 +126,8 @@ hosts:
     training_enabled: false
     gauntlet_enabled: false
     export_enabled: false
-    p2p_enabled: true
+    # Coordinator-only: keep P2P disabled to avoid local deployment.
+    p2p_enabled: false
 
   # ============================================================
   # VAST.AI NODES (12 running)
