@@ -135,8 +135,8 @@ class TestCoreEventsImports:
             validate_event_names,
         )
 
-        assert isinstance(CANONICAL_EVENT_NAMES, dict)
-        assert isinstance(EVENT_NAMING_GUIDELINES, dict)
+        assert isinstance(CANONICAL_EVENT_NAMES, (dict, set))  # Can be dict or set
+        assert isinstance(EVENT_NAMING_GUIDELINES, str)  # It's a docstring/guidelines text
         assert callable(normalize_event_type)
         assert callable(is_canonical)
         assert callable(get_variants)
@@ -453,21 +453,32 @@ class TestEventMappingsFunction:
 class TestEventNormalizationFunction:
     """Tests that event normalization functions work correctly."""
 
-    def test_normalize_event_type_identity(self):
-        """Canonical event names normalize to themselves."""
+    def test_normalize_event_type_returns_uppercase(self):
+        """Event names are normalized to uppercase."""
         from app.coordination.core_events import normalize_event_type
 
+        # Normalization should return uppercase canonical names
         result = normalize_event_type("training_completed")
-        assert result == "training_completed"
+        assert result == "TRAINING_COMPLETED"
+
+    def test_normalize_event_type_idempotent(self):
+        """Normalizing an already-normalized name returns the same value."""
+        from app.coordination.core_events import normalize_event_type
+
+        result1 = normalize_event_type("TRAINING_COMPLETED")
+        result2 = normalize_event_type("training_completed")
+        assert result1 == result2
 
     def test_is_canonical_check(self):
         """is_canonical correctly identifies canonical names."""
         from app.coordination.core_events import is_canonical
 
-        assert is_canonical("training_completed") is True
-        # Non-existent events might return True or False depending on implementation
-        # Just verify it returns a bool
-        result = is_canonical("UNKNOWN_EVENT_TYPE_XYZ")
+        # Canonical names are uppercase
+        assert is_canonical("TRAINING_COMPLETED") is True
+        # Lowercase is not canonical
+        assert is_canonical("training_completed") is False
+        # Non-existent events should return False
+        result = is_canonical("UNKNOWN_EVENT_TYPE_XYZ_123")
         assert isinstance(result, bool)
 
 

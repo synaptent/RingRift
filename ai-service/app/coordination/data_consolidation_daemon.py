@@ -604,11 +604,24 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
                     stats["duplicate"] += 1
                     continue
 
-                # Validate game
+                # Validate game - check both reported and actual move counts
                 total_moves = row["total_moves"] or 0
                 if total_moves < self.config.min_moves_for_valid:
                     stats["invalid"] += 1
                     continue
+
+                # December 2025: Verify actual move count in game_moves table
+                # This catches race conditions where games record has moves but
+                # game_moves table is incomplete
+                if self.config.validate_before_merge:
+                    actual_moves = self._count_actual_moves(source_conn, game_id)
+                    if actual_moves < self.config.min_moves_for_valid:
+                        logger.debug(
+                            f"[DataConsolidationDaemon] Skipping {game_id}: "
+                            f"actual moves ({actual_moves}) < min ({self.config.min_moves_for_valid})"
+                        )
+                        stats["invalid"] += 1
+                        continue
 
                 stats["valid"] += 1
 
@@ -649,6 +662,34 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             logger.warning(f"[DataConsolidationDaemon] Database error during merge: {e}")
 
         return stats
+
+    def _count_actual_moves(
+        self,
+        conn: sqlite3.Connection,
+        game_id: str,
+    ) -> int:
+        """Count actual moves in game_moves table for a game.
+
+        December 2025: Added to catch race conditions where games record has
+        total_moves set but game_moves table is incomplete (sync captured
+        database mid-write).
+
+        Args:
+            conn: SQLite connection to query
+            game_id: Game ID to check
+
+        Returns:
+            Number of moves in game_moves table (0 if not found)
+        """
+        try:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM game_moves WHERE game_id = ?",
+                (game_id,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        except sqlite3.Error:
+            return 0
 
     async def _copy_game_data(
         self,

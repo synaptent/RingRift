@@ -2540,6 +2540,7 @@ class P2POrchestrator(
                 WorkQueueMaintenanceLoop,
                 NATManagementLoop,
                 ManifestCollectionLoop,
+                ValidationLoop,
             )
 
             # QueuePopulatorLoop - maintains 50+ work items until 2000 Elo
@@ -2602,6 +2603,39 @@ class P2POrchestrator(
                 update_relay_preferences=self._update_relay_preferences,
             )
             manager.register(nat_management)
+
+            # ManifestCollectionLoop - periodic manifest collection for dashboard/training/sync
+            # December 27, 2025: Migrated from inline _manifest_collection_loop
+            manifest_collection = ManifestCollectionLoop(
+                get_role=lambda: self.role,
+                collect_cluster_manifest=self._collect_cluster_manifest,
+                collect_local_manifest=self._collect_local_data_manifest,
+                update_manifest=self._update_manifest_from_loop,
+                update_improvement_cycle=self._update_improvement_cycle_from_loop,
+                record_stats_sample=self._record_selfplay_stats_sample,
+            )
+            manager.register(manifest_collection)
+
+            # ValidationLoop - automatic model validation scheduling
+            # December 27, 2025: Migrated from inline _validation_loop
+            def _get_model_registry():
+                try:
+                    from app.training.model_registry import ModelRegistry
+                    return ModelRegistry()
+                except (ImportError, TypeError, ValueError) as e:
+                    logger.debug(f"ValidationLoop: registry not available: {e}")
+                    return None
+
+            async def _send_validation_notification(msg: str, severity: str, context: dict) -> None:
+                await self.notifier.send(msg, severity=severity, context=context)
+
+            validation = ValidationLoop(
+                is_leader=lambda: self.role == NodeRole.LEADER,
+                get_model_registry=_get_model_registry,
+                get_work_queue=get_work_queue,
+                send_notification=_send_validation_notification,
+            )
+            manager.register(validation)
 
             self._loops_registered = True
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
@@ -2712,6 +2746,37 @@ class P2POrchestrator(
                 for job_id, start_time in jobs.items():
                     result[job_id] = start_time
         return result
+
+    # =========================================================================
+    # ManifestCollectionLoop callbacks - December 27, 2025
+    # =========================================================================
+
+    def _update_manifest_from_loop(self, manifest: Any, is_cluster: bool) -> None:
+        """Update stored manifest from ManifestCollectionLoop.
+
+        Args:
+            manifest: The collected manifest (cluster or local)
+            is_cluster: True if this is a cluster-wide manifest, False for local
+        """
+        import time
+        with self.manifest_lock:
+            if is_cluster:
+                self.cluster_data_manifest = manifest
+            else:
+                self.local_data_manifest = manifest
+            self.last_manifest_collection = time.time()
+
+    def _update_improvement_cycle_from_loop(self, by_board_type: dict[str, Any]) -> None:
+        """Update ImprovementCycleManager from ManifestCollectionLoop.
+
+        Args:
+            by_board_type: Dict of board_type -> game counts from manifest
+        """
+        if self.improvement_cycle_manager:
+            try:
+                self.improvement_cycle_manager.update_from_cluster_totals(by_board_type)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"ImprovementCycleManager update error: {e}")
 
     async def _inline_job_reaper_fallback_loop(self) -> None:
         """Inline job reaper fallback loop.
@@ -16773,98 +16838,9 @@ print(json.dumps(result))
     # NOTE: _get_ssh_config_for_reaper() removed Dec 2025 (~23 LOC).
     # No callers existed - job reaper now uses cluster_config helpers.
 
-    async def _validation_loop(self):
-        """Background loop for automatic model validation.
-
-        Finds newly trained models that need validation and queues validation
-        work items for them. Only runs on the leader node.
-        """
-        VALIDATION_INTERVAL = 300  # 5 minutes
-        await asyncio.sleep(120)  # Initial delay
-
-        logger.info("Validation loop started")
-
-        while self.running:
-            try:
-                # Only leader performs validation scheduling
-                if self.role != NodeRole.LEADER:
-                    await asyncio.sleep(VALIDATION_INTERVAL)
-                    continue
-
-                # Get model registry
-                try:
-                    from app.training.model_registry import ModelRegistry
-                    registry = ModelRegistry()
-                except Exception as e:  # noqa: BLE001
-                    logger.debug(f"Model registry not available: {e}")
-                    await asyncio.sleep(VALIDATION_INTERVAL)
-                    continue
-
-                # Get work queue
-                wq = get_work_queue()
-                if wq is None:
-                    await asyncio.sleep(VALIDATION_INTERVAL)
-                    continue
-
-                # Find models needing validation
-                models_pending = registry.get_models_needing_validation()
-                logger.debug(f"Found {len(models_pending)} models pending validation")
-
-                for model_info in models_pending[:3]:  # Process up to 3 per cycle
-                    model_id = model_info['model_id']
-                    version = model_info['version']
-                    baselines = model_info.get('baselines', [])
-                    games_per = model_info.get('games_per_matchup', 50)
-
-                    # Default baselines if none specified
-                    if not baselines:
-                        baselines = ["mcts_500"]
-
-                    # Create validation work item
-                    from app.coordination.work_queue import WorkItem, WorkType
-                    work_id = f"validation_{model_id}_v{version}_{int(time.time())}"
-
-                    work_item = WorkItem(
-                        work_id=work_id,
-                        work_type=WorkType.VALIDATION,
-                        priority=80,  # High priority
-                        config={
-                            "model_id": model_id,
-                            "version": version,
-                            "baselines": baselines,
-                            "games_per_matchup": games_per,
-                            "file_path": model_info.get('file_path'),
-                        },
-                    )
-
-                    try:
-                        wq.add_work(work_item)
-                        registry.set_validation_queued(model_id, version, work_id)
-                        logger.info(f"Queued validation for {model_id}:v{version} ({work_id})")
-
-                        # Notify via webhook
-                        await self.notifier.send(
-                            f"🔬 Model validation queued: {model_id}:v{version}",
-                            severity="info",
-                            context={"baselines": baselines, "games_per_matchup": games_per}
-                        )
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"Failed to queue validation for {model_id}:v{version}: {e}")
-
-                # Also check for models without validation entries
-                unvalidated = registry.get_unvalidated_models()
-                for model_info in unvalidated[:2]:  # Process up to 2 per cycle
-                    model_id = model_info['model_id']
-                    version = model_info['version']
-                    # Create validation entry (will be picked up next cycle)
-                    registry.create_validation(model_id, version)
-                    logger.info(f"Created validation entry for {model_id}:v{version}")
-
-                await asyncio.sleep(VALIDATION_INTERVAL)
-
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Validation loop error: {e}")
-                await asyncio.sleep(VALIDATION_INTERVAL)
+    # NOTE: _validation_loop() removed Dec 2025 (92 LOC).
+    # Now runs via LoopManager as ValidationLoop.
+    # See scripts/p2p/loops/validation_loop.py for implementation.
 
     # NOTE: _queue_populator_loop() removed Dec 2025 (82 LOC).
     # Now runs via LoopManager as QueuePopulatorLoop.
@@ -20703,38 +20679,24 @@ print(json.dumps({{
         candidates.sort(key=lambda p: getattr(p, "load_score", 100))
         return candidates[0].node_id if candidates else ""
 
-    async def _manifest_collection_loop(self):
-        """Periodically collect manifests for dashboard/training/sync decisions."""
-        # IMPORTANT: Wait longer before first manifest collection to ensure HTTP server
-        # is fully responsive. Initial manifest collection reads 700+ JSONL files and
-        # can take several minutes, which can block health checks if started too early.
-        await asyncio.sleep(60.0)  # Wait 60s before first manifest collection
-        logger.info("Starting manifest collection loop (first collection in 60s)")
-        while self.running:
-            try:
-                if self.role == NodeRole.LEADER:
-                    cluster_manifest = await self._collect_cluster_manifest()
-                    with self.manifest_lock:
-                        self.cluster_data_manifest = cluster_manifest
-                        self._record_selfplay_stats_sample(cluster_manifest)
-                    if self.improvement_cycle_manager:
-                        try:
-                            self.improvement_cycle_manager.update_from_cluster_totals(
-                                cluster_manifest.by_board_type
-                            )
-                        except Exception as e:  # noqa: BLE001
-                            logger.info(f"ImprovementCycleManager update error: {e}")
-                else:
-                    local_manifest = await asyncio.to_thread(self._collect_local_data_manifest)
-                    with self.manifest_lock:
-                        self.local_data_manifest = local_manifest
+    # =========================================================================
+    # DEPRECATED: _manifest_collection_loop - December 27, 2025
+    # This inline loop has been migrated to ManifestCollectionLoop in LoopManager.
+    # See scripts/p2p/loops/manifest_collection_loop.py for the new implementation.
+    # Task creation removed from _run() - this method is now DEAD CODE.
+    # Retained temporarily for reference; safe to remove in Q1 2026.
+    # =========================================================================
+    async def _manifest_collection_loop_DEPRECATED(self):
+        """DEPRECATED: Use ManifestCollectionLoop via LoopManager instead.
 
-                self.last_manifest_collection = time.time()
-
-            except Exception as e:  # noqa: BLE001
-                logger.info(f"Manifest collection error: {e}")
-
-            await asyncio.sleep(self.manifest_collection_interval)
+        This method is retained for reference during the migration period.
+        It is NOT called anywhere - task creation was removed Dec 27, 2025.
+        """
+        raise NotImplementedError(
+            "_manifest_collection_loop is deprecated. "
+            "Use ManifestCollectionLoop via LoopManager instead. "
+            "See scripts/p2p/loops/manifest_collection_loop.py"
+        )
 
     def _record_selfplay_stats_sample(self, manifest: ClusterDataManifest) -> None:
         """Record a lightweight selfplay totals sample for dashboard charts."""
@@ -27267,7 +27229,8 @@ print(json.dumps({{
         # Previously, a single exception in any task would crash all 18+ tasks.
         tasks = [
             self._create_safe_task(self._heartbeat_loop(), "heartbeat"),
-            self._create_safe_task(self._manifest_collection_loop(), "manifest_collection"),
+            # NOTE: _manifest_collection_loop removed Dec 2025 - now runs via LoopManager (ManifestCollectionLoop)
+            # See scripts/p2p/loops/manifest_collection_loop.py for implementation
             self._create_safe_task(self._job_management_loop(), "job_management"),
             self._create_safe_task(self._discovery_loop(), "discovery"),
             # IMPROVED: Dedicated voter heartbeat loop for reliable leader election
@@ -27339,8 +27302,9 @@ print(json.dumps({{
         self._background_tasks = tasks
 
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
-        # These 7 loops now ONLY run via LoopManager (inline versions removed):
-        # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop, WorkQueueMaintenanceLoop, NATManagementLoop
+        # These 8 loops now ONLY run via LoopManager (inline versions removed):
+        # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop
+        # - WorkQueueMaintenanceLoop, NATManagementLoop, ManifestCollectionLoop
         job_reaper_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()

@@ -1,5 +1,18 @@
 """Base Event Handler - Unified base class for event-driven coordinators.
 
+.. deprecated:: December 2025
+    This module is deprecated. Use ``app.coordination.handler_base`` instead:
+
+    .. code-block:: python
+
+        # Old (deprecated)
+        from app.coordination.base_event_handler import BaseEventHandler
+
+        # New (canonical)
+        from app.coordination.handler_base import HandlerBase
+
+    This module will be archived in Q2 2026.
+
 Provides standardized patterns for:
 - Event subscription lifecycle management
 - Error handling with logging
@@ -31,6 +44,17 @@ Purpose: Wave 4 Phase 1 - Reduce event handler duplication
 """
 
 from __future__ import annotations
+
+import warnings
+
+# Emit deprecation warning on import
+warnings.warn(
+    "app.coordination.base_event_handler is deprecated. "
+    "Use app.coordination.handler_base.HandlerBase instead. "
+    "This module will be archived in Q2 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import asyncio
 import logging

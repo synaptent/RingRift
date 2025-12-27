@@ -5,6 +5,18 @@
 > unified into `app/coordination/event_router.py`. For current usage, import from event_router.py.
 > See `ai-service/docs/CONSOLIDATION_STATUS_2025_12_19.md` for consolidation details.
 
+## Current Canonical References (Dec 2025)
+
+- **Event routing**: `app/coordination/event_router.py`
+- **Canonical enums + types**: `app/coordination/enums.py`, `app/coordination/types.py`
+- **Daemon catalog**: `DAEMON_REGISTRY.md`
+- **Module inventory**: `COORDINATION_MODULE_INVENTORY.md`
+
+Backpressure uses the unified `BackpressureLevel` enum from `app/coordination/types.py`:
+
+- **Queue backpressure**: `NONE`, `SOFT`, `HARD`, `STOP`
+- **Resource backpressure**: `NONE`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`
+
 ## Overview
 
 The RingRift AI service uses a multi-layered event-driven coordination system for

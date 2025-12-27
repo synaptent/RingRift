@@ -84,6 +84,7 @@ The `DaemonManager` (`app/coordination/daemon_manager.py`) provides lifecycle ma
 | Daemon                | Type                    | Dependencies                       | Description                                 |
 | --------------------- | ----------------------- | ---------------------------------- | ------------------------------------------- |
 | Queue Monitor         | `QUEUE_MONITOR`         | None                               | Monitors queue depths, applies backpressure |
+| Work Queue Monitor    | `WORK_QUEUE_MONITOR`    | EVENT_ROUTER, QUEUE_POPULATOR      | Tracks work lifecycle, detects stuck jobs   |
 | Queue Populator       | `QUEUE_POPULATOR`       | EVENT_ROUTER, SELFPLAY_COORDINATOR | Maintains work queue until Elo targets met  |
 | Job Scheduler         | `JOB_SCHEDULER`         | EVENT_ROUTER                       | PID-based resource allocation               |
 | Idle Resource         | `IDLE_RESOURCE`         | EVENT_ROUTER                       | Monitors idle GPUs, spawns selfplay         |

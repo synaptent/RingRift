@@ -94,6 +94,10 @@ from .resilience_loops import (
     SelfHealingLoop,
 )
 from .training_sync_loop import TrainingSyncLoop
+from .validation_loop import (
+    ValidationConfig,
+    ValidationLoop,
+)
 
 __all__ = [
     # Base
@@ -146,4 +150,7 @@ __all__ = [
     "PredictiveMonitoringLoop",
     "SelfHealingConfig",
     "SelfHealingLoop",
+    # Validation
+    "ValidationConfig",
+    "ValidationLoop",
 ]

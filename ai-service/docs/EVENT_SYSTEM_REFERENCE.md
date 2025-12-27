@@ -190,6 +190,10 @@ await bus.publish(DataEvent(
 | `IDLE_RESOURCE_DETECTED`   | `idle_resource_detected`   | IdleResourceDaemon  | SelfplayScheduler             | Spawn work          |
 | `DISK_SPACE_LOW`           | `disk_space_low`           | DiskSpaceManager    | CleanupDaemon                 | Trigger cleanup     |
 
+Backpressure events include a `level` string from `BackpressureLevel` in
+`app/coordination/types.py`. Queue-based backpressure emits `none/soft/hard/stop`,
+while resource-based backpressure emits `none/low/medium/high/critical`.
+
 ### Work Queue Events
 
 | Event            | Value            | Emitters       | Subscribers          | Purpose            |

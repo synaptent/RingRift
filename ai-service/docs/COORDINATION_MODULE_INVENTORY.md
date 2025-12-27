@@ -1,8 +1,11 @@
 # Coordination Module Inventory
 
 **Last Updated:** December 27, 2025
-**Total Modules:** 154 files in `app/coordination/`
+**Total Modules:** 168 Python modules in `app/coordination/`
 **Status:** Active
+
+Counts are approximate unless noted; use:
+`rg --files -g "*.py" app/coordination | wc -l` for a precise snapshot.
 
 This document catalogs all modules in `app/coordination/` organized by category. For detailed daemon documentation, see [DAEMON_REGISTRY.md](DAEMON_REGISTRY.md). For event system details, see [COORDINATION_ARCHITECTURE.md](COORDINATION_ARCHITECTURE.md).
 
@@ -12,12 +15,12 @@ This document catalogs all modules in `app/coordination/` organized by category.
 
 | Category            | Count | Description                                  |
 | ------------------- | ----- | -------------------------------------------- |
-| Core Infrastructure | 15    | Event system, types, enums, protocols        |
+| Core Infrastructure | ~16   | Event system, types, enums, protocols        |
 | Daemons             | 30+   | Background services (see DAEMON_REGISTRY.md) |
-| Sync                | 18    | Data synchronization modules                 |
-| Health & Monitoring | 12    | Health checks, status, metrics               |
-| Coordination        | 15    | Orchestrators, coordinators, bridges         |
-| Queue & Work        | 8     | Work queue, scheduling, backpressure         |
+| Sync                | ~18   | Data synchronization modules                 |
+| Health & Monitoring | ~12   | Health checks, status, metrics               |
+| Coordination        | ~15   | Orchestrators, coordinators, bridges         |
+| Queue & Work        | ~10   | Work queue, scheduling, backpressure         |
 | Deprecated          | 10+   | Q2 2026 removal scheduled                    |
 
 ---
@@ -30,8 +33,8 @@ Essential modules for event system, types, and base classes.
 
 | Module                   | LOC  | Status | Purpose                                                           |
 | ------------------------ | ---- | ------ | ----------------------------------------------------------------- |
-| `enums.py`               | 95   | Active | Central enum re-exports (LeadershipRole, DaemonType, etc.)        |
-| `types.py`               | 240  | Active | Coordination types (BackpressureLevel, TaskType, BoardType, etc.) |
+| `enums.py`               | ~94  | Active | Central enum re-exports (LeadershipRole, DaemonType, etc.)        |
+| `types.py`               | ~350 | Active | Coordination types (BackpressureLevel, TaskType, BoardType, etc.) |
 | `daemon_types.py`        | 700  | Active | DaemonType enum, DaemonInfo, DaemonManagerConfig, startup order   |
 | `protocols.py`           | ~300 | Active | Protocol definitions (CoordinatorProtocol, DaemonProtocol)        |
 | `base_daemon.py`         | ~200 | Active | BaseDaemon base class with lifecycle hooks                        |
@@ -192,25 +195,28 @@ Active daemon implementations. See [DAEMON_REGISTRY.md](DAEMON_REGISTRY.md) for 
 | `unified_distribution_daemon.py`  | Active | Model + NPZ distribution                 |
 | `unified_idle_shutdown_daemon.py` | Active | Provider-agnostic idle detection         |
 | `unified_replication_daemon.py`   | Active | Monitoring + repair combined             |
+| `work_queue_monitor_daemon.py`    | Active | Work queue lifecycle + backpressure      |
 
 ### Utilities & Helpers
 
 Small utility modules.
 
-| Module                     | LOC  | Status | Purpose                             |
-| -------------------------- | ---- | ------ | ----------------------------------- |
-| `utils.py`                 | ~100 | Active | Miscellaneous utilities             |
-| `helpers.py`               | ~150 | Active | Helper functions                    |
-| `handler_base.py`          | ~550 | Active | Base class for handlers (45 tests)  |
-| `singleton_mixin.py`       | ~500 | Active | Singleton patterns (5 variants)     |
-| `distributed_lock.py`      | ~200 | Active | Distributed locking                 |
-| `tracing.py`               | ~150 | Active | Distributed tracing context         |
-| `npz_validation.py`        | ~100 | Active | NPZ file validation                 |
-| `async_training_bridge.py` | ~150 | Active | Async/sync training bridge          |
-| `async_bridge_manager.py`  | ~200 | Active | Async bridge lifecycle              |
-| `task_decorators.py`       | ~100 | Active | Task-related decorators             |
-| `duration_scheduler.py`    | ~100 | Active | Duration-based scheduling           |
-| `master_loop_guard.py`     | ~50  | Active | Guard against multiple master loops |
+| Module                     | LOC  | Status     | Purpose                                                   |
+| -------------------------- | ---- | ---------- | --------------------------------------------------------- |
+| `utils.py`                 | ~100 | Active     | Miscellaneous utilities                                   |
+| `helpers.py`               | ~150 | Active     | Helper functions                                          |
+| `base_event_handler.py`    | ~250 | Active     | Canonical event-handler base class                        |
+| `base_handler.py`          | ~450 | Deprecated | Legacy handler base (superseded by base_event_handler.py) |
+| `handler_base.py`          | ~550 | Deprecated | Legacy handler base (superseded by base_event_handler.py) |
+| `singleton_mixin.py`       | ~500 | Active     | Singleton patterns (5 variants)                           |
+| `distributed_lock.py`      | ~200 | Active     | Distributed locking                                       |
+| `tracing.py`               | ~150 | Active     | Distributed tracing context                               |
+| `npz_validation.py`        | ~100 | Active     | NPZ file validation                                       |
+| `async_training_bridge.py` | ~150 | Active     | Async/sync training bridge                                |
+| `async_bridge_manager.py`  | ~200 | Active     | Async bridge lifecycle                                    |
+| `task_decorators.py`       | ~100 | Active     | Task-related decorators                                   |
+| `duration_scheduler.py`    | ~100 | Active     | Duration-based scheduling                                 |
+| `master_loop_guard.py`     | ~50  | Active     | Guard against multiple master loops                       |
 
 ### P2P Backend
 
@@ -296,6 +302,9 @@ HPC cluster support (optional).
 # Enums and types
 from app.coordination.enums import DaemonType, DaemonState, LeadershipRole
 from app.coordination.types import BackpressureLevel, TaskType, BoardType
+
+# Event handler base (canonical)
+from app.coordination.base_event_handler import BaseEventHandler
 
 # Event system
 from app.coordination.event_router import get_router, publish, subscribe

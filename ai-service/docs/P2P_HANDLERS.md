@@ -260,6 +260,9 @@ P2P handlers are wired to the coordination EventRouter via `scripts/p2p/p2p_even
 | `ElectionHandlersMixin`  | `emit_p2p_leader_changed()`     | `LEADER_CHANGED`                                                  |
 | `EloSyncHandlersMixin`   | `emit_p2p_elo_updated()`        | `ELO_UPDATED`                                                     |
 
+Emitter availability in `scripts/p2p_orchestrator.py` is cached: positive checks are reused,
+and negative checks are retried every 30 seconds to allow late EventRouter initialization.
+
 ### Usage Example
 
 ```python

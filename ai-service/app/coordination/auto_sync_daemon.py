@@ -110,6 +110,17 @@ class SyncStrategy:
     AUTO = "auto"
 
 
+# Minimum moves per game for completeness validation (December 2025)
+# Games with fewer moves are considered incomplete and skipped during sync
+MIN_MOVES_PER_GAME: dict[tuple[str, int], int] = {
+    ("hex8", 2): 20, ("hex8", 3): 30, ("hex8", 4): 40,
+    ("square8", 2): 20, ("square8", 3): 30, ("square8", 4): 40,
+    ("square19", 2): 50, ("square19", 3): 80, ("square19", 4): 100,
+    ("hexagonal", 2): 50, ("hexagonal", 3): 80, ("hexagonal", 4): 100,
+}
+DEFAULT_MIN_MOVES = 5  # Fallback for unknown configurations
+
+
 @dataclass
 class AutoSyncConfig:
     """Configuration for automated data sync.
@@ -656,6 +667,71 @@ class AutoSyncDaemon:
         """Check if NFS storage is mounted."""
         nfs_path = Path("/lambda/nfs/RingRift")
         return nfs_path.exists() and nfs_path.is_dir()
+
+    def _validate_database_completeness(self, db_path: str | Path) -> tuple[bool, str]:
+        """Validate that games have complete move data (December 2025).
+
+        Checks that games in the database have at least the minimum number of moves
+        expected for their board type and player count. Games with incomplete move
+        data (e.g., only 2 moves when 50+ expected) are a sign of the race condition
+        where sync captured the database mid-write.
+
+        Args:
+            db_path: Path to the database file
+
+        Returns:
+            Tuple of (is_valid: bool, message: str)
+            - (True, "OK") if database is valid
+            - (False, "<reason>") if validation fails
+        """
+        db_path = Path(db_path)
+
+        if not db_path.exists():
+            return False, f"Database does not exist: {db_path}"
+
+        try:
+            conn = sqlite3.connect(str(db_path), timeout=10.0)
+            cursor = conn.cursor()
+
+            # Get games with their move counts
+            cursor.execute("""
+                SELECT g.game_id, g.board_type, g.num_players,
+                       COUNT(m.move_number) as move_count
+                FROM games g
+                LEFT JOIN game_moves m ON g.game_id = m.game_id
+                GROUP BY g.game_id
+            """)
+
+            incomplete_games = []
+            for row in cursor.fetchall():
+                game_id, board_type, num_players, move_count = row
+
+                # Get minimum moves for this configuration
+                min_moves = MIN_MOVES_PER_GAME.get(
+                    (board_type, num_players),
+                    DEFAULT_MIN_MOVES
+                )
+
+                if move_count < min_moves:
+                    incomplete_games.append(
+                        f"{game_id[:8]}... ({board_type}_{num_players}p): {move_count}/{min_moves} moves"
+                    )
+
+            conn.close()
+
+            if incomplete_games:
+                # Limit message to first 5 incomplete games
+                sample = incomplete_games[:5]
+                if len(incomplete_games) > 5:
+                    sample.append(f"... and {len(incomplete_games) - 5} more")
+                return False, f"{len(incomplete_games)} incomplete games: {', '.join(sample)}"
+
+            return True, "OK"
+
+        except sqlite3.Error as e:
+            return False, f"SQLite error: {e}"
+        except OSError as e:
+            return False, f"OS error: {e}"
 
     # =========================================================================
     # CoordinatorProtocol Implementation (December 2025 - Phase 14)

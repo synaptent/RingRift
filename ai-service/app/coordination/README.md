@@ -335,14 +335,17 @@ health = get_system_health()
 
 ### 5. Backpressure
 
-Multi-level backpressure prevents resource exhaustion:
+Multi-level backpressure prevents resource exhaustion. Queue-based backpressure
+uses a subset of levels (`NONE`, `SOFT`, `HARD`, `STOP`), while resource-based
+backpressure uses `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` in addition to `NONE`.
 
 ```python
-from app.coordination import check_backpressure, QueueType, BackpressureLevel
+from app.coordination import check_backpressure, QueueType
+from app.coordination.types import BackpressureLevel
 
 level = check_backpressure(QueueType.TRAINING_DATA)
-if level >= BackpressureLevel.HIGH:
-    # Slow down data production
+if level in (BackpressureLevel.HARD, BackpressureLevel.STOP):
+    # Slow down or pause data production
     pass
 ```
 

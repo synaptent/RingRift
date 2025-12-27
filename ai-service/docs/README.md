@@ -4,13 +4,14 @@ Technical documentation for the RingRift AI training service.
 
 ## Quick Links
 
-| Document                                                       | Description                   |
-| -------------------------------------------------------------- | ----------------------------- |
-| [Quick Start](QUICK_START.md)                                  | Get up and running quickly    |
-| [Developer Guide](DEVELOPER_GUIDE.md)                          | Coding patterns and standards |
-| [Config Reference](CONFIG_REFERENCE.md)                        | All configuration options     |
-| [Architecture Overview](architecture/ARCHITECTURE_OVERVIEW.md) | System architecture           |
-| [Training Pipeline](training/TRAINING_PIPELINE.md)             | Training pipeline overview    |
+| Document                                                          | Description                   |
+| ----------------------------------------------------------------- | ----------------------------- |
+| [Quick Start](QUICK_START.md)                                     | Get up and running quickly    |
+| [Developer Guide](DEVELOPER_GUIDE.md)                             | Coding patterns and standards |
+| [Config Reference](CONFIG_REFERENCE.md)                           | All configuration options     |
+| [Architecture Overview](architecture/ARCHITECTURE_OVERVIEW.md)    | System architecture           |
+| [Training Pipeline](training/TRAINING_PIPELINE.md)                | Training pipeline overview    |
+| [Coordination Module Inventory](COORDINATION_MODULE_INVENTORY.md) | Coordination module map       |
 
 ## P2P + Sync SSoT
 
@@ -95,6 +96,7 @@ Historical documentation and status reports.
 | [CONFIG_REFERENCE](CONFIG_REFERENCE.md)                               | Complete config reference        |
 | [GPU_VECTORIZATION](GPU_VECTORIZATION.md)                             | GPU module architecture & limits |
 | [COORDINATION_ARCHITECTURE](COORDINATION_ARCHITECTURE.md)             | Event system & coordination      |
+| [COORDINATION_MODULE_INVENTORY](COORDINATION_MODULE_INVENTORY.md)     | Coordination module map          |
 | [P2P_HANDLERS](P2P_HANDLERS.md)                                       | P2P orchestrator handler mixins  |
 | [EVENT_CATALOG](EVENT_CATALOG.md)                                     | Event types reference            |
 | [CONSOLIDATION_STATUS_2025_12_19](CONSOLIDATION_STATUS_2025_12_19.md) | Current consolidation status     |

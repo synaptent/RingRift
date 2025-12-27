@@ -60,16 +60,62 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HandlerStats:
-    """Standard stats tracking for handlers."""
+    """Unified stats tracking for handlers.
 
+    December 2025: Consolidated from handler_base.py and base_handler.py.
+    This is the canonical version with all fields.
+    """
+
+    # Event processing
     events_processed: int = 0
     events_deduplicated: int = 0
-    cycles_completed: int = 0
+    success_count: int = 0  # From base_handler.py
+
+    # Error tracking
     errors_count: int = 0
     last_error: str = ""
     last_error_time: float = 0.0
+
+    # Lifecycle tracking
+    cycles_completed: int = 0
     started_at: float = 0.0
     last_activity: float = field(default_factory=time.time)
+    last_event_time: float = 0.0  # From base_handler.py
+
+    # State
+    subscribed: bool = False  # From base_handler.py
+    custom_stats: dict[str, Any] = field(default_factory=dict)  # From base_handler.py
+
+    @property
+    def error_count(self) -> int:
+        """Backward-compat alias for errors_count (base_handler.py naming)."""
+        return self.errors_count
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate (0.0 to 1.0). From base_handler.py."""
+        if self.events_processed == 0:
+            return 1.0
+        return self.success_count / self.events_processed
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization. From base_handler.py."""
+        result = {
+            "subscribed": self.subscribed,
+            "events_processed": self.events_processed,
+            "events_deduplicated": self.events_deduplicated,
+            "success_count": self.success_count,
+            "errors_count": self.errors_count,
+            "success_rate": round(self.success_rate, 3),
+            "cycles_completed": self.cycles_completed,
+            "last_event_time": self.last_event_time,
+            "last_error_time": self.last_error_time,
+            "last_error": self.last_error,
+            "started_at": self.started_at,
+            "last_activity": self.last_activity,
+        }
+        result.update(self.custom_stats)
+        return result
 
 
 class HandlerBase(ABC):
@@ -505,12 +551,56 @@ class HandlerBase(ABC):
 
 
 # =============================================================================
+# Backward-Compatible Config (from base_event_handler.py)
+# =============================================================================
+
+
+class EventHandlerConfig:
+    """Configuration for event handlers.
+
+    Override in subclasses for custom behavior.
+
+    Consolidated from base_event_handler.py (December 2025).
+    """
+
+    # Whether to register with coordinator registry
+    register_with_registry: bool = True
+
+    # Whether handler methods are async (True) or sync (False)
+    async_handlers: bool = True
+
+    # Whether to use fire_and_forget for sync event callbacks
+    use_fire_and_forget: bool = True
+
+    # Timeout for handler execution (0 = no timeout)
+    handler_timeout_seconds: float = 0.0
+
+
+# =============================================================================
+# Backward-Compatible Aliases (December 2025)
+# =============================================================================
+
+# Alias for daemons that import BaseEventHandler from base_event_handler.py
+BaseEventHandler = HandlerBase
+
+# Alias for base_handler.py imports
+BaseSingletonHandler = HandlerBase
+MultiEventHandler = HandlerBase
+
+
+# =============================================================================
 # Convenience Exports
 # =============================================================================
 
 __all__ = [
+    # Canonical exports
     "CoordinatorStatus",
+    "EventHandlerConfig",
     "HandlerBase",
     "HandlerStats",
     "HealthCheckResult",
+    # Backward-compatible aliases
+    "BaseEventHandler",
+    "BaseSingletonHandler",
+    "MultiEventHandler",
 ]

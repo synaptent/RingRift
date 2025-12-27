@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils.paths import AI_SERVICE_ROOT
+from app.coordination.singleton_mixin import SingletonMixin
 
 logger = logging.getLogger(__name__)
 OPTIMIZER_STATE_PATH = AI_SERVICE_ROOT / "logs" / "improvement_optimizer_state.json"
@@ -119,7 +120,7 @@ class OptimizationRecommendation:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class ImprovementOptimizer:
+class ImprovementOptimizer(SingletonMixin):
     """Optimizer for maximizing self-improvement throughput and quality.
 
     This class provides:
@@ -127,10 +128,9 @@ class ImprovementOptimizer:
     2. Positive feedback amplification
     3. Fast-path detection for high-quality scenarios
     4. Success streak tracking and rewards
-    """
 
-    _instance: ImprovementOptimizer | None = None
-    _lock = threading.RLock()
+    December 27, 2025: Migrated to SingletonMixin (Wave 4 Phase 1).
+    """
 
     # Baseline thresholds (from unified_config.py)
     BASELINE_TRAINING_THRESHOLD = 500
@@ -160,20 +160,16 @@ class ImprovementOptimizer:
         self._load_state()
 
     @classmethod
-    def get_instance(cls, state_path: Path | None = None) -> ImprovementOptimizer:
-        """Get or create singleton instance."""
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = cls(state_path)
-            return cls._instance
-
-    @classmethod
     def reset_instance(cls) -> None:
-        """Reset singleton for testing."""
-        with cls._lock:
-            if cls._instance is not None:
-                cls._instance._save_state()
-            cls._instance = None
+        """Reset singleton for testing.
+
+        Override to save state before clearing instance.
+        """
+        with cls._get_lock():
+            if cls.has_instance():
+                instance = cls.get_instance()
+                instance._save_state()
+            super().reset_instance()
 
     def register_callback(self, callback: Callable[[OptimizationRecommendation], None]) -> None:
         """Register callback for optimization recommendations."""

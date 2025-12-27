@@ -71,6 +71,7 @@ from app.training.parity_exclusions import (
     EXCLUDED_DB_PATTERNS,
     should_exclude_database,
 )
+from app.coordination.singleton_mixin import SingletonMixin
 
 # Default paths
 DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -129,7 +130,7 @@ class CoordinatorStats:
     errors: list[str] = field(default_factory=list)
 
 
-class TrainingDataCoordinator:
+class TrainingDataCoordinator(SingletonMixin):
     """Unified coordinator for quality-aware training data operations.
 
     This class provides a single orchestration point that integrates:
@@ -140,9 +141,9 @@ class TrainingDataCoordinator:
 
     The coordinator ensures that training always has access to the highest
     quality data available across the cluster.
-    """
 
-    _instance: TrainingDataCoordinator | None = None
+    December 27, 2025: Migrated to SingletonMixin (Wave 4 Phase 1).
+    """
 
     def __init__(
         self,
@@ -178,21 +179,6 @@ class TrainingDataCoordinator:
             f"quality_scoring={self._config.enable_quality_scoring}, "
             f"sync={self._config.enable_sync}"
         )
-
-    @classmethod
-    def get_instance(
-        cls,
-        config: CoordinatorConfig | None = None,
-    ) -> TrainingDataCoordinator:
-        """Get or create the singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls(config)
-        return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset the singleton (for testing)."""
-        cls._instance = None
 
     # =========================================================================
     # Component Initialization

@@ -1,5 +1,19 @@
 """Base classes for event handlers in the coordination system.
 
+.. deprecated:: December 2025
+    This module is deprecated. Use ``app.coordination.handler_base`` instead:
+
+    .. code-block:: python
+
+        # Old (deprecated)
+        from app.coordination.base_handler import BaseEventHandler, BaseSingletonHandler
+
+        # New (canonical)
+        from app.coordination.handler_base import HandlerBase
+
+    HandlerBase combines all functionality from BaseEventHandler and BaseSingletonHandler.
+    This module will be archived in Q2 2026.
+
 This module provides common functionality for all event handlers, reducing
 code duplication across 60+ handler implementations.
 
@@ -45,53 +59,28 @@ Usage:
 
 from __future__ import annotations
 
+import warnings
+
+# Emit deprecation warning on import
+warnings.warn(
+    "app.coordination.base_handler is deprecated. "
+    "Use app.coordination.handler_base.HandlerBase instead. "
+    "This module will be archived in Q2 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+# Import canonical HandlerStats from handler_base.py (single source of truth)
+# December 2025: Consolidated from base_handler.py and handler_base.py
+from app.coordination.handler_base import HandlerStats
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class HandlerStats:
-    """Statistics for an event handler.
-
-    Provides consistent statistics tracking across all handlers.
-    """
-
-    subscribed: bool = False
-    events_processed: int = 0
-    success_count: int = 0
-    error_count: int = 0
-    last_event_time: float = 0.0
-    last_error_time: float = 0.0
-    last_error: str = ""
-    custom_stats: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def success_rate(self) -> float:
-        """Calculate success rate (0.0 to 1.0)."""
-        if self.events_processed == 0:
-            return 1.0
-        return self.success_count / self.events_processed
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        result = {
-            "subscribed": self.subscribed,
-            "events_processed": self.events_processed,
-            "success_count": self.success_count,
-            "error_count": self.error_count,
-            "success_rate": round(self.success_rate, 3),
-            "last_event_time": self.last_event_time,
-            "last_error_time": self.last_error_time,
-            "last_error": self.last_error,
-        }
-        result.update(self.custom_stats)
-        return result
 
 
 class BaseEventHandler(ABC):
@@ -236,10 +225,10 @@ class BaseEventHandler(ABC):
     def _record_error(self, error: str | Exception) -> None:
         """Record event handling error."""
         self._stats.events_processed += 1
-        self._stats.error_count += 1
+        self._stats.errors_count += 1  # Using canonical field name from handler_base.py
         self._stats.last_error_time = time.time()
         self._stats.last_error = str(error)
-        logger.error(f"[{self.handler_name}] Error #{self._stats.error_count}: {error}")
+        logger.error(f"[{self.handler_name}] Error #{self._stats.errors_count}: {error}")
 
     def get_stats(self) -> dict[str, Any]:
         """Get handler statistics.

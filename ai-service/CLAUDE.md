@@ -436,7 +436,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 The daemon system uses a three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative configuration (NEW Dec 2025)
-   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 62 daemon configurations
+   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 63 daemon configurations
    - `DaemonSpec` dataclass: runner_name, depends_on, category, auto_restart, health_check_interval
    - `get_daemons_by_category()`, `get_categories()`, `validate_registry()`
    - Replaces ~330 lines of imperative code with ~30 lines of declarations
@@ -623,7 +623,7 @@ Three main options - use the recommended one:
 
 | Script                 | Purpose                                 | Recommended?       |
 | ---------------------- | --------------------------------------- | ------------------ |
-| `master_loop.py`       | Full cluster automation with 62 daemons | ✅ Yes             |
+| `master_loop.py`       | Full cluster automation with 63 daemons | ✅ Yes             |
 | `run_training_loop.py` | Simple 1-config pipeline                | For single configs |
 | `unified_ai_loop.py`   | Legacy wrapper                          | ❌ Deprecated      |
 
@@ -652,8 +652,8 @@ Major consolidation effort completed December 2025:
 | Module               | Purpose                                                       |
 | -------------------- | ------------------------------------------------------------- |
 | `node_status.py`     | Unified NodeHealthState enum + NodeMonitoringStatus dataclass |
-| `daemon_runners.py`  | 62 daemon runner functions extracted from DaemonManager       |
-| `daemon_registry.py` | Declarative DaemonSpec registry for all 62 daemon types       |
+| `daemon_runners.py`  | 63 daemon runner functions extracted from DaemonManager       |
+| `daemon_registry.py` | Declarative DaemonSpec registry for all 63 daemon types       |
 
 **`node_status.py`** consolidates 5 duplicate NodeStatus definitions:
 
@@ -672,7 +672,7 @@ Major consolidation effort completed December 2025:
 
 **`daemon_registry.py`** provides declarative daemon configuration (Dec 27, 2025):
 
-- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 62 daemon configurations
+- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 63 daemon configurations
 - `DaemonSpec` dataclass with frozen=True for immutability:
   - `runner_name`: Function name in daemon_runners.py (e.g., "create_auto_sync")
   - `depends_on`: Tuple of DaemonTypes that must start first
