@@ -44,6 +44,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sqlite3
 import threading
 import logging
 import time
@@ -551,6 +552,32 @@ class BandwidthManager(CoordinatorBase, SQLitePersistenceMixin):
     def close(self) -> None:
         """Close database connection."""
         self._close_connection()
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check manager health for CoordinatorProtocol compliance.
+
+        December 2025 Phase 9: Added for daemon health monitoring.
+        """
+        from app.coordination.protocols import HealthCheckResult
+
+        # Check database is accessible
+        try:
+            conn = self._get_connection()
+            conn.execute("SELECT 1")
+            db_healthy = True
+        except (sqlite3.Error, OSError):
+            db_healthy = False
+
+        return HealthCheckResult(
+            healthy=db_healthy,
+            status=self._status,
+            message=f"BandwidthManager: {len(self.host_limits)} hosts configured",
+            details={
+                "db_path": str(self.db_path),
+                "host_limits": self.host_limits,
+                "db_healthy": db_healthy,
+            },
+        )
 
 
 # Global singleton
