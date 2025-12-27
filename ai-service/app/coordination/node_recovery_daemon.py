@@ -35,6 +35,8 @@ from enum import Enum
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+# December 2025: Use consolidated daemon stats base class
+from app.coordination.daemon_stats import JobDaemonStats
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +117,46 @@ class NodeInfo:
 
 
 @dataclass
-class RecoveryStats:
-    """Statistics for recovery operations."""
-    total_checks: int = 0
-    nodes_recovered: int = 0
-    recovery_failures: int = 0
+class RecoveryStats(JobDaemonStats):
+    """Statistics for recovery operations.
+
+    December 2025: Now extends JobDaemonStats for consistent tracking.
+    Inherits: jobs_processed, jobs_succeeded, jobs_failed, is_healthy(), etc.
+    """
+
+    # Recovery-specific fields
     preemptive_recoveries: int = 0
-    last_check_time: float = 0.0
-    last_error: str | None = None
+
+    # Backward compatibility aliases
+    @property
+    def total_checks(self) -> int:
+        """Alias for jobs_processed (backward compatibility)."""
+        return self.jobs_processed
+
+    @property
+    def nodes_recovered(self) -> int:
+        """Alias for jobs_succeeded (backward compatibility)."""
+        return self.jobs_succeeded
+
+    @property
+    def recovery_failures(self) -> int:
+        """Alias for jobs_failed (backward compatibility)."""
+        return self.jobs_failed
+
+    def record_check(self) -> None:
+        """Record a node health check."""
+        self.last_job_time = time.time()
+        self.jobs_processed += 1
+
+    def record_recovery_success(self, preemptive: bool = False) -> None:
+        """Record a successful recovery."""
+        self.record_job_success()
+        if preemptive:
+            self.preemptive_recoveries += 1
+
+    def record_recovery_failure(self, error: str) -> None:
+        """Record a failed recovery."""
+        self.record_job_failure(error)
 
 
 class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):

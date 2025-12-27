@@ -33,6 +33,8 @@ from app.coordination.protocols import (
     unregister_coordinator,
 )
 from app.core.async_context import safe_create_task
+# December 2025: Use consolidated daemon stats base class
+from app.coordination.daemon_stats import CleanupDaemonStats
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +99,47 @@ class DatabaseAssessment:
 
 
 @dataclass
-class CleanupStats:
-    """Statistics from cleanup operations."""
+class CleanupStats(CleanupDaemonStats):
+    """Statistics from cleanup operations.
 
-    databases_scanned: int = 0
-    databases_quarantined: int = 0
+    December 2025: Now extends CleanupDaemonStats for consistent tracking.
+    Inherits: items_scanned, items_cleaned, items_quarantined, bytes_reclaimed,
+              record_cleanup(), is_healthy(), to_dict(), etc.
+    """
+
+    # DataCleanup-specific fields
     databases_deleted: int = 0
     games_quarantined: int = 0
     games_deleted: int = 0
-    last_scan_time: float = 0.0
-    last_error: str | None = None
+
+    # Backward compatibility aliases
+    @property
+    def databases_scanned(self) -> int:
+        """Alias for items_scanned (backward compatibility)."""
+        return self.items_scanned
+
+    @property
+    def databases_quarantined(self) -> int:
+        """Alias for items_quarantined (backward compatibility)."""
+        return self.items_quarantined
+
+    def record_database_scan(self, scanned: int = 1) -> None:
+        """Record databases scanned."""
+        self.items_scanned += scanned
+        self.last_scan_time = time.time()
+
+    def record_database_quarantine(self, databases: int = 1, games: int = 0) -> None:
+        """Record databases quarantined."""
+        self.items_quarantined += databases
+        if games > 0:
+            self.games_quarantined += games
+
+    def record_database_delete(self, databases: int = 1, games: int = 0) -> None:
+        """Record databases deleted."""
+        self.databases_deleted += databases
+        self.items_cleaned += databases
+        if games > 0:
+            self.games_deleted += games
 
 
 class DataCleanupDaemon:

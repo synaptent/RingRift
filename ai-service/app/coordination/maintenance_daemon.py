@@ -25,6 +25,7 @@ Integration with DaemonManager:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gzip
 import logging
 import os
@@ -40,8 +41,12 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "MaintenanceConfig",
     "MaintenanceDaemon",
+    "MaintenanceStats",
     "get_maintenance_daemon",
 ]
+
+# December 2025: Use consolidated daemon stats base class
+from app.coordination.daemon_stats import CleanupDaemonStats
 
 
 @dataclass
@@ -96,8 +101,15 @@ class MaintenanceConfig:
 
 
 @dataclass
-class MaintenanceStats:
-    """Statistics from maintenance operations."""
+class MaintenanceStats(CleanupDaemonStats):
+    """Statistics from maintenance operations.
+
+    December 2025: Now extends CleanupDaemonStats for consistent tracking.
+    Inherits: items_scanned, items_cleaned, items_quarantined, bytes_reclaimed,
+              record_cleanup(), is_healthy(), to_dict(), etc.
+    """
+
+    # Maintenance-specific fields (not in base class)
     logs_rotated: int = 0
     bytes_reclaimed_logs: int = 0
     databases_vacuumed: int = 0
@@ -115,6 +127,23 @@ class MaintenanceStats:
     last_dlq_cleanup: float = 0.0
     last_queue_cleanup: float = 0.0  # December 2025
     last_orphan_detection: float = 0.0  # December 2025
+
+    def record_log_rotation(self, logs: int, bytes_reclaimed: int) -> None:
+        """Record a log rotation operation."""
+        self.logs_rotated += logs
+        self.bytes_reclaimed_logs += bytes_reclaimed
+        self.bytes_reclaimed += bytes_reclaimed
+        self.last_log_rotation = time.time()
+
+    def record_vacuum(self, databases: int) -> None:
+        """Record database vacuum operation."""
+        self.databases_vacuumed += databases
+        self.last_db_vacuum = time.time()
+
+    def record_archive(self, games: int) -> None:
+        """Record game archival operation."""
+        self.games_archived += games
+        self.last_archive_run = time.time()
 
 
 class MaintenanceDaemon:
@@ -253,9 +282,8 @@ class MaintenanceDaemon:
 
                     # Compress current log to .1.gz
                     backup_path = log_file.with_suffix(".log.1.gz")
-                    with open(log_file, "rb") as f_in:
-                        with gzip.open(backup_path, "wb") as f_out:
-                            shutil.copyfileobj(f_in, f_out)
+                    with open(log_file, "rb") as f_in, gzip.open(backup_path, "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
 
                     # Truncate original log
                     with open(log_file, "w") as f:
@@ -312,7 +340,7 @@ class MaintenanceDaemon:
                         f"{size_before / 1024 / 1024:.1f} MB → {size_after / 1024 / 1024:.1f} MB"
                     )
 
-            except (OSError, RuntimeError) as e:
+            except (sqlite3.Error, OSError, RuntimeError) as e:
                 logger.warning(f"[Maintenance] Failed to VACUUM {db_path}: {e}")
 
         self._stats.databases_vacuumed += vacuumed
@@ -377,7 +405,7 @@ class MaintenanceDaemon:
                             f"[Maintenance] Archived {db_path.name} "
                             f"({db_info.game_count} games, {age_days:.1f} days old)"
                         )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"[Maintenance] Failed to archive {db_path}: {e}")
 
             if archived_count > 0:
@@ -413,9 +441,8 @@ class MaintenanceDaemon:
             archive_path = archive_dir / archive_name
 
             # Compress with gzip
-            with open(db_path, "rb") as f_in:
-                with gzip.open(archive_path, "wb", compresslevel=6) as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            with open(db_path, "rb") as f_in, gzip.open(archive_path, "wb", compresslevel=6) as f_out:
+                shutil.copyfileobj(f_in, f_out)
         else:
             archive_name = f"{db_path.stem}_{timestamp}.db"
             archive_path = archive_dir / archive_name
@@ -428,7 +455,7 @@ class MaintenanceDaemon:
             try:
                 await self._upload_to_s3(archive_path)
                 logger.debug(f"[Maintenance] Uploaded to S3: {archive_path.name}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"[Maintenance] S3 upload failed for {archive_path}: {e}")
                 # Continue anyway - local archive succeeded
 
@@ -711,10 +738,8 @@ class MaintenanceDaemon:
                     board_type = parts[0]
                     players_str = parts[1]
                     if players_str.endswith("p"):
-                        try:
+                        with contextlib.suppress(ValueError):
                             num_players = int(players_str[:-1])
-                        except ValueError:
-                            pass
 
                 # Fallback: if we can't parse, use defaults
                 if not board_type:
@@ -821,7 +846,7 @@ class MaintenanceDaemon:
 
         December 2025: Added to satisfy CoordinatorProtocol for unified health monitoring.
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
         if not self._running:
             return HealthCheckResult(

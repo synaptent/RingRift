@@ -48,6 +48,8 @@ from app.coordination.protocols import (
     unregister_coordinator,
 )
 from app.core.async_context import safe_create_task
+# December 2025: Use consolidated daemon stats base class
+from app.coordination.daemon_stats import JobDaemonStats
 
 # SSH fallback for node discovery when P2P is unavailable (Dec 2025)
 try:
@@ -234,14 +236,46 @@ class ConfigSpawnHistory:
 
 
 @dataclass
-class SpawnStats:
-    """Statistics for spawn operations."""
-    total_spawns: int = 0
-    successful_spawns: int = 0
-    failed_spawns: int = 0
+class SpawnStats(JobDaemonStats):
+    """Statistics for spawn operations.
+
+    December 2025: Now extends JobDaemonStats for consistent tracking.
+    Inherits: jobs_processed, jobs_succeeded, jobs_failed, is_healthy(), etc.
+    """
+
+    # IdleResource-specific fields
     games_spawned: int = 0
-    last_spawn_time: float = 0.0
-    last_error: str | None = None
+
+    # Backward compatibility aliases
+    @property
+    def total_spawns(self) -> int:
+        """Alias for jobs_processed (backward compatibility)."""
+        return self.jobs_processed
+
+    @property
+    def successful_spawns(self) -> int:
+        """Alias for jobs_succeeded (backward compatibility)."""
+        return self.jobs_succeeded
+
+    @property
+    def failed_spawns(self) -> int:
+        """Alias for jobs_failed (backward compatibility)."""
+        return self.jobs_failed
+
+    @property
+    def last_spawn_time(self) -> float:
+        """Alias for last_job_time (backward compatibility)."""
+        return self.last_job_time
+
+    def record_spawn_success(self, games: int = 0) -> None:
+        """Record a successful spawn."""
+        self.record_job_success()
+        if games > 0:
+            self.games_spawned += games
+
+    def record_spawn_failure(self, error: str) -> None:
+        """Record a failed spawn."""
+        self.record_job_failure(error)
 
 
 @dataclass
