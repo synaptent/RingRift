@@ -478,11 +478,28 @@ class BaseCoordinator(ABC):
 class BaseDaemon(BaseCoordinator):
     """Abstract base class for daemon coordinators.
 
-    Extends BaseCoordinator with daemon-specific functionality
-    like pause/resume and restart.
+    DEPRECATED (December 2025 Phase 10): This minimal implementation is deprecated.
+    Use the feature-rich BaseDaemon from app.coordination.base_daemon instead:
+
+        from app.coordination.base_daemon import BaseDaemon
+
+    The base_daemon.py version provides:
+    - Generic[ConfigT] for typed configuration
+    - Full lifecycle management with protected main loop
+    - Automatic health check interface
+    - Metrics and status reporting
+    - Coordinator protocol registration
+
+    This class is retained for backward compatibility and will be removed Q2 2026.
     """
 
     def __init__(self):
+        import warnings
+        warnings.warn(
+            "protocols.BaseDaemon is deprecated. Use app.coordination.base_daemon.BaseDaemon instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__()
         self._paused = False
 

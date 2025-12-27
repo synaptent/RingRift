@@ -694,6 +694,31 @@ class MonitoringAwareAutoScaler(AutoScaler):
             "active_alerts": list(self._monitoring_alerts.keys()),
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check scaler health for CoordinatorProtocol compliance.
+
+        December 2025 Phase 9: Added for daemon health monitoring.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        monitoring = self.get_monitoring_status()
+        is_healthy = monitoring.get("cluster_healthy", True) and not monitoring.get("resource_constrained", False)
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=CoordinatorStatus.RUNNING if self.config.enabled else CoordinatorStatus.STOPPED,
+            message=f"MonitoringAwareAutoScaler: cluster_healthy={monitoring.get('cluster_healthy')}",
+            details={
+                "enabled": self.config.enabled,
+                "monitoring": monitoring,
+                "config": {
+                    "min_instances": self.config.min_instances,
+                    "max_instances": self.config.max_instances,
+                    "queue_depth_scale_up": self.config.queue_depth_scale_up,
+                },
+            },
+        )
+
 
 def load_scaling_config_from_yaml(yaml_config: dict[str, Any]) -> ScalingConfig:
     """Load ScalingConfig from YAML configuration dict."""

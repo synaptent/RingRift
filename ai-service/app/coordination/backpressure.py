@@ -328,6 +328,33 @@ class BackpressureMonitor:
         """Get cached signal without refreshing."""
         return self._cached_signal
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check monitor health for CoordinatorProtocol compliance.
+
+        December 2025 Phase 9: Added for daemon health monitoring.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        has_cached_signal = self._cached_signal is not None
+        cache_age = time.time() - self._cache_time if self._cache_time > 0 else float('inf')
+        cache_valid = cache_age < self.config.cache_ttl_seconds
+
+        return HealthCheckResult(
+            healthy=True,  # Monitor is stateless, always healthy if instantiated
+            status=CoordinatorStatus.RUNNING if has_cached_signal else CoordinatorStatus.READY,
+            message=f"BackpressureMonitor: cache_age={cache_age:.1f}s",
+            details={
+                "has_cached_signal": has_cached_signal,
+                "cache_age_seconds": cache_age,
+                "cache_valid": cache_valid,
+                "config": {
+                    "cache_ttl": self.config.cache_ttl_seconds,
+                    "queue_low": self.config.queue_low_threshold,
+                    "queue_high": self.config.queue_high_threshold,
+                },
+            },
+        )
+
 
 # Module-level singleton
 _backpressure_monitor: BackpressureMonitor | None = None

@@ -49,18 +49,11 @@ from app.providers import (
     VastManager,
 )
 
+# December 2025: Import canonical NodeHealthState from node_status.py
+# to avoid duplicate enum definitions
+from app.coordination.node_status import NodeHealthState
+
 logger = logging.getLogger(__name__)
-
-
-class NodeHealthState(str, Enum):
-    """Graduated node health states."""
-
-    HEALTHY = "healthy"  # All checks pass
-    DEGRADED = "degraded"  # 1 check failing
-    UNHEALTHY = "unhealthy"  # 2+ checks failing
-    OFFLINE = "offline"  # SSH unreachable
-    PROVIDER_DOWN = "provider_down"  # Provider reports down
-    RETIRED = "retired"  # Manually removed
 
 
 @dataclass

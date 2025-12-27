@@ -449,6 +449,32 @@ class OrphanDetectionDaemon:
             message=f"Orphan detection daemon running (last scan: {self._last_scan_time:.0f}s ago)" if self._last_scan_time else "Orphan detection daemon running (no scans yet)",
         )
 
+    def get_status(self) -> dict[str, Any]:
+        """Get daemon status for monitoring.
+
+        December 2025: Added for DaemonManager status reporting.
+
+        Returns:
+            Status dict with daemon state and metrics
+        """
+        now = time.time()
+        uptime = now - self._last_scan_time if self._last_scan_time > 0 else 0.0
+
+        return {
+            "daemon": "OrphanDetectionDaemon",
+            "running": self._running,
+            "last_scan_time": self._last_scan_time,
+            "seconds_since_scan": now - self._last_scan_time if self._last_scan_time > 0 else None,
+            "orphan_history_count": len(self._orphan_history),
+            "recent_orphans": self._orphan_history[-5:] if self._orphan_history else [],
+            "config": {
+                "scan_interval_seconds": self.config.scan_interval_seconds,
+                "games_dir": self.config.games_dir,
+                "auto_register": self.config.auto_register,
+                "emit_detection_event": self.config.emit_detection_event,
+            },
+        }
+
 
 async def run() -> None:
     """Run the daemon (entry point for DaemonManager)."""

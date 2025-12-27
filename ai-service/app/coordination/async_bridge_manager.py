@@ -412,6 +412,33 @@ class AsyncBridgeManager:
             "stats": stats,
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check manager health for CoordinatorProtocol compliance.
+
+        December 2025 Phase 9: Added for daemon health monitoring.
+        Wraps existing get_health() with HealthCheckResult.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        health_info = self.get_health()
+        is_healthy = health_info.get("healthy", False)
+
+        if self._shutting_down:
+            status = CoordinatorStatus.STOPPED
+        elif not self._initialized:
+            status = CoordinatorStatus.INITIALIZING
+        elif not is_healthy:
+            status = CoordinatorStatus.ERROR
+        else:
+            status = CoordinatorStatus.RUNNING
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=f"AsyncBridgeManager: {len(self._bridges)} bridges, {self._stats.active_tasks} active tasks",
+            details=health_info,
+        )
+
 
 # =============================================================================
 # Singleton Management

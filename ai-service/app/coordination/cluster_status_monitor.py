@@ -1042,6 +1042,27 @@ class ClusterMonitor:
         """Stop the background monitoring loop."""
         self._running = False
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check monitor health for CoordinatorProtocol compliance.
+
+        December 2025 Phase 9: Added for daemon health monitoring.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        is_running = getattr(self, "_running", False)
+        hosts_loaded = len(self._hosts) > 0
+
+        return HealthCheckResult(
+            healthy=hosts_loaded,
+            status=CoordinatorStatus.RUNNING if is_running else CoordinatorStatus.READY,
+            message=f"ClusterMonitor: {len(self._hosts)} hosts configured",
+            details={
+                "running": is_running,
+                "hosts_configured": len(self._hosts),
+                "hosts_config_path": str(self.hosts_config_path),
+            },
+        )
+
 
 def main():
     """CLI entry point."""

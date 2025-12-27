@@ -587,6 +587,24 @@ class AdaptiveResourceManager:
             },
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check manager health for CoordinatorProtocol compliance.
+
+        December 2025 Phase 9: Added for daemon health monitoring.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        stats = self.get_stats()
+        is_running = stats.get("running", False)
+        has_errors = stats.get("errors", 0) > 0
+
+        return HealthCheckResult(
+            healthy=is_running or not has_errors,
+            status=CoordinatorStatus.RUNNING if is_running else CoordinatorStatus.READY,
+            message=f"AdaptiveResourceManager: {stats.get('cleanups_triggered', 0)} cleanups, {stats.get('aggregations_completed', 0)} aggregations",
+            details=stats,
+        )
+
 
 # Singleton instance
 _resource_manager: AdaptiveResourceManager | None = None

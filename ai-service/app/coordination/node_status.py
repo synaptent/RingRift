@@ -36,7 +36,8 @@ class NodeHealthState(str, Enum):
     """Node health state for cluster monitoring.
 
     Canonical enum for node health classification.
-    Previously: NodeStatus enum in node_health_monitor.py
+    December 2025: Consolidated from health_check_orchestrator.py and
+    node_health_monitor.py to single source of truth.
     """
 
     HEALTHY = "healthy"  # Node responding normally
@@ -45,6 +46,8 @@ class NodeHealthState(str, Enum):
     EVICTED = "evicted"  # 5+ failures, no tasks assigned
     UNKNOWN = "unknown"  # Initial state, no health data yet
     OFFLINE = "offline"  # Node confirmed offline
+    PROVIDER_DOWN = "provider_down"  # Provider reports node as down
+    RETIRED = "retired"  # Manually removed from cluster
 
 
 @dataclass

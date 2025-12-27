@@ -47,35 +47,6 @@ def fast_config():
 
 
 @pytest.fixture
-def no_restart_config():
-    """Create config with auto-restart disabled for crash detection tests."""
-    return DaemonManagerConfig(
-        health_check_interval=0.05,  # 50ms
-        shutdown_timeout=0.5,
-        recovery_cooldown=0.1,
-        auto_restart_failed=False,  # Disabled for crash detection tests
-        max_restart_attempts=3,
-    )
-
-
-@pytest.fixture
-def no_restart_manager(no_restart_config):
-    """Create fresh DaemonManager with auto-restart disabled."""
-    DaemonManager.reset_instance()
-    mgr = DaemonManager(no_restart_config)
-    mgr._factories.clear()
-    mgr._daemons.clear()
-    yield mgr
-    mgr._running = False
-    if mgr._shutdown_event:
-        mgr._shutdown_event.set()
-    for info in list(mgr._daemons.values()):
-        if info.task and not info.task.done():
-            info.task.cancel()
-    DaemonManager.reset_instance()
-
-
-@pytest.fixture
 def manager(fast_config):
     """Create fresh DaemonManager for each test."""
     DaemonManager.reset_instance()
@@ -101,8 +72,8 @@ class TestHealthLoopDetection:
     """Tests for health monitoring loop detection of failed daemons."""
 
     @pytest.mark.asyncio
-    async def test_health_loop_detects_crashed_daemon(self, no_restart_manager: DaemonManager):
-        """Health loop should detect when a daemon crashes (with auto-restart disabled)."""
+    async def test_health_loop_detects_crashed_daemon(self, manager: DaemonManager):
+        """Health loop should detect when a daemon crashes (with auto-restart disabled on daemon)."""
         crash_flag = asyncio.Event()
 
         async def crashing_daemon():
@@ -111,46 +82,48 @@ class TestHealthLoopDetection:
             crash_flag.set()
             raise RuntimeError("Intentional crash for testing")
 
-        no_restart_manager.register_factory(DaemonType.DATA_PIPELINE, crashing_daemon)
+        # Register with auto_restart=False to test crash detection
+        manager.register_factory(DaemonType.DATA_PIPELINE, crashing_daemon, auto_restart=False)
 
         # Start daemon
-        await no_restart_manager.start(DaemonType.DATA_PIPELINE)
+        await manager.start(DaemonType.DATA_PIPELINE)
         await asyncio.sleep(0.02)
 
-        assert no_restart_manager._daemons[DaemonType.DATA_PIPELINE].state == DaemonState.RUNNING
+        assert manager._daemons[DaemonType.DATA_PIPELINE].state == DaemonState.RUNNING
 
         # Wait for crash
         await crash_flag.wait()
         await asyncio.sleep(0.15)  # Give health loop time to detect
 
         # Daemon should be marked as failed (no auto-restart)
-        assert no_restart_manager._daemons[DaemonType.DATA_PIPELINE].state == DaemonState.FAILED
+        assert manager._daemons[DaemonType.DATA_PIPELINE].state == DaemonState.FAILED
 
-        await no_restart_manager.shutdown()
+        await manager.shutdown()
 
     @pytest.mark.asyncio
-    async def test_health_loop_detects_silently_exited_daemon(self, no_restart_manager: DaemonManager):
+    async def test_health_loop_detects_silently_exited_daemon(self, manager: DaemonManager):
         """Health loop should detect when a daemon exits without error (no auto-restart)."""
         async def short_lived_daemon():
             """Daemon that completes normally (unexpected exit)."""
             await asyncio.sleep(0.03)
             # Just return - this is unexpected for a daemon
 
-        no_restart_manager.register_factory(DaemonType.QUEUE_POPULATOR, short_lived_daemon)
+        # Register with auto_restart=False
+        manager.register_factory(DaemonType.QUEUE_POPULATOR, short_lived_daemon, auto_restart=False)
 
-        await no_restart_manager.start(DaemonType.QUEUE_POPULATOR)
+        await manager.start(DaemonType.QUEUE_POPULATOR)
         await asyncio.sleep(0.02)
 
-        assert no_restart_manager._daemons[DaemonType.QUEUE_POPULATOR].state == DaemonState.RUNNING
+        assert manager._daemons[DaemonType.QUEUE_POPULATOR].state == DaemonState.RUNNING
 
         # Wait for daemon to exit
         await asyncio.sleep(0.15)
 
         # Should detect the exit
-        info = no_restart_manager._daemons[DaemonType.QUEUE_POPULATOR]
+        info = manager._daemons[DaemonType.QUEUE_POPULATOR]
         assert info.state in (DaemonState.FAILED, DaemonState.STOPPED)
 
-        await no_restart_manager.shutdown()
+        await manager.shutdown()
 
 
 # =============================================================================
@@ -300,45 +273,45 @@ class TestHealthLoopLifecycle:
     """Tests for health monitoring loop lifecycle."""
 
     @pytest.mark.asyncio
-    async def test_health_loop_starts_with_daemon(self, no_restart_manager: DaemonManager):
+    async def test_health_loop_starts_with_daemon(self, manager: DaemonManager):
         """Health loop should start when first daemon starts."""
         async def dummy_daemon():
             await asyncio.sleep(10)
 
-        no_restart_manager.register_factory(DaemonType.EVENT_ROUTER, dummy_daemon)
+        manager.register_factory(DaemonType.EVENT_ROUTER, dummy_daemon)
 
         # Start daemon
-        await no_restart_manager.start(DaemonType.EVENT_ROUTER)
+        await manager.start(DaemonType.EVENT_ROUTER)
         await asyncio.sleep(0.1)
 
         # Daemon should be running
-        assert no_restart_manager._daemons[DaemonType.EVENT_ROUTER].state == DaemonState.RUNNING
+        assert manager._daemons[DaemonType.EVENT_ROUTER].state == DaemonState.RUNNING
 
         # Manager should be in running state
-        assert no_restart_manager._running is True
+        assert manager._running is True
 
-        await no_restart_manager.shutdown()
+        await manager.shutdown()
 
     @pytest.mark.asyncio
-    async def test_health_loop_stops_on_shutdown(self, no_restart_manager: DaemonManager):
+    async def test_health_loop_stops_on_shutdown(self, manager: DaemonManager):
         """Health loop should stop cleanly on shutdown."""
         async def dummy_daemon():
             await asyncio.sleep(10)
 
-        no_restart_manager.register_factory(DaemonType.DAEMON_WATCHDOG, dummy_daemon)
-        await no_restart_manager.start(DaemonType.DAEMON_WATCHDOG)
+        manager.register_factory(DaemonType.DAEMON_WATCHDOG, dummy_daemon)
+        await manager.start(DaemonType.DAEMON_WATCHDOG)
         await asyncio.sleep(0.1)
 
         # Verify daemon is running
-        assert no_restart_manager._daemons[DaemonType.DAEMON_WATCHDOG].state == DaemonState.RUNNING
-        assert no_restart_manager._running is True
+        assert manager._daemons[DaemonType.DAEMON_WATCHDOG].state == DaemonState.RUNNING
+        assert manager._running is True
 
         # Shutdown
-        await no_restart_manager.shutdown()
+        await manager.shutdown()
         await asyncio.sleep(0.1)
 
         # Manager should not be running
-        assert no_restart_manager._running is False
+        assert manager._running is False
 
 
 # =============================================================================
@@ -350,7 +323,7 @@ class TestErrorTracking:
     """Tests for daemon error tracking."""
 
     @pytest.mark.asyncio
-    async def test_last_error_recorded_on_crash(self, no_restart_manager: DaemonManager):
+    async def test_last_error_recorded_on_crash(self, manager: DaemonManager):
         """last_error should be set when daemon crashes."""
         error_message = "Test error message for tracking"
 
@@ -358,16 +331,17 @@ class TestErrorTracking:
             await asyncio.sleep(0.02)
             raise ValueError(error_message)
 
-        no_restart_manager.register_factory(DaemonType.TRAINING_TRIGGER, error_daemon)
+        # Register with auto_restart=False to let it stay in FAILED state
+        manager.register_factory(DaemonType.TRAINING_TRIGGER, error_daemon, auto_restart=False)
 
-        await no_restart_manager.start(DaemonType.TRAINING_TRIGGER)
+        await manager.start(DaemonType.TRAINING_TRIGGER)
         await asyncio.sleep(0.2)
 
-        info = no_restart_manager._daemons[DaemonType.TRAINING_TRIGGER]
+        info = manager._daemons[DaemonType.TRAINING_TRIGGER]
         assert info.last_error is not None
         assert error_message in info.last_error
 
-        await no_restart_manager.shutdown()
+        await manager.shutdown()
 
     @pytest.mark.asyncio
     async def test_restart_count_incremented_on_restart(self, manager: DaemonManager):

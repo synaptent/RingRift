@@ -285,7 +285,7 @@ def with_trace(
 
 
 @contextmanager
-def span(name: str, **tags):
+def span(name: str, **tags: Any) -> Generator[TraceSpan | None, None, None]:
     """Context manager to create a span within the current trace.
 
     Args:

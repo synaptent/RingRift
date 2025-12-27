@@ -201,8 +201,14 @@ class RecoveryEvent:
 
 
 @dataclass
-class NodeHealthState:
-    """Track health state for a node (consolidated)."""
+class NodeRecoveryState:
+    """Track recovery state for a node.
+
+    December 2025: Renamed from NodeHealthState to avoid collision with
+    the NodeHealthState enum in node_status.py which represents health grades
+    (HEALTHY, DEGRADED, UNHEALTHY, etc.). This dataclass tracks recovery
+    attempts and failure counts, not health grades.
+    """
 
     node_id: str
     is_online: bool = True
@@ -212,6 +218,10 @@ class NodeHealthState:
     is_escalated: bool = False
     last_escalation_time: float = 0.0
     offline_since: float = 0.0
+
+
+# Backward-compat alias (deprecated - use NodeRecoveryState)
+NodeHealthState = NodeRecoveryState
 
 
 @dataclass

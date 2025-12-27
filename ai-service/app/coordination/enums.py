@@ -49,6 +49,9 @@ from app.coordination.node_recovery_daemon import NodeRecoveryAction
 # Daemon management
 from app.coordination.daemon_types import DaemonType, DaemonState
 
+# Health states (canonical location: node_status.py)
+from app.coordination.node_status import NodeHealthState
+
 # Data events
 from app.distributed.data_events import DataEventType
 
@@ -83,6 +86,7 @@ __all__ = [
     "NodeRecoveryAction",
     "DaemonType",
     "DaemonState",
+    "NodeHealthState",
     "ErrorSeverity",
     "RecoveryStatus",
     "RecoveryResult",
