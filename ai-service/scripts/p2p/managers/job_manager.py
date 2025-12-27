@@ -598,12 +598,23 @@ class JobManager:
                 if job_id in self.improvement_loop_state:
                     self.improvement_loop_state[job_id].selfplay_progress[self.node_id] = num_games
             else:
-                logger.warning(f"Local selfplay failed: {stderr.decode()[:500]}")
+                error_msg = stderr.decode()[:500] if stderr else "Unknown error"
+                logger.warning(f"Local selfplay failed: {error_msg}")
+                # Dec 2025: Emit TASK_FAILED for local selfplay failures
+                self._emit_task_event(
+                    "TASK_FAILED", job_id, "selfplay",
+                    error=f"returncode={proc.returncode}: {error_msg}",
+                    board_type=board_type,
+                )
 
         except asyncio.TimeoutError:
             logger.warning("Local selfplay timed out")
+            # Dec 2025: Emit TASK_FAILED for timeout
+            self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="timeout", board_type=board_type)
         except Exception as e:
             logger.error(f"Local selfplay error: {e}")
+            # Dec 2025: Emit TASK_FAILED for exceptions
+            self._emit_task_event("TASK_FAILED", job_id, "selfplay", error=str(e), board_type=board_type)
 
     # =========================================================================
     # Training Job Methods
@@ -673,12 +684,22 @@ class JobManager:
                 logger.info(f"Exported training data to {output_file}")
                 state.training_data_path = output_file
             else:
-                logger.warning(f"Training data export failed: {stderr.decode()[:500]}")
+                error_msg = stderr.decode()[:500] if stderr else "Unknown error"
+                logger.warning(f"Training data export failed: {error_msg}")
+                # Dec 2025: Emit TASK_FAILED for export failures
+                self._emit_task_event(
+                    "TASK_FAILED", job_id, "export",
+                    error=f"returncode={proc.returncode}: {error_msg}",
+                )
 
         except asyncio.TimeoutError:
             logger.warning("Training data export timed out")
+            # Dec 2025: Emit TASK_FAILED for timeout
+            self._emit_task_event("TASK_FAILED", job_id, "export", error="timeout")
         except Exception as e:
             logger.error(f"Training data export error: {e}")
+            # Dec 2025: Emit TASK_FAILED for exceptions
+            self._emit_task_event("TASK_FAILED", job_id, "export", error=str(e))
 
     async def run_training(self, job_id: str) -> None:
         """Run neural network training on GPU node.

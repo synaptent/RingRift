@@ -104,6 +104,7 @@ class TrainingAnomalyDetector:
         halt_on_spike: bool = False,
         halt_on_gradient_explosion: bool = False,
         max_consecutive_anomalies: int = 20,
+        model_id: str = "unknown",
     ):
         """Initialize the anomaly detector.
 
@@ -115,6 +116,7 @@ class TrainingAnomalyDetector:
             halt_on_spike: Raise exception on loss spike.
             halt_on_gradient_explosion: Raise exception on gradient explosion.
             max_consecutive_anomalies: Max consecutive anomalies before halt.
+            model_id: Model identifier for event emission (e.g., "hex8_2p").
         """
         self.loss_spike_threshold = loss_spike_threshold
         self.gradient_norm_threshold = gradient_norm_threshold
@@ -123,12 +125,21 @@ class TrainingAnomalyDetector:
         self.halt_on_spike = halt_on_spike
         self.halt_on_gradient_explosion = halt_on_gradient_explosion
         self.max_consecutive_anomalies = max_consecutive_anomalies
+        self._model_id = model_id
 
         self._loss_history: deque = deque(maxlen=loss_window_size)
         self._events: list[AnomalyEvent] = []
         self._consecutive_anomalies = 0
         self._total_anomalies = 0
         self._halted = False
+
+    def set_model_id(self, model_id: str) -> None:
+        """Set the model identifier for event emission.
+
+        Args:
+            model_id: Model identifier (e.g., "hex8_2p", "square8_4p_v5").
+        """
+        self._model_id = model_id
 
     def check_loss(self, loss: float, step: int) -> bool:
         """Check loss value for anomalies.
@@ -232,12 +243,19 @@ class TrainingAnomalyDetector:
         return False
 
     def _record_anomaly(self, event: AnomalyEvent) -> None:
-        """Record an anomaly event."""
+        """Record an anomaly event and emit rollback event for critical anomalies."""
         self._events.append(event)
         self._consecutive_anomalies += 1
         self._total_anomalies += 1
 
         logger.warning(f"[AnomalyDetector] {event.message}")
+
+        # Emit TRAINING_ROLLBACK_NEEDED for critical anomalies (NaN, Inf, halt conditions)
+        is_critical = event.anomaly_type in ("nan", "inf")
+        needs_rollback = is_critical or self._consecutive_anomalies >= self.max_consecutive_anomalies
+
+        if needs_rollback:
+            self._emit_rollback_needed(event)
 
         # Check for too many consecutive anomalies
         if self._consecutive_anomalies >= self.max_consecutive_anomalies:
@@ -245,6 +263,49 @@ class TrainingAnomalyDetector:
             raise RuntimeError(
                 f"Training halted: {self._consecutive_anomalies} consecutive anomalies detected"
             )
+
+    def _emit_rollback_needed(self, event: AnomalyEvent) -> None:
+        """Emit TRAINING_ROLLBACK_NEEDED event for critical training anomalies.
+
+        This closes the feedback loop: anomaly detection -> rollback consideration.
+        Subscribers (FeedbackLoopController, TrainingCoordinator) can decide whether
+        to actually perform a rollback based on model history and recovery options.
+        """
+        try:
+            from app.core.async_context import fire_and_forget
+            from app.coordination.event_emitters import emit_training_rollback_needed
+
+            # Determine severity based on anomaly type and count
+            if event.anomaly_type in ("nan", "inf"):
+                severity = "critical"
+            elif self._consecutive_anomalies >= self.max_consecutive_anomalies:
+                severity = "severe"
+            else:
+                severity = "moderate"
+
+            async def emit():
+                await emit_training_rollback_needed(
+                    model_id=getattr(self, "_model_id", "unknown"),
+                    reason=event.message,
+                    severity=severity,
+                    anomaly_type=event.anomaly_type,
+                    step=event.step,
+                    value=event.value,
+                    consecutive_anomalies=self._consecutive_anomalies,
+                    total_anomalies=self._total_anomalies,
+                )
+
+            fire_and_forget(emit())
+            logger.info(
+                f"[AnomalyDetector] Emitted TRAINING_ROLLBACK_NEEDED ({severity}): "
+                f"{event.anomaly_type} at step {event.step}"
+            )
+
+        except ImportError:
+            # Event system not available - log only
+            logger.debug("[AnomalyDetector] Event system not available for rollback emission")
+        except Exception as e:
+            logger.warning(f"[AnomalyDetector] Failed to emit rollback event: {e}")
 
     def reset(self) -> None:
         """Reset detector state (e.g., for new training run)."""
