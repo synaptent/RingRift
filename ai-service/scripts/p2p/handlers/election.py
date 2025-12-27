@@ -45,8 +45,10 @@ try:
         emit_p2p_cluster_unhealthy,
     )
     HAS_EVENT_BRIDGE = True
-except ImportError:
+except ImportError as e:
     HAS_EVENT_BRIDGE = False
+    # Dec 2025: Log import failure so operators know events aren't being emitted
+    logger.warning(f"[ElectionHandlers] Event bridge not available ({e}), election events will not be emitted")
 
     async def emit_p2p_leader_changed(*args, **kwargs):
         pass

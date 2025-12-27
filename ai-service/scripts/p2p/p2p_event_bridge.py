@@ -72,6 +72,70 @@ except ImportError:
 
 
 # =============================================================================
+# Config Key Validation (December 2025)
+# =============================================================================
+
+# Valid board types for config_key validation
+_VALID_BOARD_TYPES = {"hex8", "hexagonal", "square8", "square19"}
+
+
+def _validate_config_key(config_key: str, context: str = "") -> bool:
+    """Validate config_key format before event emission.
+
+    Valid formats:
+    - Standard: {board_type}_{num_players}p (e.g., "hex8_2p", "square19_4p")
+    - Special: "all" (used by elo_sync for cluster-wide operations)
+    - Node-specific: "node:{node_id}" (used by selfplay_scheduler for per-node tracking)
+
+    Returns True if valid, False otherwise (logs warning if invalid).
+    """
+    if not config_key:
+        logger.warning(f"[P2PEventBridge] {context}: Empty config_key")
+        return False
+
+    # Allow special "all" config for cluster-wide operations
+    if config_key == "all":
+        return True
+
+    # Allow node-specific config keys
+    if config_key.startswith("node:"):
+        return True
+
+    # Validate standard format: {board_type}_{num_players}p
+    if "_" not in config_key:
+        logger.warning(f"[P2PEventBridge] {context}: Invalid config_key format '{config_key}' (missing underscore)")
+        return False
+
+    parts = config_key.rsplit("_", 1)
+    if len(parts) != 2:
+        logger.warning(f"[P2PEventBridge] {context}: Invalid config_key format '{config_key}'")
+        return False
+
+    board_type, players_str = parts
+
+    # Validate board_type
+    if board_type not in _VALID_BOARD_TYPES:
+        logger.warning(f"[P2PEventBridge] {context}: Unknown board_type '{board_type}' in config_key '{config_key}'")
+        return False
+
+    # Validate num_players format (should be Np where N is 2-4)
+    if not players_str.endswith("p"):
+        logger.warning(f"[P2PEventBridge] {context}: Invalid players format in config_key '{config_key}' (should end with 'p')")
+        return False
+
+    try:
+        num_players = int(players_str.rstrip("p"))
+        if num_players not in (2, 3, 4):
+            logger.warning(f"[P2PEventBridge] {context}: Invalid num_players {num_players} in config_key '{config_key}' (must be 2, 3, or 4)")
+            return False
+    except ValueError:
+        logger.warning(f"[P2PEventBridge] {context}: Cannot parse num_players from config_key '{config_key}'")
+        return False
+
+    return True
+
+
+# =============================================================================
 # Work Queue Event Emitters
 # =============================================================================
 
@@ -93,6 +157,9 @@ async def emit_p2p_work_completed(
     if not HAS_EVENT_ROUTER:
         logger.info(f"[P2PEventBridge] Work completed: {work_type} {config_key} on {node_id}")
         return
+
+    # Dec 2025: Validate config_key before emission (logs warning if invalid)
+    _validate_config_key(config_key, f"emit_p2p_work_completed({work_type})")
 
     # Parse config_key into board_type and num_players
     board_type = ""
@@ -186,6 +253,9 @@ async def emit_p2p_work_failed(
         logger.warning(f"[P2PEventBridge] Work failed: {work_type} {config_key}: {error}")
         return
 
+    # Dec 2025: Validate config_key before emission (logs warning if invalid)
+    _validate_config_key(config_key, f"emit_p2p_work_failed({work_type})")
+
     timestamp = datetime.now().isoformat()
 
     try:
@@ -232,6 +302,9 @@ async def emit_p2p_gauntlet_completed(
             f"({wins}/{total_games}, {win_rate:.1%}, passed={passed})"
         )
         return
+
+    # Dec 2025: Validate config_key before emission (logs warning if invalid)
+    _validate_config_key(config_key, "emit_p2p_gauntlet_completed")
 
     # Parse config_key
     board_type = ""
@@ -402,6 +475,9 @@ async def emit_p2p_elo_updated(
     if not HAS_EVENT_ROUTER:
         logger.info(f"[P2PEventBridge] Elo updated: {model_id} {old_elo:.0f} -> {new_elo:.0f}")
         return
+
+    # Dec 2025: Validate config_key before emission (logs warning if invalid)
+    _validate_config_key(config_key, "emit_p2p_elo_updated")
 
     try:
         await publish(

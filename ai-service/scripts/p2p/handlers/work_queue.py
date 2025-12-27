@@ -40,8 +40,10 @@ try:
         emit_p2p_work_failed,
     )
     HAS_EVENT_BRIDGE = True
-except ImportError:
+except ImportError as e:
     HAS_EVENT_BRIDGE = False
+    # Dec 2025: Log import failure so operators know events aren't being emitted
+    logger.warning(f"[WorkQueueHandlers] Event bridge not available ({e}), work events will not be emitted")
 
     async def emit_p2p_work_completed(*args, **kwargs):
         pass

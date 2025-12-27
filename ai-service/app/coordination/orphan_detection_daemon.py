@@ -390,9 +390,9 @@ class OrphanDetectionDaemon:
             logger.info(f"Emitted ORPHAN_GAMES_REGISTERED: {len(registered)} databases")
 
         except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"Failed to emit registration event: {e}")
+            pass  # Event system not available - expected in some contexts
+        except (RuntimeError, OSError, ConnectionError) as e:
+            logger.warning(f"Failed to emit orphan registration event: {e}")
 
     async def _emit_detection_event(self, orphans: list[OrphanInfo]) -> None:
         """Emit ORPHAN_GAMES_DETECTED event."""

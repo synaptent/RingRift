@@ -41,8 +41,10 @@ logger = logging.getLogger(__name__)
 try:
     from scripts.p2p.p2p_event_bridge import emit_p2p_gauntlet_completed
     HAS_EVENT_BRIDGE = True
-except ImportError:
+except ImportError as e:
     HAS_EVENT_BRIDGE = False
+    # Dec 2025: Log import failure so operators know events aren't being emitted
+    logger.warning(f"[GauntletHandlers] Event bridge not available ({e}), gauntlet events will not be emitted")
 
     async def emit_p2p_gauntlet_completed(*args, **kwargs):
         pass
