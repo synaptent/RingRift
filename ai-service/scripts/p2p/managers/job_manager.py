@@ -284,7 +284,7 @@ class JobManager:
             )
 
             # Track recovery for scheduling decisions
-            self.stats.nodes_recovered = getattr(self.stats, "nodes_recovered", 0) + 1
+            self.stats.nodes_recovered += 1
 
             # Note: Actual job dispatch decisions are made by SelfplayScheduler
             # and TrainingCoordinator. This event is tracked for observability

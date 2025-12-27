@@ -693,6 +693,41 @@ class TaskLifecycleCoordinator:
             "offline_node_count": len(self._offline_nodes),
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Perform health check on task lifecycle coordinator (December 2025).
+
+        Returns:
+            Dict with health status including:
+            - healthy: Overall health status
+            - orphan_rate: Ratio of orphaned to active tasks
+            - failure_rate: Task failure rate
+            - subscription_status: Event subscription health
+        """
+        stats = self.get_stats()
+
+        # Calculate orphan rate
+        active = stats.active_tasks
+        orphaned = stats.orphaned_tasks
+        orphan_rate = orphaned / max(active + orphaned, 1)
+
+        # Overall health criteria
+        healthy = (
+            self._subscribed  # Must be subscribed to events
+            and orphan_rate < 0.3  # Less than 30% orphaned
+            and stats.failure_rate < 0.5  # Less than 50% failure rate
+        )
+
+        return {
+            "healthy": healthy,
+            "active_tasks": active,
+            "orphaned_tasks": orphaned,
+            "orphan_rate": round(orphan_rate, 3),
+            "failure_rate": round(stats.failure_rate, 3),
+            "subscribed": self._subscribed,
+            "online_nodes": len(self._online_nodes),
+            "offline_nodes": len(self._offline_nodes),
+        }
+
 
 # =============================================================================
 # Singleton and convenience functions

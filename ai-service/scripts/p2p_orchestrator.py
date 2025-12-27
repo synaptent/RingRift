@@ -2761,12 +2761,91 @@ class P2POrchestrator(
                 except Exception as e:  # noqa: BLE001
                     logger.debug(f"Error handling exploration boost event: {e}")
 
+            def handle_promotion_failed(event) -> None:
+                """Handle model promotion failure events.
+
+                December 27, 2025: Added missing handler for PROMOTION_FAILED events.
+                When model promotion fails (gauntlet failure, threshold not met),
+                we should revert curriculum weights and potentially pause training
+                for that config until issues are resolved.
+                """
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    config_key = payload.get("config_key", "unknown")
+                    model_path = payload.get("model_path", "unknown")
+                    reason = payload.get("reason", "unknown")
+                    win_rate = payload.get("win_rate", 0.0)
+
+                    logger.warning(
+                        f"[P2P] Promotion FAILED for {config_key}: {reason} "
+                        f"(model={model_path}, win_rate={win_rate:.1%})"
+                    )
+
+                    # Revert curriculum weights if selfplay scheduler available
+                    if hasattr(self, "selfplay_scheduler") and self.selfplay_scheduler:
+                        # Reduce priority for this config temporarily
+                        self.selfplay_scheduler.record_promotion_failure(config_key)
+                        logger.info(f"[P2P] Reduced selfplay priority for {config_key} after promotion failure")
+
+                    # Track failed promotions for monitoring
+                    if not hasattr(self, "_promotion_failures"):
+                        self._promotion_failures = {}
+                    if config_key not in self._promotion_failures:
+                        self._promotion_failures[config_key] = []
+                    self._promotion_failures[config_key].append({
+                        "timestamp": time.time(),
+                        "reason": reason,
+                        "win_rate": win_rate,
+                    })
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"Error handling promotion failed event: {e}")
+
+            def handle_handler_failed(event) -> None:
+                """Handle event handler failure events.
+
+                December 27, 2025: Added missing handler for HANDLER_FAILED events.
+                When a coordination event handler throws an exception, this event
+                is emitted. We need to track these for monitoring and potentially
+                trigger alerts for critical handler failures.
+                """
+                try:
+                    payload = event.payload if hasattr(event, "payload") else event
+                    handler_name = payload.get("handler_name", "unknown")
+                    event_type = payload.get("event_type", "unknown")
+                    error = payload.get("error", "unknown")
+                    coordinator = payload.get("coordinator", "unknown")
+
+                    logger.error(
+                        f"[P2P] Handler FAILED: {handler_name} for {event_type} "
+                        f"in {coordinator}: {error}"
+                    )
+
+                    # Track handler failures for health monitoring
+                    if not hasattr(self, "_handler_failures"):
+                        self._handler_failures = {}
+                    failure_key = f"{coordinator}.{handler_name}"
+                    if failure_key not in self._handler_failures:
+                        self._handler_failures[failure_key] = []
+                    self._handler_failures[failure_key].append({
+                        "timestamp": time.time(),
+                        "event_type": event_type,
+                        "error": str(error)[:200],  # Truncate long errors
+                    })
+
+                    # Keep only last 10 failures per handler
+                    if len(self._handler_failures[failure_key]) > 10:
+                        self._handler_failures[failure_key] = self._handler_failures[failure_key][-10:]
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"Error handling handler failed event: {e}")
+
             # Subscribe to all feedback signals
             subscribe("QUALITY_DEGRADED", handle_quality_degraded)
             subscribe("ELO_VELOCITY_CHANGED", handle_elo_velocity_changed)
             subscribe("EVALUATION_COMPLETED", handle_evaluation_completed)
             subscribe("PLATEAU_DETECTED", handle_plateau_detected)
             subscribe("EXPLORATION_BOOST", handle_exploration_boost)
+            subscribe("PROMOTION_FAILED", handle_promotion_failed)
+            subscribe("HANDLER_FAILED", handle_handler_failed)
 
             logger.info("Subscribed to training feedback signals")
             return True

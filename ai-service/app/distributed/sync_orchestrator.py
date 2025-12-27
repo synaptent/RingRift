@@ -962,6 +962,66 @@ class SyncOrchestrator:
 
         return status
 
+    def health_check(self) -> dict[str, Any]:
+        """Perform health check on sync orchestrator (December 2025).
+
+        Returns:
+            Dict with health status including:
+            - healthy: Overall health status
+            - initialized: Whether orchestrator is initialized
+            - error_rate: Recent sync error rate
+            - components: Health of individual sync components
+            - last_sync_age: Seconds since last successful sync
+        """
+        now = time.time()
+        status = self.get_status()
+
+        # Calculate error rate
+        total = status.get("total_syncs", 0)
+        errors = status.get("sync_errors", 0)
+        error_rate = errors / max(total, 1)
+
+        # Find last sync time (most recent across all components)
+        last_syncs = status.get("last_syncs", {})
+        last_sync_times = [v for v in last_syncs.values() if v > 0]
+        last_sync_age = now - max(last_sync_times) if last_sync_times else float("inf")
+
+        # Component health checks
+        component_health = {}
+        for component, enabled_key in [
+            ("data", "data_sync_enabled"),
+            ("elo", "elo_sync_enabled"),
+            ("registry", "registry_sync_enabled"),
+            ("model", "model_sync_enabled"),
+        ]:
+            config = status.get("config", {})
+            is_enabled = config.get(enabled_key, False)
+            last_time = last_syncs.get(component, 0)
+            component_health[component] = {
+                "enabled": is_enabled,
+                "last_sync": last_time,
+                "age_seconds": now - last_time if last_time > 0 else None,
+                "healthy": not is_enabled or (now - last_time < 3600 if last_time > 0 else False),
+            }
+
+        # Overall health: initialized, low error rate, recent sync
+        healthy = (
+            status.get("initialized", False)
+            and error_rate < 0.2
+            and (last_sync_age < 3600 or total == 0)  # Less than 1 hour or no syncs yet
+        )
+
+        return {
+            "healthy": healthy,
+            "initialized": status.get("initialized", False),
+            "total_syncs": total,
+            "sync_errors": errors,
+            "error_rate": round(error_rate, 4),
+            "last_sync_age_seconds": round(last_sync_age, 1) if last_sync_age != float("inf") else None,
+            "components": component_health,
+            "quality_orchestrator_available": status.get("quality_orchestrator") is not None,
+        }
+
 
 # Singleton instance
 _sync_orchestrator: SyncOrchestrator | None = None

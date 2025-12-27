@@ -74,6 +74,11 @@ class TriggerConfig:
     # Root directory for ai-service
     ai_service_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent)
 
+    # Dec 2025: Deep NPZ validation options
+    validate_npz_integrity: bool = True  # Check for NaN/Inf values
+    max_nan_ratio: float = 0.001  # Max 0.1% NaN allowed in features
+    validate_policy_bounds: bool = True  # Check policy indices within board size
+
 
 class PipelineTrigger:
     """Trigger functions with prerequisite validation.
@@ -143,7 +148,12 @@ class PipelineTrigger:
         board_type: str,
         num_players: int,
     ) -> PrerequisiteResult:
-        """Check if NPZ training file exists with sufficient samples."""
+        """Check if NPZ training file exists with sufficient samples.
+
+        Dec 2025: Enhanced with deep validation for data integrity:
+        - NaN/Inf detection in features array
+        - Policy index bounds checking
+        """
         try:
             import numpy as np
 
@@ -193,12 +203,68 @@ class PipelineTrigger:
                     },
                 )
 
+            # Dec 2025: Deep validation for data integrity
+            integrity_issues: list[str] = []
+
+            if self.config.validate_npz_integrity or self.config.validate_policy_bounds:
+                try:
+                    with np.load(best_npz) as data:
+                        # Check for NaN/Inf in features
+                        if self.config.validate_npz_integrity:
+                            features = data.get("features", data.get("states"))
+                            if features is not None:
+                                nan_count = np.isnan(features).sum()
+                                inf_count = np.isinf(features).sum()
+                                total_values = features.size
+                                nan_ratio = nan_count / total_values if total_values > 0 else 0
+
+                                if nan_ratio > self.config.max_nan_ratio:
+                                    integrity_issues.append(
+                                        f"Features contain {nan_count:,} NaN values "
+                                        f"({nan_ratio:.2%} > {self.config.max_nan_ratio:.2%} threshold)"
+                                    )
+                                if inf_count > 0:
+                                    integrity_issues.append(
+                                        f"Features contain {inf_count:,} Inf values"
+                                    )
+
+                        # Check policy index bounds
+                        if self.config.validate_policy_bounds:
+                            policy = data.get("policy", data.get("policy_targets"))
+                            if policy is not None:
+                                # Get expected board size for bounds checking
+                                max_policy_idx = self._get_max_policy_index(board_type)
+                                if max_policy_idx is not None:
+                                    invalid_indices = (policy < 0) | (policy >= max_policy_idx)
+                                    invalid_count = np.sum(invalid_indices)
+                                    if invalid_count > 0:
+                                        integrity_issues.append(
+                                            f"Policy contains {invalid_count:,} out-of-bounds indices "
+                                            f"(valid: 0-{max_policy_idx - 1})"
+                                        )
+
+                except (OSError, ValueError, KeyError) as e:
+                    logger.warning(f"[PipelineTrigger] Deep NPZ validation failed: {e}")
+                    # Don't fail on validation errors - log and continue
+
+            if integrity_issues:
+                return PrerequisiteResult(
+                    passed=False,
+                    message=f"NPZ data integrity issues: {'; '.join(integrity_issues)}",
+                    details={
+                        "npz_path": str(best_npz),
+                        "samples": best_samples,
+                        "integrity_issues": integrity_issues,
+                    },
+                )
+
             return PrerequisiteResult(
                 passed=True,
-                message=f"Found {best_npz.name} with {best_samples:,} samples",
+                message=f"Found {best_npz.name} with {best_samples:,} samples (validated)",
                 details={
                     "npz_path": str(best_npz),
                     "samples": best_samples,
+                    "integrity_validated": self.config.validate_npz_integrity,
                 },
             )
         except (FileNotFoundError, OSError, PermissionError, ValueError) as e:
@@ -207,6 +273,20 @@ class PipelineTrigger:
                 message=f"Error checking NPZ: {e}",
                 details={"error": str(e)},
             )
+
+    def _get_max_policy_index(self, board_type: str) -> int | None:
+        """Get the maximum valid policy index for a board type.
+
+        Returns None if board type is unknown.
+        """
+        # Board type -> cell count mapping
+        board_sizes = {
+            "hex8": 61,       # Radius 4 hexagonal = 61 cells
+            "square8": 64,    # 8x8 = 64 cells
+            "square19": 361,  # 19x19 = 361 cells
+            "hexagonal": 469, # Radius 12 hexagonal = 469 cells
+        }
+        return board_sizes.get(board_type)
 
     async def check_model_exists(
         self,

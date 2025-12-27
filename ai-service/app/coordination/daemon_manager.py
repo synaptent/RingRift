@@ -1442,6 +1442,47 @@ class DaemonManager:
                     else:
                         info.state = DaemonState.FAILED
                         info.last_failure_time = current_time
+                    continue
+
+                # December 2025: Call daemon's health_check() if available
+                # This enables daemon-specific health monitoring beyond just task liveness
+                if info.instance is not None and hasattr(info.instance, 'health_check'):
+                    try:
+                        health_result = info.instance.health_check()
+                        # Handle both sync and async health_check methods
+                        if asyncio.iscoroutine(health_result):
+                            health_result = await health_result
+
+                        # Check if result indicates unhealthy state
+                        is_healthy = True
+                        if hasattr(health_result, 'healthy'):
+                            is_healthy = health_result.healthy
+                        elif isinstance(health_result, dict):
+                            is_healthy = health_result.get('healthy', True)
+                        elif isinstance(health_result, bool):
+                            is_healthy = health_result
+
+                        if not is_healthy:
+                            message = ""
+                            if hasattr(health_result, 'message'):
+                                message = health_result.message
+                            elif isinstance(health_result, dict):
+                                message = health_result.get('message', 'unhealthy')
+
+                            logger.warning(
+                                f"{daemon_type.value} health check failed: {message}"
+                            )
+                            info.last_error = f"Health check failed: {message}"
+                            # Mark for restart if auto-restart is enabled
+                            if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
+                                daemons_to_restart.append(daemon_type)
+                            else:
+                                info.state = DaemonState.FAILED
+                                info.last_failure_time = current_time
+                    except (RuntimeError, OSError, AttributeError) as e:
+                        logger.debug(
+                            f"Error calling health_check for {daemon_type.value}: {e}"
+                        )
 
         # Handle restarts outside lock to prevent deadlock (start() also acquires lock)
         # Also cascade restart to dependent daemons when a dependency fails

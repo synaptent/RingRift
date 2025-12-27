@@ -1173,6 +1173,12 @@ class SelfplayScheduler:
                 _safe_subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed, "ELO_VELOCITY_CHANGED")
             if hasattr(DataEventType, 'EXPLORATION_BOOST'):
                 _safe_subscribe(DataEventType.EXPLORATION_BOOST, self._on_exploration_boost, "EXPLORATION_BOOST")
+            # Dec 2025: Subscribe to CURRICULUM_ADVANCED for curriculum progression
+            if hasattr(DataEventType, 'CURRICULUM_ADVANCED'):
+                _safe_subscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced, "CURRICULUM_ADVANCED")
+            # Dec 2025: Subscribe to ADAPTIVE_PARAMS_CHANGED for parameter adjustments
+            if hasattr(DataEventType, 'ADAPTIVE_PARAMS_CHANGED'):
+                _safe_subscribe(DataEventType.ADAPTIVE_PARAMS_CHANGED, self._on_adaptive_params_changed, "ADAPTIVE_PARAMS_CHANGED")
             if hasattr(DataEventType, 'LOW_QUALITY_DATA_WARNING'):
                 _safe_subscribe(DataEventType.LOW_QUALITY_DATA_WARNING, self._on_low_quality_warning, "LOW_QUALITY_DATA_WARNING")
 
@@ -1189,6 +1195,10 @@ class SelfplayScheduler:
                 _safe_subscribe(DataEventType.P2P_CLUSTER_HEALTHY, self._on_cluster_healthy, "P2P_CLUSTER_HEALTHY")
             if hasattr(DataEventType, 'HOST_OFFLINE'):
                 _safe_subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline, "HOST_OFFLINE")
+
+            # Dec 2025: Subscribe to regression events for curriculum rebalancing
+            if hasattr(DataEventType, 'REGRESSION_DETECTED'):
+                _safe_subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected, "REGRESSION_DETECTED")
 
             self._subscribed = subscribed_count > 0
             if self._subscribed:
@@ -1301,6 +1311,48 @@ class SelfplayScheduler:
                     priority.quality_penalty = 0.0
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling quality degraded: {e}")
+
+    def _on_regression_detected(self, event: Any) -> None:
+        """Handle model regression detection.
+
+        Dec 2025: When evaluation detects model regression (win rate dropping),
+        trigger curriculum rebalancing to adjust selfplay priorities.
+        This helps recover from training instability by increasing exploration.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            severity = payload.get("severity", "moderate")  # mild, moderate, severe
+            win_rate_drop = payload.get("win_rate_drop", 0.0)
+
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+
+                # Apply exploration boost based on regression severity
+                boost_factor = {"mild": 0.1, "moderate": 0.2, "severe": 0.3}.get(severity, 0.15)
+                priority.exploration_boost = boost_factor
+
+                logger.warning(
+                    f"[SelfplayScheduler] Regression detected for {config_key}: "
+                    f"severity={severity}, win_rate_drop={win_rate_drop:.2%}, "
+                    f"exploration_boost={boost_factor}"
+                )
+
+                # Emit curriculum rebalance event to trigger downstream updates
+                try:
+                    from app.coordination.event_router import publish_sync
+
+                    publish_sync("CURRICULUM_REBALANCED", {
+                        "config_key": config_key,
+                        "reason": "regression_detected",
+                        "severity": severity,
+                        "new_exploration_boost": boost_factor,
+                    })
+                except ImportError:
+                    pass  # Event system not available
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling regression: {e}")
 
     def _on_curriculum_rebalanced(self, event: Any) -> None:
         """Handle curriculum rebalancing event.
@@ -1738,6 +1790,95 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling exploration boost: {e}")
+
+    def _on_curriculum_advanced(self, event) -> None:
+        """Handle CURRICULUM_ADVANCED event - curriculum stage progressed.
+
+        Dec 2025: When a config achieves consecutive successful promotions,
+        the curriculum advances. This signals we should shift focus to the
+        next curriculum stage (harder opponents, more complex positions).
+
+        Actions:
+        - Update priority weights for the advanced config
+        - Potentially reduce focus on "graduated" configs
+        - Log curriculum progression for tracking
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            new_stage = payload.get("stage", 1)
+            consecutive_promotions = payload.get("consecutive_promotions", 0)
+
+            if not config_key:
+                return
+
+            logger.info(
+                f"[SelfplayScheduler] CURRICULUM_ADVANCED: {config_key} "
+                f"stage={new_stage}, consecutive_promotions={consecutive_promotions}"
+            )
+
+            # Update curriculum stage if tracked
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+                # Slightly reduce selfplay priority for graduated configs
+                # to focus resources on configs that still need improvement
+                if consecutive_promotions >= 3:
+                    priority.curriculum_weight = max(0.5, priority.curriculum_weight * 0.9)
+                    logger.debug(
+                        f"[SelfplayScheduler] Reduced curriculum weight for {config_key}: "
+                        f"{priority.curriculum_weight:.2f} (graduated)"
+                    )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling curriculum advanced: {e}")
+
+    def _on_adaptive_params_changed(self, event) -> None:
+        """Handle ADAPTIVE_PARAMS_CHANGED event - training parameters adjusted.
+
+        Dec 2025: When gauntlet feedback controller adjusts training parameters
+        (learning rate, batch size, etc.), this event is emitted. We respond by
+        adjusting selfplay parameters accordingly.
+
+        Actions:
+        - Update exploration parameters if temperature changed
+        - Adjust selfplay rate if training intensity changed
+        - Log parameter changes for tracking
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            param_type = payload.get("param_type", "")
+            old_value = payload.get("old_value")
+            new_value = payload.get("new_value")
+            reason = payload.get("reason", "adaptive_adjustment")
+
+            if not config_key:
+                return
+
+            logger.info(
+                f"[SelfplayScheduler] ADAPTIVE_PARAMS_CHANGED: {config_key} "
+                f"{param_type}: {old_value} → {new_value} (reason={reason})"
+            )
+
+            # Respond to temperature changes
+            if param_type == "temperature" and config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+                # Higher temperature = more exploration, adjust boost accordingly
+                if new_value and old_value and new_value > old_value:
+                    # Temperature increased, boost exploration
+                    priority.exploration_boost = max(priority.exploration_boost, 1.2)
+                    logger.debug(f"[SelfplayScheduler] Boosted exploration for {config_key} due to temperature increase")
+
+            # Respond to learning rate changes (training intensity)
+            elif param_type == "learning_rate" and config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+                # Lower LR = more careful training, may need more selfplay data
+                if new_value and old_value and new_value < old_value:
+                    priority.target_games_multiplier = min(2.0, getattr(priority, 'target_games_multiplier', 1.0) * 1.1)
+                    logger.debug(f"[SelfplayScheduler] Increased target games for {config_key} due to LR decrease")
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling adaptive params changed: {e}")
 
     def _decay_expired_boosts(self, now: float) -> int:
         """Decay exploration boosts that have expired.

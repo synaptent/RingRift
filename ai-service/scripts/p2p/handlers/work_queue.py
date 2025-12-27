@@ -53,19 +53,29 @@ except ImportError as e:
 
 
 # Work queue singleton (lazy import to avoid circular deps)
+# Dec 2025: Added thread-safe initialization to prevent race conditions
+import threading
+
 _work_queue = None
+_work_queue_lock = threading.Lock()
 
 
 def get_work_queue():
-    """Get the work queue singleton (lazy load)."""
+    """Get the work queue singleton (lazy load, thread-safe)."""
     global _work_queue
-    if _work_queue is None:
-        try:
-            from app.coordination.work_queue import get_work_queue as _get_wq
+    # Fast path: already initialized
+    if _work_queue is not None:
+        return _work_queue
 
-            _work_queue = _get_wq()
-        except ImportError:
-            _work_queue = None
+    # Slow path: initialize with lock (double-check pattern)
+    with _work_queue_lock:
+        if _work_queue is None:
+            try:
+                from app.coordination.work_queue import get_work_queue as _get_wq
+
+                _work_queue = _get_wq()
+            except ImportError:
+                _work_queue = None
     return _work_queue
 
 

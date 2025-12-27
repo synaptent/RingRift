@@ -711,6 +711,40 @@ class OptimizationCoordinator:
             "subscribed": self._subscribed,
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Perform health check on optimization coordinator (December 2025).
+
+        Returns:
+            Dict with health status including:
+            - healthy: Overall health status
+            - success_rate: Ratio of successful to total runs
+            - is_running: Whether optimization is currently running
+            - subscription_status: Event subscription health
+        """
+        stats = self.get_stats()
+
+        # Calculate success rate
+        total = stats.total_runs
+        successful = stats.successful_runs
+        success_rate = successful / max(total, 1)
+
+        # Overall health criteria
+        healthy = (
+            self._subscribed  # Must be subscribed to events
+            and success_rate >= 0.5  # At least 50% success rate
+        )
+
+        return {
+            "healthy": healthy,
+            "total_runs": total,
+            "successful_runs": successful,
+            "failed_runs": stats.failed_runs,
+            "success_rate": round(success_rate, 3),
+            "is_running": self.is_optimization_running(),
+            "in_cooldown": self.is_in_cooldown(),
+            "subscribed": self._subscribed,
+        }
+
 
 # =============================================================================
 # Singleton and convenience functions

@@ -1206,3 +1206,59 @@ class SelfplayScheduler:
             "active_exploration_boosts": active_boosts,
             "diversity_metrics": diversity,
         }
+
+    def record_promotion_failure(self, config_key: str) -> None:
+        """Record a promotion failure for curriculum feedback.
+
+        December 27, 2025: Added to handle PROMOTION_FAILED events.
+        When a model fails to promote (gauntlet failure), we temporarily
+        reduce the selfplay priority for that config to avoid wasting
+        resources on a potentially unstable training trajectory.
+
+        Args:
+            config_key: The configuration that failed promotion (e.g., "hex8_2p")
+        """
+        if not hasattr(self, "_promotion_failures"):
+            self._promotion_failures: dict[str, list[float]] = {}
+
+        # Track failure timestamps
+        if config_key not in self._promotion_failures:
+            self._promotion_failures[config_key] = []
+        self._promotion_failures[config_key].append(time.time())
+
+        # Keep only failures from last 24 hours
+        cutoff = time.time() - 86400
+        self._promotion_failures[config_key] = [
+            t for t in self._promotion_failures[config_key] if t > cutoff
+        ]
+
+        failure_count = len(self._promotion_failures[config_key])
+        logger.info(
+            f"[SelfplayScheduler] Recorded promotion failure for {config_key} "
+            f"({failure_count} failures in last 24h)"
+        )
+
+        # Apply temporary priority reduction based on failure count
+        # More failures = longer penalty period
+        if failure_count >= 3:
+            # After 3 failures, significantly reduce priority for 2 hours
+            penalty_duration = 7200
+            penalty_factor = 0.3
+        elif failure_count >= 2:
+            # After 2 failures, reduce priority for 1 hour
+            penalty_duration = 3600
+            penalty_factor = 0.5
+        else:
+            # First failure, reduce priority for 30 minutes
+            penalty_duration = 1800
+            penalty_factor = 0.7
+
+        # Store penalty in exploration boosts (negative boost = reduced priority)
+        if not hasattr(self, "_promotion_penalties"):
+            self._promotion_penalties: dict[str, tuple[float, float]] = {}
+        self._promotion_penalties[config_key] = (penalty_factor, time.time() + penalty_duration)
+
+        logger.info(
+            f"[SelfplayScheduler] Applied {penalty_factor:.0%} priority penalty "
+            f"to {config_key} for {penalty_duration}s"
+        )

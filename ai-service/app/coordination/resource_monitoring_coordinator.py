@@ -800,6 +800,46 @@ class ResourceMonitoringCoordinator:
             "subscribed": self._subscribed,
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Perform health check on resource monitoring (December 2025).
+
+        Returns:
+            Dict with health status including:
+            - healthy: Overall health status
+            - node_health_ratio: Ratio of healthy to total nodes
+            - backpressure_active: Whether cluster is under backpressure
+            - subscription_status: Event subscription health
+        """
+        stats = self.get_stats()
+
+        # Calculate node health ratio
+        total = stats.total_nodes
+        healthy = stats.healthy_nodes
+        node_health_ratio = healthy / max(total, 1)
+
+        # Check if we have too many constrained nodes
+        constrained_ratio = stats.constrained_nodes / max(total, 1)
+
+        # Overall health criteria
+        healthy_status = (
+            self._subscribed  # Must be subscribed to events
+            and node_health_ratio >= 0.5  # At least 50% nodes healthy
+            and constrained_ratio < 0.8  # Less than 80% constrained
+        )
+
+        return {
+            "healthy": healthy_status,
+            "total_nodes": total,
+            "healthy_nodes": healthy,
+            "constrained_nodes": stats.constrained_nodes,
+            "node_health_ratio": round(node_health_ratio, 3),
+            "constrained_ratio": round(constrained_ratio, 3),
+            "backpressure_active": self.is_backpressure_active(),
+            "backpressure_level": self._cluster_backpressure.value,
+            "subscribed": self._subscribed,
+            "avg_gpu_utilization": round(stats.avg_gpu_utilization, 1),
+        }
+
 
 # =============================================================================
 # Singleton and convenience functions

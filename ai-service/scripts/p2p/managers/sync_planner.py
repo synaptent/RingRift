@@ -31,24 +31,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Event emission helper - imported lazily to avoid circular imports
+# Dec 2025: Added thread-safe initialization to prevent race conditions
 _publish_sync: Callable[[str, dict], None] | None = None
 _DataEventType: type | None = None  # Lazy-loaded DataEventType enum
+_event_emitter_lock = threading.Lock()
 
 
 def _get_event_emitter() -> Callable[[str, dict], None] | None:
-    """Get the event emitter function, initializing if needed.
+    """Get the event emitter function, initializing if needed (thread-safe).
 
     Uses publish_sync from event_router for synchronous event publication.
     This enables pipeline coordination to react to sync events.
     """
     global _publish_sync
-    if _publish_sync is None:
-        try:
-            from app.coordination.event_router import publish_sync
-            _publish_sync = publish_sync
-        except ImportError:
-            # Event system not available - running without coordination
-            logger.debug("Event router not available, sync events will not be emitted")
+    # Fast path
+    if _publish_sync is not None:
+        return _publish_sync
+
+    # Slow path with lock
+    with _event_emitter_lock:
+        if _publish_sync is None:
+            try:
+                from app.coordination.event_router import publish_sync
+                _publish_sync = publish_sync
+            except ImportError:
+                # Event system not available - running without coordination
+                logger.debug("Event router not available, sync events will not be emitted")
     return _publish_sync
 
 

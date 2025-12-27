@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -265,10 +266,12 @@ class TrainingActivityDaemon(BaseDaemon[TrainingActivityConfig]):
         """Get set of currently detected training nodes."""
         return self._training_nodes.copy()
 
-    def health_check(self) -> dict[str, Any]:
-        """Return health check result for daemon protocol."""
-        return {
-            "status": "healthy" if self._running else "stopped",
+    def health_check(self) -> HealthCheckResult:
+        """Return health check result for daemon protocol.
+
+        Override of BaseDaemon.health_check() with training-specific details.
+        """
+        details = {
             "running": self._running,
             "training_nodes": list(self._training_nodes),
             "syncs_triggered": self._syncs_triggered,
@@ -278,9 +281,36 @@ class TrainingActivityDaemon(BaseDaemon[TrainingActivityConfig]):
             "errors_count": self._errors_count,
         }
 
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message=f"{self._get_daemon_name()} is not running",
+                details=details,
+            )
+
+        # Check for high error rate
+        if self._cycles_completed > 10:
+            error_rate = self._errors_count / self._cycles_completed
+            if error_rate > 0.5:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message=f"High error rate: {error_rate:.1%}",
+                    details=details,
+                )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"{self._get_daemon_name()} healthy, tracking {len(self._training_nodes)} training nodes",
+            details=details,
+        )
+
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for monitoring."""
-        base_status = {
+        health = self.health_check()
+        return {
             "name": self._get_daemon_name(),
             "running": self._running,
             "uptime_seconds": self.uptime_seconds,
@@ -288,9 +318,13 @@ class TrainingActivityDaemon(BaseDaemon[TrainingActivityConfig]):
                 "check_interval": self.config.check_interval_seconds,
                 "trigger_priority_sync": self.config.trigger_priority_sync,
             },
+            "health": {
+                "healthy": health.healthy,
+                "status": health.status.value if hasattr(health.status, "value") else str(health.status),
+                "message": health.message,
+            },
+            **health.details,
         }
-        base_status.update(self.health_check())
-        return base_status
 
 
 # =============================================================================

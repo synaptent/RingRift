@@ -66,6 +66,9 @@ class ImprovementSignal(str, Enum):
     DATA_QUALITY_HIGH = "data_quality_high"      # Parity validation passing
     LOW_QUEUE_DEPTH = "low_queue_depth"          # Not backlogged
 
+    # Warning signals (slow down pipeline)
+    REGRESSION_DETECTED = "regression_detected"  # Model performance regressing
+
 
 @dataclass
 class ImprovementState:
@@ -317,6 +320,90 @@ class ImprovementOptimizer:
             )
 
         self._save_state()
+
+    def record_regression(
+        self,
+        config_key: str,
+        regression_type: str = "unknown",
+        severity: str = "moderate",
+        elo_drop: float = 0.0,
+        win_rate: float = 0.0,
+    ) -> OptimizationRecommendation:
+        """Record a detected model regression.
+
+        December 2025: Added for REGRESSION_DETECTED event handling.
+        Regression is a strong negative signal that slows down the pipeline
+        to allow for investigation and recovery.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            regression_type: Type of regression (e.g., "elo_drop", "win_rate_decline")
+            severity: Regression severity ("mild", "moderate", "severe")
+            elo_drop: Amount of Elo lost (positive value)
+            win_rate: Current win rate
+
+        Returns:
+            OptimizationRecommendation with adjusted thresholds
+        """
+        # Reset promotion streak on regression
+        self._state.consecutive_promotions = 0
+
+        # Calculate slowdown based on severity
+        severity_multipliers = {
+            "mild": 1.10,      # 10% slower
+            "moderate": 1.25,  # 25% slower
+            "severe": 1.50,    # 50% slower
+        }
+        slowdown = severity_multipliers.get(severity, 1.25)
+
+        # Apply slowdown to threshold multiplier
+        self._state.threshold_multiplier = min(
+            self.MAX_THRESHOLD_MULTIPLIER,
+            self._state.threshold_multiplier * slowdown
+        )
+
+        # Heavily reduce config-specific boost (regression is a strong signal)
+        self._state.config_boosts[config_key] = min(
+            1.0, self._state.config_boosts.get(config_key, 1.0) * slowdown
+        )
+
+        # Reduce evaluation frequency multiplier (evaluate more often to catch issues)
+        self._state.evaluation_frequency_multiplier = max(
+            0.5, self._state.evaluation_frequency_multiplier * 0.8
+        )
+
+        self._save_state()
+
+        reason_parts = [
+            f"Regression detected: {regression_type} ({severity})",
+        ]
+        if elo_drop > 0:
+            reason_parts.append(f"Elo drop: {elo_drop:.1f}")
+        if win_rate > 0:
+            reason_parts.append(f"Win rate: {win_rate:.1%}")
+
+        rec = OptimizationRecommendation(
+            signal=ImprovementSignal.REGRESSION_DETECTED,
+            config_key=config_key,
+            threshold_adjustment=self._state.threshold_multiplier,
+            evaluation_adjustment=self._state.evaluation_frequency_multiplier,
+            reason=". ".join(reason_parts),
+            confidence=0.9,  # High confidence in regression detection
+            metadata={
+                "regression_type": regression_type,
+                "severity": severity,
+                "elo_drop": elo_drop,
+                "win_rate": win_rate,
+                "slowdown_applied": slowdown,
+            },
+        )
+
+        self._emit_recommendation(rec)
+        logger.warning(
+            f"[ImprovementOptimizer] Regression recorded for {config_key}: "
+            f"{regression_type} ({severity}), slowdown={slowdown}x"
+        )
+        return rec
 
     def record_training_complete(
         self,

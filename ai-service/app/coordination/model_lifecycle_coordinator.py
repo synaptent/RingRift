@@ -12,6 +12,7 @@ Event Integration:
 - Subscribes to TRAINING_COMPLETED: Track training completions
 - Subscribes to ELO_UPDATED: Track Elo changes
 - Subscribes to MODEL_CORRUPTED: Handle corrupted model recovery (December 2025)
+- Subscribes to REGRESSION_DETECTED: Handle model performance regression (December 2025)
 
 Key Responsibilities:
 1. Track model state transitions (training -> eval -> staging -> production)
@@ -203,6 +204,7 @@ class ModelLifecycleCoordinator:
             router.subscribe(DataEventType.TRAINING_COMPLETED.value, self._on_training_completed)
             router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
             router.subscribe(DataEventType.MODEL_CORRUPTED.value, self._on_model_corrupted)
+            router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
 
             self._subscribed = True
             logger.info("[ModelLifecycleCoordinator] Subscribed to model events")
@@ -624,6 +626,117 @@ class ModelLifecycleCoordinator:
             except Exception as e:
                 logger.error(f"[ModelLifecycleCoordinator] Rollback failed: {e}")
 
+    async def _on_regression_detected(self, event) -> None:
+        """Handle REGRESSION_DETECTED event - track and respond to model regression.
+
+        December 2025: Wired handler for REGRESSION_DETECTED events.
+        When a model shows performance regression (e.g., declining win rate,
+        Elo drop), this handler:
+        1. Records the regression in model history
+        2. Notifies ImprovementOptimizer for negative feedback
+        3. Triggers rollback if regression is severe and model is in production
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+        model_id = payload.get("model_id", "")
+        config_key = payload.get("config_key", "")
+        regression_type = payload.get("regression_type", "unknown")
+        severity = payload.get("severity", "moderate")  # mild, moderate, severe
+        current_elo = payload.get("current_elo", 0.0)
+        baseline_elo = payload.get("baseline_elo", 0.0)
+        elo_drop = payload.get("elo_drop", baseline_elo - current_elo if baseline_elo else 0.0)
+        win_rate = payload.get("win_rate", 0.0)
+        games_analyzed = payload.get("games_analyzed", 0)
+        source = payload.get("source", "unknown")
+
+        logger.warning(
+            f"[ModelLifecycleCoordinator] REGRESSION_DETECTED: {model_id or config_key} "
+            f"(type={regression_type}, severity={severity}, elo_drop={elo_drop:.1f}, "
+            f"win_rate={win_rate:.1%}, games={games_analyzed}, source={source})"
+        )
+
+        # Update model state if we have a record
+        if model_id and model_id in self._models:
+            model = self._models[model_id]
+            self._record_state_transition(
+                model,
+                ModelState.EVALUATING,
+                f"regression_detected: {regression_type} ({severity})",
+            )
+
+        # Notify ImprovementOptimizer of regression for negative feedback
+        try:
+            from app.training.improvement_optimizer import record_regression
+
+            if config_key or model_id:
+                record_regression(
+                    config_key=config_key or model_id,
+                    regression_type=regression_type,
+                    severity=severity,
+                    elo_drop=elo_drop,
+                    win_rate=win_rate,
+                )
+                logger.debug(
+                    f"[ModelLifecycleCoordinator] Recorded regression for "
+                    f"{config_key or model_id} in ImprovementOptimizer"
+                )
+        except ImportError:
+            pass  # ImprovementOptimizer not available
+        except Exception as e:
+            logger.debug(f"[ModelLifecycleCoordinator] Could not update ImprovementOptimizer: {e}")
+
+        # Trigger rollback for severe regression on production model
+        if severity == "severe" and model_id and self._production_model_id == model_id:
+            logger.warning(
+                f"[ModelLifecycleCoordinator] Severe regression on production model! "
+                f"Triggering automatic rollback..."
+            )
+            try:
+                from app.training.rollback_manager import RollbackManager
+                from app.training.model_registry import get_model_registry
+
+                registry = get_model_registry()
+                rollback_mgr = RollbackManager(registry)
+
+                result = rollback_mgr.rollback_model(
+                    model_id=config_key or model_id,
+                    reason=f"Severe regression detected: {regression_type}, "
+                    f"Elo drop={elo_drop:.1f}, win_rate={win_rate:.1%}",
+                    triggered_by="regression_detected_handler",
+                )
+
+                if result.get("success"):
+                    logger.info(
+                        f"[ModelLifecycleCoordinator] Auto-rollback successful: "
+                        f"v{result.get('from_version')} -> v{result.get('to_version')}"
+                    )
+                    # Emit rollback event
+                    try:
+                        from app.coordination.event_router import get_router, DataEventType
+
+                        router = get_router()
+                        await router.publish(
+                            DataEventType.PROMOTION_ROLLED_BACK.value,
+                            {
+                                "from_model_id": model_id,
+                                "to_model_id": result.get("to_model_id", ""),
+                                "reason": f"auto_rollback:regression:{regression_type}",
+                                "triggered_by": "ModelLifecycleCoordinator",
+                            },
+                        )
+                    except Exception:
+                        pass
+                else:
+                    logger.error(
+                        f"[ModelLifecycleCoordinator] Auto-rollback failed: {result.get('error')}"
+                    )
+
+            except ImportError:
+                logger.warning(
+                    "[ModelLifecycleCoordinator] RollbackManager not available for auto-rollback"
+                )
+            except Exception as e:
+                logger.error(f"[ModelLifecycleCoordinator] Auto-rollback failed: {e}")
+
     def register_model(
         self,
         model_id: str,
@@ -802,6 +915,40 @@ class ModelLifecycleCoordinator:
             "production_elo": round(stats.current_production_elo, 0),
             "avg_promotion_time": round(stats.avg_promotion_time, 0),
             "cache_entries": stats.cache_entries,
+            "subscribed": self._subscribed,
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Perform health check on model lifecycle coordinator (December 2025).
+
+        Returns:
+            Dict with health status including:
+            - healthy: Overall health status
+            - has_production_model: Whether a production model exists
+            - rollback_rate: Ratio of rollbacks to promotions
+            - subscription_status: Event subscription health
+        """
+        stats = self.get_stats()
+
+        # Calculate rollback rate
+        promotions = stats.total_promotions
+        rollbacks = stats.total_rollbacks
+        rollback_rate = rollbacks / max(promotions, 1)
+
+        # Overall health criteria
+        healthy = (
+            self._subscribed  # Must be subscribed to events
+            and rollback_rate < 0.5  # Less than 50% rollback rate
+        )
+
+        return {
+            "healthy": healthy,
+            "total_models": stats.total_models,
+            "has_production_model": stats.current_production_model is not None,
+            "production_model": stats.current_production_model,
+            "total_promotions": promotions,
+            "total_rollbacks": rollbacks,
+            "rollback_rate": round(rollback_rate, 3),
             "subscribed": self._subscribed,
         }
 
