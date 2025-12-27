@@ -6,14 +6,20 @@ Provides a single interface to all training enhancement modules:
 - Hard example mining (curriculum learning)
 - Curriculum LR scaling
 - Quality + freshness weighting
+- Hot buffer for real-time updates
+- Quality bridge for data quality integration
 
 This facade consolidates 3,193 lines of orphaned enhancement code into
 an easily-integrated interface for train.py.
+
+December 2025: Extended with EnhancementComponents and initialize_all_enhancements().
 
 Usage:
     from app.training.enhancements.training_facade import (
         TrainingEnhancementsFacade,
         FacadeConfig,
+        EnhancementComponents,
+        initialize_all_enhancements,
     )
 
     # Initialize with training
@@ -42,6 +48,12 @@ Usage:
     # End of epoch
     stats = facade.get_epoch_statistics()
     facade.on_epoch_end()
+
+    # Or use the unified initializer (Wave 5):
+    components = initialize_all_enhancements(config, model)
+    if components.facade:
+        # Use facade in training loop
+        pass
 """
 
 from __future__ import annotations

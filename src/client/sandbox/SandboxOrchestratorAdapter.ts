@@ -947,17 +947,50 @@ export class SandboxOrchestratorAdapter {
       return decision.options[0];
     }
 
-    // Fallback: create a minimal skip move
+    // RR-FIX-2025-12-27: Create phase-appropriate fallback move based on decision type.
+    // Using the wrong move type (e.g., skip_placement in territory_processing) causes
+    // phase/move invariant violations that crash or hang the game.
     const state = this.stateAccessor.getGameState();
-    return {
+    const moveNumber = state.moveHistory.length + 1;
+    const baseMoveProps = {
       id: `auto-decision-${Date.now()}`,
-      type: 'skip_placement',
       player: decision.player,
-      to: { x: 0, y: 0 },
+      to: { x: 0, y: 0 } as Position,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: state.moveHistory.length + 1,
+      moveNumber,
     };
+
+    // Select fallback move type based on decision type and current phase
+    switch (decision.type) {
+      case 'region_order':
+      case 'no_territory_action_required':
+        return { ...baseMoveProps, type: 'no_territory_action' };
+      case 'line_order':
+      case 'no_line_action_required':
+        return { ...baseMoveProps, type: 'no_line_action' };
+      case 'ring_elimination':
+        // For ring elimination with no options, we can't eliminate - use no_territory_action
+        return { ...baseMoveProps, type: 'no_territory_action' };
+      case 'chain_capture':
+        // Chain capture with no options means skip capture continuation
+        return { ...baseMoveProps, type: 'skip_capture' };
+      case 'no_movement_action_required':
+        return { ...baseMoveProps, type: 'no_movement_action' };
+      case 'no_placement_action_required':
+        return { ...baseMoveProps, type: 'no_placement_action' };
+      default:
+        // Check current phase for context
+        if (state.currentPhase === 'territory_processing') {
+          return { ...baseMoveProps, type: 'no_territory_action' };
+        } else if (state.currentPhase === 'line_processing') {
+          return { ...baseMoveProps, type: 'no_line_action' };
+        } else if (state.currentPhase === 'movement') {
+          return { ...baseMoveProps, type: 'no_movement_action' };
+        }
+        // Last resort fallback
+        return { ...baseMoveProps, type: 'skip_placement' };
+    }
   }
 
   private moveMatchKey(move: Move): string {

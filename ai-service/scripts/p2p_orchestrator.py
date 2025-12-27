@@ -2743,6 +2743,49 @@ class P2POrchestrator(
             )
             manager.register(validation)
 
+            # TailscalePeerDiscoveryLoop - December 27, 2025
+            # Proactively discovers and connects to Tailscale nodes not in P2P network
+            # Extracted from _tailscale_peer_recovery_loop (note: different from TailscaleRecoveryLoop
+            # which handles service recovery; this handles peer discovery)
+            def _get_current_peer_ids() -> set[str]:
+                """Get node IDs of current P2P peers."""
+                with self.peers_lock:
+                    return {p.node_id for p in self.peers.values()}
+
+            def _get_alive_peer_count() -> int:
+                """Count peers that are currently alive."""
+                with self.peers_lock:
+                    return sum(1 for p in self.peers.values() if p.is_alive())
+
+            async def _probe_and_connect_peer(ip: str, hostname: str) -> bool:
+                """Probe peer health endpoint and send heartbeat to connect."""
+                try:
+                    url = f"http://{ip}:{DEFAULT_PORT}/health"
+                    timeout = ClientTimeout(total=10)
+                    async with get_client_session(timeout) as session:
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                node_id = data.get("node_id", hostname)
+                                logger.debug(f"TailscalePeerDiscovery: connected to {node_id}, sending heartbeat")
+                                await self._send_heartbeat_to_peer(ip, DEFAULT_PORT)
+                                return True
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"TailscalePeerDiscovery: failed to connect to {hostname}: {e}")
+                return False
+
+            try:
+                from scripts.p2p.loops import TailscalePeerDiscoveryLoop
+                ts_peer_discovery = TailscalePeerDiscoveryLoop(
+                    is_leader=lambda: self.role == NodeRole.LEADER,
+                    get_current_peers=_get_current_peer_ids,
+                    get_alive_peer_count=_get_alive_peer_count,
+                    probe_and_connect=_probe_and_connect_peer,
+                )
+                manager.register(ts_peer_discovery)
+            except (ImportError, TypeError) as e:
+                logger.debug(f"TailscalePeerDiscoveryLoop: not available: {e}")
+
             self._loops_registered = True
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
             return True
@@ -6442,6 +6485,12 @@ class P2POrchestrator(
 
     async def _tailscale_peer_recovery_loop(self):
         """Proactively discover and connect to all Tailscale nodes.
+
+        .. deprecated::
+            December 2025 - This method is deprecated and now runs via LoopManager
+            as TailscalePeerDiscoveryLoop. See scripts/p2p/loops/network_loops.py.
+            This inline version is kept for fallback compatibility but is no longer
+            invoked by default. Will be removed Q2 2026.
 
         LEARNED LESSONS: Cross-cloud nodes (Lambda, Vast, Hetzner) can lose
         connectivity intermittently. This loop ensures all nodes stay in the
@@ -27453,8 +27502,8 @@ print(json.dumps({{
             tasks.append(self._create_safe_task(self._aws_ip_update_loop(), "aws_ip_update"))
             tasks.append(self._create_safe_task(self._tailscale_ip_update_loop(), "tailscale_ip_update"))
 
-        # Peer recovery loop - ensures all Tailscale nodes stay in P2P network
-        tasks.append(self._create_safe_task(self._tailscale_peer_recovery_loop(), "tailscale_peer_recovery"))
+        # NOTE: _tailscale_peer_recovery_loop removed Dec 2025 - now runs via LoopManager (TailscalePeerDiscoveryLoop)
+        # See scripts/p2p/loops/network_loops.py for implementation
 
         # Phase 26: Continuous bootstrap loop - ensures isolated nodes can rejoin
         tasks.append(self._create_safe_task(self._continuous_bootstrap_loop(), "continuous_bootstrap"))

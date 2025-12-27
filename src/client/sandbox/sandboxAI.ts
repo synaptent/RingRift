@@ -1424,6 +1424,174 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       }
 
       if (decisionCandidates.length === 0) {
+        // RR-FIX-2025-12-27: Handle cases where getValidMoves returns empty but
+        // decision phases need to advance. This prevents AI hangs during ring_elimination
+        // and region_order decision phases.
+        if (gameState.currentPhase === 'territory_processing') {
+          // Check if there's a pending territory self-elimination decision
+          if (hooks.hasPendingTerritorySelfElimination()) {
+            // Manually find a stack to eliminate
+            const currentPlayer = gameState.currentPlayer;
+            const playerStacks = hooks.getPlayerStacks(currentPlayer, gameState.board);
+            const eligibleStack = playerStacks.find((s) => s.stackHeight > 0);
+
+            if (eligibleStack) {
+              const capHeight = eligibleStack.capHeight || 0;
+              const count = Math.max(1, capHeight);
+              const fallbackMove: Move = {
+                id: `territory-elim-fallback-${Date.now()}`,
+                type: 'eliminate_rings_from_stack',
+                player: currentPlayer,
+                to: eligibleStack.position,
+                eliminatedRings: [{ player: currentPlayer, count }],
+                eliminationFromStack: {
+                  position: eligibleStack.position,
+                  capHeight,
+                  totalHeight: eligibleStack.stackHeight,
+                },
+                timestamp: new Date(),
+                thinkTime: 0,
+                moveNumber: gameState.history.length + 1,
+              } as Move;
+
+              if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+                console.log(
+                  '[Sandbox AI Debug] territory_processing fallback: applying eliminate_rings_from_stack',
+                  {
+                    position: eligibleStack.position,
+                    capHeight,
+                    stackHeight: eligibleStack.stackHeight,
+                  }
+                );
+              }
+
+              try {
+                await hooks.applyCanonicalMove(fallbackMove);
+                lastAIMove = fallbackMove;
+                hooks.setLastAIMove(lastAIMove);
+                return;
+              } catch (e) {
+                if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+                  console.error(
+                    '[Sandbox AI Debug] territory_processing elimination fallback failed',
+                    e
+                  );
+                }
+              }
+            }
+          }
+
+          // No pending elimination or fallback failed - synthesize no_territory_action
+          const moveNumber = gameState.history.length + 1;
+          const noTerritoryMove: Move = {
+            id: `no-territory-action-ai-${moveNumber}`,
+            type: 'no_territory_action',
+            player: gameState.currentPlayer,
+            to: { x: 0, y: 0 },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move;
+
+          if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+            console.log(
+              '[Sandbox AI Debug] territory_processing fallback: applying no_territory_action'
+            );
+          }
+
+          try {
+            await hooks.applyCanonicalMove(noTerritoryMove);
+            lastAIMove = noTerritoryMove;
+            hooks.setLastAIMove(lastAIMove);
+            return;
+          } catch (e) {
+            if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+              console.error('[Sandbox AI Debug] no_territory_action fallback failed', e);
+            }
+          }
+        } else if (gameState.currentPhase === 'line_processing') {
+          // Check if there's a pending line reward elimination
+          if (hooks.hasPendingLineRewardElimination()) {
+            // Manually find a stack to eliminate
+            const currentPlayer = gameState.currentPlayer;
+            const playerStacks = hooks.getPlayerStacks(currentPlayer, gameState.board);
+            const eligibleStack = playerStacks.find((s) => s.stackHeight > 0);
+
+            if (eligibleStack) {
+              const capHeight = eligibleStack.capHeight || 0;
+              const count = Math.max(1, capHeight);
+              const fallbackMove: Move = {
+                id: `line-elim-fallback-${Date.now()}`,
+                type: 'eliminate_rings_from_stack',
+                player: currentPlayer,
+                to: eligibleStack.position,
+                eliminatedRings: [{ player: currentPlayer, count }],
+                eliminationFromStack: {
+                  position: eligibleStack.position,
+                  capHeight,
+                  totalHeight: eligibleStack.stackHeight,
+                },
+                timestamp: new Date(),
+                thinkTime: 0,
+                moveNumber: gameState.history.length + 1,
+              } as Move;
+
+              if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+                console.log(
+                  '[Sandbox AI Debug] line_processing fallback: applying eliminate_rings_from_stack',
+                  {
+                    position: eligibleStack.position,
+                    capHeight,
+                    stackHeight: eligibleStack.stackHeight,
+                  }
+                );
+              }
+
+              try {
+                await hooks.applyCanonicalMove(fallbackMove);
+                lastAIMove = fallbackMove;
+                hooks.setLastAIMove(lastAIMove);
+                return;
+              } catch (e) {
+                if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+                  console.error(
+                    '[Sandbox AI Debug] line_processing elimination fallback failed',
+                    e
+                  );
+                }
+              }
+            }
+          }
+
+          // No pending elimination or fallback failed - synthesize no_line_action
+          const moveNumber = gameState.history.length + 1;
+          const noLineMove: Move = {
+            id: `no-line-action-ai-${moveNumber}`,
+            type: 'no_line_action',
+            player: gameState.currentPlayer,
+            to: { x: 0, y: 0 },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move;
+
+          if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+            console.log('[Sandbox AI Debug] line_processing fallback: applying no_line_action');
+          }
+
+          try {
+            await hooks.applyCanonicalMove(noLineMove);
+            lastAIMove = noLineMove;
+            hooks.setLastAIMove(lastAIMove);
+            return;
+          } catch (e) {
+            if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+              console.error('[Sandbox AI Debug] no_line_action fallback failed', e);
+            }
+          }
+        }
+
+        // If all fallbacks failed, return without progress
         return;
       }
 
