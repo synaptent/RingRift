@@ -1831,6 +1831,8 @@ class P2POrchestrator(
             is_emergency_active_fn=_safeguards.is_emergency_active if HAS_SAFEGUARDS and _safeguards else None,
             verbose=self.verbose,
         )
+        # Subscribe to feedback loop events (December 2025)
+        self.selfplay_scheduler.subscribe_to_events()
 
         # Phase 2B Refactoring: JobManager for job spawning and lifecycle
         self.job_manager = JobManager(

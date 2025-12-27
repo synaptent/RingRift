@@ -253,7 +253,7 @@ async def lifespan(app: FastAPI):
             # Legacy: Start core daemons if RINGRIFT_START_DAEMONS=1
             if os.environ.get("RINGRIFT_START_DAEMONS", "0") == "1":
                 core_daemons = [
-                    DaemonType.HEALTH_CHECK,
+                    DaemonType.NODE_HEALTH_MONITOR,  # Dec 2025: Unified health monitoring
                     DaemonType.QUEUE_MONITOR,
                 ]
                 for daemon_type in core_daemons:

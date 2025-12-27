@@ -27,7 +27,7 @@ Usage:
     await manager.start_all()
 
     # Start specific daemon
-    await manager.start(DaemonType.SYNC_COORDINATOR)
+    await manager.start(DaemonType.AUTO_SYNC)  # Primary data sync
 
     # Get status
     status = manager.get_status()

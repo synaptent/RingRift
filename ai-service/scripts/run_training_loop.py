@@ -400,7 +400,7 @@ def main() -> int:
                 asyncio.run(manager.start(DaemonType.EVENT_ROUTER))
                 asyncio.run(manager.start(DaemonType.DATA_PIPELINE))
                 if args.sync_from_cluster:
-                    asyncio.run(manager.start(DaemonType.SYNC_COORDINATOR))
+                    asyncio.run(manager.start(DaemonType.AUTO_SYNC))  # Dec 2025: Using unified sync
                 logger.info("Essential daemons started")
             except Exception as e:
                 logger.warning(f"Could not start daemons: {e}")

@@ -61,12 +61,11 @@ logger = logging.getLogger(__name__)
 # Daemon categories for grouped launching
 DAEMON_CATEGORIES = {
     "sync": [
-        DaemonType.SYNC_COORDINATOR,
+        DaemonType.AUTO_SYNC,  # Primary P2P data sync with gossip replication
         DaemonType.HIGH_QUALITY_SYNC,
         DaemonType.ELO_SYNC,
         DaemonType.MODEL_SYNC,
         DaemonType.CLUSTER_DATA_SYNC,
-        DaemonType.AUTO_SYNC,  # P2P data sync with gossip replication
     ],
     "training": [
         DaemonType.DATA_PIPELINE,

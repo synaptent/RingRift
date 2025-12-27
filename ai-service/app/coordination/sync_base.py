@@ -30,6 +30,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.coordination.sync_constants import (
+    SyncDirection,
+    SyncPriority,
+    SyncResult,
+    SyncState,
+    SyncTarget,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -273,10 +281,7 @@ class SyncManagerBase(ABC):
         return {
             "running": self._running,
             "state": self._state.to_dict(),
-            "circuit_breakers": {
-                node: breaker.get_status()
-                for node, breaker in self._circuit_breakers.items()
-            },
+            "circuit_breaker": self._circuit_breaker.get_status(),
         }
 
 
@@ -319,11 +324,17 @@ async def try_transports(
 # =============================================================================
 
 __all__ = [
+    # Base class and config
     "CircuitBreakerConfig",
-    # Classes
     "SyncManagerBase",
-    # Data classes
+    # Progress tracking
+    "BaseSyncProgress",
+    # Re-exports from sync_constants (for convenience imports)
+    "SyncDirection",
+    "SyncPriority",
+    "SyncResult",
     "SyncState",
-    # Functions
+    "SyncTarget",
+    # Utility functions
     "try_transports",
 ]

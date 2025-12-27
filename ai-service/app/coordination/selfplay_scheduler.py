@@ -64,12 +64,13 @@ __all__ = [
     "reset_selfplay_scheduler",
 ]
 
+import contextlib
 import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -126,6 +127,11 @@ MAX_STALENESS_HOURS = 24.0  # Cap staleness factor
 # Default allocation
 DEFAULT_GAMES_PER_CONFIG = 500
 MIN_GAMES_PER_ALLOCATION = 100
+
+# Resource management thresholds (for get_target_jobs_for_node)
+MIN_MEMORY_GB_FOR_TASKS = 8  # Skip nodes with < 8GB RAM
+DISK_WARNING_THRESHOLD = 90  # Reduce jobs when disk > 90%
+MEMORY_WARNING_THRESHOLD = 95  # Reduce jobs when memory > 95%
 
 
 @dataclass
@@ -224,9 +230,51 @@ class SelfplayScheduler:
     - Calculate priority scores for each config
     - Allocate selfplay games based on node capabilities
     - Integrate with feedback loop signals
+    - Calculate target selfplay jobs per node (Dec 2025)
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        # Optional callbacks for external integrations (Dec 2025)
+        # These enable full delegation from P2P orchestrator
+        get_cluster_elo_fn: Callable[[], dict[str, Any]] | None = None,
+        load_curriculum_weights_fn: Callable[[], dict[str, float]] | None = None,
+        get_board_priority_overrides_fn: Callable[[], dict[str, int]] | None = None,
+        # Backpressure callbacks
+        should_stop_production_fn: Callable[..., bool] | None = None,
+        should_throttle_production_fn: Callable[..., bool] | None = None,
+        get_throttle_factor_fn: Callable[..., float] | None = None,
+        # Resource targeting callbacks
+        record_utilization_fn: Callable[..., None] | None = None,
+        get_host_targets_fn: Callable[[str], Any] | None = None,
+        get_target_job_count_fn: Callable[..., int] | None = None,
+        should_scale_up_fn: Callable[..., tuple[bool, str]] | None = None,
+        should_scale_down_fn: Callable[..., tuple[bool, int, str]] | None = None,
+        # Hardware-aware limits
+        get_max_selfplay_for_node_fn: Callable[..., int] | None = None,
+        get_hybrid_selfplay_limits_fn: Callable[..., dict[str, int]] | None = None,
+        # Safeguard callback
+        is_emergency_active_fn: Callable[[], bool] | None = None,
+        # Verbosity
+        verbose: bool = False,
+    ):
+        # Store callbacks (Dec 2025)
+        self._get_cluster_elo_fn = get_cluster_elo_fn
+        self._load_curriculum_weights_fn = load_curriculum_weights_fn
+        self._get_board_priority_overrides_fn = get_board_priority_overrides_fn
+        self._should_stop_production_fn = should_stop_production_fn
+        self._should_throttle_production_fn = should_throttle_production_fn
+        self._get_throttle_factor_fn = get_throttle_factor_fn
+        self._record_utilization_fn = record_utilization_fn
+        self._get_host_targets_fn = get_host_targets_fn
+        self._get_target_job_count_fn = get_target_job_count_fn
+        self._should_scale_up_fn = should_scale_up_fn
+        self._should_scale_down_fn = should_scale_down_fn
+        self._get_max_selfplay_for_node_fn = get_max_selfplay_for_node_fn
+        self._get_hybrid_selfplay_limits_fn = get_hybrid_selfplay_limits_fn
+        self._is_emergency_active_fn = is_emergency_active_fn
+        self._verbose = verbose
+
         # Priority tracking
         self._config_priorities: dict[str, ConfigPriority] = {
             cfg: ConfigPriority(config_key=cfg) for cfg in ALL_CONFIGS
@@ -1849,6 +1897,214 @@ class SelfplayScheduler:
         cutoff = now - self._allocation_window_seconds
         while self._allocation_history and self._allocation_history[0][0] < cutoff:
             self._allocation_history.popleft()
+
+    # =========================================================================
+    # Per-Node Job Targeting (Dec 2025)
+    # =========================================================================
+
+    def get_target_jobs_for_node(self, node: Any) -> int:
+        """Return the desired selfplay concurrency for a node.
+
+        Uses unified resource targets for consistent 60-80% utilization:
+        - Backpressure-aware: Reduces jobs when training queue is full
+        - Adaptive scaling: Increases jobs when underutilized, decreases when overloaded
+        - Host-tier aware: Adjusts targets based on hardware capability
+
+        Args:
+            node: NodeInfo-like object with attributes:
+                - node_id: str
+                - memory_gb: int
+                - has_gpu: bool
+                - cpu_count: int
+                - cpu_percent: float
+                - memory_percent: float
+                - disk_percent: float
+                - gpu_percent: float
+                - gpu_memory_percent: float
+                - selfplay_jobs: int
+                - gpu_name: str (optional)
+                - gpu_count: int (optional)
+
+        Returns:
+            Target number of selfplay jobs for this node (always >= 1 unless blocked)
+        """
+        # Check safeguards first
+        if self._is_emergency_active_fn:
+            try:
+                if self._is_emergency_active_fn():
+                    return 0
+            except (TypeError, AttributeError, RuntimeError) as e:
+                # Dec 2025: Narrow exception - callback may be misconfigured
+                logger.debug(f"[SelfplayScheduler] Emergency check callback error: {e}")
+
+        # Check backpressure - reduce production when training queue is full
+        backpressure_factor = 1.0
+        if self._should_stop_production_fn:
+            try:
+                # Import QueueType lazily to avoid circular imports
+                from app.coordination.backpressure import QueueType
+                if self._should_stop_production_fn(QueueType.TRAINING_DATA):
+                    if self._verbose:
+                        logger.info(f"Backpressure STOP: training queue full, halting selfplay on {getattr(node, 'node_id', 'unknown')}")
+                    return 0
+            except Exception as e:
+                if self._verbose:
+                    logger.debug(f"Backpressure stop check error: {e}")
+
+        if self._should_throttle_production_fn and self._get_throttle_factor_fn:
+            try:
+                from app.coordination.backpressure import QueueType
+                if self._should_throttle_production_fn(QueueType.TRAINING_DATA):
+                    backpressure_factor = self._get_throttle_factor_fn(QueueType.TRAINING_DATA)
+                    if self._verbose:
+                        logger.info(f"Backpressure throttle: factor={backpressure_factor:.2f}")
+            except Exception as e:
+                if self._verbose:
+                    logger.debug(f"Backpressure throttle check error: {e}")
+
+        # Extract node metrics
+        node_id = getattr(node, "node_id", "unknown")
+        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
+        has_gpu = bool(getattr(node, "has_gpu", False))
+        cpu_count = int(getattr(node, "cpu_count", 0) or 0)
+        cpu_percent = float(getattr(node, "cpu_percent", 0.0) or 0.0)
+        mem_percent = float(getattr(node, "memory_percent", 0.0) or 0.0)
+        disk_percent = float(getattr(node, "disk_percent", 0.0) or 0.0)
+        gpu_percent = float(getattr(node, "gpu_percent", 0.0) or 0.0)
+        gpu_mem_percent = float(getattr(node, "gpu_memory_percent", 0.0) or 0.0)
+        current_jobs = int(getattr(node, "selfplay_jobs", 0) or 0)
+        gpu_name = getattr(node, "gpu_name", "") or ""
+        gpu_count = int(getattr(node, "gpu_count", 1) or 1) if has_gpu else 0
+
+        # Minimum memory requirement
+        if memory_gb > 0 and memory_gb < MIN_MEMORY_GB_FOR_TASKS:
+            return 0
+
+        # Record utilization for adaptive feedback
+        if self._record_utilization_fn:
+            with contextlib.suppress(Exception):
+                self._record_utilization_fn(node_id, cpu_percent, gpu_percent, mem_percent, current_jobs)
+
+        # Try unified resource targets if available
+        if self._get_host_targets_fn and self._get_target_job_count_fn:
+            try:
+                host_targets = self._get_host_targets_fn(node_id)
+                target_selfplay = self._get_target_job_count_fn(
+                    node_id,
+                    cpu_count if cpu_count > 0 else 8,
+                    cpu_percent,
+                    gpu_percent if has_gpu else 0.0,
+                )
+
+                # Scale up if underutilized
+                if self._should_scale_up_fn:
+                    scale_up, reason = self._should_scale_up_fn(
+                        node_id, cpu_percent, gpu_percent, current_jobs
+                    )
+                    if scale_up and current_jobs < target_selfplay:
+                        scale_up_increment = min(4, target_selfplay - current_jobs)
+                        target_selfplay = current_jobs + scale_up_increment
+                        if self._verbose:
+                            logger.info(f"Scale-up on {node_id}: {reason}, target={target_selfplay}")
+
+                # Scale down if overloaded
+                if self._should_scale_down_fn:
+                    scale_down, reduction, reason = self._should_scale_down_fn(
+                        node_id, cpu_percent, gpu_percent, mem_percent
+                    )
+                    if scale_down:
+                        target_selfplay = max(1, current_jobs - reduction)
+                        logger.info(f"Scale-down on {node_id}: {reason}, target={target_selfplay}")
+
+                # Apply backpressure factor
+                target_selfplay = int(target_selfplay * backpressure_factor)
+
+                # Apply host-specific max
+                max_selfplay = getattr(host_targets, "max_selfplay", target_selfplay)
+                target_selfplay = min(target_selfplay, max_selfplay)
+
+                return int(max(1, target_selfplay))
+
+            except Exception as e:
+                if self._verbose:
+                    logger.info(f"Resource targets error, falling back to hardware-aware: {e}")
+
+        # FALLBACK: Use hardware-aware limits
+        if self._get_max_selfplay_for_node_fn:
+            max_selfplay = self._get_max_selfplay_for_node_fn(
+                node_id=node_id,
+                gpu_count=gpu_count,
+                gpu_name=gpu_name,
+                cpu_count=cpu_count,
+                memory_gb=memory_gb,
+                has_gpu=has_gpu,
+            )
+        else:
+            # Minimal fallback when callback unavailable
+            max_selfplay = self._compute_hardware_limit(
+                has_gpu, gpu_name, gpu_count, cpu_count, memory_gb
+            )
+
+        target_selfplay = max_selfplay
+
+        # Utilization-aware adjustments
+        gpu_overloaded = gpu_percent > 85 or gpu_mem_percent > 85
+        cpu_overloaded = cpu_percent > 80
+        gpu_has_headroom = gpu_percent < 60 and gpu_mem_percent < 75
+        cpu_has_headroom = cpu_percent < 60
+
+        if gpu_overloaded:
+            target_selfplay = max(2, target_selfplay - 2)
+        if cpu_overloaded:
+            target_selfplay = max(2, target_selfplay - 1)
+
+        if ((has_gpu and gpu_has_headroom and cpu_has_headroom) or
+            (not has_gpu and cpu_has_headroom)) and current_jobs < target_selfplay:
+            target_selfplay = min(target_selfplay, current_jobs + 2)
+
+        # Resource pressure warnings
+        if disk_percent >= DISK_WARNING_THRESHOLD:
+            target_selfplay = min(target_selfplay, 4)
+        if mem_percent >= MEMORY_WARNING_THRESHOLD:
+            target_selfplay = min(target_selfplay, 2)
+
+        # Apply backpressure factor
+        target_selfplay = int(target_selfplay * backpressure_factor)
+
+        return int(max(1, target_selfplay))
+
+    def _compute_hardware_limit(
+        self,
+        has_gpu: bool,
+        gpu_name: str,
+        gpu_count: int,
+        cpu_count: int,
+        memory_gb: int,
+    ) -> int:
+        """Compute hardware-based max selfplay limit.
+
+        This is a fallback when resource_optimizer callbacks are unavailable.
+        """
+        if has_gpu:
+            gpu_upper = gpu_name.upper()
+            if any(g in gpu_upper for g in ["GH200"]):
+                return int(cpu_count * 0.8) if cpu_count > 0 else 48
+            elif any(g in gpu_upper for g in ["H100", "H200"]):
+                return min(int(cpu_count * 0.5), 48) if cpu_count > 0 else 32
+            elif any(g in gpu_upper for g in ["A100", "L40"]):
+                return min(int(cpu_count * 0.4), 32) if cpu_count > 0 else 24
+            elif any(g in gpu_upper for g in ["5090"]):
+                return min(int(cpu_count * 0.3), gpu_count * 12, 64) if cpu_count > 0 else 48
+            elif any(g in gpu_upper for g in ["A10", "4090", "3090"]):
+                return min(int(cpu_count * 0.3), 24) if cpu_count > 0 else 16
+            elif any(g in gpu_upper for g in ["4080", "4070", "3080", "4060"]):
+                return min(int(cpu_count * 0.25), 12) if cpu_count > 0 else 8
+            elif any(g in gpu_upper for g in ["3070", "3060", "2060", "2070", "2080"]):
+                return min(int(cpu_count * 0.2), 10) if cpu_count > 0 else 6
+            else:
+                return min(int(cpu_count * 0.2), 8) if cpu_count > 0 else 6
+        else:
+            return min(int(cpu_count * 0.3), 32) if cpu_count > 0 else 8
 
     def get_metrics(self) -> dict[str, Any]:
         """Get throughput metrics for monitoring."""

@@ -167,6 +167,10 @@ class SelfplayScheduler:
         self._rate_multipliers: dict[str, float] = {}
         self._subscribed = False
 
+        # Track previous targets for change detection (P0.2 Dec 2025)
+        self._previous_targets: dict[str, int] = {}
+        self._previous_priorities: dict[str, int] = {}
+
     def get_elo_based_priority_boost(self, board_type: str, num_players: int) -> int:
         """Get priority boost based on ELO performance for this config.
 
@@ -277,6 +281,59 @@ class SelfplayScheduler:
             Rate multiplier (1.0 = normal, >1 = boost, <1 = throttle)
         """
         return self._rate_multipliers.get(config_key, 1.0)
+
+    def _emit_selfplay_target_updated(
+        self,
+        config_key: str,
+        priority: str,
+        reason: str,
+        *,
+        target_jobs: int | None = None,
+        effective_priority: int | None = None,
+        exploration_boost: float | None = None,
+    ) -> None:
+        """Emit SELFPLAY_TARGET_UPDATED event for feedback loop integration.
+
+        P0.2 (December 2025): Enables pipeline coordination to respond to
+        scheduling decisions. Events trigger:
+        - DaemonManager workload scaling
+        - FeedbackLoopController priority adjustments
+        - Training pipeline data freshness checks
+
+        Args:
+            config_key: Config key (e.g., "hex8_2p")
+            priority: Priority level ("urgent", "high", "normal")
+            reason: Descriptive reason for the update
+            target_jobs: Optional target job count
+            effective_priority: Optional effective priority value
+            exploration_boost: Optional exploration boost multiplier
+        """
+        try:
+            from app.coordination.event_router import publish_sync
+
+            payload: dict[str, Any] = {
+                "config_key": config_key,
+                "priority": priority,
+                "reason": reason,
+                "source": "p2p_selfplay_scheduler",
+            }
+            if target_jobs is not None:
+                payload["target_jobs"] = target_jobs
+            if effective_priority is not None:
+                payload["effective_priority"] = effective_priority
+            if exploration_boost is not None:
+                payload["exploration_boost"] = exploration_boost
+
+            publish_sync("SELFPLAY_TARGET_UPDATED", payload)
+            if self.verbose:
+                logger.info(
+                    f"[SelfplayScheduler] Emitted SELFPLAY_TARGET_UPDATED: "
+                    f"{config_key} priority={priority} reason={reason}"
+                )
+        except ImportError:
+            logger.debug("[SelfplayScheduler] Event router not available for target updates")
+        except (RuntimeError, AttributeError) as e:
+            logger.debug(f"[SelfplayScheduler] Failed to emit target update: {e}")
 
     def pick_weighted_config(self, node: NodeInfo) -> dict[str, Any] | None:
         """Pick a selfplay config weighted by priority and node capabilities.
@@ -479,7 +536,29 @@ class SelfplayScheduler:
             priority = max(1, cfg.get("effective_priority", 1))
             weighted.extend([cfg] * priority)
 
-        return random.choice(weighted) if weighted else None
+        selected = random.choice(weighted) if weighted else None
+
+        # P0.2 (Dec 2025): Emit event when priority changes significantly
+        if selected:
+            config_key = f"{selected.get('board_type', '')}_{selected.get('num_players', 2)}p"
+            new_priority = selected.get("effective_priority", 1)
+            old_priority = self._previous_priorities.get(config_key, new_priority)
+
+            # Emit event if priority changed by 2+ or rate multiplier applied
+            rate_mult = self.get_rate_multiplier(config_key)
+            priority_change = abs(new_priority - old_priority)
+            if priority_change >= 2 or (rate_mult != 1.0 and priority_change >= 1):
+                reason = "priority_boost" if new_priority > old_priority else "priority_reduced"
+                self._emit_selfplay_target_updated(
+                    config_key=config_key,
+                    priority="high" if priority_change >= 3 else "normal",
+                    reason=f"{reason}:{priority_change}",
+                    effective_priority=new_priority,
+                    exploration_boost=rate_mult if rate_mult != 1.0 else None,
+                )
+                self._previous_priorities[config_key] = new_priority
+
+        return selected
 
     def get_target_jobs_for_node(self, node: NodeInfo) -> int:
         """Return the desired selfplay concurrency for a node.
@@ -602,7 +681,24 @@ class SelfplayScheduler:
                 # Apply host-specific max
                 target_selfplay = min(target_selfplay, host_targets.max_selfplay)
 
-                return int(max(1, target_selfplay))
+                final_target = int(max(1, target_selfplay))
+
+                # P0.2 (Dec 2025): Emit event when target changes significantly
+                old_target = self._previous_targets.get(node.node_id, final_target)
+                target_change = abs(final_target - old_target)
+                relative_change = target_change / max(1, old_target)
+                if target_change >= 3 or relative_change >= 0.5:
+                    reason = "target_increased" if final_target > old_target else "target_decreased"
+                    evt_priority = "high" if target_change >= 5 or relative_change >= 0.75 else "normal"
+                    self._emit_selfplay_target_updated(
+                        config_key=f"node:{node.node_id}",
+                        priority=evt_priority,
+                        reason=f"{reason}:{target_change}",
+                        target_jobs=final_target,
+                    )
+                    self._previous_targets[node.node_id] = final_target
+
+                return final_target
 
             except Exception as e:
                 logger.info(f"Resource targets error, falling back to hardware-aware: {e}")
@@ -697,7 +793,27 @@ class SelfplayScheduler:
         # Apply backpressure factor
         target_selfplay = int(target_selfplay * backpressure_factor)
 
-        return int(max(1, target_selfplay))
+        final_target = int(max(1, target_selfplay))
+
+        # P0.2 (Dec 2025): Emit event when target changes significantly
+        node_id = getattr(node, "node_id", "unknown")
+        old_target = self._previous_targets.get(node_id, final_target)
+        target_change = abs(final_target - old_target)
+
+        # Emit if target changed by 3+ jobs or 50%+ relative change
+        relative_change = target_change / max(1, old_target)
+        if target_change >= 3 or relative_change >= 0.5:
+            reason = "target_increased" if final_target > old_target else "target_decreased"
+            priority = "high" if target_change >= 5 or relative_change >= 0.75 else "normal"
+            self._emit_selfplay_target_updated(
+                config_key=f"node:{node_id}",
+                priority=priority,
+                reason=f"{reason}:{target_change}",
+                target_jobs=final_target,
+            )
+            self._previous_targets[node_id] = final_target
+
+        return final_target
 
     def get_hybrid_job_targets(self, node: NodeInfo) -> dict[str, int]:
         """Get separate GPU and CPU-only selfplay job targets for hybrid mode.
