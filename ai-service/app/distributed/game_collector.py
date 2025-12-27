@@ -78,7 +78,7 @@ class InMemoryGameCollector:
         store_history_entries: bool = True,
         compress_states: bool = False,  # Not used in memory, but kept for API compat
         snapshot_interval: int = 20,  # Ignored for in-memory storage
-    ) -> str:
+    ) -> str | None:
         """Store a game in memory.
 
         This method has the same signature as GameReplayDB.store_game
@@ -146,9 +146,15 @@ class InMemoryGameCollector:
         """Get all collected games."""
         return self._games
 
+    @property
+    def rejected_games(self) -> int:
+        """Get the count of games rejected by quality gate."""
+        return self._rejected_games
+
     def clear(self) -> None:
-        """Clear all collected games."""
+        """Clear all collected games and reset counters."""
         self._games = []
+        self._rejected_games = 0
 
     def get_serialized_games(
         self,

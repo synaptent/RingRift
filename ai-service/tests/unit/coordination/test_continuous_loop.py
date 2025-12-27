@@ -191,7 +191,7 @@ class TestContinuousTrainingLoopStart:
     @pytest.fixture
     def mock_env(self):
         """Mock environment configuration."""
-        with patch('app.coordination.continuous_loop.env') as mock:
+        with patch('app.config.env.env') as mock:
             mock.is_coordinator = False
             mock.node_id = "test-node"
             yield mock
@@ -201,7 +201,8 @@ class TestContinuousTrainingLoopStart:
         """Should skip on coordinator nodes."""
         from app.coordination.continuous_loop import ContinuousTrainingLoop
 
-        with patch('app.coordination.continuous_loop.env') as mock_env:
+        # Patch where env is imported (inside start method)
+        with patch('app.config.env.env') as mock_env:
             mock_env.is_coordinator = True
             mock_env.node_id = "coordinator-node"
 
