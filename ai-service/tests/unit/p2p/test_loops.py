@@ -213,7 +213,7 @@ class TestBaseLoop:
         loop = SimpleLoop()
 
         # Start in background
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.1)  # Let loop start (increased from 0.01 for CI stability)
         assert loop.running is True
 
@@ -234,7 +234,7 @@ class TestBaseLoop:
         """Should update stats on successful runs."""
         loop = SimpleLoop()
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.05)
         loop.stop()
         await asyncio.sleep(0.02)
@@ -250,7 +250,7 @@ class TestBaseLoop:
         loop = SimpleLoop()
         loop.raise_error = True
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.05)
         loop.stop()
         await asyncio.sleep(0.02)
@@ -273,7 +273,7 @@ class TestBaseLoop:
 
         loop.add_error_callback(callback)
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.05)
         loop.stop()
         await asyncio.sleep(0.02)
@@ -295,7 +295,7 @@ class TestBaseLoop:
         loop.add_error_callback(callback)
         loop.remove_error_callback(callback)
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.03)
         loop.stop()
         await asyncio.sleep(0.02)
@@ -307,7 +307,7 @@ class TestBaseLoop:
         """Should skip running when disabled."""
         loop = SimpleLoop(enabled=False)
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.03)
         loop.stop()
         await asyncio.sleep(0.02)
@@ -319,7 +319,7 @@ class TestBaseLoop:
         """Should respect enabled toggle during execution."""
         loop = SimpleLoop(enabled=True)
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.03)
 
         initial_count = loop.run_count
@@ -369,16 +369,14 @@ class TestBaseLoop:
                 await asyncio.sleep(10)  # Very slow
 
         loop = SlowLoop(name="slow", interval=0.01)
-        task = loop.start_background()
+        loop.start_background()
 
         # Wait for it to start running
         await asyncio.sleep(0.05)
 
         # Stop with very short timeout
         result = await loop.stop_async(timeout=0.01)
-
-        # Should return False (timeout) or True (if task cancelled quickly)
-        # The result depends on timing, but shouldn't hang
+        assert isinstance(result, bool)
 
     @pytest.mark.asyncio
     async def test_already_running_warning(self):
@@ -594,7 +592,7 @@ class TestLoopIntegration:
         )
         loop.raise_error = True
 
-        task = loop.start_background()
+        loop.start_background()
 
         # Let it run for a bit - backoff should slow down execution
         await asyncio.sleep(0.15)
@@ -617,7 +615,7 @@ class TestLoopIntegration:
 
         loop = SimpleLoop(metrics_manager=mock_metrics)
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.05)
         loop.stop()
         await asyncio.sleep(0.02)
@@ -633,7 +631,7 @@ class TestLoopIntegration:
         loop = SimpleLoop(metrics_manager=mock_metrics)
         loop.raise_error = True
 
-        task = loop.start_background()
+        loop.start_background()
         await asyncio.sleep(0.05)
         loop.stop()
         await asyncio.sleep(0.02)

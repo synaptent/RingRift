@@ -209,7 +209,7 @@ class SyncOrchestrator:
 
         # Load sync scheduler
         try:
-            from app.coordination.sync_coordinator import get_sync_scheduler
+            from app.coordination.cluster.sync import get_sync_scheduler
 
             self._sync_scheduler = get_sync_scheduler()
             components_loaded.append("sync_scheduler")

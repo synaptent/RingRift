@@ -342,7 +342,7 @@ async def collect_all_coordinator_metrics() -> dict[str, Any]:
 
     # Try to get SyncScheduler stats (scheduling layer for cluster sync)
     try:
-        from app.coordination.sync_coordinator import SyncScheduler
+        from app.coordination.cluster.sync import SyncScheduler
         sc = SyncScheduler.get_instance()
         stats = await sc.get_stats()
         metrics["coordinators"]["SyncScheduler"] = stats
@@ -403,7 +403,7 @@ def _collect_sync() -> dict[str, Any]:
         logger.debug(f"Could not collect BandwidthManager metrics (sync): {e}")
 
     try:
-        from app.coordination.sync_coordinator import SyncScheduler
+        from app.coordination.cluster.sync import SyncScheduler
         sc = SyncScheduler.get_instance()
         stats = sc.get_stats_sync()
         metrics["coordinators"]["SyncScheduler"] = stats

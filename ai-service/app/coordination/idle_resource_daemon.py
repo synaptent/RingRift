@@ -910,8 +910,12 @@ class IdleResourceDaemon:
                             gpu_memory_used_gb=mem_used,
                             last_seen=time.time(),
                         )
-            except Exception:
-                pass
+            except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                # nvidia-smi not available or timed out - expected on non-GPU nodes
+                logger.debug(f"[IdleResourceDaemon] GPU query unavailable: {e}")
+            except (ValueError, IndexError) as e:
+                # Failed to parse nvidia-smi output
+                logger.debug(f"[IdleResourceDaemon] GPU output parse error: {e}")
 
         if local_node is None:
             return None

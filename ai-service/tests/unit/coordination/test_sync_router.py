@@ -264,7 +264,7 @@ class TestShouldSyncToNode:
         """Test capacity check is performed."""
         mock_manifest.can_receive_data.return_value = False
 
-        result = router.should_sync_to_node(
+        router.should_sync_to_node(
             target_node="lambda-gh200-b",
             data_type="game",
         )
@@ -482,7 +482,7 @@ class TestEdgeCases:
         """Test should_sync for unknown node falls back to manifest."""
         mock_manifest.can_receive_data.return_value = True
 
-        result = router.should_sync_to_node(
+        router.should_sync_to_node(
             target_node="unknown-node",
             data_type="game",
         )

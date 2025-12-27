@@ -1354,6 +1354,15 @@ def load_populator_config_from_yaml(yaml_config: dict[str, Any]) -> QueuePopulat
 # Module Exports
 # =============================================================================
 
+# =============================================================================
+# Backward-Compatible Aliases (Dec 2025)
+# =============================================================================
+# These aliases maintain compatibility with code that imports from the
+# deprecated app.coordination.queue_populator module.
+
+PopulatorConfig = QueuePopulatorConfig  # Alias for backward compatibility
+QueuePopulator = UnifiedQueuePopulator  # Alias for backward compatibility
+
 __all__ = [
     # Constants
     "BOARD_CONFIGS",
@@ -1375,4 +1384,7 @@ __all__ = [
     # Utilities
     "wire_queue_populator_events",
     "load_populator_config_from_yaml",
+    # Backward-compatible aliases
+    "PopulatorConfig",  # Alias for QueuePopulatorConfig
+    "QueuePopulator",   # Alias for UnifiedQueuePopulator
 ]

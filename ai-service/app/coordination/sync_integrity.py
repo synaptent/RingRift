@@ -644,8 +644,8 @@ def atomic_file_write(
         if temp_path.exists():
             try:
                 temp_path.unlink()
-            except Exception:
-                pass
+            except OSError as unlink_err:
+                logger.debug(f"Could not remove temp file {temp_path}: {unlink_err}")
         return False, f"Atomic write failed: {e}"
 
 
@@ -733,8 +733,8 @@ def verified_database_copy(
         if temp_path.exists():
             try:
                 temp_path.unlink()
-            except Exception:
-                pass
+            except OSError as unlink_err:
+                logger.debug(f"Could not remove temp file {temp_path}: {unlink_err}")
         return False, f"Copy failed: {e}"
 
 
