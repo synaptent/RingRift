@@ -476,7 +476,7 @@ class AutoSyncDaemon:
             total_games = payload.get("total_games", 0)
 
             # Only push if we have a meaningful batch (avoid spamming for 1-2 games)
-            min_games = self._config.min_games_to_sync or 5
+            min_games = self.config.min_games_to_sync or 5
             if new_games < min_games:
                 logger.debug(
                     f"[AutoSyncDaemon] Push-on-generate: skipping for {config_key} "
@@ -611,22 +611,22 @@ class AutoSyncDaemon:
             neighbors = []
 
             # Get cluster manifest if available
-            if self._manifest:
+            if self._cluster_manifest:
                 # Get all nodes with their storage capacity
-                all_nodes = self._manifest.get_all_nodes()
+                all_nodes = self._cluster_manifest.get_all_nodes()
 
                 for node_id, node_info in all_nodes.items():
                     # Skip self
-                    if node_id == self._host:
+                    if node_id == self.node_id:
                         continue
 
                     # Skip excluded nodes (coordinators, etc.)
-                    if node_id in self._config.exclude_hosts:
+                    if node_id in self.config.exclude_hosts:
                         continue
 
                     # Skip nodes with high disk usage
                     disk_usage = node_info.get("disk_usage_percent", 0)
-                    if disk_usage > self._config.max_disk_usage_percent:
+                    if disk_usage > self.config.max_disk_usage_percent:
                         continue
 
                     # Compute priority score
@@ -646,11 +646,9 @@ class AutoSyncDaemon:
                 neighbors.sort(key=lambda x: x[1], reverse=True)
                 return [n[0] for n in neighbors[:max_neighbors]]
 
-            # Fallback: use known peers from sync state
-            for peer_id in list(self._sync_state.keys())[:max_neighbors]:
-                if peer_id != self._host and peer_id not in self._config.exclude_hosts:
-                    neighbors.append(peer_id)
-
+            # Fallback: no manifest available, return empty list
+            # (we cannot determine neighbors without cluster manifest)
+            logger.debug("[AutoSyncDaemon] No cluster manifest available for push neighbors")
             return neighbors
 
         except (RuntimeError, AttributeError, KeyError) as e:
@@ -1057,8 +1055,8 @@ class AutoSyncDaemon:
             conn.close()
 
             if len(games) < 5:
-                # Too few games to assess quality reliably
-                return True, f"Too few games to assess ({len(games)})"
+                # Too few games - sync anyway, small DBs aren't worth filtering
+                return True, f"Small DB ({len(games)} games), sync"
 
             # Compute quality scores for sampled games
             qualities = []
@@ -1078,7 +1076,8 @@ class AutoSyncDaemon:
                     qualities.append(0.3)  # Assume poor quality on error
 
             if not qualities:
-                return True, "No quality scores computed"
+                # All quality computations failed - skip sync (likely bad data)
+                return False, "No quality scores computed, skip sync"
 
             avg_quality = sum(qualities) / len(qualities)
             self._stats.databases_quality_checked += 1
@@ -1090,17 +1089,20 @@ class AutoSyncDaemon:
             return True, f"Quality OK: {avg_quality:.2f}"
 
         except sqlite3.OperationalError as e:
-            # Table doesn't exist or schema mismatch - skip silently
+            # Table doesn't exist or schema mismatch - skip sync (don't sync broken DBs)
             if "no such column" in str(e) or "no such table" in str(e):
-                return True, f"Schema check skipped: {e}"
+                logger.debug(f"Quality check skipped (schema issue) for {db_path.name}: {e}")
+                return False, f"Schema issue, skip sync: {e}"
             logger.warning(f"Quality check DB error for {db_path.name}: {e}")
-            return True, f"DB error, default to sync: {e}"
+            return False, f"DB error, skip sync: {e}"
         except ImportError as e:
-            logger.warning(f"Quality module not available: {e}")
-            return True, "Quality module unavailable"
+            # Quality module unavailable - conservative: skip sync
+            logger.warning(f"Quality module not available, skipping sync: {e}")
+            return False, "Quality module unavailable, skip sync"
         except (RuntimeError, OSError, ConnectionError) as e:
+            # Transient error - skip this sync attempt, will retry later
             logger.warning(f"Quality check failed for {db_path.name}: {e}")
-            return True, f"Check failed, default to sync: {e}"
+            return False, f"Check failed, skip sync: {e}"
 
     async def _register_synced_data(self) -> None:
         """Register synced games to ClusterManifest."""

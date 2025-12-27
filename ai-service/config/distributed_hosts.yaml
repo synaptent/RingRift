@@ -5,9 +5,9 @@
 # Lambda Labs account terminated Dec 2025. All Lambda nodes permanently removed.
 
 sync_routing:
-  # Dec 2025: Restored to 70% after cleanup freed ~67GB on mac-studio
+  # Dec 2025: max triggers cleanup, target is where we clean to (10% gap)
   max_disk_usage_percent: 70
-  target_disk_usage_percent: 70
+  target_disk_usage_percent: 60
   min_free_disk_percent: 15
   replication_target: 2
   # Dec 2025: Removed mac-studio from excluded_hosts - use allowed_external_storage instead
