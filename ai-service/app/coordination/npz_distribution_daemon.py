@@ -1,5 +1,14 @@
 """NPZ Distribution Daemon - Automatic training data sync after export.
 
+DEPRECATED (December 2025): Use unified_distribution_daemon.py instead.
+This module is preserved for backward compatibility but will be removed in Q2 2026.
+
+Migration:
+    from app.coordination.unified_distribution_daemon import (
+        UnifiedDistributionDaemon,
+        create_unified_distribution_daemon,
+    )
+
 This daemon watches for NPZ_EXPORT_COMPLETE events and automatically distributes
 exported NPZ files to all training-capable cluster nodes.
 

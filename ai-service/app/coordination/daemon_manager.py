@@ -1639,11 +1639,14 @@ class DaemonManager:
 
         Monitors data replication health across the cluster and triggers
         emergency sync when data safety is at risk.
+
+        Uses UnifiedReplicationDaemon (consolidated Dec 26, 2025).
         """
         try:
-            from app.coordination.replication_monitor import get_replication_monitor
+            # Use unified daemon (consolidated from replication_monitor + replication_repair_daemon)
+            from app.coordination.unified_replication_daemon import create_replication_monitor
 
-            daemon = get_replication_monitor()
+            daemon = create_replication_monitor()
             await daemon.start()
 
             # Wait for daemon to complete (or be stopped)
@@ -1659,11 +1662,14 @@ class DaemonManager:
 
         Actively repairs under-replicated data by coordinating targeted
         sync operations across the cluster.
+
+        Uses UnifiedReplicationDaemon (consolidated Dec 26, 2025).
         """
         try:
-            from app.coordination.replication_repair_daemon import get_replication_repair_daemon
+            # Use unified daemon (consolidated from replication_monitor + replication_repair_daemon)
+            from app.coordination.unified_replication_daemon import create_replication_repair_daemon
 
-            daemon = get_replication_repair_daemon()
+            daemon = create_replication_repair_daemon()
             await daemon.start()
 
             # Wait for daemon to complete (or be stopped)
@@ -2977,7 +2983,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.NODE_RECOVERY,  # Phase 21: Auto-recover terminated nodes
         DaemonType.LAMBDA_IDLE,  # Dec 2025: Auto-terminate idle Lambda nodes (suspended - keep for restoration)
         DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
-        DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
+        # NOTE: CURRICULUM_INTEGRATION removed - not registered in factory (Dec 26, 2025)
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
@@ -2985,13 +2991,13 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.AUTO_SYNC,  # Dec 2025: CRITICAL - Pull game data from remote nodes
         DaemonType.CLUSTER_DATA_SYNC,  # Dec 2025: Cluster-wide data distribution
         DaemonType.CLUSTER_WATCHDOG,  # Dec 2025: Self-healing cluster utilization
-        DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
+        # NOTE: METRICS_ANALYSIS removed - not registered in factory (Dec 26, 2025)
     ],
 
     # Training node profile - runs on GPU nodes
     "training_node": [
         DaemonType.EVENT_ROUTER,
-        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
+        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
         DaemonType.DATA_PIPELINE,
         DaemonType.CONTINUOUS_TRAINING_LOOP,
         DaemonType.AUTO_SYNC,
@@ -3000,14 +3006,14 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.QUALITY_MONITOR,  # Monitor local selfplay quality
         DaemonType.ORPHAN_DETECTION,  # Detect local orphaned databases
         DaemonType.UNIFIED_PROMOTION,  # Phase 18.4: Auto-promote models after evaluation
-        DaemonType.P2P_AUTO_DEPLOY,  # Phase 21.2: Ensure P2P runs on recovered nodes
+        # NOTE: P2P_AUTO_DEPLOY removed - not registered in factory (Dec 26, 2025)
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
         DaemonType.UTILIZATION_OPTIMIZER,  # Phase 4: Match GPU capabilities to workloads
-        DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for local self-improvement
+        # NOTE: CURRICULUM_INTEGRATION removed - not registered in factory (Dec 26, 2025)
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.FEEDBACK_LOOP,  # Phase 21.2: Orchestrate all feedback signals
-        DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
+        # NOTE: METRICS_ANALYSIS removed - not registered in factory (Dec 26, 2025)
         DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
     ],
 
@@ -3015,7 +3021,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
     # Phase 21.2: Expanded from 4 to 9 daemons for better data safety & observability
     "ephemeral": [
         DaemonType.EVENT_ROUTER,
-        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
+        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
         DaemonType.EPHEMERAL_SYNC,
         DaemonType.DATA_PIPELINE,
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay
@@ -3028,7 +3034,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
     # Selfplay-only profile - just generates games
     "selfplay": [
         DaemonType.EVENT_ROUTER,
-        DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
+        # NOTE: HEALTH_SERVER removed - not registered in factory (Dec 26, 2025)
         DaemonType.AUTO_SYNC,
         DaemonType.QUALITY_MONITOR,  # Monitor quality to trigger throttling feedback
         DaemonType.IDLE_RESOURCE,  # Phase 4: Detect idle GPUs and auto-spawn selfplay

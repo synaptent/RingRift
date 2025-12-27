@@ -1659,7 +1659,7 @@ def main() -> None:
             emit_sync = None
 
         try:
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import DataEventType
             parity_started_event = DataEventType.PARITY_VALIDATION_STARTED.name
             parity_completed_event = DataEventType.PARITY_VALIDATION_COMPLETED.name
         except ImportError:

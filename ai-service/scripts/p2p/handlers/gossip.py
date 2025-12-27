@@ -1,11 +1,23 @@
 """Gossip Protocol HTTP Handlers Mixin.
 
-Extracted from p2p_orchestrator.py for modularity.
-This mixin provides gossip protocol endpoints for decentralized state sharing.
+Provides HTTP endpoints for decentralized state sharing via gossip protocol.
+Nodes exchange state with random peers, propagating information cluster-wide
+without leader coordination.
 
 Usage:
     class P2POrchestrator(GossipHandlersMixin, ...):
         pass
+
+Endpoints:
+    POST /gossip - Exchange state with peer (bi-directional gossip)
+    POST /gossip/push - Receive one-way state push from peer
+    GET /gossip/manifest - Get local data manifest for sync planning
+    GET /gossip/cluster-manifest - Get aggregated cluster manifest
+
+Compression:
+    Supports gzip-compressed requests/responses for bandwidth efficiency.
+    Magic byte detection (0x1f 0x8b) ensures graceful handling of
+    clients that set Content-Encoding: gzip but send raw JSON.
 """
 
 from __future__ import annotations

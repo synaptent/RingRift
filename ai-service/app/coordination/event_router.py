@@ -67,14 +67,22 @@ try:
         EventBus,
         get_event_bus as get_data_event_bus,
         # Emit functions used by coordination modules (December 2025 consolidation)
+        emit_cluster_capacity_changed,
+        emit_curriculum_advanced,
         emit_daemon_status_changed,
         emit_data_event,
+        emit_data_sync_failed,
         emit_elo_velocity_changed,
         emit_exploration_boost,
+        emit_host_offline,
+        emit_host_online,
         emit_idle_resource_detected,
+        emit_leader_elected,
+        emit_node_overloaded,
         emit_promotion_candidate,
         emit_quality_check_requested,
         emit_quality_degraded,
+        emit_quality_score_updated,
         emit_selfplay_target_updated,
         emit_training_early_stopped,
         emit_training_loss_anomaly,
@@ -87,14 +95,22 @@ except ImportError:
     DataEvent = None
     EventBus = None
     # Stubs for when data_events not available
+    emit_cluster_capacity_changed = None
+    emit_curriculum_advanced = None
     emit_daemon_status_changed = None
     emit_data_event = None
+    emit_data_sync_failed = None
     emit_elo_velocity_changed = None
     emit_exploration_boost = None
+    emit_host_offline = None
+    emit_host_online = None
     emit_idle_resource_detected = None
+    emit_leader_elected = None
+    emit_node_overloaded = None
     emit_promotion_candidate = None
     emit_quality_check_requested = None
     emit_quality_degraded = None
+    emit_quality_score_updated = None
     emit_selfplay_target_updated = None
     emit_training_early_stopped = None
     emit_training_loss_anomaly = None
@@ -1030,14 +1046,22 @@ __all__ = [
     "EventBus",
     "get_event_bus",
     # Emit functions re-exported from data_events (December 2025 consolidation)
+    "emit_cluster_capacity_changed",
+    "emit_curriculum_advanced",
     "emit_daemon_status_changed",
     "emit_data_event",
+    "emit_data_sync_failed",
     "emit_elo_velocity_changed",
     "emit_exploration_boost",
+    "emit_host_offline",
+    "emit_host_online",
     "emit_idle_resource_detected",
+    "emit_leader_elected",
+    "emit_node_overloaded",
     "emit_promotion_candidate",
     "emit_quality_check_requested",
     "emit_quality_degraded",
+    "emit_quality_score_updated",
     "emit_selfplay_target_updated",
     "emit_training_early_stopped",
     "emit_training_loss_anomaly",

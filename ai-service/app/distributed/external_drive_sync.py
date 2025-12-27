@@ -206,8 +206,7 @@ class ExternalDriveSyncDaemon:
     async def _emit_backup_event(self, results: list[SyncResult]) -> None:
         """Emit DATA_BACKUP_COMPLETED event."""
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
 
             router = get_router()
             if router is None:

@@ -116,6 +116,10 @@ from .consensus_mixin import ConsensusMixin
 from .handlers.swim import SwimHandlersMixin
 from .handlers.raft import RaftHandlersMixin
 
+# Re-export gossip protocol (Dec 26, 2025 - Phase 3)
+from .gossip_metrics import GossipMetricsMixin
+from .gossip_protocol import GossipProtocolMixin
+
 # Re-export client utilities
 from .client import (
     P2PClient,
@@ -148,6 +152,9 @@ __all__ = [
     'ConsensusMixin',
     'SwimHandlersMixin',
     'RaftHandlersMixin',
+    # Gossip protocol (Dec 26, 2025 - Phase 3)
+    'GossipMetricsMixin',
+    'GossipProtocolMixin',
     # Constants
     'DEFAULT_PORT',
     'DISK_CRITICAL_THRESHOLD',

@@ -1,5 +1,14 @@
 """Model Distribution Daemon - Automatic model sync after promotion.
 
+DEPRECATED (December 2025): Use unified_distribution_daemon.py instead.
+This module is preserved for backward compatibility but will be removed in Q2 2026.
+
+Migration:
+    from app.coordination.unified_distribution_daemon import (
+        UnifiedDistributionDaemon,
+        create_unified_distribution_daemon,
+    )
+
 This daemon watches for MODEL_PROMOTED events and automatically distributes
 promoted models to all cluster nodes, solving the gap where models would
 only exist on the node where training completed.

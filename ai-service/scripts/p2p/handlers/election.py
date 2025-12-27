@@ -1,11 +1,26 @@
 """Election HTTP Handlers Mixin.
 
-Extracted from p2p_orchestrator.py for modularity.
-This mixin provides leader election and voter management endpoints.
+Provides HTTP endpoints for Bully algorithm leader election and voter-based
+quorum management. Supports lease-based leader locking with automatic expiry.
 
 Usage:
     class P2POrchestrator(ElectionHandlersMixin, ...):
         pass
+
+Endpoints:
+    POST /election/start - Start a new leader election
+    POST /election/vote - Request vote from this voter node
+    POST /election/leader - Announce leadership claim
+    POST /election/renew-lease - Renew leader lease (extend TTL)
+    GET /election/status - Get current election state and leader info
+    GET /voters - Get list of registered voter nodes
+
+Leader Election Flow:
+    1. Candidate calls /election/start to begin election
+    2. Candidate requests votes via /election/vote from voters
+    3. With quorum (3/5), candidate claims leadership via /election/leader
+    4. Leader renews lease periodically via /election/renew-lease
+    5. On lease expiry, followers can start new election
 """
 
 from __future__ import annotations

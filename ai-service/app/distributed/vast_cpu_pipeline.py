@@ -244,8 +244,7 @@ class VastCpuPipelineDaemon:
     async def _emit_job_completed_event(self, job: CPUJob) -> None:
         """Emit CPU_PIPELINE_JOB_COMPLETED event."""
         try:
-            from app.coordination.event_router import get_router
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import get_router, DataEventType
 
             router = get_router()
             if router is None:

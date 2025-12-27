@@ -249,7 +249,7 @@ def _check_event_emitters() -> bool:
         return _p2p_event_emitters_available
 
     try:
-        from app.distributed.data_events import (
+        from app.coordination.event_router import (
             emit_host_online,
             emit_host_offline,
             emit_leader_elected,
@@ -273,7 +273,7 @@ async def _emit_p2p_host_offline(node_id: str, reason: str = "timeout", last_see
         return
 
     try:
-        from app.distributed.data_events import emit_host_offline
+        from app.coordination.event_router import emit_host_offline
         await emit_host_offline(
             host=node_id,
             reason=reason,
@@ -296,7 +296,7 @@ async def _emit_p2p_host_online(node_id: str, capabilities: list[str] | None = N
         return
 
     try:
-        from app.distributed.data_events import emit_host_online
+        from app.coordination.event_router import emit_host_online
         await emit_host_online(
             host=node_id,
             capabilities=capabilities or [],
@@ -318,7 +318,7 @@ async def _emit_p2p_leader_elected(leader_id: str, term: int = 0) -> None:
         return
 
     try:
-        from app.distributed.data_events import emit_leader_elected
+        from app.coordination.event_router import emit_leader_elected
         await emit_leader_elected(
             leader_id=leader_id,
             term=term,
@@ -9649,7 +9649,7 @@ print(json.dumps(result))
             JSON with event types and their subscriber counts/names
         """
         try:
-            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import DataEventType
 
             subscriptions: dict[str, dict] = {}
             router_info: dict = {"available": False, "type": "unknown"}
@@ -24585,8 +24585,8 @@ print(json.dumps({{
 
             for _ in range(needed):
                 try:
-                    # Pick a config weighted by priority (same as leader logic)
-                    config = self._pick_weighted_selfplay_config(node)
+                    # Pick a config weighted by priority (using SelfplayScheduler manager)
+                    config = self.selfplay_scheduler.pick_weighted_config(node)
                     if config:
                         job = await self._start_local_job(
                             JobType.HYBRID_SELFPLAY,
@@ -24674,7 +24674,7 @@ print(json.dumps({{
 
                 for _ in range(new_jobs):
                     try:
-                        config = self._pick_weighted_selfplay_config(self.self_info)
+                        config = self.selfplay_scheduler.pick_weighted_config(self.self_info)
                         if config:
                             # Use hybrid mode (CPU rules + GPU eval) for quality + speed
                             job = await self._start_local_job(
