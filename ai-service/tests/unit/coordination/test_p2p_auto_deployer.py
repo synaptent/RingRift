@@ -603,7 +603,7 @@ class TestP2PAutoDeployerSeedPeers:
     def test_get_seed_peers_empty(self, deployer: P2PAutoDeployer) -> None:
         """Test getting seed peers when none configured."""
         with patch(
-            "app.coordination.p2p_auto_deployer.get_p2p_voters",
+            "app.config.cluster_config.get_p2p_voters",
             side_effect=ImportError,
         ):
             peers = deployer._get_seed_peers()
@@ -619,7 +619,7 @@ class TestP2PAutoDeployerSeedPeers:
         deployer._hosts["voter-2"] = {"ssh_host": "192.168.1.101"}
 
         with patch(
-            "app.coordination.p2p_auto_deployer.get_p2p_voters",
+            "app.config.cluster_config.get_p2p_voters",
             return_value=["voter-1", "voter-2"],
         ):
             peers = deployer._get_seed_peers()
@@ -679,7 +679,7 @@ class TestP2PAutoDeployerLoadConfig:
         }
 
         with patch(
-            "app.coordination.p2p_auto_deployer.load_cluster_config",
+            "app.config.cluster_config.load_cluster_config",
             return_value=mock_config,
         ):
             deployer = P2PAutoDeployer()
@@ -689,7 +689,7 @@ class TestP2PAutoDeployerLoadConfig:
     def test_load_hosts_fallback_yaml(self) -> None:
         """Test loading hosts from YAML fallback."""
         with patch(
-            "app.coordination.p2p_auto_deployer.load_cluster_config",
+            "app.config.cluster_config.load_cluster_config",
             side_effect=ImportError,
         ):
             with patch("builtins.open", side_effect=FileNotFoundError):

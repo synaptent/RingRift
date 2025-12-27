@@ -466,7 +466,8 @@ class TestRunSelfplay:
         mock_stats.games_completed = 100
         mock_stats.total_samples = 5000
 
-        with patch('app.coordination.continuous_loop.run_selfplay', return_value=mock_stats):
+        # Patch where run_selfplay is imported from (inside the method)
+        with patch('app.training.selfplay_runner.run_selfplay', return_value=mock_stats):
             result = await loop._run_selfplay("hex8", 2, 100, "gumbel-mcts")
             assert result is True
 
@@ -480,7 +481,8 @@ class TestRunSelfplay:
         mock_stats = MagicMock()
         mock_stats.games_completed = 0
 
-        with patch('app.coordination.continuous_loop.run_selfplay', return_value=mock_stats):
+        # Patch where run_selfplay is imported from (inside the method)
+        with patch('app.training.selfplay_runner.run_selfplay', return_value=mock_stats):
             result = await loop._run_selfplay("hex8", 2, 100, "gumbel-mcts")
             assert result is False
 
@@ -491,7 +493,8 @@ class TestRunSelfplay:
 
         loop = ContinuousTrainingLoop()
 
-        with patch('app.coordination.continuous_loop.run_selfplay', side_effect=ImportError("module not found")):
+        # Mock the module import to raise ImportError
+        with patch.dict('sys.modules', {'app.training.selfplay_runner': None}):
             result = await loop._run_selfplay("hex8", 2, 100, "gumbel-mcts")
             assert result is False
 
@@ -536,13 +539,26 @@ class TestSetupPipeline:
 
         loop = ContinuousTrainingLoop()
 
+        # Mock the module import to raise ImportError
         with patch.dict('sys.modules', {'app.coordination.data_pipeline_orchestrator': None}):
-            with patch('app.coordination.continuous_loop.get_orchestrator', side_effect=ImportError("not found")):
-                with caplog.at_level(logging.WARNING):
-                    loop._setup_pipeline()
+            with caplog.at_level(logging.WARNING):
+                loop._setup_pipeline()
 
         # Should have logged warning about import failure
         # (or succeeded if module is available)
+
+    def test_setup_pipeline_success(self):
+        """Should set up orchestrator when import succeeds."""
+        from app.coordination.continuous_loop import ContinuousTrainingLoop
+
+        loop = ContinuousTrainingLoop()
+
+        # Mock the orchestrator functions
+        mock_orchestrator = MagicMock()
+        with patch('app.coordination.data_pipeline_orchestrator.get_orchestrator', return_value=mock_orchestrator):
+            with patch('app.coordination.data_pipeline_orchestrator.wire_pipeline_events'):
+                loop._setup_pipeline()
+                assert loop._orchestrator == mock_orchestrator
 
 
 class TestRunSingleConfig:
