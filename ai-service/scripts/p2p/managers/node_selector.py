@@ -6,8 +6,11 @@ Handles node ranking by GPU/CPU power and selection for various tasks.
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..models import NodeInfo
@@ -61,6 +64,9 @@ class NodeSelector:
         # Track nodes marked as unhealthy via events (Dec 2025)
         self._unhealthy_nodes: set[str] = set()
         self._unhealthy_reasons: dict[str, str] = {}
+        # December 2025: Initialize subscription state to prevent AttributeError
+        self._subscribed = False
+        self._subscription_lock = threading.Lock()
 
     def _get_all_nodes(self, include_self: bool = True) -> list["NodeInfo"]:
         """Get all nodes including self if requested."""
@@ -387,36 +393,46 @@ class NodeSelector:
 
         December 27, 2025: Added to populate _unhealthy_nodes from events.
         This allows NodeSelector to filter out unhealthy nodes during selection.
+        Uses double-check locking to prevent race conditions.
         """
-        if getattr(self, "_subscribed", False):
+        # Fast path - already subscribed
+        if self._subscribed:
             return
 
-        try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEventType
+        # Slow path with lock to prevent race conditions
+        with self._subscription_lock:
+            # Double-check after acquiring lock
+            if self._subscribed:
+                return
 
-            bus = get_event_bus()
+            try:
+                from app.coordination.event_router import get_event_bus
+                from app.distributed.data_events import DataEventType
 
-            # Subscribe to HOST_OFFLINE to mark nodes as unhealthy
-            if hasattr(DataEventType, "HOST_OFFLINE"):
-                bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-                logger.info("[NodeSelector] Subscribed to HOST_OFFLINE")
+                bus = get_event_bus()
 
-            # Subscribe to NODE_RECOVERED to clear unhealthy status
-            if hasattr(DataEventType, "NODE_RECOVERED"):
-                bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
-                logger.info("[NodeSelector] Subscribed to NODE_RECOVERED")
+                # Subscribe to HOST_OFFLINE to mark nodes as unhealthy
+                if hasattr(DataEventType, "HOST_OFFLINE"):
+                    bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+                    logger.info("[NodeSelector] Subscribed to HOST_OFFLINE")
 
-            # Subscribe to HOST_ONLINE to clear offline nodes
-            if hasattr(DataEventType, "HOST_ONLINE"):
-                bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
-                logger.info("[NodeSelector] Subscribed to HOST_ONLINE")
+                # Subscribe to NODE_RECOVERED to clear unhealthy status
+                if hasattr(DataEventType, "NODE_RECOVERED"):
+                    bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
+                    logger.info("[NodeSelector] Subscribed to NODE_RECOVERED")
 
-            self._subscribed = True
-        except ImportError:
-            logger.debug("[NodeSelector] Event router not available")
-        except (RuntimeError, AttributeError) as e:
-            logger.warning(f"[NodeSelector] Failed to subscribe: {e}")
+                # Subscribe to HOST_ONLINE to clear offline nodes
+                if hasattr(DataEventType, "HOST_ONLINE"):
+                    bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
+                    logger.info("[NodeSelector] Subscribed to HOST_ONLINE")
+
+                self._subscribed = True
+            except ImportError:
+                logger.debug("[NodeSelector] Event router not available")
+                self._subscribed = False  # Explicit reset on failure
+            except (RuntimeError, AttributeError) as e:
+                logger.warning(f"[NodeSelector] Failed to subscribe: {e}")
+                self._subscribed = False  # Explicit reset on failure
 
     async def _on_host_offline(self, event) -> None:
         """Handle HOST_OFFLINE events - mark node as unhealthy."""

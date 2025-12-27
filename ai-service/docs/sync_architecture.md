@@ -1,162 +1,424 @@
-# Sync Architecture
+# Sync Architecture Reference
 
-This document clarifies the sync-related modules and their responsibilities.
+**Date:** December 2025
+**Status:** Production
 
-## Layer Overview
+This document describes the data synchronization architecture for the RingRift AI training cluster.
+
+---
+
+## Overview
+
+The sync system handles distribution of training data across a heterogeneous cluster of ~30-50 GPU nodes. It manages three types of data:
+
+| Data Type | Description                       | Size      | Sync Priority |
+| --------- | --------------------------------- | --------- | ------------- |
+| `games`   | SQLite game replay databases      | 1-50GB    | High          |
+| `models`  | Neural network checkpoints (.pth) | 100-200MB | Critical      |
+| `npz`     | Training data archives            | 500MB-5GB | High          |
+
+---
+
+## Architecture Evolution (8→3 Consolidation)
+
+### Historical Implementations (Deprecated)
+
+The codebase evolved 8 different sync implementations over 2024-2025:
+
+| Implementation          | Status             | Replaced By                          |
+| ----------------------- | ------------------ | ------------------------------------ |
+| `SyncScheduler`         | Deprecated Q2 2026 | AutoSyncDaemon                       |
+| `UnifiedDataSync`       | Deprecated Q2 2026 | SyncFacade                           |
+| `SyncOrchestrator`      | Deprecated Q2 2026 | AutoSyncDaemon                       |
+| `ClusterDataSyncDaemon` | Absorbed Dec 2025  | AutoSyncDaemon(strategy="broadcast") |
+| `EphemeralSyncDaemon`   | Absorbed Dec 2025  | AutoSyncDaemon(strategy="ephemeral") |
+
+### Current Architecture (December 2025)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      SyncFacade                             │
-│   app/coordination/sync_facade.py                            │
-│   - Recommended entry point for programmatic sync            │
-│   - Routes to AutoSyncDaemon / SyncRouter / DistributedSync  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ routes
-           ┌───────────────┴───────────────┐
-           ▼                               ▼
-┌───────────────────────┐       ┌───────────────────────┐
-│    AutoSyncDaemon     │       │ DistributedSyncCoord. │
-│ app/coordination/     │       │ app/distributed/      │
-│ auto_sync_daemon.py   │       │ sync_coordinator.py   │
-│ ───────────────────── │       │ ────────────────────  │
-│ CONTINUOUS sync       │       │ EXECUTION layer       │
-│ - P2P + routing       │       │ - Performs syncs      │
-│ - Strategy aware      │       │ - aria2/SSH/P2P       │
-└───────────────────────┘       └───────────────────────┘
-
-Legacy (avoid for new code):
-  - SyncOrchestrator (app/distributed/sync_orchestrator.py)
-  - SyncScheduler (app/coordination/sync_coordinator.py)
+┌──────────────────────────────────────────────────────────────────────┐
+│                         SyncFacade                                   │
+│                    (Unified Entry Point)                             │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│    ┌───────────────┐    ┌───────────────┐    ┌───────────────────┐  │
+│    │  SyncRouter   │    │AutoSyncDaemon │    │ SyncCoordinator   │  │
+│    │  (Routing)    │ ── │   (Daemon)    │ ── │ (Transport)       │  │
+│    └───────────────┘    └───────────────┘    └───────────────────┘  │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    ▼            ▼            ▼
+              ┌──────────┐ ┌──────────┐ ┌──────────┐
+              │  Rsync   │ │   HTTP   │ │ Gossip   │
+              └──────────┘ └──────────┘ └──────────┘
 ```
 
-## Which module should I use?
+**Three Active Components:**
 
-| Use Case                          | Module                       | Import                                                             |
-| --------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
-| **Most cases**: Programmatic sync | `SyncFacade`                 | `from app.coordination.sync_facade import sync`                    |
-| Continuous/daemon sync            | `AutoSyncDaemon`             | `from app.coordination.auto_sync_daemon import AutoSyncDaemon`     |
-| Low-level sync execution          | `DistributedSyncCoordinator` | `from app.coordination import DistributedSyncCoordinator`          |
-| Legacy scheduling (deprecated)    | `SyncScheduler`              | `from app.coordination.sync_coordinator import get_sync_scheduler` |
+| Component        | File                  | Purpose                                        |
+| ---------------- | --------------------- | ---------------------------------------------- |
+| `SyncFacade`     | `sync_facade.py`      | Single entry point for all sync operations     |
+| `AutoSyncDaemon` | `auto_sync_daemon.py` | Background P2P sync with multiple strategies   |
+| `SyncRouter`     | `sync_router.py`      | Intelligent routing based on node capabilities |
 
-## Detailed Responsibilities
+**Supporting Component:**
 
-### SyncFacade (Recommended Entry Point)
+| Component         | File                                  | Purpose                       |
+| ----------------- | ------------------------------------- | ----------------------------- |
+| `SyncCoordinator` | `app/distributed/sync_coordinator.py` | Low-level transport execution |
 
-Unified programmatic entry point for sync operations:
+---
+
+## Sync Strategies
+
+AutoSyncDaemon supports four strategies:
+
+### 1. HYBRID (Default)
+
+Combines push-from-generator with P2P gossip for optimal coverage:
+
+```
+Layer 1: Push-from-generator
+  ├── Immediate push to 2-3 neighbors on game completion
+  └── Low latency for fresh data
+
+Layer 2: P2P Gossip
+  ├── Background replication for eventual consistency
+  └── Handles missed pushes and new nodes
+```
+
+### 2. EPHEMERAL
+
+Aggressive sync for termination-prone nodes (Vast.ai):
+
+- 30-second sync interval (vs 5-minute default)
+- Priority sync before termination
+- Targets persistent nodes first
+
+### 3. BROADCAST
+
+Push-based sync to all training nodes:
+
+- Full replication to all GPU nodes
+- Used for model distribution
+- Higher bandwidth cost
+
+### 4. AUTO
+
+Selects strategy based on node type and data type:
+
+| Node Type   | Games     | Models    | NPZ       |
+| ----------- | --------- | --------- | --------- |
+| Ephemeral   | EPHEMERAL | BROADCAST | EPHEMERAL |
+| Training    | HYBRID    | BROADCAST | HYBRID    |
+| Coordinator | SKIP      | SKIP      | SKIP      |
+
+---
+
+## Usage
+
+### Programmatic Sync
 
 ```python
-from app.coordination.sync_facade import sync
+from app.coordination.sync_facade import SyncFacade, sync
 
-# Sync all data types
-await sync("all")
+# Get facade instance
+facade = SyncFacade.get_instance()
 
-# Sync specific data with routing hints
-await sync("games", board_type="hex8", priority="high")
+# Sync games to specific nodes
+await facade.sync(
+    data_type="games",
+    targets=["node-1", "node-2"],
+    board_type="hex8",
+    priority="high"
+)
+
+# Convenience function - sync all models
+await sync("models", targets=["all"])
+
+# Priority sync for orphan recovery
+await facade.trigger_priority_sync(
+    reason="orphan_games_recovery",
+    source_node="vast-12345",
+    config_key="hex8_2p",
+)
 ```
 
-Features:
-
-- Routes to AutoSyncDaemon / SyncRouter / DistributedSyncCoordinator
-- Centralized logging + metrics for sync operations
-- Backward-compatible with legacy backends (deprecated)
-
-### AutoSyncDaemon (Recommended for Continuous Sync)
-
-Daemonized sync loop for cluster-wide continuous sync:
+### Daemon Usage
 
 ```python
-from app.coordination.auto_sync_daemon import AutoSyncDaemon
+from app.coordination.auto_sync_daemon import AutoSyncDaemon, SyncStrategy
 
+# Default hybrid strategy
 daemon = AutoSyncDaemon()
+await daemon.start()
+
+# Ephemeral strategy for Vast.ai nodes
+daemon = AutoSyncDaemon(strategy=SyncStrategy.EPHEMERAL)
 await daemon.start()
 ```
 
-Features:
+### CLI Usage
 
-- Strategy-aware sync (HYBRID/EPHEMERAL/BROADCAST/AUTO)
-- Prioritizes ephemeral nodes and avoids shared storage
-- Integrates with sync routing + bandwidth controls
+```bash
+# Sync via master_loop.py (recommended)
+python scripts/master_loop.py
 
-### SyncOrchestrator (Legacy, Pending Deprecation)
-
-The older unified facade remains for backward compatibility:
-
-```python
-from app.distributed.sync_orchestrator import get_sync_orchestrator
-
-orchestrator = get_sync_orchestrator()
-await orchestrator.sync_all()
+# Direct sync operations
+python scripts/unified_data_sync.py --data-type games --board-type hex8
 ```
 
-Prefer `SyncFacade` for new code.
+---
 
-### SyncScheduler (Deprecated Scheduling Layer)
+## Routing Algorithm
 
-Decides **when** and **what** to sync:
+SyncRouter uses a multi-factor routing algorithm:
+
+### Step 1: Node Eligibility
 
 ```python
-from app.coordination.sync_coordinator import (
-    get_sync_scheduler,
-    get_cluster_data_status,
-    schedule_priority_sync,
-    get_sync_recommendations,
-)
+def should_sync_to_node(node_id, data_type) -> bool:
+    # Check exclusion rules
+    if node_id in COORDINATOR_NODES:
+        return False  # Coordinators don't receive synced data
 
-status = get_cluster_data_status()
-recommendations = get_sync_recommendations()
-await schedule_priority_sync()
+    # Check disk capacity
+    if get_disk_usage(node_id) > 70%:
+        return False
+
+    # Check NFS sharing
+    if shares_nfs_with(source_node, node_id):
+        return False  # Already have the data
+
+    return True
 ```
 
-Features (legacy):
+### Step 2: Priority Scoring
 
-- Data freshness tracking across all hosts
-- Priority-based sync scheduling
-- Bandwidth-aware transfer balancing
-- Cluster-wide data state visibility
+| Factor        | Weight | Description                             |
+| ------------- | ------ | --------------------------------------- |
+| Training node | +50    | Active training jobs need fresh data    |
+| Ephemeral     | +30    | Prioritize before potential termination |
+| Disk headroom | +20    | Nodes with more free space              |
+| Last sync age | +10    | Nodes that haven't synced recently      |
+| Quality score | +10    | Higher quality data gets priority       |
 
-### DistributedSyncCoordinator (Execution Layer)
+### Step 3: Bandwidth Allocation
 
-Performs **actual sync operations**:
+Bandwidth limits by provider (from `distributed_hosts.yaml`):
 
-```python
-from app.coordination import DistributedSyncCoordinator
+| Provider | Limit    | Reason                         |
+| -------- | -------- | ------------------------------ |
+| RunPod   | 100 MB/s | High-bandwidth datacenter      |
+| Nebius   | 100 MB/s | High-bandwidth datacenter      |
+| Vast.ai  | 50 MB/s  | Residential/varied connections |
+| Vultr    | 75 MB/s  | Mid-tier datacenter            |
+| Hetzner  | 25 MB/s  | CPU-only, lower priority       |
 
-coordinator = DistributedSyncCoordinator.get_instance()
-await coordinator.sync_training_data()
-await coordinator.sync_models(model_ids=["model_v42"])
-stats = await coordinator.full_cluster_sync()
+---
+
+## Event Integration
+
+### Events Emitted
+
+| Event                 | Trigger                 | Payload                             |
+| --------------------- | ----------------------- | ----------------------------------- |
+| `DATA_SYNC_STARTED`   | Sync operation begins   | `{sync_type, targets, data_type}`   |
+| `DATA_SYNC_COMPLETED` | Sync operation succeeds | `{sync_type, duration, file_count}` |
+| `DATA_SYNC_FAILED`    | Sync operation fails    | `{error, target_node}`              |
+
+### Events Subscribed
+
+| Event                   | Handler        | Action                           |
+| ----------------------- | -------------- | -------------------------------- |
+| `TRAINING_STARTED`      | SyncRouter     | Prioritize sync to training node |
+| `NODE_RECOVERED`        | AutoSyncDaemon | Trigger catch-up sync            |
+| `ORPHAN_GAMES_DETECTED` | SyncFacade     | Trigger priority sync            |
+
+---
+
+## Fault Tolerance
+
+### Circuit Breaker
+
+Each node has an independent circuit breaker:
+
+```
+States: CLOSED → OPEN → HALF_OPEN → CLOSED
+
+CLOSED:     Normal operation
+OPEN:       Node unreachable, skip for 5 minutes
+HALF_OPEN:  Test with single request
 ```
 
-Features:
+### Fallback Chain
 
-- Multiple transport backends (aria2, SSH/rsync, P2P HTTP, Gossip)
-- Automatic transport selection based on capabilities
-- NFS optimization (skip sync when storage is shared)
-- Circuit breaker integration
-- Sync watchdog (deadline per sync, consecutive failure tracking)
-- Data server health checks with best-effort restart and `get_sync_health()` metrics
+```
+1. Tailscale (private network)
+   ↓ fail
+2. SSH/rsync (direct connection)
+   ↓ fail
+3. HTTP (data server)
+   ↓ fail
+4. Queue for retry
+```
 
-## Exports from app.coordination
+### Integrity Checks
 
-Recommended:
+Before syncing, databases are validated:
 
 ```python
+# Check SQLite integrity
+check_sqlite_integrity(db_path)
+
+# Check write lock (no active writers)
+is_database_safe_to_sync(db_path)
+
+# Verify game count matches source
+verify_game_count(db_path, expected_count)
+```
+
+---
+
+## Monitoring
+
+### Health Check
+
+```python
+daemon = AutoSyncDaemon.get_instance()
+health = daemon.health_check()
+# Returns: HealthCheckResult(healthy=True, status=RUNNING, ...)
+```
+
+### Metrics
+
+| Metric                   | Description             |
+| ------------------------ | ----------------------- |
+| `sync_operations_total`  | Total sync operations   |
+| `sync_bytes_transferred` | Total bytes transferred |
+| `sync_duration_seconds`  | Sync operation duration |
+| `sync_failures_total`    | Failed sync attempts    |
+| `sync_queue_depth`       | Pending sync operations |
+
+### Status Endpoint
+
+```bash
+curl http://localhost:8790/status | jq '.sync'
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable                        | Default | Description              |
+| ------------------------------- | ------- | ------------------------ |
+| `RINGRIFT_SYNC_INTERVAL`        | 300     | Sync interval in seconds |
+| `RINGRIFT_SYNC_BATCH_SIZE`      | 10      | Files per batch          |
+| `RINGRIFT_SYNC_BANDWIDTH_LIMIT` | 100     | MB/s per node            |
+| `RINGRIFT_SYNC_RETRY_MAX`       | 3       | Max retry attempts       |
+
+### distributed_hosts.yaml
+
+```yaml
+sync:
+  enabled: true
+  interval_seconds: 300
+  strategies:
+    ephemeral_interval: 30
+    broadcast_on_promotion: true
+
+hosts:
+  runpod-h100:
+    bandwidth_mbps: 100
+    priority: high
+```
+
+---
+
+## Migration Guide
+
+### From SyncScheduler
+
+```python
+# Before (deprecated)
+from app.coordination.sync_scheduler import SyncScheduler
+scheduler = SyncScheduler()
+await scheduler.schedule_sync(targets)
+
+# After
 from app.coordination.sync_facade import sync
+await sync("games", targets=targets)
 ```
 
-Legacy exports (still available, but deprecated for new code):
+### From ClusterDataSyncDaemon
 
 ```python
-from app.coordination import (
-    SyncScheduler,              # Scheduling layer (deprecated)
-    DistributedSyncCoordinator, # Execution layer
-)
+# Before (deprecated)
+from app.coordination.cluster_data_sync import ClusterDataSyncDaemon
+daemon = ClusterDataSyncDaemon()
+
+# After
+from app.coordination.auto_sync_daemon import AutoSyncDaemon, SyncStrategy
+daemon = AutoSyncDaemon(strategy=SyncStrategy.BROADCAST)
 ```
 
-## Migration Notes
+### From EphemeralSyncDaemon
 
-The naming evolved over time:
+```python
+# Before (deprecated)
+from app.coordination.ephemeral_sync import EphemeralSyncDaemon
 
-- `SyncCoordinator` in `app/distributed/` is the original execution layer
-- `SyncCoordinator` in `app/coordination/` was renamed to `SyncScheduler` in Dec 2025 (deprecated)
-- `SyncOrchestrator` is pending deprecation; prefer `SyncFacade` + `AutoSyncDaemon`
+# After
+from app.coordination.auto_sync_daemon import AutoSyncDaemon, SyncStrategy
+daemon = AutoSyncDaemon(strategy=SyncStrategy.EPHEMERAL)
+```
+
+---
+
+## Files Reference
+
+| File                       | LOC    | Purpose                |
+| -------------------------- | ------ | ---------------------- |
+| `sync_facade.py`           | ~600   | Unified entry point    |
+| `auto_sync_daemon.py`      | ~3,600 | Main sync daemon       |
+| `sync_router.py`           | ~800   | Routing logic          |
+| `sync_bandwidth.py`        | ~700   | Bandwidth management   |
+| `database_sync_manager.py` | ~670   | Base class for DB sync |
+
+### Deprecated (Archive Q2 2026)
+
+| File                   | Replacement               |
+| ---------------------- | ------------------------- |
+| `sync_scheduler.py`    | AutoSyncDaemon            |
+| `cluster_data_sync.py` | AutoSyncDaemon(BROADCAST) |
+| `ephemeral_sync.py`    | AutoSyncDaemon(EPHEMERAL) |
+
+---
+
+## Troubleshooting
+
+### "Sync queue backed up"
+
+1. Check network connectivity: `curl -s http://node:8770/health`
+2. Check disk usage: `df -h /data`
+3. Check circuit breaker state in logs
+
+### "Sync taking too long"
+
+1. Reduce batch size: `RINGRIFT_SYNC_BATCH_SIZE=5`
+2. Check bandwidth limits in distributed_hosts.yaml
+3. Enable parallel transfers: `RINGRIFT_SYNC_PARALLEL=4`
+
+### "Missing data on training node"
+
+1. Check node is not in exclusion list
+2. Verify NFS sharing detection
+3. Trigger manual sync: `await sync("games", targets=["node-id"])`
+
+---
+
+_Last Updated: December 27, 2025_

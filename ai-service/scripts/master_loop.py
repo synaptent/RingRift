@@ -133,11 +133,16 @@ _MASTER_LOCK: SingletonLock | None = None
 
 # Critical daemons that MUST start for autonomous operation (December 2025 - Gap 2 fix)
 # If any of these fail to start, the master loop should NOT proceed
+# December 27, 2025: Expanded to include full automation pipeline
 CRITICAL_DAEMON_NAMES = {
     "event_router",      # Event system is fundamental
     "data_pipeline",     # Pipeline orchestration
     "auto_sync",         # Data replication
-    "feedback_loop",     # Training feedback and quality scoring (Dec 2025)
+    "feedback_loop",     # Training feedback and quality scoring
+    "auto_export",       # NPZ export (Dec 27) - blocks training if missing
+    "training_trigger",  # Training trigger (Dec 27) - starts training jobs
+    "evaluation",        # Gauntlet evaluation (Dec 27) - model quality gates
+    "auto_promotion",    # Model promotion (Dec 27) - promotes winning models
 }
 
 
