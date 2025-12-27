@@ -1065,12 +1065,11 @@ class DataPipelineController:
             elif source.source_type == DataSourceType.DATABASE:
                 try:
                     import sqlite3
-                    conn = sqlite3.connect(source.path)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM games WHERE status = 'completed'")
-                    count = cursor.fetchone()[0]
-                    conn.close()
-                    total += count
+                    with sqlite3.connect(source.path) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT COUNT(*) FROM games WHERE status = 'completed'")
+                        count = cursor.fetchone()[0]
+                        total += count
                 except Exception as e:
                     logger.warning(f"Failed to count games in {source.path}: {e}")
 

@@ -27,11 +27,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
 import socket
 import time
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 from app.coordination.protocols import (
     CoordinatorStatus,
@@ -57,10 +58,12 @@ class DaemonConfig:
     All daemons share:
     - enabled: Whether the daemon should run
     - check_interval_seconds: How often to run the main cycle
+    - handle_signals: Whether to register SIGTERM/SIGINT handlers
     """
 
     enabled: bool = True
     check_interval_seconds: int = 300  # 5 minutes default
+    handle_signals: bool = False  # Enable for daemons that need graceful shutdown
 
     @classmethod
     def from_env(cls, prefix: str = "RINGRIFT") -> "DaemonConfig":
@@ -85,6 +88,11 @@ class DaemonConfig:
                 config.check_interval_seconds = int(os.environ.get(interval_key, "300"))
             except ValueError:
                 pass
+
+        # Signal handling
+        signals_key = f"{env_prefix}HANDLE_SIGNALS"
+        if os.environ.get(signals_key):
+            config.handle_signals = os.environ.get(signals_key, "0") == "1"
 
         return config
 
@@ -140,6 +148,11 @@ class BaseDaemon(ABC, Generic[ConfigT]):
         self.node_id = socket.gethostname()
         self._hostname = socket.gethostname()
 
+        # Signal handling (December 2025: graceful shutdown support)
+        self._original_sigterm_handler: Callable | int | None = None
+        self._original_sigint_handler: Callable | int | None = None
+        self._shutdown_in_progress = False
+
         logger.info(f"[{self._get_daemon_name()}] Initialized on {self.node_id}")
 
     # =========================================================================
@@ -165,6 +178,10 @@ class BaseDaemon(ABC, Generic[ConfigT]):
 
         # Register with coordinator protocol
         self._coordinator_register()
+
+        # Register signal handlers if enabled
+        if self.config.handle_signals:
+            self._register_signal_handlers()
 
         # Allow subclass initialization
         await self._on_start()
@@ -199,6 +216,10 @@ class BaseDaemon(ABC, Generic[ConfigT]):
                 await asyncio.wait_for(self._task, timeout=5.0)
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+
+        # Unregister signal handlers
+        if self.config.handle_signals:
+            self._unregister_signal_handlers()
 
         # Unregister from coordinator
         self._coordinator_unregister()
@@ -397,6 +418,91 @@ class BaseDaemon(ABC, Generic[ConfigT]):
             unregister_coordinator(self._get_daemon_name())
         except Exception as e:
             logger.debug(f"[{self._get_daemon_name()}] Failed to unregister coordinator: {e}")
+
+    # =========================================================================
+    # Signal Handling (December 2025: graceful shutdown support)
+    # =========================================================================
+
+    def _register_signal_handlers(self) -> None:
+        """Register SIGTERM/SIGINT handlers for graceful shutdown.
+
+        Called during start() when config.handle_signals=True.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+
+            # Save original handlers
+            self._original_sigterm_handler = signal.getsignal(signal.SIGTERM)
+            self._original_sigint_handler = signal.getsignal(signal.SIGINT)
+
+            # Register our handlers
+            loop.add_signal_handler(signal.SIGTERM, self._handle_termination_signal)
+            loop.add_signal_handler(signal.SIGINT, self._handle_termination_signal)
+
+            logger.debug(f"[{self._get_daemon_name()}] Signal handlers registered")
+        except (NotImplementedError, RuntimeError) as e:
+            # Signal handlers not supported (e.g., Windows, non-main thread)
+            logger.debug(f"[{self._get_daemon_name()}] Could not register signal handlers: {e}")
+
+    def _unregister_signal_handlers(self) -> None:
+        """Unregister signal handlers during shutdown."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.remove_signal_handler(signal.SIGTERM)
+            loop.remove_signal_handler(signal.SIGINT)
+        except (NotImplementedError, RuntimeError, ValueError):
+            pass
+
+    def _handle_termination_signal(self) -> None:
+        """Handle SIGTERM/SIGINT for graceful shutdown.
+
+        This is called synchronously by the event loop. It schedules
+        the async shutdown for execution.
+
+        Override _on_graceful_shutdown() for custom pre-shutdown logic.
+        """
+        if self._shutdown_in_progress:
+            logger.warning(f"[{self._get_daemon_name()}] Shutdown already in progress")
+            return
+
+        self._shutdown_in_progress = True
+        logger.info(f"[{self._get_daemon_name()}] Received termination signal, initiating graceful shutdown")
+
+        # Import here to avoid circular imports
+        from app.core.async_context import fire_and_forget
+
+        fire_and_forget(
+            self._graceful_shutdown(),
+            error_callback=lambda e: logger.error(f"[{self._get_daemon_name()}] Graceful shutdown error: {e}"),
+        )
+
+    async def _graceful_shutdown(self) -> None:
+        """Perform graceful shutdown sequence.
+
+        Called when SIGTERM/SIGINT is received. Subclasses should override
+        _on_graceful_shutdown() for custom pre-shutdown logic (e.g., final sync).
+        """
+        try:
+            # Allow subclass to perform final actions (e.g., sync, flush)
+            await self._on_graceful_shutdown()
+        except Exception as e:
+            logger.error(f"[{self._get_daemon_name()}] Error during graceful shutdown: {e}")
+        finally:
+            await self.stop()
+
+    async def _on_graceful_shutdown(self) -> None:
+        """Hook for subclass custom graceful shutdown logic.
+
+        Override this to perform final actions before the daemon stops,
+        such as:
+        - Triggering a final data sync
+        - Flushing buffers
+        - Completing in-progress work
+        - Emitting shutdown events
+
+        This is called BEFORE stop() is called.
+        """
+        pass
 
     # =========================================================================
     # Utility Methods

@@ -373,12 +373,13 @@ class MetricsAnalysisOrchestrator:
             router.subscribe(DataEventType.METRICS_UPDATED.value, self._on_metrics_updated)
             router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
             router.subscribe(DataEventType.TRAINING_PROGRESS.value, self._on_training_progress)
+            router.subscribe(DataEventType.EVALUATION_PROGRESS.value, self._on_evaluation_progress)
 
             # Subscribe to cache events for window reset (December 2025)
             router.subscribe(DataEventType.CACHE_INVALIDATED.value, self._on_cache_invalidated)
 
             self._subscribed = True
-            logger.info("[MetricsAnalysisOrchestrator] Subscribed to metrics events")
+            logger.info("[MetricsAnalysisOrchestrator] Subscribed to metrics + evaluation events")
             return True
 
         except ImportError:
@@ -516,6 +517,51 @@ class MetricsAnalysisOrchestrator:
         for key in ["train_loss", "val_loss", "loss", "accuracy"]:
             if key in payload:
                 self.record_metric(key, payload[key], epoch=epoch)
+
+    async def _on_evaluation_progress(self, event) -> None:
+        """Handle EVALUATION_PROGRESS event - track evaluation metrics as they come in.
+
+        December 2025: Wire EVALUATION_PROGRESS to enable real-time tracking of
+        evaluation metrics (games played, win rates, Elo estimates) during gauntlet
+        evaluation. This provides visibility into evaluation progress before
+        EVALUATION_COMPLETED is emitted.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        config_key = payload.get("config", payload.get("config_key", ""))
+        games_played = payload.get("games_played", 0)
+        games_total = payload.get("games_total", payload.get("total_games", 0))
+        current_elo = payload.get("current_elo", payload.get("elo_estimate"))
+        win_rate = payload.get("win_rate")
+        opponent = payload.get("opponent", "")
+
+        # Record evaluation progress metrics
+        if games_played and games_total:
+            progress_pct = (games_played / games_total) * 100
+            self.record_metric(
+                f"eval_progress_{config_key}" if config_key else "eval_progress",
+                progress_pct,
+            )
+
+        if current_elo is not None:
+            self.record_metric(
+                f"eval_elo_{config_key}" if config_key else "eval_elo",
+                current_elo,
+            )
+
+        if win_rate is not None:
+            metric_name = (
+                f"eval_winrate_{config_key}_{opponent}"
+                if config_key and opponent
+                else f"eval_winrate_{config_key}" if config_key else "eval_winrate"
+            )
+            self.record_metric(metric_name, win_rate)
+
+        logger.debug(
+            f"[MetricsAnalysisOrchestrator] EVALUATION_PROGRESS: "
+            f"{config_key or 'unknown'} {games_played}/{games_total} games, "
+            f"elo={current_elo}, winrate={win_rate}"
+        )
 
     async def _on_cache_invalidated(self, event) -> None:
         """Handle CACHE_INVALIDATED - reset metric windows when caches are flushed.

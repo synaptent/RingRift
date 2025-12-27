@@ -578,6 +578,53 @@ class HealthCheckOrchestrator:
                 return True
         return False
 
+    def health_check(self) -> "HealthCheckResult":
+        """Perform health check on this orchestrator (CoordinatorProtocol compliance).
+
+        Returns standardized HealthCheckResult for unified monitoring.
+
+        Returns:
+            HealthCheckResult with health status and details
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        # Check if orchestrator is running and has data
+        is_running = self._running
+        has_data = len(self.node_health) > 0
+        check_recent = (time.time() - self._last_full_check) < (self.check_interval * 3)
+
+        is_healthy = is_running and (has_data or check_recent)
+
+        if is_healthy:
+            status = CoordinatorStatus.RUNNING
+            message = ""
+        elif is_running and not has_data:
+            status = CoordinatorStatus.DEGRADED
+            message = "No node health data collected yet"
+        else:
+            status = CoordinatorStatus.STOPPED
+            message = "Health check orchestrator not running"
+
+        # Count node states
+        healthy_count = sum(
+            1 for h in self.node_health.values()
+            if h.state == NodeHealthState.HEALTHY
+        )
+        total_count = len(self.node_health)
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=message,
+            details={
+                "is_running": is_running,
+                "nodes_tracked": total_count,
+                "nodes_healthy": healthy_count,
+                "last_check_seconds_ago": round(time.time() - self._last_full_check, 1),
+                "check_interval": self.check_interval,
+            },
+        )
+
 
 # Global instance
 _health_orchestrator: HealthCheckOrchestrator | None = None

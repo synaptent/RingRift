@@ -207,6 +207,21 @@ class DaemonLifecycleManager:
                             )
                         finally:
                             await self._lock.acquire()
+
+                        # December 2025: Re-validate state after re-acquiring lock
+                        # Another coroutine may have modified daemon state while waiting
+                        info = self._daemons.get(daemon_type)
+                        if info is None:
+                            logger.warning(
+                                f"{daemon_type.value} was removed while waiting for dependencies"
+                            )
+                            return False
+                        if info.state == DaemonState.RUNNING:
+                            logger.debug(
+                                f"{daemon_type.value} was started by another coroutine while waiting"
+                            )
+                            return True  # Already started, success
+
                     except asyncio.TimeoutError:
                         logger.error(
                             f"Dependency {dep.value} not ready after {DEPENDENCY_READY_TIMEOUT}s, "

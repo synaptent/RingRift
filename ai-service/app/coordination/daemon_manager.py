@@ -242,6 +242,16 @@ class DaemonManager:
             depends_on=[DaemonType.EVENT_ROUTER],
         )
         self.register_factory(DaemonType.CLUSTER_WATCHDOG, daemon_runners.create_cluster_watchdog)
+        self.register_factory(
+            DaemonType.COORDINATOR_HEALTH_MONITOR,
+            daemon_runners.create_coordinator_health_monitor,
+            depends_on=[DaemonType.EVENT_ROUTER],
+        )
+        self.register_factory(
+            DaemonType.WORK_QUEUE_MONITOR,
+            daemon_runners.create_work_queue_monitor,
+            depends_on=[DaemonType.EVENT_ROUTER, DaemonType.QUEUE_POPULATOR],
+        )
 
         # Health server needs self access - kept inline
         self.register_factory(DaemonType.HEALTH_SERVER, self._create_health_server)
@@ -1464,6 +1474,53 @@ class DaemonManager:
             },
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Perform health check (CoordinatorProtocol compliance).
+
+        Returns standardized HealthCheckResult for unified monitoring.
+        DaemonManager is healthy if it's running and has few failed daemons.
+
+        Returns:
+            HealthCheckResult with health status and details
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        running_count = sum(
+            1 for i in self._daemons.values() if i.state == DaemonState.RUNNING
+        )
+        failed_count = sum(
+            1 for i in self._daemons.values() if i.state == DaemonState.FAILED
+        )
+        total = len(self._daemons)
+
+        # Healthy if running and not too many failures
+        is_healthy = self._running and (
+            total == 0 or failed_count < max(1, total * 0.2)
+        )
+
+        if is_healthy:
+            status = CoordinatorStatus.RUNNING
+            message = ""
+        elif self._running and failed_count >= max(1, total * 0.2):
+            status = CoordinatorStatus.DEGRADED
+            message = f"High failure rate: {failed_count}/{total} daemons failed"
+        else:
+            status = CoordinatorStatus.STOPPED
+            message = "DaemonManager not running"
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=message,
+            details={
+                "running": self._running,
+                "daemons_total": total,
+                "daemons_running": running_count,
+                "daemons_failed": failed_count,
+                "uptime_seconds": round(time.time() - self._start_time, 1),
+            },
+        )
+
     def is_running(self, daemon_type: DaemonType) -> bool:
         """Check if a daemon is running."""
         info = self._daemons.get(daemon_type)
@@ -1760,13 +1817,15 @@ class DaemonManager:
         async def handle_status(request):
             """Detailed daemon status."""
             summary = self.health_summary()
-            # Add per-daemon status
+            # Dec 2025: Fixed to use self._daemons instead of undefined _daemon_states
+            # and self._factories (which contains Callables, not DaemonInfo)
             summary["daemons"] = {}
-            for daemon_type, info in self._factories.items():
-                state = self._daemon_states.get(daemon_type, DaemonState.STOPPED)
+            for daemon_type, info in self._daemons.items():
                 summary["daemons"][daemon_type.value] = {
-                    "state": state.value,
-                    "auto_restart": info.get("auto_restart", True),
+                    "state": info.state.value,
+                    "auto_restart": info.auto_restart,
+                    "uptime_seconds": info.uptime_seconds,
+                    "restart_count": info.restart_count,
                 }
             return web.json_response(summary)
 

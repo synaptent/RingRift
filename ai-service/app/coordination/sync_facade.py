@@ -519,7 +519,55 @@ class SyncFacade:
             require_confirmation=True,
         )
 
-        return await self.sync(request)
+        response = await self.sync(request)
+
+        # December 2025: Emit DATA_SYNC_COMPLETED/FAILED for pipeline coordination
+        # This is critical for orphan game recovery flow to continue
+        await self._emit_sync_event(response, source_node, config_key, reason)
+
+        return response
+
+    async def _emit_sync_event(
+        self,
+        response: SyncResponse,
+        source_node: str | None,
+        config_key: str | None,
+        reason: str,
+    ) -> None:
+        """Emit DATA_SYNC_COMPLETED or DATA_SYNC_FAILED event.
+
+        December 2025: Added to fix orphan game recovery pipeline.
+        Without this event, DataPipelineOrchestrator._on_orphan_games_detected()
+        would wait indefinitely for sync completion.
+        """
+        try:
+            if response.success:
+                from app.distributed.data_events import emit_data_sync_completed
+
+                await emit_data_sync_completed(
+                    host=source_node or "cluster",
+                    games_synced=response.nodes_synced,
+                    duration=response.duration_seconds,
+                    bytes_transferred=response.bytes_transferred,
+                    source="sync_facade.trigger_priority_sync",
+                    config=config_key or "",
+                )
+                logger.debug(
+                    f"[SyncFacade] Emitted DATA_SYNC_COMPLETED: {response.nodes_synced} games"
+                )
+            else:
+                from app.distributed.data_events import emit_data_sync_failed
+
+                await emit_data_sync_failed(
+                    host=source_node or "cluster",
+                    error="; ".join(response.errors) if response.errors else reason,
+                    source="sync_facade.trigger_priority_sync",
+                )
+                logger.debug(f"[SyncFacade] Emitted DATA_SYNC_FAILED: {response.errors}")
+        except ImportError:
+            logger.debug("[SyncFacade] data_events module not available for event emission")
+        except Exception as e:
+            logger.debug(f"[SyncFacade] Failed to emit sync event: {e}")
 
     def get_stats(self) -> dict[str, Any]:
         """Get sync statistics."""
@@ -528,6 +576,49 @@ class SyncFacade:
             "backends_loaded": {
                 k.value: v for k, v in self._backends_loaded.items()
             },
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Check health status of SyncFacade.
+
+        December 27, 2025: Added to meet P2P manager health_check() standard.
+
+        Returns:
+            Dict with status, sync statistics, and backend health.
+        """
+        status = "healthy"
+        errors_count = self._stats.get("total_errors", 0)
+        last_error: str | None = None
+
+        # Check error rate
+        total_syncs = self._stats.get("total_syncs", 0)
+        if total_syncs > 0:
+            error_rate = errors_count / total_syncs
+            if error_rate > 0.5:
+                status = "unhealthy"
+                last_error = f"High error rate: {error_rate:.0%}"
+            elif error_rate > 0.2:
+                status = "degraded"
+                last_error = f"Elevated error rate: {error_rate:.0%}"
+
+        # Check if any backends are loaded
+        backends_loaded_count = sum(1 for v in self._backends_loaded.values() if v)
+        if backends_loaded_count == 0 and total_syncs == 0:
+            # No backends loaded yet (normal at startup)
+            status = "healthy"
+        elif backends_loaded_count == 0 and total_syncs > 0:
+            # Tried syncs but no backends available
+            status = "degraded"
+            last_error = "No sync backends available"
+
+        return {
+            "status": status,
+            "operations_count": total_syncs,
+            "errors_count": errors_count,
+            "last_error": last_error,
+            "backends_loaded": backends_loaded_count,
+            "total_bytes_transferred": self._stats.get("total_bytes", 0),
+            "by_backend": self._stats.get("by_backend", {}),
         }
 
     @classmethod

@@ -415,10 +415,24 @@ class P2PBackend:
         return await _retry_request(_do_request, "start_training")
 
     async def get_pipeline_status(self) -> dict[str, Any]:
-        """Get current pipeline status."""
-        session = await self._get_session()
-        async with session.get(f"{self.leader_url}/pipeline/status") as resp:
-            return await resp.json()
+        """Get current pipeline status.
+
+        Returns:
+            Pipeline status dict
+
+        Raises:
+            RuntimeError: If request fails
+        """
+        try:
+            session = await self._get_session()
+            async with session.get(f"{self.leader_url}/pipeline/status") as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Failed to get pipeline status: HTTP {resp.status}")
+                return await resp.json()
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"Timeout getting pipeline status: {e}") from e
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Error getting pipeline status: {e}") from e
 
     async def wait_for_pipeline_completion(
         self,
@@ -454,10 +468,24 @@ class P2PBackend:
         )
 
     async def trigger_data_sync(self) -> dict[str, Any]:
-        """Trigger data synchronization across the cluster."""
-        session = await self._get_session()
-        async with session.post(f"{self.leader_url}/sync/start") as resp:
-            return await resp.json()
+        """Trigger data synchronization across the cluster.
+
+        Returns:
+            Sync status dict
+
+        Raises:
+            RuntimeError: If request fails
+        """
+        try:
+            session = await self._get_session()
+            async with session.post(f"{self.leader_url}/sync/start") as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Failed to trigger data sync: HTTP {resp.status}")
+                return await resp.json()
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"Timeout triggering data sync: {e}") from e
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Error triggering data sync: {e}") from e
 
     async def trigger_git_update(self, node_id: str | None = None) -> dict[str, Any]:
         """Trigger git update on cluster nodes.
@@ -467,11 +495,21 @@ class P2PBackend:
 
         Returns:
             Result of git update operation
+
+        Raises:
+            RuntimeError: If request fails
         """
-        session = await self._get_session()
-        payload = {"node_id": node_id} if node_id else {}
-        async with session.post(f"{self.leader_url}/git/update", json=payload) as resp:
-            return await resp.json()
+        try:
+            session = await self._get_session()
+            payload = {"node_id": node_id} if node_id else {}
+            async with session.post(f"{self.leader_url}/git/update", json=payload) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Failed to trigger git update: HTTP {resp.status}")
+                return await resp.json()
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"Timeout triggering git update: {e}") from e
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Error triggering git update: {e}") from e
 
     async def get_job_history(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent job history.
@@ -480,14 +518,22 @@ class P2PBackend:
             limit: Maximum number of jobs to return
 
         Returns:
-            List of recent jobs
+            List of recent jobs (empty list on error)
         """
-        session = await self._get_session()
-        async with session.get(f"{self.leader_url}/jobs/history?limit={limit}") as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
-            return data.get("jobs", [])
+        try:
+            session = await self._get_session()
+            async with session.get(f"{self.leader_url}/jobs/history?limit={limit}") as resp:
+                if resp.status != 200:
+                    logger.warning(f"Failed to get job history: HTTP {resp.status}")
+                    return []
+                data = await resp.json()
+                return data.get("jobs", [])
+        except asyncio.TimeoutError:
+            logger.warning("Timeout getting job history")
+            return []
+        except aiohttp.ClientError as e:
+            logger.warning(f"Error getting job history: {e}")
+            return []
 
     async def cancel_job(self, job_id: str) -> dict[str, Any]:
         """Cancel a running job.
@@ -497,10 +543,20 @@ class P2PBackend:
 
         Returns:
             Result of cancel operation
+
+        Raises:
+            RuntimeError: If request fails
         """
-        session = await self._get_session()
-        async with session.post(f"{self.leader_url}/jobs/{job_id}/cancel") as resp:
-            return await resp.json()
+        try:
+            session = await self._get_session()
+            async with session.post(f"{self.leader_url}/jobs/{job_id}/cancel") as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"Failed to cancel job {job_id}: HTTP {resp.status}")
+                return await resp.json()
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"Timeout cancelling job {job_id}: {e}") from e
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Error cancelling job {job_id}: {e}") from e
 
     async def health_check(self) -> bool:
         """Check if the P2P leader is healthy.

@@ -240,6 +240,18 @@ class UnifiedReplicationConfig:
     max_concurrent_repairs: int = 5
     repair_timeout_seconds: float = 300.0
 
+    # December 2025: Rate limiting to prevent cluster spam
+    # (Harvested from deprecated replication_repair_daemon.py)
+    max_repairs_per_hour: int = 500  # Hourly limit on repair attempts
+    repair_cooldown_per_game_seconds: float = 600.0  # 10 min cooldown per game
+
+    # December 2025: Ephemeral target avoidance
+    # Vast.ai nodes are unreliable as replication targets
+    avoid_ephemeral_targets: bool = True
+
+    # December 2025: Bandwidth limiting per repair
+    bandwidth_limit_mbps: float = 50.0  # Default 50 MB/s per transfer
+
     # Emergency sync
     enable_emergency_sync: bool = True
     emergency_sync_threshold_games: int = 500
@@ -290,6 +302,12 @@ class UnifiedReplicationDaemon:
         self._active_repairs: dict[str, RepairJob] = {}
         self._repair_history: list[RepairJob] = []
         self._repair_lock = asyncio.Lock()
+
+        # December 2025: Rate limiting state
+        # (Harvested from deprecated replication_repair_daemon.py)
+        self._hourly_repair_count: int = 0
+        self._hourly_reset_time: float = time.time()
+        self._repair_cooldowns: dict[str, float] = {}  # game_id -> last_attempt_time
 
     async def start(self) -> None:
         """Start both monitoring and repair loops."""
@@ -653,6 +671,74 @@ class UnifiedReplicationDaemon:
     # Repair Loop
     # =========================================================================
 
+    # =========================================================================
+    # Rate Limiting (December 2025 - harvested from deprecated daemon)
+    # =========================================================================
+
+    def _check_and_reset_hourly_limit(self) -> bool:
+        """Check if hourly repair limit is reached, reset if hour elapsed.
+
+        Returns:
+            True if repairs are allowed, False if hourly limit reached
+        """
+        now = time.time()
+        elapsed = now - self._hourly_reset_time
+
+        # Reset counter every hour (3600 seconds)
+        if elapsed >= 3600.0:
+            self._hourly_repair_count = 0
+            self._hourly_reset_time = now
+            logger.debug("[UnifiedReplicationDaemon] Hourly repair counter reset")
+
+        if self._hourly_repair_count >= self.config.max_repairs_per_hour:
+            remaining = 3600.0 - elapsed
+            logger.warning(
+                f"[UnifiedReplicationDaemon] Hourly repair limit reached "
+                f"({self._hourly_repair_count}/{self.config.max_repairs_per_hour}), "
+                f"reset in {remaining:.0f}s"
+            )
+            return False
+
+        return True
+
+    def _is_game_on_cooldown(self, game_id: str) -> bool:
+        """Check if a game is on repair cooldown.
+
+        Args:
+            game_id: The game to check
+
+        Returns:
+            True if game is on cooldown, False if repair is allowed
+        """
+        if game_id not in self._repair_cooldowns:
+            return False
+
+        last_attempt = self._repair_cooldowns[game_id]
+        elapsed = time.time() - last_attempt
+
+        if elapsed < self.config.repair_cooldown_per_game_seconds:
+            remaining = self.config.repair_cooldown_per_game_seconds - elapsed
+            logger.debug(
+                f"[UnifiedReplicationDaemon] Game {game_id[:8]} on cooldown, "
+                f"retry in {remaining:.0f}s"
+            )
+            return True
+
+        return False
+
+    def _record_repair_attempt(self, game_id: str) -> None:
+        """Record a repair attempt for rate limiting."""
+        now = time.time()
+        self._hourly_repair_count += 1
+        self._repair_cooldowns[game_id] = now
+
+        # Prune old cooldowns (>2x cooldown period)
+        prune_threshold = now - (self.config.repair_cooldown_per_game_seconds * 2)
+        self._repair_cooldowns = {
+            gid: ts for gid, ts in self._repair_cooldowns.items()
+            if ts > prune_threshold
+        }
+
     async def _repair_loop(self) -> None:
         """Main repair loop."""
         logger.info(
@@ -672,6 +758,10 @@ class UnifiedReplicationDaemon:
 
     async def _run_repair_cycle(self) -> None:
         """Run one cycle of repair operations."""
+        # December 2025: Check hourly rate limit before processing
+        if not self._check_and_reset_hourly_limit():
+            return
+
         async with self._repair_lock:
             # Find games needing repair
             games_needing_repair = await self._find_games_needing_repair()
@@ -679,7 +769,7 @@ class UnifiedReplicationDaemon:
             if not games_needing_repair:
                 return
 
-            # Create repair jobs
+            # Create repair jobs (filters out games on cooldown)
             new_jobs = await self._create_repair_jobs(games_needing_repair)
             self._repair_queue.extend(new_jobs)
             self._repair_stats.queued_repairs = len(self._repair_queue)
@@ -690,6 +780,10 @@ class UnifiedReplicationDaemon:
             # Execute repairs up to concurrency limit
             concurrent_count = len(self._active_repairs)
             slots_available = self.config.max_concurrent_repairs - concurrent_count
+
+            # December 2025: Also limit by remaining hourly budget
+            remaining_budget = self.config.max_repairs_per_hour - self._hourly_repair_count
+            slots_available = min(slots_available, remaining_budget)
 
             for _ in range(min(slots_available, len(self._repair_queue))):
                 job = self._repair_queue.pop(0)
@@ -729,6 +823,10 @@ class UnifiedReplicationDaemon:
             if any(j.game_id == game_id for j in self._repair_queue):
                 continue
 
+            # December 2025: Skip if game is on cooldown
+            if self._is_game_on_cooldown(game_id):
+                continue
+
             # Determine priority
             if replica_count == 0:
                 priority = RepairPriority.CRITICAL
@@ -737,7 +835,7 @@ class UnifiedReplicationDaemon:
             else:
                 priority = RepairPriority.NORMAL
 
-            # Select target nodes
+            # Select target nodes (filters out ephemeral if configured)
             target_nodes = await self._select_target_nodes(
                 source_nodes,
                 self.config.target_replicas - replica_count,
@@ -761,23 +859,64 @@ class UnifiedReplicationDaemon:
         source_nodes: list[str],
         needed_copies: int,
     ) -> list[str]:
-        """Select target nodes for repair."""
+        """Select target nodes for repair.
+
+        December 2025: Filters out ephemeral nodes (Vast.ai) as replication
+        targets if avoid_ephemeral_targets is enabled. Ephemeral nodes can
+        still be used as sources, but should not be targets since they may
+        terminate at any time.
+        """
         try:
             from app.coordination.sync_router import get_sync_router
             router = get_sync_router()
+
+            # December 2025: Get ephemeral nodes to exclude as targets
+            exclude_nodes = set(source_nodes)
+            if self.config.avoid_ephemeral_targets:
+                ephemeral_nodes = self._get_ephemeral_nodes()
+                exclude_nodes.update(ephemeral_nodes)
+                if ephemeral_nodes:
+                    logger.debug(
+                        f"[UnifiedReplicationDaemon] Excluding {len(ephemeral_nodes)} "
+                        "ephemeral nodes as repair targets"
+                    )
+
             return await router.select_targets(
-                exclude_nodes=set(source_nodes),
+                exclude_nodes=exclude_nodes,
                 count=needed_copies,
             )
         except (ImportError, AttributeError):
             logger.debug("[UnifiedReplicationDaemon] SyncRouter not available")
             return []
 
+    def _get_ephemeral_nodes(self) -> set[str]:
+        """Get set of ephemeral node names (Vast.ai nodes).
+
+        December 2025: Vast.ai nodes are ephemeral and can terminate at any
+        time. They should be avoided as replication targets to prevent data loss.
+        """
+        ephemeral: set[str] = set()
+        try:
+            from app.config.cluster_config import get_cluster_nodes
+
+            nodes = get_cluster_nodes()
+            for name, node in nodes.items():
+                # Vast.ai nodes are identified by provider or name pattern
+                if node.provider == "vast" or name.startswith("vast-"):
+                    ephemeral.add(name)
+        except (ImportError, AttributeError) as e:
+            logger.debug(f"[UnifiedReplicationDaemon] Could not get cluster nodes: {e}")
+
+        return ephemeral
+
     async def _execute_repair(self, job: RepairJob) -> None:
         """Execute a single repair job."""
         job.started_at = time.time()
         self._active_repairs[job.game_id] = job
         self._repair_stats.active_repairs = len(self._active_repairs)
+
+        # December 2025: Record attempt for rate limiting
+        self._record_repair_attempt(job.game_id)
 
         try:
             success = await self._perform_repair_transfer(job)
@@ -824,13 +963,17 @@ class UnifiedReplicationDaemon:
                 self._repair_stats.avg_repair_duration_seconds = sum(durations) / len(durations)
 
     async def _perform_repair_transfer(self, job: RepairJob) -> bool:
-        """Perform the actual data transfer for repair."""
+        """Perform the actual data transfer for repair.
+
+        December 2025: Uses bandwidth-coordinated rsync with per-transfer limits.
+        """
         if not job.source_nodes or not job.target_nodes:
             job.error = "No source or target nodes"
             return False
 
         try:
-            from app.coordination.sync_bandwidth import rsync_with_bandwidth
+            from app.coordination.sync_bandwidth import get_coordinated_rsync
+            from app.config.cluster_config import get_node_bandwidth_kbs
 
             source_node = job.source_nodes[0]
             target_node = job.target_nodes[0]
@@ -838,19 +981,36 @@ class UnifiedReplicationDaemon:
             # Get game data path
             game_path = f"data/games/{job.game_id}.db"
 
-            success = await rsync_with_bandwidth(
-                source_host=source_node,
-                source_path=game_path,
-                dest_host=target_node,
-                dest_path=game_path,
-                timeout=self.config.repair_timeout_seconds,
+            # December 2025: Get bandwidth limit from cluster_config or use config default
+            try:
+                bwlimit_kbs = get_node_bandwidth_kbs(target_node)
+            except (KeyError, ValueError):
+                # Convert config MB/s to KB/s
+                bwlimit_kbs = int(self.config.bandwidth_limit_mbps * 1024)
+
+            # Cap at configured maximum
+            max_kbs = int(self.config.bandwidth_limit_mbps * 1024)
+            bwlimit_kbs = min(bwlimit_kbs, max_kbs)
+
+            rsync = get_coordinated_rsync()
+            result = await rsync.sync(
+                source=f"{source_node}:{game_path}",
+                dest=f"{target_node}:{game_path}",
+                host=target_node,
+                bwlimit_kbps=bwlimit_kbs,
+                timeout=int(self.config.repair_timeout_seconds),
             )
 
-            if success:
+            if result.success:
                 # Update manifest
                 await self._update_manifest(job.game_id, target_node)
+                logger.debug(
+                    f"[UnifiedReplicationDaemon] Transferred {job.game_id[:8]} "
+                    f"to {target_node} ({result.bytes_transferred} bytes, "
+                    f"{result.duration_seconds:.1f}s)"
+                )
 
-            return success
+            return result.success
 
         except (ImportError, AttributeError) as e:
             job.error = f"Sync not available: {e}"

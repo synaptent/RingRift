@@ -133,28 +133,26 @@ await shutdown_all_coordinators()
 
 #### Daemon Types Reference
 
-40+ daemon types organized by category:
+63+ daemon types organized by category (all with DAEMON_DEPENDENCIES defined as of Dec 2025):
 
 **Core Infrastructure:**
-| Daemon Type | Purpose | Critical | Auto-Restart |
-|-------------|---------|----------|--------------|
-| `EVENT_ROUTER` | Core event bus - all coordination depends on this | ✓ | Yes |
-| `CROSS_PROCESS_POLLER` | Cross-process event polling | | Yes |
-| `DLQ_RETRY` | Dead letter queue retry daemon | | Yes |
-| `DAEMON_WATCHDOG` | Monitors daemon health & restarts | | Yes |
+| Daemon Type | Purpose | Critical | Auto-Restart | Dependencies |
+|-------------|---------|----------|--------------|--------------|
+| `EVENT_ROUTER` | Core event bus - all coordination depends on this | ✓ | Yes | None |
+| `DAEMON_WATCHDOG` | Monitors daemon health & restarts | ✓ | Yes | `EVENT_ROUTER` |
+| `CROSS_PROCESS_POLLER` | Cross-process event polling | | Yes | `EVENT_ROUTER` |
+| `DLQ_RETRY` | Dead letter queue retry daemon | | Yes | `EVENT_ROUTER` |
 
 **Sync & Data Transfer:**
 | Daemon Type | Purpose | Critical | Dependencies |
 |-------------|---------|----------|--------------|
-| `AUTO_SYNC` | Automated P2P data sync (canonical) | ✓ | `EVENT_ROUTER` |
-| `HIGH_QUALITY_SYNC` | Sync high-quality game data | | |
-| `ELO_SYNC` | Elo rating synchronization | | |
-| `MODEL_SYNC` | Model file synchronization | | |
-| `MODEL_DISTRIBUTION` | Auto-distribute models after promotion | | |
-| `NPZ_DISTRIBUTION` | Sync NPZ training data after export | | |
-| `CLUSTER_DATA_SYNC` | Cluster-wide data synchronization | | |
-| `EPHEMERAL_SYNC` | Aggressive sync for Vast.ai ephemeral hosts | | |
-| `EXTERNAL_DRIVE_SYNC` | Sync to external drives | | |
+| `AUTO_SYNC` | Automated P2P data sync (canonical) | ✓ | `EVENT_ROUTER`, `DATA_PIPELINE`, `FEEDBACK_LOOP` |
+| `HIGH_QUALITY_SYNC` | Sync high-quality game data | | `EVENT_ROUTER`, `DATA_PIPELINE` |
+| `ELO_SYNC` | Elo rating synchronization | | `EVENT_ROUTER` |
+| `MODEL_SYNC` | Model file synchronization | | `EVENT_ROUTER` |
+| `MODEL_DISTRIBUTION` | Auto-distribute models after promotion | | `EVENT_ROUTER`, `AUTO_PROMOTION` |
+| `NPZ_DISTRIBUTION` | Sync NPZ training data after export | | `EVENT_ROUTER`, `DATA_PIPELINE` |
+| `EXTERNAL_DRIVE_SYNC` | Sync to external drives | | `EVENT_ROUTER` |
 
 **Health & Monitoring:**
 | Daemon Type | Purpose | Notes |
@@ -172,35 +170,35 @@ await shutdown_all_coordinators()
 **Pipeline & Training:**
 | Daemon Type | Purpose | Critical | Dependencies |
 |-------------|---------|----------|--------------|
-| `DATA_PIPELINE` | Data pipeline stage tracking | | `EVENT_ROUTER` |
-| `SELFPLAY_COORDINATOR` | Selfplay task coordination | | |
-| `CONTINUOUS_TRAINING_LOOP` | Continuous training orchestration | | |
-| `TRAINING_NODE_WATCHER` | Detects training, triggers priority sync | | |
-| `AUTO_EXPORT` | Triggers NPZ export when thresholds met | | |
-| `TRAINING_TRIGGER` | Decides when to trigger training | | |
-| `EVALUATION` | Auto-evaluation after training completes | | |
-| `AUTO_PROMOTION` | Auto-promote based on evaluation results | | |
-| `UNIFIED_PROMOTION` | Unified model promotion | | |
-| `DISTILLATION` | Knowledge distillation daemon | | |
+| `DATA_PIPELINE` | Data pipeline stage tracking | ✓ | `EVENT_ROUTER` |
+| `FEEDBACK_LOOP` | Orchestrates all feedback signals | ✓ | `EVENT_ROUTER` |
+| `SELFPLAY_COORDINATOR` | Selfplay task coordination | | `EVENT_ROUTER` |
+| `CONTINUOUS_TRAINING_LOOP` | Continuous training orchestration | | `EVENT_ROUTER`, `DATA_PIPELINE` |
+| `TRAINING_NODE_WATCHER` | Detects training, triggers priority sync | | `EVENT_ROUTER` |
+| `AUTO_EXPORT` | Triggers NPZ export when thresholds met | | `EVENT_ROUTER`, `DATA_PIPELINE` |
+| `TRAINING_TRIGGER` | Decides when to trigger training | | `EVENT_ROUTER`, `DATA_PIPELINE`, `AUTO_SYNC` |
+| `EVALUATION` | Auto-evaluation after training completes | | `EVENT_ROUTER`, `TRAINING_TRIGGER` |
+| `AUTO_PROMOTION` | Auto-promote based on evaluation results | | `EVENT_ROUTER`, `EVALUATION` |
+| `UNIFIED_PROMOTION` | Unified model promotion | | `EVENT_ROUTER`, `EVALUATION` |
+| `DISTILLATION` | Knowledge distillation daemon | | `EVENT_ROUTER`, `TRAINING_TRIGGER` |
 
 **Work Queue & Resources:**
-| Daemon Type | Purpose | Critical |
-|-------------|---------|----------|
-| `QUEUE_POPULATOR` | Auto-populates work queue | ✓ |
-| `IDLE_RESOURCE` | Monitors idle GPUs, spawns selfplay | ✓ |
-| `JOB_SCHEDULER` | Centralized job scheduling | |
-| `RESOURCE_OPTIMIZER` | Optimizes resource allocation | |
-| `UTILIZATION_OPTIMIZER` | Optimizes cluster workloads | |
-| `ADAPTIVE_RESOURCES` | Dynamic resource scaling | |
-
-**Feedback & Learning:**
 | Daemon Type | Purpose | Critical | Dependencies |
 |-------------|---------|----------|--------------|
-| `FEEDBACK_LOOP` | Orchestrates all feedback signals | ✓ | `EVENT_ROUTER` |
-| `GAUNTLET_FEEDBACK` | Bridges gauntlet to training feedback | | `FEEDBACK_LOOP` |
-| `CURRICULUM_INTEGRATION` | Bridges feedback loops for self-improvement | | |
-| `METRICS_ANALYSIS` | Metrics monitoring, plateau detection | | |
-| `TOURNAMENT_DAEMON` | Automatic tournament scheduling | | |
+| `QUEUE_POPULATOR` | Auto-populates work queue | ✓ | `EVENT_ROUTER` |
+| `IDLE_RESOURCE` | Monitors idle GPUs, spawns selfplay | ✓ | `EVENT_ROUTER`, `QUEUE_POPULATOR` |
+| `JOB_SCHEDULER` | Centralized job scheduling | | `EVENT_ROUTER` |
+| `RESOURCE_OPTIMIZER` | Optimizes resource allocation | | `EVENT_ROUTER` |
+| `UTILIZATION_OPTIMIZER` | Optimizes cluster workloads | | `EVENT_ROUTER`, `IDLE_RESOURCE` |
+| `ADAPTIVE_RESOURCES` | Dynamic resource scaling | | `EVENT_ROUTER`, `IDLE_RESOURCE` |
+
+**Feedback & Learning:**
+| Daemon Type | Purpose | Dependencies |
+|-------------|---------|--------------|
+| `GAUNTLET_FEEDBACK` | Bridges gauntlet to training feedback | `EVENT_ROUTER`, `EVALUATION` |
+| `CURRICULUM_INTEGRATION` | Bridges feedback loops for self-improvement | `EVENT_ROUTER`, `FEEDBACK_LOOP` |
+| `METRICS_ANALYSIS` | Metrics monitoring, plateau detection | `EVENT_ROUTER` |
+| `TOURNAMENT_DAEMON` | Automatic tournament scheduling | `EVENT_ROUTER` |
 
 **P2P & Cluster:**
 | Daemon Type | Purpose | Notes |
@@ -231,10 +229,14 @@ await shutdown_all_coordinators()
 | `CLUSTER_WATCHDOG` | Self-healing cluster monitor |
 
 **Deprecated (Q2 2026 removal):**
-| Daemon Type | Replacement |
-|-------------|-------------|
-| `SYNC_COORDINATOR` | `AUTO_SYNC` |
-| `HEALTH_CHECK` | `NODE_HEALTH_MONITOR` |
+| Daemon Type | Replacement | Notes |
+|-------------|-------------|-------|
+| `SYNC_COORDINATOR` | `AUTO_SYNC` | Use AutoSyncDaemon |
+| `HEALTH_CHECK` | `NODE_HEALTH_MONITOR` | Use unified health monitoring |
+| `CLUSTER_DATA_SYNC` | `AUTO_SYNC` | Use AutoSyncDaemon(strategy="broadcast") |
+| `EPHEMERAL_SYNC` | `AUTO_SYNC` | Use AutoSyncDaemon(strategy="ephemeral") |
+| `SYSTEM_HEALTH_MONITOR` | `unified_health_manager` | Use get_system_health_score() |
+| `LAMBDA_IDLE` | `VAST_IDLE` or `UNIFIED_IDLE` | Lambda Labs account terminated Dec 2025 |
 
 ### Configuration & Persistence
 

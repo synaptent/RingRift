@@ -223,6 +223,9 @@ class DataCleanupDaemon:
 
         logger.info(f"Starting DataCleanupDaemon on {self.node_id}")
 
+        # December 2025: Subscribe to events for reactive cleanup
+        await self._subscribe_to_events()
+
         # Start scan loop
         self._scan_task = safe_create_task(
             self._scan_loop(),
@@ -257,6 +260,71 @@ class DataCleanupDaemon:
         unregister_coordinator(self.name)
         self._coordinator_status = CoordinatorStatus.STOPPED
         logger.info("DataCleanupDaemon stopped")
+
+    async def _subscribe_to_events(self) -> None:
+        """Subscribe to events for reactive cleanup.
+
+        December 2025: Added event-driven cleanup triggers for better
+        integration with the data pipeline. The daemon responds to:
+        - DATA_QUALITY_ALERT: Immediate scan when quality issues detected
+        - DATA_SYNC_COMPLETED: Scan new data after sync completes
+        """
+        try:
+            from app.coordination.event_router import get_event_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_event_router()
+            router.subscribe(DataEventType.DATA_QUALITY_ALERT, self._on_quality_alert)
+            router.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_sync_completed)
+            logger.info(
+                "[DataCleanupDaemon] Subscribed to DATA_QUALITY_ALERT, DATA_SYNC_COMPLETED"
+            )
+        except ImportError:
+            logger.debug("[DataCleanupDaemon] Event router not available")
+        except Exception as e:
+            logger.warning(f"[DataCleanupDaemon] Failed to subscribe to events: {e}")
+
+    async def _on_quality_alert(self, event: Any) -> None:
+        """Handle DATA_QUALITY_ALERT - trigger immediate scan.
+
+        Quality alerts indicate poor quality data has been detected.
+        We immediately trigger a cleanup scan instead of waiting.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            db_path = payload.get("database") or payload.get("db_path")
+            quality_score = payload.get("quality_score", 0.0)
+
+            logger.info(
+                f"[DataCleanupDaemon] Quality alert received: "
+                f"db={db_path}, quality={quality_score:.1%}"
+            )
+
+            # Trigger immediate scan
+            if self._running:
+                await self._scan_and_cleanup()
+        except Exception as e:
+            logger.debug(f"[DataCleanupDaemon] Error handling quality alert: {e}")
+
+    async def _on_sync_completed(self, event: Any) -> None:
+        """Handle DATA_SYNC_COMPLETED - scan for quality after sync.
+
+        After new data is synced, we scan to check quality of newly
+        received databases.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            games_synced = payload.get("games_synced", 0)
+
+            if games_synced > 100:  # Only scan if significant data was synced
+                logger.info(
+                    f"[DataCleanupDaemon] Sync completed ({games_synced} games), "
+                    "triggering quality scan"
+                )
+                if self._running:
+                    await self._scan_and_cleanup()
+        except Exception as e:
+            logger.debug(f"[DataCleanupDaemon] Error handling sync completed: {e}")
 
     async def _scan_loop(self) -> None:
         """Main scan loop."""

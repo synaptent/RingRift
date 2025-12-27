@@ -1189,142 +1189,141 @@ class HotDataBuffer:
             return 0
 
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            # Check if quality_score column exists (v9+ schema)
-            has_quality_column = True
-            try:
-                cursor.execute("SELECT quality_score FROM games LIMIT 1")
-            except sqlite3.OperationalError:
-                has_quality_column = False
-                logger.debug(f"Database {db_path} missing quality_score column")
+                # Check if quality_score column exists (v9+ schema)
+                has_quality_column = True
+                try:
+                    cursor.execute("SELECT quality_score FROM games LIMIT 1")
+                except sqlite3.OperationalError:
+                    has_quality_column = False
+                    logger.debug(f"Database {db_path} missing quality_score column")
 
-            # Build query with optional quality filtering
-            if has_quality_column:
-                query = """
-                    SELECT game_id, board_type, num_players, winner, total_moves,
-                           termination_reason, source, created_at,
-                           COALESCE(quality_score, 0.5) as quality_score
-                    FROM games
-                    WHERE game_status = 'completed'
-                      AND winner IS NOT NULL
-                      AND board_type = ?
-                      AND num_players = ?
-                      AND total_moves >= ?
-                      AND COALESCE(excluded_from_training, 0) = 0
-                      AND COALESCE(quality_score, 0.5) >= ?
-                    ORDER BY quality_score DESC, created_at DESC
-                    LIMIT ?
-                """
-                cursor.execute(query, (board_type, num_players, min_moves, min_quality, limit))
-            else:
-                query = """
-                    SELECT game_id, board_type, num_players, winner, total_moves,
-                           termination_reason, source, created_at
-                    FROM games
-                    WHERE game_status = 'completed'
-                      AND winner IS NOT NULL
-                      AND board_type = ?
-                      AND num_players = ?
-                      AND total_moves >= ?
-                      AND COALESCE(excluded_from_training, 0) = 0
-                    ORDER BY created_at DESC
-                    LIMIT ?
-                """
-                cursor.execute(query, (board_type, num_players, min_moves, limit))
-
-            rows = cursor.fetchall()
-            loaded = 0
-
-            for row in rows:
-                game_id = row['game_id']
-
-                # Skip if already in buffer
-                if game_id in self._buffer:
-                    continue
-
-                # Get quality score from DB or lookup table
+                # Build query with optional quality filtering
                 if has_quality_column:
-                    quality_score = float(row['quality_score'])
-                elif game_id in self._quality_lookup:
-                    quality_score = self._quality_lookup[game_id]
+                    query = """
+                        SELECT game_id, board_type, num_players, winner, total_moves,
+                               termination_reason, source, created_at,
+                               COALESCE(quality_score, 0.5) as quality_score
+                        FROM games
+                        WHERE game_status = 'completed'
+                          AND winner IS NOT NULL
+                          AND board_type = ?
+                          AND num_players = ?
+                          AND total_moves >= ?
+                          AND COALESCE(excluded_from_training, 0) = 0
+                          AND COALESCE(quality_score, 0.5) >= ?
+                        ORDER BY quality_score DESC, created_at DESC
+                        LIMIT ?
+                    """
+                    cursor.execute(query, (board_type, num_players, min_moves, min_quality, limit))
                 else:
-                    quality_score = 0.5  # Default
+                    query = """
+                        SELECT game_id, board_type, num_players, winner, total_moves,
+                               termination_reason, source, created_at
+                        FROM games
+                        WHERE game_status = 'completed'
+                          AND winner IS NOT NULL
+                          AND board_type = ?
+                          AND num_players = ?
+                          AND total_moves >= ?
+                          AND COALESCE(excluded_from_training, 0) = 0
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """
+                    cursor.execute(query, (board_type, num_players, min_moves, limit))
 
-                # Get Elo from lookup if available
-                avg_elo = self._elo_lookup.get(game_id, 1500.0)
+                rows = cursor.fetchall()
+                loaded = 0
 
-                # Load moves for this game
-                moves_query = """
-                    SELECT move_number, action_json, state_json
-                    FROM moves
-                    WHERE game_id = ?
-                    ORDER BY move_number
-                """
-                cursor.execute(moves_query, (game_id,))
-                move_rows = cursor.fetchall()
+                for row in rows:
+                    game_id = row['game_id']
 
-                if not move_rows:
-                    continue
+                    # Skip if already in buffer
+                    if game_id in self._buffer:
+                        continue
 
-                moves = []
-                for move_row in move_rows:
-                    move_data = {
-                        "move_number": move_row['move_number'],
-                    }
-                    if move_row['action_json']:
-                        try:
-                            import json
-                            move_data["action"] = json.loads(move_row['action_json'])
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                    if move_row['state_json']:
-                        try:
-                            import json
-                            move_data["state"] = json.loads(move_row['state_json'])
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                    moves.append(move_data)
-
-                # Build outcome dict
-                winner = row['winner']
-                outcome = {}
-                for p in range(1, num_players + 1):
-                    if winner == p:
-                        outcome[str(p)] = 1.0
-                    elif winner is None or winner == 0:
-                        outcome[str(p)] = 0.5  # Draw
+                    # Get quality score from DB or lookup table
+                    if has_quality_column:
+                        quality_score = float(row['quality_score'])
+                    elif game_id in self._quality_lookup:
+                        quality_score = self._quality_lookup[game_id]
                     else:
-                        outcome[str(p)] = 0.0
+                        quality_score = 0.5  # Default
 
-                # Create game record
-                game = GameRecord(
-                    game_id=game_id,
-                    board_type=board_type,
-                    num_players=num_players,
-                    moves=moves,
-                    outcome=outcome,
-                    timestamp=float(row['created_at']) if row['created_at'] else time.time(),
-                    source=row['source'] or "db_load",
-                    avg_elo=avg_elo,
-                    priority=1.0,  # Will be computed below
-                    from_promoted_model=False,
-                    manifest_quality=quality_score,
+                    # Get Elo from lookup if available
+                    avg_elo = self._elo_lookup.get(game_id, 1500.0)
+
+                    # Load moves for this game
+                    moves_query = """
+                        SELECT move_number, action_json, state_json
+                        FROM moves
+                        WHERE game_id = ?
+                        ORDER BY move_number
+                    """
+                    cursor.execute(moves_query, (game_id,))
+                    move_rows = cursor.fetchall()
+
+                    if not move_rows:
+                        continue
+
+                    moves = []
+                    for move_row in move_rows:
+                        move_data = {
+                            "move_number": move_row['move_number'],
+                        }
+                        if move_row['action_json']:
+                            try:
+                                import json
+                                move_data["action"] = json.loads(move_row['action_json'])
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        if move_row['state_json']:
+                            try:
+                                import json
+                                move_data["state"] = json.loads(move_row['state_json'])
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        moves.append(move_data)
+
+                    # Build outcome dict
+                    winner = row['winner']
+                    outcome = {}
+                    for p in range(1, num_players + 1):
+                        if winner == p:
+                            outcome[str(p)] = 1.0
+                        elif winner is None or winner == 0:
+                            outcome[str(p)] = 0.5  # Draw
+                        else:
+                            outcome[str(p)] = 0.0
+
+                    # Create game record
+                    game = GameRecord(
+                        game_id=game_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        moves=moves,
+                        outcome=outcome,
+                        timestamp=float(row['created_at']) if row['created_at'] else time.time(),
+                        source=row['source'] or "db_load",
+                        avg_elo=avg_elo,
+                        priority=1.0,  # Will be computed below
+                        from_promoted_model=False,
+                        manifest_quality=quality_score,
+                    )
+
+                    # Compute priority using quality
+                    game.priority = self.compute_game_priority(game)
+                    self.add_game(game)
+                    loaded += 1
+
+                logger.info(
+                    f"Loaded {loaded} games from {db_path.name} "
+                    f"(min_quality={min_quality:.2f}, has_quality_col={has_quality_column})"
                 )
-
-                # Compute priority using quality
-                game.priority = self.compute_game_priority(game)
-                self.add_game(game)
-                loaded += 1
-
-            conn.close()
-            logger.info(
-                f"Loaded {loaded} games from {db_path.name} "
-                f"(min_quality={min_quality:.2f}, has_quality_col={has_quality_column})"
-            )
-            return loaded
+                return loaded
 
         except sqlite3.Error as e:
             logger.error(f"Failed to load games from {db_path}: {e}")

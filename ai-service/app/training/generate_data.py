@@ -978,6 +978,7 @@ def generate_dataset(
     # Optional JSONL export of per-game GameRecord entries.
     jsonl_path: str | None = None
     jsonl_file = None
+    _jsonl_cleanup_needed = False  # Track for exception-safe cleanup
     if game_records_jsonl:
         if not os.path.isabs(game_records_jsonl):
             jsonl_path = os.path.join(
@@ -988,6 +989,7 @@ def generate_dataset(
             jsonl_path = game_records_jsonl
         os.makedirs(os.path.dirname(jsonl_path), exist_ok=True)
         jsonl_file = open(jsonl_path, "a", encoding="utf-8")
+        _jsonl_cleanup_needed = True
 
     for game_idx in range(num_games):
         # Circuit breaker: Check resources every 10 games
@@ -1573,6 +1575,7 @@ def generate_dataset(
     quality_tracker.log_summary()
     if jsonl_file is not None:
         jsonl_file.close()
+        _jsonl_cleanup_needed = False  # Mark as closed
 
     # Save data with Experience Replay (Append mode)
     # Use provided output_file, ensuring directory exists

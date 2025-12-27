@@ -141,6 +141,7 @@ class JobManager:
         Subscribes to:
         - HOST_OFFLINE: Cancel jobs on offline hosts
         - HOST_ONLINE: Potentially reschedule cancelled jobs
+        - NODE_RECOVERED: Re-enable job dispatch to recovered nodes
         """
         if self._subscribed:
             return
@@ -160,6 +161,11 @@ class JobManager:
             if hasattr(DataEventType, "HOST_ONLINE"):
                 bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
                 logger.info("[JobManager] Subscribed to HOST_ONLINE")
+
+            # Dec 27, 2025: Subscribe to NODE_RECOVERED to re-enable recovered nodes
+            if hasattr(DataEventType, "NODE_RECOVERED"):
+                bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
+                logger.info("[JobManager] Subscribed to NODE_RECOVERED")
 
             self._subscribed = True
         except ImportError:
@@ -216,6 +222,38 @@ class JobManager:
 
         except (AttributeError, KeyError, TypeError) as e:
             logger.debug(f"[JobManager] Error handling host online: {e}")
+
+    async def _on_node_recovered(self, event) -> None:
+        """Handle NODE_RECOVERED events - re-enable job dispatch to recovered node.
+
+        December 27, 2025: Added to complete health event integration.
+        When a node recovers from an unhealthy state, we can consider it for new jobs again.
+
+        Unlike HOST_ONLINE (which is for new connections), NODE_RECOVERED indicates
+        a node that was degraded/unhealthy is now healthy again.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            node_id = payload.get("node_id", "") or payload.get("host", "")
+            recovery_reason = payload.get("reason", "unknown")
+
+            if not node_id:
+                return
+
+            logger.info(
+                f"[JobManager] NODE_RECOVERED: {node_id} recovered "
+                f"(reason: {recovery_reason}), available for new jobs"
+            )
+
+            # Track recovery for scheduling decisions
+            self.stats.nodes_recovered = getattr(self.stats, "nodes_recovered", 0) + 1
+
+            # Note: Actual job dispatch decisions are made by SelfplayScheduler
+            # and TrainingCoordinator. This event is tracked for observability
+            # and to inform scheduling heuristics.
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[JobManager] Error handling node recovered: {e}")
 
     def _emit_task_event(self, event_type: str, job_id: str, job_type: str, **kwargs) -> None:
         """Emit a task lifecycle event if the event system is available.
@@ -771,9 +809,15 @@ class JobManager:
         """Run training locally using subprocess.
 
         Args:
-            config: Training configuration dict
+            config: Training configuration dict containing:
+                - job_id: Job identifier for event tracking
+                - training_data: Path to training data
+                - output_model: Path to save trained model
+                - board_type, num_players, epochs, batch_size, learning_rate
         """
-        logger.info("Running local training")
+        # Dec 2025: Extract job_id from config for event emission
+        job_id = config.get("job_id", "unknown")
+        logger.info(f"Running local training for job {job_id}")
 
         training_script = f"""
 import sys

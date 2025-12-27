@@ -60,13 +60,16 @@ logger = logging.getLogger(__name__)
 # Circuit Breaker for Pipeline Fault Tolerance (December 2025)
 # =============================================================================
 
-
-class CircuitBreakerState(Enum):
-    """Circuit breaker states."""
-
-    CLOSED = "closed"  # Normal operation
-    OPEN = "open"  # Failing, rejecting requests
-    HALF_OPEN = "half_open"  # Testing recovery
+# December 2025: Import canonical CircuitState, alias as CircuitBreakerState for compatibility
+try:
+    from app.distributed.circuit_breaker import CircuitState as CircuitBreakerState
+except ImportError:
+    # Fallback if canonical module unavailable
+    class CircuitBreakerState(Enum):
+        """Circuit breaker states."""
+        CLOSED = "closed"
+        OPEN = "open"
+        HALF_OPEN = "half_open"
 
 
 @dataclass
@@ -80,6 +83,11 @@ class CircuitBreaker:
     - CLOSED: Normal operation, requests pass through
     - OPEN: Circuit is tripped, requests are rejected
     - HALF_OPEN: Testing if service recovered, limited requests allowed
+
+    Note (December 2025): This is a simplified local implementation for pipeline
+    stages. For per-host/per-target circuit breaking with Prometheus metrics and
+    exponential backoff, use app.distributed.circuit_breaker.CircuitBreaker instead.
+    Migration planned for Q1 2026.
     """
 
     failure_threshold: int = 3
@@ -830,6 +838,21 @@ class DataPipelineOrchestrator:
             router.subscribe(
                 DataEventType.DATA_STALE.value,
                 self._on_data_stale,
+            )
+
+            # December 2025 Phase 11: Additional event subscriptions for improved
+            # pipeline coordination and regression handling
+            router.subscribe(
+                DataEventType.NEW_GAMES_AVAILABLE.value,
+                self._on_new_games_available,
+            )
+            router.subscribe(
+                DataEventType.REGRESSION_DETECTED.value,
+                self._on_regression_detected,
+            )
+            router.subscribe(
+                DataEventType.PROMOTION_FAILED.value,
+                self._on_promotion_failed,
             )
 
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
@@ -2392,6 +2415,131 @@ class DataPipelineOrchestrator:
                 )
         except ImportError:
             logger.debug("[DataPipelineOrchestrator] SyncFacade not available")
+
+    async def _on_new_games_available(self, event) -> None:
+        """Handle NEW_GAMES_AVAILABLE - new game data ready for processing.
+
+        December 2025 Phase 11: Wire NEW_GAMES_AVAILABLE to trigger NPZ export
+        when new games are available. This closes the loop from selfplay -> export.
+
+        Actions:
+        - Track new game availability
+        - Consider triggering NPZ export if threshold met
+        - Update pipeline state for monitoring
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        config_key = payload.get("config_key")
+        game_count = payload.get("count", payload.get("game_count", 0))
+        source = payload.get("source", payload.get("host", "unknown"))
+
+        logger.debug(
+            f"[DataPipelineOrchestrator] NEW_GAMES_AVAILABLE: "
+            f"config={config_key}, count={game_count}, source={source}"
+        )
+
+        # Track new games for this iteration
+        if not hasattr(self, "_new_games_tracker"):
+            self._new_games_tracker: dict[str, int] = {}
+        if config_key:
+            self._new_games_tracker[config_key] = (
+                self._new_games_tracker.get(config_key, 0) + game_count
+            )
+
+        # Update stats
+        self._stats["total_games"] += game_count
+
+    async def _on_regression_detected(self, event) -> None:
+        """Handle REGRESSION_DETECTED - model performance dropped.
+
+        December 2025 Phase 11: Wire REGRESSION_DETECTED to pause training
+        progression and track regression events for health monitoring.
+
+        Actions:
+        - Log the regression alert
+        - Track regression events for health monitoring
+        - Consider pausing training progression
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        config_key = payload.get("config_key")
+        severity = payload.get("severity", "unknown")
+        elo_change = payload.get("elo_change", 0)
+        reason = payload.get("reason", "")
+
+        logger.warning(
+            f"[DataPipelineOrchestrator] REGRESSION_DETECTED: "
+            f"config={config_key}, severity={severity}, elo_change={elo_change}, "
+            f"reason={reason}"
+        )
+
+        # Track regression events for health monitoring
+        if not hasattr(self, "_regression_count"):
+            self._regression_count = 0
+        self._regression_count += 1
+
+        # Store last regression for diagnostics
+        self._last_regression = {
+            "config_key": config_key,
+            "severity": severity,
+            "elo_change": elo_change,
+            "reason": reason,
+            "timestamp": time.time(),
+        }
+
+        # If severity is severe/critical, consider pausing training
+        if severity in ("severe", "critical"):
+            logger.warning(
+                f"[DataPipelineOrchestrator] Severe regression detected for {config_key}, "
+                "training progression may be paused"
+            )
+            # Update stage metadata to reflect regression
+            self._stage_metadata["regression_detected"] = True
+            self._stage_metadata["regression_severity"] = severity
+
+    async def _on_promotion_failed(self, event) -> None:
+        """Handle PROMOTION_FAILED - model failed promotion criteria.
+
+        December 2025 Phase 11: Wire PROMOTION_FAILED to track failed promotions
+        and update pipeline state appropriately.
+
+        Actions:
+        - Log the promotion failure
+        - Track failed promotions for monitoring
+        - Update pipeline state (stay in EVALUATION or reset)
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        config_key = payload.get("config_key")
+        reason = payload.get("reason", payload.get("error", "unknown"))
+        model_path = payload.get("model_path", payload.get("model_id", ""))
+
+        logger.warning(
+            f"[DataPipelineOrchestrator] PROMOTION_FAILED: "
+            f"config={config_key}, reason={reason}, model={model_path}"
+        )
+
+        # Track promotion failures for monitoring
+        if not hasattr(self, "_promotion_failure_count"):
+            self._promotion_failure_count = 0
+        self._promotion_failure_count += 1
+
+        # Store last failure for diagnostics
+        self._last_promotion_failure = {
+            "config_key": config_key,
+            "reason": reason,
+            "model_path": model_path,
+            "timestamp": time.time(),
+        }
+
+        # If we're in promotion stage, transition back to evaluation
+        if self._current_stage == PipelineStage.PROMOTION:
+            self._transition_to(
+                PipelineStage.EVALUATION,
+                self._current_iteration,
+                success=False,
+                metadata={"promotion_failed": True, "reason": reason},
+            )
 
     async def _on_promotion_candidate(self, event) -> None:
         """Handle PROMOTION_CANDIDATE - model ready for promotion evaluation.

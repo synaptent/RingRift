@@ -309,81 +309,82 @@ def generate_selfplay_games(
         jsonl_file = open(jsonl_path, "a", encoding="utf-8")
         logger.info(f"Logging games to {jsonl_path}")
 
-    for game_idx in tqdm(range(num_games), desc=f"Self-play vs {opponent_type}"):
-        # Alternate who plays first
-        gmo_is_player1 = (game_idx % 2 == 0)
+    try:
+        for game_idx in tqdm(range(num_games), desc=f"Self-play vs {opponent_type}"):
+            # Alternate who plays first
+            gmo_is_player1 = (game_idx % 2 == 0)
 
-        # Create opponent
-        if opponent_type == "self":
-            opponent = gmo_ai
-        elif opponent_type == "random":
-            opponent = RandomAI(2 if gmo_is_player1 else 1, AIConfig(difficulty=1))
-        elif opponent_type == "heuristic":
-            opponent = HeuristicAI(2 if gmo_is_player1 else 1, AIConfig(difficulty=3))
-        else:
-            opponent = gmo_ai
+            # Create opponent
+            if opponent_type == "self":
+                opponent = gmo_ai
+            elif opponent_type == "random":
+                opponent = RandomAI(2 if gmo_is_player1 else 1, AIConfig(difficulty=1))
+            elif opponent_type == "heuristic":
+                opponent = HeuristicAI(2 if gmo_is_player1 else 1, AIConfig(difficulty=3))
+            else:
+                opponent = gmo_ai
 
-        # Set up players
-        if gmo_is_player1:
-            player1 = gmo_ai
-            player2 = opponent
-            gmo_player = 1
-        else:
-            player1 = opponent
-            player2 = gmo_ai
-            gmo_player = 2
+            # Set up players
+            if gmo_is_player1:
+                player1 = gmo_ai
+                player2 = opponent
+                gmo_player = 1
+            else:
+                player1 = opponent
+                player2 = gmo_ai
+                gmo_player = 2
 
-        # Reset AIs
-        gmo_ai.reset_for_new_game(rng_seed=game_idx * 1000)
-        if hasattr(opponent, "reset_for_new_game") and opponent is not gmo_ai:
-            opponent.reset_for_new_game(rng_seed=game_idx * 1000 + 1)
+            # Reset AIs
+            gmo_ai.reset_for_new_game(rng_seed=game_idx * 1000)
+            if hasattr(opponent, "reset_for_new_game") and opponent is not gmo_ai:
+                opponent.reset_for_new_game(rng_seed=game_idx * 1000 + 1)
 
-        # Play game
-        game_id = f"selfplay_{game_idx}"
-        winner, states, moves = play_game(
-            player1, player2, game_id, board_type,
-            collect_states=True,
-        )
+            # Play game
+            game_id = f"selfplay_{game_idx}"
+            winner, states, moves = play_game(
+                player1, player2, game_id, board_type,
+                collect_states=True,
+            )
 
-        # Record result
-        if winner == gmo_player:
-            wins += 1
-        elif winner == 0:
-            draws += 1
+            # Record result
+            if winner == gmo_player:
+                wins += 1
+            elif winner == 0:
+                draws += 1
 
-        total_moves += len(moves)
+            total_moves += len(moves)
 
-        # Add to dataset (all moves, not just GMO's)
-        if states and moves:
-            samples_added += dataset.add_full_game(states, moves, winner)
+            # Add to dataset (all moves, not just GMO's)
+            if states and moves:
+                samples_added += dataset.add_full_game(states, moves, winner)
 
-        # Log game to JSONL
-        if jsonl_file and moves:
-            game_record = {
-                "id": f"gmo_selfplay_{uuid.uuid4().hex[:8]}",
-                "board_type": board_type.value,
-                "opponent": opponent_type,
-                "gmo_player": gmo_player,
-                "winner": winner,
-                "num_moves": len(moves),
-                "timestamp": datetime.now().isoformat(),
-                "moves": [
-                    {
-                        "type": m.type.value,
-                        "player": m.player,
-                        "from": {"x": m.from_pos.x, "y": m.from_pos.y} if m.from_pos else None,
-                        "to": {"x": m.to.x, "y": m.to.y} if m.to else None,
-                    }
-                    for m in moves
-                ],
-            }
-            jsonl_file.write(json.dumps(game_record) + "\n")
-            jsonl_file.flush()
-
-    # Close JSONL file
-    if jsonl_file:
-        jsonl_file.close()
-        logger.info(f"Saved {num_games} games to JSONL")
+            # Log game to JSONL
+            if jsonl_file and moves:
+                game_record = {
+                    "id": f"gmo_selfplay_{uuid.uuid4().hex[:8]}",
+                    "board_type": board_type.value,
+                    "opponent": opponent_type,
+                    "gmo_player": gmo_player,
+                    "winner": winner,
+                    "num_moves": len(moves),
+                    "timestamp": datetime.now().isoformat(),
+                    "moves": [
+                        {
+                            "type": m.type.value,
+                            "player": m.player,
+                            "from": {"x": m.from_pos.x, "y": m.from_pos.y} if m.from_pos else None,
+                            "to": {"x": m.to.x, "y": m.to.y} if m.to else None,
+                        }
+                        for m in moves
+                    ],
+                }
+                jsonl_file.write(json.dumps(game_record) + "\n")
+                jsonl_file.flush()
+    finally:
+        # Close JSONL file (ensures closure even on exception)
+        if jsonl_file:
+            jsonl_file.close()
+            logger.info(f"Saved {num_games} games to JSONL")
 
     return {
         "games": num_games,

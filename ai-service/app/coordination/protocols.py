@@ -51,6 +51,25 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
+# Import pure contracts - these have no dependencies on coordination modules
+# and break circular import chains
+from app.coordination.contracts import (
+    ConfigurableProtocol,
+    CoordinatorMetrics,
+    CoordinatorProtocol,
+    CoordinatorStatus,
+    DaemonProtocol,
+    EventDrivenProtocol,
+    HealthCheckResult,
+    get_coordinator,
+    get_registered_coordinators,
+    is_coordinator,
+    is_daemon,
+    is_event_driven,
+    register_coordinator,
+    unregister_coordinator,
+)
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -81,284 +100,17 @@ __all__ = [
 
 
 # =============================================================================
-# Enums and Data Classes
+# Enums, Data Classes, and Protocols
 # =============================================================================
-
-
-class CoordinatorStatus(str, Enum):
-    """Status of a coordinator.
-
-    December 2025 Phase 11: Canonical enum combining values from both
-    protocols.py and coordinator_base.py.
-    """
-
-    INITIALIZING = "initializing"
-    READY = "ready"  # Added from coordinator_base.py
-    RUNNING = "running"
-    PAUSED = "paused"
-    DRAINING = "draining"  # Added from coordinator_base.py
-    STOPPING = "stopping"
-    STOPPED = "stopped"
-    ERROR = "error"
-    DEGRADED = "degraded"  # Running but with reduced functionality
-
-
-@dataclass
-class HealthCheckResult:
-    """Result of a health check.
-
-    Provides a consistent structure for health check responses
-    across all coordinators.
-    """
-
-    healthy: bool
-    status: CoordinatorStatus = CoordinatorStatus.RUNNING
-    message: str = ""
-    timestamp: float = field(default_factory=time.time)
-    details: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "healthy": self.healthy,
-            "status": self.status.value,
-            "message": self.message,
-            "timestamp": self.timestamp,
-            "details": self.details,
-        }
-
-    @classmethod
-    def unhealthy(cls, message: str, **details: Any) -> HealthCheckResult:
-        """Create an unhealthy result."""
-        return cls(
-            healthy=False,
-            status=CoordinatorStatus.ERROR,
-            message=message,
-            details=details,
-        )
-
-    @classmethod
-    def degraded(cls, message: str, **details: Any) -> HealthCheckResult:
-        """Create a degraded health result."""
-        return cls(
-            healthy=True,  # Still operational
-            status=CoordinatorStatus.DEGRADED,
-            message=message,
-            details=details,
-        )
-
-
-@dataclass
-class CoordinatorMetrics:
-    """Standard metrics structure for coordinators.
-
-    Provides a common format for metrics across coordinators.
-    """
-
-    name: str
-    status: CoordinatorStatus
-    uptime_seconds: float = 0.0
-    start_time: float = 0.0
-    events_processed: int = 0
-    errors_count: int = 0
-    last_error: str = ""
-    last_activity_time: float = 0.0
-    custom_metrics: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "name": self.name,
-            "status": self.status.value,
-            "uptime_seconds": self.uptime_seconds,
-            "start_time": self.start_time,
-            "events_processed": self.events_processed,
-            "errors_count": self.errors_count,
-            "last_error": self.last_error,
-            "last_activity_time": self.last_activity_time,
-            **self.custom_metrics,
-        }
-
-
+# NOTE: The following are now imported from app.coordination.contracts to break
+# circular dependency chains:
+# - CoordinatorStatus, HealthCheckResult, CoordinatorMetrics
+# - CoordinatorProtocol, DaemonProtocol, EventDrivenProtocol, ConfigurableProtocol
+# - Registry functions: register_coordinator, unregister_coordinator, etc.
+#
+# This module now only contains implementation classes (BaseCoordinator, BaseDaemon)
+# and additional utility functions.
 # =============================================================================
-# Core Protocol
-# =============================================================================
-
-
-@runtime_checkable
-class CoordinatorProtocol(Protocol):
-    """Base protocol for all coordinators.
-
-    All coordinator classes should implement this protocol to enable
-    consistent lifecycle management and observability.
-
-    This is a structural protocol - classes don't need to explicitly
-    inherit from it, they just need to implement the required methods.
-    """
-
-    @property
-    def name(self) -> str:
-        """Unique name identifying this coordinator.
-
-        Returns:
-            Coordinator name (e.g., "TrainingCoordinator", "SyncDaemon")
-        """
-        ...
-
-    @property
-    def status(self) -> CoordinatorStatus:
-        """Current status of the coordinator.
-
-        Returns:
-            Current status enum value
-        """
-        ...
-
-    async def start(self) -> None:
-        """Start the coordinator.
-
-        Should be idempotent - calling on an already running coordinator
-        should be a no-op.
-        """
-        ...
-
-    async def stop(self) -> None:
-        """Stop the coordinator gracefully.
-
-        Should complete any in-progress work and clean up resources.
-        Should be idempotent.
-        """
-        ...
-
-    def get_metrics(self) -> dict[str, Any]:
-        """Get coordinator metrics.
-
-        Returns:
-            Dictionary of metrics (events processed, error counts, etc.)
-        """
-        ...
-
-    def health_check(self) -> HealthCheckResult:
-        """Check coordinator health.
-
-        Returns:
-            Health check result with status and details
-        """
-        ...
-
-
-# =============================================================================
-# Extended Protocols
-# =============================================================================
-
-
-@runtime_checkable
-class DaemonProtocol(CoordinatorProtocol, Protocol):
-    """Protocol for long-running daemon coordinators.
-
-    Extends CoordinatorProtocol with daemon-specific methods for
-    restart, pause/resume, and background loop management.
-    """
-
-    @property
-    def is_running(self) -> bool:
-        """Whether the daemon is currently running.
-
-        Returns:
-            True if running
-        """
-        ...
-
-    @property
-    def uptime_seconds(self) -> float:
-        """Time since daemon started, in seconds.
-
-        Returns:
-            Uptime in seconds
-        """
-        ...
-
-    async def restart(self) -> None:
-        """Restart the daemon.
-
-        Should stop and then start the daemon.
-        """
-        ...
-
-    async def pause(self) -> None:
-        """Pause daemon processing without stopping.
-
-        The daemon remains running but doesn't process new work.
-        """
-        ...
-
-    async def resume(self) -> None:
-        """Resume daemon processing after pause.
-
-        Resumes normal operation.
-        """
-        ...
-
-
-@runtime_checkable
-class EventDrivenProtocol(CoordinatorProtocol, Protocol):
-    """Protocol for event-driven coordinators.
-
-    Extends CoordinatorProtocol with event subscription management.
-    """
-
-    def subscribe_to_events(self) -> bool:
-        """Subscribe to relevant events.
-
-        Should set up event subscriptions for the coordinator.
-
-        Returns:
-            True if successfully subscribed
-        """
-        ...
-
-    def unsubscribe_from_events(self) -> None:
-        """Unsubscribe from all events.
-
-        Should clean up event subscriptions.
-        """
-        ...
-
-    @property
-    def subscribed_events(self) -> list[str]:
-        """List of event types this coordinator is subscribed to.
-
-        Returns:
-            List of event type names
-        """
-        ...
-
-
-@runtime_checkable
-class ConfigurableProtocol(Protocol):
-    """Protocol for coordinators with runtime configuration.
-
-    Enables dynamic configuration updates without restart.
-    """
-
-    def get_config(self) -> dict[str, Any]:
-        """Get current configuration.
-
-        Returns:
-            Dictionary of configuration values
-        """
-        ...
-
-    def update_config(self, config: dict[str, Any]) -> bool:
-        """Update configuration at runtime.
-
-        Args:
-            config: Dictionary of configuration values to update
-
-        Returns:
-            True if configuration was updated successfully
-        """
-        ...
 
 
 # =============================================================================

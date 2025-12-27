@@ -412,36 +412,34 @@ def validate_database_integrity(db_path: str) -> tuple[bool, dict[str, Any]]:
         return False, stats
 
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
 
-        # Check SQLite integrity
-        cursor.execute("PRAGMA integrity_check")
-        integrity = cursor.fetchone()[0]
-        stats["integrity_ok"] = integrity == "ok"
-        if integrity != "ok":
-            stats["errors"].append(f"SQLite integrity check failed: {integrity}")
+            # Check SQLite integrity
+            cursor.execute("PRAGMA integrity_check")
+            integrity = cursor.fetchone()[0]
+            stats["integrity_ok"] = integrity == "ok"
+            if integrity != "ok":
+                stats["errors"].append(f"SQLite integrity check failed: {integrity}")
 
-        # Count games
-        cursor.execute("SELECT COUNT(*) FROM games")
-        stats["total_games"] = cursor.fetchone()[0]
+            # Count games
+            cursor.execute("SELECT COUNT(*) FROM games")
+            stats["total_games"] = cursor.fetchone()[0]
 
-        # Count completed games
-        cursor.execute("SELECT COUNT(*) FROM games WHERE game_status = 'completed'")
-        stats["completed_games"] = cursor.fetchone()[0]
+            # Count completed games
+            cursor.execute("SELECT COUNT(*) FROM games WHERE game_status = 'completed'")
+            stats["completed_games"] = cursor.fetchone()[0]
 
-        # Count games with snapshots (if table exists)
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='game_state_snapshots'"
-        )
-        if cursor.fetchone():
-            cursor.execute("SELECT COUNT(DISTINCT game_id) FROM game_state_snapshots")
-            stats["games_with_snapshots"] = cursor.fetchone()[0]
+            # Count games with snapshots (if table exists)
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='game_state_snapshots'"
+            )
+            if cursor.fetchone():
+                cursor.execute("SELECT COUNT(DISTINCT game_id) FROM game_state_snapshots")
+                stats["games_with_snapshots"] = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM game_state_snapshots")
-            stats["total_snapshots"] = cursor.fetchone()[0]
-
-        conn.close()
+                cursor.execute("SELECT COUNT(*) FROM game_state_snapshots")
+                stats["total_snapshots"] = cursor.fetchone()[0]
 
         # Validate stats
         if stats["completed_games"] == 0:
@@ -569,80 +567,76 @@ class NNUESQLiteDataset(Dataset):
         This is much faster than replay-based extraction.
         """
         samples: list[NNUESample] = []
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        # Check if the game_nnue_features table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='game_nnue_features'
-        """)
-        if not cursor.fetchone():
-            conn.close()
-            return None
+            # Check if the game_nnue_features table exists
+            cursor.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='game_nnue_features'
+            """)
+            if not cursor.fetchone():
+                return None
 
-        board_type_str = self.config.board_type.value.lower()
+            board_type_str = self.config.board_type.value.lower()
 
-        # Query cached features matching our criteria
-        # RR-CANON compliance: filter by schema_version if require_canonical_schema
-        schema_filter = ""
-        params = [
-            board_type_str,
-            self.config.num_players,
-            self.config.min_game_length,
-        ]
-        if self.config.require_canonical_schema:
-            schema_filter = "AND COALESCE(g.schema_version, 0) >= ?"
-            params.append(self.config.min_schema_version)
+            # Query cached features matching our criteria
+            # RR-CANON compliance: filter by schema_version if require_canonical_schema
+            schema_filter = ""
+            params = [
+                board_type_str,
+                self.config.num_players,
+                self.config.min_game_length,
+            ]
+            if self.config.require_canonical_schema:
+                schema_filter = "AND COALESCE(g.schema_version, 0) >= ?"
+                params.append(self.config.min_schema_version)
 
-        query = f"""
-            SELECT f.game_id, f.move_number, f.player_perspective, f.features, f.value, f.feature_dim
-            FROM game_nnue_features f
-            JOIN games g ON f.game_id = g.game_id
-            WHERE f.board_type = ?
-              AND g.num_players = ?
-              AND g.game_status = 'completed'
-              AND g.winner IS NOT NULL
-              AND g.total_moves >= ?
-              AND COALESCE(g.excluded_from_training, 0) = 0
-              {schema_filter}
-        """
-        try:
-            cursor.execute(query, params)
-        except sqlite3.OperationalError:
-            # Table might not have proper joins, fallback
-            conn.close()
-            return None
-
-        count = 0
-        for row in cursor:
+            query = f"""
+                SELECT f.game_id, f.move_number, f.player_perspective, f.features, f.value, f.feature_dim
+                FROM game_nnue_features f
+                JOIN games g ON f.game_id = g.game_id
+                WHERE f.board_type = ?
+                  AND g.num_players = ?
+                  AND g.game_status = 'completed'
+                  AND g.winner IS NOT NULL
+                  AND g.total_moves >= ?
+                  AND COALESCE(g.excluded_from_training, 0) = 0
+                  {schema_filter}
+            """
             try:
-                # Decompress features
-                features = np.frombuffer(
-                    gzip.decompress(row['features']), dtype=np.float32
-                ).copy()
+                cursor.execute(query, params)
+            except sqlite3.OperationalError:
+                # Table might not have proper joins, fallback
+                return None
 
-                # Validate feature dimension
-                if len(features) != row['feature_dim']:
+            count = 0
+            for row in cursor:
+                try:
+                    # Decompress features
+                    features = np.frombuffer(
+                        gzip.decompress(row['features']), dtype=np.float32
+                    ).copy()
+
+                    # Validate feature dimension
+                    if len(features) != row['feature_dim']:
+                        continue
+
+                    # Apply sampling rate
+                    if row['move_number'] % self.config.sample_every_n_moves != 0:
+                        continue
+
+                    samples.append(NNUESample(
+                        features=features,
+                        value=row['value'],
+                        player_number=row['player_perspective'],
+                        game_id=row['game_id'],
+                        move_number=row['move_number'],
+                    ))
+                    count += 1
+                except (OSError, ValueError, KeyError, TypeError):
                     continue
-
-                # Apply sampling rate
-                if row['move_number'] % self.config.sample_every_n_moves != 0:
-                    continue
-
-                samples.append(NNUESample(
-                    features=features,
-                    value=row['value'],
-                    player_number=row['player_perspective'],
-                    game_id=row['game_id'],
-                    move_number=row['move_number'],
-                ))
-                count += 1
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
-
-        conn.close()
 
         if count > 0:
             logger.info(f"Loaded {count} cached NNUE features from {db_path}")
@@ -658,180 +652,176 @@ class NNUESQLiteDataset(Dataset):
 
         # Fall back to snapshot/replay extraction
         samples: list[NNUESample] = []
-        conn = sqlite3.connect(db_path)
-        _ensure_training_columns(conn)  # Migrate schema if needed
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(db_path) as conn:
+            _ensure_training_columns(conn)  # Migrate schema if needed
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        # Get completed games with winners
-        # RR-CANON compliance: filter by schema_version if require_canonical_schema
-        board_type_str = self.config.board_type.value.lower()
-        schema_filter = ""
-        params = [
-            board_type_str,
-            self.config.num_players,
-            self.config.min_game_length,
-        ]
-        if self.config.require_canonical_schema:
-            schema_filter = "AND COALESCE(schema_version, 0) >= ?"
-            params.append(self.config.min_schema_version)
+            # Get completed games with winners
+            # RR-CANON compliance: filter by schema_version if require_canonical_schema
+            board_type_str = self.config.board_type.value.lower()
+            schema_filter = ""
+            params = [
+                board_type_str,
+                self.config.num_players,
+                self.config.min_game_length,
+            ]
+            if self.config.require_canonical_schema:
+                schema_filter = "AND COALESCE(schema_version, 0) >= ?"
+                params.append(self.config.min_schema_version)
 
-        query = f"""
-            SELECT game_id, board_type, num_players, winner, total_moves
-            FROM games
-            WHERE game_status = 'completed'
-              AND winner IS NOT NULL
-              AND board_type = ?
-              AND num_players = ?
-              AND total_moves >= ?
-              AND COALESCE(excluded_from_training, 0) = 0
-              {schema_filter}
-        """
-        cursor.execute(query, params)
-        games = cursor.fetchall()
-
-        # For GPU extraction, batch collect states first
-        if self.use_gpu_extraction:
-            samples = self._extract_from_db_gpu_batch(conn, cursor, games)
-            conn.close()
-            return samples
-
-        # Batch load all snapshots to avoid N+1 query pattern (December 2025)
-        game_ids = [g['game_id'] for g in games]
-        snapshots_by_game: dict[str, list[Any]] = {gid: [] for gid in game_ids}
-
-        if game_ids:
-            # Single query for all snapshots instead of one per game
-            placeholders = ",".join("?" * len(game_ids))
-            snapshot_query = f"""
-                SELECT game_id, move_number, state_json, compressed
-                FROM game_state_snapshots
-                WHERE game_id IN ({placeholders})
-                ORDER BY game_id, move_number
+            query = f"""
+                SELECT game_id, board_type, num_players, winner, total_moves
+                FROM games
+                WHERE game_status = 'completed'
+                  AND winner IS NOT NULL
+                  AND board_type = ?
+                  AND num_players = ?
+                  AND total_moves >= ?
+                  AND COALESCE(excluded_from_training, 0) = 0
+                  {schema_filter}
             """
-            cursor.execute(snapshot_query, game_ids)
-            all_snapshots = cursor.fetchall()
+            cursor.execute(query, params)
+            games = cursor.fetchall()
 
-            for snap in all_snapshots:
-                gid = snap['game_id']
-                if gid in snapshots_by_game:
-                    snapshots_by_game[gid].append(snap)
+            # For GPU extraction, batch collect states first
+            if self.use_gpu_extraction:
+                return self._extract_from_db_gpu_batch(conn, cursor, games)
 
-        for game_row in games:
-            game_id = game_row['game_id']
-            winner = game_row['winner']
-            total_moves = game_row['total_moves']
+            # Batch load all snapshots to avoid N+1 query pattern (December 2025)
+            game_ids = [g['game_id'] for g in games]
+            snapshots_by_game: dict[str, list[Any]] = {gid: [] for gid in game_ids}
 
-            # Use batch-loaded snapshots
-            snapshots = snapshots_by_game.get(game_id, [])
+            if game_ids:
+                # Single query for all snapshots instead of one per game
+                placeholders = ",".join("?" * len(game_ids))
+                snapshot_query = f"""
+                    SELECT game_id, move_number, state_json, compressed
+                    FROM game_state_snapshots
+                    WHERE game_id IN ({placeholders})
+                    ORDER BY game_id, move_number
+                """
+                cursor.execute(snapshot_query, game_ids)
+                all_snapshots = cursor.fetchall()
 
-            # Determine expected positions based on sampling rate
-            # Use snapshots if we have at least 1 - faster than full replay
-            # Note: Lowered threshold from max(expected_samples//2, 5) to 1
-            # because most cluster DBs only store final state snapshot
-            if not snapshots:
-                # No snapshots at all - must use slow replay
-                samples.extend(self._extract_via_replay(
-                    conn, game_id, winner, total_moves
-                ))
-                continue
+                for snap in all_snapshots:
+                    gid = snap['game_id']
+                    if gid in snapshots_by_game:
+                        snapshots_by_game[gid].append(snap)
 
-            # Check if snapshots have actual game data (not just initial state at move 0)
-            # We only need any snapshot with move_number > 0 that has a valid players list
-            # Note: Late-game snapshots may have empty stacks, but still contain valid game state
-            has_useful_snapshots = False
-            for snap in snapshots:
-                move_num = snap['move_number']
-                # Any snapshot at move > 0 is useful (even with empty board at end-game)
-                if move_num > 0:
-                    try:
-                        snap_json = snap['state_json']
-                        if snap['compressed']:
-                            snap_json = gzip.decompress(snap_json.encode()).decode()
-                        snap_dict = json.loads(snap_json)
-                        # Check for valid game state: has players list with data
-                        players = snap_dict.get('players', [])
-                        if len(players) > 0:
-                            has_useful_snapshots = True
-                            break
-                    except (OSError, json.JSONDecodeError, TypeError, KeyError):
-                        continue
+            for game_row in games:
+                game_id = game_row['game_id']
+                winner = game_row['winner']
+                total_moves = game_row['total_moves']
 
-            if not has_useful_snapshots:
-                # No useful mid-game snapshots - try replay (may fail for hybrid games)
-                replay_samples = self._extract_via_replay(
-                    conn, game_id, winner, total_moves
-                )
-                samples.extend(replay_samples)
-                continue
+                # Use batch-loaded snapshots
+                snapshots = snapshots_by_game.get(game_id, [])
 
-            # Sample positions from snapshots (only if we have good coverage)
-            for _i, snapshot in enumerate(snapshots):
-                move_num = snapshot['move_number']
-
-                # Sample every Nth position
-                if move_num % self.config.sample_every_n_moves != 0:
+                # Determine expected positions based on sampling rate
+                # Use snapshots if we have at least 1 - faster than full replay
+                # Note: Lowered threshold from max(expected_samples//2, 5) to 1
+                # because most cluster DBs only store final state snapshot
+                if not snapshots:
+                    # No snapshots at all - must use slow replay
+                    samples.extend(self._extract_via_replay(
+                        conn, game_id, winner, total_moves
+                    ))
                     continue
 
-                # Parse state JSON
-                state_json = snapshot['state_json']
-                if snapshot['compressed']:
-                    state_json = gzip.decompress(state_json.encode()).decode()
+                # Check if snapshots have actual game data (not just initial state at move 0)
+                # We only need any snapshot with move_number > 0 that has a valid players list
+                # Note: Late-game snapshots may have empty stacks, but still contain valid game state
+                has_useful_snapshots = False
+                for snap in snapshots:
+                    move_num = snap['move_number']
+                    # Any snapshot at move > 0 is useful (even with empty board at end-game)
+                    if move_num > 0:
+                        try:
+                            snap_json = snap['state_json']
+                            if snap['compressed']:
+                                snap_json = gzip.decompress(snap_json.encode()).decode()
+                            snap_dict = json.loads(snap_json)
+                            # Check for valid game state: has players list with data
+                            players = snap_dict.get('players', [])
+                            if len(players) > 0:
+                                has_useful_snapshots = True
+                                break
+                        except (OSError, json.JSONDecodeError, TypeError, KeyError):
+                            continue
 
-                try:
-                    state_dict = json.loads(state_json)
-                    game_state = GameState(**state_dict)
-                except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
-                    logger.debug(f"Failed to parse state for {game_id}:{move_num}: {e}")
-                    continue
-
-                # Determine which perspectives to extract from
-                if self.config.dual_perspective:
-                    # Extract from all player perspectives for balanced training
-                    perspectives = list(range(1, self.config.num_players + 1))
-                else:
-                    # Extract only from current player's perspective
-                    current_player = game_state.current_player
-                    if current_player is None or current_player < 1:
-                        current_player = 1
-                    perspectives = [current_player]
-
-                for player_perspective in perspectives:
-                    # Calculate value: +1 if this player wins, -1 if loses
-                    if winner == player_perspective:
-                        value = 1.0
-                    elif winner is None or winner == 0:
-                        value = 0.0  # Draw
-                    else:
-                        value = -1.0  # Loss
-
-                    # Skip draws if configured
-                    if value == 0.0 and not self.config.include_draws:
-                        continue
-
-                    # Extract NNUE features from this player's perspective
-                    try:
-                        features = extract_features_from_gamestate(
-                            game_state, player_perspective
-                        )
-                    except (ValueError, RuntimeError, IndexError, KeyError) as e:
-                        logger.debug(f"Feature extraction failed for {game_id}:{move_num}:P{player_perspective}: {e}")
-                        continue
-
-                    sample = NNUESample(
-                        features=features,
-                        value=value,
-                        player_number=player_perspective,
-                        game_id=game_id,
-                        move_number=move_num,
+                if not has_useful_snapshots:
+                    # No useful mid-game snapshots - try replay (may fail for hybrid games)
+                    replay_samples = self._extract_via_replay(
+                        conn, game_id, winner, total_moves
                     )
-                    samples.append(sample)
+                    samples.extend(replay_samples)
+                    continue
 
-                if self.max_samples and len(samples) >= self.max_samples:
-                    conn.close()
-                    return samples
+                # Sample positions from snapshots (only if we have good coverage)
+                for _i, snapshot in enumerate(snapshots):
+                    move_num = snapshot['move_number']
 
-        conn.close()
+                    # Sample every Nth position
+                    if move_num % self.config.sample_every_n_moves != 0:
+                        continue
+
+                    # Parse state JSON
+                    state_json = snapshot['state_json']
+                    if snapshot['compressed']:
+                        state_json = gzip.decompress(state_json.encode()).decode()
+
+                    try:
+                        state_dict = json.loads(state_json)
+                        game_state = GameState(**state_dict)
+                    except (json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
+                        logger.debug(f"Failed to parse state for {game_id}:{move_num}: {e}")
+                        continue
+
+                    # Determine which perspectives to extract from
+                    if self.config.dual_perspective:
+                        # Extract from all player perspectives for balanced training
+                        perspectives = list(range(1, self.config.num_players + 1))
+                    else:
+                        # Extract only from current player's perspective
+                        current_player = game_state.current_player
+                        if current_player is None or current_player < 1:
+                            current_player = 1
+                        perspectives = [current_player]
+
+                    for player_perspective in perspectives:
+                        # Calculate value: +1 if this player wins, -1 if loses
+                        if winner == player_perspective:
+                            value = 1.0
+                        elif winner is None or winner == 0:
+                            value = 0.0  # Draw
+                        else:
+                            value = -1.0  # Loss
+
+                        # Skip draws if configured
+                        if value == 0.0 and not self.config.include_draws:
+                            continue
+
+                        # Extract NNUE features from this player's perspective
+                        try:
+                            features = extract_features_from_gamestate(
+                                game_state, player_perspective
+                            )
+                        except (ValueError, RuntimeError, IndexError, KeyError) as e:
+                            logger.debug(f"Feature extraction failed for {game_id}:{move_num}:P{player_perspective}: {e}")
+                            continue
+
+                        sample = NNUESample(
+                            features=features,
+                            value=value,
+                            player_number=player_perspective,
+                            game_id=game_id,
+                            move_number=move_num,
+                        )
+                        samples.append(sample)
+
+                    if self.max_samples and len(samples) >= self.max_samples:
+                        return samples
+
         return samples
 
     def _extract_from_db_gpu_batch(

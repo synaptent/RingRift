@@ -20,6 +20,8 @@ Event Integration:
 - Subscribes to NODE_RECOVERED: Update recovery state
 - Subscribes to PARITY_FAILURE_RATE_CHANGED: Alert on TS/Python parity issues (Dec 2025)
 - Subscribes to COORDINATOR_HEALTH_DEGRADED: Track coordinator health issues (Dec 2025)
+- Subscribes to DAEMON_STARTED: Track daemon lifecycle for health visibility (Dec 2025)
+- Subscribes to DAEMON_STOPPED: Track daemon stops and detect unexpected failures (Dec 2025)
 
 Usage:
     from app.coordination.unified_health_manager import (
@@ -275,6 +277,23 @@ class JobHealthState:
 
 
 @dataclass
+class DaemonHealthState:
+    """Track health state for a daemon (December 2025).
+
+    Used by UnifiedHealthManager to track daemon lifecycle events
+    and provide visibility into daemon health across the cluster.
+    """
+
+    daemon_name: str
+    hostname: str = ""
+    started_at: float = 0.0
+    stopped_at: float = 0.0
+    is_running: bool = False
+    restart_count: int = 0
+    last_stop_reason: str = ""
+
+
+@dataclass
 class RecoveryConfig:
     """Configuration for recovery behavior."""
 
@@ -441,6 +460,7 @@ class UnifiedHealthManager(CoordinatorBase):
         # Node and job health tracking (consolidated)
         self._node_states: dict[str, NodeHealthState] = {}
         self._job_states: dict[str, JobHealthState] = {}
+        self._daemon_states: dict[str, DaemonHealthState] = {}  # December 2025
 
         # Circuit breakers - use shared implementation from app.distributed
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
@@ -509,6 +529,10 @@ class UnifiedHealthManager(CoordinatorBase):
 
             # Deadlock detection (December 2025 - critical lock contention handler)
             router.subscribe(DataEventType.DEADLOCK_DETECTED.value, self._on_deadlock_detected)
+
+            # Daemon lifecycle events (December 2025 - wires orphaned events to health monitor)
+            router.subscribe(DataEventType.DAEMON_STARTED.value, self._on_daemon_started)
+            router.subscribe(DataEventType.DAEMON_STOPPED.value, self._on_daemon_stopped)
 
             self._subscribed = True
             logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
@@ -1173,6 +1197,108 @@ class UnifiedHealthManager(CoordinatorBase):
             "lock_manager",
             f"Deadlock detected: {len(resources)} resources involved",
         )
+
+    async def _on_daemon_started(self, event) -> None:
+        """Handle DAEMON_STARTED event - track daemon health (December 2025).
+
+        Tracks daemon starts across the cluster for health visibility.
+        Updates daemon state, detects restarts, and logs for monitoring.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        daemon_name = payload.get("daemon_name", "unknown")
+        hostname = payload.get("hostname", "unknown")
+        daemon_key = f"{daemon_name}@{hostname}"
+
+        # Get or create daemon state
+        if daemon_key not in self._daemon_states:
+            self._daemon_states[daemon_key] = DaemonHealthState(
+                daemon_name=daemon_name,
+                hostname=hostname,
+            )
+
+        state = self._daemon_states[daemon_key]
+
+        # Track restart if daemon was previously running
+        if state.is_running:
+            state.restart_count += 1
+            logger.warning(
+                f"[UnifiedHealthManager] Daemon restarted: {daemon_name} on {hostname} "
+                f"(restart #{state.restart_count})"
+            )
+        else:
+            logger.info(f"[UnifiedHealthManager] Daemon started: {daemon_name} on {hostname}")
+
+        state.is_running = True
+        state.started_at = time.time()
+
+    async def _on_daemon_stopped(self, event) -> None:
+        """Handle DAEMON_STOPPED event - track daemon health (December 2025).
+
+        Tracks daemon stops across the cluster for health visibility.
+        Records stop reason for debugging and alerts on unexpected stops.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        daemon_name = payload.get("daemon_name", "unknown")
+        hostname = payload.get("hostname", "unknown")
+        reason = payload.get("reason", "normal")
+        daemon_key = f"{daemon_name}@{hostname}"
+
+        # Get or create daemon state
+        if daemon_key not in self._daemon_states:
+            self._daemon_states[daemon_key] = DaemonHealthState(
+                daemon_name=daemon_name,
+                hostname=hostname,
+            )
+
+        state = self._daemon_states[daemon_key]
+        state.is_running = False
+        state.stopped_at = time.time()
+        state.last_stop_reason = reason
+
+        # Log based on stop reason
+        if reason in ("error", "crash", "killed"):
+            logger.warning(
+                f"[UnifiedHealthManager] Daemon stopped unexpectedly: {daemon_name} on {hostname} "
+                f"(reason: {reason})"
+            )
+            # Record as error for monitoring
+            error = ErrorRecord(
+                error_id=f"daemon_stop_{int(time.time() * 1000)}",
+                timestamp=time.time(),
+                component=f"daemon:{daemon_name}",
+                error_type="daemon_stopped",
+                message=f"Daemon {daemon_name} stopped unexpectedly: {reason}",
+                node_id=hostname,
+                severity=ErrorSeverity.WARNING,
+                context={
+                    "daemon_name": daemon_name,
+                    "hostname": hostname,
+                    "reason": reason,
+                },
+            )
+            self._record_error(error)
+        else:
+            logger.info(
+                f"[UnifiedHealthManager] Daemon stopped: {daemon_name} on {hostname} ({reason})"
+            )
+
+    def get_daemon_states(self) -> dict[str, DaemonHealthState]:
+        """Get all tracked daemon states (December 2025).
+
+        Returns:
+            Dict mapping daemon_key (daemon_name@hostname) to DaemonHealthState
+        """
+        return dict(self._daemon_states)
+
+    def get_running_daemons(self) -> list[str]:
+        """Get list of currently running daemons (December 2025).
+
+        Returns:
+            List of daemon keys (daemon_name@hostname) for running daemons
+        """
+        return [key for key, state in self._daemon_states.items() if state.is_running]
 
     # =========================================================================
     # Error and Recovery Recording

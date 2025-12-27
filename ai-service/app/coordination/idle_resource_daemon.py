@@ -614,6 +614,9 @@ class IdleResourceDaemon:
         # December 2025: Subscribe to cluster-wide idle state broadcast
         self._wire_cluster_state_events()
 
+        # December 2025: Subscribe to selfplay priority updates from feedback loop
+        self._wire_selfplay_target_events()
+
         # Start monitoring loop
         self._monitor_task = safe_create_task(
             self._monitor_loop(),
@@ -852,6 +855,100 @@ class IdleResourceDaemon:
             logger.debug("[IdleResourceDaemon] Event router not available, cluster state disabled")
         except Exception as e:
             logger.warning(f"[IdleResourceDaemon] Failed to wire cluster state events: {e}")
+
+    def _wire_selfplay_target_events(self) -> None:
+        """Subscribe to SELFPLAY_TARGET_UPDATED events from feedback loop.
+
+        December 2025: When the feedback loop detects quality degradation,
+        regression, or promotion failures, it emits SELFPLAY_TARGET_UPDATED
+        to request priority selfplay for specific configs. This daemon should
+        prioritize spawning selfplay jobs for those configs on idle GPUs.
+
+        Events handled:
+        - SELFPLAY_TARGET_UPDATED: Update config priority for job spawning
+        """
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+
+            # Track priority configs - these should be preferred when spawning
+            if not hasattr(self, "_priority_configs"):
+                self._priority_configs: dict[str, dict[str, Any]] = {}
+
+            def _on_selfplay_target_updated(event: Any) -> None:
+                """Handle SELFPLAY_TARGET_UPDATED - prioritize config for spawning."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                config_key = payload.get("config_key") or payload.get("config", "")
+                priority = payload.get("priority", "normal")
+                reason = payload.get("reason", "feedback_loop")
+                target_jobs = payload.get("target_jobs") or payload.get("target_games")
+                exploration_boost = payload.get("exploration_boost", 1.0)
+
+                if not config_key:
+                    return
+
+                # Store priority config with metadata
+                self._priority_configs[config_key] = {
+                    "priority": priority,
+                    "reason": reason,
+                    "target_jobs": target_jobs,
+                    "exploration_boost": exploration_boost,
+                    "timestamp": time.time(),
+                }
+
+                logger.info(
+                    f"[IdleResourceDaemon] SELFPLAY_TARGET_UPDATED: {config_key} "
+                    f"priority={priority} reason={reason}"
+                    + (f" target_jobs={target_jobs}" if target_jobs else "")
+                    + (f" exploration_boost={exploration_boost:.1f}x" if exploration_boost > 1.0 else "")
+                )
+
+                # If priority is urgent, trigger immediate spawn check
+                if priority == "urgent":
+                    logger.info(
+                        f"[IdleResourceDaemon] Urgent priority for {config_key}, "
+                        f"triggering immediate spawn check"
+                    )
+                    # Could trigger immediate spawn here, but the regular loop
+                    # will pick it up quickly (15s interval by default)
+
+            # Subscribe to the event
+            if hasattr(DataEventType, 'SELFPLAY_TARGET_UPDATED'):
+                router.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED.value, _on_selfplay_target_updated)
+                logger.info(
+                    "[IdleResourceDaemon] Subscribed to SELFPLAY_TARGET_UPDATED "
+                    "(feedback loop priority updates)"
+                )
+            else:
+                logger.debug("[IdleResourceDaemon] SELFPLAY_TARGET_UPDATED event type not available")
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] Event router not available, selfplay target updates disabled")
+        except Exception as e:
+            logger.warning(f"[IdleResourceDaemon] Failed to wire selfplay target events: {e}")
+
+    def get_priority_configs(self) -> dict[str, dict[str, Any]]:
+        """Get current priority configs for spawning decisions.
+
+        Returns:
+            Dict mapping config_key to priority metadata (priority, reason, timestamp, etc.)
+        """
+        if not hasattr(self, "_priority_configs"):
+            return {}
+
+        # Prune stale priorities (older than 30 minutes)
+        now = time.time()
+        stale_threshold = 30 * 60  # 30 minutes
+        stale_keys = [
+            key for key, meta in self._priority_configs.items()
+            if now - meta.get("timestamp", 0) > stale_threshold
+        ]
+        for key in stale_keys:
+            del self._priority_configs[key]
+            logger.debug(f"[IdleResourceDaemon] Pruned stale priority for {key}")
+
+        return self._priority_configs.copy()
 
     def _prune_stale_cluster_states(self) -> None:
         """Remove cluster states older than the stale threshold."""

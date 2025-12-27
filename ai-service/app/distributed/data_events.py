@@ -2615,6 +2615,24 @@ async def emit_sync_triggered(
     ))
 
 
+# =============================================================================
+# Curriculum Weight Events
+# =============================================================================
+# STATUS: RESERVED - Emitter exists, no subscribers yet (Dec 2025)
+#
+# Purpose: Track changes to curriculum/opponent weights for auditing and debugging.
+# When curriculum integration adjusts weights (exploration, opponent strength, etc.),
+# this event provides a trail for understanding why weights changed.
+#
+# Intended subscribers (to be implemented Q1 2026):
+#   - WeightHistoryTracker: Store weight change history for analysis
+#   - CurriculumDashboard: Visualize weight evolution over time
+#   - SelfplayScheduler: Could adjust priorities based on weight changes
+#
+# The emit function is intended to be called from curriculum integration components
+# when they adjust training weights.
+# =============================================================================
+
 async def emit_weight_updated(
     config: str,
     component: str,

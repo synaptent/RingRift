@@ -97,6 +97,20 @@ class NodeStatus:
 
 
 @dataclass
+class NodeStallState:
+    """State tracking for stall detection on a single node.
+
+    December 2025: Harvested from deprecated robust_cluster_monitor.py.
+    Tracks game count across consecutive checks to detect stuck jobs.
+    """
+
+    last_game_count: int = 0
+    stall_count: int = 0  # Consecutive checks with unchanged game count
+    last_check_time: float = 0.0
+    alerted: bool = False  # Whether we've already alerted for this stall
+
+
+@dataclass
 class ClusterStatus:
     """Aggregated status for the entire cluster."""
 
@@ -183,6 +197,11 @@ class ClusterMonitor:
         except ImportError:
             logger.warning("RemoteGameDiscovery not available")
             self.game_discovery = None
+
+        # December 2025: Stall detection state (harvested from robust_cluster_monitor)
+        self._stall_states: dict[str, NodeStallState] = {}
+        self._stall_threshold: int = 3  # Consecutive checks before alerting
+        self._running = False
 
     def _load_hosts(self):
         """Load hosts configuration from cluster_config helpers.
@@ -1008,6 +1027,107 @@ class ClusterMonitor:
         except KeyboardInterrupt:
             print("\nMonitoring stopped.")
 
+    def _check_for_stalls(self, status: ClusterStatus) -> list[str]:
+        """Check for stalled nodes (no game progress).
+
+        December 2025: Harvested from deprecated robust_cluster_monitor.py.
+        Tracks game count across consecutive checks. If game count doesn't
+        change for N consecutive checks, the node is considered stalled.
+
+        Args:
+            status: Current cluster status
+
+        Returns:
+            List of stalled node names (for alerting)
+        """
+        now = time.time()
+        stalled_nodes: list[str] = []
+
+        for node_name, node_status in status.nodes.items():
+            if not node_status.reachable:
+                # Clear stall state for unreachable nodes
+                if node_name in self._stall_states:
+                    del self._stall_states[node_name]
+                continue
+
+            current_games = node_status.total_games
+
+            # Initialize state if first check
+            if node_name not in self._stall_states:
+                self._stall_states[node_name] = NodeStallState(
+                    last_game_count=current_games,
+                    stall_count=0,
+                    last_check_time=now,
+                    alerted=False,
+                )
+                continue
+
+            state = self._stall_states[node_name]
+
+            if current_games > state.last_game_count:
+                # Progress made - reset stall counter
+                state.stall_count = 0
+                state.last_game_count = current_games
+                state.last_check_time = now
+                state.alerted = False
+            else:
+                # No progress - increment stall counter
+                state.stall_count += 1
+                state.last_check_time = now
+
+                # Check if stall threshold reached
+                if state.stall_count >= self._stall_threshold and not state.alerted:
+                    stalled_nodes.append(node_name)
+                    state.alerted = True
+                    logger.warning(
+                        f"[ClusterMonitor] Node {node_name} stalled: "
+                        f"game count {current_games} unchanged for "
+                        f"{state.stall_count} consecutive checks"
+                    )
+
+        return stalled_nodes
+
+    async def _emit_stall_alert(self, stalled_nodes: list[str]) -> None:
+        """Emit stall detection event.
+
+        December 2025: Integrated with event system for pipeline coordination.
+        """
+        if not stalled_nodes:
+            return
+
+        try:
+            from app.coordination.event_router import DataEventType, get_event_router
+
+            router = get_event_router()
+            router.emit(
+                DataEventType.CLUSTER_STALL_DETECTED,
+                {
+                    "stalled_nodes": stalled_nodes,
+                    "stall_threshold": self._stall_threshold,
+                    "timestamp": time.time(),
+                },
+            )
+        except (ImportError, AttributeError) as e:
+            logger.debug(f"Could not emit stall event: {e}")
+
+    def get_stall_status(self) -> dict[str, dict[str, Any]]:
+        """Get current stall detection status for all tracked nodes.
+
+        Returns:
+            Dict mapping node name to stall state info
+        """
+        return {
+            node: {
+                "game_count": state.last_game_count,
+                "stall_count": state.stall_count,
+                "threshold": self._stall_threshold,
+                "is_stalled": state.stall_count >= self._stall_threshold,
+                "alerted": state.alerted,
+                "last_check": state.last_check_time,
+            }
+            for node, state in self._stall_states.items()
+        }
+
     async def run_forever(self, interval: int = 30):
         """Run cluster monitoring forever (for DaemonManager compatibility).
 
@@ -1033,6 +1153,12 @@ class ClusterMonitor:
                     f"[ClusterMonitor] {status.total_nodes} nodes, "
                     f"{status.healthy_nodes} healthy, {len(status.errors)} errors"
                 )
+
+                # December 2025: Check for stalled nodes
+                stalled = self._check_for_stalls(status)
+                if stalled:
+                    await self._emit_stall_alert(stalled)
+
             except Exception as e:
                 logger.warning(f"[ClusterMonitor] Status check failed: {e}")
 

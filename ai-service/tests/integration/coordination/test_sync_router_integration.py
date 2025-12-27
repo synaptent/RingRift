@@ -382,7 +382,8 @@ class TestEventWiring:
     def test_wire_to_event_router_subscribes(self, router):
         """wire_to_event_router should subscribe to events."""
         mock_event_router = MagicMock()
-        with patch("app.coordination.sync_router.get_router", return_value=mock_event_router):
+        # Patch at the source module where it's imported
+        with patch("app.coordination.event_router.get_router", return_value=mock_event_router):
             router.wire_to_event_router()
 
             # Should have subscribed to various events via router.subscribe()
@@ -397,7 +398,8 @@ class TestEventWiring:
     def test_wire_to_event_router_idempotent(self, router):
         """Calling wire_to_event_router twice should be safe."""
         mock_event_router = MagicMock()
-        with patch("app.coordination.sync_router.get_router", return_value=mock_event_router):
+        # Patch at the source module where it's imported
+        with patch("app.coordination.event_router.get_router", return_value=mock_event_router):
             # Should not raise on second call
             router.wire_to_event_router()
             router.wire_to_event_router()

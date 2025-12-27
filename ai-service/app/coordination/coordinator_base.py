@@ -300,6 +300,48 @@ class CoordinatorBase(ABC):
             "last_error": self._last_error,
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Perform health check (CoordinatorProtocol compliance).
+
+        Returns standardized HealthCheckResult for unified monitoring.
+        Subclasses can override to add custom health criteria.
+
+        Returns:
+            HealthCheckResult with health status and details
+        """
+        from app.coordination.protocols import HealthCheckResult
+
+        # Consider healthy if running and not too many errors
+        is_running = self._status == CoordinatorStatus.RUNNING
+        error_rate_ok = self._errors_count < 10 or (
+            self._operations_count > 0
+            and self._errors_count / self._operations_count < 0.1
+        )
+        is_healthy = is_running and error_rate_ok
+
+        if is_healthy:
+            status = CoordinatorStatus.RUNNING
+            message = ""
+        elif is_running and not error_rate_ok:
+            status = CoordinatorStatus.DEGRADED
+            message = f"High error rate: {self._errors_count}/{self._operations_count}"
+        else:
+            status = self._status
+            message = self._last_error or f"Not running (status: {self._status.value})"
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=message,
+            details={
+                "name": self._name,
+                "is_running": self._running,
+                "uptime_seconds": round(self.uptime_seconds, 2),
+                "operations_count": self._operations_count,
+                "errors_count": self._errors_count,
+            },
+        )
+
     # Hooks for subclasses - override these (optional, not abstract)
     async def _do_initialize(self) -> None:  # noqa: B027 - optional hook
         """Custom initialization logic. Override in subclass."""

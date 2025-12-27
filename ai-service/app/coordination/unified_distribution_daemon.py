@@ -497,9 +497,14 @@ class UnifiedDistributionDaemon:
             self._successful_distributions += 1
             self._last_sync_time = time.time()
 
-            # Create symlinks for models
+            # Create local symlinks for models
             if self.config.create_symlinks:
                 await self._create_model_symlinks(model_paths)
+
+            # December 2025: Create remote symlinks on target nodes
+            # (Harvested from deprecated model_distribution_daemon.py)
+            if self.config.create_symlinks:
+                await self._create_remote_symlinks(model_paths, target_nodes)
 
             # Emit completion event
             if self.config.emit_completion_event:
@@ -928,6 +933,81 @@ class UnifiedDistributionDaemon:
 
         if created > 0:
             logger.info(f"Created {created} model symlinks")
+
+    async def _create_remote_symlinks(
+        self,
+        model_paths: list[Path],
+        target_nodes: list[str],
+    ) -> None:
+        """Create ringrift_best_*.pth symlinks on remote nodes.
+
+        December 2025: Harvested from deprecated model_distribution_daemon.py.
+        After distributing canonical models, create corresponding symlinks on
+        each target node so selfplay nodes can find models by config key.
+        """
+        if not model_paths or not target_nodes:
+            return
+
+        # Build symlink commands for canonical models
+        symlink_cmds: list[str] = []
+        for path in model_paths:
+            if not path.stem.startswith("canonical_"):
+                continue
+            config_key = path.stem[len("canonical_"):]
+            canonical_name = path.name
+            symlink_name = f"ringrift_best_{config_key}.pth"
+            # Create relative symlink in models directory
+            # rm -f to avoid "file exists" errors, -sf for force symlink
+            symlink_cmds.append(
+                f"cd ~/ringrift/ai-service/models && "
+                f"rm -f {symlink_name} && "
+                f"ln -sf {canonical_name} {symlink_name}"
+            )
+
+        if not symlink_cmds:
+            return
+
+        # Execute on all target nodes concurrently
+        combined_cmd = " && ".join(symlink_cmds)
+        created_count = 0
+        failed_nodes: list[str] = []
+
+        try:
+            from app.core.ssh import get_ssh_client
+
+            async def create_on_node(host: str) -> bool:
+                try:
+                    client = get_ssh_client(host)
+                    result = await client.run_async(combined_cmd, timeout=30)
+                    return result.success
+                except Exception as e:
+                    logger.debug(f"Failed to create symlinks on {host}: {e}")
+                    return False
+
+            tasks = [create_on_node(node) for node in target_nodes]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for i, (node, result) in enumerate(zip(target_nodes, results)):
+                if isinstance(result, Exception):
+                    failed_nodes.append(node)
+                elif result:
+                    created_count += 1
+                else:
+                    failed_nodes.append(node)
+
+        except ImportError:
+            logger.debug("SSH client not available, skipping remote symlinks")
+            return
+
+        if created_count > 0:
+            logger.info(
+                f"Created remote symlinks on {created_count}/{len(target_nodes)} nodes"
+            )
+        if failed_nodes:
+            logger.debug(
+                f"Failed to create symlinks on {len(failed_nodes)} nodes: "
+                f"{failed_nodes[:3]}{'...' if len(failed_nodes) > 3 else ''}"
+            )
 
     def _record_delivery(
         self,

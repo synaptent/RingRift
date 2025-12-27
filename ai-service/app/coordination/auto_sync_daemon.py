@@ -667,7 +667,7 @@ class AutoSyncDaemon:
             if games_synced and games_synced > 0:
                 fire_and_forget(
                     self._emit_sync_completed(games_synced),
-                    error_callback=lambda exc: logger.debug(
+                    on_error=lambda exc: logger.debug(
                         f"Failed to emit sync completed from sync_now(): {exc}"
                     ),
                 )
@@ -676,7 +676,7 @@ class AutoSyncDaemon:
             logger.error(f"[AutoSyncDaemon] sync_now() error: {e}")
             fire_and_forget(
                 self._emit_sync_failed(str(e)),
-                error_callback=lambda exc: logger.debug(
+                on_error=lambda exc: logger.debug(
                     f"Failed to emit sync failed from sync_now(): {exc}"
                 ),
             )
@@ -802,7 +802,7 @@ class AutoSyncDaemon:
             # Dec 2025: Emit DATA_SYNC_FAILED for final sync failures
             fire_and_forget(
                 self._emit_sync_failed(f"Final sync failed: {e}"),
-                error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
+                on_error=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
             )
 
     async def on_game_complete(
@@ -861,7 +861,7 @@ class AutoSyncDaemon:
                         # Dec 2025: Emit DATA_SYNC_FAILED for write-through failures (critical for ephemeral nodes)
                         fire_and_forget(
                             self._emit_sync_failed(f"Write-through push failed for game {game_id}"),
-                            error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
+                            on_error=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
                         )
                         return False
                 except asyncio.TimeoutError:
@@ -1593,7 +1593,7 @@ class AutoSyncDaemon:
                 # Dec 2025: Emit DATA_SYNC_FAILED for individual sync failures
                 fire_and_forget(
                     self._emit_sync_failure(target["node_id"], str(source), error),
-                    error_callback=lambda e: logger.debug(f"Failed to emit sync failure: {e}"),
+                    on_error=lambda e: logger.debug(f"Failed to emit sync failure: {e}"),
                 )
                 return {
                     "source": str(source),
@@ -1612,7 +1612,7 @@ class AutoSyncDaemon:
                     timeout_seconds=dynamic_timeout,
                     data_type="game",
                 ),
-                error_callback=lambda e: logger.debug(f"Failed to emit SYNC_STALLED: {e}"),
+                on_error=lambda e: logger.debug(f"Failed to emit SYNC_STALLED: {e}"),
             )
             return {
                 "source": str(source),
@@ -1626,7 +1626,7 @@ class AutoSyncDaemon:
             # Dec 2025: Emit DATA_SYNC_FAILED for sync exceptions
             fire_and_forget(
                 self._emit_sync_failure(target["node_id"], str(source), str(e)),
-                error_callback=lambda exc: logger.debug(f"Failed to emit sync failure: {exc}"),
+                on_error=lambda exc: logger.debug(f"Failed to emit sync failure: {exc}"),
             )
             return {
                 "source": str(source),
@@ -2221,7 +2221,7 @@ class AutoSyncDaemon:
                 if games_synced and games_synced > 0:
                     fire_and_forget(
                         self._emit_sync_completed(games_synced),
-                        error_callback=lambda exc: logger.debug(f"Failed to emit sync completed: {exc}"),
+                        on_error=lambda exc: logger.debug(f"Failed to emit sync completed: {exc}"),
                     )
             except asyncio.CancelledError:
                 break
@@ -2232,7 +2232,7 @@ class AutoSyncDaemon:
                 # Emit DATA_SYNC_FAILED event
                 fire_and_forget(
                     self._emit_sync_failed(str(e)),
-                    error_callback=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
+                    on_error=lambda exc: logger.debug(f"Failed to emit sync failed: {exc}"),
                 )
 
             await asyncio.sleep(self.config.interval_seconds)

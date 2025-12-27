@@ -805,6 +805,29 @@ class OrchestratorRegistry:
             'active_orchestrators': [o.to_dict() for o in active],
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Perform health check (CoordinatorProtocol compliance).
+
+        Returns:
+            HealthCheckResult with registry health status
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        summary = self.get_status_summary()
+        active_count = summary['active_count']
+        has_role = summary['my_role'] is not None
+
+        # Unhealthy if we have no role and no active orchestrators
+        is_healthy = active_count > 0 or has_role
+        status = CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message="" if is_healthy else "No active orchestrators and no role assigned",
+            details=summary,
+        )
+
     # =========================================================================
     # DataCatalog Integration (December 2025)
     # =========================================================================

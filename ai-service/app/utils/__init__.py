@@ -36,6 +36,7 @@ __all__ = [
     "numpy_utils",
     "torch_utils",
     "game_discovery",
+    "retry",
     # Safe NPZ loading (numpy_utils)
     "safe_load_npz",
     # Device management (lazy)
@@ -54,6 +55,13 @@ __all__ = [
     "find_all_game_databases",
     "count_games_for_config",
     "get_game_counts_summary",
+    # Retry utilities (Dec 2025)
+    "retry",
+    "retry_async",
+    "RetryConfig",
+    "RETRY_STANDARD",
+    "RETRY_SSH",
+    "RETRY_HTTP",
 ]
 
 # =============================================================================
@@ -118,5 +126,27 @@ def __getattr__(name: str):
                 "get_game_counts_summary": _ggcs,
             }
         return _lazy_cache["game_discovery"][name]
+
+    # Retry utilities (Dec 2025)
+    if name in ("retry", "retry_async", "RetryConfig", "RETRY_STANDARD",
+                "RETRY_SSH", "RETRY_HTTP"):
+        if "retry" not in _lazy_cache:
+            from app.utils.retry import (
+                retry as _retry,
+                retry_async as _retry_async,
+                RetryConfig as _RetryConfig,
+                RETRY_STANDARD as _RETRY_STANDARD,
+                RETRY_SSH as _RETRY_SSH,
+                RETRY_HTTP as _RETRY_HTTP,
+            )
+            _lazy_cache["retry"] = {
+                "retry": _retry,
+                "retry_async": _retry_async,
+                "RetryConfig": _RetryConfig,
+                "RETRY_STANDARD": _RETRY_STANDARD,
+                "RETRY_SSH": _RETRY_SSH,
+                "RETRY_HTTP": _RETRY_HTTP,
+            }
+        return _lazy_cache["retry"][name]
 
     raise AttributeError(f"module 'app.utils' has no attribute {name!r}")

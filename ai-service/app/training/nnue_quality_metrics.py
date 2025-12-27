@@ -393,11 +393,11 @@ def analyze_dataset_quality(
     """
     import sqlite3
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
 
-    # Count snapshots by move number range
-    cursor.execute("""
+        # Count snapshots by move number range
+        cursor.execute("""
         SELECT
             SUM(CASE WHEN s.move_number < 40 THEN 1 ELSE 0 END) as early,
             SUM(CASE WHEN s.move_number >= 40 AND s.move_number < 80 THEN 1 ELSE 0 END) as mid,
@@ -409,35 +409,33 @@ def analyze_dataset_quality(
           AND g.winner IS NOT NULL
           AND g.board_type = ?
           AND g.num_players = ?
-    """, (board_type.lower(), num_players))
+        """, (board_type.lower(), num_players))
 
-    row = cursor.fetchone()
-    early, mid, late, total = row if row else (0, 0, 0, 0)
+        row = cursor.fetchone()
+        early, mid, late, total = row if row else (0, 0, 0, 0)
 
-    # Count outcomes
-    cursor.execute("""
-        SELECT winner, COUNT(*)
-        FROM games
-        WHERE game_status = 'completed'
-          AND board_type = ?
-          AND num_players = ?
-        GROUP BY winner
-    """, (board_type.lower(), num_players))
+        # Count outcomes
+        cursor.execute("""
+            SELECT winner, COUNT(*)
+            FROM games
+            WHERE game_status = 'completed'
+              AND board_type = ?
+              AND num_players = ?
+            GROUP BY winner
+        """, (board_type.lower(), num_players))
 
-    winner_dist = {str(r[0]): r[1] for r in cursor.fetchall()}
+        winner_dist = {str(r[0]): r[1] for r in cursor.fetchall()}
 
-    # Average game length
-    cursor.execute("""
-        SELECT AVG(total_moves), MIN(total_moves), MAX(total_moves)
-        FROM games
-        WHERE game_status = 'completed'
-          AND board_type = ?
-          AND num_players = ?
-    """, (board_type.lower(), num_players))
+        # Average game length
+        cursor.execute("""
+            SELECT AVG(total_moves), MIN(total_moves), MAX(total_moves)
+            FROM games
+            WHERE game_status = 'completed'
+              AND board_type = ?
+              AND num_players = ?
+        """, (board_type.lower(), num_players))
 
-    avg_moves, min_moves, max_moves = cursor.fetchone()
-
-    conn.close()
+        avg_moves, min_moves, max_moves = cursor.fetchone()
 
     return {
         "total_snapshots": total,

@@ -91,22 +91,28 @@ async def create_auto_sync() -> None:
 
 
 async def create_training_node_watcher() -> None:
-    """Create and run training node watcher daemon (Phase 6, December 2025)."""
+    """Create and run training activity daemon (December 2025).
+
+    Monitors cluster for training activity and triggers priority sync
+    before training starts. Uses TrainingActivityDaemon which:
+    - Detects training via P2P status (running_jobs, processes)
+    - Detects local training via process monitoring
+    - Triggers priority sync when new training detected
+    - Emits TRAINING_STARTED events for coordination
+    - Graceful shutdown on SIGTERM with final sync
+    """
     try:
-        from app.coordination.auto_sync_daemon import (
-            AutoSyncConfig,
-            AutoSyncDaemon,
-            SyncStrategy,
+        from app.coordination.training_activity_daemon import (
+            TrainingActivityConfig,
+            TrainingActivityDaemon,
         )
 
-        config = AutoSyncConfig.from_config_file()
-        config.strategy = SyncStrategy.BROADCAST
-        config.sync_interval = 30.0
-        daemon = AutoSyncDaemon(config=config)
+        config = TrainingActivityConfig.from_env()
+        daemon = TrainingActivityDaemon(config=config)
         await daemon.start()
         await _wait_for_daemon(daemon)
     except ImportError as e:
-        logger.error(f"AutoSyncDaemon not available for training watcher: {e}")
+        logger.error(f"TrainingActivityDaemon not available: {e}")
         raise
 
 

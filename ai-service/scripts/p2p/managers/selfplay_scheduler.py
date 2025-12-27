@@ -171,6 +171,11 @@ class SelfplayScheduler:
         self._previous_targets: dict[str, int] = {}
         self._previous_priorities: dict[str, int] = {}
 
+        # Dec 2025: Initialize boost tracking dicts (fix for hasattr checks)
+        # These track temporary boosts to selfplay rates for specific configs
+        self._exploration_boosts: dict[str, tuple[float, float]] = {}  # config_key -> (boost_factor, expiry_time)
+        self._training_complete_boosts: dict[str, float] = {}  # config_key -> expiry_time
+
     def get_elo_based_priority_boost(self, board_type: str, num_players: int) -> int:
         """Get priority boost based on ELO performance for this config.
 
@@ -1085,8 +1090,7 @@ class SelfplayScheduler:
             # Increase rate multiplier for 30 minutes after training
             boost_duration = 1800  # 30 minutes
             expiry = time.time() + boost_duration
-            if not hasattr(self, "_training_complete_boosts"):
-                self._training_complete_boosts: dict[str, float] = {}
+            # Dec 2025: _training_complete_boosts initialized in __init__
             self._training_complete_boosts[config_key] = expiry
 
             logger.debug(
@@ -1114,8 +1118,7 @@ class SelfplayScheduler:
         """
         try:
             expiry = time.time() + duration_seconds
-            if not hasattr(self, "_exploration_boosts"):
-                self._exploration_boosts: dict[str, tuple[float, float]] = {}
+            # Dec 2025: _exploration_boosts initialized in __init__
             self._exploration_boosts[config_key] = (boost_factor, expiry)
 
             logger.info(
@@ -1134,9 +1137,7 @@ class SelfplayScheduler:
         Returns:
             Boost factor (1.0 = no boost, >1.0 = boosted).
         """
-        if not hasattr(self, "_exploration_boosts"):
-            return 1.0
-
+        # Dec 2025: _exploration_boosts always initialized in __init__
         boost_info = self._exploration_boosts.get(config_key)
         if not boost_info:
             return 1.0
@@ -1187,13 +1188,12 @@ class SelfplayScheduler:
                 last_error = f"Only {configs_with_targets}/{total_configs} configs have targets"
 
         # Count active exploration boosts
-        active_boosts = 0
-        if hasattr(self, "_exploration_boosts"):
-            now = time.time()
-            active_boosts = sum(
-                1 for _, expiry in self._exploration_boosts.values()
-                if expiry > now
-            )
+        # Dec 2025: _exploration_boosts always initialized in __init__
+        now = time.time()
+        active_boosts = sum(
+            1 for _, expiry in self._exploration_boosts.values()
+            if expiry > now
+        )
 
         return {
             "status": status,

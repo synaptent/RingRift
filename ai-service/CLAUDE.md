@@ -423,11 +423,35 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 
 **Key files:**
 
-- **`daemon_manager.py`**: Lifecycle management, health checks, auto-restart
-- **`daemon_factory.py`**: Factory methods for all daemon types
-- **`daemon_types.py`**: `DaemonType` enum with all 60+ types
+- **`daemon_manager.py`**: Lifecycle management, health checks, auto-restart (~2,000 LOC)
+- **`daemon_runners.py`**: Async runner functions for all daemon types (~1,100 LOC, Dec 2025 extraction)
+- **`daemon_types.py`**: `DaemonType` enum with all 63+ daemon types
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
+
+**Architecture (December 2025):**
+
+The daemon system uses a two-layer architecture:
+
+1. **`daemon_manager.py`** - Lifecycle coordinator
+   - `DaemonManager` class handles start/stop, health monitoring, auto-restart
+   - `_register_default_factories()` maps DaemonType to runner functions
+   - Only `_create_health_server()` remains inline (needs `self.liveness_probe()`)
+
+2. **`daemon_runners.py`** - Runner implementations
+   - 62 async runner functions (`create_auto_sync()`, `create_data_pipeline()`, etc.)
+   - Each handles: import, instantiation, start, wait-for-completion
+   - `get_runner(DaemonType)` - Retrieve runner by type
+   - `get_all_runners()` - Get full registry
+
+```python
+# Example: Get and invoke a runner
+from app.coordination.daemon_runners import get_runner
+from app.coordination.daemon_types import DaemonType
+
+runner = get_runner(DaemonType.AUTO_SYNC)
+await runner()  # Starts AutoSyncDaemon
+```
 
 **Launching daemons:**
 
@@ -586,36 +610,39 @@ Major consolidation effort completed December 2025:
 | `EloSyncManager` + `RegistrySyncManager`                      | `DatabaseSyncManager` base class         | ~567       | Complete |
 | 28 `_init_*()` functions in `coordination_bootstrap.py`       | `COORDINATOR_REGISTRY` + generic handler | ~17        | Complete |
 | 5× NodeStatus definitions                                     | `node_status.py`                         | ~200       | Complete |
-| DaemonManager factory methods (8 of 61)                       | `daemon_factory_implementations.py`      | ~100       | Complete |
+| DaemonManager factory methods (62 of 63)                      | `daemon_runners.py`                      | ~1,580     | Complete |
 
 **New Canonical Modules (December 2025 Wave 2):**
 
-| Module                            | Purpose                                                              |
-| --------------------------------- | -------------------------------------------------------------------- |
-| `node_status.py`                  | Unified NodeHealthState enum + NodeMonitoringStatus dataclass       |
-| `daemon_factory_implementations.py` | Standalone factory functions for daemon creation                   |
+| Module              | Purpose                                                       |
+| ------------------- | ------------------------------------------------------------- |
+| `node_status.py`    | Unified NodeHealthState enum + NodeMonitoringStatus dataclass |
+| `daemon_runners.py` | 62 daemon runner functions extracted from DaemonManager       |
 
 **`node_status.py`** consolidates 5 duplicate NodeStatus definitions:
+
 - `NodeHealthState` enum: HEALTHY, DEGRADED, UNHEALTHY, EVICTED, UNKNOWN, OFFLINE
 - `NodeMonitoringStatus` dataclass: 20+ fields for node identity, health, GPU, workload
 - Backward-compatible aliases: `NodeStatus`, `ClusterNodeStatus`
 - Migration: `from app.coordination.node_status import NodeMonitoringStatus as NodeStatus`
 
-**`daemon_factory_implementations.py`** extracts factory methods from DaemonManager:
-- 8 factory functions: `create_auto_sync`, `create_model_distribution`, etc.
-- `FACTORY_REGISTRY` dict for lookup by DaemonType name
-- Pattern for extracting remaining 53 factories incrementally
-- Benefits: Reduces daemon_manager.py from ~3,600 LOC, factories testable in isolation
+**`daemon_runners.py`** extracts runner functions from DaemonManager:
+
+- 62 async runner functions: `create_auto_sync()`, `create_data_pipeline()`, etc.
+- `get_runner(DaemonType)` - Retrieve runner function by daemon type
+- `get_all_runners()` - Get full registry of all runners
+- Only `_create_health_server()` remains in daemon_manager.py (needs `self` access)
+- Benefits: Reduced daemon_manager.py from ~3,600 to ~2,000 LOC, runners testable in isolation
 
 **Infrastructure Improvements (December 2025 Wave 2):**
 
-| Improvement                      | Description                                               |
-| -------------------------------- | --------------------------------------------------------- |
-| DaemonAdapter.health_check()     | Added to base class; all 9 adapter subclasses now comply  |
-| Hardcoded port 8770 → P2P_DEFAULT_PORT | node_status.py, unified_node_health_daemon.py fixed |
-| health_check() added to 6 classes | ClusterMonitor, BandwidthManager, BackpressureMonitor, etc. |
-| BaseDaemon deprecation           | protocols.py BaseDaemon → use base_daemon.py version      |
-| CoordinatorStatus/Protocol       | coordinator_base.py now imports from protocols.py         |
+| Improvement                            | Description                                                 |
+| -------------------------------------- | ----------------------------------------------------------- |
+| DaemonAdapter.health_check()           | Added to base class; all 9 adapter subclasses now comply    |
+| Hardcoded port 8770 → P2P_DEFAULT_PORT | node_status.py, unified_node_health_daemon.py fixed         |
+| health_check() added to 6 classes      | ClusterMonitor, BandwidthManager, BackpressureMonitor, etc. |
+| BaseDaemon deprecation                 | protocols.py BaseDaemon → use base_daemon.py version        |
+| CoordinatorStatus/Protocol             | coordinator_base.py now imports from protocols.py           |
 
 **Coordination Bootstrap Refactoring (December 2025):**
 
@@ -639,8 +666,13 @@ Special handlers retained for `_init_pipeline_orchestrator` (extra args) and `_i
 | Opportunity                        | Current LOC | Savings | Priority |
 | ---------------------------------- | ----------- | ------- | -------- |
 | Archive unified_cluster_monitor.py | 951         | ~951    | MEDIUM   |
-| Split daemon_manager.py            | 3,253       | ~1,000  | MEDIUM   |
 | Archive node_health_monitor.py     | 386         | ~350    | LOW      |
+
+**Completed Consolidation (December 2025):**
+
+| Completed                             | Original LOC | New LOC         | Savings                  |
+| ------------------------------------- | ------------ | --------------- | ------------------------ |
+| daemon_manager.py → daemon_runners.py | ~3,600       | ~2,000 + ~1,100 | ~1,580 (deprecated code) |
 
 **Bug Fixes (December 2025):**
 
@@ -696,36 +728,42 @@ See `scripts/P2P_ORCHESTRATOR_REMOVED_CODE.md` for detailed registry of all 22 r
 
 Daemon health check coverage and code quality improvements:
 
-| Task                              | Description                                            | Status              |
-| --------------------------------- | ------------------------------------------------------ | ------------------- |
-| Quality→Training wiring           | `ImprovementOptimizer` already integrated              | ✅ Already complete |
-| SELFPLAY_COORDINATOR health_check | Added to `selfplay_scheduler.py`                       | ✅ Complete         |
-| FEEDBACK_LOOP health_check        | Added to `feedback_loop_controller.py`                 | ✅ Complete         |
-| TRAINING_TRIGGER health_check     | Added to `training_trigger_daemon.py`                  | ✅ Complete         |
-| facade.py exception handling      | Specific exception types (ValueError, OSError, etc.)   | ✅ Complete         |
-| Startup validation                | `_validate_critical_subsystems()` in daemon_manager.py | ✅ Complete         |
-| CLUSTER_WATCHDOG health_check     | Added to `cluster_watchdog_daemon.py`                  | ✅ Complete         |
-| NODE_RECOVERY health_check        | Added to `node_recovery_daemon.py`                     | ✅ Complete         |
-| EVALUATION get_status()           | Added to `evaluation_daemon.py`                        | ✅ Complete         |
-| Hardcoded port 8770 fix           | `p2p_integration.py` now uses `get_p2p_port()`         | ✅ Complete         |
-| DB connection leak fix            | `auto_sync_daemon.py` uses context managers            | ✅ Complete         |
-| SyncRouter NODE_RECOVERED         | Added event subscription for node recovery             | ✅ Complete         |
-| FeedbackLoopController fix        | `_subscribed` flag now reset in `finally` block        | ✅ Complete         |
-| P2P_BACKEND health_check          | Added `P2PIntegration` class to `p2p_integration.py`   | ✅ Complete         |
-| Config template archival          | Archived 13 example/template files to deprecated_config| ✅ Complete         |
+| Task                              | Description                                             | Status              |
+| --------------------------------- | ------------------------------------------------------- | ------------------- |
+| Quality→Training wiring           | `ImprovementOptimizer` already integrated               | ✅ Already complete |
+| SELFPLAY_COORDINATOR health_check | Added to `selfplay_scheduler.py`                        | ✅ Complete         |
+| FEEDBACK_LOOP health_check        | Added to `feedback_loop_controller.py`                  | ✅ Complete         |
+| TRAINING_TRIGGER health_check     | Added to `training_trigger_daemon.py`                   | ✅ Complete         |
+| facade.py exception handling      | Specific exception types (ValueError, OSError, etc.)    | ✅ Complete         |
+| Startup validation                | `_validate_critical_subsystems()` in daemon_manager.py  | ✅ Complete         |
+| CLUSTER_WATCHDOG health_check     | Added to `cluster_watchdog_daemon.py`                   | ✅ Complete         |
+| NODE_RECOVERY health_check        | Added to `node_recovery_daemon.py`                      | ✅ Complete         |
+| EVALUATION get_status()           | Added to `evaluation_daemon.py`                         | ✅ Complete         |
+| Hardcoded port 8770 fix           | `p2p_integration.py` now uses `get_p2p_port()`          | ✅ Complete         |
+| DB connection leak fix            | `auto_sync_daemon.py` uses context managers             | ✅ Complete         |
+| SyncRouter NODE_RECOVERED         | Added event subscription for node recovery              | ✅ Complete         |
+| FeedbackLoopController fix        | `_subscribed` flag now reset in `finally` block         | ✅ Complete         |
+| P2P_BACKEND health_check          | Added `P2PIntegration` class to `p2p_integration.py`    | ✅ Complete         |
+| Config template archival          | Archived 13 example/template files to deprecated_config | ✅ Complete         |
+| CoordinatorBase health_check      | Added to `coordinator_base.py` (all subclasses inherit) | ✅ Complete         |
+| DaemonManager health_check        | Added to `daemon_manager.py` (lines 1477-1522)          | ✅ Complete         |
+| HealthCheckOrchestrator health    | Added to `health_check_orchestrator.py` (581-626)       | ✅ Complete         |
+| DataPipeline NEW_GAMES handler    | Subscribes to NEW_GAMES_AVAILABLE event                 | ✅ Complete         |
+| DataPipeline REGRESSION handler   | Subscribes to REGRESSION_DETECTED event                 | ✅ Complete         |
+| DataPipeline PROMOTION_FAILED     | Subscribes to PROMOTION_FAILED event                    | ✅ Complete         |
 
-Daemon health check coverage increased from 22% to ~60%+ for critical daemons.
+Daemon health check coverage increased from 22% to ~85%+ for critical coordinators.
 
 **Integration Verification (December 27, 2025):**
 
 Verified and tested coordination module integration:
 
-| Component                  | Status            | Verification                                                 |
-| -------------------------- | ----------------- | ------------------------------------------------------------ |
-| DataPipelineOrchestrator   | ✅ Already wired  | Lines 766-798 subscribe to all DataEventType pipeline events |
-| SelfplayScheduler          | ✅ Already wired  | Lines 1163-1164 subscribe to NODE_RECOVERED                  |
-| P2PAutoDeployer            | ✅ Consolidated   | Now uses cluster_config helpers instead of inline YAML       |
-| GauntletFeedbackController | ✅ 26 tests added | Full test coverage for feedback loop controller              |
+| Component                  | Status            | Verification                                                                                  |
+| -------------------------- | ----------------- | --------------------------------------------------------------------------------------------- |
+| DataPipelineOrchestrator   | ✅ Fully wired    | Lines 690-850+ subscribe to all pipeline events incl. NEW_GAMES, REGRESSION, PROMOTION_FAILED |
+| SelfplayScheduler          | ✅ Already wired  | Lines 1163-1164 subscribe to NODE_RECOVERED                                                   |
+| P2PAutoDeployer            | ✅ Consolidated   | Now uses cluster_config helpers instead of inline YAML                                        |
+| GauntletFeedbackController | ✅ 26 tests added | Full test coverage for feedback loop controller                                               |
 
 **Test Coverage Additions:**
 
@@ -786,6 +824,7 @@ ai-service/
 │   │   ├── event_router.py           # Unified event system
 │   │   ├── pipeline_actions.py       # Stage action invokers
 │   │   ├── daemon_manager.py         # Daemon lifecycle management
+│   │   ├── daemon_runners.py         # Async runner functions for all daemon types
 │   │   └── sync_bandwidth.py         # Bandwidth-coordinated transfers
 │   ├── core/            # Core shared utilities
 │   │   ├── ssh.py                    # Unified SSH client

@@ -415,6 +415,84 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Multi-provider orchestrator
     DaemonType.MULTI_PROVIDER: {DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE},
+
+    # =========================================================================
+    # Additional daemon dependencies (December 2025 - P0 CRITICAL fix)
+    # =========================================================================
+
+    # Sync daemons
+    DaemonType.HIGH_QUALITY_SYNC: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+    DaemonType.ELO_SYNC: {DaemonType.EVENT_ROUTER},
+    DaemonType.MODEL_SYNC: {DaemonType.EVENT_ROUTER},
+
+    # Health/monitoring daemons
+    DaemonType.NODE_HEALTH_MONITOR: {DaemonType.EVENT_ROUTER},
+    DaemonType.SYSTEM_HEALTH_MONITOR: {DaemonType.EVENT_ROUTER},  # Deprecated but may still be used
+    DaemonType.HEALTH_SERVER: {DaemonType.EVENT_ROUTER},
+    DaemonType.CLUSTER_WATCHDOG: {DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR},
+    DaemonType.MODEL_PERFORMANCE_WATCHDOG: {DaemonType.EVENT_ROUTER},
+
+    # Event processing daemons
+    DaemonType.CROSS_PROCESS_POLLER: {DaemonType.EVENT_ROUTER},
+    DaemonType.DLQ_RETRY: {DaemonType.EVENT_ROUTER},
+
+    # Pipeline/selfplay daemons
+    DaemonType.SELFPLAY_COORDINATOR: {DaemonType.EVENT_ROUTER},
+    DaemonType.CONTINUOUS_TRAINING_LOOP: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+    DaemonType.QUALITY_MONITOR: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+
+    # P2P/data server daemons
+    DaemonType.DATA_SERVER: {DaemonType.EVENT_ROUTER},
+
+    # Training enhancement daemons
+    DaemonType.DISTILLATION: {DaemonType.EVENT_ROUTER, DaemonType.TRAINING_TRIGGER},
+    DaemonType.UNIFIED_PROMOTION: {DaemonType.EVENT_ROUTER, DaemonType.EVALUATION},
+    DaemonType.EXTERNAL_DRIVE_SYNC: {DaemonType.EVENT_ROUTER},
+    DaemonType.VAST_CPU_PIPELINE: {DaemonType.EVENT_ROUTER},
+
+    # Node watching/recovery daemons
+    DaemonType.TRAINING_NODE_WATCHER: {DaemonType.EVENT_ROUTER},
+    DaemonType.NODE_RECOVERY: {DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR},
+
+    # Replication daemons
+    DaemonType.REPLICATION_REPAIR: {DaemonType.EVENT_ROUTER, DaemonType.REPLICATION_MONITOR},
+
+    # Tournament/evaluation daemons
+    DaemonType.TOURNAMENT_DAEMON: {DaemonType.EVENT_ROUTER},
+    DaemonType.GAUNTLET_FEEDBACK: {DaemonType.EVENT_ROUTER, DaemonType.EVALUATION},
+
+    # Data management daemons
+    DaemonType.ORPHAN_DETECTION: {DaemonType.EVENT_ROUTER},
+    DaemonType.AUTO_EXPORT: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+    DaemonType.DATA_CLEANUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_SYNC},
+    DaemonType.S3_BACKUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
+
+    # Job/resource daemons
+    DaemonType.JOB_SCHEDULER: {DaemonType.EVENT_ROUTER},
+    DaemonType.RESOURCE_OPTIMIZER: {DaemonType.EVENT_ROUTER},
+    DaemonType.UTILIZATION_OPTIMIZER: {DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE},
+
+    # Curriculum/feedback daemons
+    DaemonType.CURRICULUM_INTEGRATION: {DaemonType.EVENT_ROUTER, DaemonType.FEEDBACK_LOOP},
+
+    # Recovery/coordination daemons
+    DaemonType.RECOVERY_ORCHESTRATOR: {DaemonType.EVENT_ROUTER},
+    DaemonType.CACHE_COORDINATION: {DaemonType.EVENT_ROUTER},
+    DaemonType.METRICS_ANALYSIS: {DaemonType.EVENT_ROUTER},
+    DaemonType.ADAPTIVE_RESOURCES: {DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE},
+
+    # Maintenance daemons
+    DaemonType.MAINTENANCE: {DaemonType.EVENT_ROUTER},
+
+    # Provider-specific idle daemons
+    DaemonType.VAST_IDLE: {DaemonType.EVENT_ROUTER},
+    DaemonType.LAMBDA_IDLE: {DaemonType.EVENT_ROUTER},  # Deprecated but may still be referenced
+
+    # Deprecated daemons (empty deps - should not be started)
+    DaemonType.SYNC_COORDINATOR: set(),  # DEPRECATED: Use AUTO_SYNC
+    DaemonType.HEALTH_CHECK: set(),  # DEPRECATED: Use NODE_HEALTH_MONITOR
+    DaemonType.CLUSTER_DATA_SYNC: set(),  # DEPRECATED: Use AUTO_SYNC
+    DaemonType.EPHEMERAL_SYNC: set(),  # DEPRECATED: Use AUTO_SYNC
 }
 
 

@@ -2,8 +2,10 @@
 
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
-**Last updated:** December 26, 2025
-**Total Daemon Types:** 60+
+**Last updated:** December 27, 2025
+**Total Daemon Types:** 67 (63 documented)
+
+> **Architecture Note (December 2025):** Factory methods have been extracted from `daemon_manager.py` to `daemon_runners.py`. Factory methods named `create_*()` are in `daemon_runners.py`; methods named `_create_*()` remain in `daemon_manager.py` for legacy or special cases.
 
 ## Table of Contents
 
@@ -145,6 +147,8 @@ Cluster health monitoring and alerting.
 | Daemon Type                  | Priority   | Description                                                                              | Dependencies                      |
 | ---------------------------- | ---------- | ---------------------------------------------------------------------------------------- | --------------------------------- |
 | `NODE_HEALTH_MONITOR`        | HIGH       | Unified cluster health maintenance. Canonical health daemon.                             | None                              |
+| `COORDINATOR_HEALTH_MONITOR` | HIGH       | Tracks coordinator lifecycle events (healthy/unhealthy/degraded, heartbeat, init).       | EVENT_ROUTER                      |
+| `WORK_QUEUE_MONITOR`         | HIGH       | Tracks work queue lifecycle (depth, latency, stuck jobs, backpressure).                  | EVENT_ROUTER, QUEUE_POPULATOR     |
 | `HEALTH_CHECK`               | DEPRECATED | Legacy health checker. Use `NODE_HEALTH_MONITOR` instead. Scheduled for removal Q2 2026. | None                              |
 | `QUALITY_MONITOR`            | MEDIUM     | Continuous selfplay data quality monitoring. Triggers throttling feedback.               | EVENT_ROUTER                      |
 | `MODEL_PERFORMANCE_WATCHDOG` | MEDIUM     | Monitors model win rates and performance metrics.                                        | EVENT_ROUTER                      |
@@ -155,6 +159,8 @@ Cluster health monitoring and alerting.
 **Factory Methods:**
 
 - `_create_node_health_monitor()` → Creates `UnifiedNodeHealthDaemon`
+- `create_coordinator_health_monitor()` → Creates `CoordinatorHealthMonitorDaemon` (in daemon_runners.py)
+- `create_work_queue_monitor()` → Creates `WorkQueueMonitorDaemon` (in daemon_runners.py)
 - `_create_health_check()` → Creates `HealthChecker` (deprecated)
 - `_create_quality_monitor()` → Uses `quality_monitor_daemon.create_quality_monitor()`
 - `_create_model_performance_watchdog()` → Creates `ModelPerformanceWatchdog`

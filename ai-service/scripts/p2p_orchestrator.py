@@ -72,7 +72,7 @@ def get_work_queue():
 _auto_scaler = None
 _health_manager = None  # December 2025: Consolidated from recovery_manager
 _predictive_alerts = None
-_tier_calibrator = None
+# Dec 2025: Removed unused _tier_calibrator global (never used)
 
 def get_auto_scaler():
     """Get the auto-scaler singleton (lazy load).
@@ -151,16 +151,7 @@ def get_predictive_alerts():
             _predictive_alerts = None
     return _predictive_alerts
 
-def get_tier_calibrator():
-    """Get the tier calibrator singleton (lazy load)."""
-    global _tier_calibrator
-    if _tier_calibrator is None:
-        try:
-            from app.training.tier_calibrator import TierCalibrator
-            _tier_calibrator = TierCalibrator()
-        except ImportError:
-            _tier_calibrator = None
-    return _tier_calibrator
+# Dec 2025: Removed unused get_tier_calibrator() function
 
 
 # SWIM membership manager for leaderless gossip-based membership
@@ -2515,110 +2506,6 @@ class P2POrchestrator(
             logger.warning(f"SyncRouter: failed to wire events: {e}")
         return False
 
-    def _validate_manager_health(self) -> dict[str, Any]:
-        """Validate that all P2P managers are properly initialized and healthy.
-
-        December 27, 2025: Called at startup to catch initialization issues early.
-        Checks each manager's health_check() method if available, otherwise validates
-        that required attributes and callbacks are configured.
-
-        Returns:
-            dict with 'healthy' bool and per-manager status details.
-        """
-        status: dict[str, Any] = {
-            "healthy": True,
-            "timestamp": time.time(),
-            "managers": {},
-        }
-
-        # StateManager - critical for persistence
-        try:
-            if hasattr(self, 'state_manager') and self.state_manager is not None:
-                if hasattr(self.state_manager, 'health_check'):
-                    sm_health = self.state_manager.health_check()
-                    status["managers"]["state_manager"] = {
-                        "initialized": True,
-                        "health_check": sm_health,
-                    }
-                else:
-                    status["managers"]["state_manager"] = {
-                        "initialized": True,
-                        "db_path": str(self.state_manager.db_path) if hasattr(self.state_manager, 'db_path') else None,
-                    }
-            else:
-                status["managers"]["state_manager"] = {"initialized": False, "error": "Not configured"}
-                status["healthy"] = False
-        except Exception as e:  # noqa: BLE001
-            status["managers"]["state_manager"] = {"initialized": False, "error": str(e)}
-            status["healthy"] = False
-
-        # SelfplayScheduler - critical for job distribution
-        try:
-            if hasattr(self, 'selfplay_scheduler') and self.selfplay_scheduler is not None:
-                if hasattr(self.selfplay_scheduler, 'health_check'):
-                    sp_health = self.selfplay_scheduler.health_check()
-                    status["managers"]["selfplay_scheduler"] = {
-                        "initialized": True,
-                        "health_check": sp_health,
-                    }
-                else:
-                    status["managers"]["selfplay_scheduler"] = {
-                        "initialized": True,
-                        "config_count": len(self.selfplay_scheduler.config_weights) if hasattr(self.selfplay_scheduler, 'config_weights') else 0,
-                    }
-            else:
-                status["managers"]["selfplay_scheduler"] = {"initialized": False, "error": "Not configured"}
-                status["healthy"] = False
-        except Exception as e:  # noqa: BLE001
-            status["managers"]["selfplay_scheduler"] = {"initialized": False, "error": str(e)}
-            status["healthy"] = False
-
-        # JobManager - critical for job execution
-        try:
-            if hasattr(self, 'job_manager') and self.job_manager is not None:
-                if hasattr(self.job_manager, 'health_check'):
-                    jm_health = self.job_manager.health_check()
-                    status["managers"]["job_manager"] = {
-                        "initialized": True,
-                        "health_check": jm_health,
-                    }
-                else:
-                    status["managers"]["job_manager"] = {"initialized": True}
-            else:
-                status["managers"]["job_manager"] = {"initialized": False, "error": "Not configured"}
-                status["healthy"] = False
-        except Exception as e:  # noqa: BLE001
-            status["managers"]["job_manager"] = {"initialized": False, "error": str(e)}
-            status["healthy"] = False
-
-        # TrainingCoordinator - critical for training workflow
-        try:
-            if hasattr(self, 'training_coordinator') and self.training_coordinator is not None:
-                if hasattr(self.training_coordinator, 'health_check'):
-                    tc_health = self.training_coordinator.health_check()
-                    status["managers"]["training_coordinator"] = {
-                        "initialized": True,
-                        "health_check": tc_health,
-                    }
-                else:
-                    status["managers"]["training_coordinator"] = {"initialized": True}
-            else:
-                status["managers"]["training_coordinator"] = {"initialized": False, "error": "Not configured"}
-                status["healthy"] = False
-        except Exception as e:  # noqa: BLE001
-            status["managers"]["training_coordinator"] = {"initialized": False, "error": str(e)}
-            status["healthy"] = False
-
-        # Log summary
-        if status["healthy"]:
-            manager_names = list(status["managers"].keys())
-            logger.info(f"[P2P] Manager health: all {len(manager_names)} managers initialized ✓")
-        else:
-            unhealthy = [k for k, v in status["managers"].items() if not v.get("initialized", False)]
-            logger.error(f"[P2P] Manager health: FAILED - unhealthy managers: {unhealthy}")
-
-        return status
-
     def _wire_feedback_loops(self) -> bool:
         """Wire curriculum feedback loops for self-improvement.
 
@@ -2652,14 +2539,23 @@ class P2POrchestrator(
     def _validate_manager_health(self) -> dict[str, Any]:
         """Validate health of all P2P managers at startup.
 
-        December 27, 2025: Checks that all managers initialized correctly and
+        December 27, 2025: Checks that all 6 managers initialized correctly and
         are healthy. This catches initialization issues early rather than
         at first use, improving debuggability.
+
+        Managers validated:
+        - state_manager: SQLite persistence and cluster epoch tracking
+        - node_selector: Node ranking for job dispatch
+        - sync_planner: Manifest collection and sync planning
+        - selfplay_scheduler: Priority-based config selection
+        - job_manager: Job spawning and lifecycle management
+        - training_coordinator: Training dispatch and model promotion
 
         Returns:
             dict with manager health status and overall healthy flag
         """
         managers = [
+            ("state_manager", self.state_manager),
             ("node_selector", self.node_selector),
             ("sync_planner", self.sync_planner),
             ("selfplay_scheduler", self.selfplay_scheduler),
@@ -2676,30 +2572,42 @@ class P2POrchestrator(
 
         for name, manager in managers:
             try:
-                if hasattr(manager, "health_check"):
+                if manager is None:
+                    status["managers"][name] = {"status": "not_initialized", "error": "Manager is None"}
+                    status["all_healthy"] = False
+                    status["unhealthy_count"] += 1
+                elif hasattr(manager, "health_check"):
                     health = manager.health_check()
-                    is_healthy = health.get("status") == "healthy"
+                    # Handle both dict and HealthCheckResult return types
+                    if hasattr(health, "status"):
+                        is_healthy = str(health.status).lower() in ("healthy", "ready")
+                        health_status = str(health.status)
+                    else:
+                        is_healthy = health.get("status") == "healthy"
+                        health_status = health.get("status", "unknown")
                     status["managers"][name] = {
-                        "status": health.get("status", "unknown"),
-                        "operations": health.get("operations_count", 0),
-                        "errors": health.get("errors_count", 0),
+                        "status": health_status,
+                        "operations": health.get("operations_count", 0) if isinstance(health, dict) else 0,
+                        "errors": health.get("errors_count", 0) if isinstance(health, dict) else 0,
                     }
                     if not is_healthy:
                         status["all_healthy"] = False
                         status["unhealthy_count"] += 1
                 else:
-                    status["managers"][name] = {"status": "no_health_check"}
+                    # Manager initialized but no health_check method
+                    status["managers"][name] = {"status": "initialized", "health_check": "not_available"}
             except Exception as e:  # noqa: BLE001
                 status["managers"][name] = {"status": "error", "error": str(e)}
                 status["all_healthy"] = False
                 status["unhealthy_count"] += 1
 
         # Log results
+        manager_count = len(managers)
         if status["all_healthy"]:
-            logger.info("[P2P] Manager health: all 5 managers healthy")
+            logger.info(f"[P2P] Manager health: all {manager_count} managers healthy ✓")
         else:
-            unhealthy = [n for n, s in status["managers"].items() if s.get("status") != "healthy"]
-            logger.warning(f"[P2P] Manager health: {len(unhealthy)} unhealthy: {unhealthy}")
+            unhealthy = [n for n, s in status["managers"].items() if s.get("status") not in ("healthy", "initialized", "ready")]
+            logger.warning(f"[P2P] Manager health: {len(unhealthy)}/{manager_count} unhealthy: {unhealthy}")
 
         return status
 

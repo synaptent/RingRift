@@ -195,8 +195,8 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             payload = event.payload if hasattr(event, 'payload') else event
             host = payload.get("host", "unknown")
             logger.info(f"[{self._get_daemon_name()}] Host offline: {host}")
-        except Exception as e:
-            logger.debug(f"[{self._get_daemon_name()}] Error handling host offline: {e}")
+        except (KeyError, AttributeError, TypeError) as e:
+            logger.warning(f"[{self._get_daemon_name()}] Error handling host offline: {e}")
 
     async def _on_host_online(self, event) -> None:
         """Handle host coming online."""
@@ -204,8 +204,8 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             payload = event.payload if hasattr(event, 'payload') else event
             host = payload.get("host", "unknown")
             logger.info(f"[{self._get_daemon_name()}] Host online: {host}")
-        except Exception as e:
-            logger.debug(f"[{self._get_daemon_name()}] Error handling host online: {e}")
+        except (KeyError, AttributeError, TypeError) as e:
+            logger.warning(f"[{self._get_daemon_name()}] Error handling host online: {e}")
 
     async def _on_cluster_unhealthy(self, event) -> None:
         """Handle cluster becoming unhealthy - pause spawning."""
@@ -214,16 +214,16 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             reason = payload.get("reason", "unknown")
             logger.warning(f"[{self._get_daemon_name()}] Cluster unhealthy: {reason} - pausing spawning")
             self._cluster_healthy = False
-        except Exception as e:
-            logger.debug(f"[{self._get_daemon_name()}] Error handling cluster unhealthy: {e}")
+        except (KeyError, AttributeError, TypeError) as e:
+            logger.warning(f"[{self._get_daemon_name()}] Error handling cluster unhealthy: {e}")
 
     async def _on_cluster_healthy(self, event) -> None:
         """Handle cluster becoming healthy - resume spawning."""
         try:
             logger.info(f"[{self._get_daemon_name()}] Cluster healthy - resuming spawning")
             self._cluster_healthy = True
-        except Exception as e:
-            logger.debug(f"[{self._get_daemon_name()}] Error handling cluster healthy: {e}")
+        except (KeyError, AttributeError, TypeError) as e:
+            logger.warning(f"[{self._get_daemon_name()}] Error handling cluster healthy: {e}")
 
     async def _on_stop(self) -> None:
         """Graceful shutdown handler.
