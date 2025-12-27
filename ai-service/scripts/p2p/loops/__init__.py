@@ -56,6 +56,8 @@ from .coordination_loops import (
 from .data_loops import (
     DataAggregationConfig,
     DataAggregationLoop,
+    DataManagementConfig,
+    DataManagementLoop,
     ModelSyncConfig,
     ModelSyncLoop,
 )
@@ -117,6 +119,8 @@ __all__ = [
     # Data
     "DataAggregationConfig",
     "DataAggregationLoop",
+    "DataManagementConfig",
+    "DataManagementLoop",
     "ModelSyncConfig",
     "ModelSyncLoop",
     # Network

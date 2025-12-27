@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 _HAS_FRESHNESS_CHECK = None
 _HAS_DATA_VALIDATION = None
 _HAS_CHECKSUM_VERIFICATION = None
+_HAS_STRUCTURE_VALIDATION = None
 
 
 def _check_freshness_available() -> bool:
@@ -75,6 +76,18 @@ def _check_checksum_available() -> bool:
     return _HAS_CHECKSUM_VERIFICATION
 
 
+def _check_structure_available() -> bool:
+    """Check if NPZ structure validation module is available."""
+    global _HAS_STRUCTURE_VALIDATION
+    if _HAS_STRUCTURE_VALIDATION is None:
+        try:
+            from app.training.npz_structure_validation import validate_npz_structure
+            _HAS_STRUCTURE_VALIDATION = True
+        except ImportError:
+            _HAS_STRUCTURE_VALIDATION = False
+    return _HAS_STRUCTURE_VALIDATION
+
+
 @dataclass
 class FreshnessResult:
     """Result of data freshness check."""
@@ -93,6 +106,36 @@ class ValidationResult:
     total_samples: int
     samples_with_issues: int
     issues: list[str]
+
+
+@dataclass
+class StructureValidationResult:
+    """Result of NPZ structure validation."""
+
+    valid: bool
+    sample_count: int
+    array_shapes: dict[str, tuple]
+    errors: list[str]
+
+
+@dataclass
+class DataValidationResult:
+    """Combined result of all training data validation checks.
+
+    This aggregates results from freshness, structure, content, and checksum
+    validation into a single result object.
+    """
+
+    all_valid: bool
+    freshness: FreshnessResult | None = None
+    structure_results: dict[str, StructureValidationResult] | None = None
+    file_validations: list[ValidationResult] | None = None
+    checksum_results: dict[str, tuple[bool, list[str]]] | None = None
+    errors: list[str] | None = None
+
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
 
 
 def validate_training_data_freshness(

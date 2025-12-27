@@ -69,20 +69,20 @@ These daemons form the foundation of the cluster coordination system.
 
 Data synchronization across the cluster.
 
-| Daemon Type             | Priority     | Description                                                                                                              | Dependencies |
-| ----------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------ |
-| `AUTO_SYNC`             | **CRITICAL** | Primary data sync mechanism. Pulls game data from remote nodes to coordinator. Excludes coordinator-to-coordinator sync. | None         |
-| `SYNC_COORDINATOR`      | DEPRECATED   | Legacy sync coordinator. Use `AUTO_SYNC` instead. Scheduled for removal Q2 2026.                                         | None         |
-| `GOSSIP_SYNC`           | MEDIUM       | P2P gossip-based data synchronization for eventual consistency.                                                          | None         |
-| `EPHEMERAL_SYNC`        | HIGH         | Aggressive 5-second sync for Vast.ai ephemeral nodes to prevent data loss on termination.                                | None         |
-| `MODEL_SYNC`            | MEDIUM       | Syncs trained models across the cluster.                                                                                 | None         |
-| `MODEL_DISTRIBUTION`    | MEDIUM       | Auto-distributes models after promotion. Subscribes to MODEL_PROMOTED events.                                            | EVENT_ROUTER |
-| `NPZ_DISTRIBUTION`      | MEDIUM       | Syncs training data (NPZ files) after export.                                                                            | EVENT_ROUTER |
-| `EXTERNAL_DRIVE_SYNC`   | LOW          | Backup to external drives for disaster recovery.                                                                         | None         |
-| `CLUSTER_DATA_SYNC`     | MEDIUM       | Full cluster-wide data distribution and replication.                                                                     | EVENT_ROUTER |
-| `TRAINING_NODE_WATCHER` | MEDIUM       | Detects active training processes and triggers priority data sync.                                                       | None         |
-| `HIGH_QUALITY_SYNC`     | MEDIUM       | Priority sync for high-quality game data (quality score > 0.7).                                                          | None         |
-| `ELO_SYNC`              | MEDIUM       | Synchronize ELO ratings across cluster.                                                                                  | None         |
+| Daemon Type             | Priority     | Description                                                                                                                | Dependencies |
+| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `AUTO_SYNC`             | **CRITICAL** | Primary data sync mechanism. Pulls game data to coordinator; includes min-move completeness checks to avoid mid-write DBs. | None         |
+| `SYNC_COORDINATOR`      | DEPRECATED   | Legacy sync coordinator. Use `AUTO_SYNC` instead. Scheduled for removal Q2 2026.                                           | None         |
+| `GOSSIP_SYNC`           | MEDIUM       | P2P gossip-based data synchronization for eventual consistency.                                                            | None         |
+| `EPHEMERAL_SYNC`        | HIGH         | Aggressive 5-second sync for Vast.ai ephemeral nodes to prevent data loss on termination.                                  | None         |
+| `MODEL_SYNC`            | MEDIUM       | Syncs trained models across the cluster.                                                                                   | None         |
+| `MODEL_DISTRIBUTION`    | MEDIUM       | Auto-distributes models after promotion. Subscribes to MODEL_PROMOTED events.                                              | EVENT_ROUTER |
+| `NPZ_DISTRIBUTION`      | MEDIUM       | Syncs training data (NPZ files) after export.                                                                              | EVENT_ROUTER |
+| `EXTERNAL_DRIVE_SYNC`   | LOW          | Backup to external drives for disaster recovery.                                                                           | None         |
+| `CLUSTER_DATA_SYNC`     | MEDIUM       | Full cluster-wide data distribution and replication.                                                                       | EVENT_ROUTER |
+| `TRAINING_NODE_WATCHER` | MEDIUM       | Detects active training processes and triggers priority data sync.                                                         | None         |
+| `HIGH_QUALITY_SYNC`     | MEDIUM       | Priority sync for high-quality game data (quality score > 0.7).                                                            | None         |
+| `ELO_SYNC`              | MEDIUM       | Synchronize ELO ratings across cluster.                                                                                    | None         |
 
 **Factory Methods:**
 
@@ -893,14 +893,18 @@ timeout = get_job_timeout("training")  # 14400 seconds
 
 ### Base Handler Classes (December 2025)
 
-Event handlers that subscribe to the event bus can inherit from base classes in `app/coordination/base_handler.py`:
+Event handlers should inherit from the canonical base in `app/coordination/handler_base.py`.
+Legacy wrappers in `base_event_handler.py` and `base_handler.py` remain for compatibility but
+are deprecated (Q2 2026).
 
-| Class                  | Purpose                                                                      | Use Case                       |
-| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------ |
-| `BaseEventHandler`     | Abstract base for all event handlers with subscription, stats, and lifecycle | Single-event subscription      |
-| `BaseSingletonHandler` | Adds thread-safe singleton pattern to BaseEventHandler                       | Module-level singleton handler |
-| `MultiEventHandler`    | Routes multiple event types to different handler methods                     | Multi-event coordinators       |
-| `HandlerStats`         | Statistics dataclass (success_rate, error_count, last_event_time)            | Handler metrics                |
+| Class                  | Purpose                                                                    | Use Case                |
+| ---------------------- | -------------------------------------------------------------------------- | ----------------------- |
+| `HandlerBase`          | Canonical base for handlers (subscription, stats, lifecycle)               | New handlers            |
+| `HandlerStats`         | Unified statistics dataclass (success_rate, errors_count, last_event_time) | Handler metrics         |
+| `EventHandlerConfig`   | Handler configuration (async/sync, timeouts)                               | Custom handler behavior |
+| `BaseEventHandler`     | Legacy alias for HandlerBase (backward-compatible)                         | Existing handlers       |
+| `BaseSingletonHandler` | Legacy alias for HandlerBase (singleton-style usage)                       | Existing handlers       |
+| `MultiEventHandler`    | Legacy alias for HandlerBase (multi-event patterns)                        | Existing handlers       |
 
 **When to use:**
 
@@ -915,9 +919,9 @@ Event handlers that subscribe to the event bus can inherit from base classes in 
 - Handlers with sync-to-async patterns (existing code with `fire_and_forget`)
 
 ```python
-from app.coordination.base_handler import BaseEventHandler, HandlerStats
+from app.coordination.handler_base import HandlerBase, HandlerStats
 
-class MyHandler(BaseEventHandler):
+class MyHandler(HandlerBase):
     def __init__(self):
         super().__init__("MyHandler")
 
@@ -933,7 +937,7 @@ class MyHandler(BaseEventHandler):
         self._record_success()  # Tracks stats automatically
 ```
 
-**Helper functions:**
+**Legacy helper functions (from base_handler.py):**
 
 - `create_handler_stats(**custom)` - Create HandlerStats with custom stats
 - `safe_subscribe(handler)` - Subscribe with exception handling

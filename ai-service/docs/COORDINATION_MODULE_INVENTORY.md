@@ -201,22 +201,22 @@ Active daemon implementations. See [DAEMON_REGISTRY.md](DAEMON_REGISTRY.md) for 
 
 Small utility modules.
 
-| Module                     | LOC  | Status     | Purpose                                                   |
-| -------------------------- | ---- | ---------- | --------------------------------------------------------- |
-| `utils.py`                 | ~100 | Active     | Miscellaneous utilities                                   |
-| `helpers.py`               | ~150 | Active     | Helper functions                                          |
-| `base_event_handler.py`    | ~250 | Active     | Canonical event-handler base class                        |
-| `base_handler.py`          | ~450 | Deprecated | Legacy handler base (superseded by base_event_handler.py) |
-| `handler_base.py`          | ~550 | Deprecated | Legacy handler base (superseded by base_event_handler.py) |
-| `singleton_mixin.py`       | ~500 | Active     | Singleton patterns (5 variants)                           |
-| `distributed_lock.py`      | ~200 | Active     | Distributed locking                                       |
-| `tracing.py`               | ~150 | Active     | Distributed tracing context                               |
-| `npz_validation.py`        | ~100 | Active     | NPZ file validation                                       |
-| `async_training_bridge.py` | ~150 | Active     | Async/sync training bridge                                |
-| `async_bridge_manager.py`  | ~200 | Active     | Async bridge lifecycle                                    |
-| `task_decorators.py`       | ~100 | Active     | Task-related decorators                                   |
-| `duration_scheduler.py`    | ~100 | Active     | Duration-based scheduling                                 |
-| `master_loop_guard.py`     | ~50  | Active     | Guard against multiple master loops                       |
+| Module                     | LOC  | Status     | Purpose                                            |
+| -------------------------- | ---- | ---------- | -------------------------------------------------- |
+| `utils.py`                 | ~100 | Active     | Miscellaneous utilities                            |
+| `helpers.py`               | ~150 | Active     | Helper functions                                   |
+| `handler_base.py`          | ~550 | Active     | Canonical handler base (HandlerBase, HandlerStats) |
+| `base_event_handler.py`    | ~250 | Deprecated | Legacy wrapper (superseded by handler_base.py)     |
+| `base_handler.py`          | ~450 | Deprecated | Legacy helpers (superseded by handler_base.py)     |
+| `singleton_mixin.py`       | ~500 | Active     | Singleton patterns (5 variants)                    |
+| `distributed_lock.py`      | ~200 | Active     | Distributed locking                                |
+| `tracing.py`               | ~150 | Active     | Distributed tracing context                        |
+| `npz_validation.py`        | ~100 | Active     | NPZ file validation                                |
+| `async_training_bridge.py` | ~150 | Active     | Async/sync training bridge                         |
+| `async_bridge_manager.py`  | ~200 | Active     | Async bridge lifecycle                             |
+| `task_decorators.py`       | ~100 | Active     | Task-related decorators                            |
+| `duration_scheduler.py`    | ~100 | Active     | Duration-based scheduling                          |
+| `master_loop_guard.py`     | ~50  | Active     | Guard against multiple master loops                |
 
 ### P2P Backend
 
@@ -304,7 +304,7 @@ from app.coordination.enums import DaemonType, DaemonState, LeadershipRole
 from app.coordination.types import BackpressureLevel, TaskType, BoardType
 
 # Event handler base (canonical)
-from app.coordination.base_event_handler import BaseEventHandler
+from app.coordination.handler_base import HandlerBase
 
 # Event system
 from app.coordination.event_router import get_router, publish, subscribe

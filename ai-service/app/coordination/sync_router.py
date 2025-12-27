@@ -309,6 +309,119 @@ class SyncRouter:
 
         return targets[:max_targets]
 
+    def get_sync_sources(
+        self,
+        data_type: str | DataType,
+        target_node: str | None = None,
+        exclude_nodes: list[str] | None = None,
+        max_sources: int = 5,
+    ) -> list[SyncTarget]:
+        """Get nodes that can provide data (for reverse sync / pull operations).
+
+        December 2025: Added to support coordinator pulling data from cluster nodes.
+        This is the inverse of get_sync_targets() - finds nodes that generate data
+        which should be synced TO the target_node.
+
+        Args:
+            data_type: Type of data ("game", "model", "npz")
+            target_node: Node that needs the data (defaults to self.node_id)
+            exclude_nodes: Nodes to exclude as sources
+            max_sources: Maximum number of sources to return
+
+        Returns:
+            List of SyncTarget sorted by priority (nodes with most data first)
+        """
+        if isinstance(data_type, str):
+            data_type = DataType(data_type)
+
+        target_node = target_node or self.node_id
+        exclude = set(exclude_nodes or [])
+        exclude.add(target_node)  # Don't pull from self
+
+        sources: list[SyncTarget] = []
+
+        # Dec 2025: Load cluster nodes for storage routing checks
+        cluster_nodes = get_cluster_nodes()
+
+        for node_id, cap in self._node_capabilities.items():
+            if node_id in exclude:
+                continue
+
+            # Source nodes must generate/have the data type
+            if not self._can_provide_data_type(cap, data_type):
+                continue
+
+            # Check if node has data to share
+            node_config = cluster_nodes.get(node_id)
+            if node_config and node_config.role == "coordinator":
+                # Coordinators don't generate data
+                continue
+
+            # Compute priority based on data generation rate
+            priority = self._compute_source_priority(cap, data_type)
+            reason = f"Has {data_type.value} data, generates selfplay"
+
+            sources.append(SyncTarget(
+                node_id=node_id,
+                priority=priority,
+                reason=reason,
+            ))
+
+        # Sort by priority (highest first - nodes with most data)
+        sources.sort(key=lambda s: s.priority, reverse=True)
+
+        return sources[:max_sources]
+
+    def _can_provide_data_type(
+        self,
+        cap: NodeSyncCapability,
+        data_type: DataType,
+    ) -> bool:
+        """Check if a node can provide (has) a specific data type."""
+        if data_type == DataType.GAME:
+            # Nodes that generate selfplay have game data
+            return cap.selfplay_enabled
+        elif data_type == DataType.MODEL:
+            # Any node can have models
+            return True
+        elif data_type == DataType.NPZ:
+            # NPZ data comes from export, usually on training nodes
+            return cap.training_enabled or cap.selfplay_enabled
+        return False
+
+    def _compute_source_priority(
+        self,
+        cap: NodeSyncCapability,
+        data_type: DataType,
+    ) -> float:
+        """Compute priority for a source node (higher = more data).
+
+        December 2025: Priority based on selfplay/training activity.
+        """
+        priority = 0.0
+
+        if data_type == DataType.GAME:
+            if cap.selfplay_enabled:
+                priority += 100.0  # Active selfplay = high priority
+            if cap.training_enabled:
+                priority += 50.0   # Training nodes may have consolidated data
+        elif data_type == DataType.MODEL:
+            if cap.training_enabled:
+                priority += 100.0  # Training nodes have latest models
+        elif data_type == DataType.NPZ:
+            if cap.training_enabled:
+                priority += 100.0  # Training nodes export NPZ
+
+        # Boost for GPU nodes (generate more data)
+        if cap.has_gpu:
+            priority += 20.0
+
+        # Boost for high disk usage (more data available)
+        if cap.disk_percent > 50:
+            priority += 10.0
+
+        return priority
+
     def _can_receive_data_type(
         self,
         cap: NodeSyncCapability,

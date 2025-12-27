@@ -509,8 +509,14 @@ class TestModuleExports:
         """Should export expected classes."""
         from app.coordination import handler_base
 
+        # Canonical exports
         assert hasattr(handler_base, "HandlerBase")
         assert hasattr(handler_base, "HandlerStats")
         assert hasattr(handler_base, "HealthCheckResult")
         assert hasattr(handler_base, "CoordinatorStatus")
-        assert len(handler_base.__all__) == 4
+        assert hasattr(handler_base, "EventHandlerConfig")
+        # Backward-compatible aliases
+        assert hasattr(handler_base, "BaseEventHandler")
+        assert hasattr(handler_base, "BaseSingletonHandler")
+        assert hasattr(handler_base, "MultiEventHandler")
+        assert len(handler_base.__all__) == 8

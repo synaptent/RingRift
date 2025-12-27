@@ -1,5 +1,16 @@
 """Unified Sync Safety Module - Single Import for All Reliability Features.
 
+.. deprecated:: December 2025
+    This module has no external callers and may be unused.
+    Import directly from the specialized modules instead:
+
+    - ``app.coordination.sync_durability`` - SyncWAL, DeadLetterQueue
+    - ``app.coordination.sync_integrity`` - checksum validation
+    - ``app.coordination.sync_stall_handler`` - stall detection
+    - ``app.coordination.sync_bloom_filter`` - Bloom filters
+
+    This module will be archived in Q2 2026 if no callers are found.
+
 This module provides a unified namespace for all sync safety and reliability features,
 consolidating functionality from four specialized modules:
 

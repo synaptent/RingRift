@@ -14,12 +14,12 @@ The event system enables loose coupling between components of the AI training pi
 
 ### Key Components
 
-| Component            | Location                | Purpose                    |
-| -------------------- | ----------------------- | -------------------------- |
-| `EventBus`           | `data_events.py`        | Core pub/sub mechanism     |
-| `UnifiedEventRouter` | `event_router.py`       | Routes events to all buses |
-| `DataEventType`      | `data_events.py`        | Enum of all event types    |
-| `BaseEventHandler`   | `base_event_handler.py` | Base class for handlers    |
+| Component            | Location          | Purpose                     |
+| -------------------- | ----------------- | --------------------------- |
+| `EventBus`           | `data_events.py`  | Core pub/sub mechanism      |
+| `UnifiedEventRouter` | `event_router.py` | Routes events to all buses  |
+| `DataEventType`      | `data_events.py`  | Enum of all event types     |
+| `HandlerBase`        | `handler_base.py` | Canonical base for handlers |
 
 ## Quick Start
 
@@ -36,12 +36,12 @@ def my_handler(event):
     # Process event...
 ```
 
-### Using BaseEventHandler (Recommended)
+### Using HandlerBase (Recommended)
 
 ```python
-from app.coordination.base_event_handler import BaseEventHandler
+from app.coordination.handler_base import HandlerBase
 
-class MyHandler(BaseEventHandler):
+class MyHandler(HandlerBase):
     def __init__(self):
         super().__init__("MyHandler")
 
@@ -55,6 +55,9 @@ class MyHandler(BaseEventHandler):
         # Handle event
         pass
 ```
+
+`BaseEventHandler` remains as a backward-compatible alias in `handler_base.py`, but new
+handlers should import `HandlerBase` directly.
 
 ### Publishing Events
 

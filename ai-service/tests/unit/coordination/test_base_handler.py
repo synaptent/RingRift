@@ -39,25 +39,31 @@ class TestHandlerStats:
         """Test success_rate calculates correctly."""
         from app.coordination.base_handler import HandlerStats
 
-        stats = HandlerStats(events_processed=10, success_count=8, error_count=2)
+        # Use canonical field name (errors_count, not error_count)
+        # error_count is a read-only property alias for backward compatibility
+        stats = HandlerStats(events_processed=10, success_count=8, errors_count=2)
         assert stats.success_rate == 0.8
+        # Verify backward-compat alias works for reading
+        assert stats.error_count == 2
 
     def test_to_dict(self):
         """Test HandlerStats serializes to dict."""
         from app.coordination.base_handler import HandlerStats
 
+        # Use canonical field name (errors_count, not error_count)
         stats = HandlerStats(
             subscribed=True,
             events_processed=5,
             success_count=4,
-            error_count=1,
+            errors_count=1,
         )
         result = stats.to_dict()
 
         assert result["subscribed"] is True
         assert result["events_processed"] == 5
         assert result["success_count"] == 4
-        assert result["error_count"] == 1
+        # to_dict uses canonical key (errors_count, not error_count)
+        assert result["errors_count"] == 1
         assert result["success_rate"] == 0.8
 
     def test_custom_stats_in_to_dict(self):

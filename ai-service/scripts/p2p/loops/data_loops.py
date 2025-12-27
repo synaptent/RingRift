@@ -249,9 +249,353 @@ class DataAggregationLoop(BaseLoop):
         }
 
 
+@dataclass
+class DataManagementConfig:
+    """Configuration for data management loop.
+
+    December 2025: Extracted from inline _data_management_loop.
+    """
+
+    # Timing
+    interval_seconds: float = 300.0  # 5 minutes
+    initial_delay_seconds: float = 30.0  # Wait before first run
+
+    # Disk thresholds
+    disk_warning_percent: float = 70.0
+    disk_critical_percent: float = 85.0
+
+    # Export thresholds
+    db_export_threshold_mb: float = 100.0
+    max_concurrent_exports: int = 3
+    export_timeout_seconds: float = 3600.0  # 1 hour
+
+    # Training thresholds
+    auto_training_threshold_mb: float = 500.0
+
+    # Integrity check frequency (every N cycles)
+    db_integrity_check_frequency: int = 6  # ~30 minutes at 5-min interval
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.interval_seconds <= 0:
+            raise ValueError("interval_seconds must be > 0")
+        if self.disk_warning_percent >= self.disk_critical_percent:
+            raise ValueError("disk_warning_percent must be < disk_critical_percent")
+        if self.max_concurrent_exports <= 0:
+            raise ValueError("max_concurrent_exports must be > 0")
+
+
+class DataManagementLoop(BaseLoop):
+    """Background loop for automatic data management.
+
+    December 2025: Extracted from inline _data_management_loop in p2p_orchestrator.py.
+
+    This loop handles:
+    - Local operations (runs on ALL nodes):
+      - Disk usage check and cleanup
+      - JSONL→DB conversion
+      - JSONL→NPZ conversion
+    - Leader operations (runs on LEADER only):
+      - Database integrity check
+      - Trigger exports when databases exceed threshold
+      - Auto-trigger training when enough data
+      - Request data sync from peers
+    """
+
+    def __init__(
+        self,
+        # Role check
+        is_leader: Callable[[], bool],
+        # Disk operations
+        check_disk_capacity: Callable[[float], tuple[bool, float]],  # threshold -> (has_capacity, percent)
+        cleanup_disk: Callable[[], Coroutine[Any, Any, None]],
+        # Conversion operations
+        convert_jsonl_to_db: Callable[[Path, Path], Coroutine[Any, Any, int]],  # data_dir, games_dir -> count
+        convert_jsonl_to_npz: Callable[[Path, Path], Coroutine[Any, Any, int]],  # data_dir, training_dir -> count
+        # Leader operations
+        check_db_integrity: Callable[[Path], Coroutine[Any, Any, dict[str, int]]] | None = None,
+        trigger_export: Callable[[Path, Path, str], Coroutine[Any, Any, bool]] | None = None,  # db, output, board_type
+        start_training: Callable[[Path], Coroutine[Any, Any, None]] | None = None,  # npz_path
+        request_peer_data: Callable[[], Coroutine[Any, Any, None]] | None = None,
+        # Directory providers
+        get_data_dir: Callable[[], Path] | None = None,
+        get_games_dir: Callable[[], Path] | None = None,
+        get_training_dir: Callable[[], Path] | None = None,
+        # GPU check for training
+        is_gpu_node: Callable[[], bool] | None = None,
+        has_training_jobs: Callable[[], bool] | None = None,
+        # Configuration
+        config: DataManagementConfig | None = None,
+    ):
+        """Initialize data management loop.
+
+        Args:
+            is_leader: Callback returning True if this node is leader
+            check_disk_capacity: Callback to check disk capacity at threshold
+            cleanup_disk: Async callback to cleanup disk space
+            convert_jsonl_to_db: Async callback for JSONL→DB conversion
+            convert_jsonl_to_npz: Async callback for JSONL→NPZ conversion
+            check_db_integrity: Optional async callback to check DB integrity
+            trigger_export: Optional async callback to trigger export job
+            start_training: Optional async callback to start training
+            request_peer_data: Optional async callback to request data from peers
+            get_data_dir: Callback returning data directory path
+            get_games_dir: Callback returning games directory path
+            get_training_dir: Callback returning training directory path
+            is_gpu_node: Callback returning True if this is a GPU node
+            has_training_jobs: Callback returning True if training is running
+            config: Loop configuration
+        """
+        self.config = config or DataManagementConfig()
+        super().__init__(
+            name="data_management",
+            interval=self.config.interval_seconds,
+        )
+
+        # Required callbacks
+        self._is_leader = is_leader
+        self._check_disk_capacity = check_disk_capacity
+        self._cleanup_disk = cleanup_disk
+        self._convert_jsonl_to_db = convert_jsonl_to_db
+        self._convert_jsonl_to_npz = convert_jsonl_to_npz
+
+        # Optional leader callbacks
+        self._check_db_integrity = check_db_integrity
+        self._trigger_export = trigger_export
+        self._start_training = start_training
+        self._request_peer_data = request_peer_data
+
+        # Directory providers (default to current dir if not provided)
+        self._get_data_dir = get_data_dir or (lambda: Path("data"))
+        self._get_games_dir = get_games_dir or (lambda: Path("data/games"))
+        self._get_training_dir = get_training_dir or (lambda: Path("data/training"))
+
+        # Optional node info
+        self._is_gpu_node = is_gpu_node or (lambda: False)
+        self._has_training_jobs = has_training_jobs or (lambda: False)
+
+        # Track state
+        self._active_exports: dict[str, float] = {}  # path -> start_time
+        self._db_integrity_counter = 0
+
+        # Statistics
+        self._stats = {
+            "disk_cleanups": 0,
+            "jsonl_to_db_conversions": 0,
+            "jsonl_to_npz_conversions": 0,
+            "exports_triggered": 0,
+            "training_triggered": 0,
+            "integrity_checks": 0,
+        }
+
+    async def _on_start(self) -> None:
+        """Wait for initial delay before starting loop."""
+        if self.config.initial_delay_seconds > 0:
+            logger.info(
+                f"[{self.name}] Starting (first run in {self.config.initial_delay_seconds}s)"
+            )
+            await asyncio.sleep(self.config.initial_delay_seconds)
+
+    async def _run_once(self) -> None:
+        """Execute one cycle of data management."""
+        # === LOCAL NODE OPERATIONS (run on ALL nodes) ===
+
+        # 1. Check disk usage and cleanup if needed
+        has_capacity, disk_pct = self._check_disk_capacity(self.config.disk_warning_percent)
+        if not has_capacity:
+            logger.info(
+                f"[{self.name}] Disk at {disk_pct:.1f}% "
+                f"(warning: {self.config.disk_warning_percent}%), triggering cleanup"
+            )
+            try:
+                await self._cleanup_disk()
+                self._stats["disk_cleanups"] += 1
+            except Exception as e:
+                logger.debug(f"[{self.name}] Cleanup error: {e}")
+            # Re-check after cleanup
+            has_capacity, disk_pct = self._check_disk_capacity(self.config.disk_critical_percent)
+
+        # 2. Ensure directories exist
+        data_dir = self._get_data_dir()
+        games_dir = self._get_games_dir()
+        training_dir = self._get_training_dir()
+        games_dir.mkdir(parents=True, exist_ok=True)
+        training_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3. JSONL→DB conversion
+        try:
+            converted = await self._convert_jsonl_to_db(data_dir, games_dir)
+            if converted > 0:
+                self._stats["jsonl_to_db_conversions"] += converted
+                logger.debug(f"[{self.name}] JSONL→DB: {converted} games converted")
+        except Exception as e:
+            logger.debug(f"[{self.name}] JSONL→DB error: {e}")
+
+        # 4. JSONL→NPZ conversion
+        try:
+            npz_created = await self._convert_jsonl_to_npz(data_dir, training_dir)
+            if npz_created > 0:
+                self._stats["jsonl_to_npz_conversions"] += npz_created
+                logger.debug(f"[{self.name}] JSONL→NPZ: {npz_created} files created")
+        except Exception as e:
+            logger.debug(f"[{self.name}] JSONL→NPZ error: {e}")
+
+        # === LEADER-ONLY OPERATIONS ===
+        if not self._is_leader():
+            return
+
+        logger.debug(f"[{self.name}] Running leader operations...")
+
+        # Skip if disk still critical after cleanup
+        if not has_capacity:
+            logger.info(f"[{self.name}] Disk at {disk_pct:.1f}%, skipping leader operations")
+            return
+
+        # 5. Database integrity check (every N cycles)
+        self._db_integrity_counter += 1
+        if (
+            self._check_db_integrity is not None
+            and self._db_integrity_counter % self.config.db_integrity_check_frequency == 0
+        ):
+            try:
+                result = await self._check_db_integrity(games_dir)
+                self._stats["integrity_checks"] += 1
+                if result.get("corrupted", 0) > 0:
+                    logger.info(
+                        f"[{self.name}] DB integrity: {result.get('checked', 0)} checked, "
+                        f"{result.get('corrupted', 0)} corrupted"
+                    )
+            except Exception as e:
+                logger.debug(f"[{self.name}] DB integrity check error: {e}")
+
+        # 6. Check databases and trigger exports
+        await self._check_and_trigger_exports(games_dir, training_dir)
+
+        # 7. Calculate training data and auto-trigger training
+        await self._check_and_trigger_training(training_dir)
+
+        # 8. Request data from peers
+        if self._request_peer_data is not None:
+            try:
+                await self._request_peer_data()
+            except Exception as e:
+                logger.debug(f"[{self.name}] Peer data request error: {e}")
+
+    async def _check_and_trigger_exports(self, games_dir: Path, training_dir: Path) -> None:
+        """Check database sizes and trigger exports if thresholds exceeded."""
+        if self._trigger_export is None:
+            return
+
+        # Clean up stale export tracking
+        now = time.time()
+        self._active_exports = {
+            p: t for p, t in self._active_exports.items()
+            if now - t < self.config.export_timeout_seconds
+        }
+
+        current_exports = len(self._active_exports)
+        if current_exports >= self.config.max_concurrent_exports:
+            return
+
+        if not games_dir.exists():
+            return
+
+        for db_file in games_dir.glob("*.db"):
+            if current_exports >= self.config.max_concurrent_exports:
+                break
+
+            export_key = str(db_file)
+            if export_key in self._active_exports:
+                continue
+
+            try:
+                db_size_mb = db_file.stat().st_size / (1024 * 1024)
+            except OSError:
+                continue
+
+            if db_size_mb < self.config.db_export_threshold_mb:
+                continue
+
+            # Determine board type from filename
+            board_type = self._infer_board_type(db_file.name)
+
+            # Trigger export
+            output_path = training_dir / f"auto_{db_file.stem}_{int(time.time())}.npz"
+            try:
+                success = await self._trigger_export(db_file, output_path, board_type)
+                if success:
+                    self._active_exports[export_key] = time.time()
+                    self._stats["exports_triggered"] += 1
+                    current_exports += 1
+                    logger.info(f"[{self.name}] Triggered export for {db_file.name}")
+            except Exception as e:
+                logger.debug(f"[{self.name}] Export trigger error for {db_file.name}: {e}")
+
+    async def _check_and_trigger_training(self, training_dir: Path) -> None:
+        """Check training data size and auto-trigger training if threshold exceeded."""
+        if self._start_training is None:
+            return
+
+        if not self._is_gpu_node():
+            return
+
+        if self._has_training_jobs():
+            return
+
+        if not training_dir.exists():
+            return
+
+        # Calculate total training data
+        total_mb = 0.0
+        largest_npz: Path | None = None
+        largest_size = 0
+
+        for npz_file in training_dir.glob("*.npz"):
+            try:
+                size = npz_file.stat().st_size
+                total_mb += size / (1024 * 1024)
+                if size > largest_size:
+                    largest_size = size
+                    largest_npz = npz_file
+            except OSError:
+                continue
+
+        logger.debug(f"[{self.name}] Training data: {total_mb:.1f}MB")
+
+        if total_mb >= self.config.auto_training_threshold_mb and largest_npz:
+            logger.info(f"[{self.name}] Auto-triggering training ({total_mb:.1f}MB available)")
+            try:
+                await self._start_training(largest_npz)
+                self._stats["training_triggered"] += 1
+            except Exception as e:
+                logger.debug(f"[{self.name}] Training trigger error: {e}")
+
+    @staticmethod
+    def _infer_board_type(filename: str) -> str:
+        """Infer board type from database filename."""
+        name_lower = filename.lower()
+        if "hex" in name_lower:
+            return "hexagonal"
+        elif "square19" in name_lower or "sq19" in name_lower:
+            return "square19"
+        return "square8"
+
+    def get_status(self) -> dict[str, Any]:
+        """Get extended loop status with statistics."""
+        status = super().get_status()
+        status["data_management_stats"] = {
+            **self._stats,
+            "active_exports": len(self._active_exports),
+            "integrity_check_counter": self._db_integrity_counter,
+        }
+        return status
+
+
 __all__ = [
     "DataAggregationConfig",
     "DataAggregationLoop",
+    "DataManagementConfig",
+    "DataManagementLoop",
     "ModelSyncConfig",
     "ModelSyncLoop",
 ]

@@ -11,12 +11,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
 
 if TYPE_CHECKING:
-    pass
+    from app.training.fault_tolerance import HeartbeatMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,15 @@ def _try_import_shutdown_handler():
     try:
         from app.training.checkpoint_unified import GracefulShutdownHandler
         return GracefulShutdownHandler
+    except ImportError:
+        return None
+
+
+def _try_import_heartbeat_monitor():
+    """Lazy import HeartbeatMonitor."""
+    try:
+        from app.training.fault_tolerance import HeartbeatMonitor
+        return HeartbeatMonitor
     except ImportError:
         return None
 
@@ -197,6 +207,75 @@ def setup_graceful_shutdown(
     return handler
 
 
+def setup_heartbeat_monitor(
+    heartbeat_file: str | Path | None,
+    heartbeat_interval: float = 30.0,
+    is_main_process_fn: Callable[[], bool] | None = None,
+    timeout_multiplier: float = 4.0,
+) -> HeartbeatMonitor | None:
+    """Initialize heartbeat monitor for training fault tolerance.
+
+    The heartbeat monitor writes periodic updates to a file, allowing external
+    systems to detect hung or crashed training processes.
+
+    Args:
+        heartbeat_file: Path to heartbeat file. If None, no monitor is created.
+        heartbeat_interval: Seconds between heartbeat updates (default: 30.0).
+        is_main_process_fn: Function to check if this is the main process.
+            If provided and returns False, no monitor is created.
+        timeout_multiplier: Multiplier for timeout threshold (default: 4.0).
+            Timeout = heartbeat_interval * timeout_multiplier.
+
+    Returns:
+        HeartbeatMonitor instance if successfully created, None otherwise.
+
+    Example:
+        >>> from app.training.train_setup import setup_heartbeat_monitor
+        >>> monitor = setup_heartbeat_monitor(
+        ...     heartbeat_file="/tmp/training_heartbeat.json",
+        ...     heartbeat_interval=30.0,
+        ... )
+        >>> if monitor:
+        ...     # Call monitor.beat() after each epoch
+        ...     monitor.beat()
+        ...     # Stop when done
+        ...     monitor.stop()
+    """
+    if heartbeat_file is None:
+        return None
+
+    # Only create on main process if function provided
+    if is_main_process_fn is not None and not is_main_process_fn():
+        logger.debug("Heartbeat monitor skipped (not main process)")
+        return None
+
+    HeartbeatMonitor = _try_import_heartbeat_monitor()
+    if not HeartbeatMonitor:
+        logger.warning("HeartbeatMonitor not available, skipping heartbeat setup")
+        return None
+
+    # Ensure parent directory exists
+    heartbeat_path = Path(heartbeat_file)
+    heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Calculate timeout threshold
+    timeout_threshold = heartbeat_interval * timeout_multiplier
+
+    # Create and start monitor
+    monitor = HeartbeatMonitor(
+        heartbeat_interval=heartbeat_interval,
+        timeout_threshold=timeout_threshold,
+    )
+    monitor.start(heartbeat_path)
+
+    logger.info(
+        f"Heartbeat monitor started: {heartbeat_file} "
+        f"(interval={heartbeat_interval}s, timeout={timeout_threshold}s)"
+    )
+
+    return monitor
+
+
 # =============================================================================
 # Model Initialization Helpers
 # =============================================================================
@@ -290,4 +369,5 @@ __all__ = [
     # Setup functions
     'setup_fault_tolerance',
     'setup_graceful_shutdown',
+    'setup_heartbeat_monitor',
 ]

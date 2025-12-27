@@ -2541,6 +2541,8 @@ class P2POrchestrator(
                 NATManagementLoop,
                 ManifestCollectionLoop,
                 ValidationLoop,
+                ModelSyncLoop,
+                DataManagementLoop,
             )
 
             # QueuePopulatorLoop - maintains 50+ work items until 2000 Elo
@@ -2615,6 +2617,45 @@ class P2POrchestrator(
                 record_stats_sample=self._record_selfplay_stats_sample,
             )
             manager.register(manifest_collection)
+
+            # DataManagementLoop - automatic data pipeline management
+            # December 27, 2025: Migrated from inline _data_management_loop
+            def _check_disk_capacity_wrapper(threshold: float) -> tuple[bool, float]:
+                """Wrapper for check_disk_has_capacity."""
+                try:
+                    return check_disk_has_capacity(threshold)
+                except Exception as e:
+                    logger.debug(f"Disk capacity check error: {e}")
+                    return True, 0.0  # Assume OK on error
+
+            async def _check_db_integrity_wrapper(data_dir: Path) -> dict[str, int]:
+                """Wrapper for check_and_repair_databases."""
+                try:
+                    return check_and_repair_databases(
+                        data_dir=data_dir,
+                        auto_repair=False,
+                        log_prefix="[P2P]"
+                    )
+                except Exception as e:
+                    logger.debug(f"DB integrity check error: {e}")
+                    return {"checked": 0, "corrupted": 0, "failed": 0}
+
+            data_management = DataManagementLoop(
+                is_leader=self._is_leader,
+                check_disk_capacity=_check_disk_capacity_wrapper,
+                cleanup_disk=self._cleanup_local_disk,
+                convert_jsonl_to_db=self._convert_jsonl_to_db,
+                convert_jsonl_to_npz=self._convert_jsonl_to_npz_for_training,
+                check_db_integrity=_check_db_integrity_wrapper,
+                trigger_export=self._trigger_export_for_loop,
+                start_training=self._start_auto_training,
+                get_data_dir=self.get_data_directory,
+                get_games_dir=lambda: self.get_data_directory() / "games",
+                get_training_dir=lambda: self.get_data_directory() / "training",
+                is_gpu_node=lambda: self.self_info.is_gpu_node() if self.self_info else False,
+                has_training_jobs=lambda: (self.self_info.training_jobs > 0) if self.self_info else False,
+            )
+            manager.register(data_management)
 
             # ValidationLoop - automatic model validation scheduling
             # December 27, 2025: Migrated from inline _validation_loop
@@ -2777,6 +2818,59 @@ class P2POrchestrator(
                 self.improvement_cycle_manager.update_from_cluster_totals(by_board_type)
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"ImprovementCycleManager update error: {e}")
+
+    # =========================================================================
+    # DataManagementLoop callbacks - December 27, 2025
+    # =========================================================================
+
+    async def _trigger_export_for_loop(
+        self,
+        db_path: Path,
+        output_path: Path,
+        board_type: str,
+    ) -> bool:
+        """Trigger export job for DataManagementLoop.
+
+        Args:
+            db_path: Path to database file to export
+            output_path: Path for output NPZ file
+            board_type: Board type (square8, hex8, etc.)
+
+        Returns:
+            True if export started successfully
+        """
+        import subprocess
+
+        try:
+            cmd = [
+                sys.executable,
+                f"{self.ringrift_path}/ai-service/scripts/export_replay_dataset.py",
+                "--db", str(db_path),
+                "--board-type", board_type,
+                "--num-players", "2",
+                "--board-aware-encoding",
+                "--require-completed",
+                "--min-moves", "10",
+                "--output", str(output_path),
+            ]
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
+
+            log_file = Path(f"/tmp/auto_export_{db_path.stem}.log")
+            subprocess.Popen(
+                cmd,
+                stdout=open(log_file, "w"),
+                stderr=subprocess.STDOUT,
+                env=env,
+                cwd=f"{self.ringrift_path}/ai-service",
+            )
+            logger.info(f"[DataManagement] Started export job for {db_path.name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[DataManagement] Failed to start export for {db_path.name}: {e}")
+            return False
 
     async def _inline_job_reaper_fallback_loop(self) -> None:
         """Inline job reaper fallback loop.
@@ -6838,14 +6932,32 @@ class P2POrchestrator(
 
         return conversions_done
 
-    async def _data_management_loop(self):
-        """Background loop for automatic data management.
+    # =========================================================================
+    # DEPRECATED: _data_management_loop - December 27, 2025
+    # This inline loop has been migrated to DataManagementLoop in LoopManager.
+    # See scripts/p2p/loops/data_loops.py for the new implementation.
+    # Task creation removed from _run() - this method is now DEAD CODE.
+    # Retained temporarily for reference; safe to remove in Q1 2026.
+    # =========================================================================
+    async def _data_management_loop_DEPRECATED(self):
+        """DEPRECATED: Use DataManagementLoop via LoopManager instead.
+
+        Original docstring:
+        Background loop for automatic data management.
 
         LEARNED LESSONS - Automated data pipeline:
         - Triggers exports when databases exceed threshold
         - Syncs training data to GPU nodes
         - Auto-triggers training when enough data available
         """
+        raise NotImplementedError(
+            "_data_management_loop is deprecated. "
+            "Use DataManagementLoop via LoopManager instead."
+        )
+
+        # ====================================================================
+        # DEAD CODE BELOW - Retained for historical reference only
+        # ====================================================================
         logger.info(f"Data management loop started (interval: {DATA_MANAGEMENT_INTERVAL}s)")
 
         # Track active export jobs
@@ -27263,8 +27375,8 @@ print(json.dumps({{
         # Phase 30: Follower discovery loop - non-leaders actively discover peers
         tasks.append(self._create_safe_task(self._follower_discovery_loop(), "follower_discovery"))
 
-        # Add automatic data management loop (export triggers, training triggers, data sync)
-        tasks.append(self._create_safe_task(self._data_management_loop(), "data_management"))
+        # NOTE: _data_management_loop removed Dec 2025 - now runs via LoopManager (DataManagementLoop)
+        # See scripts/p2p/loops/data_loops.py for implementation
 
         # Add model sync loop (syncs NN/NNUE models across cluster)
         if HAS_MODEL_SYNC:
@@ -27293,8 +27405,8 @@ print(json.dumps({{
 
         # NOTE: _job_reaper_loop removed Dec 2025 - now runs via LoopManager (JobReaperLoop)
 
-        # Validation loop: auto-queue validation for newly trained models
-        tasks.append(self._create_safe_task(self._validation_loop(), "validation"))
+        # NOTE: _validation_loop removed Dec 2025 - now runs via LoopManager (ValidationLoop)
+        # See scripts/p2p/loops/validation_loop.py for implementation
 
         # NOTE: _queue_populator_loop removed Dec 2025 - now runs via LoopManager (QueuePopulatorLoop)
 
@@ -27302,9 +27414,10 @@ print(json.dumps({{
         self._background_tasks = tasks
 
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
-        # These 8 loops now ONLY run via LoopManager (inline versions removed):
+        # These 10 loops now ONLY run via LoopManager (inline versions removed):
         # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop
-        # - WorkQueueMaintenanceLoop, NATManagementLoop, ManifestCollectionLoop
+        # - WorkQueueMaintenanceLoop, NATManagementLoop, ManifestCollectionLoop, ValidationLoop
+        # - DataManagementLoop
         job_reaper_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()

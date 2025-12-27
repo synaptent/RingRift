@@ -77,6 +77,7 @@ The sync system ensures data (games, models, NPZ files) flows reliably across th
 - Gossip protocol for cluster-wide consistency
 - Respects `excluded_hosts` from config
 - Bandwidth-aware transfers
+- Completeness validation helper for sync inputs (min-moves per game) to detect mid-write DBs
 
 **When to use**: Always running on coordinator and training nodes.
 
@@ -134,6 +135,9 @@ The sync system ensures data (games, models, NPZ files) flows reliably across th
 from app.coordination.sync_router import SyncRouter
 router = SyncRouter()
 targets = router.get_sync_targets(data_type="games", size_mb=100)
+
+# Reverse sync (pull) sources for coordinator ingestion
+sources = router.get_sync_sources(data_type="games", target_node="coordinator-1")
 ```
 
 ---

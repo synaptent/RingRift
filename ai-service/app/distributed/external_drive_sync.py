@@ -62,14 +62,22 @@ class ExternalDriveSyncConfig:
 
 
 @dataclass
-class SyncResult:
-    """Result of a sync operation."""
+class ExternalDriveSyncResult:
+    """Result of an external drive sync operation.
+
+    Note: This is distinct from app.coordination.sync_constants.SyncResult
+    which is used for distributed cluster sync operations.
+    """
 
     drive_path: Path
     files_synced: int = 0
     bytes_synced: int = 0
     errors: list[str] = field(default_factory=list)
     success: bool = True
+
+
+# Backward-compatible alias
+SyncResult = ExternalDriveSyncResult
 
 
 class ExternalDriveSyncDaemon:
