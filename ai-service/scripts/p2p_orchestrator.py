@@ -53,6 +53,7 @@ from urllib.parse import urlparse
 if TYPE_CHECKING:
     from app.coordination.queue_populator import QueuePopulator
     from app.coordination.p2p_auto_deployer import P2PAutoDeployer
+    from scripts.p2p.loops import LoopManager
 
 # Work queue for centralized work distribution (lazy import to avoid circular deps)
 _work_queue = None
@@ -10199,181 +10200,12 @@ print(json.dumps(result))
     async def _dispatch_training_job(self, job_config: dict[str, Any]) -> TrainingJob | None:
         """Dispatch a training job to an appropriate worker.
 
-        Finds a GPU node for NNUE training, or any available node for CMA-ES.
-        Creates a TrainingJob and sends it to the worker.
-
-        TRAINING CHECKPOINTING: If a failed job with checkpoint exists for this
-        config, includes resume info in the dispatch.
-
         .. deprecated:: December 2025
-            This method duplicates TrainingCoordinator.dispatch_training_job().
-            Future versions should delegate to self.training_coordinator.dispatch_training_job().
-            Scheduled for removal in Q2 2026.
+            Delegates to TrainingCoordinator.dispatch_training_job().
+            This wrapper method will be removed in Q2 2026.
         """
-        # Check if pipeline should be paused (cluster health, node availability, etc.)
-        try:
-            from app.coordination.unified_health_manager import should_pause_pipeline
-
-            should_pause, reason = should_pause_pipeline()
-            if should_pause:
-                logger.warning(f"Training dispatch paused: {reason}")
-                return None
-        except ImportError:
-            pass  # Health manager not available, proceed with dispatch
-
-        job_type = job_config["job_type"]
-        board_type = job_config["board_type"]
-        num_players = job_config["num_players"]
-        config_key = job_config["config_key"]
-
-        # TRAINING CHECKPOINTING: Check for resumable failed job
-        resumable = self._find_resumable_training_job(job_type, config_key)
-        if resumable and not job_config.get("resume_checkpoint_path"):
-            # Found a failed job with checkpoint - add resume info
-            job_config["resume_checkpoint_path"] = resumable.checkpoint_path
-            job_config["resume_epoch"] = resumable.checkpoint_epoch
-            logger.info(f"Found resumable job {resumable.job_id} with checkpoint at epoch {resumable.checkpoint_epoch}")
-
-        # Generate job ID
-        job_id = f"{job_type}_{config_key}_{int(time.time())}"
-
-        # Create TrainingJob
-        job = TrainingJob(
-            job_id=job_id,
-            job_type=job_type,
-            board_type=board_type,
-            num_players=num_players,
-            status="pending",
-            data_games_count=job_config.get("total_games", 0),
-        )
-
-        # Find suitable worker (CPU/GPU-aware + load-balanced)
-        self._update_self_info()
-        with self.peers_lock:
-            all_nodes = list(self.peers.values())
-        all_nodes.append(self.self_info)
-        # Filter for healthy nodes with sufficient memory
-        healthy_nodes = [
-            n for n in all_nodes
-            if n.is_healthy() and int(getattr(n, "memory_gb", 0) or 0) >= MIN_MEMORY_GB_FOR_TASKS
-        ]
-
-        # Policy-based filtering: check if work type is allowed on each node
-        policy_manager = None
-        try:
-            from app.coordination.node_policies import get_policy_manager
-            policy_manager = get_policy_manager()
-        except ImportError:
-            pass
-
-        # Determine work type for policy check
-        policy_work_type = "training" if job_type == "nnue" else "cpu_cmaes"
-
-        if policy_manager:
-            # Filter nodes that allow this work type
-            healthy_nodes = [
-                n for n in healthy_nodes
-                if policy_manager.is_work_allowed(n.node_id, policy_work_type)
-            ]
-
-        # Get set of nodes already running training jobs (for parallel training across configs)
-        with self.training_lock:
-            nodes_with_training = {
-                job.worker_node for job in self.training_jobs.values()
-                if job.status in ("pending", "queued", "running") and job.worker_node
-            }
-
-        worker_node: NodeInfo | None = None
-        if job_type == "nnue":
-            # NNUE training prefers accelerator nodes (CUDA/MPS).
-            # Exclude nodes already running training to enable parallel training across configs
-            gpu_nodes = [n for n in healthy_nodes if n.has_gpu and n.node_id not in nodes_with_training]
-            if not gpu_nodes:
-                # Fall back to allowing nodes with training if no free GPU nodes
-                gpu_nodes = [n for n in healthy_nodes if n.has_gpu]
-            gpu_nodes.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
-            worker_node = gpu_nodes[0] if gpu_nodes else None
-        else:
-            # CMA-ES is CPU-heavy. Prefer high-CPU nodes (vast nodes have 256-512 CPUs).
-            # Use cpu_power_score() to prioritize vast nodes over lambda nodes.
-            cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node() and n.node_id not in nodes_with_training]
-            if not cpu_nodes:
-                cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node()]
-            candidates = cpu_nodes if cpu_nodes else healthy_nodes
-            # Sort by CPU power (descending) then load score (ascending)
-            candidates.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
-            worker_node = candidates[0] if candidates else None
-
-        if not worker_node:
-            logger.info(f"No suitable worker for {job_type} training job")
-            return None
-
-        job.worker_node = worker_node.node_id
-        job.status = "queued"
-
-        # Store job
-        with self.training_lock:
-            self.training_jobs[job_id] = job
-
-        # Update games count at training start
-        if job_type == "nnue":
-            self.games_at_last_nnue_train[config_key] = job_config.get("total_games", 0)
-        else:
-            self.games_at_last_cmaes_train[config_key] = job_config.get("total_games", 0)
-
-        # TRAINING CHECKPOINTING: Check for resumable job with checkpoint
-        resume_checkpoint = job_config.get("resume_checkpoint_path", "")
-        resume_epoch = job_config.get("resume_epoch", 0)
-        if resume_checkpoint:
-            job.checkpoint_path = resume_checkpoint
-            job.checkpoint_epoch = resume_epoch
-            job.resume_from_checkpoint = True
-            logger.info(f"Resuming training from checkpoint: {resume_checkpoint} (epoch {resume_epoch})")
-
-        # Send to worker
-        try:
-            endpoint = f"/training/{job_type}/start"
-            timeout = ClientTimeout(total=30)
-            async with get_client_session(timeout) as session:
-                payload = {
-                    "job_id": job_id,
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "epochs": job.epochs,
-                    "batch_size": job.batch_size,
-                    "learning_rate": job.learning_rate,
-                    # TRAINING CHECKPOINTING: Include resume info
-                    "resume_checkpoint": resume_checkpoint,
-                    "resume_epoch": resume_epoch,
-                }
-                last_err: str | None = None
-                for url in self._urls_for_peer(worker_node, endpoint):
-                    try:
-                        async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
-                            if resp.status != 200:
-                                last_err = f"http_{resp.status}"
-                                continue
-                            result = await resp.json()
-                        if result.get("success"):
-                            job.status = "running"
-                            job.started_at = time.time()
-                            logger.info(f"Started {job_type} training job {job_id} on {worker_node.node_id}")
-                            self._save_state()
-                            return job
-                        job.status = "failed"
-                        job.error_message = str(result.get("error") or "Unknown error")
-                        return job
-                    except Exception as e:
-                        last_err = str(e)
-                        continue
-                job.status = "failed"
-                job.error_message = last_err or "dispatch_failed"
-        except Exception as e:
-            job.status = "failed"
-            job.error_message = str(e)
-            logger.error(f"Failed to dispatch {job_type} training to {worker_node.node_id}: {e}")
-
-        return job
+        # Delegate to TrainingCoordinator (December 2025 refactoring)
+        return await self.training_coordinator.dispatch_training_job(job_config)
 
     async def _check_and_trigger_training(self):
         """Periodic check for training readiness (leader only)."""
@@ -10824,50 +10656,12 @@ print(json.dumps(result))
     async def _handle_training_job_completion(self, job: TrainingJob) -> None:
         """Handle training job completion - run gauntlet, notify cycle manager, trigger evaluation.
 
-        This method bridges the training completion with the improvement cycle:
-        1. Runs immediate gauntlet evaluation against median model
-        2. Archives model if gauntlet fails (< 50% win rate vs median)
-        3. Notifies improvement_cycle_manager of training completion
-        4. Schedules a model comparison tournament
-
         .. deprecated:: December 2025
-            This method duplicates TrainingCoordinator.handle_training_job_completion().
-            Future versions should delegate to self.training_coordinator.handle_training_job_completion().
-            Scheduled for removal in Q2 2026.
+            Delegates to TrainingCoordinator.handle_training_job_completion().
+            This wrapper method will be removed in Q2 2026.
         """
-        if not self.improvement_cycle_manager:
-            return
-
-        try:
-            logger.info(f"Training job {job.job_id} completed, triggering evaluation")
-
-            # NEW: Run immediate gauntlet evaluation
-            passed = await self._run_post_training_gauntlet(job)
-
-            if not passed:
-                # Archive model that failed gauntlet
-                await self._archive_failed_model(
-                    job.output_model_path,
-                    job.board_type,
-                    job.num_players,
-                    reason="failed_post_training_gauntlet"
-                )
-                logger.info("Model archived: failed post-training gauntlet (< 50% vs median)")
-                return  # Don't proceed with tournament scheduling
-
-            # Notify improvement cycle manager
-            self.improvement_cycle_manager.handle_training_complete(
-                job.board_type,
-                job.num_players,
-                job.output_model_path,
-                job.data_games_count or 0
-            )
-
-            # Schedule model comparison tournament
-            await self._schedule_model_comparison_tournament(job)
-
-        except Exception as e:
-            logger.error(f"handling training completion for {job.job_id}: {e}")
+        # Delegate to TrainingCoordinator (December 2025 refactoring)
+        await self.training_coordinator.handle_training_job_completion(job)
 
     async def _schedule_model_comparison_tournament(self, job: TrainingJob) -> None:
         """Schedule a tournament to compare the new model against baseline.
