@@ -1476,8 +1476,9 @@ class DataPipelineOrchestrator:
                     event_type=DataEventType.SYNC_TRIGGERED,
                     payload={"reason": "post_repair", "source": "data_pipeline_orchestrator"},
                 )
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, AttributeError) as e:
+                # Non-critical: sync trigger is best-effort after repair
+                logger.debug(f"[DataPipelineOrchestrator] Could not emit SYNC_TRIGGERED: {e}")
 
     async def _on_repair_failed(self, event: Any) -> None:
         """Handle REPAIR_FAILED - log and potentially escalate."""

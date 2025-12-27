@@ -79,6 +79,11 @@ class AutoPromotionDaemon:
         self._promotion_history: list[dict[str, Any]] = []
         self._subscribed = False
 
+    @property
+    def is_running(self) -> bool:
+        """Check if daemon is currently running."""
+        return self._running
+
     async def start(self) -> None:
         """Start the auto-promotion daemon."""
         if self._running:

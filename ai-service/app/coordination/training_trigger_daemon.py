@@ -115,6 +115,11 @@ class TrainingTriggerDaemon:
         self._event_subscriptions: list[Any] = []
         self._active_training_tasks: dict[str, asyncio.Task] = {}
 
+    @property
+    def is_running(self) -> bool:
+        """Check if daemon is currently running."""
+        return self._running
+
     async def start(self) -> None:
         """Start the training trigger daemon."""
         # December 2025: Coordinator-only mode check
