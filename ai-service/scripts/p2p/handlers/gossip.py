@@ -18,6 +18,8 @@ Compression:
     Supports gzip-compressed requests/responses for bandwidth efficiency.
     Magic byte detection (0x1f 0x8b) ensures graceful handling of
     clients that set Content-Encoding: gzip but send raw JSON.
+
+December 2025: Migrated to use handlers_base.py utilities for event bridge.
 """
 
 from __future__ import annotations
@@ -30,22 +32,16 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+# Dec 2025: Use consolidated handler utilities
+from scripts.p2p.handlers.handlers_base import get_event_bridge
+
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Event bridge import (with fallback)
-try:
-    from scripts.p2p.p2p_event_bridge import emit_p2p_node_online
-    HAS_EVENT_BRIDGE = True
-except ImportError as e:
-    HAS_EVENT_BRIDGE = False
-    # Dec 2025: Log import failure so operators know events aren't being emitted
-    logger.warning(f"[GossipHandlers] Event bridge not available ({e}), gossip events will not be emitted")
-
-    async def emit_p2p_node_online(*args, **kwargs):
-        pass
+# Event bridge manager for safe event emission (Dec 2025 consolidation)
+_event_bridge = get_event_bridge()
 
 
 class GossipHandlersMixin:
@@ -239,17 +235,16 @@ class GossipHandlersMixin:
                     if is_new_peer:
                         new_peers.append((node_id, state))
 
-            # Emit node online events for newly discovered peers
-            if HAS_EVENT_BRIDGE and new_peers:
-                for peer_id, peer_state in new_peers:
-                    await emit_p2p_node_online(
-                        node_id=peer_id,
-                        host_type=peer_state.get("role", ""),
-                        capabilities={
-                            "has_gpu": peer_state.get("has_gpu", False),
-                            "gpu_name": peer_state.get("gpu_name", ""),
-                        },
-                    )
+            # Emit node online events for newly discovered peers (Dec 2025 consolidation)
+            for peer_id, peer_state in new_peers:
+                await _event_bridge.emit("p2p_node_online", {
+                    "node_id": peer_id,
+                    "host_type": peer_state.get("role", ""),
+                    "capabilities": {
+                        "has_gpu": peer_state.get("has_gpu", False),
+                        "gpu_name": peer_state.get("gpu_name", ""),
+                    },
+                })
 
             if updates > 0:
                 self._record_gossip_metrics("anti_entropy")

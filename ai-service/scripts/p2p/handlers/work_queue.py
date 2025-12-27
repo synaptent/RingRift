@@ -3,6 +3,9 @@
 Provides HTTP endpoints for distributed work queue management.
 Supports work item claiming, completion reporting, and queue status.
 
+December 2025: Migrated to use BaseP2PHandler for consistent response formatting
+and error handling. Saves ~40 LOC through consolidated patterns.
+
 Usage:
     class P2POrchestrator(WorkQueueHandlersMixin, ...):
         pass
@@ -28,28 +31,16 @@ from typing import TYPE_CHECKING, Protocol
 
 from aiohttp import web
 
+from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.handlers_base import get_event_bridge
+
 if TYPE_CHECKING:
     from app.coordination.unified_queue_populator import UnifiedQueuePopulator as QueuePopulator
 
 logger = logging.getLogger(__name__)
 
-# Event bridge import (with fallback)
-try:
-    from scripts.p2p.p2p_event_bridge import (
-        emit_p2p_work_completed,
-        emit_p2p_work_failed,
-    )
-    HAS_EVENT_BRIDGE = True
-except ImportError as e:
-    HAS_EVENT_BRIDGE = False
-    # Dec 2025: Log import failure so operators know events aren't being emitted
-    logger.warning(f"[WorkQueueHandlers] Event bridge not available ({e}), work events will not be emitted")
-
-    async def emit_p2p_work_completed(*args, **kwargs):
-        pass
-
-    async def emit_p2p_work_failed(*args, **kwargs):
-        pass
+# Event bridge manager for safe event emission (Dec 2025 consolidation)
+_event_bridge = get_event_bridge()
 
 
 # Work queue singleton (lazy import to avoid circular deps)
@@ -92,13 +83,17 @@ class OrchestratorProtocol(Protocol):
     def _queue_populator(self) -> "QueuePopulator | None": ...
 
 
-class WorkQueueHandlersMixin:
+class WorkQueueHandlersMixin(BaseP2PHandler):
     """Mixin providing work queue HTTP handlers.
+
+    Inherits from BaseP2PHandler for consistent response formatting.
 
     Requires the implementing class to have:
     - is_leader: bool property
     - leader_id: str property
     - _queue_populator: QueuePopulator | None
+    - node_id: str (from BaseP2PHandler)
+    - auth_token: str | None (from BaseP2PHandler)
     """
 
     # Type hint for self to enable IDE support
@@ -106,21 +101,41 @@ class WorkQueueHandlersMixin:
     leader_id: str
     _queue_populator: "QueuePopulator | None"
 
+    # ==========================================================================
+    # Helper Methods
+    # ==========================================================================
+
+    def _not_leader_response(self) -> web.Response:
+        """Return 403 response for non-leader nodes."""
+        return self.error_response(
+            "Not leader - forward to leader",
+            status=403,
+            error_code="NOT_LEADER",
+            details={"leader_id": self.leader_id},
+        )
+
+    def _work_queue_unavailable(self) -> web.Response:
+        """Return 503 response when work queue is not available."""
+        return self.error_response(
+            "Work queue not available",
+            status=503,
+            error_code="WORK_QUEUE_UNAVAILABLE",
+        )
+
     async def handle_work_add(self, request: web.Request) -> web.Response:
         """Add work to the centralized queue (leader only)."""
         try:
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             work_type = data.get("work_type", "selfplay")
             priority = data.get("priority", 50)
             config = data.get("config", {})
@@ -138,17 +153,15 @@ class WorkQueueHandlersMixin:
             )
             work_id = wq.add_work(item)
 
-            return web.json_response(
-                {
-                    "status": "added",
-                    "work_id": work_id,
-                    "work_type": work_type,
-                    "priority": priority,
-                }
-            )
+            return self.json_response({
+                "status": "added",
+                "work_id": work_id,
+                "work_type": work_type,
+                "priority": priority,
+            })
         except Exception as e:
             logger.error(f"Error adding work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_add_batch(self, request: web.Request) -> web.Response:
         """Add multiple work items to the queue in a single request (leader only).
@@ -171,26 +184,23 @@ class WorkQueueHandlersMixin:
         """
         try:
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             items = data.get("items", [])
 
             if not items:
-                return web.json_response({"error": "no_items_provided"}, status=400)
+                return self.bad_request("No items provided")
 
             if len(items) > 100:
-                return web.json_response(
-                    {"error": "too_many_items", "max": 100}, status=400
-                )
+                return self.bad_request("Too many items (max 100)")
 
             from app.coordination.work_queue import WorkItem, WorkType
 
@@ -217,31 +227,25 @@ class WorkQueueHandlersMixin:
                 except Exception as e:
                     errors.append({"index": i, "error": str(e)})
 
-            return web.json_response(
-                {
-                    "status": "added",
-                    "count": len(work_ids),
-                    "work_ids": work_ids,
-                    "errors": errors if errors else None,
-                }
-            )
+            return self.json_response({
+                "status": "added",
+                "count": len(work_ids),
+                "work_ids": work_ids,
+                "errors": errors if errors else None,
+            })
         except Exception as e:
             logger.error(f"Error adding batch work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_claim(self, request: web.Request) -> web.Response:
         """Claim available work from the queue."""
         try:
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
             node_id = request.query.get("node_id", "")
             capabilities_str = request.query.get("capabilities", "")
@@ -250,48 +254,46 @@ class WorkQueueHandlersMixin:
             )
 
             if not node_id:
-                return web.json_response({"error": "node_id_required"}, status=400)
+                return self.bad_request("node_id required")
 
             item = wq.claim_work(node_id, capabilities)
             if item is None:
-                return web.json_response({"status": "no_work_available"})
+                return self.json_response({"status": "no_work_available"})
 
-            return web.json_response(
-                {
-                    "status": "claimed",
-                    "work": item.to_dict(),
-                }
-            )
+            return self.json_response({
+                "status": "claimed",
+                "work": item.to_dict(),
+            })
         except Exception as e:
             logger.error(f"Error claiming work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_start(self, request: web.Request) -> web.Response:
         """Mark work as started (running)."""
         try:
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             work_id = data.get("work_id", "")
             if not work_id:
-                return web.json_response({"error": "work_id_required"}, status=400)
+                return self.bad_request("work_id required")
 
             success = wq.start_work(work_id)
-            return web.json_response(
-                {"status": "started" if success else "failed", "work_id": work_id}
-            )
+            return self.json_response({
+                "status": "started" if success else "failed",
+                "work_id": work_id,
+            })
         except Exception as e:
             logger.error(f"Error starting work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_complete(self, request: web.Request) -> web.Response:
         """Mark work as completed successfully."""
@@ -299,21 +301,20 @@ class WorkQueueHandlersMixin:
             from app.coordination.work_queue import WorkType
 
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             work_id = data.get("work_id", "")
             result = data.get("result", {})
             if not work_id:
-                return web.json_response({"error": "work_id_required"}, status=400)
+                return self.bad_request("work_id required")
 
             # Dec 2025: Fixed race condition - read work item data under lock
             # before calling complete_work() which modifies state
@@ -326,17 +327,17 @@ class WorkQueueHandlersMixin:
 
             success = wq.complete_work(work_id, result)
 
-            # Emit event to coordination EventRouter
-            if success and HAS_EVENT_BRIDGE:
+            # Emit event to coordination EventRouter (Dec 2025 consolidation)
+            if success:
                 # Use locally captured assigned_to (already read under lock above)
-                await emit_p2p_work_completed(
-                    work_id=work_id,
-                    work_type=work_type.value if work_type else "unknown",
-                    config_key=f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
-                    result=result,
-                    node_id=assigned_to,
-                    duration_seconds=result.get("duration_seconds", 0.0),
-                )
+                await _event_bridge.emit("p2p_work_completed", {
+                    "work_id": work_id,
+                    "work_type": work_type.value if work_type else "unknown",
+                    "config_key": f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
+                    "result": result,
+                    "node_id": assigned_to,
+                    "duration_seconds": result.get("duration_seconds", 0.0),
+                })
 
             # Update queue populator with Elo data if applicable
             if success and self._queue_populator is not None:
@@ -372,32 +373,32 @@ class WorkQueueHandlersMixin:
                     if board_type and num_players:
                         self._queue_populator.increment_training(board_type, num_players)
 
-            return web.json_response(
-                {"status": "completed" if success else "failed", "work_id": work_id}
-            )
+            return self.json_response({
+                "status": "completed" if success else "failed",
+                "work_id": work_id,
+            })
         except Exception as e:
             logger.error(f"Error completing work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_fail(self, request: web.Request) -> web.Response:
         """Mark work as failed (may retry based on attempts)."""
         try:
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             work_id = data.get("work_id", "")
             error = data.get("error", "unknown")
             if not work_id:
-                return web.json_response({"error": "work_id_required"}, status=400)
+                return self.bad_request("work_id required")
 
             # Dec 2025: Fixed race condition - read work item data under lock
             # before calling fail_work() which modifies state
@@ -410,31 +411,30 @@ class WorkQueueHandlersMixin:
 
             success = wq.fail_work(work_id, error)
 
-            # Emit failure event to coordination EventRouter
-            if success and HAS_EVENT_BRIDGE:
-                await emit_p2p_work_failed(
-                    work_id=work_id,
-                    work_type=work_type,
-                    config_key=f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
-                    error=error,
-                    node_id=node_id,
-                )
+            # Emit failure event to coordination EventRouter (Dec 2025 consolidation)
+            if success:
+                await _event_bridge.emit("p2p_work_failed", {
+                    "work_id": work_id,
+                    "work_type": work_type,
+                    "config_key": f"{config.get('board_type', '')}_{config.get('num_players', 0)}p",
+                    "error": error,
+                    "node_id": node_id,
+                })
 
-            return web.json_response(
-                {"status": "failed" if success else "not_found", "work_id": work_id}
-            )
+            return self.json_response({
+                "status": "failed" if success else "not_found",
+                "work_id": work_id,
+            })
         except Exception as e:
             logger.error(f"Error failing work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_status(self, request: web.Request) -> web.Response:
         """Get work queue status."""
         try:
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
             # Check for timeouts
             timed_out = wq.check_timeouts()
@@ -444,105 +444,92 @@ class WorkQueueHandlersMixin:
             status["leader_id"] = self.leader_id
             status["timed_out_this_check"] = timed_out
 
-            return web.json_response(status)
+            return self.json_response(status)
         except Exception as e:
             logger.error(f"Error getting work status: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_populator_status(self, request: web.Request) -> web.Response:
         """Get queue populator status for monitoring."""
         try:
             if self._queue_populator is None:
-                return web.json_response(
-                    {
-                        "enabled": False,
-                        "message": "Queue populator not initialized",
-                    }
-                )
+                return self.json_response({
+                    "enabled": False,
+                    "message": "Queue populator not initialized",
+                })
 
             status = self._queue_populator.get_status()
             status["is_leader"] = self.is_leader
-            return web.json_response(status)
+            return self.json_response(status)
         except Exception as e:
             logger.error(f"Error getting populator status: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_for_node(self, request: web.Request) -> web.Response:
         """Get all work assigned to a specific node."""
         try:
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
             node_id = request.match_info.get("node_id", "")
             if not node_id:
-                return web.json_response({"error": "node_id_required"}, status=400)
+                return self.bad_request("node_id required")
 
             work_items = wq.get_work_for_node(node_id)
-            return web.json_response(
-                {
-                    "node_id": node_id,
-                    "work_items": work_items,
-                    "count": len(work_items),
-                }
-            )
+            return self.json_response({
+                "node_id": node_id,
+                "work_items": work_items,
+                "count": len(work_items),
+            })
         except Exception as e:
             logger.error(f"Error getting work for node: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_cancel(self, request: web.Request) -> web.Response:
         """Cancel a pending or claimed work item."""
         try:
             if not self.is_leader:
-                return web.json_response(
-                    {"error": "not_leader", "leader_id": self.leader_id}, status=403
-                )
+                return self._not_leader_response()
 
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             work_id = data.get("work_id", "")
             if not work_id:
-                return web.json_response({"error": "work_id_required"}, status=400)
+                return self.bad_request("work_id required")
 
             success = wq.cancel_work(work_id)
-            return web.json_response(
-                {
-                    "status": "cancelled" if success else "failed",
-                    "work_id": work_id,
-                }
-            )
+            return self.json_response({
+                "status": "cancelled" if success else "failed",
+                "work_id": work_id,
+            })
         except Exception as e:
             logger.error(f"Error cancelling work: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_work_history(self, request: web.Request) -> web.Response:
         """Get work history from the database."""
         try:
             wq = get_work_queue()
             if wq is None:
-                return web.json_response(
-                    {"error": "work_queue_not_available"}, status=503
-                )
+                return self._work_queue_unavailable()
 
             limit = int(request.query.get("limit", "50"))
             status_filter = request.query.get("status", None)
 
             history = wq.get_history(limit=limit, status_filter=status_filter)
-            return web.json_response(
-                {
-                    "history": history,
-                    "count": len(history),
-                    "limit": limit,
-                    "status_filter": status_filter,
-                }
-            )
+            return self.json_response({
+                "history": history,
+                "count": len(history),
+                "limit": limit,
+                "status_filter": status_filter,
+            })
         except Exception as e:
             logger.error(f"Error getting work history: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)

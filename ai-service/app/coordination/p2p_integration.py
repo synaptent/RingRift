@@ -35,7 +35,7 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -77,13 +77,18 @@ if not HAS_AIOHTTP:
         aiohttp = None  # type: ignore
 
 
+def _get_default_p2p_port() -> int:
+    """Get default P2P port - wrapper for field default_factory."""
+    return get_p2p_port()
+
+
 @dataclass
 class P2PNodeStatus:
     """Node status from P2P cluster."""
 
     node_id: str
     host: str
-    port: int = 8770
+    port: int = field(default_factory=_get_default_p2p_port)
     is_alive: bool = True
     is_healthy: bool = True
     gpu_utilization: float = 0.0

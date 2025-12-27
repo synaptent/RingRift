@@ -930,6 +930,88 @@ def get_backpressure_multiplier(level: str) -> float:
 
 
 # =============================================================================
+# Resource Manager Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class ResourceManagerDefaults:
+    """Default values for adaptive resource manager operations.
+
+    Used by: app/coordination/adaptive_resource_manager.py
+
+    These control proactive disk/memory/GPU monitoring across the cluster.
+    """
+    # Check interval - how often to check resource usage (seconds)
+    CHECK_INTERVAL: int = _env_int("RINGRIFT_RESOURCE_CHECK_INTERVAL", 300)  # 5 minutes
+
+    # Cleanup cooldown - minimum time between cleanup operations (seconds)
+    CLEANUP_COOLDOWN: int = _env_int("RINGRIFT_CLEANUP_COOLDOWN", 1800)  # 30 minutes
+
+    # Aggregation interval - how often to aggregate selfplay data (seconds)
+    AGGREGATION_INTERVAL: int = _env_int("RINGRIFT_AGGREGATION_INTERVAL", 600)  # 10 minutes
+
+    # Disk thresholds (percentage)
+    DISK_WARNING_THRESHOLD: int = _env_int("RINGRIFT_DISK_WARNING_THRESHOLD", 85)
+    DISK_CRITICAL_THRESHOLD: int = _env_int("RINGRIFT_DISK_CRITICAL_THRESHOLD", 92)
+    DISK_CLEANUP_THRESHOLD: int = _env_int("RINGRIFT_DISK_CLEANUP_THRESHOLD", 90)
+
+    # Memory thresholds (percentage)
+    MEMORY_WARNING_THRESHOLD: int = _env_int("RINGRIFT_MEMORY_WARNING_THRESHOLD", 85)
+    MEMORY_CRITICAL_THRESHOLD: int = _env_int("RINGRIFT_MEMORY_CRITICAL_THRESHOLD", 95)
+
+
+# =============================================================================
+# Orphan Detection Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class OrphanDetectionDefaults:
+    """Default values for orphan detection daemon.
+
+    Used by: app/coordination/orphan_detection_daemon.py
+    """
+    # Scan interval - how often to scan for orphaned databases (seconds)
+    SCAN_INTERVAL: float = _env_float("RINGRIFT_ORPHAN_SCAN_INTERVAL", 300.0)  # 5 minutes
+
+    # Minimum games required in a DB to auto-register
+    MIN_GAMES_TO_REGISTER: int = _env_int("RINGRIFT_ORPHAN_MIN_GAMES", 1)
+
+    # Minimum age before considering cleanup (hours)
+    MIN_AGE_BEFORE_CLEANUP_HOURS: float = _env_float("RINGRIFT_ORPHAN_MIN_AGE_HOURS", 24.0)
+
+    # Alert threshold - emit alert if orphan count exceeds this
+    MAX_ORPHAN_COUNT_BEFORE_ALERT: int = _env_int("RINGRIFT_ORPHAN_ALERT_THRESHOLD", 100)
+
+
+# =============================================================================
+# Cluster Watchdog Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class ClusterWatchdogDefaults:
+    """Default values for cluster watchdog daemon.
+
+    Used by: app/coordination/cluster_watchdog_daemon.py
+
+    These control automatic node activation and GPU utilization monitoring.
+    """
+    # SSH timeout for node checks (seconds)
+    SSH_TIMEOUT: int = _env_int("RINGRIFT_WATCHDOG_SSH_TIMEOUT", 30)
+
+    # Minimum GPU utilization - below this, spawn selfplay (percentage)
+    MIN_GPU_UTILIZATION: float = _env_float("RINGRIFT_WATCHDOG_MIN_GPU_UTIL", 20.0)
+
+    # Activation cooldown - time to wait after activating a node (seconds)
+    ACTIVATION_COOLDOWN: int = _env_int("RINGRIFT_WATCHDOG_ACTIVATION_COOLDOWN", 600)  # 10 minutes
+
+    # Maximum consecutive failures before escalation
+    MAX_CONSECUTIVE_FAILURES: int = _env_int("RINGRIFT_WATCHDOG_MAX_FAILURES", 3)
+
+    # Maximum nodes to activate per cycle
+    MAX_ACTIVATIONS_PER_CYCLE: int = _env_int("RINGRIFT_WATCHDOG_MAX_ACTIVATIONS", 10)
+
+
+# =============================================================================
 # Daemon Health Check Defaults (December 2025)
 # =============================================================================
 
@@ -1377,6 +1459,7 @@ __all__ = [
     "BandwidthDefaults",
     "CacheDefaults",
     "CircuitBreakerDefaults",
+    "ClusterWatchdogDefaults",
     "DaemonHealthDefaults",
     "DaemonLoopDefaults",
     "DurationDefaults",
@@ -1390,10 +1473,12 @@ __all__ = [
     "NetworkRetryDefaults",
     "OperationTimeouts",
     "OptimizationDefaults",
+    "OrphanDetectionDefaults",
     "P2PDefaults",
     "PIDDefaults",
     "QueueDefaults",
     "ResourceLimitsDefaults",
+    "ResourceManagerDefaults",
     "ResourceMonitoringDefaults",
     "RetryDefaults",
     "ScalingDefaults",

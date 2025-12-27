@@ -21,7 +21,8 @@ sync_routing:
     receive_npz: true
     receive_models: true
     subdirs:
-      games: selfplay_repository/raw
+      # Dec 27, 2025: Aligned with mac-studio.storage_paths for consistency
+      games: selfplay_repository
       npz: canonical_data
       models: canonical_models
   # Dec 2025: Priority hosts for data distribution (receive data first)

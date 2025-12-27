@@ -1,7 +1,10 @@
 """Cloud provider abstraction layer for multi-provider cluster management.
 
 This module provides a unified interface for managing compute resources across
-multiple cloud providers (Lambda, Vultr, Vast.ai, Hetzner).
+multiple cloud providers (Vast.ai, RunPod, Nebius, Vultr, Hetzner).
+
+DEPRECATED (Dec 2025): Lambda Labs account terminated.
+ProviderType.LAMBDA is kept for backward compatibility but will emit warnings.
 
 Usage:
     from app.coordination.providers import get_provider, ProviderType
@@ -15,6 +18,9 @@ Usage:
         print(f"{provider.name}: {await provider.get_available_gpus()}")
 """
 
+import logging
+import warnings
+
 from app.coordination.providers.base import (
     CloudProvider,
     Instance,
@@ -22,6 +28,8 @@ from app.coordination.providers.base import (
     ProviderType,
     GPUType,
 )
+
+logger = logging.getLogger(__name__)
 
 # Provider implementations (lazy imports to avoid dependency issues)
 _provider_cache: dict[ProviderType, "CloudProvider"] = {}
@@ -35,6 +43,10 @@ def get_provider(provider_type: ProviderType) -> "CloudProvider":
 
     Returns:
         CloudProvider instance for the specified type
+
+    Raises:
+        ValueError: If provider type is unknown
+        DeprecationWarning: If Lambda provider is requested (account terminated Dec 2025)
     """
     if provider_type in _provider_cache:
         return _provider_cache[provider_type]
@@ -46,8 +58,14 @@ def get_provider(provider_type: ProviderType) -> "CloudProvider":
         from app.coordination.providers.hetzner_provider import HetznerProvider
         _provider_cache[provider_type] = HetznerProvider()
     elif provider_type == ProviderType.LAMBDA:
-        from app.coordination.providers.lambda_provider import LambdaProvider
-        _provider_cache[provider_type] = LambdaProvider()
+        warnings.warn(
+            "Lambda Labs account terminated Dec 2025. Lambda provider is deprecated. "
+            "Returning None - use VAST or RUNPOD providers instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.warning("Lambda provider requested but account is terminated - returning None")
+        return None  # Lambda Labs account terminated Dec 2025
     elif provider_type == ProviderType.VAST:
         from app.coordination.providers.vast_provider import VastProvider
         _provider_cache[provider_type] = VastProvider()

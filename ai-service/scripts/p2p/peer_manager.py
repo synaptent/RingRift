@@ -8,36 +8,40 @@ Usage:
         pass
 
 Phase 2.1 extraction - Dec 26, 2025
+Refactored to use P2PMixinBase - Dec 27, 2025
 """
 
 from __future__ import annotations
 
 import logging
-import sqlite3
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from scripts.p2p.p2p_mixin_base import P2PMixinBase
+
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from scripts.p2p.models import NodeInfo
 
 logger = logging.getLogger(__name__)
 
-# Import constants with fallbacks
-try:
-    from scripts.p2p.constants import (
-        PEER_CACHE_MAX_ENTRIES,
-        PEER_CACHE_TTL_SECONDS,
-        PEER_REPUTATION_ALPHA,
-    )
-except ImportError:
-    PEER_CACHE_MAX_ENTRIES = 200
-    PEER_CACHE_TTL_SECONDS = 604800  # 7 days
-    PEER_REPUTATION_ALPHA = 0.2
+# Load constants with fallbacks using base class helper
+_CONSTANTS = P2PMixinBase._load_config_constants({
+    "PEER_CACHE_MAX_ENTRIES": 200,
+    "PEER_CACHE_TTL_SECONDS": 604800,  # 7 days
+    "PEER_REPUTATION_ALPHA": 0.2,
+})
+
+PEER_CACHE_MAX_ENTRIES = _CONSTANTS["PEER_CACHE_MAX_ENTRIES"]
+PEER_CACHE_TTL_SECONDS = _CONSTANTS["PEER_CACHE_TTL_SECONDS"]
+PEER_REPUTATION_ALPHA = _CONSTANTS["PEER_REPUTATION_ALPHA"]
 
 
-class PeerManagerMixin:
+class PeerManagerMixin(P2PMixinBase):
     """Mixin providing peer management functionality.
+
+    Inherits from P2PMixinBase for shared database and state helpers.
 
     Requires the implementing class to have:
     - db_path: Path - Path to SQLite database
@@ -51,8 +55,10 @@ class PeerManagerMixin:
     - _nat_blocked_peers: set[str] - Peers behind NAT
     """
 
+    MIXIN_TYPE = "peer_manager"
+
     # Type hints for IDE support (implemented by P2POrchestrator)
-    db_path: Path
+    db_path: "Path"
     bootstrap_seeds: list[str]
     verbose: bool
     node_id: str
@@ -64,67 +70,66 @@ class PeerManagerMixin:
         Uses exponential moving average (EMA) for smooth reputation updates.
         Higher reputation = more reliable peer for bootstrap.
         """
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            cursor = conn.cursor()
+        with self._db_connection() as conn:
+            if not conn:
+                return
 
-            # Get current reputation
-            cursor.execute(
-                "SELECT reputation_score, success_count, failure_count FROM peer_cache WHERE node_id = ?",
-                (peer_addr_or_node_id,),
-            )
-            row = cursor.fetchone()
+            try:
+                cursor = conn.cursor()
 
-            if row:
-                current_score = float(row[0] or 0.5)
-                success_count = int(row[1] or 0)
-                failure_count = int(row[2] or 0)
-            else:
-                current_score = 0.5
-                success_count = 0
-                failure_count = 0
+                # Get current reputation
+                cursor.execute(
+                    "SELECT reputation_score, success_count, failure_count FROM peer_cache WHERE node_id = ?",
+                    (peer_addr_or_node_id,),
+                )
+                row = cursor.fetchone()
 
-            # EMA update: new_score = alpha * outcome + (1-alpha) * current
-            outcome = 1.0 if success else 0.0
-            new_score = PEER_REPUTATION_ALPHA * outcome + (1 - PEER_REPUTATION_ALPHA) * current_score
+                if row:
+                    current_score = float(row[0] or 0.5)
+                    success_count = int(row[1] or 0)
+                    failure_count = int(row[2] or 0)
+                else:
+                    current_score = 0.5
+                    success_count = 0
+                    failure_count = 0
 
-            # Update counts
-            if success:
-                success_count += 1
-            else:
-                failure_count += 1
+                # EMA update: new_score = alpha * outcome + (1-alpha) * current
+                outcome = 1.0 if success else 0.0
+                new_score = PEER_REPUTATION_ALPHA * outcome + (1 - PEER_REPUTATION_ALPHA) * current_score
 
-            # Upsert
-            cursor.execute(
-                """
-                INSERT INTO peer_cache (node_id, host, port, reputation_score, success_count, failure_count, last_seen)
-                VALUES (?, '', 0, ?, ?, ?, ?)
-                ON CONFLICT(node_id) DO UPDATE SET
-                    reputation_score = ?,
-                    success_count = ?,
-                    failure_count = ?,
-                    last_seen = ?
-            """,
-                (
-                    peer_addr_or_node_id,
-                    new_score,
-                    success_count,
-                    failure_count,
-                    time.time(),
-                    new_score,
-                    success_count,
-                    failure_count,
-                    time.time(),
-                ),
-            )
-            conn.commit()
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Error updating peer reputation: {e}")
-        finally:
-            if conn:
-                conn.close()
+                # Update counts
+                if success:
+                    success_count += 1
+                else:
+                    failure_count += 1
+
+                # Upsert
+                cursor.execute(
+                    """
+                    INSERT INTO peer_cache (node_id, host, port, reputation_score, success_count, failure_count, last_seen)
+                    VALUES (?, '', 0, ?, ?, ?, ?)
+                    ON CONFLICT(node_id) DO UPDATE SET
+                        reputation_score = ?,
+                        success_count = ?,
+                        failure_count = ?,
+                        last_seen = ?
+                """,
+                    (
+                        peer_addr_or_node_id,
+                        new_score,
+                        success_count,
+                        failure_count,
+                        time.time(),
+                        new_score,
+                        success_count,
+                        failure_count,
+                        time.time(),
+                    ),
+                )
+                conn.commit()
+            except Exception as e:
+                if self.verbose:
+                    self._log_debug(f"Error updating peer reputation: {e}")
 
     def _save_peer_to_cache(
         self,
@@ -137,67 +142,66 @@ class PeerManagerMixin:
         if not node_id or node_id == self.node_id:
             return
 
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            cursor = conn.cursor()
+        with self._db_connection() as conn:
+            if not conn:
+                return
 
-            # Check if this is a known bootstrap seed
-            is_seed = f"{host}:{port}" in self.bootstrap_seeds
+            try:
+                cursor = conn.cursor()
 
-            cursor.execute(
-                """
-                INSERT INTO peer_cache (node_id, host, port, tailscale_ip, last_seen, is_bootstrap_seed)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(node_id) DO UPDATE SET
-                    host = COALESCE(NULLIF(?, ''), host),
-                    port = CASE WHEN ? > 0 THEN ? ELSE port END,
-                    tailscale_ip = COALESCE(NULLIF(?, ''), tailscale_ip),
-                    last_seen = ?,
-                    is_bootstrap_seed = ?
-            """,
-                (
-                    node_id,
-                    host,
-                    port,
-                    tailscale_ip or "",
-                    time.time(),
-                    is_seed,
-                    host,
-                    port,
-                    port,
-                    tailscale_ip or "",
-                    time.time(),
-                    is_seed,
-                ),
-            )
-            conn.commit()
+                # Check if this is a known bootstrap seed
+                is_seed = f"{host}:{port}" in self.bootstrap_seeds
 
-            # Prune old entries if needed
-            cursor.execute("SELECT COUNT(*) FROM peer_cache")
-            count = cursor.fetchone()[0]
-            if count > PEER_CACHE_MAX_ENTRIES:
-                # Delete oldest entries with lowest reputation
                 cursor.execute(
                     """
-                    DELETE FROM peer_cache
-                    WHERE node_id IN (
-                        SELECT node_id FROM peer_cache
-                        WHERE is_bootstrap_seed = 0
-                        ORDER BY reputation_score ASC, last_seen ASC
-                        LIMIT ?
-                    )
+                    INSERT INTO peer_cache (node_id, host, port, tailscale_ip, last_seen, is_bootstrap_seed)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(node_id) DO UPDATE SET
+                        host = COALESCE(NULLIF(?, ''), host),
+                        port = CASE WHEN ? > 0 THEN ? ELSE port END,
+                        tailscale_ip = COALESCE(NULLIF(?, ''), tailscale_ip),
+                        last_seen = ?,
+                        is_bootstrap_seed = ?
                 """,
-                    (count - PEER_CACHE_MAX_ENTRIES,),
+                    (
+                        node_id,
+                        host,
+                        port,
+                        tailscale_ip or "",
+                        time.time(),
+                        is_seed,
+                        host,
+                        port,
+                        port,
+                        tailscale_ip or "",
+                        time.time(),
+                        is_seed,
+                    ),
                 )
                 conn.commit()
 
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Error saving peer to cache: {e}")
-        finally:
-            if conn:
-                conn.close()
+                # Prune old entries if needed
+                cursor.execute("SELECT COUNT(*) FROM peer_cache")
+                count = cursor.fetchone()[0]
+                if count > PEER_CACHE_MAX_ENTRIES:
+                    # Delete oldest entries with lowest reputation
+                    cursor.execute(
+                        """
+                        DELETE FROM peer_cache
+                        WHERE node_id IN (
+                            SELECT node_id FROM peer_cache
+                            WHERE is_bootstrap_seed = 0
+                            ORDER BY reputation_score ASC, last_seen ASC
+                            LIMIT ?
+                        )
+                    """,
+                        (count - PEER_CACHE_MAX_ENTRIES,),
+                    )
+                    conn.commit()
+
+            except Exception as e:
+                if self.verbose:
+                    self._log_debug(f"Error saving peer to cache: {e}")
 
     def _get_bootstrap_peers_by_reputation(self, limit: int = 5) -> list[str]:
         """Get most reliable cached peers for bootstrap.
@@ -205,42 +209,41 @@ class PeerManagerMixin:
         Returns list of "host:port" strings ordered by reputation.
         Filters out peers not seen in the last 7 days.
         """
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            cursor = conn.cursor()
+        with self._db_connection() as conn:
+            if not conn:
+                return []
 
-            # Get peers seen recently, ordered by seed status then reputation
-            cutoff = time.time() - PEER_CACHE_TTL_SECONDS
-            cursor.execute(
-                """
-                SELECT host, port, tailscale_ip FROM peer_cache
-                WHERE last_seen > ? AND host != '' AND port > 0
-                ORDER BY is_bootstrap_seed DESC, reputation_score DESC
-                LIMIT ?
-            """,
-                (cutoff, limit),
-            )
+            try:
+                cursor = conn.cursor()
 
-            result = []
-            for row in cursor.fetchall():
-                host = row[0]
-                port = row[1]
-                ts_ip = row[2]
-                # Prefer Tailscale IP if available
-                if ts_ip:
-                    result.append(f"{ts_ip}:{port}")
-                elif host:
-                    result.append(f"{host}:{port}")
-            return result
+                # Get peers seen recently, ordered by seed status then reputation
+                cutoff = time.time() - PEER_CACHE_TTL_SECONDS
+                cursor.execute(
+                    """
+                    SELECT host, port, tailscale_ip FROM peer_cache
+                    WHERE last_seen > ? AND host != '' AND port > 0
+                    ORDER BY is_bootstrap_seed DESC, reputation_score DESC
+                    LIMIT ?
+                """,
+                    (cutoff, limit),
+                )
 
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Error getting cached peers: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
+                result = []
+                for row in cursor.fetchall():
+                    host = row[0]
+                    port = row[1]
+                    ts_ip = row[2]
+                    # Prefer Tailscale IP if available
+                    if ts_ip:
+                        result.append(f"{ts_ip}:{port}")
+                    elif host:
+                        result.append(f"{host}:{port}")
+                return result
+
+            except Exception as e:
+                if self.verbose:
+                    self._log_debug(f"Error getting cached peers: {e}")
+                return []
 
     def _get_peer_health_score(self, peer_id: str) -> float:
         """Get health score for a peer based on reputation and sync history.
@@ -251,7 +254,8 @@ class PeerManagerMixin:
         reputation = getattr(self, "_peer_reputations", {}).get(peer_id, 0.5)
 
         # Factor in recent sync success
-        sync_history = getattr(self, "_p2p_sync_results", {}).get(peer_id, [])
+        self._ensure_state_attr("_p2p_sync_results", {})
+        sync_history = self._p2p_sync_results.get(peer_id, [])
         if sync_history:
             recent_syncs = sync_history[-10:]  # Last 10 syncs
             sync_success_rate = sum(1 for s in recent_syncs if s) / len(recent_syncs)
@@ -267,9 +271,8 @@ class PeerManagerMixin:
 
         Used for health scoring and routing decisions.
         """
-        # Ensure sync results dict exists
-        if not hasattr(self, "_p2p_sync_results"):
-            self._p2p_sync_results: dict[str, list[bool]] = {}
+        # Ensure sync results dict exists using base class helper
+        self._ensure_state_attr("_p2p_sync_results", {})
 
         if peer_id not in self._p2p_sync_results:
             self._p2p_sync_results[peer_id] = []
@@ -285,57 +288,32 @@ class PeerManagerMixin:
 
     def _get_cached_peer_count(self) -> int:
         """Get count of peers in the cache."""
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM peer_cache")
-            return cursor.fetchone()[0]
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Error getting cached peer count: {e}")
-            return 0
-        finally:
-            if conn:
-                conn.close()
+        result = self._execute_db_query(
+            "SELECT COUNT(*) FROM peer_cache",
+            fetch=True,
+            commit=False,
+        )
+        if result and len(result) > 0:
+            return result[0][0]
+        return 0
 
     def _clear_peer_cache(self) -> int:
         """Clear all non-seed peers from cache. Returns count deleted."""
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM peer_cache WHERE is_bootstrap_seed = 0")
-            conn.commit()
-            return cursor.rowcount
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Error clearing peer cache: {e}")
-            return 0
-        finally:
-            if conn:
-                conn.close()
+        result = self._execute_db_query(
+            "DELETE FROM peer_cache WHERE is_bootstrap_seed = 0",
+            fetch=False,
+        )
+        return result if result is not None else 0
 
     def _prune_stale_peers(self, max_age_seconds: float = 86400) -> int:
         """Remove peers not seen in max_age_seconds. Returns count pruned."""
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            cursor = conn.cursor()
-            cutoff = time.time() - max_age_seconds
-            cursor.execute(
-                "DELETE FROM peer_cache WHERE last_seen < ? AND is_bootstrap_seed = 0",
-                (cutoff,),
-            )
-            conn.commit()
-            return cursor.rowcount
-        except Exception as e:
-            if self.verbose:
-                logger.debug(f"Error pruning stale peers: {e}")
-            return 0
-        finally:
-            if conn:
-                conn.close()
+        cutoff = time.time() - max_age_seconds
+        result = self._execute_db_query(
+            "DELETE FROM peer_cache WHERE last_seen < ? AND is_bootstrap_seed = 0",
+            (cutoff,),
+            fetch=False,
+        )
+        return result if result is not None else 0
 
 
 # Convenience function to get singleton (if P2POrchestrator uses this)

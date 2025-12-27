@@ -127,6 +127,7 @@ CRITICAL_DAEMON_NAMES = {
     "event_router",      # Event system is fundamental
     "data_pipeline",     # Pipeline orchestration
     "auto_sync",         # Data replication
+    "feedback_loop",     # Training feedback and quality scoring (Dec 2025)
 }
 
 
@@ -808,12 +809,22 @@ class MasterLoopController:
     async def _start_daemons(self) -> None:
         """Start daemons for the selected profile."""
         from app.coordination.daemon_manager import DaemonType
+        from app.coordination.daemon_types import validate_startup_order_or_raise
 
         profile_daemons = self._get_daemons_for_profile()
         logger.info(
             f"[MasterLoop] Starting {len(profile_daemons)} daemons "
             f"(profile={self.daemon_profile})"
         )
+
+        # December 2025: Validate daemon dependency graph before starting
+        try:
+            validate_startup_order_or_raise()
+            logger.debug("[MasterLoop] Daemon startup order validated successfully")
+        except ValueError as e:
+            logger.error(f"[MasterLoop] Daemon dependency validation failed: {e}")
+            # Continue with warning - don't block startup, but log prominently
+            logger.warning("[MasterLoop] Proceeding despite dependency issues")
 
         # Track which daemons started successfully
         started_daemons: set[str] = set()

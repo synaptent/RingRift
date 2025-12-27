@@ -47,6 +47,13 @@ from app.coordination.event_emitters import (
     emit_node_unhealthy,
 )
 
+# Import centralized defaults (December 2025)
+try:
+    from app.config.coordination_defaults import ClusterWatchdogDefaults
+    HAS_CENTRALIZED_DEFAULTS = True
+except ImportError:
+    HAS_CENTRALIZED_DEFAULTS = False
+
 
 # =============================================================================
 # Configuration
@@ -58,19 +65,30 @@ class ClusterWatchdogConfig(DaemonConfig):
     """Configuration for cluster watchdog daemon.
 
     Extends DaemonConfig with watchdog-specific settings.
+    December 2025: Now uses centralized defaults from coordination_defaults.py.
     """
 
-    # Watchdog-specific settings
+    # Watchdog-specific settings (from centralized defaults)
     # Minimum GPU utilization threshold - below this, spawn selfplay
-    min_gpu_utilization: float = 20.0
+    min_gpu_utilization: float = (
+        ClusterWatchdogDefaults.MIN_GPU_UTILIZATION if HAS_CENTRALIZED_DEFAULTS else 20.0
+    )
     # Maximum consecutive failures before escalation
-    max_consecutive_failures: int = 3
+    max_consecutive_failures: int = (
+        ClusterWatchdogDefaults.MAX_CONSECUTIVE_FAILURES if HAS_CENTRALIZED_DEFAULTS else 3
+    )
     # Cooldown after successful activation (avoid re-checking same node immediately)
-    activation_cooldown_seconds: int = 600  # 10 minutes
+    activation_cooldown_seconds: int = (
+        ClusterWatchdogDefaults.ACTIVATION_COOLDOWN if HAS_CENTRALIZED_DEFAULTS else 600
+    )
     # SSH timeout for node checks
-    ssh_timeout_seconds: int = 30
+    ssh_timeout_seconds: int = (
+        ClusterWatchdogDefaults.SSH_TIMEOUT if HAS_CENTRALIZED_DEFAULTS else 30
+    )
     # Max nodes to activate per cycle (avoid overwhelming cluster)
-    max_activations_per_cycle: int = 10
+    max_activations_per_cycle: int = (
+        ClusterWatchdogDefaults.MAX_ACTIVATIONS_PER_CYCLE if HAS_CENTRALIZED_DEFAULTS else 10
+    )
     # Board/player configs to cycle through
     selfplay_configs: list[tuple[str, int]] = field(default_factory=lambda: [
         ("hex8", 2),

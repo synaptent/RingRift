@@ -676,16 +676,21 @@ class UnifiedIdleShutdownDaemon:
 
 
 # Factory functions for backward compatibility
-def create_lambda_idle_daemon() -> UnifiedIdleShutdownDaemon:
-    """Create a Lambda idle shutdown daemon with Lambda-specific defaults."""
-    try:
-        from app.coordination.providers.lambda_provider import LambdaProvider
-        return UnifiedIdleShutdownDaemon(
-            provider=LambdaProvider(),
-            config=IdleShutdownConfig.for_provider("lambda"),
-        )
-    except ImportError:
-        raise ImportError("Lambda provider not available")
+def create_lambda_idle_daemon() -> UnifiedIdleShutdownDaemon | None:
+    """Create a Lambda idle shutdown daemon with Lambda-specific defaults.
+
+    NOTE: Lambda Labs account was terminated December 2025. This function
+    now returns None with a warning. Retained for backward compatibility.
+    """
+    import warnings
+    warnings.warn(
+        "Lambda Labs account terminated December 2025. "
+        "create_lambda_idle_daemon() returns None. Use create_vast_idle_daemon() "
+        "or create_runpod_idle_daemon() for active providers.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return None
 
 
 def create_vast_idle_daemon() -> UnifiedIdleShutdownDaemon:

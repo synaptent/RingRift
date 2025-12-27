@@ -272,6 +272,7 @@ Update this section as tests are added:
 | 2025-12-27 | job_reaper.py            | 45          | 85%        |
 | 2025-12-27 | daemon_adapters.py       | 43          | 80%        |
 | 2025-12-27 | npz_validation.py        | 45          | 95%        |
+| 2025-12-27 | transfer_verification.py | 43          | 90%        |
 
 ---
 

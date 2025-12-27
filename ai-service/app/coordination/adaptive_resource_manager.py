@@ -42,20 +42,23 @@ except ImportError:
 
 
 # ============================================
-# Configuration
+# Configuration (December 2025: centralized defaults)
 # ============================================
 
-# Thresholds (percentage)
-DISK_WARNING_THRESHOLD = 85
-DISK_CRITICAL_THRESHOLD = 92
-DISK_CLEANUP_THRESHOLD = 90
-MEMORY_WARNING_THRESHOLD = 85
-MEMORY_CRITICAL_THRESHOLD = 95
+# Import centralized defaults
+from app.config.coordination_defaults import ResourceManagerDefaults
 
-# Check intervals (seconds)
-CHECK_INTERVAL = 300  # 5 minutes
-CLEANUP_COOLDOWN = 1800  # 30 minutes between cleanups
-AGGREGATION_INTERVAL = 600  # 10 minutes
+# Thresholds (percentage) - from centralized config
+DISK_WARNING_THRESHOLD = ResourceManagerDefaults.DISK_WARNING_THRESHOLD
+DISK_CRITICAL_THRESHOLD = ResourceManagerDefaults.DISK_CRITICAL_THRESHOLD
+DISK_CLEANUP_THRESHOLD = ResourceManagerDefaults.DISK_CLEANUP_THRESHOLD
+MEMORY_WARNING_THRESHOLD = ResourceManagerDefaults.MEMORY_WARNING_THRESHOLD
+MEMORY_CRITICAL_THRESHOLD = ResourceManagerDefaults.MEMORY_CRITICAL_THRESHOLD
+
+# Check intervals (seconds) - from centralized config
+CHECK_INTERVAL = ResourceManagerDefaults.CHECK_INTERVAL  # 5 minutes
+CLEANUP_COOLDOWN = ResourceManagerDefaults.CLEANUP_COOLDOWN  # 30 minutes between cleanups
+AGGREGATION_INTERVAL = ResourceManagerDefaults.AGGREGATION_INTERVAL  # 10 minutes
 
 # Cleanup settings
 MIN_FILE_AGE_HOURS = 24  # Only clean files older than 24 hours
@@ -563,7 +566,7 @@ class AdaptiveResourceManager:
 
         return results
 
-    async def run(self):
+    async def run(self) -> None:
         """Main monitoring loop."""
         self.running = True
         logger.info("Adaptive Resource Manager starting")
@@ -585,7 +588,7 @@ class AdaptiveResourceManager:
 
         logger.info("Adaptive Resource Manager stopped")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the manager."""
         self.running = False
 

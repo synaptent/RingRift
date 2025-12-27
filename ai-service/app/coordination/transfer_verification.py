@@ -529,6 +529,56 @@ class TransferVerifier:
             ),
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health check result for CoordinatorProtocol compliance.
+
+        December 2025: Added for unified daemon health monitoring.
+        Enables TransferVerifier to be monitored by DaemonManager.
+
+        Returns:
+            HealthCheckResult with verification health status
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        try:
+            stats = self.get_stats()
+
+            # Health criteria:
+            # - Verification rate > 95% is healthy
+            # - Verification rate 80-95% is degraded
+            # - Verification rate < 80% or too many quarantined files is unhealthy
+            verification_rate = stats.get("verification_rate", 1.0)
+            quarantine_count = stats.get("quarantine_count", 0)
+
+            if verification_rate >= 0.95 and quarantine_count < 100:
+                status = CoordinatorStatus.RUNNING
+                healthy = True
+                message = f"TransferVerifier healthy: {verification_rate:.1%} verification rate"
+            elif verification_rate >= 0.80:
+                status = CoordinatorStatus.DEGRADED
+                healthy = True
+                message = f"TransferVerifier degraded: {verification_rate:.1%} verification rate"
+            else:
+                status = CoordinatorStatus.ERROR
+                healthy = False
+                message = f"TransferVerifier unhealthy: {verification_rate:.1%} rate, {quarantine_count} quarantined"
+
+            return HealthCheckResult(
+                healthy=healthy,
+                status=status,
+                message=message,
+                details=stats,
+            )
+
+        except Exception as e:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"TransferVerifier health check failed: {e}",
+            )
+
 
 # =============================================================================
 # Module-level convenience functions

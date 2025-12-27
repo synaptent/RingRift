@@ -974,6 +974,8 @@ def train_model(
     # Checksum Verification (December 2025)
     # ==========================================================================
     # Verify embedded checksums to detect file corruption
+    # Skip checksum verification for large files (>500MB) to avoid memory issues
+    CHECKSUM_SIZE_LIMIT_MB = 500
     if validate_data and HAS_CHECKSUM_VERIFICATION and not use_streaming:
         # Compute paths for checksum verification (self-contained)
         checksum_paths = []
@@ -988,6 +990,12 @@ def train_model(
 
             checksum_failed = False
             for path in checksum_paths:
+                # Skip checksum verification for large files (>500MB)
+                file_size_mb = os.path.getsize(path) / (1024 * 1024)
+                if file_size_mb > CHECKSUM_SIZE_LIMIT_MB:
+                    if not distributed or is_main_process():
+                        logger.info(f"  ○ {path}: skipping checksum (file size {file_size_mb:.0f}MB > {CHECKSUM_SIZE_LIMIT_MB}MB limit)")
+                    continue
                 all_valid, computed, errors = verify_npz_checksums(path)
                 if not distributed or is_main_process():
                     if all_valid and not errors:

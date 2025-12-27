@@ -895,6 +895,100 @@ async def _emit_model_distribution_failed(
         logger.debug(f"[P2P Event] Failed to emit MODEL_DISTRIBUTION_FAILED: {e}")
 
 
+# =============================================================================
+# Batch Event Helpers (December 27, 2025)
+# P0: Pipeline coordination requires batch start/completion events
+# =============================================================================
+
+
+async def _emit_batch_scheduled(
+    batch_id: str,
+    batch_type: str,
+    config_key: str,
+    job_count: int,
+    target_nodes: list[str],
+    reason: str = "normal",
+    source: str = "p2p_orchestrator",
+) -> None:
+    """Safely emit BATCH_SCHEDULED event when a batch of jobs is scheduled.
+
+    December 27, 2025: P0 pipeline coordination fix.
+    Enables DataPipelineOrchestrator to track batch operations.
+
+    Args:
+        batch_id: Unique batch identifier
+        batch_type: Type of batch ("selfplay", "training", "tournament")
+        config_key: Configuration key (e.g., "hex8_2p")
+        job_count: Number of jobs in the batch
+        target_nodes: List of node IDs selected for dispatch
+        reason: Why the batch was scheduled
+        source: Caller module
+    """
+    try:
+        from app.distributed.data_events import emit_batch_scheduled
+        await emit_batch_scheduled(
+            batch_id=batch_id,
+            batch_type=batch_type,
+            config_key=config_key,
+            job_count=job_count,
+            target_nodes=target_nodes,
+            reason=reason,
+            source=source,
+        )
+        logger.debug(
+            f"[P2P Event] Emitted BATCH_SCHEDULED: {batch_type}/{config_key} "
+            f"({job_count} jobs to {len(target_nodes)} nodes)"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except (AttributeError, RuntimeError, TypeError) as e:
+        logger.debug(f"[P2P Event] Failed to emit BATCH_SCHEDULED: {e}")
+
+
+async def _emit_batch_dispatched(
+    batch_id: str,
+    batch_type: str,
+    config_key: str,
+    jobs_dispatched: int,
+    jobs_failed: int = 0,
+    target_nodes: list[str] | None = None,
+    source: str = "p2p_orchestrator",
+) -> None:
+    """Safely emit BATCH_DISPATCHED event when batch jobs are sent to nodes.
+
+    December 27, 2025: P0 pipeline coordination fix.
+    Enables DataPipelineOrchestrator to track batch completion.
+
+    Args:
+        batch_id: Unique batch identifier (same as BATCH_SCHEDULED)
+        batch_type: Type of batch ("selfplay", "training", "tournament")
+        config_key: Configuration key (e.g., "hex8_2p")
+        jobs_dispatched: Number of jobs successfully dispatched
+        jobs_failed: Number of jobs that failed to dispatch
+        target_nodes: List of node IDs that received jobs
+        source: Caller module
+    """
+    try:
+        from app.distributed.data_events import emit_batch_dispatched
+        await emit_batch_dispatched(
+            batch_id=batch_id,
+            batch_type=batch_type,
+            config_key=config_key,
+            jobs_dispatched=jobs_dispatched,
+            jobs_failed=jobs_failed,
+            target_nodes=target_nodes,
+            source=source,
+        )
+        logger.debug(
+            f"[P2P Event] Emitted BATCH_DISPATCHED: {batch_type}/{config_key} "
+            f"({jobs_dispatched} dispatched, {jobs_failed} failed)"
+        )
+    except ImportError:
+        pass  # Data events module not available
+    except (AttributeError, RuntimeError, TypeError) as e:
+        logger.debug(f"[P2P Event] Failed to emit BATCH_DISPATCHED: {e}")
+
+
 async def _emit_model_promoted(
     model_id: str,
     config_key: str,
@@ -24333,6 +24427,21 @@ print(json.dumps({{
             needed = min(target_selfplay - current_jobs, 3)  # Max 3 per cycle
             logger.info(f"LOCAL: Starting {needed} selfplay job(s) ({current_jobs}/{target_selfplay})")
 
+            # Dec 27, 2025: Generate batch ID and emit BATCH_SCHEDULED
+            batch_id = f"selfplay_{self.node_id}_{int(time.time())}"
+            first_config = self.selfplay_scheduler.pick_weighted_config(node)
+            config_key = f"{first_config['board_type']}_{first_config['num_players']}p" if first_config else "mixed"
+            await _emit_batch_scheduled(
+                batch_id=batch_id,
+                batch_type="selfplay",
+                config_key=config_key,
+                job_count=needed,
+                target_nodes=[self.node_id],
+                reason="local_job_management",
+            )
+
+            jobs_dispatched = 0
+            jobs_failed = 0
             for _ in range(needed):
                 try:
                     # Pick a config weighted by priority (using SelfplayScheduler manager)
@@ -24346,9 +24455,23 @@ print(json.dumps({{
                         )
                         if job:
                             changes += 1
+                            jobs_dispatched += 1
+                        else:
+                            jobs_failed += 1
                 except Exception as e:  # noqa: BLE001
                     logger.info(f"LOCAL: Failed to start selfplay: {e}")
+                    jobs_failed += 1
                     break
+
+            # Dec 27, 2025: Emit BATCH_DISPATCHED after loop completes
+            await _emit_batch_dispatched(
+                batch_id=batch_id,
+                batch_type="selfplay",
+                config_key=config_key,
+                jobs_dispatched=jobs_dispatched,
+                jobs_failed=jobs_failed,
+                target_nodes=[self.node_id],
+            )
 
         # Stop jobs if way over target (2x or more)
         elif current_jobs > target_selfplay * 2:
@@ -24422,6 +24545,21 @@ print(json.dumps({{
 
                 logger.info(f"LOCAL: {gpu_percent:.0f}% GPU util, starting {new_jobs} diverse/hybrid selfplay job(s)")
 
+                # Dec 27, 2025: Generate batch ID and emit BATCH_SCHEDULED
+                batch_id = f"gpu_selfplay_{self.node_id}_{int(time.time())}"
+                first_config = self.selfplay_scheduler.pick_weighted_config(self.self_info)
+                config_key = f"{first_config['board_type']}_{first_config['num_players']}p" if first_config else "mixed"
+                await _emit_batch_scheduled(
+                    batch_id=batch_id,
+                    batch_type="selfplay",
+                    config_key=config_key,
+                    job_count=new_jobs,
+                    target_nodes=[self.node_id],
+                    reason="gpu_auto_scale",
+                )
+
+                gpu_jobs_dispatched = 0
+                gpu_jobs_failed = 0
                 for _ in range(new_jobs):
                     try:
                         config = self.selfplay_scheduler.pick_weighted_config(self.self_info)
@@ -24435,9 +24573,23 @@ print(json.dumps({{
                             )
                             if job:
                                 started += 1
+                                gpu_jobs_dispatched += 1
+                            else:
+                                gpu_jobs_failed += 1
                     except Exception as e:  # noqa: BLE001
                         logger.info(f"LOCAL: Failed to start diverse selfplay: {e}")
+                        gpu_jobs_failed += 1
                         break
+
+                # Dec 27, 2025: Emit BATCH_DISPATCHED after loop completes
+                await _emit_batch_dispatched(
+                    batch_id=batch_id,
+                    batch_type="selfplay",
+                    config_key=config_key,
+                    jobs_dispatched=gpu_jobs_dispatched,
+                    jobs_failed=gpu_jobs_failed,
+                    target_nodes=[self.node_id],
+                )
 
                 self._local_gpu_idle_since = now  # Reset after action
         else:
@@ -27230,18 +27382,26 @@ print(json.dumps({{
         # Phase 4: Start extracted loops via LoopManager (Dec 2025)
         # These 5 loops now ONLY run via LoopManager (inline versions removed):
         # - EloSyncLoop, IdleDetectionLoop, AutoScalingLoop, JobReaperLoop, QueuePopulatorLoop
-        loop_manager_started = False
+        job_reaper_started = False
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()
             if loop_manager is not None:
-                await loop_manager.start_all()
-                loop_manager_started = True
-                logger.info(f"LoopManager: started {len(loop_manager.loop_names)} extracted loops")
+                # Dec 27, 2025: start_all() now returns dict of {loop_name: started_successfully}
+                # Check if job_reaper specifically started to avoid duplicate reapers
+                startup_results = await loop_manager.start_all()
+                job_reaper_started = startup_results.get("job_reaper", False)
+                started_count = sum(1 for v in startup_results.values() if v)
+                logger.info(
+                    f"LoopManager: started {started_count}/{len(startup_results)} loops, "
+                    f"job_reaper={'running' if job_reaper_started else 'FAILED'}"
+                )
 
         # Phase 4.1: Inline job reaper fallback (Dec 27, 2025)
-        # If LoopManager failed to start or is disabled, run inline fallback for job cleanup
+        # If JobReaperLoop specifically failed to start, run inline fallback for job cleanup
         # This ensures stuck jobs get cleaned up even if the modular loop system fails
-        if JOB_REAPER_FALLBACK_ENABLED and not loop_manager_started:
+        # Dec 27, 2025: Fixed race condition - now checks job_reaper loop status, not just
+        # whether LoopManager.start_all() completed (which could mask loop startup failures)
+        if JOB_REAPER_FALLBACK_ENABLED and not job_reaper_started:
             logger.info("[JobReaper] LoopManager not available, starting inline fallback")
             tasks.append(
                 self._create_safe_task(

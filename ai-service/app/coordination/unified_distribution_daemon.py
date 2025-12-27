@@ -722,19 +722,34 @@ class UnifiedDistributionDaemon:
     async def _distribute_via_rsync(
         self, file_path: Path, target: dict[str, Any] | str, data_type: DataType
     ) -> bool:
-        """Distribute file via rsync."""
+        """Distribute file via rsync.
+
+        December 27, 2025: Added external storage routing.
+        Nodes with use_external_storage: true get files routed to their
+        configured storage_paths (e.g., mac-studio -> /Volumes/RingRift-Data).
+        """
         if isinstance(target, str):
             host = target
             user = "root"
             remote_path = "~/ringrift/ai-service"
             ssh_key = None
+            node_name = None
         else:
             host = target.get("host", "")
             user = target.get("user", target.get("ssh_user", "root"))
             remote_path = target.get("remote_path", "~/ringrift/ai-service")
             ssh_key = target.get("ssh_key")
+            node_name = target.get("node_id")
 
-        if data_type == DataType.MODEL:
+        # December 27, 2025: Check for external storage routing
+        # Nodes with use_external_storage get files routed to OWC/external drives
+        external_dest = self._get_external_storage_dest(
+            host, node_name, data_type, user, remote_path
+        )
+
+        if external_dest:
+            remote_dest = external_dest
+        elif data_type == DataType.MODEL:
             remote_dest = f"{user}@{host}:{remote_path}/models/"
         else:
             remote_dest = f"{user}@{host}:{remote_path}/data/training/"
@@ -791,6 +806,78 @@ class UnifiedDistributionDaemon:
         except (OSError, asyncio.TimeoutError, ConnectionError, RuntimeError) as e:
             logger.debug(f"BitTorrent distribution failed: {e}")
             return False
+
+    # =========================================================================
+    # External Storage Routing (December 27, 2025)
+    # =========================================================================
+
+    def _get_external_storage_dest(
+        self,
+        host: str,
+        node_name: str | None,
+        data_type: DataType,
+        user: str,
+        fallback_path: str,
+    ) -> str | None:
+        """Get external storage destination for nodes with use_external_storage.
+
+        December 27, 2025: Supports routing to OWC/external drives on coordinator
+        nodes like mac-studio.
+
+        Args:
+            host: Target host IP or hostname
+            node_name: Node name from cluster config (optional)
+            data_type: Type of data being distributed
+            user: SSH user
+            fallback_path: Default ringrift path if no external storage
+
+        Returns:
+            Full rsync destination path (user@host:path/) or None if no external storage
+        """
+        try:
+            from app.config.cluster_config import get_cluster_nodes
+
+            nodes = get_cluster_nodes()
+
+            # Find node by name or IP
+            target_node = None
+            if node_name and node_name in nodes:
+                target_node = nodes[node_name]
+            else:
+                # Try to match by IP
+                for n in nodes.values():
+                    if n.best_ip == host or n.ssh_host == host:
+                        target_node = n
+                        break
+
+            if not target_node:
+                return None
+
+            # Check if external storage is configured
+            if not target_node.use_external_storage:
+                return None
+
+            # Get storage path for this data type
+            storage_type = "models" if data_type == DataType.MODEL else "training_data"
+            storage_path = target_node.get_storage_path(storage_type)
+
+            if not storage_path:
+                return None
+
+            # Use node's configured user if available
+            actual_user = target_node.ssh_user or user
+            actual_host = target_node.best_ip or host
+
+            logger.debug(
+                f"[UnifiedDistributionDaemon] Routing {data_type.name} to "
+                f"external storage: {actual_host}:{storage_path}"
+            )
+
+            return f"{actual_user}@{actual_host}:{storage_path}/"
+
+        except (ImportError, KeyError, AttributeError, TypeError) as e:
+            logger.debug(f"External storage lookup failed: {e}")
+            return None
 
     # =========================================================================
     # Checksum Verification

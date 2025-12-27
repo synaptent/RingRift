@@ -674,18 +674,22 @@ async def create_adaptive_resources() -> None:
 
 
 async def create_lambda_idle() -> None:
-    """Create and run Lambda idle shutdown daemon (December 2025)."""
-    try:
-        from app.coordination.unified_idle_shutdown_daemon import (
-            create_lambda_idle_daemon,
-        )
+    """Create and run Lambda idle shutdown daemon.
 
-        daemon = create_lambda_idle_daemon()
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"Lambda idle daemon not available: {e}")
-        raise
+    NOTE: Lambda Labs account was terminated December 2025. This runner
+    now logs a warning and returns immediately without starting any daemon.
+    Retained for backward compatibility with existing daemon registrations.
+    """
+    from app.coordination.unified_idle_shutdown_daemon import (
+        create_lambda_idle_daemon,
+    )
+
+    daemon = create_lambda_idle_daemon()  # Returns None with deprecation warning
+    if daemon is None:
+        logger.info("Lambda idle daemon skipped (Lambda Labs account terminated Dec 2025)")
+        return
+    await daemon.start()
+    await _wait_for_daemon(daemon)
 
 
 async def create_vast_idle() -> None:

@@ -2,9 +2,10 @@
 
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
-**Last updated:** December 27, 2025 (Session 3)
-**Total Daemon Types:** 65 registered runners (see `daemon_runners.py`)
+**Last updated:** December 27, 2025 (Session 4 - Verification)
+**Total Daemon Types:** 66 (65 in `daemon_runners.py` + 1 inline in `daemon_manager.py`)
 **Startup Order:** 18 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
+**Dependencies:** All 66 daemons have entries in `DAEMON_DEPENDENCIES`
 
 > **Architecture Note (December 2025):** Factory methods have been extracted from `daemon_manager.py` to `daemon_runners.py`. Factory methods named `create_*()` are in `daemon_runners.py`; methods named `_create_*()` remain in `daemon_manager.py` for legacy or special cases.
 
@@ -904,10 +905,67 @@ class MyHandler(BaseEventHandler):
 
 ---
 
+## Infrastructure Verification (December 2025)
+
+Automated verification confirmed the following architecture is properly configured:
+
+### Daemon Coverage
+
+| Metric                         | Value | Status                |
+| ------------------------------ | ----- | --------------------- |
+| Total DaemonType values        | 66    | ✓ All accounted       |
+| Runners in `daemon_runners.py` | 65    | ✓ Complete            |
+| Inline runners (HEALTH_SERVER) | 1     | ✓ Needs `self` access |
+| Missing runners                | 0     | ✓ None                |
+
+### Startup Order
+
+| Metric                             | Value  | Notes                                  |
+| ---------------------------------- | ------ | -------------------------------------- |
+| Daemons in `DAEMON_STARTUP_ORDER`  | 18     | Critical path daemons                  |
+| Daemons with `DAEMON_DEPENDENCIES` | 66     | All have deps defined                  |
+| Order/Dependency consistency       | Passes | `validate_startup_order_consistency()` |
+
+### P2P Event Subscriptions
+
+The P2P orchestrator subscribes to 18+ events across three subscription methods:
+
+- `_subscribe_to_daemon_events`: DAEMON_STATUS_CHANGED
+- `_subscribe_to_feedback_signals`: QUALITY_DEGRADED, ELO_VELOCITY_CHANGED, EVALUATION_COMPLETED, PLATEAU_DETECTED, EXPLORATION_BOOST, PROMOTION_FAILED, HANDLER_FAILED
+- `_subscribe_to_manager_events`: TRAINING_STARTED, TRAINING_COMPLETED, TASK_SPAWNED, TASK_COMPLETED, TASK_FAILED, DATA_SYNC_STARTED, DATA_SYNC_COMPLETED, NODE_UNHEALTHY, NODE_RECOVERED, P2P_CLUSTER_HEALTHY, P2P_CLUSTER_UNHEALTHY
+
+### Circular Dependency Status
+
+Previously identified circular dependencies have been resolved:
+
+| Modules                                          | Resolution                        | Status  |
+| ------------------------------------------------ | --------------------------------- | ------- |
+| `selfplay_scheduler` ↔ `unified_queue_populator` | TYPE_CHECKING guard + lazy import | ✓ Fixed |
+
+### Verification Commands
+
+```bash
+# Verify all daemons have runners
+cd ai-service && PYTHONPATH=. python3 -c "
+from app.coordination.daemon_types import DaemonType
+from app.coordination.daemon_runners import get_all_runners
+print(f'Total: {len(DaemonType)}, Runners: {len(get_all_runners())}')
+"
+
+# Verify startup order consistency
+cd ai-service && PYTHONPATH=. python3 -c "
+from app.coordination.daemon_types import validate_startup_order_consistency
+valid, errors = validate_startup_order_consistency()
+print('✓ Valid' if valid else f'✗ Errors: {errors}')
+"
+```
+
+---
+
 ## See Also
 
 - `daemon_manager.py` - Main daemon lifecycle management
-- `daemon_runners.py` - 65+ async runner functions for daemon types
+- `daemon_runners.py` - 65 async runner functions for daemon types
 - `daemon_types.py` - Type definitions and enums
 - `daemon_factory.py` - Centralized daemon creation factory
 - `daemon_adapters.py` - Daemon wrappers for legacy code

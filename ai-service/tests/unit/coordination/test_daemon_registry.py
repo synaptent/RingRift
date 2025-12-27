@@ -286,3 +286,137 @@ class TestDependencyChains:
 
         assert DaemonType.EVENT_ROUTER in spec.depends_on
         assert DaemonType.DATA_PIPELINE in spec.depends_on
+
+
+class TestRunnerValidation:
+    """Test runner name format and existence."""
+
+    def test_all_runner_names_start_with_create(self):
+        """Test that all runner names follow create_* convention."""
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            assert spec.runner_name.startswith("create_"), (
+                f"{daemon_type.name} runner '{spec.runner_name}' "
+                f"should start with 'create_'"
+            )
+
+    def test_all_runners_exist(self):
+        """Test that all runner functions exist in daemon_runners."""
+        from app.coordination import daemon_runners
+
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            assert hasattr(daemon_runners, spec.runner_name), (
+                f"{daemon_type.name} runner '{spec.runner_name}' "
+                f"not found in daemon_runners module"
+            )
+
+    def test_all_runners_are_callable(self):
+        """Test that all runners are callable functions."""
+        from app.coordination import daemon_runners
+
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            runner = getattr(daemon_runners, spec.runner_name, None)
+            if runner is not None:
+                assert callable(runner), (
+                    f"{daemon_type.name} runner '{spec.runner_name}' is not callable"
+                )
+
+
+class TestCircularDependencies:
+    """Test for circular dependency detection."""
+
+    def test_no_direct_circular_dependencies(self):
+        """Test that no daemon directly depends on its dependent."""
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            for dep in spec.depends_on:
+                if dep in DAEMON_REGISTRY:
+                    dep_spec = DAEMON_REGISTRY[dep]
+                    assert daemon_type not in dep_spec.depends_on, (
+                        f"Circular dependency: {daemon_type.name} <-> {dep.name}"
+                    )
+
+    def test_no_transitive_circular_dependencies(self):
+        """Test that no transitive circular dependencies exist.
+
+        Uses depth-first search to detect cycles in the dependency graph.
+        """
+        def has_cycle(start: DaemonType, visited: set, path: set) -> bool:
+            if start in path:
+                return True
+            if start in visited:
+                return False
+            if start not in DAEMON_REGISTRY:
+                return False  # External dependency
+
+            visited.add(start)
+            path.add(start)
+
+            for dep in DAEMON_REGISTRY[start].depends_on:
+                if has_cycle(dep, visited, path):
+                    return True
+
+            path.remove(start)
+            return False
+
+        for daemon_type in DAEMON_REGISTRY:
+            assert not has_cycle(daemon_type, set(), set()), (
+                f"Transitive circular dependency detected starting from {daemon_type.name}"
+            )
+
+
+class TestCategoryDistribution:
+    """Test category distribution and balance."""
+
+    def test_each_category_has_at_least_one_daemon(self):
+        """Test that no category is empty."""
+        for category in get_categories():
+            daemons = get_daemons_by_category(category)
+            assert len(daemons) >= 1, f"Category '{category}' has no daemons"
+
+    def test_category_counts(self):
+        """Test expected category sizes are reasonable."""
+        category_counts = {}
+        for spec in DAEMON_REGISTRY.values():
+            category_counts[spec.category] = category_counts.get(spec.category, 0) + 1
+
+        # Should have at least 5 categories
+        assert len(category_counts) >= 5
+
+        # No single category should have more than 50% of daemons
+        total = len(DAEMON_REGISTRY)
+        for category, count in category_counts.items():
+            assert count < total * 0.5, (
+                f"Category '{category}' has {count}/{total} daemons (>50%)"
+            )
+
+    def test_known_categories(self):
+        """Test that expected categories exist."""
+        categories = get_categories()
+        expected = ["event", "health", "pipeline", "sync", "evaluation", "distribution"]
+        for cat in expected:
+            assert cat in categories, f"Expected category '{cat}' not found"
+
+
+class TestDaemonSpecAttributes:
+    """Test DaemonSpec attribute handling."""
+
+    def test_auto_restart_defaults(self):
+        """Test that auto_restart defaults to True."""
+        for spec in DAEMON_REGISTRY.values():
+            # Default is True, so most should be True
+            # Just verify the attribute exists and is boolean
+            assert isinstance(spec.auto_restart, bool)
+
+    def test_max_restarts_positive(self):
+        """Test that max_restarts is always positive."""
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            assert spec.max_restarts > 0, (
+                f"{daemon_type.name} has non-positive max_restarts: {spec.max_restarts}"
+            )
+
+    def test_health_check_interval_valid(self):
+        """Test health_check_interval is None or positive."""
+        for daemon_type, spec in DAEMON_REGISTRY.items():
+            if spec.health_check_interval is not None:
+                assert spec.health_check_interval > 0, (
+                    f"{daemon_type.name} has non-positive health_check_interval"
+                )

@@ -41,23 +41,38 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+# Import centralized defaults (December 2025)
+try:
+    from app.config.coordination_defaults import OrphanDetectionDefaults
+    HAS_CENTRALIZED_DEFAULTS = True
+except ImportError:
+    HAS_CENTRALIZED_DEFAULTS = False
+
+
 @dataclass
 class OrphanDetectionConfig:
     """Configuration for orphan detection daemon."""
 
-    # Scan settings (Phase 3B.3: Dec 2025 - reduced from 30 min to 5 min)
-    # See app.config.timeout_config.TIMEOUTS.ORPHAN_SCAN_INTERVAL
-    scan_interval_seconds: float = 300.0  # 5 minutes
+    # Scan settings (December 2025: now from centralized defaults)
+    scan_interval_seconds: float = (
+        OrphanDetectionDefaults.SCAN_INTERVAL if HAS_CENTRALIZED_DEFAULTS else 300.0
+    )
     games_dir: str = "data/games"
 
     # Auto-registration
     auto_register_orphans: bool = True
-    min_games_to_register: int = 1  # Minimum games in DB to auto-register
+    min_games_to_register: int = (
+        OrphanDetectionDefaults.MIN_GAMES_TO_REGISTER if HAS_CENTRALIZED_DEFAULTS else 1
+    )
 
     # Cleanup settings
     cleanup_enabled: bool = False  # Don't delete by default
-    min_age_before_cleanup_hours: float = 24.0
-    max_orphan_count_before_alert: int = 100
+    min_age_before_cleanup_hours: float = (
+        OrphanDetectionDefaults.MIN_AGE_BEFORE_CLEANUP_HOURS if HAS_CENTRALIZED_DEFAULTS else 24.0
+    )
+    max_orphan_count_before_alert: int = (
+        OrphanDetectionDefaults.MAX_ORPHAN_COUNT_BEFORE_ALERT if HAS_CENTRALIZED_DEFAULTS else 100
+    )
 
     # Event settings
     emit_detection_event: bool = True

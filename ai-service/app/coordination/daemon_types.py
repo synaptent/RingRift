@@ -536,6 +536,8 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Disk space management
     DaemonType.DISK_SPACE_MANAGER: {DaemonType.EVENT_ROUTER},
+    # Coordinator disk manager (Dec 27, 2025) - specialized for coordinator-only nodes
+    DaemonType.COORDINATOR_DISK_MANAGER: {DaemonType.EVENT_ROUTER},
 
     # Provider-specific idle daemons
     DaemonType.VAST_IDLE: {DaemonType.EVENT_ROUTER},

@@ -3,6 +3,8 @@
 Provides HTTP endpoints for Raft consensus status, work queue, job assignments,
 and distributed locking.
 
+December 2025: Migrated to use BaseP2PHandler for consistent response formatting.
+
 Usage:
     class P2POrchestrator(RaftHandlersMixin, ...):
         pass
@@ -22,6 +24,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
+
+from scripts.p2p.handlers.base import BaseP2PHandler
 
 if TYPE_CHECKING:
     pass
@@ -53,12 +57,14 @@ except ImportError:
     CONSENSUS_MODE = "bully"
 
 
-class RaftHandlersMixin:
+class RaftHandlersMixin(BaseP2PHandler):
     """Mixin providing Raft HTTP handlers.
 
+    Inherits from BaseP2PHandler for consistent response formatting.
+
     Requires the implementing class to have:
-    - node_id: str
-    - auth_token: str | None
+    - node_id: str (from BaseP2PHandler)
+    - auth_token: str | None (from BaseP2PHandler)
     - _raft_work_queue: ReplicatedWorkQueue | None
     - _raft_job_assignments: ReplicatedJobAssignments | None
     - _raft_initialized: bool
@@ -67,8 +73,6 @@ class RaftHandlersMixin:
     """
 
     # Type hints for IDE support
-    node_id: str
-    auth_token: str | None
     _raft_work_queue: Any  # Optional[ReplicatedWorkQueue]
     _raft_job_assignments: Any  # Optional[ReplicatedJobAssignments]
     _raft_initialized: bool
@@ -148,7 +152,7 @@ class RaftHandlersMixin:
                 else:
                     cluster_health = "unavailable"
 
-            response = {
+            return self.json_response({
                 "node_id": self.node_id,
                 "raft_enabled": RAFT_ENABLED,
                 "pysyncobj_available": PYSYNCOBJ_AVAILABLE,
@@ -161,20 +165,17 @@ class RaftHandlersMixin:
                 "job_assignments": job_assignments_status,
                 "cluster_health": cluster_health,
                 "timestamp": time.time(),
-            }
-
-            return web.json_response(response)
+            })
 
         except Exception as e:
             logger.error(f"Error in handle_raft_status: {e}", exc_info=True)
-            return web.json_response(
-                {
-                    "error": str(e),
-                    "node_id": self.node_id,
+            return self.error_response(
+                str(e),
+                status=500,
+                details={
                     "raft_enabled": RAFT_ENABLED,
                     "pysyncobj_available": PYSYNCOBJ_AVAILABLE,
                 },
-                status=500,
             )
 
     async def handle_raft_work_queue(self, request: web.Request) -> web.Response:
@@ -206,16 +207,14 @@ class RaftHandlersMixin:
             raft_initialized = getattr(self, "_raft_initialized", False)
 
             if not RAFT_ENABLED or not raft_initialized or work_queue is None:
-                return web.json_response(
-                    {
-                        "node_id": self.node_id,
-                        "enabled": False,
-                        "is_ready": False,
-                        "stats": {},
-                        "message": "Raft work queue not enabled or not initialized",
-                        "timestamp": time.time(),
-                    }
-                )
+                return self.json_response({
+                    "node_id": self.node_id,
+                    "enabled": False,
+                    "is_ready": False,
+                    "stats": {},
+                    "message": "Raft work queue not enabled or not initialized",
+                    "timestamp": time.time(),
+                })
 
             # Get queue statistics
             try:
@@ -224,7 +223,7 @@ class RaftHandlersMixin:
                 logger.warning(f"Error getting work queue stats: {e}")
                 stats = {"error": str(e)}
 
-            response = {
+            return self.json_response({
                 "node_id": self.node_id,
                 "enabled": True,
                 "is_ready": work_queue.is_ready,
@@ -232,19 +231,14 @@ class RaftHandlersMixin:
                 "leader_address": work_queue.leader_address,
                 "stats": stats,
                 "timestamp": time.time(),
-            }
-
-            return web.json_response(response)
+            })
 
         except Exception as e:
             logger.error(f"Error in handle_raft_work_queue: {e}", exc_info=True)
-            return web.json_response(
-                {
-                    "error": str(e),
-                    "node_id": self.node_id,
-                    "enabled": RAFT_ENABLED,
-                },
+            return self.error_response(
+                str(e),
                 status=500,
+                details={"enabled": RAFT_ENABLED},
             )
 
     async def handle_raft_jobs(self, request: web.Request) -> web.Response:
@@ -279,16 +273,14 @@ class RaftHandlersMixin:
             raft_initialized = getattr(self, "_raft_initialized", False)
 
             if not RAFT_ENABLED or not raft_initialized or job_assignments is None:
-                return web.json_response(
-                    {
-                        "node_id": self.node_id,
-                        "enabled": False,
-                        "is_ready": False,
-                        "stats": {},
-                        "message": "Raft job assignments not enabled or not initialized",
-                        "timestamp": time.time(),
-                    }
-                )
+                return self.json_response({
+                    "node_id": self.node_id,
+                    "enabled": False,
+                    "is_ready": False,
+                    "stats": {},
+                    "message": "Raft job assignments not enabled or not initialized",
+                    "timestamp": time.time(),
+                })
 
             # Get assignment statistics
             try:
@@ -297,7 +289,7 @@ class RaftHandlersMixin:
                 logger.warning(f"Error getting job assignment stats: {e}")
                 stats = {"error": str(e)}
 
-            response = {
+            return self.json_response({
                 "node_id": self.node_id,
                 "enabled": True,
                 "is_ready": job_assignments.is_ready,
@@ -305,19 +297,14 @@ class RaftHandlersMixin:
                 "leader_address": job_assignments.leader_address,
                 "stats": stats,
                 "timestamp": time.time(),
-            }
-
-            return web.json_response(response)
+            })
 
         except Exception as e:
             logger.error(f"Error in handle_raft_jobs: {e}", exc_info=True)
-            return web.json_response(
-                {
-                    "error": str(e),
-                    "node_id": self.node_id,
-                    "enabled": RAFT_ENABLED,
-                },
+            return self.error_response(
+                str(e),
                 status=500,
+                details={"enabled": RAFT_ENABLED},
             )
 
     async def handle_raft_lock(self, request: web.Request) -> web.Response:
@@ -342,36 +329,30 @@ class RaftHandlersMixin:
             }
         """
         try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
+            if not self.check_auth(request):
+                return self.auth_error()
 
             lock_name = request.match_info.get("name", "")
             if not lock_name:
-                return web.json_response(
-                    {"error": "lock name required"}, status=400
-                )
+                return self.bad_request("lock name required")
 
             work_queue = getattr(self, "_raft_work_queue", None)
             raft_initialized = getattr(self, "_raft_initialized", False)
 
             if not RAFT_ENABLED or not raft_initialized or work_queue is None:
-                return web.json_response(
-                    {
-                        "acquired": False,
-                        "lock_name": lock_name,
-                        "error": "Raft not enabled or not initialized",
-                    },
+                return self.error_response(
+                    "Raft not enabled or not initialized",
                     status=503,
+                    error_code="RAFT_UNAVAILABLE",
+                    details={"acquired": False, "lock_name": lock_name},
                 )
 
             if not work_queue.is_ready:
-                return web.json_response(
-                    {
-                        "acquired": False,
-                        "lock_name": lock_name,
-                        "error": "Raft cluster not ready",
-                    },
+                return self.error_response(
+                    "Raft cluster not ready",
                     status=503,
+                    error_code="CLUSTER_NOT_READY",
+                    details={"acquired": False, "lock_name": lock_name},
                 )
 
             # Try to acquire lock via the lock manager
@@ -380,43 +361,33 @@ class RaftHandlersMixin:
                 # Access the internal lock manager
                 lock_manager = getattr(work_queue, "_ReplicatedWorkQueue__lock_manager", None)
                 if lock_manager is None:
-                    return web.json_response(
-                        {
-                            "acquired": False,
-                            "lock_name": lock_name,
-                            "error": "Lock manager not available",
-                        },
+                    return self.error_response(
+                        "Lock manager not available",
                         status=503,
+                        error_code="LOCK_MANAGER_UNAVAILABLE",
+                        details={"acquired": False, "lock_name": lock_name},
                     )
 
                 acquired = lock_manager.tryAcquire(lock_name, sync=True)
 
-                return web.json_response(
-                    {
-                        "acquired": acquired,
-                        "lock_name": lock_name,
-                        "holder": self.node_id if acquired else None,
-                        "timestamp": time.time(),
-                    }
-                )
+                return self.json_response({
+                    "acquired": acquired,
+                    "lock_name": lock_name,
+                    "holder": self.node_id if acquired else None,
+                    "timestamp": time.time(),
+                })
 
             except Exception as e:
                 logger.warning(f"Error acquiring lock {lock_name}: {e}")
-                return web.json_response(
-                    {
-                        "acquired": False,
-                        "lock_name": lock_name,
-                        "error": str(e),
-                    },
+                return self.error_response(
+                    str(e),
                     status=500,
+                    details={"acquired": False, "lock_name": lock_name},
                 )
 
         except Exception as e:
             logger.error(f"Error in handle_raft_lock: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500,
-            )
+            return self.error_response(str(e), status=500)
 
     async def handle_raft_unlock(self, request: web.Request) -> web.Response:
         """DELETE /raft/lock/{name} - Release a distributed lock.
@@ -434,75 +405,59 @@ class RaftHandlersMixin:
             }
         """
         try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
+            if not self.check_auth(request):
+                return self.auth_error()
 
             lock_name = request.match_info.get("name", "")
             if not lock_name:
-                return web.json_response(
-                    {"error": "lock name required"}, status=400
-                )
+                return self.bad_request("lock name required")
 
             work_queue = getattr(self, "_raft_work_queue", None)
             raft_initialized = getattr(self, "_raft_initialized", False)
 
             if not RAFT_ENABLED or not raft_initialized or work_queue is None:
-                return web.json_response(
-                    {
-                        "released": False,
-                        "lock_name": lock_name,
-                        "error": "Raft not enabled or not initialized",
-                    },
+                return self.error_response(
+                    "Raft not enabled or not initialized",
                     status=503,
+                    error_code="RAFT_UNAVAILABLE",
+                    details={"released": False, "lock_name": lock_name},
                 )
 
             if not work_queue.is_ready:
-                return web.json_response(
-                    {
-                        "released": False,
-                        "lock_name": lock_name,
-                        "error": "Raft cluster not ready",
-                    },
+                return self.error_response(
+                    "Raft cluster not ready",
                     status=503,
+                    error_code="CLUSTER_NOT_READY",
+                    details={"released": False, "lock_name": lock_name},
                 )
 
             # Try to release lock via the lock manager
             try:
                 lock_manager = getattr(work_queue, "_ReplicatedWorkQueue__lock_manager", None)
                 if lock_manager is None:
-                    return web.json_response(
-                        {
-                            "released": False,
-                            "lock_name": lock_name,
-                            "error": "Lock manager not available",
-                        },
+                    return self.error_response(
+                        "Lock manager not available",
                         status=503,
+                        error_code="LOCK_MANAGER_UNAVAILABLE",
+                        details={"released": False, "lock_name": lock_name},
                     )
 
                 lock_manager.release(lock_name)
 
-                return web.json_response(
-                    {
-                        "released": True,
-                        "lock_name": lock_name,
-                        "timestamp": time.time(),
-                    }
-                )
+                return self.json_response({
+                    "released": True,
+                    "lock_name": lock_name,
+                    "timestamp": time.time(),
+                })
 
             except Exception as e:
                 logger.warning(f"Error releasing lock {lock_name}: {e}")
-                return web.json_response(
-                    {
-                        "released": False,
-                        "lock_name": lock_name,
-                        "error": str(e),
-                    },
+                return self.error_response(
+                    str(e),
                     status=500,
+                    details={"released": False, "lock_name": lock_name},
                 )
 
         except Exception as e:
             logger.error(f"Error in handle_raft_unlock: {e}", exc_info=True)
-            return web.json_response(
-                {"error": str(e)},
-                status=500,
-            )
+            return self.error_response(str(e), status=500)

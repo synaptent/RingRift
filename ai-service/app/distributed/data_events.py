@@ -128,6 +128,10 @@ class DataEventType(Enum):
     SELFPLAY_RATE_CHANGED = "selfplay_rate_changed"  # Phase 19.3: Rate multiplier changed (>20%)
     SELFPLAY_ALLOCATION_UPDATED = "selfplay_allocation_updated"  # Dec 2025: Allocation changed (exploration boost, curriculum)
 
+    # Batch scheduling events (Dec 27, 2025 - P0 pipeline coordination fix)
+    BATCH_SCHEDULED = "batch_scheduled"  # Batch of jobs selected for dispatch
+    BATCH_DISPATCHED = "batch_dispatched"  # Batch of jobs sent to nodes
+
     # Optimization events
     CMAES_TRIGGERED = "cmaes_triggered"
     CMAES_COMPLETED = "cmaes_completed"
@@ -2443,6 +2447,88 @@ async def emit_idle_resource_detected(
             "gpu_memory_gb": gpu_memory_gb,
             "idle_duration_seconds": idle_duration_seconds,
             "recommended_config": recommended_config,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
+# Batch Scheduling Events (December 27, 2025)
+# =============================================================================
+# P0 fix for pipeline coordination - emits when batches are scheduled/dispatched
+
+
+async def emit_batch_scheduled(
+    batch_id: str,
+    batch_type: str,
+    config_key: str,
+    job_count: int,
+    target_nodes: list[str],
+    reason: str = "normal",
+    source: str = "selfplay_scheduler",
+) -> None:
+    """Emit a BATCH_SCHEDULED event when a batch of jobs is scheduled.
+
+    Used by SelfplayScheduler to signal when a batch of jobs has been selected
+    for dispatch. Enables pipeline coordination to track batch operations.
+
+    Args:
+        batch_id: Unique batch identifier
+        batch_type: Type of batch ("selfplay", "training", "tournament")
+        config_key: Configuration key (e.g., "hex8_2p")
+        job_count: Number of jobs in the batch
+        target_nodes: List of node IDs selected for dispatch
+        reason: Why the batch was scheduled (e.g., "priority_change", "idle_detection")
+        source: Component that scheduled the batch
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.BATCH_SCHEDULED,
+        payload={
+            "batch_id": batch_id,
+            "batch_type": batch_type,
+            "config_key": config_key,
+            "job_count": job_count,
+            "target_nodes": target_nodes,
+            "reason": reason,
+            "timestamp": time.time(),
+        },
+        source=source,
+    ))
+
+
+async def emit_batch_dispatched(
+    batch_id: str,
+    batch_type: str,
+    config_key: str,
+    jobs_dispatched: int,
+    jobs_failed: int = 0,
+    target_nodes: list[str] | None = None,
+    source: str = "job_dispatcher",
+) -> None:
+    """Emit a BATCH_DISPATCHED event when batch jobs are sent to nodes.
+
+    Used after jobs have been dispatched to signal the pipeline that work
+    is in progress.
+
+    Args:
+        batch_id: Unique batch identifier (same as BATCH_SCHEDULED)
+        batch_type: Type of batch ("selfplay", "training", "tournament")
+        config_key: Configuration key (e.g., "hex8_2p")
+        jobs_dispatched: Number of jobs successfully dispatched
+        jobs_failed: Number of jobs that failed to dispatch
+        target_nodes: List of node IDs that received jobs
+        source: Component that dispatched the batch
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.BATCH_DISPATCHED,
+        payload={
+            "batch_id": batch_id,
+            "batch_type": batch_type,
+            "config_key": config_key,
+            "jobs_dispatched": jobs_dispatched,
+            "jobs_failed": jobs_failed,
+            "target_nodes": target_nodes or [],
+            "timestamp": time.time(),
         },
         source=source,
     ))

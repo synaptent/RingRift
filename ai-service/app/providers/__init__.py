@@ -2,24 +2,32 @@
 
 This module provides unified interfaces for managing compute instances
 across multiple cloud providers:
-- Lambda Labs (GH200, H100, A10 GPUs) - Primary GPU training nodes
-- Vast.ai (various consumer/datacenter GPUs) - Regular P2P nodes
-- Hetzner Cloud (CPU instances) - CPU-only selfplay
+- Vast.ai (various consumer/datacenter GPUs) - Primary GPU training nodes
+- RunPod (H100, A100, L40S GPUs) - High-performance GPU nodes
+- Nebius (H100, L40S GPUs) - Backbone infrastructure
+- Hetzner Cloud (CPU instances) - CPU-only selfplay, P2P voters
 - AWS EC2 (staging/proxy) - Keep updated, light utilization
 - Tailscale (mesh networking) - Cross-provider connectivity
 
-Usage:
-    from app.providers import LambdaManager, VastManager, HetznerManager
+DEPRECATED (Dec 2025): Lambda Labs account terminated.
+LambdaManager is kept for backward compatibility but will emit DeprecationWarning.
 
-    # List all Lambda instances
-    lambda_mgr = LambdaManager()
-    instances = await lambda_mgr.list_instances()
+Usage:
+    from app.providers import VastManager, HetznerManager
+
+    # List all Vast instances
+    vast_mgr = VastManager()
+    instances = await vast_mgr.list_instances()
 
     # Check health
     for inst in instances:
-        health = await lambda_mgr.check_health(inst)
+        health = await vast_mgr.check_health(inst)
         print(f"{inst.name}: {health.message}")
 """
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from app.providers.base import (
     HealthCheckResult,
@@ -31,9 +39,21 @@ from app.providers.base import (
 )
 from app.providers.aws_manager import AWSManager
 from app.providers.hetzner_manager import HetznerManager
-from app.providers.lambda_manager import LambdaManager
 from app.providers.tailscale_manager import TailscaleManager, TailscalePeer, TailscaleStatus
 from app.providers.vast_manager import VastManager, VastOffer
+
+# Lazy import for deprecated Lambda to avoid DeprecationWarning on module load
+if TYPE_CHECKING:
+    from app.providers.lambda_manager import LambdaManager as _LambdaManager
+
+
+def __getattr__(name: str):
+    """Lazy import for deprecated modules."""
+    if name == "LambdaManager":
+        from app.providers.lambda_manager import LambdaManager
+        return LambdaManager
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Base classes
@@ -44,7 +64,7 @@ __all__ = [
     "HealthCheckResult",
     "RecoveryResult",
     # Provider managers
-    "LambdaManager",
+    "LambdaManager",  # DEPRECATED - will emit warning on import
     "VastManager",
     "HetznerManager",
     "AWSManager",

@@ -3,6 +3,8 @@
 Provides HTTP endpoints for Bully algorithm leader election and voter-based
 quorum management. Supports lease-based leader locking with automatic expiry.
 
+December 2025: Migrated to use BaseP2PHandler for consistent response formatting.
+
 Usage:
     class P2POrchestrator(ElectionHandlersMixin, ...):
         pass
@@ -32,32 +34,18 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from scripts.p2p.handlers.base import BaseP2PHandler
+
+# Dec 2025: Use consolidated handler utilities
+from scripts.p2p.handlers.handlers_base import get_event_bridge
+
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Event bridge import (with fallback)
-try:
-    from scripts.p2p.p2p_event_bridge import (
-        emit_p2p_leader_changed,
-        emit_p2p_cluster_healthy,
-        emit_p2p_cluster_unhealthy,
-    )
-    HAS_EVENT_BRIDGE = True
-except ImportError as e:
-    HAS_EVENT_BRIDGE = False
-    # Dec 2025: Log import failure so operators know events aren't being emitted
-    logger.warning(f"[ElectionHandlers] Event bridge not available ({e}), election events will not be emitted")
-
-    async def emit_p2p_leader_changed(*args, **kwargs):
-        pass
-
-    async def emit_p2p_cluster_healthy(*args, **kwargs):
-        pass
-
-    async def emit_p2p_cluster_unhealthy(*args, **kwargs):
-        pass
+# Event bridge manager for safe event emission (Dec 2025 consolidation)
+_event_bridge = get_event_bridge()
 
 # Import constants
 try:
@@ -77,18 +65,20 @@ except ImportError:
         CANDIDATE = "candidate"
 
 
-class ElectionHandlersMixin:
+class ElectionHandlersMixin(BaseP2PHandler):
     """Mixin providing election HTTP handlers.
 
+    Inherits from BaseP2PHandler for consistent response formatting.
+
     Requires the implementing class to have:
-    - node_id: str
+    - node_id: str (from BaseP2PHandler)
+    - auth_token: str | None (from BaseP2PHandler)
     - role: NodeRole
     - leader_id: str | None
     - election_in_progress: bool
     - peers_lock: threading.RLock
     - peers: dict[str, NodeInfo]
     - self_info: NodeInfo
-    - auth_token: str | None
     - voter_node_ids: list[str]
     - voter_grant_leader_id: str
     - voter_grant_lease_id: str
@@ -109,11 +99,9 @@ class ElectionHandlersMixin:
     """
 
     # Type hints for IDE support
-    node_id: str
     role: Any  # NodeRole
     leader_id: str | None
     election_in_progress: bool
-    auth_token: str | None
 
     async def handle_election(self, request: web.Request) -> web.Response:
         """Handle election message from another node."""
@@ -122,10 +110,13 @@ class ElectionHandlersMixin:
             # to act as a leader. Otherwise (e.g. NAT-blocked / ambiguous endpoint),
             # responding ALIVE can stall elections and leave the cluster leaderless.
             self._update_self_info()
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
             candidate_id = str(data.get("candidate_id") or "")
             if not candidate_id:
-                return web.json_response({"error": "missing_candidate_id"}, status=400)
+                return self.bad_request("missing_candidate_id")
 
             with self.peers_lock:
                 peers_snapshot = [
@@ -148,15 +139,19 @@ class ElectionHandlersMixin:
             if self.node_id > candidate_id and eligible:
                 # Start our own election
                 asyncio.create_task(self._start_election())
-                return web.json_response(
-                    {"response": "ALIVE", "node_id": self.node_id, "eligible": True}
-                )
+                return self.json_response({
+                    "response": "ALIVE",
+                    "node_id": self.node_id,
+                    "eligible": True,
+                })
             else:
-                return web.json_response(
-                    {"response": "OK", "node_id": self.node_id, "eligible": bool(eligible)}
-                )
+                return self.json_response({
+                    "response": "OK",
+                    "node_id": self.node_id,
+                    "eligible": bool(eligible),
+                })
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=400)
+            return self.error_response(str(e), status=400)
 
     async def handle_lease_request(self, request: web.Request) -> web.Response:
         """Voter endpoint: grant/renew an exclusive leader lease.
@@ -166,9 +161,11 @@ class ElectionHandlersMixin:
         lease expires (or is explicitly released by stepping down).
         """
         try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
-            data = await request.json()
+            if not self.check_auth(request):
+                return self.auth_error()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
             leader_id = str(
                 data.get("leader_id") or data.get("candidate_id") or ""
             ).strip()
@@ -181,19 +178,28 @@ class ElectionHandlersMixin:
             duration = max(10, min(duration, int(LEADER_LEASE_DURATION * 2)))
 
             if not leader_id or not lease_id:
-                return web.json_response(
-                    {"granted": False, "reason": "missing_fields"}, status=400
+                return self.error_response(
+                    "missing_fields",
+                    status=400,
+                    error_code="MISSING_FIELDS",
+                    details={"granted": False},
                 )
 
             voters = list(getattr(self, "voter_node_ids", []) or [])
             if voters:
                 if self.node_id not in voters:
-                    return web.json_response(
-                        {"granted": False, "reason": "not_a_voter"}, status=403
+                    return self.error_response(
+                        "not_a_voter",
+                        status=403,
+                        error_code="NOT_A_VOTER",
+                        details={"granted": False},
                     )
                 if leader_id not in voters:
-                    return web.json_response(
-                        {"granted": False, "reason": "leader_not_voter"}, status=403
+                    return self.error_response(
+                        "leader_not_voter",
+                        status=403,
+                        error_code="LEADER_NOT_VOTER",
+                        details={"granted": False},
                     )
 
             now = time.time()
@@ -201,7 +207,7 @@ class ElectionHandlersMixin:
             current_expires = float(getattr(self, "voter_grant_expires", 0.0) or 0.0)
 
             if current_leader and current_expires > now and current_leader != leader_id:
-                return web.json_response(
+                return self.json_response(
                     {
                         "granted": False,
                         "reason": "lease_already_granted",
@@ -220,20 +226,22 @@ class ElectionHandlersMixin:
             self._save_state()
 
             lease_ttl_seconds = max(0.0, float(self.voter_grant_expires) - time.time())
-            return web.json_response(
-                {
-                    "granted": True,
-                    "leader_id": leader_id,
-                    "lease_id": lease_id,
-                    "lease_expires": self.voter_grant_expires,
-                    # Use a relative TTL for robustness under clock skew (absolute
-                    # timestamps from different machines are not directly comparable).
-                    "lease_ttl_seconds": lease_ttl_seconds,
-                    "voter_id": self.node_id,
-                }
-            )
+            return self.json_response({
+                "granted": True,
+                "leader_id": leader_id,
+                "lease_id": lease_id,
+                "lease_expires": self.voter_grant_expires,
+                # Use a relative TTL for robustness under clock skew (absolute
+                # timestamps from different machines are not directly comparable).
+                "lease_ttl_seconds": lease_ttl_seconds,
+                "voter_id": self.node_id,
+            })
         except Exception as e:
-            return web.json_response({"granted": False, "error": str(e)}, status=400)
+            return self.error_response(
+                str(e),
+                status=400,
+                details={"granted": False},
+            )
 
     async def handle_voter_grant_status(self, request: web.Request) -> web.Response:
         """Read-only voter endpoint: return our currently granted leader lease.
@@ -242,22 +250,20 @@ class ElectionHandlersMixin:
         the active lease holder, without mutating lease state.
         """
         try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
+            if not self.check_auth(request):
+                return self.auth_error()
             now = time.time()
             expires = float(getattr(self, "voter_grant_expires", 0.0) or 0.0)
-            return web.json_response(
-                {
-                    "voter_id": self.node_id,
-                    "now": now,
-                    "leader_id": str(getattr(self, "voter_grant_leader_id", "") or ""),
-                    "lease_id": str(getattr(self, "voter_grant_lease_id", "") or ""),
-                    "lease_expires": expires,
-                    "lease_ttl_seconds": max(0.0, expires - now),
-                }
-            )
+            return self.json_response({
+                "voter_id": self.node_id,
+                "now": now,
+                "leader_id": str(getattr(self, "voter_grant_leader_id", "") or ""),
+                "lease_id": str(getattr(self, "voter_grant_lease_id", "") or ""),
+                "lease_expires": expires,
+                "lease_ttl_seconds": max(0.0, expires - now),
+            })
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=400)
+            return self.error_response(str(e), status=400)
 
     async def handle_election_reset(self, request: web.Request) -> web.Response:
         """Reset stuck election state to allow fresh leader election.
@@ -268,8 +274,8 @@ class ElectionHandlersMixin:
         POST /election/reset
         """
         try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
+            if not self.check_auth(request):
+                return self.auth_error()
 
             old_state = {
                 "election_in_progress": self.election_in_progress,
@@ -299,17 +305,15 @@ class ElectionHandlersMixin:
 
             logger.info(f"Election state reset on {self.node_id}: {old_state}")
 
-            return web.json_response(
-                {
-                    "status": "reset",
-                    "node_id": self.node_id,
-                    "previous_state": old_state,
-                    "message": "Election state cleared. New election will start on next heartbeat cycle.",
-                }
-            )
+            return self.json_response({
+                "status": "reset",
+                "node_id": self.node_id,
+                "previous_state": old_state,
+                "message": "Election state cleared. New election will start on next heartbeat cycle.",
+            })
         except Exception as e:
             logger.error(f"Error resetting election: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)
 
     async def handle_election_force_leader(self, request: web.Request) -> web.Response:
         """Force a specific node to become leader (emergency override).
@@ -321,14 +325,16 @@ class ElectionHandlersMixin:
         Body: {"leader_id": "node-id-to-become-leader"}
         """
         try:
-            if self.auth_token and not self._is_request_authorized(request):
-                return web.json_response({"error": "unauthorized"}, status=401)
+            if not self.check_auth(request):
+                return self.auth_error()
 
-            data = await request.json()
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
             target_leader_id = str(data.get("leader_id", "")).strip()
 
             if not target_leader_id:
-                return web.json_response({"error": "leader_id required"}, status=400)
+                return self.bad_request("leader_id required")
 
             # If we're the target, become leader
             if target_leader_id == self.node_id:
@@ -348,28 +354,25 @@ class ElectionHandlersMixin:
                 self._increment_cluster_epoch()
                 self._save_state()
 
-                # Emit leader change event to coordination EventRouter
-                if HAS_EVENT_BRIDGE:
-                    await emit_p2p_leader_changed(
-                        new_leader_id=self.node_id,
-                        old_leader_id="",  # Unknown previous leader in force mode
-                        term=getattr(self, "cluster_epoch", 0),
-                    )
+                # Emit leader change event to coordination EventRouter (Dec 2025 consolidation)
+                await _event_bridge.emit("p2p_leader_changed", {
+                    "new_leader_id": self.node_id,
+                    "old_leader_id": "",  # Unknown previous leader in force mode
+                    "term": getattr(self, "cluster_epoch", 0),
+                })
 
                 logger.warning(
                     f"FORCED LEADERSHIP: {self.node_id} is now leader via override"
                 )
 
-                return web.json_response(
-                    {
-                        "status": "leader_forced",
-                        "node_id": self.node_id,
-                        "role": "leader",
-                        "lease_id": lease_id,
-                        "lease_expires": self.leader_lease_expires,
-                        "warning": "Leadership was forced without normal election. Use with caution.",
-                    }
-                )
+                return self.json_response({
+                    "status": "leader_forced",
+                    "node_id": self.node_id,
+                    "role": "leader",
+                    "lease_id": lease_id,
+                    "lease_expires": self.leader_lease_expires,
+                    "warning": "Leadership was forced without normal election. Use with caution.",
+                })
             else:
                 # Store the forced leader hint so we adopt it
                 self.leader_id = target_leader_id
@@ -381,14 +384,12 @@ class ElectionHandlersMixin:
                     f"Accepting forced leader {target_leader_id} on node {self.node_id}"
                 )
 
-                return web.json_response(
-                    {
-                        "status": "leader_accepted",
-                        "node_id": self.node_id,
-                        "forced_leader": target_leader_id,
-                        "role": "follower",
-                    }
-                )
+                return self.json_response({
+                    "status": "leader_accepted",
+                    "node_id": self.node_id,
+                    "forced_leader": target_leader_id,
+                    "role": "follower",
+                })
         except Exception as e:
             logger.error(f"Error forcing leader: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+            return self.error_response(str(e), status=500)

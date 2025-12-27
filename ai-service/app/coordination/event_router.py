@@ -1181,6 +1181,114 @@ def unsubscribe(
     return get_router().unsubscribe(event_type, callback)
 
 
+def validate_event_wiring(
+    raise_on_error: bool = False,
+    log_warnings: bool = True,
+) -> dict[str, Any]:
+    """Validate that critical pipeline events have subscribers (December 2025).
+
+    This function should be called at startup to ensure all critical events
+    are properly wired. It checks for subscribers to events that are essential
+    for the training pipeline to function correctly.
+
+    Critical events checked:
+    - TRAINING_COMPLETED: Should trigger evaluation, feedback, model distribution
+    - EVALUATION_COMPLETED: Should trigger curriculum updates, promotion decisions
+    - MODEL_PROMOTED: Should trigger model distribution to cluster
+    - DATA_SYNC_COMPLETED: Should trigger NPZ export pipeline
+    - NEW_GAMES_AVAILABLE: Should trigger training data processing
+
+    Args:
+        raise_on_error: If True, raises RuntimeError on critical missing subscriptions
+        log_warnings: If True, logs warnings for missing subscriptions
+
+    Returns:
+        Dictionary with:
+        - "valid": True if all critical events have subscribers
+        - "missing_critical": List of critical events without subscribers
+        - "missing_optional": List of recommended events without subscribers
+        - "all_subscribed": List of all event types that have subscribers
+
+    Usage:
+        from app.coordination.event_router import validate_event_wiring
+
+        # At startup
+        result = validate_event_wiring(raise_on_error=True)
+
+        # Or just check without raising
+        result = validate_event_wiring()
+        if not result["valid"]:
+            for event in result["missing_critical"]:
+                print(f"CRITICAL: {event} has no subscribers!")
+    """
+    router = get_router()
+
+    # Critical events that MUST have subscribers for pipeline to work
+    critical_events = [
+        "training_completed",  # TRAINING_COMPLETED.value
+        "evaluation_completed",  # EVALUATION_COMPLETED.value
+        "model_promoted",  # MODEL_PROMOTED.value
+        "sync_completed",  # DATA_SYNC_COMPLETED.value
+    ]
+
+    # Recommended events (nice to have but not blocking)
+    recommended_events = [
+        "new_games",  # NEW_GAMES_AVAILABLE.value
+        "curriculum_rebalanced",  # CURRICULUM_REBALANCED.value
+        "elo_velocity_changed",  # ELO_VELOCITY_CHANGED.value
+        "training_started",  # TRAINING_STARTED.value
+        "selfplay_complete",  # SELFPLAY_COMPLETE.value
+    ]
+
+    # Get all subscribed event types from router
+    subscribed_types = set(router._subscribers.keys())
+
+    # Check critical events
+    missing_critical = []
+    for event in critical_events:
+        normalized = normalize_event_type(event)
+        if normalized not in subscribed_types:
+            missing_critical.append(event)
+
+    # Check recommended events
+    missing_optional = []
+    for event in recommended_events:
+        normalized = normalize_event_type(event)
+        if normalized not in subscribed_types:
+            missing_optional.append(event)
+
+    # Log warnings
+    if log_warnings:
+        for event in missing_critical:
+            logger.error(
+                f"[EventRouter] CRITICAL: Event '{event}' has no subscribers! "
+                f"Pipeline may not function correctly."
+            )
+        for event in missing_optional:
+            logger.warning(
+                f"[EventRouter] Recommended event '{event}' has no subscribers."
+            )
+
+    # Raise if critical events are missing
+    if raise_on_error and missing_critical:
+        raise RuntimeError(
+            f"Critical events without subscribers: {missing_critical}. "
+            f"Ensure pipeline components are initialized with wire_pipeline_events() "
+            f"or coordination_bootstrap.bootstrap_coordinators()."
+        )
+
+    is_valid = len(missing_critical) == 0
+
+    return {
+        "valid": is_valid,
+        "missing_critical": missing_critical,
+        "missing_optional": missing_optional,
+        "all_subscribed": sorted(subscribed_types),
+        "critical_events_checked": critical_events,
+        "recommended_events_checked": recommended_events,
+    }
+
+
 def validate_event_flow() -> dict[str, Any]:
     """Validate event flow health (December 2025).
 
@@ -1269,6 +1377,7 @@ __all__ = [  # noqa: RUF022
     "subscribe",
     "unsubscribe",
     "validate_event_flow",
+    "validate_event_wiring",  # Dec 2025: Startup validation for critical events
     "get_orphaned_events",
     "get_event_stats",
     "get_event_payload",  # Dec 2025: Standard helper for event handlers

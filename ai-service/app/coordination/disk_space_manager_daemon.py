@@ -44,6 +44,56 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Protected Patterns - NEVER DELETE THESE
+# =============================================================================
+
+# CRITICAL: Files matching these patterns must NEVER be deleted by cleanup.
+# This is a safety measure to prevent accidental data loss.
+PROTECTED_PATTERNS = [
+    "canonical_*.db",       # Canonical game databases - source of truth
+    "unified_elo*.db",      # Elo ratings database
+    "registry.db",          # Model registry
+    "coordination.db",      # Coordination state
+    "work_queue.db",        # Active work queue
+    "*.npz",                # Training data files - never auto-delete
+    "*_backup*.db",         # Backup files
+]
+
+# Directories that should never have files auto-deleted
+PROTECTED_DIRECTORIES = [
+    "coordination",         # State databases
+    "model_registry",       # Model metadata
+    "registry_backups",     # Registry backups
+]
+
+
+def _is_protected_file(file_path: Path) -> bool:
+    """Check if a file is protected from deletion.
+
+    CRITICAL: This function must be called before any file deletion.
+    Protected files include canonical databases, training data, and
+    coordination state.
+    """
+    import fnmatch
+
+    filename = file_path.name
+
+    # Check filename patterns
+    for pattern in PROTECTED_PATTERNS:
+        if fnmatch.fnmatch(filename, pattern):
+            logger.debug(f"Protected file (pattern {pattern}): {filename}")
+            return True
+
+    # Check parent directories
+    for parent in file_path.parents:
+        if parent.name in PROTECTED_DIRECTORIES:
+            logger.debug(f"Protected file (directory {parent.name}): {filename}")
+            return True
+
+    return False
+
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -366,7 +416,13 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
         return bytes_freed
 
     def _cleanup_empty_databases(self) -> int:
-        """Remove empty or near-empty database files."""
+        """Remove empty or near-empty database files.
+
+        SAFETY: Never deletes:
+        - canonical_*.db files (production game data)
+        - Databases in cluster_* directories (synced from cluster nodes)
+        - .bak backup files
+        """
         bytes_freed = 0
         games_path = self._root_path / self.config.games_dir
         if not games_path.exists():
@@ -375,6 +431,25 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
         cutoff = time.time() - (self.config.empty_db_max_age_days * 86400)
 
         for db_file in games_path.glob("**/*.db"):
+            # CRITICAL: Check centralized protection first
+            if _is_protected_file(db_file):
+                continue
+
+            # NEVER delete canonical databases - they are protected
+            if db_file.name.startswith("canonical_"):
+                logger.debug(f"Skipping protected canonical database: {db_file.name}")
+                continue
+
+            # Skip databases in cluster_* directories (source data from cluster nodes)
+            if any(parent.name.startswith("cluster_") for parent in db_file.parents):
+                logger.debug(f"Skipping cluster source database: {db_file}")
+                continue
+
+            # Skip backup files
+            if ".bak" in db_file.name:
+                logger.debug(f"Skipping backup file: {db_file.name}")
+                continue
+
             try:
                 stat = db_file.stat()
                 # Remove if small (<100KB) and old
@@ -712,32 +787,37 @@ class CoordinatorDiskManager(DiskSpaceManagerDaemon):
     def _cleanup_synced_training(self) -> int:
         """Remove training NPZ files that have been synced.
 
-        Only removes files older than 24 hours to ensure sync completed.
+        DISABLED: NPZ files are never auto-deleted for safety.
+        Training data is critical and should only be deleted manually.
+
+        December 27, 2025: Disabled after data loss incident.
         """
-        bytes_freed = 0
-        training_path = self._root_path / "data" / "training"
-        if not training_path.exists():
-            return 0
-
-        cutoff = time.time() - 86400  # 24 hours
-
-        for npz_file in training_path.glob("*.npz"):
-            try:
-                if npz_file.stat().st_mtime < cutoff:
-                    size = npz_file.stat().st_size
-                    npz_file.unlink()
-                    bytes_freed += size
-                    logger.debug(f"Removed synced training file: {npz_file.name}")
-            except (OSError, PermissionError) as e:
-                logger.debug(f"Failed to remove {npz_file}: {e}")
-
-        return bytes_freed
+        # CRITICAL: NPZ files are in PROTECTED_PATTERNS - never auto-delete
+        logger.debug("_cleanup_synced_training: Disabled for safety - NPZ files are protected")
+        return 0
 
     def _cleanup_synced_games(self) -> int:
         """Remove game databases that have been synced.
 
-        Only removes non-canonical databases older than 24 hours.
-        Keeps canonical_*.db files locally for quick access.
+        DISABLED: Database deletion is now disabled for safety.
+        Only empty databases (<100KB with 0 games) are cleaned via _cleanup_empty_databases().
+
+        SAFETY: This method previously deleted any DB older than 24 hours that wasn't
+        canonical_*.db. This was dangerous because:
+        1. It didn't verify sync actually succeeded
+        2. It deleted valuable selfplay databases
+        3. No confirmation or manifest tracking
+
+        December 27, 2025: Disabled after data loss incident.
+        """
+        # CRITICAL: Disabled to prevent accidental data loss
+        logger.debug("_cleanup_synced_games: Disabled for safety - manual deletion only")
+        return 0
+
+    def _cleanup_synced_games_DISABLED(self) -> int:
+        """DEPRECATED: Original implementation kept for reference.
+
+        DO NOT ENABLE - this deleted databases without verifying sync succeeded.
         """
         bytes_freed = 0
         games_path = self._root_path / "data" / "games"
@@ -747,8 +827,16 @@ class CoordinatorDiskManager(DiskSpaceManagerDaemon):
         cutoff = time.time() - 86400  # 24 hours
 
         for db_file in games_path.glob("*.db"):
+            # CRITICAL: Check centralized protection first
+            if _is_protected_file(db_file):
+                continue
+
             # Never delete canonical databases
             if db_file.name.startswith("canonical_"):
+                continue
+
+            # Never delete backup files
+            if ".bak" in db_file.name:
                 continue
 
             try:

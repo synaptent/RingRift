@@ -444,7 +444,8 @@ class WorkDistributor:
         if not self._ensure_queue():
             return {"available": False}
 
-        return self._queue.get_stats()
+        # Use get_queue_status which exists on WorkQueue
+        return self._queue.get_queue_status()
 
     def get_pending_work(
         self,
@@ -570,8 +571,11 @@ class WorkDistributor:
 
         # Check for warning conditions
         warnings = []
-        pending_count = stats.get("pending", 0)
-        failed_count = stats.get("failed", 0)
+        # get_queue_status returns by_status dict with counts per status
+        by_status = stats.get("by_status", {})
+        pending_count = by_status.get("pending", 0)
+        failed_count = by_status.get("failed", 0)
+        total_items = stats.get("total_items", 0)
 
         if pending_count > 500:
             warnings.append(f"High pending count: {pending_count}")
@@ -588,6 +592,7 @@ class WorkDistributor:
             message="; ".join(warnings) if warnings else "Distributor healthy",
             details={
                 "queue_available": True,
+                "total_items": total_items,
                 "local_submissions": len(self._local_submissions),
                 "pending_work": pending_count,
                 "failed_work": failed_count,

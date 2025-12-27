@@ -32,22 +32,16 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+# Dec 2025: Use consolidated handler utilities
+from scripts.p2p.handlers.handlers_base import get_event_bridge
+
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Event bridge import (with fallback)
-try:
-    from scripts.p2p.p2p_event_bridge import emit_p2p_gauntlet_completed
-    HAS_EVENT_BRIDGE = True
-except ImportError as e:
-    HAS_EVENT_BRIDGE = False
-    # Dec 2025: Log import failure so operators know events aren't being emitted
-    logger.warning(f"[GauntletHandlers] Event bridge not available ({e}), gauntlet events will not be emitted")
-
-    async def emit_p2p_gauntlet_completed(*args, **kwargs):
-        pass
+# Event bridge manager for safe event emission (Dec 2025 consolidation)
+_event_bridge = get_event_bridge()
 
 
 class GauntletHandlersMixin:
@@ -442,18 +436,17 @@ class GauntletHandlersMixin:
             win_rate = wins / total_games if total_games > 0 else 0
             passed = win_rate >= 0.50
 
-            # Emit gauntlet completion event to coordination EventRouter
-            if HAS_EVENT_BRIDGE:
-                await emit_p2p_gauntlet_completed(
-                    model_id=model_id,
-                    baseline_id=baseline_id,
-                    config_key=config_key,
-                    wins=wins,
-                    total_games=total_games,
-                    win_rate=win_rate,
-                    passed=passed,
-                    node_id=self.node_id,
-                )
+            # Emit gauntlet completion event to coordination EventRouter (Dec 2025 consolidation)
+            await _event_bridge.emit("p2p_gauntlet_completed", {
+                "model_id": model_id,
+                "baseline_id": baseline_id,
+                "config_key": config_key,
+                "wins": wins,
+                "total_games": total_games,
+                "win_rate": win_rate,
+                "passed": passed,
+                "node_id": self.node_id,
+            })
 
             return web.json_response({
                 "success": True,

@@ -4,7 +4,7 @@ This document catalogs all daemons managed by the `DaemonManager` in the RingRif
 
 ## Overview
 
-The `DaemonManager` (`app/coordination/daemon_manager.py`) provides lifecycle management for 40+ background daemons. Daemons are organized by function and can declare dependencies on other daemons.
+The `DaemonManager` (`app/coordination/daemon_manager.py`) provides lifecycle management for 62+ background daemons. Daemons are organized by function and can declare dependencies on other daemons.
 
 ## Daemon Categories
 
@@ -42,6 +42,7 @@ The `DaemonManager` (`app/coordination/daemon_manager.py`) provides lifecycle ma
 | Training Trigger         | `TRAINING_TRIGGER`         | EVENT_ROUTER, AUTO_EXPORT | Triggers training when data threshold reached  |
 | Auto Export              | `AUTO_EXPORT`              | EVENT_ROUTER              | Automatically exports NPZ when games available |
 | Data Pipeline            | `DATA_PIPELINE`            | EVENT_ROUTER              | Orchestrates pipeline stages                   |
+| Data Consolidation       | `DATA_CONSOLIDATION`       | EVENT_ROUTER, AUTO_SYNC   | Merges scattered games into canonical DBs      |
 | Selfplay Coordinator     | `SELFPLAY_COORDINATOR`     | EVENT_ROUTER              | Coordinates selfplay across cluster            |
 | Curriculum Integration   | `CURRICULUM_INTEGRATION`   | EVENT_ROUTER              | Bridges feedback loops for curriculum          |
 
@@ -94,14 +95,15 @@ The `DaemonManager` (`app/coordination/daemon_manager.py`) provides lifecycle ma
 
 ### Data Integrity
 
-| Daemon              | Type                  | Dependencies | Description                            |
-| ------------------- | --------------------- | ------------ | -------------------------------------- |
-| Replication Monitor | `REPLICATION_MONITOR` | EVENT_ROUTER | Monitors data replication health       |
-| Replication Repair  | `REPLICATION_REPAIR`  | EVENT_ROUTER | Repairs under-replicated data          |
-| Orphan Detection    | `ORPHAN_DETECTION`    | EVENT_ROUTER | Detects unregistered game databases    |
-| Data Cleanup        | `DATA_CLEANUP`        | EVENT_ROUTER | Auto-quarantine poor quality data      |
-| Disk Space Manager  | `DISK_SPACE_MANAGER`  | EVENT_ROUTER | Proactive disk cleanup at 60% usage    |
-| Health Check        | `HEALTH_CHECK`        | None         | _Deprecated_ - Use NODE_HEALTH_MONITOR |
+| Daemon              | Type                       | Dependencies | Description                            |
+| ------------------- | -------------------------- | ------------ | -------------------------------------- |
+| Replication Monitor | `REPLICATION_MONITOR`      | EVENT_ROUTER | Monitors data replication health       |
+| Replication Repair  | `REPLICATION_REPAIR`       | EVENT_ROUTER | Repairs under-replicated data          |
+| Orphan Detection    | `ORPHAN_DETECTION`         | EVENT_ROUTER | Detects unregistered game databases    |
+| Data Cleanup        | `DATA_CLEANUP`             | EVENT_ROUTER | Auto-quarantine poor quality data      |
+| Disk Space Manager  | `DISK_SPACE_MANAGER`       | EVENT_ROUTER | Proactive disk cleanup at 60% usage    |
+| Coordinator Disk    | `COORDINATOR_DISK_MANAGER` | None         | Syncs/cleans coordinator node storage  |
+| Health Check        | `HEALTH_CHECK`             | None         | _Deprecated_ - Use NODE_HEALTH_MONITOR |
 
 ### Backup & Recovery
 
@@ -211,16 +213,19 @@ async def _create_my_daemon(self) -> None:
 
 ## Key Files
 
-| File                                            | Purpose                                                   |
-| ----------------------------------------------- | --------------------------------------------------------- |
-| `app/coordination/daemon_manager.py`            | Main DaemonManager implementation                         |
-| `app/coordination/daemon_runners.py`            | 62 async runner functions for each daemon type (Dec 2025) |
-| `app/coordination/daemon_adapters.py`           | Adapters for existing daemons                             |
-| `app/coordination/event_router.py`              | Unified event bus                                         |
-| `app/coordination/pipeline_triggers.py`         | Pipeline stage triggers with NPZ validation               |
-| `scripts/launch_daemons.py`                     | CLI for daemon management                                 |
-| `docs/coordination/EVENT_CATALOG.md`            | Event types reference                                     |
-| `docs/coordination/RESILIENT_TRANSFER_GUIDE.md` | Transfer daemon guide                                     |
+| File                                            | Purpose                                                         |
+| ----------------------------------------------- | --------------------------------------------------------------- |
+| `app/coordination/daemon_manager.py`            | Main DaemonManager implementation (~2,000 LOC)                  |
+| `app/coordination/daemon_runners.py`            | 62 async runner functions for each daemon type (Dec 2025)       |
+| `app/coordination/daemon_registry.py`           | Declarative DaemonSpec registry for all daemon types (Dec 2025) |
+| `app/coordination/daemon_adapters.py`           | Adapters for existing daemons                                   |
+| `app/coordination/data_consolidation_daemon.py` | Consolidates scattered games into canonical DBs                 |
+| `app/coordination/event_router.py`              | Unified event bus                                               |
+| `app/coordination/pipeline_triggers.py`         | Pipeline stage triggers with NPZ validation                     |
+| `scripts/launch_daemons.py`                     | CLI for daemon management                                       |
+| `scripts/master_loop.py`                        | Full automation controller with daemon orchestration            |
+| `docs/coordination/EVENT_CATALOG.md`            | Event types reference                                           |
+| `docs/coordination/RESILIENT_TRANSFER_GUIDE.md` | Transfer daemon guide                                           |
 
 ## December 2025 Improvements
 
@@ -269,4 +274,33 @@ from app.coordination.daemon_types import DaemonType
 
 runner = get_runner(DaemonType.AUTO_SYNC)
 await runner()  # Starts the daemon
+```
+
+### Data Consolidation Daemon
+
+New `DATA_CONSOLIDATION` daemon (Dec 27, 2025) merges scattered selfplay games into canonical databases:
+
+- Subscribes to `SELFPLAY_COMPLETE` and `NEW_GAMES_AVAILABLE` events
+- Consolidates games from various sources (cluster nodes, jsonl imports) into `canonical_*.db` files
+- Emits `CONSOLIDATION_COMPLETE` event after merging
+- Wired in `master_loop.py` startup order (after AUTO_SYNC, before training)
+
+```python
+from app.coordination.data_consolidation_daemon import get_consolidation_daemon
+
+daemon = get_consolidation_daemon()
+await daemon.start()
+```
+
+### Declarative Daemon Registry
+
+New `daemon_registry.py` (Dec 27, 2025) provides data-driven daemon configuration:
+
+```python
+from app.coordination.daemon_registry import DAEMON_REGISTRY, DaemonSpec
+
+# Get spec for a daemon
+spec = DAEMON_REGISTRY[DaemonType.DATA_CONSOLIDATION]
+print(f"Runner: {spec.runner_name}")  # "create_data_consolidation"
+print(f"Depends on: {spec.depends_on}")  # (DaemonType.EVENT_ROUTER, DaemonType.AUTO_SYNC)
 ```

@@ -181,6 +181,40 @@ class AutoSyncConfig:
             config.min_games_to_sync = auto_sync.min_games_to_sync
             config.bandwidth_limit_mbps = auto_sync.bandwidth_limit_mbps
 
+            # December 27, 2025: Auto-exclude coordinator nodes and nodes with skip_sync_receive
+            # This is Layer 2 of the multi-layer coordinator disk protection plan.
+            # Previously, role: coordinator and skip_sync_receive: true in config were never
+            # enforced. Now we automatically add these nodes to exclude_hosts.
+            #
+            # EXCEPTION: Nodes with use_external_storage: true are allowed to receive sync
+            # because data is routed to external storage (e.g., mac-studio with OWC drive).
+            for host_name, host_config in cluster_cfg.hosts_raw.items():
+                if host_name in config.exclude_hosts:
+                    continue  # Already excluded
+
+                # Check skip_sync_receive flag - always exclude these
+                if host_config.get("skip_sync_receive", False):
+                    config.exclude_hosts.append(host_name)
+                    logger.debug(
+                        f"[AutoSyncConfig] Auto-excluding node with skip_sync_receive: {host_name}"
+                    )
+                    continue
+
+                # Check role - coordinators should not receive synced data
+                # UNLESS they have external storage configured
+                if host_config.get("role") == "coordinator":
+                    # Allow if external storage is configured
+                    if host_config.get("use_external_storage", False):
+                        logger.debug(
+                            f"[AutoSyncConfig] Allowing coordinator with external storage: {host_name}"
+                        )
+                        continue
+                    # Exclude coordinators without external storage
+                    config.exclude_hosts.append(host_name)
+                    logger.debug(
+                        f"[AutoSyncConfig] Auto-excluding coordinator node: {host_name}"
+                    )
+
         except (OSError, ValueError, KeyError, AttributeError) as e:
             logger.warning(f"Failed to load cluster config: {e}")
 

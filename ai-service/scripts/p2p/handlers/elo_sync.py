@@ -30,22 +30,16 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+# Dec 2025: Use consolidated handler utilities
+from scripts.p2p.handlers.handlers_base import get_event_bridge
+
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Event bridge import (with fallback)
-try:
-    from scripts.p2p.p2p_event_bridge import emit_p2p_elo_updated
-    HAS_EVENT_BRIDGE = True
-except ImportError as e:
-    HAS_EVENT_BRIDGE = False
-    # Dec 2025: Log import failure so operators know events aren't being emitted
-    logger.warning(f"[EloSyncHandlers] Event bridge not available ({e}), Elo events will not be emitted")
-
-    async def emit_p2p_elo_updated(*args, **kwargs):
-        pass
+# Event bridge manager for safe event emission (Dec 2025 consolidation)
+_event_bridge = get_event_bridge()
 
 
 class EloSyncHandlersMixin:
@@ -212,16 +206,15 @@ class EloSyncHandlersMixin:
                 if success:
                     logger.info(f"Elo sync triggered after {pending} matches: "
                           f"{self.elo_sync_manager.state.local_match_count} total")
-                    # Emit Elo sync event to coordination EventRouter
-                    if HAS_EVENT_BRIDGE:
-                        # Note: We don't have individual model Elo changes here,
-                        # so emit a generic sync completion signal
-                        await emit_p2p_elo_updated(
-                            model_id="cluster_sync",
-                            config_key="all",
-                            old_elo=0.0,
-                            new_elo=0.0,
-                            games_played=self.elo_sync_manager.state.local_match_count,
-                        )
+                    # Emit Elo sync event to coordination EventRouter (Dec 2025 consolidation)
+                    # Note: We don't have individual model Elo changes here,
+                    # so emit a generic sync completion signal
+                    await _event_bridge.emit("p2p_elo_updated", {
+                        "model_id": "cluster_sync",
+                        "config_key": "all",
+                        "old_elo": 0.0,
+                        "new_elo": 0.0,
+                        "games_played": self.elo_sync_manager.state.local_match_count,
+                    })
         except Exception as e:
             logger.info(f"Elo sync trigger error: {e}")

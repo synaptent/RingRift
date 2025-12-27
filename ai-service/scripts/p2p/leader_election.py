@@ -8,16 +8,15 @@ Usage:
         pass
 
 Phase 2.2 extraction - Dec 26, 2025
+Refactored to use P2PMixinBase - Dec 27, 2025
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
-import os
-import time
 from typing import TYPE_CHECKING, Any
+
+from scripts.p2p.p2p_mixin_base import P2PMixinBase
 
 if TYPE_CHECKING:
     from threading import RLock
@@ -27,15 +26,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Import constants with fallbacks
-try:
-    from scripts.p2p.constants import VOTER_MIN_QUORUM
-except ImportError:
-    VOTER_MIN_QUORUM = 3
+# Load constants with fallbacks using base class helper
+_CONSTANTS = P2PMixinBase._load_config_constants({
+    "VOTER_MIN_QUORUM": 3,
+})
+
+VOTER_MIN_QUORUM = _CONSTANTS["VOTER_MIN_QUORUM"]
 
 
-class LeaderElectionMixin:
+class LeaderElectionMixin(P2PMixinBase):
     """Mixin providing core leader election logic.
+
+    Inherits from P2PMixinBase for shared peer counting helpers.
 
     Requires the implementing class to have:
     State:
@@ -56,6 +58,8 @@ class LeaderElectionMixin:
     - _start_election() - Start new election
     - _save_state() - Persist state changes
     """
+
+    MIXIN_TYPE = "leader_election"
 
     # Type hints for IDE support (implemented by P2POrchestrator)
     node_id: str
@@ -85,16 +89,8 @@ class LeaderElectionMixin:
         # Use fixed minimum quorum of 3 (or fewer if we have fewer voters)
         quorum = min(VOTER_MIN_QUORUM, len(voters))
 
-        alive = 0
-        with self.peers_lock:
-            peers = dict(self.peers)
-        for node_id in voters:
-            if node_id == self.node_id:
-                alive += 1
-                continue
-            peer = peers.get(node_id)
-            if peer and peer.is_alive():
-                alive += 1
+        # Use base class helper for counting alive peers
+        alive = self._count_alive_peers(voters)
         return alive >= quorum
 
     def _release_voter_grant_if_self(self) -> None:
@@ -123,17 +119,9 @@ class LeaderElectionMixin:
             return {"voters": [], "alive": 0, "total": 0, "quorum_met": True}
 
         quorum = min(VOTER_MIN_QUORUM, len(voters))
-        alive_voters = []
 
-        with self.peers_lock:
-            peers = dict(self.peers)
-        for node_id in voters:
-            if node_id == self.node_id:
-                alive_voters.append(node_id)
-                continue
-            peer = peers.get(node_id)
-            if peer and peer.is_alive():
-                alive_voters.append(node_id)
+        # Use base class helper for getting alive peer list
+        alive_voters = self._get_alive_peer_list(voters)
 
         return {
             "voters": voters,
@@ -201,7 +189,7 @@ class LeaderElectionMixin:
 
         has_consensus = voting_for_proposed >= quorum
         if not has_consensus:
-            logger.warning(
+            self._log_warning(
                 f"No consensus on leader {proposed_leader}: "
                 f"{voting_for_proposed}/{quorum} voters agree"
             )
@@ -279,7 +267,7 @@ class LeaderElectionMixin:
 
         # Multiple leaders detected - this is split-brain
         severity = "critical" if len(leaders_seen) >= 3 else "warning"
-        logger.error(
+        self._log_error(
             f"SPLIT-BRAIN DETECTED: {len(leaders_seen)} different leaders seen: "
             f"{list(leaders_seen.keys())}"
         )

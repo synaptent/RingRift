@@ -152,6 +152,7 @@ class BaseLoop(ABC):
         backoff_config: BackoffConfig | None = None,
         metrics_manager: MetricsManager | None = None,
         enabled: bool = True,
+        depends_on: list[str] | None = None,
     ):
         """Initialize the base loop.
 
@@ -161,12 +162,14 @@ class BaseLoop(ABC):
             backoff_config: Configuration for exponential backoff (uses defaults if None)
             metrics_manager: Optional MetricsManager for recording metrics
             enabled: Whether the loop is enabled (can be toggled at runtime)
+            depends_on: List of loop names that must start before this loop (Dec 2025)
         """
         self.name = name
         self.interval = interval
         self.backoff_config = backoff_config or BackoffConfig()
         self.metrics_manager = metrics_manager
         self.enabled = enabled
+        self.depends_on = depends_on or []
 
         # Lifecycle state
         self._running = False
@@ -401,6 +404,72 @@ class BaseLoop(ABC):
             },
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check loop health for CoordinatorProtocol compliance.
+
+        Dec 2025: Added to enable DaemonManager integration and observability.
+
+        Returns:
+            HealthCheckResult with status and loop metrics
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            # Fallback if protocols not available
+            return {  # type: ignore[return-value]
+                "healthy": self._running,
+                "status": "running" if self._running else "stopped",
+                "message": f"Loop {self.name} {'running' if self._running else 'stopped'}",
+                "details": self._stats.to_dict(),
+            }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message=f"Loop {self.name} is stopped",
+            )
+
+        # Check consecutive errors
+        if self._stats.consecutive_errors > 5:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Too many consecutive errors: {self._stats.consecutive_errors}",
+                details={
+                    "last_error": self._stats.last_error_message,
+                    "consecutive_errors": self._stats.consecutive_errors,
+                },
+            )
+
+        # Check success rate
+        if self._stats.total_runs > 0 and self._stats.success_rate < 50:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"High failure rate: {self._stats.success_rate:.1f}%",
+                details={
+                    "total_runs": self._stats.total_runs,
+                    "failed_runs": self._stats.failed_runs,
+                    "success_rate": f"{self._stats.success_rate:.1f}%",
+                },
+            )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Loop {self.name} operational",
+            details={
+                "total_runs": self._stats.total_runs,
+                "successful_runs": self._stats.successful_runs,
+                "consecutive_errors": self._stats.consecutive_errors,
+                "success_rate": f"{self._stats.success_rate:.1f}%",
+                "last_success": self._stats.last_success_time,
+                "avg_duration_ms": f"{self._stats.avg_run_duration * 1000:.1f}",
+            },
+        )
+
     # Abstract method that subclasses must implement
 
     @abstractmethod
@@ -495,28 +564,105 @@ class LoopManager:
         """
         return self._loops.get(name)
 
-    async def start_all(self, verify_startup: bool = True, startup_timeout: float = 5.0) -> None:
-        """Start all registered loops as background tasks.
+    async def start_all(
+        self, verify_startup: bool = True, startup_timeout: float = 5.0
+    ) -> dict[str, bool]:
+        """Start all registered loops in dependency order as background tasks.
+
+        Dec 2025: Modified to return startup success per loop and use dependency ordering.
 
         Args:
             verify_startup: If True, verify all loops started successfully
             startup_timeout: Seconds to wait for loops to start running
 
-        Raises:
-            RuntimeError: If verify_startup is True and any loop fails to start
+        Returns:
+            Dictionary mapping loop names to whether they started successfully
         """
+        results: dict[str, bool] = {}
+
         if self._started:
             logger.warning(f"[{self.name}] Already started")
-            return
+            # Return current running status
+            for name, loop in self._loops.items():
+                results[name] = loop.running
+            return results
 
-        logger.info(f"[{self.name}] Starting {len(self._loops)} loops")
-        for loop in self._loops.values():
+        # Get loops in dependency order (topological sort)
+        ordered_names = self._get_startup_order()
+        logger.info(f"[{self.name}] Starting {len(self._loops)} loops in order: {ordered_names}")
+
+        started_loops: set[str] = set()
+        for loop_name in ordered_names:
+            loop = self._loops.get(loop_name)
+            if loop is None:
+                continue
+
+            # Wait for dependencies to be running
+            for dep_name in loop.depends_on:
+                if dep_name not in started_loops and dep_name in self._loops:
+                    # Dependency hasn't started yet - wait briefly
+                    dep_loop = self._loops[dep_name]
+                    wait_start = time.time()
+                    while not dep_loop.running and time.time() - wait_start < 2.0:
+                        await asyncio.sleep(0.1)
+
+            # Start this loop
             loop.start_background()
+            await asyncio.sleep(0.1)  # Brief delay for startup
+
+            # Check if it started
+            if loop.running:
+                started_loops.add(loop_name)
+                results[loop_name] = True
+            else:
+                results[loop_name] = False
+
         self._started = True
 
         # Dec 2025: Verify loops actually started running
         if verify_startup and self._loops:
             await self._verify_loops_running(timeout=startup_timeout)
+            # Update results with verified status
+            for name, loop in self._loops.items():
+                results[name] = loop.running or self._loops[name]._stats.total_runs > 0
+
+        return results
+
+    def _get_startup_order(self) -> list[str]:
+        """Get loop names in topological order based on dependencies.
+
+        Returns:
+            List of loop names in order they should be started
+        """
+        # Simple topological sort using Kahn's algorithm
+        in_degree: dict[str, int] = {name: 0 for name in self._loops}
+        graph: dict[str, list[str]] = {name: [] for name in self._loops}
+
+        for name, loop in self._loops.items():
+            for dep in loop.depends_on:
+                if dep in self._loops:
+                    graph[dep].append(name)
+                    in_degree[name] += 1
+
+        # Start with nodes that have no dependencies
+        queue = [name for name, degree in in_degree.items() if degree == 0]
+        result: list[str] = []
+
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+
+            for dependent in graph[node]:
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
+
+        # Add any remaining loops (handles cycles by just appending them)
+        for name in self._loops:
+            if name not in result:
+                result.append(name)
+
+        return result
 
     async def _verify_loops_running(self, timeout: float = 5.0) -> None:
         """Verify all loops have started running.

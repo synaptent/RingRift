@@ -336,6 +336,15 @@ class FeedbackLoopController:
                 bus.subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
                 event_count += 1
 
+            # Dec 27, 2025: Subscribe to HEALTH_CHECK_PASSED/FAILED for node health tracking
+            # Closes feedback loop: node health changes → training scheduling adjustments
+            if hasattr(DataEventType, 'HEALTH_CHECK_PASSED'):
+                bus.subscribe(DataEventType.HEALTH_CHECK_PASSED, self._on_health_check_passed)
+                event_count += 1
+            if hasattr(DataEventType, 'HEALTH_CHECK_FAILED'):
+                bus.subscribe(DataEventType.HEALTH_CHECK_FAILED, self._on_health_check_failed)
+                event_count += 1
+
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
 
             self._subscribed = True
@@ -2488,6 +2497,83 @@ class FeedbackLoopController:
                     f"{abs(capacity_delta):.1%} reduction. "
                     "Training/selfplay rates may need adjustment."
                 )
+
+    def _on_health_check_passed(self, event) -> None:
+        """Handle HEALTH_CHECK_PASSED - node health check succeeded.
+
+        Dec 27, 2025: Closes node health → feedback loop.
+        When a node passes health check, this handler:
+        1. Updates node availability tracking
+        2. May resume jobs on recovered nodes
+
+        Args:
+            event: Event with payload containing node_id, node_ip, check_type, latency_ms
+        """
+        payload = event.payload if hasattr(event, "payload") else {}
+        node_id = payload.get("node_id", "unknown")
+        check_type = payload.get("check_type", "general")
+        latency_ms = payload.get("latency_ms")
+
+        # Track node as available
+        if not hasattr(self, "_available_nodes"):
+            self._available_nodes: set = set()
+        self._available_nodes.add(node_id)
+
+        # Log recovery from previous failure
+        if not hasattr(self, "_failed_nodes"):
+            self._failed_nodes: set = set()
+        if node_id in self._failed_nodes:
+            self._failed_nodes.discard(node_id)
+            logger.info(
+                f"[FeedbackLoopController] Node {node_id} recovered from health failure "
+                f"(check_type={check_type}, latency={latency_ms}ms)"
+            )
+
+    def _on_health_check_failed(self, event) -> None:
+        """Handle HEALTH_CHECK_FAILED - node health check failed.
+
+        Dec 27, 2025: Closes node health → feedback loop.
+        When a node fails health check, this handler:
+        1. Marks node as unavailable
+        2. May trigger job redistribution if node was running jobs
+        3. Emits warning for monitoring
+
+        Args:
+            event: Event with payload containing node_id, reason, node_ip, check_type, error
+        """
+        payload = event.payload if hasattr(event, "payload") else {}
+        node_id = payload.get("node_id", "unknown")
+        reason = payload.get("reason", "unknown")
+        check_type = payload.get("check_type", "general")
+        error = payload.get("error", "")
+
+        # Track node as failed
+        if not hasattr(self, "_failed_nodes"):
+            self._failed_nodes: set = set()
+        self._failed_nodes.add(node_id)
+
+        # Remove from available nodes
+        if not hasattr(self, "_available_nodes"):
+            self._available_nodes: set = set()
+        self._available_nodes.discard(node_id)
+
+        # Count consecutive failures for this node
+        if not hasattr(self, "_node_failure_counts"):
+            self._node_failure_counts: dict = {}
+        self._node_failure_counts[node_id] = self._node_failure_counts.get(node_id, 0) + 1
+        failure_count = self._node_failure_counts[node_id]
+
+        # Log warning for repeated failures
+        if failure_count >= 3:
+            logger.warning(
+                f"[FeedbackLoopController] Node {node_id} has failed {failure_count} "
+                f"consecutive health checks (reason={reason}, check_type={check_type}). "
+                "Consider removing from active pool."
+            )
+        else:
+            logger.debug(
+                f"[FeedbackLoopController] Node {node_id} health check failed: {reason}"
+            )
 
     def signal_selfplay_quality(self, config_key: str, quality_score: float) -> None:
         """Manually signal selfplay quality (for testing/manual intervention)."""

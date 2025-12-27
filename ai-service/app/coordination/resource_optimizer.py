@@ -76,8 +76,9 @@ def _get_targets() -> dict[str, float]:
             "scale_up": _targets.cpu_min - 5,
             "scale_down": _targets.cpu_max + 5,
         }
-    except ImportError:
-        # Fallback to centralized env config
+    except (ImportError, AttributeError) as e:
+        # Fallback to centralized env config (Dec 2025: Added AttributeError handling)
+        logger.debug(f"Using env fallback for resource targets: {e}")
         _cached_targets = {
             "util_min": env.target_util_min,
             "util_max": env.target_util_max,

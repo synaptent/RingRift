@@ -480,6 +480,79 @@ class Safeguards:
             self._task_counts = counts
 
     # ==========================================
+    # Health Check
+    # ==========================================
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the safeguards system.
+
+        Returns:
+            HealthCheckResult indicating safeguards health status.
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            from dataclasses import dataclass as _dc
+            @_dc
+            class HealthCheckResult:
+                healthy: bool
+                status: str = "unknown"
+                message: str = ""
+                details: dict = None
+            return HealthCheckResult(healthy=True, status="unknown")
+
+        warnings = []
+
+        # Check emergency status
+        if self.is_emergency_active():
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message="Emergency halt is active",
+                details={"emergency_active": True},
+            )
+
+        # Check resource status
+        critical, critical_reason = self._resource_monitor.is_critical()
+        if critical:
+            warnings.append(f"Resource critical: {critical_reason}")
+
+        warning, warning_reason = self._resource_monitor.is_warning()
+        if warning:
+            warnings.append(f"Resource warning: {warning_reason}")
+
+        # Check spawn rate
+        spawn_rate = self._global_tracker.get_rate()
+        if self._global_tracker.at_limit():
+            warnings.append(f"Spawn rate at limit: {spawn_rate:.0f}/min")
+
+        # Check circuit breakers
+        stats = self.get_stats()
+        open_circuits = sum(
+            1 for cb in stats.get("circuit_breakers", {}).values()
+            if cb.get("state") == "open"
+        )
+        if open_circuits > 0:
+            warnings.append(f"{open_circuits} open circuit breaker(s)")
+
+        is_healthy = len(warnings) == 0
+        status = CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED
+
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message="; ".join(warnings) if warnings else "Safeguards healthy",
+            details={
+                "emergency_active": False,
+                "spawn_rate": spawn_rate,
+                "recommended_delay": self.get_delay(),
+                "open_circuits": open_circuits,
+                "resource_critical": critical,
+                "resource_warning": warning,
+            },
+        )
+
+    # ==========================================
     # Internal Methods
     # ==========================================
 
