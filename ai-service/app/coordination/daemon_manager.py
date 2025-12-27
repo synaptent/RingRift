@@ -390,12 +390,57 @@ class DaemonManager:
             except ImportError as e:
                 logger.warning(f"[DaemonManager] Optional subsystem unavailable: {description} ({module_path}): {e}")
 
+        # December 2025: Verify critical event subscriptions are ready
+        # This catches issues where emitters start before subscribers are wired
+        missing_subs = self._verify_critical_subscriptions()
+        if missing_subs:
+            for event_type in missing_subs:
+                logger.warning(f"[DaemonManager] Critical event {event_type} has no subscribers yet")
+
         if errors:
             logger.error(f"[DaemonManager] {len(errors)} critical subsystem(s) failed validation")
         else:
             logger.debug("[DaemonManager] All critical subsystems validated successfully")
 
         return errors
+
+    def _verify_critical_subscriptions(self) -> list[str]:
+        """Verify critical event subscriptions are wired.
+
+        December 2025: Added to ensure subscriber daemons are started before
+        emitter daemons. This prevents event loss where emitters fire before
+        handlers are subscribed.
+
+        Returns:
+            List of event types that are missing subscribers
+        """
+        # Critical events that must have subscribers before sync/training daemons start
+        critical_events = [
+            "DATA_SYNC_COMPLETED",
+            "TRAINING_COMPLETED",
+            "MODEL_PROMOTED",
+            "EVALUATION_COMPLETED",
+            "NEW_GAMES_AVAILABLE",
+        ]
+
+        missing = []
+        try:
+            from app.coordination.event_router import has_subscribers
+
+            for event_type in critical_events:
+                if not has_subscribers(event_type):
+                    missing.append(event_type)
+
+            if missing:
+                logger.debug(
+                    f"[DaemonManager] {len(missing)} critical events missing subscribers: {missing}"
+                )
+            else:
+                logger.debug("[DaemonManager] All critical event subscriptions verified")
+        except ImportError:
+            logger.debug("[DaemonManager] Cannot verify event subscriptions - event_router not available")
+
+        return missing
 
     # NOTE: _verify_p2p_subscriptions was removed Dec 27, 2025
     # P2P event verification is now consolidated in _verify_subscriptions() at line ~1156

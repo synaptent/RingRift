@@ -73,6 +73,8 @@ class MomentumToCurriculumBridge:
         self._event_subscribed = False
         self._fallback_thread: threading.Thread | None = None
         self._last_weights: dict[str, float] = {}
+        # December 2025: Track selfplay allocation shares for curriculum alignment
+        self._last_allocation_share: dict[str, float] = {}
 
     def start(self) -> None:
         """Start the momentum-to-curriculum bridge.
@@ -167,6 +169,9 @@ class MomentumToCurriculumBridge:
                     router.unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
                 if hasattr(DataEventType, 'ELO_SIGNIFICANT_CHANGE'):
                     router.unsubscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+                # December 2025: Unsubscribe from SELFPLAY_ALLOCATION_UPDATED
+                if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
+                    router.unsubscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -265,6 +270,51 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error handling Elo change: {e}")
+
+    def _on_selfplay_allocation_updated(self, event) -> None:
+        """Handle SELFPLAY_ALLOCATION_UPDATED event - track allocation shifts.
+
+        December 2025: Wire SELFPLAY_ALLOCATION_UPDATED to curriculum tracking.
+        When SelfplayScheduler allocates games, this event tells us which configs
+        are receiving focus. We use this to:
+        - Track which configs are currently prioritized by the scheduler
+        - Adjust curriculum weights to align with scheduler allocation
+        - Detect allocation imbalances that may need curriculum correction
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            trigger = payload.get("trigger", "")
+            total_games = payload.get("total_games", 0)
+            configs_allocated = payload.get("configs_allocated", [])
+            allocation = payload.get("allocation", {})
+
+            if not configs_allocated:
+                return
+
+            # Log allocation for tracking
+            logger.debug(
+                f"[MomentumToCurriculumBridge] SELFPLAY_ALLOCATION_UPDATED: "
+                f"trigger={trigger}, games={total_games}, configs={configs_allocated}"
+            )
+
+            # Track allocation patterns for curriculum alignment
+            # If scheduler is heavily weighting a config, curriculum should align
+            if total_games > 0 and allocation:
+                total_allocated_games = sum(
+                    sum(node_games.values()) if isinstance(node_games, dict) else 0
+                    for node_games in allocation.values()
+                )
+
+                for config_key, node_allocation in allocation.items():
+                    config_games = sum(node_allocation.values()) if isinstance(node_allocation, dict) else 0
+                    if config_games > 0 and total_allocated_games > 0:
+                        allocation_share = config_games / total_allocated_games
+                        # Store allocation share for curriculum weight alignment
+                        self._last_allocation_share[config_key] = allocation_share
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.debug(f"[MomentumToCurriculumBridge] Error handling allocation update: {e}")
 
     def _sync_weights_for_momentum(
         self,

@@ -44,12 +44,34 @@ def get_p2p_cluster_status() -> Optional[Dict]:
     except (subprocess.SubprocessError, json.JSONDecodeError, OSError) as e:
         logger.debug(f"Local P2P status check failed: {e}")
 
-    # Try known stable nodes
-    stable_nodes = [
-        ("ubuntu@89.169.112.47", 22, "~/.ssh/id_cluster"),  # nebius-backbone-1
-        ("ubuntu@89.169.110.128", 22, "~/.ssh/id_cluster"),  # nebius-h100-3
-        ("root@208.167.249.164", 22, "~/.ssh/id_ed25519"),  # vultr-a100-20gb
-    ]
+    # December 2025: Load stable nodes dynamically from cluster config
+    # Prefer P2P voters since they are always running P2P
+    stable_nodes = []
+    try:
+        from app.config.cluster_config import get_cluster_nodes, get_p2p_voters
+
+        voters = get_p2p_voters()
+        nodes = get_cluster_nodes()
+
+        for voter_id in voters[:5]:  # Limit to first 5 voters
+            node = nodes.get(voter_id)
+            if node and node.is_active:
+                ssh_host = node.ssh_host or node.tailscale_ip
+                if ssh_host:
+                    user_host = f"{node.ssh_user}@{ssh_host}"
+                    ssh_key = node.ssh_key or "~/.ssh/id_cluster"
+                    stable_nodes.append((user_host, node.ssh_port, ssh_key))
+    except ImportError:
+        logger.debug("cluster_config not available, using legacy hardcoded list")
+        # Fallback to hardcoded list if cluster_config unavailable
+        stable_nodes = [
+            ("ubuntu@89.169.112.47", 22, "~/.ssh/id_cluster"),  # nebius-backbone-1
+            ("ubuntu@89.169.110.128", 22, "~/.ssh/id_cluster"),  # nebius-h100-3
+            ("root@208.167.249.164", 22, "~/.ssh/id_ed25519"),  # vultr-a100-20gb
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to load stable nodes from config: {e}")
+        stable_nodes = []
 
     for ssh_user_host, ssh_port, ssh_key in stable_nodes:
         try:

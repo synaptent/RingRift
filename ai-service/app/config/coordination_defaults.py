@@ -1398,6 +1398,84 @@ class CrossProcessDefaults:
 
 
 # =============================================================================
+# Idle Threshold Defaults (December 27, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class IdleThresholdDefaults:
+    """Default values for GPU idle detection and process cleanup.
+
+    Used by: app/coordination/idle_resource_daemon.py, unified_idle_shutdown_daemon.py
+    """
+    # GPU idle threshold - consider GPU idle after this duration (seconds)
+    GPU_IDLE_THRESHOLD: int = _env_int("RINGRIFT_GPU_IDLE_THRESHOLD", 600)  # 10 minutes
+
+    # Maximum selfplay processes per node before cleanup
+    MAX_PROCESSES: int = _env_int("RINGRIFT_MAX_PROCESSES", 128)
+
+    # Disk usage threshold for cleanup (percentage)
+    CLEANUP_THRESHOLD_PERCENT: int = _env_int("RINGRIFT_CLEANUP_THRESHOLD_PERCENT", 90)
+
+    # Minimum GPU utilization to consider active (percentage)
+    MIN_GPU_UTILIZATION: float = _env_float("RINGRIFT_MIN_GPU_UTILIZATION", 10.0)
+
+    # Grace period before terminating idle instance (seconds)
+    TERMINATION_GRACE_PERIOD: int = _env_int("RINGRIFT_TERMINATION_GRACE_PERIOD", 300)
+
+
+# =============================================================================
+# Provider Defaults (December 27, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class ProviderDefaults:
+    """Default values for cloud provider operations.
+
+    Used by: app/coordination/multi_provider_orchestrator.py
+    """
+    # Interval between provider status checks (seconds)
+    CHECK_INTERVAL: int = _env_int("RINGRIFT_PROVIDER_CHECK_INTERVAL", 300)  # 5 minutes
+
+    # Timeout for provider API calls (seconds)
+    TIMEOUT: int = _env_int("RINGRIFT_PROVIDER_TIMEOUT", 30)
+
+    # Delay between retries on failure (seconds)
+    RETRY_DELAY: int = _env_int("RINGRIFT_PROVIDER_RETRY_DELAY", 5)
+
+    # Maximum retries for provider operations
+    MAX_RETRIES: int = _env_int("RINGRIFT_PROVIDER_MAX_RETRIES", 3)
+
+    # Cooldown after provider error before retry (seconds)
+    ERROR_COOLDOWN: int = _env_int("RINGRIFT_PROVIDER_ERROR_COOLDOWN", 60)
+
+
+# =============================================================================
+# Inventory Defaults (December 27, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class InventoryDefaults:
+    """Default values for unified inventory management.
+
+    Used by: app/coordination/unified_inventory.py
+    """
+    # Interval between inventory refreshes (seconds)
+    REFRESH_INTERVAL: int = _env_int("RINGRIFT_INVENTORY_REFRESH_INTERVAL", 300)
+
+    # Cache TTL for inventory data (seconds)
+    CACHE_TTL: int = _env_int("RINGRIFT_INVENTORY_CACHE_TTL", 60)
+
+    # Threshold for considering inventory stale (seconds)
+    STALE_THRESHOLD: int = _env_int("RINGRIFT_INVENTORY_STALE_THRESHOLD", 1800)
+
+    # Maximum nodes to track in inventory
+    MAX_NODES: int = _env_int("RINGRIFT_INVENTORY_MAX_NODES", 200)
+
+    # Timeout for inventory fetch operations (seconds)
+    FETCH_TIMEOUT: int = _env_int("RINGRIFT_INVENTORY_FETCH_TIMEOUT", 10)
+
+
+# =============================================================================
 # Sync Integrity Defaults (December 27, 2025)
 # =============================================================================
 
@@ -1619,6 +1697,30 @@ def get_all_defaults() -> dict:
             "startup_timeout": DaemonHealthDefaults.STARTUP_TIMEOUT,
             "shutdown_timeout": DaemonHealthDefaults.SHUTDOWN_TIMEOUT,
         },
+        # December 27, 2025: Idle threshold defaults
+        "idle_threshold": {
+            "gpu_idle_threshold": IdleThresholdDefaults.GPU_IDLE_THRESHOLD,
+            "max_processes": IdleThresholdDefaults.MAX_PROCESSES,
+            "cleanup_threshold_percent": IdleThresholdDefaults.CLEANUP_THRESHOLD_PERCENT,
+            "min_gpu_utilization": IdleThresholdDefaults.MIN_GPU_UTILIZATION,
+            "termination_grace_period": IdleThresholdDefaults.TERMINATION_GRACE_PERIOD,
+        },
+        # December 27, 2025: Provider defaults
+        "provider": {
+            "check_interval": ProviderDefaults.CHECK_INTERVAL,
+            "timeout": ProviderDefaults.TIMEOUT,
+            "retry_delay": ProviderDefaults.RETRY_DELAY,
+            "max_retries": ProviderDefaults.MAX_RETRIES,
+            "error_cooldown": ProviderDefaults.ERROR_COOLDOWN,
+        },
+        # December 27, 2025: Inventory defaults
+        "inventory": {
+            "refresh_interval": InventoryDefaults.REFRESH_INTERVAL,
+            "cache_ttl": InventoryDefaults.CACHE_TTL,
+            "stale_threshold": InventoryDefaults.STALE_THRESHOLD,
+            "max_nodes": InventoryDefaults.MAX_NODES,
+            "fetch_timeout": InventoryDefaults.FETCH_TIMEOUT,
+        },
     }
 
 
@@ -1638,6 +1740,8 @@ __all__ = [
     "EphemeralGuardDefaults",
     "HealthDefaults",
     "HeartbeatDefaults",
+    "IdleThresholdDefaults",  # December 27, 2025
+    "InventoryDefaults",  # December 27, 2025
     "JobReaperDefaults",
     "JobTimeoutDefaults",
     "LockDefaults",
@@ -1649,6 +1753,7 @@ __all__ = [
     "OrphanDetectionDefaults",
     "P2PDefaults",
     "PIDDefaults",
+    "ProviderDefaults",  # December 27, 2025
     "QueueDefaults",
     "ResourceLimitsDefaults",
     "ResourceManagerDefaults",

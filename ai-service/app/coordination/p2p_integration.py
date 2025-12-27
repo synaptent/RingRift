@@ -355,6 +355,225 @@ async def submit_p2p_job(job_spec: dict[str, Any]) -> P2PJobResult:
         return P2PJobResult(success=False, error=str(e))
 
 
+async def cancel_p2p_job(job_id: str) -> P2PJobResult:
+    """Cancel a job in the P2P cluster.
+
+    December 2025: Added as part of P2P facade expansion.
+
+    Args:
+        job_id: ID of the job to cancel
+
+    Returns:
+        P2PJobResult with success status
+    """
+    if not HAS_AIOHTTP:
+        return P2PJobResult(success=False, error="aiohttp not available")
+
+    backend = await _get_backend()
+    if backend is None:
+        return P2PJobResult(success=False, error="P2P backend not available")
+
+    try:
+        session = await backend._get_session()
+        async with session.post(
+            f"{backend.leader_url}/work/cancel",
+            json={"job_id": job_id},
+        ) as resp:
+            result = await resp.json()
+            return P2PJobResult(
+                success=result.get("success", False),
+                job_id=job_id,
+                error=result.get("error", ""),
+                details=result,
+            )
+    except asyncio.TimeoutError:
+        return P2PJobResult(success=False, job_id=job_id, error="Request timeout")
+    except (OSError, RuntimeError) as e:
+        return P2PJobResult(success=False, job_id=job_id, error=str(e))
+
+
+async def get_p2p_job_status(job_id: str) -> dict[str, Any] | None:
+    """Get status of a specific job in the P2P cluster.
+
+    December 2025: Added as part of P2P facade expansion.
+
+    Args:
+        job_id: ID of the job to query
+
+    Returns:
+        Job status dict or None if not found
+    """
+    if not HAS_AIOHTTP:
+        return None
+
+    backend = await _get_backend()
+    if backend is None:
+        return None
+
+    try:
+        session = await backend._get_session()
+        async with session.get(
+            f"{backend.leader_url}/work/status/{job_id}",
+        ) as resp:
+            if resp.status == 404:
+                return None
+            result = await resp.json()
+            return result
+    except asyncio.TimeoutError:
+        logger.debug(f"Timeout getting job status for {job_id}")
+        return None
+    except (OSError, RuntimeError) as e:
+        logger.debug(f"Error getting job status for {job_id}: {e}")
+        return None
+
+
+async def list_p2p_jobs(
+    status_filter: str | None = None,
+    job_type: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """List jobs in the P2P cluster.
+
+    December 2025: Added as part of P2P facade expansion.
+
+    Args:
+        status_filter: Optional status to filter by (pending, running, completed, failed)
+        job_type: Optional job type to filter by (selfplay, training, tournament)
+        limit: Maximum number of jobs to return
+
+    Returns:
+        List of job status dicts
+    """
+    if not HAS_AIOHTTP:
+        return []
+
+    backend = await _get_backend()
+    if backend is None:
+        return []
+
+    try:
+        params: dict[str, Any] = {"limit": limit}
+        if status_filter:
+            params["status"] = status_filter
+        if job_type:
+            params["type"] = job_type
+
+        session = await backend._get_session()
+        async with session.get(
+            f"{backend.leader_url}/work/list",
+            params=params,
+        ) as resp:
+            result = await resp.json()
+            return result.get("jobs", [])
+    except asyncio.TimeoutError:
+        logger.debug("Timeout listing P2P jobs")
+        return []
+    except (OSError, RuntimeError) as e:
+        logger.debug(f"Error listing P2P jobs: {e}")
+        return []
+
+
+async def update_p2p_lease(node_id: str | None = None) -> bool:
+    """Update the P2P lease/heartbeat for this node.
+
+    December 2025: Added as part of P2P facade expansion.
+    This is used to signal to the cluster that this node is still alive.
+
+    Args:
+        node_id: Optional node ID (uses local node if not specified)
+
+    Returns:
+        True if lease was updated successfully
+    """
+    if not HAS_AIOHTTP:
+        return False
+
+    backend = await _get_backend()
+    if backend is None:
+        return False
+
+    try:
+        # If no node_id specified, try to get from environment
+        if node_id is None:
+            node_id = os.environ.get("RINGRIFT_NODE_ID", "")
+            if not node_id:
+                # Try to get from status
+                status = await get_p2p_status()
+                if status:
+                    node_id = status.get("node_id", "")
+
+        if not node_id:
+            logger.debug("No node_id available for lease update")
+            return False
+
+        session = await backend._get_session()
+        async with session.post(
+            f"{backend.leader_url}/lease/update",
+            json={"node_id": node_id, "timestamp": time.time()},
+        ) as resp:
+            result = await resp.json()
+            return result.get("success", False)
+    except asyncio.TimeoutError:
+        logger.debug("Timeout updating P2P lease")
+        return False
+    except (OSError, RuntimeError) as e:
+        logger.debug(f"Error updating P2P lease: {e}")
+        return False
+
+
+async def submit_batch_p2p_jobs(job_specs: list[dict[str, Any]]) -> list[P2PJobResult]:
+    """Submit multiple jobs to the P2P cluster in a batch.
+
+    December 2025: Added as part of P2P facade expansion.
+    This is more efficient than submitting jobs one at a time.
+
+    Args:
+        job_specs: List of job specification dicts
+
+    Returns:
+        List of P2PJobResult for each job
+    """
+    if not job_specs:
+        return []
+
+    if not HAS_AIOHTTP:
+        return [P2PJobResult(success=False, error="aiohttp not available") for _ in job_specs]
+
+    backend = await _get_backend()
+    if backend is None:
+        return [P2PJobResult(success=False, error="P2P backend not available") for _ in job_specs]
+
+    try:
+        session = await backend._get_session()
+        async with session.post(
+            f"{backend.leader_url}/work/add_batch",
+            json={"jobs": job_specs},
+        ) as resp:
+            result = await resp.json()
+
+            if result.get("success"):
+                # Parse individual job results
+                job_results = result.get("results", [])
+                return [
+                    P2PJobResult(
+                        success=jr.get("success", False),
+                        job_id=jr.get("job_id", ""),
+                        error=jr.get("error", ""),
+                        details=jr,
+                    )
+                    for jr in job_results
+                ]
+            else:
+                # Batch failed entirely
+                error_msg = result.get("error", "Batch submission failed")
+                return [P2PJobResult(success=False, error=error_msg) for _ in job_specs]
+
+    except asyncio.TimeoutError:
+        return [P2PJobResult(success=False, error="Request timeout") for _ in job_specs]
+    except (OSError, RuntimeError) as e:
+        return [P2PJobResult(success=False, error=str(e)) for _ in job_specs]
+
+
 async def get_p2p_leader_id() -> str | None:
     """Get the current P2P leader ID.
 
@@ -578,6 +797,12 @@ __all__ = [
     "get_p2p_leader_url",
     # Job functions
     "submit_p2p_job",
+    "cancel_p2p_job",  # December 2025
+    "get_p2p_job_status",  # December 2025
+    "list_p2p_jobs",  # December 2025
+    "submit_batch_p2p_jobs",  # December 2025
+    # Lease functions
+    "update_p2p_lease",  # December 2025
     # Utility functions
     "is_p2p_available",
     "clear_p2p_cache",

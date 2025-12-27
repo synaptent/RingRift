@@ -879,6 +879,26 @@ class UnifiedEventRouter:
         """
         self.subscribe(event_type, handler)
 
+    def has_subscribers(self, event_type: str | DataEventType | StageEvent) -> bool:
+        """Check if an event type has any subscribers.
+
+        December 2025: Added to support startup verification that critical
+        event subscribers are wired before emitters start.
+
+        Args:
+            event_type: Event type to check (string or enum)
+
+        Returns:
+            True if at least one subscriber exists for this event type
+        """
+        if hasattr(event_type, 'value'):
+            event_type_str = event_type.value
+        else:
+            event_type_str = str(event_type)
+
+        event_type_str = normalize_event_type(event_type_str)
+        return bool(self._subscribers.get(event_type_str))
+
     def get_history(
         self,
         event_type: str | None = None,
@@ -1331,6 +1351,20 @@ def get_orphaned_events() -> dict[str, list[str]]:
 def get_event_stats() -> dict[str, Any]:
     """Get event router statistics."""
     return get_router().get_stats()
+
+
+def has_subscribers(event_type: str) -> bool:
+    """Check if an event type has any subscribers.
+
+    December 2025: Module-level helper for startup verification.
+
+    Args:
+        event_type: Event type string to check
+
+    Returns:
+        True if at least one subscriber exists for this event type
+    """
+    return get_router().has_subscribers(event_type)
 
 
 def get_event_payload(event: RouterEvent | dict[str, Any] | Any) -> dict[str, Any]:

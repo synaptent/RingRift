@@ -16480,6 +16480,12 @@ print(json.dumps(result))
     async def _worker_pull_loop(self):
         """Background loop for workers to poll leader for work (pull model).
 
+        .. deprecated::
+            December 2025 - This method is deprecated and now runs via LoopManager
+            as WorkerPullLoop. See scripts/p2p/loops/job_loops.py.
+            This inline version is kept for fallback compatibility but is no longer
+            invoked by default. Will be removed Q2 2026.
+
         This implements a worker pull model where nodes periodically check
         if they are idle and pull work from the leader's work queue.
 
@@ -27193,6 +27199,60 @@ print(json.dumps({{
                 status["warnings"].append(f"{name} import failed: {e}")
                 logger.warning(f"[Startup Validation] Manager {name} unavailable: {e}")
 
+        # December 2025: P2P voter connectivity validation
+        # Check that at least quorum voters are reachable before starting
+        status["voters"] = {
+            "configured": len(self.voter_node_ids),
+            "quorum": self.voter_quorum_size,
+            "reachable": 0,
+            "unreachable": [],
+        }
+
+        if self.voter_node_ids:
+            import socket
+            import contextlib
+
+            reachable_count = 0
+            for voter_id in self.voter_node_ids:
+                # Try to resolve voter IP from config
+                try:
+                    from app.config.cluster_config import get_cluster_nodes
+                    nodes = get_cluster_nodes()
+                    node = nodes.get(voter_id)
+                    if node:
+                        voter_ip = node.best_ip
+                        if voter_ip:
+                            # Quick TCP connect test to P2P port
+                            with contextlib.suppress(Exception):
+                                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                sock.settimeout(2.0)
+                                result = sock.connect_ex((voter_ip, self.port))
+                                sock.close()
+                                if result == 0:
+                                    reachable_count += 1
+                                    continue
+                    status["voters"]["unreachable"].append(voter_id)
+                except Exception:
+                    status["voters"]["unreachable"].append(voter_id)
+
+            status["voters"]["reachable"] = reachable_count
+
+            # Log voter connectivity status
+            if reachable_count < self.voter_quorum_size:
+                msg = (
+                    f"Only {reachable_count}/{len(self.voter_node_ids)} voters reachable, "
+                    f"need {self.voter_quorum_size} for quorum. Unreachable: {status['voters']['unreachable']}"
+                )
+                status["warnings"].append(msg)
+                logger.warning(f"[Startup Validation] {msg}")
+            else:
+                logger.info(
+                    f"[Startup Validation] Voter quorum OK: "
+                    f"{reachable_count}/{len(self.voter_node_ids)} voters reachable"
+                )
+        else:
+            logger.info("[Startup Validation] No voters configured - quorum checks disabled")
+
         # Summary log
         available_count = sum(1 for v in status["managers"].values() if v)
         total_count = len(status["managers"])
@@ -27545,8 +27605,8 @@ print(json.dumps({{
 
         # NOTE: _elo_sync_loop removed Dec 2025 - now runs via LoopManager (EloSyncLoop)
 
-        # Add worker pull loop (workers poll leader for work)
-        tasks.append(self._create_safe_task(self._worker_pull_loop(), "worker_pull"))
+        # NOTE: _worker_pull_loop removed Dec 2025 - now runs via LoopManager (WorkerPullLoop)
+        # See scripts/p2p/loops/job_loops.py for implementation
 
         # NOTE: _work_queue_maintenance_loop removed Dec 2025 - now runs via LoopManager (WorkQueueMaintenanceLoop)
         # See scripts/p2p/loops/job_loops.py for implementation
