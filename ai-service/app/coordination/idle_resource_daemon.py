@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.cluster_config import get_host_provider
 from app.config.env import env
 from app.coordination.protocols import (
     CoordinatorStatus,
@@ -1314,21 +1315,11 @@ class IdleResourceDaemon:
             return None
 
     def _detect_provider(self, node_name: str) -> str:
-        """Detect provider from node name."""
-        name_lower = node_name.lower()
-        if "vast" in name_lower:
-            return "vast"
-        elif "runpod" in name_lower:
-            return "runpod"
-        elif "nebius" in name_lower:
-            return "nebius"
-        elif "vultr" in name_lower:
-            return "vultr"
-        elif "hetzner" in name_lower:
-            return "hetzner"
-        elif "lambda" in name_lower or name_lower.startswith(("a-", "b-", "c-", "d-", "e-", "f-", "g-", "h-", "i-", "j-", "k-", "l-", "m-", "n-", "o-", "p-", "q-", "r-", "s-", "t-")):
-            return "lambda"
-        return "unknown"
+        """Detect provider from node name.
+
+        Uses the consolidated get_host_provider() from cluster_config.
+        """
+        return get_host_provider(node_name)
 
     def _update_node_state(self, node: NodeStatus) -> None:
         """Update tracked node state for idle duration tracking."""

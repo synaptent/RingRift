@@ -40,6 +40,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config.cluster_config import get_host_provider
+
 logger = logging.getLogger(__name__)
 
 
@@ -463,25 +465,24 @@ class MultiProviderOrchestrator:
         return nodes
 
     def _detect_provider(self, hostname: str) -> Provider:
-        """Detect provider from hostname."""
-        hostname_lower = hostname.lower()
-        if "lambda" in hostname_lower or "gh200" in hostname_lower:
-            return Provider.LAMBDA
-        elif "runpod" in hostname_lower:
-            return Provider.RUNPOD
-        elif "nebius" in hostname_lower:
-            return Provider.NEBIUS
-        elif "vultr" in hostname_lower:
-            return Provider.VULTR
-        elif "vast" in hostname_lower:
-            return Provider.VAST
-        elif hostname_lower.startswith("ip-172-31") or "aws" in hostname_lower:
-            return Provider.AWS
-        elif "hetzner" in hostname_lower or hostname_lower.startswith("ringrift-cpu"):
-            return Provider.HETZNER
-        elif "mac" in hostname_lower or "mbp" in hostname_lower:
-            return Provider.LOCAL
-        return Provider.UNKNOWN
+        """Detect provider from hostname.
+
+        Uses the consolidated get_host_provider() from cluster_config.
+        """
+        # Map string result to Provider enum
+        provider_map = {
+            "lambda": Provider.LAMBDA,
+            "vast": Provider.VAST,
+            "runpod": Provider.RUNPOD,
+            "nebius": Provider.NEBIUS,
+            "vultr": Provider.VULTR,
+            "aws": Provider.AWS,
+            "hetzner": Provider.HETZNER,
+            "local": Provider.LOCAL,
+            "unknown": Provider.UNKNOWN,
+        }
+        provider_str = get_host_provider(hostname)
+        return provider_map.get(provider_str, Provider.UNKNOWN)
 
     async def ensure_tailscale_connected(self, node: ClusterNode) -> bool:
         """Ensure a node has Tailscale connected."""
