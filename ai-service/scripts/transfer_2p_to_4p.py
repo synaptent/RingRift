@@ -64,28 +64,52 @@ def transfer_2p_to_np(source_path: str, output_path: str, board_type: str, targe
                 logger.info(f"  Found 2-player value head: {key} {shape}")
 
     # Resize value head from 2 to target_players
+    # Dec 27, 2025: Fixed initialization - was using 0.01 noise (too small),
+    # and Player 2 could end up all zeros if weight copy failed
     for key in value_keys_to_resize:
         old_weight = state_dict[key]
         new_shape = (target_players, old_weight.shape[1]) if len(old_weight.shape) == 2 else (target_players,)
 
-        # Initialize new weights
-        new_weight = torch.zeros(new_shape)
+        # Initialize new weights with small random values (not zeros!)
+        # This ensures no player starts with all-zero weights
+        new_weight = torch.randn(new_shape) * 0.1
 
         # Copy existing weights for players 1-2
         if len(old_weight.shape) == 2:
-            new_weight[:2, :] = old_weight
-            # Initialize additional players by averaging players 1-2 with noise
+            new_weight[0, :] = old_weight[0, :]  # Player 1 - explicit copy
+            new_weight[1, :] = old_weight[1, :]  # Player 2 - explicit copy
+            # Initialize additional players by averaging players 1-2 with LARGER noise
             avg = old_weight.mean(dim=0)
             for p in range(2, target_players):
-                new_weight[p, :] = avg + torch.randn_like(avg) * 0.01
+                # Use 0.1 scale instead of 0.01 for better learning dynamics
+                new_weight[p, :] = avg + torch.randn_like(avg) * 0.1
         else:
-            new_weight[:2] = old_weight
+            new_weight[0] = old_weight[0]  # Player 1
+            new_weight[1] = old_weight[1]  # Player 2
             avg = old_weight.mean()
             for p in range(2, target_players):
-                new_weight[p] = avg + torch.randn(1).item() * 0.01
+                new_weight[p] = avg + torch.randn(1).item() * 0.1
+
+        # Validate: ensure no player has all-zero weights
+        for p in range(target_players):
+            if len(new_weight.shape) == 2:
+                if new_weight[p, :].abs().sum() < 1e-6:
+                    logger.warning(f"  Player {p+1} weights near zero - adding noise")
+                    new_weight[p, :] = torch.randn(new_weight.shape[1]) * 0.1
+            else:
+                if abs(new_weight[p].item()) < 1e-6:
+                    logger.warning(f"  Player {p+1} weight near zero - adding noise")
+                    new_weight[p] = torch.randn(1).item() * 0.1
 
         state_dict[key] = new_weight
         logger.info(f"  Resized {key}: {old_weight.shape} -> {new_weight.shape}")
+        # Log weight magnitudes for each player
+        for p in range(target_players):
+            if len(new_weight.shape) == 2:
+                mag = new_weight[p, :].abs().mean().item()
+            else:
+                mag = abs(new_weight[p].item())
+            logger.info(f"    Player {p+1} weight magnitude: {mag:.4f}")
 
     # Also resize bias if present
     for key in list(state_dict.keys()):
