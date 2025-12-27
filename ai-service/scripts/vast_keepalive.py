@@ -28,7 +28,14 @@ from typing import Optional
 
 from scripts.lib.logging_config import setup_script_logging
 from scripts.lib.paths import AI_SERVICE_ROOT, LOGS_DIR
-from scripts.lib.ssh import run_vast_ssh_command
+from app.core.ssh import run_vast_ssh_command as _run_vast_ssh
+
+
+def run_vast_ssh_command(host: str, port: int, command: str, **kwargs) -> tuple[bool, str]:
+    """Compatibility wrapper returning (success, output) tuple."""
+    result = _run_vast_ssh(host, port, command, **kwargs)
+    return result.success, result.stdout
+
 
 LOG_FILE = LOGS_DIR / "vast_keepalive.log"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)

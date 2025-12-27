@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from scripts.lib.ssh import SSHConfig, run_ssh_command_async_with_config
+from app.core.ssh import SSHClient, SSHConfig
 
 
 @dataclass
@@ -106,9 +106,7 @@ def build_ssh_config(host_config: dict[str, Any]) -> SSHConfig:
         host=host,
         port=host_config.get("ssh_port", 22),
         user=host_config.get("ssh_user", "root"),
-        ssh_key=host_config.get("ssh_key"),
-        batch_mode=True,
-        strict_host_key_checking="no",  # Match original behavior
+        key_path=host_config.get("ssh_key"),
     )
 
 
@@ -125,7 +123,9 @@ def get_ringrift_path(host_config: dict[str, Any]) -> str:
 
 async def run_ssh_command(config: SSHConfig, remote_cmd: str, timeout: int = 60) -> tuple[bool, str]:
     """Run a command via SSH and return (success, output)."""
-    return await run_ssh_command_async_with_config(config, remote_cmd, timeout=timeout)
+    client = SSHClient(config)
+    result = await client.run_async(remote_cmd, timeout=timeout)
+    return result.success, result.output
 
 
 async def get_host_status(name: str, host_config: dict[str, Any]) -> HostResult:

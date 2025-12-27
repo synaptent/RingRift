@@ -41,7 +41,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.lib.hosts import get_hosts, get_hosts_manager, HostConfig
-from scripts.lib.ssh import SSHConfig, run_ssh_command_async_with_config
+from app.core.ssh import SSHClient, SSHConfig
 
 logger = logging.getLogger(__name__)
 
@@ -119,39 +119,35 @@ async def check_node_p2p_status(host: HostConfig, verbose: bool = False) -> P2PS
     """
     status = P2PStatus(node_name=host.name)
 
-    # Build SSH config
+    # Build SSH config and client (using app.core.ssh)
     ssh_config = SSHConfig(
         host=host.ssh_host,
         port=host.ssh_port,
         user=host.ssh_user,
-        ssh_key=host.ssh_key,
+        key_path=host.ssh_key,
         connect_timeout=SSH_TIMEOUT,
-        batch_mode=True,
     )
+    client = SSHClient(ssh_config)
 
     if verbose:
         logger.info(f"Checking {host.name} ({host.ssh_host}:{host.ssh_port})...")
 
     # First, check SSH reachability with a simple command
-    success, output = await run_ssh_command_async_with_config(
-        ssh_config, "echo ok", timeout=SSH_TIMEOUT
-    )
+    result = await client.run_async("echo ok", timeout=SSH_TIMEOUT)
 
-    if not success:
-        status.error = f"SSH unreachable: {output}"
+    if not result.success:
+        status.error = f"SSH unreachable: {result.output}"
         return status
 
     status.ssh_reachable = True
 
     # Check P2P status via curl
     curl_cmd = f"curl -s --max-time 5 http://localhost:{P2P_PORT}/status 2>/dev/null || echo 'CURL_FAILED'"
-    success, output = await run_ssh_command_async_with_config(
-        ssh_config, curl_cmd, timeout=SSH_TIMEOUT
-    )
+    result = await client.run_async(curl_cmd, timeout=SSH_TIMEOUT)
 
-    if success and output and output != "CURL_FAILED":
+    if result.success and result.output and result.output != "CURL_FAILED":
         try:
-            data = json.loads(output)
+            data = json.loads(result.output)
             status.p2p_running = True
             status.p2p_role = data.get("role", "unknown")
             status.leader_id = data.get("leader_id") or data.get("effective_leader_id")
@@ -171,11 +167,9 @@ async def check_node_p2p_status(host: HostConfig, verbose: bool = False) -> P2PS
 
     # P2P not responding to HTTP, check if process is running
     ps_cmd = "ps aux | grep -E 'p2p_orchestrator|p2p.main' | grep -v grep | head -1"
-    success, output = await run_ssh_command_async_with_config(
-        ssh_config, ps_cmd, timeout=SSH_TIMEOUT
-    )
+    result = await client.run_async(ps_cmd, timeout=SSH_TIMEOUT)
 
-    if success and output:
+    if result.success and result.output:
         # Process exists but HTTP not responding
         status.error = "P2P process exists but HTTP not responding (possibly starting up)"
         status.p2p_running = False  # Not fully operational
@@ -184,16 +178,16 @@ async def check_node_p2p_status(host: HostConfig, verbose: bool = False) -> P2PS
         status.error = "P2P not running"
 
         # Check for crash logs
-        await check_crash_logs(ssh_config, status, host)
+        await check_crash_logs(client, status, host)
 
     return status
 
 
-async def check_crash_logs(ssh_config: SSHConfig, status: P2PStatus, host: HostConfig) -> None:
+async def check_crash_logs(client: SSHClient, status: P2PStatus, host: HostConfig) -> None:
     """Check for recent P2P crash logs on a node.
 
     Args:
-        ssh_config: SSH configuration
+        client: SSH client to use
         status: P2PStatus to update with crash log info
         host: Host configuration for path info
     """
@@ -209,14 +203,12 @@ async def check_crash_logs(ssh_config: SSHConfig, status: P2PStatus, host: HostC
     for log_path in log_paths:
         # Get last 20 lines of the log if it exists
         check_cmd = f"test -f {log_path} && tail -20 {log_path} 2>/dev/null || true"
-        success, output = await run_ssh_command_async_with_config(
-            ssh_config, check_cmd, timeout=SSH_TIMEOUT
-        )
+        result = await client.run_async(check_cmd, timeout=SSH_TIMEOUT)
 
-        if success and output:
+        if result.success and result.output:
             # Look for error indicators
             error_indicators = ["ERROR", "Exception", "Traceback", "FATAL", "crashed", "killed"]
-            lines = output.split("\n")
+            lines = result.output.split("\n")
             error_lines = [
                 line for line in lines
                 if any(indicator in line for indicator in error_indicators)

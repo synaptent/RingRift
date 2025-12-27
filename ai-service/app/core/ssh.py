@@ -61,6 +61,9 @@ __all__ = [
     "run_ssh_command",
     "run_ssh_command_async",
     "run_ssh_command_sync",
+    # Vast.ai convenience functions
+    "run_vast_ssh_command",
+    "run_vast_ssh_command_async",
 ]
 
 logger = logging.getLogger(__name__)
@@ -797,3 +800,120 @@ def run_ssh_command_sync(
 
 # Default to async for backward compatibility
 run_ssh_command = run_ssh_command_async
+
+
+# =============================================================================
+# Vast.ai SSH Convenience Functions
+# =============================================================================
+
+def run_vast_ssh_command(
+    host: str,
+    port: int,
+    command: str,
+    *,
+    timeout: int = 30,
+    retries: int = 0,
+    key_path: str | None = None,
+) -> SSHResult:
+    """Run SSH command on a Vast.ai instance (sync).
+
+    Vast.ai instances use:
+    - Custom SSH ports (not 22)
+    - root user
+    - accept-new host key checking
+    - batch mode
+
+    Args:
+        host: Vast.ai instance hostname or IP
+        port: SSH port (varies per instance)
+        command: Command to execute
+        timeout: Command timeout in seconds (default: 30)
+        retries: Number of retry attempts (default: 0)
+        key_path: Optional SSH key path (default: ~/.ssh/id_ed25519)
+
+    Returns:
+        SSHResult with command output
+
+    Example:
+        result = run_vast_ssh_command("ssh5.vast.ai", 12345, "nvidia-smi")
+        if result.success:
+            print(result.stdout)
+    """
+    config = SSHConfig(
+        host=host,
+        port=port,
+        user="root",
+        key_path=key_path or "~/.ssh/id_ed25519",
+        connect_timeout=10,
+        command_timeout=timeout,
+        use_control_master=True,
+    )
+    client = SSHClient(config)
+
+    last_result = None
+    for attempt in range(retries + 1):
+        result = client.run(command, timeout=timeout)
+        if result.success:
+            return result
+        last_result = result
+        if attempt < retries:
+            time.sleep(2)  # Brief delay between retries
+
+    return last_result or SSHResult(
+        success=False,
+        returncode=-1,
+        stdout="",
+        stderr="No attempts made",
+        elapsed_ms=0,
+        command=command,
+        host=host,
+    )
+
+
+async def run_vast_ssh_command_async(
+    host: str,
+    port: int,
+    command: str,
+    *,
+    timeout: int = 30,
+    retries: int = 0,
+    key_path: str | None = None,
+) -> SSHResult:
+    """Run SSH command on a Vast.ai instance (async).
+
+    Vast.ai instances use:
+    - Custom SSH ports (not 22)
+    - root user
+    - accept-new host key checking
+    - batch mode
+
+    Args:
+        host: Vast.ai instance hostname or IP
+        port: SSH port (varies per instance)
+        command: Command to execute
+        timeout: Command timeout in seconds (default: 30)
+        retries: Number of retry attempts (default: 0)
+        key_path: Optional SSH key path (default: ~/.ssh/id_ed25519)
+
+    Returns:
+        SSHResult with command output
+
+    Example:
+        result = await run_vast_ssh_command_async("ssh5.vast.ai", 12345, "nvidia-smi")
+        if result.success:
+            print(result.stdout)
+    """
+    config = SSHConfig(
+        host=host,
+        port=port,
+        user="root",
+        key_path=key_path or "~/.ssh/id_ed25519",
+        connect_timeout=10,
+        command_timeout=timeout,
+        use_control_master=True,
+    )
+    client = SSHClient(config)
+
+    if retries > 0:
+        return await client.run_async_with_retry(command, timeout, retries)
+    return await client.run_async(command, timeout=timeout)

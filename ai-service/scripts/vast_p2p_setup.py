@@ -34,7 +34,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Add parent directory to path for imports
-from scripts.lib.ssh import run_vast_ssh_command
+from app.core.ssh import run_vast_ssh_command as _run_vast_ssh
+
+
+def run_vast_ssh_command(host: str, port: int, command: str, **kwargs) -> tuple[bool, str]:
+    """Compatibility wrapper returning (success, output) tuple."""
+    result = _run_vast_ssh(host, port, command, **kwargs)
+    return result.success, result.stdout
+
 
 # P2P Configuration
 P2P_PORT = 8770
