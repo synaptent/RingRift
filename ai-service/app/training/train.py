@@ -1431,14 +1431,26 @@ def train_model(
             )
         elif dataset_feature_version is None:
             if config_feature_version != 1:
-                raise ValueError(
-                    "Dataset is missing feature_version metadata but training "
-                    "was configured for feature_version="
-                    f"{config_feature_version}.\n"
-                    f"  dataset={data_path_str}\n"
-                    "Regenerate the dataset with --feature-version or "
-                    "set feature_version=1 to use legacy features."
-                )
+                # Check for autonomous mode - fallback to v1 instead of failing
+                autonomous_mode = os.environ.get("RINGRIFT_AUTONOMOUS_MODE", "").lower() in ("1", "true")
+                if autonomous_mode:
+                    if not distributed or is_main_process():
+                        logger.warning(
+                            "[AUTONOMOUS] Dataset %s missing feature_version metadata. "
+                            "Config requested v%d but falling back to v1 for compatibility.",
+                            data_path_str,
+                            config_feature_version,
+                        )
+                    config_feature_version = 1
+                else:
+                    raise ValueError(
+                        "Dataset is missing feature_version metadata but training "
+                        "was configured for feature_version="
+                        f"{config_feature_version}.\n"
+                        f"  dataset={data_path_str}\n"
+                        "Regenerate the dataset with --feature-version or "
+                        "set feature_version=1 to use legacy features."
+                    )
             if not distributed or is_main_process():
                 logger.warning(
                     "Dataset %s missing feature_version metadata; assuming legacy "
@@ -1625,14 +1637,26 @@ def train_model(
                 )
             elif dataset_feature_version is None:
                 if config_feature_version != 1:
-                    raise ValueError(
-                        "Dataset is missing feature_version metadata but training "
-                        "was configured for feature_version="
-                        f"{config_feature_version}.\n"
-                        f"  dataset={data_path_str}\n"
-                        "Regenerate the dataset with --feature-version or "
-                        "set feature_version=1 to use legacy features."
-                    )
+                    # Check for autonomous mode - fallback to v1 instead of failing
+                    autonomous_mode = os.environ.get("RINGRIFT_AUTONOMOUS_MODE", "").lower() in ("1", "true")
+                    if autonomous_mode:
+                        if not distributed or is_main_process():
+                            logger.warning(
+                                "[AUTONOMOUS] Dataset %s missing feature_version metadata. "
+                                "Config requested v%d but falling back to v1 for compatibility.",
+                                data_path_str,
+                                config_feature_version,
+                            )
+                        config_feature_version = 1
+                    else:
+                        raise ValueError(
+                            "Dataset is missing feature_version metadata but training "
+                            "was configured for feature_version="
+                            f"{config_feature_version}.\n"
+                            f"  dataset={data_path_str}\n"
+                            "Regenerate the dataset with --feature-version or "
+                            "set feature_version=1 to use legacy features."
+                        )
                 if not distributed or is_main_process():
                     logger.warning(
                         "Dataset %s missing feature_version metadata; assuming legacy "
@@ -2548,14 +2572,26 @@ def train_model(
             )
         elif dataset_feature_version is None:
             if config_feature_version != 1:
-                raise ValueError(
-                    "Dataset is missing feature_version metadata but training "
-                    "was configured for feature_version="
-                    f"{config_feature_version}.\n"
-                    f"  dataset={first_path}\n"
-                    "Regenerate the dataset with --feature-version or "
-                    "set feature_version=1 to use legacy features."
-                )
+                # Check for autonomous mode - fallback to v1 instead of failing
+                autonomous_mode = os.environ.get("RINGRIFT_AUTONOMOUS_MODE", "").lower() in ("1", "true")
+                if autonomous_mode:
+                    if not distributed or is_main_process():
+                        logger.warning(
+                            "[AUTONOMOUS] Dataset %s missing feature_version metadata. "
+                            "Config requested v%d but falling back to v1 for compatibility.",
+                            first_path,
+                            config_feature_version,
+                        )
+                    config_feature_version = 1
+                else:
+                    raise ValueError(
+                        "Dataset is missing feature_version metadata but training "
+                        "was configured for feature_version="
+                        f"{config_feature_version}.\n"
+                        f"  dataset={first_path}\n"
+                        "Regenerate the dataset with --feature-version or "
+                        "set feature_version=1 to use legacy features."
+                    )
             if not distributed or is_main_process():
                 logger.warning(
                     "Dataset %s missing feature_version metadata; assuming legacy "
