@@ -93,17 +93,12 @@ class TestCreateAutoSync:
         mock_daemon.start = AsyncMock()
         mock_daemon._running = False  # Exit immediately
 
+        # Patch at the source module level (where the import happens)
         with patch(
-            "app.coordination.daemon_factory_implementations.AutoSyncDaemon",
+            "app.coordination.auto_sync_daemon.AutoSyncDaemon",
             return_value=mock_daemon,
-        ) as mock_class:
-            # Import inside patch to use mock
-            import sys
-            mock_module = MagicMock()
-            mock_module.AutoSyncDaemon = mock_class
-            with patch.dict(sys.modules, {"app.coordination.auto_sync_daemon": mock_module}):
-                # Run with patched import
-                await create_auto_sync()
+        ):
+            await create_auto_sync()
 
         mock_daemon.start.assert_called_once()
 

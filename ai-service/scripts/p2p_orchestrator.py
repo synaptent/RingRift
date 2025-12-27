@@ -22493,8 +22493,16 @@ print(json.dumps({{
                                     content_encoding = resp.headers.get("Content-Encoding", "")
                                     if content_encoding == "gzip":
                                         response_bytes = await resp.read()
-                                        decompressed = gzip.decompress(response_bytes)
-                                        response_data = json.loads(decompressed.decode("utf-8"))
+                                        try:
+                                            decompressed = gzip.decompress(response_bytes)
+                                            payload_bytes = decompressed
+                                        except OSError as e:
+                                            logger.debug(
+                                                f"[Gossip] Gzip decode failed from {peer.node_id}: {e}. "
+                                                "Falling back to plain JSON."
+                                            )
+                                            payload_bytes = response_bytes
+                                        response_data = json.loads(payload_bytes.decode("utf-8"))
                                     else:
                                         response_data = await resp.json()
                                     self._process_gossip_response(response_data)
