@@ -896,9 +896,40 @@ class GPUSelfPlayGenerator:
                 # Adjust batch size for last batch
                 remaining = num_games - len(all_records)
                 actual_batch = min(self.batch_size, remaining)
+                batch_records_start = len(all_records)
+                batch_filtered_start = self.filtered_short_games
 
                 # Generate batch
-                results = self.generate_batch(seed=batch_idx * 1000)
+                try:
+                    results = self.generate_batch(seed=batch_idx * 1000)
+                except Exception as exc:
+                    logger.exception(
+                        "GPU selfplay batch failed",
+                        extra={
+                            "batch_idx": batch_idx,
+                            "num_batches": num_batches,
+                            "board_type": self.board_type,
+                            "num_players": self.num_players,
+                            "batch_size": self.batch_size,
+                        },
+                    )
+                    raise exc
+
+                required_keys = (
+                    "move_counts",
+                    "move_histories",
+                    "winners",
+                    "victory_types",
+                    "stalemate_tiebreakers",
+                )
+                for key in required_keys:
+                    values = results.get(key)
+                    if values is None or not hasattr(values, "__len__"):
+                        raise RuntimeError(f"GPU selfplay batch missing '{key}' results")
+                    if len(values) < actual_batch:
+                        raise RuntimeError(
+                            f"GPU selfplay batch '{key}' length {len(values)} < expected {actual_batch}"
+                        )
 
                 # Create game records
                 # Use the board_type that was passed in, not inferred from board_size
@@ -1087,6 +1118,26 @@ class GPUSelfPlayGenerator:
                 # Flush at end of each batch for safety
                 flush_write_buffer()
 
+                batch_written = len(all_records) - batch_records_start
+                batch_filtered = self.filtered_short_games - batch_filtered_start
+                if batch_written == 0:
+                    logger.warning(
+                        "GPU selfplay batch produced zero records",
+                        extra={
+                            "batch_idx": batch_idx + 1,
+                            "num_batches": num_batches,
+                            "board_type": board_type_str,
+                            "num_players": self.num_players,
+                            "filtered_short_games": batch_filtered,
+                        },
+                    )
+                elif batch_filtered > 0:
+                    logger.info(
+                        f"  Batch {batch_idx + 1}/{num_batches}: "
+                        f"wrote {batch_written}/{actual_batch} games "
+                        f"(filtered {batch_filtered})"
+                    )
+
                 # Progress logging
                 if (batch_idx + 1) % progress_interval == 0:
                     elapsed = time.time() - start_time
@@ -1106,6 +1157,19 @@ class GPUSelfPlayGenerator:
             flush_write_buffer()
             if file_handle:
                 file_handle.close()
+
+        if output_file and os.path.exists(output_file):
+            if os.path.getsize(output_file) == 0:
+                raise RuntimeError(
+                    f"GPU selfplay output is empty: {output_file}. "
+                    "Check for batch failures or min_game_length filtering."
+                )
+
+        if len(all_records) == 0:
+            raise RuntimeError(
+                "GPU selfplay produced zero records. "
+                "Check for batch failures, min_game_length filtering, or upstream errors."
+            )
 
         return all_records
 
@@ -1652,7 +1716,7 @@ def run_gpu_selfplay(
 
     # Generate games - use unique filename per config to avoid lock contention
     games_file = os.path.join(output_dir, f"games_{board_type}_{num_players}p_{os.getpid()}.jsonl")
-    generator.generate_games(
+    records = generator.generate_games(
         num_games=num_games,
         output_file=games_file,
         progress_interval=10,
@@ -1660,8 +1724,15 @@ def run_gpu_selfplay(
 
     # Get and save statistics
     stats = generator.get_statistics()
+    stats["recorded_games"] = len(records)
     stats["timestamp"] = datetime.now().isoformat()
     stats["seed"] = seed
+
+    if stats["recorded_games"] < num_games:
+        logger.warning(
+            f"Recorded {stats['recorded_games']}/{num_games} games. "
+            f"Filtered short games: {stats['filtered_short_games']}."
+        )
 
     stats_file = os.path.join(output_dir, "stats.json")
     # Ensure directory exists right before write (handles race conditions on remote hosts)

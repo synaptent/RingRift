@@ -431,16 +431,16 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
 
     def _has_games_for_config(self, db_path: Path, board_type: str, num_players: int) -> bool:
         """Check if a database has games for the specified config."""
+        # December 27, 2025: Use context manager to prevent connection leaks
         try:
-            conn = sqlite3.connect(str(db_path), timeout=5.0)
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM games
-                WHERE board_type = ? AND num_players = ?
-                LIMIT 1
-            """, (board_type, num_players))
-            count = cursor.fetchone()[0]
-            conn.close()
-            return count > 0
+            with sqlite3.connect(str(db_path), timeout=5.0) as conn:
+                cursor = conn.execute("""
+                    SELECT COUNT(*) FROM games
+                    WHERE board_type = ? AND num_players = ?
+                    LIMIT 1
+                """, (board_type, num_players))
+                count = cursor.fetchone()[0]
+                return count > 0
         except (sqlite3.Error, OSError):
             return False
 
@@ -453,12 +453,12 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         if not db_path.exists():
             return set()
 
+        # December 27, 2025: Use context manager to prevent connection leaks
         try:
-            conn = sqlite3.connect(str(db_path), timeout=30.0)
-            cursor = conn.execute("SELECT game_id FROM games")
-            game_ids = {row[0] for row in cursor.fetchall()}
-            conn.close()
-            return game_ids
+            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+                cursor = conn.execute("SELECT game_id FROM games")
+                game_ids = {row[0] for row in cursor.fetchall()}
+                return game_ids
         except sqlite3.Error as e:
             logger.warning(f"[DataConsolidationDaemon] Could not read game IDs from {db_path}: {e}")
             return set()

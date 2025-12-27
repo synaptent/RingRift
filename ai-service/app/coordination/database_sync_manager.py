@@ -670,51 +670,62 @@ class DatabaseSyncManager(SyncManagerBase):
             HealthCheckResult with sync status and database details.
 
         December 2025: Added for unified health monitoring. Inherited by
-        EloSyncManager and RegistrySyncManager.
+        EloSyncManager and RegistrySyncManager. Added exception handling to
+        prevent health_check crashes from causing daemon restart loops.
         """
         from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
-        if not self._running:
+        try:
+            if not self._running:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.STOPPED,
+                    message=f"{self.db_type}SyncManager not running",
+                )
+
+            # Check database exists
+            if not self.db_path.exists():
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"Database not found: {self.db_path}",
+                )
+
+            # Calculate sync health metrics
+            sync_rate = (
+                self._db_state.successful_syncs / self._db_state.total_syncs
+                if self._db_state.total_syncs > 0
+                else 1.0
+            )
+            is_recent = time.time() - self._db_state.last_sync_timestamp < self.sync_interval * 2
+
+            # Healthy if: sync rate > 50% AND last sync is recent
+            is_healthy = sync_rate >= 0.5 and is_recent
+
+            return HealthCheckResult(
+                healthy=is_healthy,
+                status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED,
+                message=f"Syncing {self.db_type}: {self._db_state.local_record_count} records, "
+                        f"{self._db_state.successful_syncs}/{self._db_state.total_syncs} syncs ok",
+                details={
+                    "db_type": self.db_type,
+                    "db_path": str(self.db_path),
+                    "local_record_count": self._db_state.local_record_count,
+                    "sync_rate": sync_rate,
+                    "last_sync_age_seconds": time.time() - self._db_state.last_sync_timestamp,
+                    "synced_from": self._db_state.synced_from,
+                    "node_count": len(self.nodes),
+                },
+            )
+        except Exception as e:
+            # Prevent health_check crashes from causing daemon restart loops
+            logger.warning(f"[{self.db_type}SyncManager] health_check error: {e}")
             return HealthCheckResult(
                 healthy=False,
-                status=CoordinatorStatus.STOPPED,
-                message=f"{self.db_type}SyncManager not running",
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check error: {e}",
+                details={"error": str(e)},
             )
-
-        # Check database exists
-        if not self.db_path.exists():
-            return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.DEGRADED,
-                message=f"Database not found: {self.db_path}",
-            )
-
-        # Calculate sync health metrics
-        sync_rate = (
-            self._db_state.successful_syncs / self._db_state.total_syncs
-            if self._db_state.total_syncs > 0
-            else 1.0
-        )
-        is_recent = time.time() - self._db_state.last_sync_timestamp < self.sync_interval * 2
-
-        # Healthy if: sync rate > 50% AND last sync is recent
-        is_healthy = sync_rate >= 0.5 and is_recent
-
-        return HealthCheckResult(
-            healthy=is_healthy,
-            status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED,
-            message=f"Syncing {self.db_type}: {self._db_state.local_record_count} records, "
-                    f"{self._db_state.successful_syncs}/{self._db_state.total_syncs} syncs ok",
-            details={
-                "db_type": self.db_type,
-                "db_path": str(self.db_path),
-                "local_record_count": self._db_state.local_record_count,
-                "sync_rate": sync_rate,
-                "last_sync_age_seconds": time.time() - self._db_state.last_sync_timestamp,
-                "synced_from": self._db_state.synced_from,
-                "node_count": len(self.nodes),
-            },
-        )
 
 
 # =============================================================================
