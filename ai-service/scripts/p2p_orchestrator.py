@@ -194,6 +194,67 @@ def get_swim_manager(node_id: str | None = None, bind_port: int = 7947):
     return _swim_manager
 
 
+# ============================================
+# Phase 4: Extracted Background Loops (Dec 2025)
+# ============================================
+# These loops are extracted from the monolithic orchestrator for modularity.
+# They use dependency injection via callbacks for testability.
+
+# Feature flag for gradual rollout
+EXTRACTED_LOOPS_ENABLED = os.environ.get("RINGRIFT_EXTRACTED_LOOPS", "true").lower() in ("true", "1", "yes")
+
+# Lazy import to avoid circular dependencies
+_loop_manager_instance = None
+_loop_classes_loaded = False
+
+
+def _load_loop_classes():
+    """Lazy-load loop classes to avoid import-time dependencies."""
+    global _loop_classes_loaded
+    if _loop_classes_loaded:
+        return True
+    try:
+        from scripts.p2p.loops import (
+            LoopManager,
+            QueuePopulatorLoop,
+            EloSyncLoop,
+            ModelSyncLoop,
+            DataAggregationLoop,
+            IpDiscoveryLoop,
+            TailscaleRecoveryLoop,
+            AutoScalingLoop,
+            HealthAggregationLoop,
+            JobReaperLoop,
+            IdleDetectionLoop,
+        )
+        _loop_classes_loaded = True
+        return True
+    except ImportError as e:
+        logger.warning(f"Extracted loops not available: {e}")
+        return False
+
+
+def get_loop_manager() -> "LoopManager | None":
+    """Get or create the global LoopManager singleton.
+
+    Returns None if extracted loops are disabled or unavailable.
+    """
+    global _loop_manager_instance
+    if not EXTRACTED_LOOPS_ENABLED:
+        return None
+    if _loop_manager_instance is None:
+        if not _load_loop_classes():
+            return None
+        try:
+            from scripts.p2p.loops import LoopManager
+            _loop_manager_instance = LoopManager(name="p2p_loops")
+            logger.info("LoopManager: initialized for extracted background loops")
+        except Exception as e:
+            logger.error(f"LoopManager: failed to initialize: {e}")
+            return None
+    return _loop_manager_instance
+
+
 # Board priority overrides from unified_loop.yaml
 # 0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW (lower value = higher priority)
 _board_priority_cache: dict[str, int] | None = None
