@@ -631,6 +631,24 @@ def get_game_counts_summary(root_path: Path | str | None = None) -> dict[str, in
     return GameDiscovery(root_path).count_games_by_config().by_config
 
 
+# JSONL convenience functions (December 2025)
+def find_all_jsonl_files(root_path: Path | str | None = None) -> list[JsonlFileInfo]:
+    """Find all JSONL game files in the ai-service directory."""
+    return GameDiscovery(root_path).find_all_jsonl_files()
+
+
+def find_jsonl_for_config(
+    board_type: str, num_players: int, root_path: Path | str | None = None
+) -> list[JsonlFileInfo]:
+    """Find JSONL files for a specific board/player configuration."""
+    return GameDiscovery(root_path).find_jsonl_for_config(board_type, num_players)
+
+
+def get_jsonl_counts_summary(root_path: Path | str | None = None) -> dict[str, int]:
+    """Get a summary of JSONL game counts by configuration."""
+    return GameDiscovery(root_path).count_jsonl_games_by_config()
+
+
 class RemoteGameDiscovery:
     """Discover games on remote hosts via SSH.
 

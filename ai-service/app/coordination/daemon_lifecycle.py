@@ -707,6 +707,66 @@ class DaemonLifecycleManager:
                 dependents.append(dt)
         return dependents
 
+    async def _cascade_restart_dependent(
+        self,
+        dependent: DaemonType,
+        failed_dependency: DaemonType,
+        delay: float,
+    ) -> None:
+        """Restart a dependent daemon after a dependency failure.
+
+        December 2025: Implements cascade restart with throttling to prevent
+        thundering herd when a core daemon fails.
+
+        Args:
+            dependent: The daemon that depends on the failed dependency
+            failed_dependency: The daemon that failed and triggered this restart
+            delay: Seconds to wait before restarting (throttling)
+        """
+        try:
+            logger.info(
+                f"[DaemonLifecycle] Cascade restart scheduled: {dependent.value} "
+                f"(dependency {failed_dependency.value} failed) in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
+
+            # Check if dependent is still running - only restart if it was affected
+            info = self._daemons.get(dependent)
+            if info is None:
+                logger.debug(f"[DaemonLifecycle] {dependent.value} not registered, skipping cascade")
+                return
+
+            if info.state not in (DaemonState.RUNNING, DaemonState.STARTING):
+                logger.debug(
+                    f"[DaemonLifecycle] {dependent.value} already stopped "
+                    f"(state={info.state.value}), skipping cascade restart"
+                )
+                return
+
+            # Stop and restart the dependent daemon
+            logger.warning(
+                f"[DaemonLifecycle] Cascade restarting {dependent.value} "
+                f"(dependency {failed_dependency.value} failed)"
+            )
+
+            # Reset restart count for fresh start after dependency failure
+            info.restart_count = 0
+            info.last_error = f"Cascade restart: dependency {failed_dependency.value} failed"
+
+            # Stop the daemon first
+            await self.stop(dependent)
+
+            # Brief pause before restart
+            await asyncio.sleep(2.0)
+
+            # Restart
+            await self.start(dependent)
+
+        except asyncio.CancelledError:
+            logger.debug(f"[DaemonLifecycle] Cascade restart cancelled for {dependent.value}")
+        except Exception as e:
+            logger.error(f"[DaemonLifecycle] Cascade restart failed for {dependent.value}: {e}")
+
     def validate_dependency_graph(self, types: list[DaemonType] | None = None) -> None:
         """Validate the dependency graph before startup.
 

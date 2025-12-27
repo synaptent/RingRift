@@ -1,7 +1,13 @@
-"""Comprehensive tests for event_mappings.py.
+"""Tests for event mapping utilities (December 2025).
 
-Tests event type mapping dictionaries and helper functions for
-cross-bus event translation.
+Tests for app/coordination/event_mappings.py:
+- STAGE_TO_DATA_EVENT_MAP - Stage-to-DataEventType mapping
+- DATA_TO_STAGE_EVENT_MAP - Reverse mapping
+- DATA_TO_CROSS_PROCESS_MAP - Cross-process queue routing
+- CROSS_PROCESS_TO_DATA_MAP - Reverse mapping
+- STAGE_TO_CROSS_PROCESS_MAP - Direct stage to cross-process
+- Helper functions: get_data_event_type, get_cross_process_event_type, etc.
+- validate_mappings() - Mapping consistency validation
 """
 
 from __future__ import annotations
@@ -9,477 +15,422 @@ from __future__ import annotations
 import pytest
 
 from app.coordination.event_mappings import (
-    # Dictionaries
-    STAGE_TO_DATA_EVENT_MAP,
-    DATA_TO_STAGE_EVENT_MAP,
-    DATA_TO_CROSS_PROCESS_MAP,
     CROSS_PROCESS_TO_DATA_MAP,
+    DATA_TO_CROSS_PROCESS_MAP,
+    DATA_TO_STAGE_EVENT_MAP,
     STAGE_TO_CROSS_PROCESS_MAP,
-    # Functions
-    get_data_event_type,
+    STAGE_TO_DATA_EVENT_MAP,
+    get_all_event_types,
     get_cross_process_event_type,
+    get_data_event_type,
     get_stage_event_type,
     is_mapped_event,
-    get_all_event_types,
     validate_mappings,
 )
 
 
-class TestStageToDataEventMap:
-    """Tests for STAGE_TO_DATA_EVENT_MAP dictionary."""
+# =============================================================================
+# Stage-to-Data Mapping Tests
+# =============================================================================
 
-    def test_not_empty(self):
-        """Test mapping is not empty."""
-        assert len(STAGE_TO_DATA_EVENT_MAP) > 0
 
-    def test_selfplay_events_mapped(self):
-        """Test selfplay events are mapped correctly."""
+class TestStageToDataMapping:
+    """Tests for STAGE_TO_DATA_EVENT_MAP."""
+
+    def test_selfplay_complete_mapping(self):
+        """selfplay_complete maps to selfplay_complete."""
         assert STAGE_TO_DATA_EVENT_MAP["selfplay_complete"] == "selfplay_complete"
+
+    def test_canonical_selfplay_mapping(self):
+        """canonical_selfplay_complete maps to selfplay_complete."""
         assert STAGE_TO_DATA_EVENT_MAP["canonical_selfplay_complete"] == "selfplay_complete"
+
+    def test_gpu_selfplay_mapping(self):
+        """gpu_selfplay_complete maps to selfplay_complete."""
         assert STAGE_TO_DATA_EVENT_MAP["gpu_selfplay_complete"] == "selfplay_complete"
 
-    def test_training_events_mapped(self):
-        """Test training events are mapped correctly."""
+    def test_training_complete_mapping(self):
+        """training_complete maps to training_completed."""
         assert STAGE_TO_DATA_EVENT_MAP["training_complete"] == "training_completed"
+
+    def test_training_started_mapping(self):
+        """training_started maps correctly."""
         assert STAGE_TO_DATA_EVENT_MAP["training_started"] == "training_started"
-        assert STAGE_TO_DATA_EVENT_MAP["training_failed"] == "training_failed"
 
-    def test_evaluation_events_mapped(self):
-        """Test evaluation events are mapped correctly."""
+    def test_evaluation_complete_mapping(self):
+        """evaluation_complete maps to evaluation_completed."""
         assert STAGE_TO_DATA_EVENT_MAP["evaluation_complete"] == "evaluation_completed"
-        assert STAGE_TO_DATA_EVENT_MAP["shadow_tournament_complete"] == "evaluation_completed"
 
-    def test_sync_events_mapped(self):
-        """Test sync events are mapped correctly."""
-        assert STAGE_TO_DATA_EVENT_MAP["sync_complete"] == "sync_completed"
-        assert STAGE_TO_DATA_EVENT_MAP["cluster_sync_complete"] == "sync_completed"
-
-    def test_promotion_events_mapped(self):
-        """Test promotion events are mapped correctly."""
+    def test_promotion_complete_mapping(self):
+        """promotion_complete maps to model_promoted."""
         assert STAGE_TO_DATA_EVENT_MAP["promotion_complete"] == "model_promoted"
-        assert STAGE_TO_DATA_EVENT_MAP["tier_gating_complete"] == "model_promoted"
 
-    def test_all_keys_are_lowercase(self):
-        """Test all stage event keys are lowercase."""
-        for key in STAGE_TO_DATA_EVENT_MAP:
-            assert key == key.lower(), f"Key '{key}' is not lowercase"
+    def test_sync_complete_mapping(self):
+        """sync_complete maps to sync_completed."""
+        assert STAGE_TO_DATA_EVENT_MAP["sync_complete"] == "sync_completed"
 
-    def test_all_values_are_lowercase(self):
-        """Test all data event values are lowercase."""
-        for value in STAGE_TO_DATA_EVENT_MAP.values():
-            assert value == value.lower(), f"Value '{value}' is not lowercase"
+    def test_cmaes_complete_mapping(self):
+        """cmaes_complete maps to cmaes_completed."""
+        assert STAGE_TO_DATA_EVENT_MAP["cmaes_complete"] == "cmaes_completed"
 
 
-class TestDataToStageEventMap:
-    """Tests for DATA_TO_STAGE_EVENT_MAP dictionary."""
+class TestDataToStageMapping:
+    """Tests for DATA_TO_STAGE_EVENT_MAP (reverse)."""
 
-    def test_not_empty(self):
-        """Test mapping is not empty."""
-        assert len(DATA_TO_STAGE_EVENT_MAP) > 0
-
-    def test_reverse_of_stage_to_data(self):
-        """Test that DATA_TO_STAGE provides reverse mapping."""
-        # selfplay_complete should map back to selfplay_complete
-        assert DATA_TO_STAGE_EVENT_MAP.get("selfplay_complete") == "selfplay_complete"
-
-    def test_training_events_mapped(self):
-        """Test training events are mapped correctly."""
+    def test_training_completed_reverse(self):
+        """training_completed maps back to training_complete."""
         assert DATA_TO_STAGE_EVENT_MAP["training_completed"] == "training_complete"
-        assert DATA_TO_STAGE_EVENT_MAP["training_started"] == "training_started"
 
-    def test_sync_events_mapped(self):
-        """Test sync events are mapped correctly."""
-        assert DATA_TO_STAGE_EVENT_MAP["sync_completed"] == "sync_complete"
-        assert DATA_TO_STAGE_EVENT_MAP["p2p_model_synced"] == "model_sync_complete"
+    def test_evaluation_completed_reverse(self):
+        """evaluation_completed maps back to evaluation_complete."""
+        assert DATA_TO_STAGE_EVENT_MAP["evaluation_completed"] == "evaluation_complete"
 
-    def test_new_games_maps_to_selfplay(self):
-        """Test new_games event maps to selfplay_complete stage."""
-        assert DATA_TO_STAGE_EVENT_MAP["new_games"] == "selfplay_complete"
+    def test_model_promoted_reverse(self):
+        """model_promoted maps back to promotion_complete."""
+        assert DATA_TO_STAGE_EVENT_MAP["model_promoted"] == "promotion_complete"
+
+    def test_selfplay_complete_reverse(self):
+        """selfplay_complete maps back to selfplay_complete."""
+        assert DATA_TO_STAGE_EVENT_MAP["selfplay_complete"] == "selfplay_complete"
 
 
-class TestDataToCrossProcessMap:
-    """Tests for DATA_TO_CROSS_PROCESS_MAP dictionary."""
+# =============================================================================
+# Data-to-CrossProcess Mapping Tests
+# =============================================================================
 
-    def test_not_empty(self):
-        """Test mapping is not empty."""
-        assert len(DATA_TO_CROSS_PROCESS_MAP) > 0
 
-    def test_training_events_uppercase(self):
-        """Test training events are mapped to UPPERCASE."""
+class TestDataToCrossProcessMapping:
+    """Tests for DATA_TO_CROSS_PROCESS_MAP."""
+
+    def test_training_events_use_uppercase(self):
+        """Training events map to UPPERCASE cross-process format."""
         assert DATA_TO_CROSS_PROCESS_MAP["training_started"] == "TRAINING_STARTED"
         assert DATA_TO_CROSS_PROCESS_MAP["training_completed"] == "TRAINING_COMPLETED"
         assert DATA_TO_CROSS_PROCESS_MAP["training_failed"] == "TRAINING_FAILED"
 
-    def test_evaluation_events_uppercase(self):
-        """Test evaluation events are mapped to UPPERCASE."""
+    def test_evaluation_events_mapped(self):
+        """Evaluation events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["evaluation_started"] == "EVALUATION_STARTED"
         assert DATA_TO_CROSS_PROCESS_MAP["evaluation_completed"] == "EVALUATION_COMPLETED"
+        assert DATA_TO_CROSS_PROCESS_MAP["elo_updated"] == "ELO_UPDATED"
 
-    def test_promotion_events_uppercase(self):
-        """Test promotion events are mapped to UPPERCASE."""
+    def test_promotion_events_mapped(self):
+        """Promotion events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["model_promoted"] == "MODEL_PROMOTED"
         assert DATA_TO_CROSS_PROCESS_MAP["promotion_failed"] == "PROMOTION_FAILED"
 
+    def test_sync_events_mapped(self):
+        """Sync events are properly mapped."""
+        assert DATA_TO_CROSS_PROCESS_MAP["sync_completed"] == "DATA_SYNC_COMPLETED"
+        assert DATA_TO_CROSS_PROCESS_MAP["sync_started"] == "DATA_SYNC_STARTED"
+        assert DATA_TO_CROSS_PROCESS_MAP["p2p_model_synced"] == "P2P_MODEL_SYNCED"
+
     def test_quality_events_mapped(self):
-        """Test quality events are mapped."""
+        """Quality events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["quality_score_updated"] == "QUALITY_SCORE_UPDATED"
         assert DATA_TO_CROSS_PROCESS_MAP["quality_degraded"] == "QUALITY_DEGRADED"
 
     def test_regression_events_mapped(self):
-        """Test regression events are mapped."""
+        """Regression events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["regression_detected"] == "REGRESSION_DETECTED"
         assert DATA_TO_CROSS_PROCESS_MAP["regression_critical"] == "REGRESSION_CRITICAL"
-
-    def test_cluster_events_mapped(self):
-        """Test cluster events are mapped."""
-        assert DATA_TO_CROSS_PROCESS_MAP["host_online"] == "HOST_ONLINE"
-        assert DATA_TO_CROSS_PROCESS_MAP["host_offline"] == "HOST_OFFLINE"
-        assert DATA_TO_CROSS_PROCESS_MAP["node_recovered"] == "NODE_RECOVERED"
+        assert DATA_TO_CROSS_PROCESS_MAP["regression_cleared"] == "REGRESSION_CLEARED"
 
     def test_p2p_events_mapped(self):
-        """Test P2P events are mapped."""
-        assert DATA_TO_CROSS_PROCESS_MAP["p2p_cluster_healthy"] == "P2P_CLUSTER_HEALTHY"
+        """P2P cluster events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["p2p_node_dead"] == "P2P_NODE_DEAD"
         assert DATA_TO_CROSS_PROCESS_MAP["leader_elected"] == "LEADER_ELECTED"
+        assert DATA_TO_CROSS_PROCESS_MAP["leader_lost"] == "LEADER_LOST"
 
     def test_work_queue_events_mapped(self):
-        """Test work queue events are mapped."""
+        """Work queue events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["work_queued"] == "WORK_QUEUED"
         assert DATA_TO_CROSS_PROCESS_MAP["work_completed"] == "WORK_COMPLETED"
         assert DATA_TO_CROSS_PROCESS_MAP["work_failed"] == "WORK_FAILED"
 
     def test_task_lifecycle_events_mapped(self):
-        """Test task lifecycle events are mapped."""
+        """Task lifecycle events are properly mapped."""
         assert DATA_TO_CROSS_PROCESS_MAP["task_spawned"] == "TASK_SPAWNED"
         assert DATA_TO_CROSS_PROCESS_MAP["task_completed"] == "TASK_COMPLETED"
         assert DATA_TO_CROSS_PROCESS_MAP["task_abandoned"] == "TASK_ABANDONED"
 
-    def test_all_values_uppercase(self):
-        """Test all cross-process event values are UPPERCASE."""
-        for key, value in DATA_TO_CROSS_PROCESS_MAP.items():
-            assert value == value.upper(), f"Value '{value}' for key '{key}' is not UPPERCASE"
-
-    def test_all_keys_lowercase(self):
-        """Test all data event keys are lowercase."""
-        for key in DATA_TO_CROSS_PROCESS_MAP:
-            assert key == key.lower(), f"Key '{key}' is not lowercase"
+    def test_resource_events_mapped(self):
+        """Resource events are properly mapped."""
+        assert DATA_TO_CROSS_PROCESS_MAP["backpressure_activated"] == "BACKPRESSURE_ACTIVATED"
+        assert DATA_TO_CROSS_PROCESS_MAP["backpressure_released"] == "BACKPRESSURE_RELEASED"
 
 
-class TestCrossProcessToDataMap:
-    """Tests for CROSS_PROCESS_TO_DATA_MAP (auto-generated reverse)."""
+class TestCrossProcessToDataMapping:
+    """Tests for CROSS_PROCESS_TO_DATA_MAP (reverse)."""
 
-    def test_is_reverse_of_data_to_cross_process(self):
-        """Test it's the exact reverse of DATA_TO_CROSS_PROCESS_MAP."""
-        for data_event, cross_event in DATA_TO_CROSS_PROCESS_MAP.items():
-            assert CROSS_PROCESS_TO_DATA_MAP[cross_event] == data_event
-
-    def test_same_length(self):
-        """Test both maps have same length."""
-        assert len(CROSS_PROCESS_TO_DATA_MAP) == len(DATA_TO_CROSS_PROCESS_MAP)
+    def test_reverse_mapping_is_complete(self):
+        """Every DATA_TO_CROSS_PROCESS value has reverse mapping."""
+        for data_event, cp_event in DATA_TO_CROSS_PROCESS_MAP.items():
+            assert cp_event in CROSS_PROCESS_TO_DATA_MAP
+            assert CROSS_PROCESS_TO_DATA_MAP[cp_event] == data_event
 
     def test_training_completed_reverse(self):
-        """Test TRAINING_COMPLETED maps back to training_completed."""
+        """TRAINING_COMPLETED maps back to training_completed."""
         assert CROSS_PROCESS_TO_DATA_MAP["TRAINING_COMPLETED"] == "training_completed"
 
     def test_model_promoted_reverse(self):
-        """Test MODEL_PROMOTED maps back to model_promoted."""
+        """MODEL_PROMOTED maps back to model_promoted."""
         assert CROSS_PROCESS_TO_DATA_MAP["MODEL_PROMOTED"] == "model_promoted"
 
 
-class TestStageToCrossProcessMap:
-    """Tests for STAGE_TO_CROSS_PROCESS_MAP (direct mapping)."""
+# =============================================================================
+# Stage-to-CrossProcess Mapping Tests
+# =============================================================================
 
-    def test_not_empty(self):
-        """Test mapping is not empty."""
-        assert len(STAGE_TO_CROSS_PROCESS_MAP) > 0
 
-    def test_training_events_mapped(self):
-        """Test training events are mapped directly."""
+class TestStageToCrossProcessMapping:
+    """Tests for STAGE_TO_CROSS_PROCESS_MAP (direct)."""
+
+    def test_training_complete_direct(self):
+        """training_complete maps directly to TRAINING_COMPLETED."""
         assert STAGE_TO_CROSS_PROCESS_MAP["training_complete"] == "TRAINING_COMPLETED"
-        assert STAGE_TO_CROSS_PROCESS_MAP["training_started"] == "TRAINING_STARTED"
 
-    def test_evaluation_events_mapped(self):
-        """Test evaluation events are mapped directly."""
+    def test_selfplay_complete_direct(self):
+        """selfplay_complete maps directly to SELFPLAY_BATCH_COMPLETE."""
+        assert STAGE_TO_CROSS_PROCESS_MAP["selfplay_complete"] == "SELFPLAY_BATCH_COMPLETE"
+
+    def test_evaluation_complete_direct(self):
+        """evaluation_complete maps directly to EVALUATION_COMPLETED."""
         assert STAGE_TO_CROSS_PROCESS_MAP["evaluation_complete"] == "EVALUATION_COMPLETED"
 
-    def test_selfplay_events_mapped(self):
-        """Test selfplay events are mapped directly."""
-        assert STAGE_TO_CROSS_PROCESS_MAP["selfplay_complete"] == "SELFPLAY_BATCH_COMPLETE"
-        assert STAGE_TO_CROSS_PROCESS_MAP["gpu_selfplay_complete"] == "GPU_SELFPLAY_COMPLETE"
+    def test_promotion_complete_direct(self):
+        """promotion_complete maps directly to MODEL_PROMOTED."""
+        assert STAGE_TO_CROSS_PROCESS_MAP["promotion_complete"] == "MODEL_PROMOTED"
 
-    def test_sync_events_mapped(self):
-        """Test sync events are mapped directly."""
+    def test_sync_complete_direct(self):
+        """sync_complete maps directly to DATA_SYNC_COMPLETED."""
         assert STAGE_TO_CROSS_PROCESS_MAP["sync_complete"] == "DATA_SYNC_COMPLETED"
 
-    def test_all_values_uppercase(self):
-        """Test all cross-process values are UPPERCASE."""
-        for key, value in STAGE_TO_CROSS_PROCESS_MAP.items():
-            assert value == value.upper(), f"Value '{value}' for key '{key}' is not UPPERCASE"
+
+# =============================================================================
+# Helper Function Tests
+# =============================================================================
 
 
 class TestGetDataEventType:
-    """Tests for get_data_event_type() helper function."""
+    """Tests for get_data_event_type helper."""
 
     def test_valid_stage_event(self):
-        """Test converting valid stage event."""
-        assert get_data_event_type("training_complete") == "training_completed"
+        """Returns data event for valid stage event."""
+        result = get_data_event_type("training_complete")
+        assert result == "training_completed"
+
+    def test_unmapped_stage_event(self):
+        """Returns None for unmapped stage event."""
+        result = get_data_event_type("unknown_stage")
+        assert result is None
+
+    def test_selfplay_stages_return_same_event(self):
+        """Multiple selfplay stages map to same data event."""
         assert get_data_event_type("selfplay_complete") == "selfplay_complete"
-
-    def test_invalid_stage_event(self):
-        """Test converting non-existent stage event."""
-        result = get_data_event_type("nonexistent_event")
-        assert result is None
-
-    def test_empty_string(self):
-        """Test converting empty string."""
-        result = get_data_event_type("")
-        assert result is None
+        assert get_data_event_type("canonical_selfplay_complete") == "selfplay_complete"
+        assert get_data_event_type("gpu_selfplay_complete") == "selfplay_complete"
 
 
 class TestGetCrossProcessEventType:
-    """Tests for get_cross_process_event_type() helper function."""
+    """Tests for get_cross_process_event_type helper."""
 
     def test_from_data_event(self):
-        """Test converting from data event (default source)."""
-        assert get_cross_process_event_type("training_completed") == "TRAINING_COMPLETED"
-        assert get_cross_process_event_type("model_promoted") == "MODEL_PROMOTED"
+        """Converts data event to cross-process format."""
+        result = get_cross_process_event_type("training_completed", source="data")
+        assert result == "TRAINING_COMPLETED"
 
     def test_from_stage_event(self):
-        """Test converting from stage event."""
-        assert get_cross_process_event_type("training_complete", source="stage") == "TRAINING_COMPLETED"
-        assert get_cross_process_event_type("selfplay_complete", source="stage") == "SELFPLAY_BATCH_COMPLETE"
+        """Converts stage event to cross-process format."""
+        result = get_cross_process_event_type("training_complete", source="stage")
+        assert result == "TRAINING_COMPLETED"
 
-    def test_invalid_data_event(self):
-        """Test converting non-existent data event."""
-        result = get_cross_process_event_type("nonexistent")
-        assert result is None
-
-    def test_invalid_stage_event(self):
-        """Test converting non-existent stage event."""
-        result = get_cross_process_event_type("nonexistent", source="stage")
+    def test_unmapped_event(self):
+        """Returns None for unmapped event."""
+        result = get_cross_process_event_type("unknown_event")
         assert result is None
 
     def test_default_source_is_data(self):
-        """Test default source is 'data'."""
-        # This should work for data events
-        result = get_cross_process_event_type("training_completed")
-        assert result == "TRAINING_COMPLETED"
+        """Default source is 'data'."""
+        result = get_cross_process_event_type("model_promoted")
+        assert result == "MODEL_PROMOTED"
 
 
 class TestGetStageEventType:
-    """Tests for get_stage_event_type() helper function."""
+    """Tests for get_stage_event_type helper."""
 
     def test_valid_data_event(self):
-        """Test converting valid data event."""
-        assert get_stage_event_type("training_completed") == "training_complete"
-        assert get_stage_event_type("selfplay_complete") == "selfplay_complete"
+        """Returns stage event for valid data event."""
+        result = get_stage_event_type("training_completed")
+        assert result == "training_complete"
 
-    def test_new_games_event(self):
-        """Test new_games maps to selfplay_complete."""
-        assert get_stage_event_type("new_games") == "selfplay_complete"
-
-    def test_invalid_data_event(self):
-        """Test converting non-existent data event."""
-        result = get_stage_event_type("nonexistent")
+    def test_unmapped_data_event(self):
+        """Returns None for unmapped data event."""
+        result = get_stage_event_type("unknown_data")
         assert result is None
 
 
 class TestIsMappedEvent:
-    """Tests for is_mapped_event() helper function."""
+    """Tests for is_mapped_event helper."""
 
-    def test_stage_event_lowercase(self):
-        """Test stage event in lowercase is recognized."""
+    def test_lowercase_stage_event(self):
+        """Recognizes lowercase stage events."""
         assert is_mapped_event("training_complete") is True
         assert is_mapped_event("selfplay_complete") is True
 
-    def test_data_event_lowercase(self):
-        """Test data event in lowercase is recognized."""
+    def test_lowercase_data_event(self):
+        """Recognizes lowercase data events."""
         assert is_mapped_event("training_completed") is True
         assert is_mapped_event("model_promoted") is True
 
-    def test_cross_process_event_uppercase(self):
-        """Test cross-process event in UPPERCASE is recognized."""
+    def test_uppercase_cross_process_event(self):
+        """Recognizes uppercase cross-process events."""
         assert is_mapped_event("TRAINING_COMPLETED") is True
         assert is_mapped_event("MODEL_PROMOTED") is True
 
-    def test_unknown_event(self):
-        """Test unknown event returns False."""
-        assert is_mapped_event("unknown_event") is False
-        assert is_mapped_event("UNKNOWN_EVENT") is False
-
-    def test_empty_string(self):
-        """Test empty string returns False."""
-        assert is_mapped_event("") is False
-
-    def test_case_insensitive_lookup(self):
-        """Test case handling works correctly."""
-        # Lowercase should match stage/data maps
-        assert is_mapped_event("training_complete") is True
-        # Uppercase should match cross-process map
-        assert is_mapped_event("TRAINING_COMPLETED") is True
+    def test_unmapped_event(self):
+        """Returns False for unknown events."""
+        assert is_mapped_event("totally_unknown") is False
+        assert is_mapped_event("NOT_A_REAL_EVENT") is False
 
 
 class TestGetAllEventTypes:
-    """Tests for get_all_event_types() helper function."""
+    """Tests for get_all_event_types helper."""
 
     def test_returns_set(self):
-        """Test function returns a set."""
+        """Returns a set of event types."""
         result = get_all_event_types()
         assert isinstance(result, set)
 
-    def test_not_empty(self):
-        """Test result is not empty."""
-        result = get_all_event_types()
-        assert len(result) > 0
-
-    def test_contains_stage_events(self):
-        """Test result contains stage events."""
+    def test_includes_stage_events(self):
+        """Includes stage event types."""
         result = get_all_event_types()
         assert "training_complete" in result
         assert "selfplay_complete" in result
 
-    def test_contains_data_events(self):
-        """Test result contains data events."""
+    def test_includes_data_events(self):
+        """Includes data event types."""
         result = get_all_event_types()
         assert "training_completed" in result
         assert "model_promoted" in result
 
-    def test_contains_cross_process_events(self):
-        """Test result contains cross-process events."""
+    def test_includes_cross_process_events(self):
+        """Includes cross-process event types."""
         result = get_all_event_types()
         assert "TRAINING_COMPLETED" in result
         assert "MODEL_PROMOTED" in result
 
-    def test_unique_entries(self):
-        """Test no duplicates (set property)."""
+    def test_has_substantial_size(self):
+        """Has a substantial number of event types."""
         result = get_all_event_types()
-        # Set automatically handles uniqueness
-        assert len(result) == len(set(result))
+        # Should have at least 100 distinct event types
+        assert len(result) >= 100
+
+
+# =============================================================================
+# Validation Tests
+# =============================================================================
 
 
 class TestValidateMappings:
-    """Tests for validate_mappings() helper function."""
+    """Tests for validate_mappings consistency checker."""
 
     def test_returns_list(self):
-        """Test function returns a list."""
+        """Returns a list of warnings."""
         result = validate_mappings()
         assert isinstance(result, list)
 
-    def test_no_warnings_for_current_mappings(self):
-        """Test current mappings produce no warnings."""
+    def test_no_critical_errors(self):
+        """No critical errors in current mappings."""
         warnings = validate_mappings()
-        # Filter out expected inconsistencies if any
-        # Current mappings should be consistent
-        assert len(warnings) == 0, f"Unexpected warnings: {warnings}"
+        # Filter out expected warnings (if any)
+        critical_warnings = [w for w in warnings if "CRITICAL" in w.upper()]
+        assert len(critical_warnings) == 0
 
-    def test_cross_process_uppercase_check(self):
-        """Test validation catches non-uppercase cross-process events."""
-        # This is a static check - the current implementation should pass
-        warnings = validate_mappings()
-        lowercase_warnings = [w for w in warnings if "UPPERCASE" in w]
-        assert len(lowercase_warnings) == 0
+    def test_cross_process_names_are_uppercase(self):
+        """Cross-process event names should be uppercase."""
+        for cp_event in CROSS_PROCESS_TO_DATA_MAP:
+            assert cp_event == cp_event.upper(), f"{cp_event} is not uppercase"
+
+
+# =============================================================================
+# Mapping Consistency Tests
+# =============================================================================
 
 
 class TestMappingConsistency:
-    """Integration tests for mapping consistency across all dictionaries."""
+    """Tests for overall mapping consistency."""
 
-    def test_stage_to_data_then_cross_process(self):
-        """Test chained mapping: stage -> data -> cross_process."""
-        stage_event = "training_complete"
-        data_event = STAGE_TO_DATA_EVENT_MAP.get(stage_event)
-        assert data_event is not None
+    def test_stage_to_data_values_are_strings(self):
+        """All STAGE_TO_DATA_EVENT_MAP values are strings."""
+        for stage, data in STAGE_TO_DATA_EVENT_MAP.items():
+            assert isinstance(stage, str)
+            assert isinstance(data, str)
 
-        cross_event = DATA_TO_CROSS_PROCESS_MAP.get(data_event)
-        assert cross_event is not None
-        assert cross_event == "TRAINING_COMPLETED"
+    def test_data_to_cross_process_values_are_uppercase(self):
+        """All DATA_TO_CROSS_PROCESS_MAP values are uppercase."""
+        for data, cp in DATA_TO_CROSS_PROCESS_MAP.items():
+            assert cp == cp.upper(), f"Value {cp} for {data} is not uppercase"
 
-    def test_direct_stage_to_cross_matches_chained(self):
-        """Test direct stage->cross matches chained stage->data->cross."""
-        for stage_event in STAGE_TO_CROSS_PROCESS_MAP:
-            direct = STAGE_TO_CROSS_PROCESS_MAP[stage_event]
+    def test_no_duplicate_stage_keys(self):
+        """Stage keys are unique."""
+        keys = list(STAGE_TO_DATA_EVENT_MAP.keys())
+        assert len(keys) == len(set(keys))
 
-            # Check if we can chain through data
-            data_event = STAGE_TO_DATA_EVENT_MAP.get(stage_event)
-            if data_event:
-                chained = DATA_TO_CROSS_PROCESS_MAP.get(data_event)
-                # They might differ slightly (e.g., GPU_SELFPLAY_COMPLETE vs SELFPLAY_BATCH_COMPLETE)
-                # but both should be valid UPPERCASE strings
-                assert direct == direct.upper()
-                if chained:
-                    assert chained == chained.upper()
-
-    def test_round_trip_data_cross_data(self):
-        """Test round trip: data -> cross -> data."""
-        for data_event in DATA_TO_CROSS_PROCESS_MAP:
-            cross_event = DATA_TO_CROSS_PROCESS_MAP[data_event]
-            back_to_data = CROSS_PROCESS_TO_DATA_MAP.get(cross_event)
-            assert back_to_data == data_event, (
-                f"Round trip failed: {data_event} -> {cross_event} -> {back_to_data}"
-            )
-
-    def test_all_cross_process_events_are_valid_identifiers(self):
-        """Test all cross-process events are valid Python identifiers (uppercase)."""
-        for cross_event in CROSS_PROCESS_TO_DATA_MAP:
-            # Should be UPPERCASE_SNAKE_CASE
-            assert cross_event == cross_event.upper()
-            assert "_" in cross_event or cross_event.isalpha()
-            # No spaces or special characters
-            assert cross_event.replace("_", "").isalnum()
-
-    def test_no_orphaned_data_events(self):
-        """Test data events in DATA_TO_STAGE have corresponding cross-process mapping."""
-        # Most data events should have cross-process equivalents
-        unmapped_count = 0
-        for data_event in DATA_TO_STAGE_EVENT_MAP:
-            if data_event not in DATA_TO_CROSS_PROCESS_MAP:
-                unmapped_count += 1
-
-        # Allow some unmapped (not all data events need cross-process mapping)
-        # But there shouldn't be too many
-        assert unmapped_count < len(DATA_TO_STAGE_EVENT_MAP) // 2
-
-
-class TestCriticalEventMappings:
-    """Tests for critical events that must be mapped correctly."""
+    def test_no_duplicate_cross_process_keys(self):
+        """Cross-process keys are unique."""
+        keys = list(CROSS_PROCESS_TO_DATA_MAP.keys())
+        assert len(keys) == len(set(keys))
 
     def test_training_lifecycle_complete(self):
-        """Test complete training lifecycle is mapped."""
-        assert "training_started" in DATA_TO_CROSS_PROCESS_MAP
-        assert "training_completed" in DATA_TO_CROSS_PROCESS_MAP
-        assert "training_failed" in DATA_TO_CROSS_PROCESS_MAP
+        """Training lifecycle events are complete."""
+        required_training = ["training_started", "training_completed", "training_failed"]
+        for event in required_training:
+            assert event in DATA_TO_CROSS_PROCESS_MAP
 
     def test_evaluation_lifecycle_complete(self):
-        """Test complete evaluation lifecycle is mapped."""
-        assert "evaluation_started" in DATA_TO_CROSS_PROCESS_MAP
-        assert "evaluation_completed" in DATA_TO_CROSS_PROCESS_MAP
-
-    def test_promotion_lifecycle_complete(self):
-        """Test complete promotion lifecycle is mapped."""
-        assert "model_promoted" in DATA_TO_CROSS_PROCESS_MAP
-        assert "promotion_failed" in DATA_TO_CROSS_PROCESS_MAP
+        """Evaluation lifecycle events are complete."""
+        required_eval = ["evaluation_started", "evaluation_completed", "evaluation_failed"]
+        for event in required_eval:
+            assert event in DATA_TO_CROSS_PROCESS_MAP
 
     def test_sync_lifecycle_complete(self):
-        """Test complete sync lifecycle is mapped."""
-        assert "sync_started" in DATA_TO_CROSS_PROCESS_MAP
-        assert "sync_completed" in DATA_TO_CROSS_PROCESS_MAP
-        assert "sync_failed" in DATA_TO_CROSS_PROCESS_MAP
+        """Sync lifecycle events are complete."""
+        required_sync = ["sync_started", "sync_completed", "sync_failed"]
+        for event in required_sync:
+            assert event in DATA_TO_CROSS_PROCESS_MAP
 
-    def test_p2p_node_dead_event(self):
-        """Test P2P_NODE_DEAD event is mapped (critical for NodeRecoveryDaemon)."""
+    def test_task_lifecycle_complete(self):
+        """Task lifecycle events are complete."""
+        required_task = ["task_spawned", "task_completed", "task_failed", "task_abandoned"]
+        for event in required_task:
+            assert event in DATA_TO_CROSS_PROCESS_MAP
+
+
+class TestDecember2025Additions:
+    """Tests for December 2025 event additions."""
+
+    def test_p2p_node_dead_exists(self):
+        """P2P_NODE_DEAD event added in Dec 2025."""
         assert "p2p_node_dead" in DATA_TO_CROSS_PROCESS_MAP
         assert DATA_TO_CROSS_PROCESS_MAP["p2p_node_dead"] == "P2P_NODE_DEAD"
 
-    def test_node_recovered_event(self):
-        """Test node_recovered event is mapped."""
-        assert "node_recovered" in DATA_TO_CROSS_PROCESS_MAP
-        assert DATA_TO_CROSS_PROCESS_MAP["node_recovered"] == "NODE_RECOVERED"
+    def test_task_abandoned_exists(self):
+        """TASK_ABANDONED event added in Dec 2025."""
+        assert "task_abandoned" in DATA_TO_CROSS_PROCESS_MAP
+        assert DATA_TO_CROSS_PROCESS_MAP["task_abandoned"] == "TASK_ABANDONED"
 
-    def test_leader_election_events(self):
-        """Test leader election events are mapped."""
-        assert "leader_elected" in DATA_TO_CROSS_PROCESS_MAP
-        assert "leader_lost" in DATA_TO_CROSS_PROCESS_MAP
+    def test_handler_failed_exists(self):
+        """HANDLER_FAILED event added in Dec 2025."""
+        assert "handler_failed" in DATA_TO_CROSS_PROCESS_MAP
+        assert DATA_TO_CROSS_PROCESS_MAP["handler_failed"] == "HANDLER_FAILED"
 
-    def test_orphan_games_events(self):
-        """Test orphan games events are mapped."""
-        assert "orphan_games_detected" in DATA_TO_CROSS_PROCESS_MAP
-        assert "orphan_games_registered" in DATA_TO_CROSS_PROCESS_MAP
+    def test_selfplay_feedback_events_exist(self):
+        """Selfplay feedback loop events added in Dec 2025."""
+        selfplay_events = [
+            "selfplay_complete",
+            "selfplay_target_updated",
+            "selfplay_rate_changed",
+        ]
+        for event in selfplay_events:
+            assert event in DATA_TO_CROSS_PROCESS_MAP

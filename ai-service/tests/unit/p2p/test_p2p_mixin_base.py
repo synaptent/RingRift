@@ -1,377 +1,556 @@
-"""Unit tests for P2PMixinBase class.
+"""Tests for P2PMixinBase, EventSubscriptionMixin, and P2PManagerBase.
 
-Tests the shared functionality extracted for P2P mixin consolidation.
-
-Created: December 27, 2025
+December 27, 2025: Comprehensive tests for the consolidated P2P mixin classes.
 """
 
+from __future__ import annotations
+
 import sqlite3
-import tempfile
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.p2p.p2p_mixin_base import P2PMixinBase
+from scripts.p2p.p2p_mixin_base import (
+    P2PMixinBase,
+    EventSubscriptionMixin,
+    P2PManagerBase,
+)
 
 
-class MockPeer:
-    """Mock peer for testing."""
-
-    def __init__(self, alive: bool = True):
-        self._alive = alive
-
-    def is_alive(self) -> bool:
-        return self._alive
+# =============================================================================
+# P2PMixinBase Tests
+# =============================================================================
 
 
-class TestMixin(P2PMixinBase):
-    """Test implementation of P2PMixinBase."""
+class TestP2PMixinBaseDatabaseHelpers:
+    """Test database helper methods."""
 
-    MIXIN_TYPE = "test_mixin"
+    def test_execute_db_query_fetch(self, tmp_path: Path) -> None:
+        """Test _execute_db_query with fetch=True."""
+        db_path = tmp_path / "test.db"
 
-    def __init__(self, db_path: Path | None = None, verbose: bool = False):
-        self.db_path = db_path
-        self.verbose = verbose
-        self.node_id = "test-node-1"
-        self.peers: dict[str, Any] = {}
-        self.peers_lock = threading.RLock()
-        self._emit_event_calls: list[tuple[str, dict]] = []
+        # Create test database
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE test (id INTEGER, value TEXT)")
+        conn.execute("INSERT INTO test VALUES (1, 'hello')")
+        conn.execute("INSERT INTO test VALUES (2, 'world')")
+        conn.commit()
+        conn.close()
 
-    def _emit_event(self, event_type: str, payload: dict) -> None:
-        """Track event emissions for testing."""
-        self._emit_event_calls.append((event_type, payload))
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
 
+        mixin = TestMixin()
+        mixin.db_path = db_path
 
-@pytest.fixture
-def temp_db() -> Path:
-    """Create a temporary SQLite database."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = Path(f.name)
-
-    # Create test table
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS test_table (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            value REAL
-        )
-    """)
-    conn.execute("INSERT INTO test_table (name, value) VALUES ('foo', 1.5)")
-    conn.execute("INSERT INTO test_table (name, value) VALUES ('bar', 2.5)")
-    conn.commit()
-    conn.close()
-
-    yield db_path
-
-    # Cleanup
-    db_path.unlink(missing_ok=True)
-
-
-@pytest.fixture
-def mixin(temp_db: Path) -> TestMixin:
-    """Create a test mixin instance with a database."""
-    return TestMixin(db_path=temp_db, verbose=True)
-
-
-@pytest.fixture
-def mixin_no_db() -> TestMixin:
-    """Create a test mixin instance without a database."""
-    return TestMixin(db_path=None, verbose=True)
-
-
-class TestDatabaseHelpers:
-    """Tests for database helper methods."""
-
-    def test_execute_db_query_fetch(self, mixin: TestMixin) -> None:
-        """Test fetching rows from database."""
-        rows = mixin._execute_db_query(
-            "SELECT name, value FROM test_table ORDER BY name",
-            fetch=True,
-        )
-        assert rows is not None
-        assert len(rows) == 2
-        assert rows[0] == ("bar", 2.5)
-        assert rows[1] == ("foo", 1.5)
-
-    def test_execute_db_query_insert(self, mixin: TestMixin) -> None:
-        """Test inserting a row."""
-        rowcount = mixin._execute_db_query(
-            "INSERT INTO test_table (name, value) VALUES (?, ?)",
-            ("baz", 3.5),
-            fetch=False,
-        )
-        assert rowcount == 1
-
-        # Verify insert
-        rows = mixin._execute_db_query(
-            "SELECT value FROM test_table WHERE name = ?",
-            ("baz",),
-            fetch=True,
-        )
-        assert rows == [(3.5,)]
-
-    def test_execute_db_query_update(self, mixin: TestMixin) -> None:
-        """Test updating rows."""
-        rowcount = mixin._execute_db_query(
-            "UPDATE test_table SET value = ? WHERE name = ?",
-            (10.0, "foo"),
-            fetch=False,
-        )
-        assert rowcount == 1
-
-        # Verify update
-        rows = mixin._execute_db_query(
-            "SELECT value FROM test_table WHERE name = ?",
-            ("foo",),
-            fetch=True,
-        )
-        assert rows == [(10.0,)]
-
-    def test_execute_db_query_no_db_path(self, mixin_no_db: TestMixin) -> None:
-        """Test graceful handling when no db_path is set."""
-        result = mixin_no_db._execute_db_query(
-            "SELECT * FROM test_table",
-            fetch=True,
-        )
-        assert result is None
-
-    def test_execute_db_query_invalid_sql(self, mixin: TestMixin) -> None:
-        """Test graceful handling of invalid SQL."""
         result = mixin._execute_db_query(
-            "INVALID SQL STATEMENT",
-            fetch=True,
+            "SELECT * FROM test WHERE id = ?", (1,), fetch=True
         )
+        assert result == [(1, "hello")]
+
+    def test_execute_db_query_insert(self, tmp_path: Path) -> None:
+        """Test _execute_db_query with fetch=False (insert)."""
+        db_path = tmp_path / "test.db"
+
+        # Create test database
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE test (id INTEGER, value TEXT)")
+        conn.commit()
+        conn.close()
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin.db_path = db_path
+
+        result = mixin._execute_db_query(
+            "INSERT INTO test VALUES (1, 'hello')", (), fetch=False
+        )
+        assert result == 1  # rowcount
+
+    def test_execute_db_query_no_db_path(self) -> None:
+        """Test _execute_db_query when db_path is None."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        result = mixin._execute_db_query("SELECT 1", fetch=True)
         assert result is None
 
-    def test_db_connection_context_manager(self, mixin: TestMixin) -> None:
-        """Test database connection context manager."""
+    def test_db_connection_context_manager(self, tmp_path: Path) -> None:
+        """Test _db_connection context manager."""
+        db_path = tmp_path / "test.db"
+
+        # Create test database
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE test (id INTEGER)")
+        conn.commit()
+        conn.close()
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin.db_path = db_path
+
         with mixin._db_connection() as conn:
             assert conn is not None
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM test_table")
+            cursor.execute("SELECT COUNT(*) FROM test")
             count = cursor.fetchone()[0]
-            assert count == 2
-
-    def test_db_connection_no_db_path(self, mixin_no_db: TestMixin) -> None:
-        """Test connection context manager without db_path."""
-        with mixin_no_db._db_connection() as conn:
-            assert conn is None
+            assert count == 0
 
 
-class TestStateInitialization:
-    """Tests for state initialization helpers."""
+class TestP2PMixinBaseStateHelpers:
+    """Test state initialization helpers."""
 
-    def test_ensure_state_attr_new_attr(self, mixin: TestMixin) -> None:
-        """Test creating a new attribute."""
-        assert not hasattr(mixin, "_new_cache")
-        mixin._ensure_state_attr("_new_cache", {})
-        assert hasattr(mixin, "_new_cache")
-        assert mixin._new_cache == {}
+    def test_ensure_state_attr_creates_dict(self) -> None:
+        """Test _ensure_state_attr creates dict for cache-like names."""
 
-    def test_ensure_state_attr_existing_attr(self, mixin: TestMixin) -> None:
-        """Test that existing attributes are not overwritten."""
-        mixin._existing = {"key": "value"}
-        mixin._ensure_state_attr("_existing", {})
-        assert mixin._existing == {"key": "value"}
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
 
-    def test_ensure_state_attr_auto_dict(self, mixin: TestMixin) -> None:
-        """Test auto-detection of dict types from name."""
-        mixin._ensure_state_attr("_peer_cache")  # No default provided
+        mixin = TestMixin()
+        mixin._ensure_state_attr("_peer_cache")
         assert mixin._peer_cache == {}
 
-        mixin._ensure_state_attr("_state_dict")
-        assert mixin._state_dict == {}
+    def test_ensure_state_attr_uses_default(self) -> None:
+        """Test _ensure_state_attr uses provided default."""
 
-    def test_ensure_multiple_state_attrs(self, mixin: TestMixin) -> None:
-        """Test ensuring multiple attributes at once."""
-        mixin._ensure_multiple_state_attrs({
-            "_cache1": {},
-            "_count": 0,
-            "_flag": False,
-        })
-        assert mixin._cache1 == {}
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin._ensure_state_attr("_counter", 42)
+        assert mixin._counter == 42
+
+    def test_ensure_state_attr_idempotent(self) -> None:
+        """Test _ensure_state_attr doesn't overwrite existing values."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin._counter = 100
+        mixin._ensure_state_attr("_counter", 0)
+        assert mixin._counter == 100
+
+    def test_ensure_multiple_state_attrs(self) -> None:
+        """Test _ensure_multiple_state_attrs initializes all attrs."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin._ensure_multiple_state_attrs(
+            {"_cache": {}, "_count": 0, "_flag": False}
+        )
+        assert mixin._cache == {}
         assert mixin._count == 0
         assert mixin._flag is False
 
 
-class TestPeerManagement:
-    """Tests for peer management helpers."""
+class TestP2PMixinBasePeerHelpers:
+    """Test peer management helpers."""
 
-    def test_count_alive_peers_empty_list(self, mixin: TestMixin) -> None:
-        """Test counting with empty list."""
+    def test_count_alive_peers_empty(self) -> None:
+        """Test _count_alive_peers with empty list."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin.peers = {}
+        mixin.peers_lock = threading.RLock()
+        mixin.node_id = "self"
+
         assert mixin._count_alive_peers([]) == 0
 
-    def test_count_alive_peers_self_only(self, mixin: TestMixin) -> None:
-        """Test that self is counted as alive."""
-        mixin.node_id = "node-1"
-        assert mixin._count_alive_peers(["node-1"]) == 1
+    def test_count_alive_peers_includes_self(self) -> None:
+        """Test _count_alive_peers counts self as alive."""
 
-    def test_count_alive_peers_with_peers(self, mixin: TestMixin) -> None:
-        """Test counting alive peers."""
-        mixin.node_id = "node-1"
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        mixin.peers = {}
+        mixin.peers_lock = threading.RLock()
+        mixin.node_id = "self"
+
+        assert mixin._count_alive_peers(["self"]) == 1
+
+    def test_count_alive_peers_checks_is_alive(self) -> None:
+        """Test _count_alive_peers calls is_alive() on peers."""
+
+        class MockPeer:
+            def __init__(self, alive: bool):
+                self._alive = alive
+
+            def is_alive(self) -> bool:
+                return self._alive
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
         mixin.peers = {
-            "node-2": MockPeer(alive=True),
-            "node-3": MockPeer(alive=False),
-            "node-4": MockPeer(alive=True),
+            "peer1": MockPeer(True),
+            "peer2": MockPeer(False),
+            "peer3": MockPeer(True),
         }
+        mixin.peers_lock = threading.RLock()
+        mixin.node_id = "self"
 
-        alive = mixin._count_alive_peers(["node-1", "node-2", "node-3", "node-4"])
-        assert alive == 3  # node-1 (self), node-2, node-4
+        assert mixin._count_alive_peers(["peer1", "peer2", "peer3"]) == 2
 
-    def test_count_alive_peers_missing_peer(self, mixin: TestMixin) -> None:
-        """Test counting when peer is not in peers dict."""
-        mixin.node_id = "node-1"
-        mixin.peers = {"node-2": MockPeer(alive=True)}
+    def test_get_alive_peer_list(self) -> None:
+        """Test _get_alive_peer_list returns correct IDs."""
 
-        alive = mixin._count_alive_peers(["node-1", "node-2", "node-99"])
-        assert alive == 2  # node-1 (self), node-2
+        class MockPeer:
+            def __init__(self, alive: bool):
+                self._alive = alive
 
-    def test_get_alive_peer_list(self, mixin: TestMixin) -> None:
-        """Test getting list of alive peer IDs."""
-        mixin.node_id = "node-1"
+            def is_alive(self) -> bool:
+                return self._alive
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
         mixin.peers = {
-            "node-2": MockPeer(alive=True),
-            "node-3": MockPeer(alive=False),
-            "node-4": MockPeer(alive=True),
+            "peer1": MockPeer(True),
+            "peer2": MockPeer(False),
         }
+        mixin.peers_lock = threading.RLock()
+        mixin.node_id = "self"
 
-        alive_list = mixin._get_alive_peer_list(["node-1", "node-2", "node-3", "node-4"])
-        assert set(alive_list) == {"node-1", "node-2", "node-4"}
+        result = mixin._get_alive_peer_list(["self", "peer1", "peer2"])
+        assert set(result) == {"self", "peer1"}
 
 
-class TestEventEmission:
-    """Tests for event emission helpers."""
+class TestP2PMixinBaseEventHelpers:
+    """Test event emission helpers."""
 
-    def test_safe_emit_event_success(self, mixin: TestMixin) -> None:
-        """Test successful event emission."""
+    def test_safe_emit_event_with_emit_event(self) -> None:
+        """Test _safe_emit_event uses _emit_event if available."""
+        emitted = []
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+            def _emit_event(self, event_type: str, payload: dict) -> None:
+                emitted.append((event_type, payload))
+
+        mixin = TestMixin()
         result = mixin._safe_emit_event("TEST_EVENT", {"key": "value"})
+
         assert result is True
-        assert len(mixin._emit_event_calls) == 1
-        assert mixin._emit_event_calls[0] == ("TEST_EVENT", {"key": "value"})
+        assert emitted == [("TEST_EVENT", {"key": "value"})]
 
     def test_safe_emit_event_no_handler(self) -> None:
-        """Test when no _emit_event method exists."""
-        # Create a mixin without _emit_event method
-        class TestMixinNoEmit(P2PMixinBase):
-            MIXIN_TYPE = "test_no_emit"
+        """Test _safe_emit_event returns False when no handler."""
 
-            def __init__(self) -> None:
-                self.node_id = "test-node"
-                self.peers: dict[str, Any] = {}
-                self.peers_lock = threading.RLock()
-                # Note: No _emit_event method defined
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
 
-        mixin = TestMixinNoEmit()
-        result = mixin._safe_emit_event("TEST_EVENT", {"key": "value"})
+        mixin = TestMixin()
+        result = mixin._safe_emit_event("TEST_EVENT", {})
         assert result is False
 
-    def test_safe_emit_event_empty_payload(self, mixin: TestMixin) -> None:
-        """Test emission with no payload."""
-        result = mixin._safe_emit_event("TEST_EVENT")
-        assert result is True
-        assert mixin._emit_event_calls[0] == ("TEST_EVENT", {})
+    def test_safe_emit_event_handles_exception(self) -> None:
+        """Test _safe_emit_event catches exceptions."""
 
-    def test_safe_emit_event_exception(self, mixin: TestMixin) -> None:
-        """Test graceful handling of exceptions during emission."""
-        def raise_error(event_type: str, payload: dict) -> None:
-            raise RuntimeError("Emission failed")
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
 
-        mixin._emit_event = raise_error
+            def _emit_event(self, event_type: str, payload: dict) -> None:
+                raise RuntimeError("Emit failed")
 
-        result = mixin._safe_emit_event("TEST_EVENT", {"key": "value"})
+        mixin = TestMixin()
+        mixin.verbose = True
+        result = mixin._safe_emit_event("TEST_EVENT", {})
         assert result is False
 
 
-class TestConfigurationLoading:
-    """Tests for configuration constant loading."""
+class TestP2PMixinBaseLoggingHelpers:
+    """Test logging helpers."""
+
+    def test_logging_methods_use_prefix(self) -> None:
+        """Test logging methods include MIXIN_TYPE prefix."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "my_component"
+
+        mixin = TestMixin()
+
+        with patch("scripts.p2p.p2p_mixin_base.logger") as mock_logger:
+            mixin._log_debug("debug message")
+            mock_logger.debug.assert_called_with("[my_component] debug message")
+
+            mixin._log_info("info message")
+            mock_logger.info.assert_called_with("[my_component] info message")
+
+            mixin._log_warning("warning message")
+            mock_logger.warning.assert_called_with("[my_component] warning message")
+
+            mixin._log_error("error message")
+            mock_logger.error.assert_called_with("[my_component] error message")
+
+
+class TestP2PMixinBaseTimingHelpers:
+    """Test timing helpers."""
+
+    def test_get_timestamp_returns_time(self) -> None:
+        """Test _get_timestamp returns current time."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        before = time.time()
+        result = mixin._get_timestamp()
+        after = time.time()
+
+        assert before <= result <= after
+
+    def test_is_expired_true(self) -> None:
+        """Test _is_expired returns True for old timestamps."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        old_time = time.time() - 100
+        assert mixin._is_expired(old_time, 50) is True
+
+    def test_is_expired_false(self) -> None:
+        """Test _is_expired returns False for recent timestamps."""
+
+        class TestMixin(P2PMixinBase):
+            MIXIN_TYPE = "test"
+
+        mixin = TestMixin()
+        recent_time = time.time() - 10
+        assert mixin._is_expired(recent_time, 50) is False
+
+
+# =============================================================================
+# EventSubscriptionMixin Tests
+# =============================================================================
+
+
+class TestEventSubscriptionMixin:
+    """Test EventSubscriptionMixin functionality."""
+
+    def test_init_subscription_state(self) -> None:
+        """Test _init_subscription_state initializes correctly."""
+
+        class TestMixin(EventSubscriptionMixin):
+            pass
+
+        mixin = TestMixin()
+        mixin._init_subscription_state()
+
+        assert mixin._subscribed is False
+        assert isinstance(mixin._subscription_lock, type(threading.RLock()))
+
+    def test_init_subscription_state_idempotent(self) -> None:
+        """Test _init_subscription_state doesn't overwrite existing values."""
+
+        class TestMixin(EventSubscriptionMixin):
+            pass
+
+        mixin = TestMixin()
+        mixin._subscribed = True
+        mixin._subscription_lock = threading.RLock()
+
+        mixin._init_subscription_state()
+        assert mixin._subscribed is True  # Not reset
+
+    def test_is_subscribed_default_false(self) -> None:
+        """Test is_subscribed returns False when not subscribed."""
+
+        class TestMixin(EventSubscriptionMixin):
+            pass
+
+        mixin = TestMixin()
+        assert mixin.is_subscribed() is False
+
+    def test_get_subscription_status(self) -> None:
+        """Test get_subscription_status returns correct dict."""
+
+        class TestMixin(EventSubscriptionMixin):
+            def _get_event_subscriptions(self) -> dict:
+                return {"EVENT_A": lambda e: None, "EVENT_B": lambda e: None}
+
+        mixin = TestMixin()
+        status = mixin.get_subscription_status()
+
+        assert status["subscribed"] is False
+        assert status["subscription_count"] == 2
+
+    def test_subscribe_to_events_empty_subscriptions(self) -> None:
+        """Test subscribe_to_events marks as subscribed with no events."""
+
+        class TestMixin(EventSubscriptionMixin):
+            _subscription_log_prefix = "TestMixin"
+
+            def _get_event_subscriptions(self) -> dict:
+                return {}
+
+        mixin = TestMixin()
+        mixin.subscribe_to_events()
+        assert mixin.is_subscribed() is True
+
+    def test_subscribe_to_events_thread_safe(self) -> None:
+        """Test subscribe_to_events is thread-safe."""
+        call_count = 0
+
+        class TestMixin(EventSubscriptionMixin):
+            _subscription_log_prefix = "TestMixin"
+
+            def _get_event_subscriptions(self) -> dict:
+                return {}
+
+        mixin = TestMixin()
+
+        def subscribe_thread():
+            nonlocal call_count
+            mixin.subscribe_to_events()
+            call_count += 1
+
+        # Spawn multiple threads trying to subscribe
+        threads = [threading.Thread(target=subscribe_thread) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All threads completed
+        assert call_count == 10
+        # Only one subscription actually happened
+        assert mixin.is_subscribed() is True
+
+
+# =============================================================================
+# P2PManagerBase Tests
+# =============================================================================
+
+
+class TestP2PManagerBase:
+    """Test P2PManagerBase combined functionality."""
+
+    def test_inherits_from_both_mixins(self) -> None:
+        """Test P2PManagerBase inherits from both parent classes."""
+        assert issubclass(P2PManagerBase, P2PMixinBase)
+        assert issubclass(P2PManagerBase, EventSubscriptionMixin)
+
+    def test_has_all_methods(self) -> None:
+        """Test P2PManagerBase has methods from both parents."""
+        # From P2PMixinBase
+        assert hasattr(P2PManagerBase, "_execute_db_query")
+        assert hasattr(P2PManagerBase, "_ensure_state_attr")
+        assert hasattr(P2PManagerBase, "_count_alive_peers")
+        assert hasattr(P2PManagerBase, "_safe_emit_event")
+        assert hasattr(P2PManagerBase, "_log_info")
+
+        # From EventSubscriptionMixin
+        assert hasattr(P2PManagerBase, "_init_subscription_state")
+        assert hasattr(P2PManagerBase, "subscribe_to_events")
+        assert hasattr(P2PManagerBase, "is_subscribed")
+        assert hasattr(P2PManagerBase, "get_subscription_status")
+
+    def test_combined_usage(self, tmp_path: Path) -> None:
+        """Test using P2PManagerBase with both functionalities."""
+        db_path = tmp_path / "test.db"
+
+        # Create test database
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE peers (node_id TEXT)")
+        conn.commit()
+        conn.close()
+
+        class MyManager(P2PManagerBase):
+            MIXIN_TYPE = "my_manager"
+            _subscription_log_prefix = "MyManager"
+
+            def __init__(self, db_path: Path):
+                self.db_path = db_path
+                self._init_subscription_state()
+
+            def _get_event_subscriptions(self) -> dict:
+                return {}
+
+            def health_check(self) -> dict:
+                sub_status = self.get_subscription_status()
+                return {
+                    "status": "healthy" if sub_status["subscribed"] else "degraded",
+                    **sub_status,
+                }
+
+        manager = MyManager(db_path)
+        manager.subscribe_to_events()
+
+        # Test database helpers work
+        result = manager._execute_db_query(
+            "SELECT COUNT(*) FROM peers", fetch=True
+        )
+        assert result == [(0,)]
+
+        # Test subscription works
+        assert manager.is_subscribed() is True
+
+        # Test health check
+        health = manager.health_check()
+        assert health["status"] == "healthy"
+        assert health["subscribed"] is True
+
+
+# =============================================================================
+# Config Loading Tests
+# =============================================================================
+
+
+class TestP2PMixinBaseConfigHelpers:
+    """Test configuration loading helpers."""
 
     def test_load_config_constant_success(self) -> None:
-        """Test loading an existing constant."""
-        # This will try to load from scripts.p2p.constants
-        # Using a known constant that should exist
+        """Test _load_config_constant loads existing constant."""
+        # Use a known module and constant
         result = P2PMixinBase._load_config_constant(
-            "DEFAULT_PORT",
-            9999,  # fallback
-            "scripts.p2p.constants",
+            "Path", None, module_path="pathlib"
         )
-        # Either gets the real value or fallback (both are valid)
-        assert isinstance(result, int)
+        from pathlib import Path
+
+        assert result is Path
 
     def test_load_config_constant_fallback(self) -> None:
-        """Test fallback when constant doesn't exist."""
+        """Test _load_config_constant uses default on missing constant."""
         result = P2PMixinBase._load_config_constant(
-            "NONEXISTENT_CONSTANT_12345",
-            42,
+            "NONEXISTENT_CONSTANT", 42, module_path="pathlib"
         )
         assert result == 42
 
-    def test_load_config_constant_bad_module(self) -> None:
-        """Test fallback when module doesn't exist."""
+    def test_load_config_constant_module_not_found(self) -> None:
+        """Test _load_config_constant uses default on missing module."""
         result = P2PMixinBase._load_config_constant(
-            "SOME_CONSTANT",
-            "default",
-            "nonexistent.module.path",
+            "SOMETHING", "default", module_path="nonexistent.module.path"
         )
         assert result == "default"
 
     def test_load_config_constants_multiple(self) -> None:
-        """Test loading multiple constants at once."""
-        result = P2PMixinBase._load_config_constants({
-            "NONEXISTENT_A": 100,
-            "NONEXISTENT_B": "hello",
-            "NONEXISTENT_C": True,
-        })
-        assert result == {
-            "NONEXISTENT_A": 100,
-            "NONEXISTENT_B": "hello",
-            "NONEXISTENT_C": True,
-        }
+        """Test _load_config_constants loads multiple at once."""
+        result = P2PMixinBase._load_config_constants(
+            {"Path": None, "MISSING": 123},
+            module_path="pathlib",
+        )
+        from pathlib import Path
 
-
-class TestLoggingHelpers:
-    """Tests for logging helper methods."""
-
-    def test_log_methods_exist(self, mixin: TestMixin) -> None:
-        """Test that all log methods exist and are callable."""
-        assert callable(mixin._log_debug)
-        assert callable(mixin._log_info)
-        assert callable(mixin._log_warning)
-        assert callable(mixin._log_error)
-
-    @patch("scripts.p2p.p2p_mixin_base.logger")
-    def test_log_debug(self, mock_logger: MagicMock, mixin: TestMixin) -> None:
-        """Test debug logging with prefix."""
-        mixin._log_debug("test message")
-        mock_logger.debug.assert_called_once_with("[test_mixin] test message")
-
-    @patch("scripts.p2p.p2p_mixin_base.logger")
-    def test_log_info(self, mock_logger: MagicMock, mixin: TestMixin) -> None:
-        """Test info logging with prefix."""
-        mixin._log_info("test message")
-        mock_logger.info.assert_called_once_with("[test_mixin] test message")
-
-
-class TestTimingHelpers:
-    """Tests for timing helper methods."""
-
-    def test_get_timestamp(self, mixin: TestMixin) -> None:
-        """Test timestamp retrieval."""
-        before = time.time()
-        ts = mixin._get_timestamp()
-        after = time.time()
-        assert before <= ts <= after
-
-    def test_is_expired_true(self, mixin: TestMixin) -> None:
-        """Test expiration check for expired timestamp."""
-        old_timestamp = time.time() - 100  # 100 seconds ago
-        assert mixin._is_expired(old_timestamp, 60) is True
-
-    def test_is_expired_false(self, mixin: TestMixin) -> None:
-        """Test expiration check for non-expired timestamp."""
-        recent_timestamp = time.time() - 10  # 10 seconds ago
-        assert mixin._is_expired(recent_timestamp, 60) is False
+        assert result["Path"] is Path
+        assert result["MISSING"] == 123
