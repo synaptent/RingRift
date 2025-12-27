@@ -47,8 +47,8 @@ echo "  - Gauntlet: DISABLED"
 echo "  - Export: DISABLED"
 echo ""
 
-# Check if already running
-if lsof -i :$PORT >/dev/null 2>&1; then
+# Check if port is already listening (ignore closed connections)
+if lsof -i :$PORT -sTCP:LISTEN >/dev/null 2>&1; then
     echo "ERROR: Port $PORT is already in use"
     echo "Check with: lsof -i :$PORT"
     exit 1

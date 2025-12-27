@@ -48,6 +48,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -530,6 +532,60 @@ class LeadershipCoordinator:
             "cluster_healthy": stats.cluster_healthy,
             "subscribed": self._subscribed,
         }
+
+    def health_check(self) -> HealthCheckResult:
+        """Check coordinator health for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult with status and details
+        """
+        stats = self.get_stats()
+
+        details = {
+            "local_node_id": self.local_node_id,
+            "subscribed": self._subscribed,
+            "online_nodes": stats.online_nodes,
+            "total_nodes": stats.total_nodes,
+            "leaders_by_domain": stats.leaders_by_domain,
+            "total_elections": stats.total_elections,
+            "total_failovers": stats.total_failovers,
+            "current_term": stats.current_term,
+        }
+
+        # Not subscribed to events = degraded
+        if not self._subscribed:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="LeadershipCoordinator not subscribed to events",
+                details=details,
+            )
+
+        # No online nodes = error
+        if stats.online_nodes == 0:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message="No online nodes in cluster",
+                details=details,
+            )
+
+        # Cluster not healthy (missing required leaders)
+        if not stats.cluster_healthy:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="Cluster missing required leaders",
+                details=details,
+            )
+
+        # All good
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"LeadershipCoordinator healthy: {stats.online_nodes} nodes, {len(stats.leaders_by_domain)} domains",
+            details=details,
+        )
 
 
 # =============================================================================

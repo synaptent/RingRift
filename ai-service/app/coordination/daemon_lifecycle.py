@@ -50,6 +50,7 @@ from app.coordination.daemon_types import (
     DaemonState,
     DaemonType,
     _check_deprecated_daemon,
+    validate_startup_order_consistency,
 )
 
 
@@ -518,6 +519,17 @@ class DaemonLifecycleManager:
 
         results: dict[DaemonType, bool] = {}
         types_to_start = types or list(self._factories.keys())
+
+        # December 2025: Validate DAEMON_STARTUP_ORDER is consistent with DAEMON_DEPENDENCIES
+        # This catches configuration bugs where startup order violates dependency constraints
+        is_consistent, violations = validate_startup_order_consistency()
+        if not is_consistent:
+            for violation in violations:
+                logger.error(f"[DaemonManager] Startup order violation: {violation}")
+            raise DependencyValidationError(
+                "DAEMON_STARTUP_ORDER is inconsistent with DAEMON_DEPENDENCIES:\n"
+                + "\n".join(f"  - {v}" for v in violations)
+            )
 
         # Phase 12: Validate dependency graph before startup
         # This fails fast with clear errors instead of proceeding with broken config

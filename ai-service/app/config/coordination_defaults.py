@@ -736,6 +736,236 @@ def get_circuit_breaker_configs() -> dict:
 
 
 # =============================================================================
+# P2P Network Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class P2PDefaults:
+    """Default values for P2P network configuration.
+
+    Used by: scripts/p2p_orchestrator.py, app/coordination/p2p_*.py
+
+    These values control the P2P mesh network for cluster coordination.
+    """
+    # P2P orchestrator port (the main cluster coordination port)
+    DEFAULT_PORT: int = _env_int("RINGRIFT_P2P_PORT", 8770)
+
+    # Health check HTTP endpoint port (same as P2P port)
+    HEALTH_PORT: int = _env_int("RINGRIFT_P2P_HEALTH_PORT", 8770)
+
+    # Data server port for file distribution
+    DATA_SERVER_PORT: int = _env_int("RINGRIFT_DATA_SERVER_PORT", 8780)
+
+    # Gossip interval (seconds) - how often to exchange state
+    GOSSIP_INTERVAL: int = _env_int("RINGRIFT_P2P_GOSSIP_INTERVAL", 15)
+
+    # Heartbeat interval (seconds) - liveness detection
+    HEARTBEAT_INTERVAL: int = _env_int("RINGRIFT_P2P_HEARTBEAT_INTERVAL", 15)
+
+    # Peer timeout (seconds) - consider dead after no heartbeat
+    PEER_TIMEOUT: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT", 60)
+
+    # Leader election timeout (seconds)
+    ELECTION_TIMEOUT: int = _env_int("RINGRIFT_P2P_ELECTION_TIMEOUT", 30)
+
+    # Startup grace period (seconds) - don't kill processes during startup
+    STARTUP_GRACE_PERIOD: int = _env_int("RINGRIFT_P2P_STARTUP_GRACE_PERIOD", 120)
+
+    # Maximum retry attempts for P2P operations
+    MAX_RETRIES: int = _env_int("RINGRIFT_P2P_MAX_RETRIES", 3)
+
+    # Quorum size for consensus (minimum voters needed)
+    DEFAULT_QUORUM: int = _env_int("RINGRIFT_P2P_QUORUM", 3)
+
+    # Maximum peers to track
+    MAX_PEERS: int = _env_int("RINGRIFT_P2P_MAX_PEERS", 100)
+
+
+def get_p2p_port() -> int:
+    """Get the P2P orchestrator port.
+
+    Example:
+        port = get_p2p_port()  # Returns 8770 or env override
+        url = f"http://{host}:{port}/status"
+    """
+    return P2PDefaults.DEFAULT_PORT
+
+
+# =============================================================================
+# Job Timeout Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class JobTimeoutDefaults:
+    """Default timeout values per job type.
+
+    Used by: app/coordination/job_reaper.py, scripts/p2p_orchestrator.py
+
+    These values control when jobs are considered stuck/stale.
+    """
+    # GPU selfplay job timeout (seconds) - 1 hour
+    GPU_SELFPLAY: int = _env_int("RINGRIFT_JOB_TIMEOUT_GPU_SELFPLAY", 3600)
+
+    # CPU selfplay job timeout (seconds) - 2 hours (slower)
+    CPU_SELFPLAY: int = _env_int("RINGRIFT_JOB_TIMEOUT_CPU_SELFPLAY", 7200)
+
+    # Training job timeout (seconds) - 4 hours
+    TRAINING: int = _env_int("RINGRIFT_JOB_TIMEOUT_TRAINING", 14400)
+
+    # Tournament job timeout (seconds) - 1 hour
+    TOURNAMENT: int = _env_int("RINGRIFT_JOB_TIMEOUT_TOURNAMENT", 3600)
+
+    # Data export job timeout (seconds) - 30 minutes
+    DATA_EXPORT: int = _env_int("RINGRIFT_JOB_TIMEOUT_DATA_EXPORT", 1800)
+
+    # Evaluation job timeout (seconds) - 1 hour
+    EVALUATION: int = _env_int("RINGRIFT_JOB_TIMEOUT_EVALUATION", 3600)
+
+    # Model sync job timeout (seconds) - 30 minutes
+    MODEL_SYNC: int = _env_int("RINGRIFT_JOB_TIMEOUT_MODEL_SYNC", 1800)
+
+    # CMA-ES optimization timeout (seconds) - 8 hours
+    CMAES: int = _env_int("RINGRIFT_JOB_TIMEOUT_CMAES", 28800)
+
+    # Pipeline stage timeouts (seconds) - 10 minutes default
+    PIPELINE_STAGE: int = _env_int("RINGRIFT_JOB_TIMEOUT_PIPELINE_STAGE", 600)
+
+
+def get_job_timeout(job_type: str) -> int:
+    """Get timeout for a specific job type.
+
+    Args:
+        job_type: Job type ("gpu_selfplay", "training", "tournament", etc.)
+
+    Returns:
+        Timeout in seconds
+
+    Example:
+        timeout = get_job_timeout("training")  # Returns 14400 (4 hours)
+    """
+    timeouts = {
+        "gpu_selfplay": JobTimeoutDefaults.GPU_SELFPLAY,
+        "cpu_selfplay": JobTimeoutDefaults.CPU_SELFPLAY,
+        "selfplay": JobTimeoutDefaults.GPU_SELFPLAY,  # Alias
+        "training": JobTimeoutDefaults.TRAINING,
+        "tournament": JobTimeoutDefaults.TOURNAMENT,
+        "data_export": JobTimeoutDefaults.DATA_EXPORT,
+        "export": JobTimeoutDefaults.DATA_EXPORT,  # Alias
+        "evaluation": JobTimeoutDefaults.EVALUATION,
+        "eval": JobTimeoutDefaults.EVALUATION,  # Alias
+        "model_sync": JobTimeoutDefaults.MODEL_SYNC,
+        "sync": JobTimeoutDefaults.MODEL_SYNC,  # Alias
+        "cmaes": JobTimeoutDefaults.CMAES,
+        "pipeline": JobTimeoutDefaults.PIPELINE_STAGE,
+    }
+    return timeouts.get(job_type.lower(), JobTimeoutDefaults.GPU_SELFPLAY)
+
+
+# =============================================================================
+# Backpressure Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class BackpressureDefaults:
+    """Default values for backpressure calculation.
+
+    Used by: app/coordination/backpressure.py, app/coordination/types.py
+
+    These values control spawn rate throttling across the cluster.
+    """
+    # Component weights (must sum to 1.0)
+    WEIGHT_QUEUE: float = _env_float("RINGRIFT_BP_WEIGHT_QUEUE", 0.30)
+    WEIGHT_TRAINING: float = _env_float("RINGRIFT_BP_WEIGHT_TRAINING", 0.25)
+    WEIGHT_DISK: float = _env_float("RINGRIFT_BP_WEIGHT_DISK", 0.20)
+    WEIGHT_SYNC: float = _env_float("RINGRIFT_BP_WEIGHT_SYNC", 0.15)
+    WEIGHT_MEMORY: float = _env_float("RINGRIFT_BP_WEIGHT_MEMORY", 0.10)
+
+    # Queue pressure thresholds (normalized 0-1)
+    QUEUE_LOW: float = _env_float("RINGRIFT_BP_QUEUE_LOW", 0.3)
+    QUEUE_MEDIUM: float = _env_float("RINGRIFT_BP_QUEUE_MEDIUM", 0.5)
+    QUEUE_HIGH: float = _env_float("RINGRIFT_BP_QUEUE_HIGH", 0.7)
+    QUEUE_CRITICAL: float = _env_float("RINGRIFT_BP_QUEUE_CRITICAL", 0.9)
+
+    # Spawn rate multipliers per backpressure level
+    MULTIPLIER_NONE: float = 1.0       # No backpressure
+    MULTIPLIER_LOW: float = 0.75       # Slight reduction
+    MULTIPLIER_SOFT: float = 0.50      # Moderate reduction
+    MULTIPLIER_MEDIUM: float = 0.25    # Significant reduction
+    MULTIPLIER_HARD: float = 0.10      # Heavy reduction
+    MULTIPLIER_HIGH: float = 0.05      # Very heavy reduction
+    MULTIPLIER_CRITICAL: float = 0.01  # Near-stop
+    MULTIPLIER_STOP: float = 0.0       # Full stop
+
+    # Cache TTL for backpressure signals (seconds)
+    CACHE_TTL: float = _env_float("RINGRIFT_BP_CACHE_TTL", 10.0)
+
+    # Cooldown between recalculations (seconds)
+    COOLDOWN: int = _env_int("RINGRIFT_BP_COOLDOWN", 5)
+
+
+def get_backpressure_multiplier(level: str) -> float:
+    """Get spawn rate multiplier for a backpressure level.
+
+    Args:
+        level: Backpressure level ("none", "low", "medium", "high", etc.)
+
+    Returns:
+        Multiplier (0.0 to 1.0) to apply to spawn rate
+
+    Example:
+        multiplier = get_backpressure_multiplier("medium")  # Returns 0.25
+        spawn_rate = base_rate * multiplier
+    """
+    multipliers = {
+        "none": BackpressureDefaults.MULTIPLIER_NONE,
+        "low": BackpressureDefaults.MULTIPLIER_LOW,
+        "soft": BackpressureDefaults.MULTIPLIER_SOFT,
+        "medium": BackpressureDefaults.MULTIPLIER_MEDIUM,
+        "hard": BackpressureDefaults.MULTIPLIER_HARD,
+        "high": BackpressureDefaults.MULTIPLIER_HIGH,
+        "critical": BackpressureDefaults.MULTIPLIER_CRITICAL,
+        "stop": BackpressureDefaults.MULTIPLIER_STOP,
+    }
+    return multipliers.get(level.lower(), BackpressureDefaults.MULTIPLIER_NONE)
+
+
+# =============================================================================
+# Daemon Health Check Defaults (December 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class DaemonHealthDefaults:
+    """Default values for daemon health monitoring.
+
+    Used by: app/coordination/daemon_manager.py
+
+    These control how daemons are monitored and when they're restarted.
+    """
+    # Health check interval (seconds) - how often to check daemon health
+    CHECK_INTERVAL: float = _env_float("RINGRIFT_DAEMON_HEALTH_INTERVAL", 60.0)
+
+    # Critical daemon check interval (seconds) - faster for critical daemons
+    CRITICAL_CHECK_INTERVAL: float = _env_float(
+        "RINGRIFT_DAEMON_CRITICAL_CHECK_INTERVAL", 30.0
+    )
+
+    # Maximum failures before restart
+    MAX_FAILURES: int = _env_int("RINGRIFT_DAEMON_MAX_FAILURES", 3)
+
+    # Restart backoff base (seconds)
+    RESTART_BACKOFF_BASE: float = _env_float("RINGRIFT_DAEMON_RESTART_BACKOFF", 5.0)
+
+    # Maximum restart backoff (seconds)
+    RESTART_BACKOFF_MAX: float = _env_float("RINGRIFT_DAEMON_RESTART_BACKOFF_MAX", 300.0)
+
+    # Startup timeout (seconds) - how long to wait for daemon to become healthy
+    STARTUP_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_STARTUP_TIMEOUT", 30.0)
+
+    # Shutdown timeout (seconds) - how long to wait for graceful shutdown
+    SHUTDOWN_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT", 10.0)
+
+
+# =============================================================================
 # SQLite Database Defaults (December 2025)
 # =============================================================================
 
@@ -1100,38 +1330,74 @@ def get_all_defaults() -> dict:
             "merge_timeout": SQLiteDefaults.MERGE_TIMEOUT,
             "busy_timeout_ms": SQLiteDefaults.BUSY_TIMEOUT_MS,
         },
+        # December 27, 2025: P2P network defaults
+        "p2p": {
+            "default_port": P2PDefaults.DEFAULT_PORT,
+            "health_port": P2PDefaults.HEALTH_PORT,
+            "data_server_port": P2PDefaults.DATA_SERVER_PORT,
+            "gossip_interval": P2PDefaults.GOSSIP_INTERVAL,
+            "heartbeat_interval": P2PDefaults.HEARTBEAT_INTERVAL,
+            "peer_timeout": P2PDefaults.PEER_TIMEOUT,
+            "election_timeout": P2PDefaults.ELECTION_TIMEOUT,
+            "startup_grace_period": P2PDefaults.STARTUP_GRACE_PERIOD,
+        },
+        # December 27, 2025: Job timeout defaults
+        "job_timeouts": {
+            "gpu_selfplay": JobTimeoutDefaults.GPU_SELFPLAY,
+            "cpu_selfplay": JobTimeoutDefaults.CPU_SELFPLAY,
+            "training": JobTimeoutDefaults.TRAINING,
+            "tournament": JobTimeoutDefaults.TOURNAMENT,
+            "data_export": JobTimeoutDefaults.DATA_EXPORT,
+            "evaluation": JobTimeoutDefaults.EVALUATION,
+            "cmaes": JobTimeoutDefaults.CMAES,
+        },
+        # December 27, 2025: Backpressure defaults
+        "backpressure": {
+            "weight_queue": BackpressureDefaults.WEIGHT_QUEUE,
+            "weight_training": BackpressureDefaults.WEIGHT_TRAINING,
+            "weight_disk": BackpressureDefaults.WEIGHT_DISK,
+            "queue_low": BackpressureDefaults.QUEUE_LOW,
+            "queue_critical": BackpressureDefaults.QUEUE_CRITICAL,
+            "cache_ttl": BackpressureDefaults.CACHE_TTL,
+        },
+        # December 27, 2025: Daemon health defaults
+        "daemon_health": {
+            "check_interval": DaemonHealthDefaults.CHECK_INTERVAL,
+            "critical_check_interval": DaemonHealthDefaults.CRITICAL_CHECK_INTERVAL,
+            "max_failures": DaemonHealthDefaults.MAX_FAILURES,
+            "startup_timeout": DaemonHealthDefaults.STARTUP_TIMEOUT,
+            "shutdown_timeout": DaemonHealthDefaults.SHUTDOWN_TIMEOUT,
+        },
     }
 
 
 __all__ = [
+    # Config classes (alphabetical)
+    "BackpressureDefaults",
     "BandwidthDefaults",
     "CacheDefaults",
     "CircuitBreakerDefaults",
-    # December 27, 2025 additions
+    "DaemonHealthDefaults",
     "DaemonLoopDefaults",
     "DurationDefaults",
     "EphemeralDefaults",
-    # December 2025 additions
     "HealthDefaults",
     "HeartbeatDefaults",
-    # Config classes
+    "JobTimeoutDefaults",
     "LockDefaults",
     "MetricsAnalysisDefaults",
-    # December 27, 2025 additions
     "MonitoringDefaults",
     "NetworkRetryDefaults",
     "OperationTimeouts",
     "OptimizationDefaults",
+    "P2PDefaults",
     "PIDDefaults",
-    # December 2025 new defaults
     "QueueDefaults",
     "ResourceLimitsDefaults",
-    # December 2025 coordinator defaults
     "ResourceMonitoringDefaults",
     "RetryDefaults",
     "ScalingDefaults",
     "SchedulerDefaults",
-    # SQLite database defaults (December 27, 2025)
     "SQLiteDefaults",
     "SyncCoordinatorDefaults",
     "SyncDefaults",
@@ -1139,9 +1405,12 @@ __all__ = [
     "TrainingDefaults",
     "TransportDefaults",
     "UtilizationDefaults",
-    # Utilities
+    # Utility functions
     "get_all_defaults",
+    "get_backpressure_multiplier",
     "get_circuit_breaker_configs",
+    "get_job_timeout",
+    "get_p2p_port",
     "get_sqlite_timeout",
     "get_timeout",
 ]

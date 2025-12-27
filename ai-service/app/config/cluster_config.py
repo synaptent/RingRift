@@ -550,6 +550,72 @@ class ClusterNode:
         """Get provider inferred from node name."""
         return get_host_provider(self.name)
 
+    def get_storage_path(self, data_type: str) -> str:
+        """Get storage path for a specific data type.
+
+        Respects storage_paths config for custom routing, falls back to
+        external_storage_path or default ringrift_path.
+
+        Args:
+            data_type: One of 'games', 'models', 'training_data', 'checkpoints',
+                       'logs', 'sync_incoming', 'npz', 'databases'
+
+        Returns:
+            Path string for the specified data type.
+
+        Dec 2025: Added for OWC external drive routing on mac-studio.
+        """
+        # Check for custom storage_paths first
+        if self.storage_paths:
+            if data_type in self.storage_paths:
+                return self.storage_paths[data_type]
+            # Handle aliases
+            alias_map = {
+                "npz": "training_data",
+                "databases": "games",
+            }
+            if data_type in alias_map and alias_map[data_type] in self.storage_paths:
+                return self.storage_paths[alias_map[data_type]]
+
+        # Fall back to external storage if enabled
+        if self.use_external_storage and self.external_storage_path:
+            default_subdirs = {
+                "games": "selfplay_repository",
+                "models": "canonical_models",
+                "training_data": "canonical_data",
+                "npz": "canonical_data",
+                "checkpoints": "model_checkpoints",
+                "logs": "logs",
+                "sync_incoming": "cluster_games",
+                "databases": "selfplay_repository",
+            }
+            subdir = default_subdirs.get(data_type, data_type)
+            return f"{self.external_storage_path}/{subdir}"
+
+        # Default paths under ringrift_path
+        base = self.ringrift_path
+        default_paths = {
+            "games": f"{base}/data/games",
+            "models": f"{base}/models",
+            "training_data": f"{base}/data/training",
+            "npz": f"{base}/data/training",
+            "checkpoints": f"{base}/checkpoints",
+            "logs": f"{base}/logs",
+            "sync_incoming": f"{base}/data/sync_incoming",
+            "databases": f"{base}/data/games",
+        }
+        return default_paths.get(data_type, f"{base}/data/{data_type}")
+
+    def should_receive_sync(self) -> bool:
+        """Check if this node should receive sync data.
+
+        Returns False if skip_sync_receive is set (e.g., for orchestrator nodes
+        that should not accumulate training data on their local disk).
+
+        Dec 2025: Added to prevent orchestrator disk fill-up.
+        """
+        return not self.skip_sync_receive
+
 
 def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, ClusterNode]:
     """Get all cluster nodes from config.
