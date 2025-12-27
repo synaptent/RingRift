@@ -235,13 +235,6 @@ MEMBERSHIP_MODE = os.environ.get("RINGRIFT_MEMBERSHIP_MODE", "http")
 CONSENSUS_MODE = os.environ.get("RINGRIFT_CONSENSUS_MODE", "bully")
 
 # ============================================
-# Tailscale Network
-# ============================================
-
-# Tailscale CGNAT network for detecting Tailscale IPs
-TAILSCALE_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
-
-# ============================================
 # Network Helpers
 # ============================================
 

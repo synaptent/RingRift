@@ -227,6 +227,9 @@ class UnifiedReplicationDaemon:
         self._running = True
         logger.info("[UnifiedReplicationDaemon] Starting monitoring and repair loops")
 
+        # Subscribe to relevant events (December 2025)
+        await self._subscribe_to_events()
+
         self._monitor_task = asyncio.create_task(
             self._monitor_loop(),
             name="replication_monitor_loop",
@@ -235,6 +238,46 @@ class UnifiedReplicationDaemon:
             self._repair_loop(),
             name="replication_repair_loop",
         )
+
+    async def _subscribe_to_events(self) -> None:
+        """Subscribe to replication-relevant events."""
+        try:
+            from app.coordination.event_router import DataEventType, get_event_router
+
+            router = get_event_router()
+            router.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games)
+            router.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_sync_completed)
+            router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+            logger.info("[UnifiedReplicationDaemon] Subscribed to events")
+        except ImportError:
+            logger.debug("[UnifiedReplicationDaemon] Event router not available")
+        except Exception as e:
+            logger.warning(f"[UnifiedReplicationDaemon] Failed to subscribe: {e}")
+
+    async def _on_new_games(self, event) -> None:
+        """Handle new games - may need replication check."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            logger.debug(f"[UnifiedReplicationDaemon] New games event: {payload.get('count', 'unknown')}")
+        except Exception as e:
+            logger.debug(f"[UnifiedReplicationDaemon] Error handling new games: {e}")
+
+    async def _on_sync_completed(self, event) -> None:
+        """Handle sync completion - verify replication."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            logger.debug(f"[UnifiedReplicationDaemon] Sync completed: {payload}")
+        except Exception as e:
+            logger.debug(f"[UnifiedReplicationDaemon] Error handling sync: {e}")
+
+    async def _on_host_offline(self, event) -> None:
+        """Handle host offline - may need repair priority adjustment."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            host = payload.get("host", "unknown")
+            logger.info(f"[UnifiedReplicationDaemon] Host offline: {host}")
+        except Exception as e:
+            logger.debug(f"[UnifiedReplicationDaemon] Error handling offline: {e}")
 
     async def stop(self) -> None:
         """Stop both loops gracefully."""

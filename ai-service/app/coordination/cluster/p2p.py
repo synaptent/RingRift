@@ -24,14 +24,12 @@ warnings.warn(
 
 from app.coordination.p2p_backend import (
     P2PBackend,
-    P2PConfig,
-    PeerInfo,
-    LeaderElection,
+    P2PNodeInfo,
+    get_p2p_backend,
 )
 
 __all__ = [
     "P2PBackend",
-    "P2PConfig",
-    "PeerInfo",
-    "LeaderElection",
+    "P2PNodeInfo",
+    "get_p2p_backend",
 ]

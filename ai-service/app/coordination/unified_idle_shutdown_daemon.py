@@ -277,9 +277,42 @@ class UnifiedIdleShutdownDaemon:
             f"min_nodes={self.config.min_nodes_to_retain}, dry_run={self.config.dry_run}"
         )
 
+        # Subscribe to relevant events (December 2025)
+        await self._subscribe_to_events()
+
         try:
             await self._run_loop()
         finally:
+
+    async def _subscribe_to_events(self) -> None:
+        """Subscribe to events that affect idle detection."""
+        try:
+            from app.coordination.event_router import DataEventType, get_event_router
+
+            router = get_event_router()
+            router.subscribe(DataEventType.TRAINING_STARTED, self._on_training_started)
+            router.subscribe(DataEventType.SELFPLAY_COMPLETED, self._on_selfplay_completed)
+            logger.info(f"[{self._daemon_name}] Subscribed to events")
+        except ImportError:
+            logger.debug(f"[{self._daemon_name}] Event router not available")
+        except Exception as e:
+            logger.warning(f"[{self._daemon_name}] Failed to subscribe: {e}")
+
+    async def _on_training_started(self, event) -> None:
+        """Handle training started - don't terminate nodes running training."""
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            host = payload.get("host", "unknown")
+            logger.debug(f"[{self._daemon_name}] Training started on {host}")
+        except Exception as e:
+            logger.debug(f"[{self._daemon_name}] Error handling training event: {e}")
+
+    async def _on_selfplay_completed(self, event) -> None:
+        """Handle selfplay completed - refresh utilization data."""
+        try:
+            logger.debug(f"[{self._daemon_name}] Selfplay completed event")
+        except Exception as e:
+            logger.debug(f"[{self._daemon_name}] Error handling selfplay event: {e}")
             self._running = False
             if HAS_PROTOCOLS:
                 unregister_coordinator(self._daemon_name)

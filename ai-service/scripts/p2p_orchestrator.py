@@ -10474,101 +10474,9 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
     # Phase 3: Training Pipeline Integration Methods
     # ============================================
 
-    def _check_training_readiness(self) -> list[dict[str, Any]]:
-        """Check cluster data manifest for training readiness.
-
-        Returns list of training jobs that should be triggered based on
-        accumulated selfplay data.
-
-        Called periodically by leader to check if automatic training should start.
-        """
-        jobs_to_start = []
-
-        if not self.cluster_data_manifest:
-            return jobs_to_start
-
-        current_time = time.time()
-        thresholds = self.training_thresholds
-
-        # Update adaptive thresholds based on current cluster state
-        gpu_node_count = len([p for p in self.peers.values()
-                              if getattr(p, 'has_gpu', False) and getattr(p, 'gpu_name', '')]
-                             ) + (1 if getattr(self.self_info, 'has_gpu', False) else 0)
-        thresholds.update_from_cluster_state(gpu_node_count)
-
-        def _cooldown_ok(job_type: str, config_key: str) -> bool:
-            cooldown = thresholds.get_effective_cooldown()
-            if cooldown <= 0:
-                return True
-            last_seen = 0.0
-            with self.training_lock:
-                for job in self.training_jobs.values():
-                    if str(getattr(job, "job_type", "")) != job_type:
-                        continue
-                    job_key = f"{job.board_type}_{job.num_players}p"
-                    if job_key != config_key:
-                        continue
-                    last_seen = max(
-                        last_seen,
-                        float(getattr(job, "completed_at", 0.0) or 0.0),
-                        float(getattr(job, "started_at", 0.0) or 0.0),
-                        float(getattr(job, "created_at", 0.0) or 0.0),
-                    )
-            if last_seen <= 0:
-                return True
-            return (current_time - last_seen) >= cooldown
-
-        # Check each board type / player count combination
-        for config_key, config_data in self.cluster_data_manifest.by_board_type.items():
-            parts = config_key.split("_")
-            if len(parts) < 2:
-                continue
-            board_type = parts[0]
-            num_players = int(parts[1].replace("p", ""))
-            total_games = config_data.get("total_games", 0)
-
-            # Check NNUE training threshold (using adaptive thresholds)
-            if thresholds.auto_nnue_enabled:
-                last_nnue_games = self.games_at_last_nnue_train.get(config_key, 0)
-                min_games = thresholds.get_effective_min_games("nnue")
-                incremental = thresholds.get_effective_incremental("nnue")
-                if total_games >= min_games:
-                    new_games = total_games - last_nnue_games
-                    if new_games >= incremental or last_nnue_games == 0:
-                        # Check cooldown
-                        if not _cooldown_ok("nnue", config_key):
-                            continue
-                        existing_job = self._find_running_training_job("nnue", config_key)
-                        if not existing_job:
-                            jobs_to_start.append({
-                                "job_type": "nnue",
-                                "board_type": board_type,
-                                "num_players": num_players,
-                                "config_key": config_key,
-                                "total_games": total_games,
-                            })
-
-            # Check CMA-ES optimization threshold (using adaptive thresholds)
-            if thresholds.auto_cmaes_enabled:
-                last_cmaes_games = self.games_at_last_cmaes_train.get(config_key, 0)
-                min_games = thresholds.get_effective_min_games("cmaes")
-                incremental = thresholds.get_effective_incremental("cmaes")
-                if total_games >= min_games:
-                    new_games = total_games - last_cmaes_games
-                    if new_games >= incremental or last_cmaes_games == 0:
-                        if not _cooldown_ok("cmaes", config_key):
-                            continue
-                        existing_job = self._find_running_training_job("cmaes", config_key)
-                        if not existing_job:
-                            jobs_to_start.append({
-                                "job_type": "cmaes",
-                                "board_type": board_type,
-                                "num_players": num_players,
-                                "config_key": config_key,
-                                "total_games": total_games,
-                            })
-
-        return jobs_to_start
+    # NOTE: _check_training_readiness() removed Dec 2025 (95 LOC).
+    # Use self.training_coordinator.check_training_readiness() instead.
+    # See scripts/p2p/managers/training_coordinator.py for implementation.
 
     def _find_running_training_job(self, job_type: str, config_key: str) -> TrainingJob | None:
         """Find a running training job of the given type for the config."""
@@ -10774,8 +10682,8 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
 
         self.last_training_check = current_time
 
-        # Get jobs that should be started
-        jobs_to_start = self._check_training_readiness()
+        # Get jobs that should be started (delegated to TrainingCoordinator manager)
+        jobs_to_start = self.training_coordinator.check_training_readiness()
 
         for job_config in jobs_to_start:
             # PHASE 4 IDEMPOTENCY: Check for duplicate triggers

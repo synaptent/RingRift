@@ -202,14 +202,14 @@ def _build_registry() -> dict[str, DaemonSpec]:
             class_name="SyncCoordinator",
         ),
         DaemonType.REPLICATION_MONITOR.name: DaemonSpec(
-            import_path="app.coordination.replication_monitor",
-            class_name="ReplicationMonitor",
-            factory_fn="get_replication_monitor",
+            import_path="app.coordination.unified_replication_daemon",
+            class_name="UnifiedReplicationDaemon",
+            factory_fn="create_replication_monitor",
         ),
         DaemonType.REPLICATION_REPAIR.name: DaemonSpec(
-            import_path="app.coordination.replication_repair_daemon",
-            class_name="ReplicationRepairDaemon",
-            factory_fn="get_replication_repair_daemon",
+            import_path="app.coordination.unified_replication_daemon",
+            class_name="UnifiedReplicationDaemon",
+            factory_fn="create_replication_repair_daemon",
         ),
         DaemonType.TRAINING_NODE_WATCHER.name: DaemonSpec(
             import_path="app.coordination.cluster_data_sync",
