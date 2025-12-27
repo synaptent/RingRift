@@ -798,6 +798,17 @@ class WebhookNotifier:
             await self._session.close()
             self._session = None
 
+    def close_sync(self) -> None:
+        """Synchronously close the HTTP session (for finally blocks)."""
+        if self._session is not None and not self._session.closed:
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(self._session.close())
+                loop.close()
+            except Exception:
+                pass  # Best effort
+            self._session = None
+
     def _should_throttle(self, alert_key: str) -> bool:
         """Check if this alert should be throttled (duplicate within window)."""
         now = time.time()
@@ -2409,7 +2420,8 @@ class P2POrchestrator(
 
     def _init_database(self):
         """Initialize SQLite database for state persistence."""
-        conn = sqlite3.connect(str(self.db_path))
+        # December 2025: Add timeout to prevent hangs on locked database
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         cursor = conn.cursor()
 
         # Peers table
@@ -2540,7 +2552,7 @@ class P2POrchestrator(
         """Load persisted state from database."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             cursor = conn.cursor()
 
             # Load peers
@@ -2642,7 +2654,7 @@ class P2POrchestrator(
         """Save current state to database."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             cursor = conn.cursor()
 
             # Save peers
@@ -2806,7 +2818,7 @@ class P2POrchestrator(
 
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             cursor = conn.cursor()
             cursor.executemany("""
                 INSERT INTO metrics_history
@@ -2831,7 +2843,7 @@ class P2POrchestrator(
         """Get metrics history for a specific metric type."""
         conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             cursor = conn.cursor()
 
             since = time.time() - (hours * 3600)
@@ -11338,6 +11350,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                     if job:
                         if success:
                             job.status = "completed"
+                            job.completed_at = time.time()
                             job.output_model_path = output_path
                             # LEARNED LESSONS - Schedule tournament to compare new model against baseline
                             asyncio.create_task(self._schedule_model_comparison(job, output_path))
@@ -11405,6 +11418,7 @@ print(f"Saved model to {config.get('output_model', '/tmp/model.pt')}")
                 job = self.local_jobs.get(job_id)
                 if job:
                     job.status = "completed" if return_code == 0 else "failed"
+                    job.completed_at = time.time()
 
             if return_code != 0:
                 logger.info(f"GPU selfplay job {job_id} failed (exit code {return_code})")
@@ -24305,6 +24319,38 @@ print(json.dumps({{
             logger.info(f"LOCAL: Memory warning at {node.memory_percent:.0f}% - reducing jobs to {target}")
             await self._reduce_local_selfplay_jobs(target, reason="memory_warning")
 
+        # Clean up old completed/failed jobs to prevent memory leak
+        await self._cleanup_old_completed_jobs()
+
+    async def _cleanup_old_completed_jobs(self):
+        """Clean up completed/failed jobs older than 24 hours to prevent memory leaks.
+
+        Jobs accumulate in self.local_jobs as they complete. This method removes
+        old completed/failed jobs that are no longer needed for status tracking.
+        """
+        now = time.time()
+        max_age_seconds = 86400  # 24 hours
+
+        with self.jobs_lock:
+            expired_job_ids = []
+            for job_id, job in self.local_jobs.items():
+                if job.status not in ("completed", "failed"):
+                    continue
+                # Check completed_at if available
+                completed_at = getattr(job, "completed_at", 0) or 0
+                if completed_at > 0 and (now - completed_at) > max_age_seconds:
+                    expired_job_ids.append(job_id)
+                elif completed_at == 0:
+                    # Fallback: use started_at + max_age if no completed_at
+                    started_at = getattr(job, "started_at", 0) or 0
+                    if started_at > 0 and (now - started_at) > max_age_seconds * 2:
+                        expired_job_ids.append(job_id)
+
+            if expired_job_ids:
+                for job_id in expired_job_ids:
+                    del self.local_jobs[job_id]
+                logger.info(f"Cleaned up {len(expired_job_ids)} old completed/failed jobs from memory")
+
     def _get_elo_based_priority_boost(self, board_type: str, num_players: int) -> int:
         """Get priority boost based on ELO performance for this config.
 
@@ -27356,6 +27402,12 @@ def main():
                 logger.info("Ramdrive sync completed on shutdown")
             except Exception as e:
                 logger.warning(f"Ramdrive sync on shutdown failed: {e}")
+            # December 2025: Close webhook notifier to prevent memory leaks
+            try:
+                if hasattr(orchestrator, 'notifier') and orchestrator.notifier:
+                    orchestrator.notifier.close_sync()
+            except Exception:
+                pass  # Best effort
 
 
 if __name__ == "__main__":
