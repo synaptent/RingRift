@@ -287,11 +287,13 @@ class TestCheckFileDescriptors:
         mock_proc = MagicMock()
         mock_proc.num_fds.return_value = 100
 
-        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
-            with patch("app.distributed.health_checks.resource") as mock_resource:
-                mock_resource.getrlimit.return_value = (1024, 4096)
-                mock_resource.RLIMIT_NOFILE = 7
+        # Create a mock resource module
+        mock_resource = MagicMock()
+        mock_resource.getrlimit.return_value = (1024, 4096)
+        mock_resource.RLIMIT_NOFILE = 7
 
+        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
+            with patch.dict("sys.modules", {"resource": mock_resource}):
                 result = check_file_descriptors()
 
                 assert result["count"] == 100
@@ -305,11 +307,12 @@ class TestCheckFileDescriptors:
         mock_proc = MagicMock()
         mock_proc.num_fds.return_value = 850  # ~83% of 1024
 
-        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
-            with patch("app.distributed.health_checks.resource") as mock_resource:
-                mock_resource.getrlimit.return_value = (1024, 4096)
-                mock_resource.RLIMIT_NOFILE = 7
+        mock_resource = MagicMock()
+        mock_resource.getrlimit.return_value = (1024, 4096)
+        mock_resource.RLIMIT_NOFILE = 7
 
+        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
+            with patch.dict("sys.modules", {"resource": mock_resource}):
                 result = check_file_descriptors()
 
                 assert result["status"] == "warning"
@@ -320,11 +323,12 @@ class TestCheckFileDescriptors:
         mock_proc = MagicMock()
         mock_proc.num_fds.return_value = 950  # ~93% of 1024
 
-        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
-            with patch("app.distributed.health_checks.resource") as mock_resource:
-                mock_resource.getrlimit.return_value = (1024, 4096)
-                mock_resource.RLIMIT_NOFILE = 7
+        mock_resource = MagicMock()
+        mock_resource.getrlimit.return_value = (1024, 4096)
+        mock_resource.RLIMIT_NOFILE = 7
 
+        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
+            with patch.dict("sys.modules", {"resource": mock_resource}):
                 result = check_file_descriptors()
 
                 assert result["status"] == "critical"
@@ -1682,11 +1686,12 @@ class TestIssueDetection:
         mock_proc = MagicMock()
         mock_proc.num_fds.return_value = 820  # ~80% of 1024
 
-        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
-            with patch("app.distributed.health_checks.resource") as mock_resource:
-                mock_resource.getrlimit.return_value = (1024, 4096)
-                mock_resource.RLIMIT_NOFILE = 7
+        mock_resource = MagicMock()
+        mock_resource.getrlimit.return_value = (1024, 4096)
+        mock_resource.RLIMIT_NOFILE = 7
 
+        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
+            with patch.dict("sys.modules", {"resource": mock_resource}):
                 result = check_file_descriptors()
 
                 assert result["status"] == "warning"
@@ -1696,11 +1701,12 @@ class TestIssueDetection:
         mock_proc = MagicMock()
         mock_proc.num_fds.return_value = 922  # ~90% of 1024
 
-        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
-            with patch("app.distributed.health_checks.resource") as mock_resource:
-                mock_resource.getrlimit.return_value = (1024, 4096)
-                mock_resource.RLIMIT_NOFILE = 7
+        mock_resource = MagicMock()
+        mock_resource.getrlimit.return_value = (1024, 4096)
+        mock_resource.RLIMIT_NOFILE = 7
 
+        with patch("app.distributed.health_checks.psutil.Process", return_value=mock_proc):
+            with patch.dict("sys.modules", {"resource": mock_resource}):
                 result = check_file_descriptors()
 
                 assert result["status"] == "critical"
