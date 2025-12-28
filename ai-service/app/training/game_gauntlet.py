@@ -133,12 +133,14 @@ class BaselineOpponent(Enum):
     Previous baselines (RANDOM@400, HEURISTIC@1200) capped measurable Elo.
 
     Baseline Elo ladder:
-        RANDOM:           ~400 Elo (random legal moves)
-        HEURISTIC:       ~1200 Elo (handcrafted evaluation, difficulty 5)
+        RANDOM:            ~400 Elo (random legal moves)
+        HEURISTIC:        ~1200 Elo (handcrafted evaluation, difficulty 5)
         HEURISTIC_STRONG: ~1400 Elo (difficulty 8, deeper search)
-        MCTS_LIGHT:      ~1500 Elo (MCTS with 32 simulations)
-        MCTS_MEDIUM:     ~1700 Elo (MCTS with 128 simulations)
-        MCTS_STRONG:     ~1900 Elo (MCTS with 512 simulations)
+        MCTS_LIGHT:       ~1500 Elo (MCTS with 32 simulations)
+        MCTS_MEDIUM:      ~1700 Elo (MCTS with 128 simulations)
+        MCTS_STRONG:      ~1900 Elo (MCTS with 512 simulations)
+        MCTS_MASTER:      ~2000 Elo (MCTS with 1024 simulations) - Dec 28
+        MCTS_GRANDMASTER: ~2100 Elo (MCTS with 2048 simulations) - Dec 28
     """
     RANDOM = "random"
     HEURISTIC = "heuristic"
@@ -146,6 +148,8 @@ class BaselineOpponent(Enum):
     MCTS_LIGHT = "mcts_light"
     MCTS_MEDIUM = "mcts_medium"
     MCTS_STRONG = "mcts_strong"
+    MCTS_MASTER = "mcts_master"              # Dec 28: 2000+ Elo
+    MCTS_GRANDMASTER = "mcts_grandmaster"    # Dec 28: 2100+ Elo
 
 
 # ============================================
