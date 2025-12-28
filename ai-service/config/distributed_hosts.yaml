@@ -390,7 +390,7 @@ hosts:
     ssh_host: 102.210.171.65
     ssh_port: 30755
     ssh_user: root
-    ssh_key: ~/.runpod/ssh/RunPod-Key-Go
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
     venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 80
@@ -406,7 +406,7 @@ hosts:
     ssh_host: 38.128.233.145
     ssh_port: 33085
     ssh_user: root
-    ssh_key: ~/.runpod/ssh/RunPod-Key-Go
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
     venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 80
@@ -422,7 +422,7 @@ hosts:
     ssh_host: 104.255.9.187
     ssh_port: 11681
     ssh_user: root
-    ssh_key: ~/.runpod/ssh/RunPod-Key-Go
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
     venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 80
@@ -439,7 +439,7 @@ hosts:
     ssh_host: 213.173.105.7
     ssh_port: 30015
     ssh_user: root
-    ssh_key: ~/.runpod/ssh/RunPod-Key-Go
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
     venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 80
@@ -456,7 +456,7 @@ hosts:
     ssh_host: 193.183.22.62
     ssh_port: 1182
     ssh_user: root
-    ssh_key: ~/.runpod/ssh/RunPod-Key-Go
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
     venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 48
@@ -472,7 +472,7 @@ hosts:
     ssh_host: 174.94.157.109
     ssh_port: 29473
     ssh_user: root
-    ssh_key: ~/.runpod/ssh/RunPod-Key-Go
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /root/ringrift/ai-service
     venv_activate: source /root/ringrift/ai-service/venv/bin/activate
     memory_gb: 24
@@ -491,7 +491,7 @@ hosts:
     ssh_host: 208.167.249.164
     ssh_port: 22
     ssh_user: root
-    ssh_key: ~/.ssh/id_ed25519
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /root/ringrift/ai-service
     venv_activate: source /root/ringrift/ai-service/venv/bin/activate
     memory_gb: 30

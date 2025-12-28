@@ -242,6 +242,9 @@ try:
     from app.config.thresholds import (
         BASELINE_ELO_HEURISTIC,
         BASELINE_ELO_RANDOM,
+        # Dec 28, 2025: Added 2000+ Elo baselines
+        BASELINE_ELO_MCTS_MASTER,
+        BASELINE_ELO_MCTS_GRANDMASTER,
         GAUNTLET_GAMES_PER_OPPONENT,
         MIN_WIN_RATE_VS_HEURISTIC,
         MIN_WIN_RATE_VS_RANDOM,
@@ -255,6 +258,9 @@ except ImportError:
     # Fallback values - keep in sync with app/config/thresholds.py
     BASELINE_ELO_RANDOM = 400
     BASELINE_ELO_HEURISTIC = 1200
+    # Dec 28, 2025: Added 2000+ Elo baselines
+    BASELINE_ELO_MCTS_MASTER = 2000
+    BASELINE_ELO_MCTS_GRANDMASTER = 2100
     GAUNTLET_GAMES_PER_OPPONENT = 50
     MIN_WIN_RATE_VS_RANDOM = 0.70  # 70% (matches thresholds.py)
     MIN_WIN_RATE_VS_HEURISTIC = 0.50  # 50% (matches thresholds.py)
@@ -285,6 +291,9 @@ BASELINE_ELOS = {
     BaselineOpponent.MCTS_LIGHT: BASELINE_ELO_MCTS_LIGHT,
     BaselineOpponent.MCTS_MEDIUM: BASELINE_ELO_MCTS_MEDIUM,
     BaselineOpponent.MCTS_STRONG: BASELINE_ELO_MCTS_STRONG,
+    # Dec 28, 2025: Added 2000+ Elo baselines
+    BaselineOpponent.MCTS_MASTER: BASELINE_ELO_MCTS_MASTER,
+    BaselineOpponent.MCTS_GRANDMASTER: BASELINE_ELO_MCTS_GRANDMASTER,
 }
 
 # Static fallback (use get_min_win_rate_* functions for player-aware thresholds)
@@ -296,6 +305,9 @@ MIN_WIN_RATES = {
     BaselineOpponent.MCTS_LIGHT: 0.50,
     BaselineOpponent.MCTS_MEDIUM: 0.50,
     BaselineOpponent.MCTS_STRONG: 0.50,
+    # Dec 28, 2025: 2000+ Elo baselines - 50% to pass (beat at parity)
+    BaselineOpponent.MCTS_MASTER: 0.50,
+    BaselineOpponent.MCTS_GRANDMASTER: 0.50,
 }
 
 
@@ -416,6 +428,28 @@ def create_baseline_ai(
             ai_type=AIType.MCTS,
             board_type=board_type,
             difficulty=difficulty or 512,  # 512 simulations
+            rngSeed=ai_rng_seed,
+        )
+        return MCTSAI(player, config)
+
+    elif baseline == BaselineOpponent.MCTS_MASTER:
+        # Dec 28, 2025: Master MCTS (~2000 Elo) - 1024 simulations
+        from app.ai.mcts_ai import MCTSAI
+        config = AIConfig(
+            ai_type=AIType.MCTS,
+            board_type=board_type,
+            difficulty=difficulty or 1024,  # 1024 simulations
+            rngSeed=ai_rng_seed,
+        )
+        return MCTSAI(player, config)
+
+    elif baseline == BaselineOpponent.MCTS_GRANDMASTER:
+        # Dec 28, 2025: Grandmaster MCTS (~2100 Elo) - 2048 simulations
+        from app.ai.mcts_ai import MCTSAI
+        config = AIConfig(
+            ai_type=AIType.MCTS,
+            board_type=board_type,
+            difficulty=difficulty or 2048,  # 2048 simulations
             rngSeed=ai_rng_seed,
         )
         return MCTSAI(player, config)

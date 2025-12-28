@@ -11251,6 +11251,275 @@ print(json.dumps(result))
             logger.error(f"in handle_sync_status: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_sync_push(self, request: web.Request) -> web.Response:
+        """POST /sync/push - Receive pushed data from GPU node.
+
+        December 2025: Added for push-based sync with verified cleanup.
+
+        GPU nodes push selfplay data to coordinator before disk fills.
+        This endpoint:
+        1. Receives file content (inline for small files, or notification for large)
+        2. Verifies checksum
+        3. Stores file locally
+        4. Returns receipt confirming storage
+
+        Request body:
+        {
+            "file_path": "data/games/selfplay_hex8.db",
+            "checksum": "sha256hex...",
+            "file_size": 12345678,
+            "source_node": "nebius-h100-1",
+            "content": "base64...",  # Optional for small files
+            "pull_required": true     # If content not provided
+        }
+
+        Response:
+        {
+            "status": "received",
+            "checksum_verified": true,
+            "stored_at": "/path/to/file",
+            "node_id": "coordinator-node"
+        }
+        """
+        try:
+            import base64
+            import hashlib
+            from pathlib import Path
+
+            data = await request.json()
+            file_path = data.get("file_path", "")
+            expected_checksum = data.get("checksum", "")
+            source_node = data.get("source_node", "")
+            file_size = data.get("file_size", 0)
+            content_b64 = data.get("content")
+            pull_required = data.get("pull_required", False)
+
+            if not file_path or not expected_checksum:
+                return web.json_response(
+                    {"error": "Missing file_path or checksum"},
+                    status=400
+                )
+
+            # Determine destination path
+            # Use relative path structure under data/
+            if file_path.startswith("/"):
+                # Absolute path - extract relative portion
+                parts = file_path.split("/")
+                # Find 'data' in path and use everything after
+                try:
+                    data_idx = parts.index("data")
+                    rel_path = "/".join(parts[data_idx:])
+                except ValueError:
+                    rel_path = parts[-1]
+            else:
+                rel_path = file_path
+
+            # Resolve to local path
+            local_data_dir = Path("data")
+            if rel_path.startswith("data/"):
+                local_path = Path(rel_path)
+            else:
+                local_path = local_data_dir / rel_path
+
+            # Ensure parent directory exists
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+
+            checksum_verified = False
+
+            if content_b64:
+                # Inline content - decode and verify
+                try:
+                    content = base64.b64decode(content_b64)
+                except Exception as e:
+                    return web.json_response(
+                        {"error": f"Invalid base64 content: {e}"},
+                        status=400
+                    )
+
+                # Verify checksum
+                computed_checksum = hashlib.sha256(content).hexdigest()
+                if computed_checksum != expected_checksum:
+                    return web.json_response({
+                        "error": "Checksum mismatch",
+                        "expected": expected_checksum[:16] + "...",
+                        "got": computed_checksum[:16] + "...",
+                    }, status=400)
+
+                checksum_verified = True
+
+                # Write file
+                local_path.write_bytes(content)
+                logger.info(
+                    f"Received pushed file from {source_node}: {local_path} "
+                    f"({file_size} bytes, checksum verified)"
+                )
+
+            elif pull_required:
+                # Large file - we'll need to pull it via rsync
+                # Just acknowledge for now
+                logger.info(
+                    f"Received push notification from {source_node}: {file_path} "
+                    f"({file_size} bytes, pull required)"
+                )
+                # TODO: Queue rsync pull from source_node
+
+            else:
+                return web.json_response(
+                    {"error": "No content and pull_required not set"},
+                    status=400
+                )
+
+            # Register in manifest if available
+            try:
+                from app.distributed.cluster_manifest import (
+                    SyncReceipt,
+                    get_cluster_manifest,
+                )
+
+                manifest = get_cluster_manifest()
+
+                # Register incoming file in manifest
+                receipt = SyncReceipt(
+                    file_path=str(local_path),
+                    file_checksum=expected_checksum,
+                    synced_to=self.node_id,
+                    synced_at=time.time(),
+                    verified=checksum_verified,
+                    file_size=file_size,
+                    source_node=source_node,
+                )
+                manifest.register_sync_receipt(receipt)
+
+            except Exception as e:
+                logger.warning(f"Could not register sync receipt: {e}")
+
+            return web.json_response({
+                "status": "received",
+                "checksum_verified": checksum_verified,
+                "stored_at": str(local_path),
+                "node_id": self.node_id,
+            })
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"in handle_sync_push: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_sync_receipt(self, request: web.Request) -> web.Response:
+        """POST /sync/receipt - Request sync receipt verification.
+
+        December 2025: Added for push-based sync with verified cleanup.
+
+        GPU nodes call this to verify a file exists on coordinator
+        with matching checksum. Used to confirm replication before
+        local cleanup.
+
+        Request body:
+        {
+            "file_path": "data/games/selfplay_hex8.db",
+            "checksum": "sha256hex..."
+        }
+
+        Response:
+        {
+            "verified": true,
+            "file_path": "data/games/selfplay_hex8.db",
+            "checksum": "sha256hex...",
+            "node_id": "coordinator-node",
+            "timestamp": 1234567890.0
+        }
+        """
+        try:
+            import hashlib
+            from pathlib import Path
+
+            data = await request.json()
+            file_path = data.get("file_path", "")
+            expected_checksum = data.get("checksum", "")
+
+            if not file_path or not expected_checksum:
+                return web.json_response(
+                    {"error": "Missing file_path or checksum"},
+                    status=400
+                )
+
+            # Resolve to local path
+            local_path = Path(file_path)
+            if not local_path.is_absolute():
+                # Try common base paths
+                candidates = [
+                    Path(file_path),
+                    Path("data") / file_path,
+                    Path(".") / file_path,
+                ]
+                local_path = None
+                for candidate in candidates:
+                    if candidate.exists():
+                        local_path = candidate
+                        break
+
+            if local_path is None or not local_path.exists():
+                return web.json_response({
+                    "verified": False,
+                    "reason": "not_found",
+                    "file_path": file_path,
+                })
+
+            # Compute local checksum
+            hasher = hashlib.sha256()
+            with open(local_path, "rb") as f:
+                while chunk := f.read(8192):
+                    hasher.update(chunk)
+            local_checksum = hasher.hexdigest()
+
+            if local_checksum != expected_checksum:
+                return web.json_response({
+                    "verified": False,
+                    "reason": "checksum_mismatch",
+                    "file_path": file_path,
+                    "expected": expected_checksum[:16] + "...",
+                    "actual": local_checksum[:16] + "...",
+                })
+
+            return web.json_response({
+                "verified": True,
+                "file_path": file_path,
+                "checksum": local_checksum,
+                "node_id": self.node_id,
+                "timestamp": time.time(),
+            })
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"in handle_sync_receipt: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_sync_receipts_status(self, request: web.Request) -> web.Response:
+        """GET /sync/receipts - Get sync receipts statistics.
+
+        December 2025: Added for push-based sync monitoring.
+
+        Returns stats about sync receipts in the cluster manifest.
+        """
+        try:
+            from app.distributed.cluster_manifest import get_cluster_manifest
+
+            manifest = get_cluster_manifest()
+            stats = manifest.get_sync_stats()
+
+            return web.json_response({
+                "node_id": self.node_id,
+                "is_leader": self._is_leader(),
+                "sync_receipts": stats,
+            })
+
+        except ImportError:
+            return web.json_response({
+                "node_id": self.node_id,
+                "error": "ClusterManifest not available",
+            })
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"in handle_sync_receipts_status: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_subscriptions(self, request: web.Request) -> web.Response:
         """GET /subscriptions - Get event subscription dashboard.
 
@@ -27665,6 +27934,9 @@ print(json.dumps({{
             app.router.add_get('/sync/file', self.handle_sync_file)
             app.router.add_post('/sync/job_update', self.handle_sync_job_update)
             app.router.add_post('/sync/training', self.handle_training_sync)  # Training node priority sync
+            app.router.add_post('/sync/push', self.handle_sync_push)            # Push data from GPU node (Dec 2025)
+            app.router.add_post('/sync/receipt', self.handle_sync_receipt)      # Request sync receipt verification (Dec 2025)
+            app.router.add_get('/sync/receipts', self.handle_sync_receipts_status)  # Get sync receipts stats (Dec 2025)
             app.router.add_get('/gpu/rankings', self.handle_gpu_rankings)      # GPU power rankings
             app.router.add_post('/cleanup/files', self.handle_cleanup_files)   # File-specific cleanup
             app.router.add_get('/admin/purge_retired', self.handle_purge_retired_peers)  # Purge retired peers (GET for auth bypass)
