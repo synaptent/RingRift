@@ -973,24 +973,366 @@ See ADR-007 for P2P orchestrator decomposition details.
 
 ### Event System Reference (December 2025)
 
-The coordination infrastructure uses an event-driven architecture with 30+ event types. Key events for pipeline coordination:
+The coordination infrastructure uses an event-driven architecture with 118 event types defined in `app/distributed/data_events.py`. Events are organized by category below.
 
-| Event                     | Emitter                  | Subscribers                                   | Purpose                               |
-| ------------------------- | ------------------------ | --------------------------------------------- | ------------------------------------- |
-| `TRAINING_STARTED`        | TrainingCoordinator      | SyncRouter, IdleShutdown, DataPipeline        | Pause idle detection, prioritize sync |
-| `TRAINING_COMPLETED`      | TrainingCoordinator      | FeedbackLoop, DataPipeline, ModelDistribution | Trigger evaluation pipeline           |
-| `EVALUATION_COMPLETED`    | GameGauntlet             | FeedbackLoop, CurriculumIntegration           | Adjust curriculum weights             |
-| `EVALUATION_PROGRESS`     | GameGauntlet             | MetricsAnalysisOrchestrator                   | Real-time tracking of eval progress   |
-| `CURRICULUM_REBALANCED`   | CurriculumIntegration    | SelfplayScheduler, SelfplayOrchestrator       | Update selfplay allocation weights    |
-| `ELO_VELOCITY_CHANGED`    | QueuePopulator           | SelfplayScheduler, UnifiedFeedback            | Adjust selfplay rate dynamically      |
-| `ELO_SIGNIFICANT_CHANGE`  | EloSyncManager           | CurriculumIntegration, DataPipeline           | Trigger curriculum rebalancing        |
-| `MODEL_PROMOTED`          | PromotionController      | ModelDistribution, FeedbackLoop               | Distribute new model to cluster       |
-| `MODEL_UPDATED`           | ModelRegistry            | UnifiedDistributionDaemon                     | Sync model metadata to nodes          |
-| `PROMOTION_FAILED`        | AutoPromotionDaemon      | ModelLifecycleCoordinator, DataPipeline       | Track failed promotions, notify       |
-| `ADAPTIVE_PARAMS_CHANGED` | ImprovementOptimizer     | EvaluationFeedbackHandler, TrainingTrigger    | Apply real-time LR adjustments        |
-| `DATA_SYNC_COMPLETED`     | P2POrchestrator          | DataPipelineOrchestrator                      | Trigger NPZ export after sync         |
-| `NEW_GAMES_AVAILABLE`     | DataPipelineOrchestrator | SelfplayScheduler, ExportScheduler            | Trigger training pipeline             |
-| `REGRESSION_DETECTED`     | ModelPerformanceWatchdog | ModelLifecycleCoordinator, DataPipeline       | Rollback bad models                   |
+#### Data Collection Events
+
+| Event                 | Emitter                     | Subscribers                            | Purpose                           |
+| --------------------- | --------------------------- | -------------------------------------- | --------------------------------- |
+| `NEW_GAMES_AVAILABLE` | DataPipelineOrchestrator    | SelfplayScheduler, ExportScheduler     | Signal new training data ready    |
+| `DATA_SYNC_STARTED`   | AutoSyncDaemon, SyncPlanner | DataPipelineOrchestrator               | Track sync progress               |
+| `DATA_SYNC_COMPLETED` | AutoSyncDaemon, SyncPlanner | DataPipelineOrchestrator               | Trigger NPZ export after sync     |
+| `DATA_SYNC_FAILED`    | AutoSyncDaemon              | DataPipelineOrchestrator, AlertManager | Handle sync failures              |
+| `GAME_SYNCED`         | AutoSyncDaemon              | DataPipelineOrchestrator               | Individual game sync notification |
+
+#### Data Freshness Events
+
+| Event            | Emitter           | Subscribers                 | Purpose                          |
+| ---------------- | ----------------- | --------------------------- | -------------------------------- |
+| `DATA_STALE`     | TrainingFreshness | SyncRouter, TrainingTrigger | Training data is stale           |
+| `DATA_FRESH`     | TrainingFreshness | TrainingTrigger             | Training data is fresh           |
+| `SYNC_TRIGGERED` | SyncRouter        | AutoSyncDaemon              | Sync triggered due to stale data |
+| `SYNC_REQUEST`   | SyncRouter        | AutoSyncDaemon              | Explicit sync request            |
+
+#### Data Consolidation Events
+
+| Event                    | Emitter                 | Subscribers              | Purpose                      |
+| ------------------------ | ----------------------- | ------------------------ | ---------------------------- |
+| `CONSOLIDATION_STARTED`  | DataConsolidationDaemon | DaemonManager            | Track consolidation state    |
+| `CONSOLIDATION_COMPLETE` | DataConsolidationDaemon | DataPipelineOrchestrator | Games merged to canonical DB |
+
+#### Training Events
+
+| Event                         | Emitter                  | Subscribers                                   | Purpose                               |
+| ----------------------------- | ------------------------ | --------------------------------------------- | ------------------------------------- |
+| `TRAINING_THRESHOLD_REACHED`  | DataPipelineOrchestrator | TrainingTrigger                               | Sufficient data for training          |
+| `TRAINING_STARTED`            | TrainingCoordinator      | SyncRouter, IdleShutdown, DataPipeline        | Pause idle detection, prioritize sync |
+| `TRAINING_PROGRESS`           | TrainingCoordinator      | MetricsAnalysisOrchestrator                   | Track training progress               |
+| `TRAINING_COMPLETED`          | TrainingCoordinator      | FeedbackLoop, DataPipeline, ModelDistribution | Trigger evaluation pipeline           |
+| `TRAINING_FAILED`             | TrainingCoordinator      | AlertManager, DataPipeline                    | Handle training failures              |
+| `TRAINING_EARLY_STOPPED`      | TrainingCoordinator      | FeedbackLoop                                  | Early stopping triggered              |
+| `TRAINING_ROLLBACK_NEEDED`    | RegressionDetector       | TrainingCoordinator                           | Rollback to previous checkpoint       |
+| `TRAINING_ROLLBACK_COMPLETED` | TrainingCoordinator      | FeedbackLoop                                  | Rollback completed                    |
+
+#### Evaluation Events
+
+| Event                  | Emitter          | Subscribers                         | Purpose                   |
+| ---------------------- | ---------------- | ----------------------------------- | ------------------------- |
+| `EVALUATION_STARTED`   | EvaluationDaemon | MetricsAnalysisOrchestrator         | Evaluation begins         |
+| `EVALUATION_PROGRESS`  | GameGauntlet     | MetricsAnalysisOrchestrator         | Real-time eval progress   |
+| `EVALUATION_COMPLETED` | GameGauntlet     | FeedbackLoop, CurriculumIntegration | Adjust curriculum weights |
+| `EVALUATION_FAILED`    | EvaluationDaemon | AlertManager                        | Handle eval failures      |
+| `ELO_UPDATED`          | EloSyncManager   | CurriculumIntegration               | Elo rating updated        |
+
+#### Promotion Events
+
+| Event                   | Emitter                   | Subscribers                             | Purpose                              |
+| ----------------------- | ------------------------- | --------------------------------------- | ------------------------------------ |
+| `PROMOTION_CANDIDATE`   | EvaluationDaemon          | AutoPromotionDaemon                     | Model is promotion candidate         |
+| `PROMOTION_STARTED`     | AutoPromotionDaemon       | DataPipeline                            | Promotion process started            |
+| `MODEL_PROMOTED`        | PromotionController       | UnifiedDistributionDaemon, FeedbackLoop | Distribute model to cluster          |
+| `PROMOTION_FAILED`      | AutoPromotionDaemon       | ModelLifecycleCoordinator, DataPipeline | Track failed promotions              |
+| `PROMOTION_REJECTED`    | AutoPromotionDaemon       | FeedbackLoop                            | Promotion rejected (below threshold) |
+| `PROMOTION_ROLLED_BACK` | ModelLifecycleCoordinator | FeedbackLoop                            | Promotion rolled back                |
+| `MODEL_UPDATED`         | ModelRegistry             | UnifiedDistributionDaemon               | Sync model metadata to nodes         |
+
+#### Curriculum Events
+
+| Event                    | Emitter               | Subscribers                             | Purpose                            |
+| ------------------------ | --------------------- | --------------------------------------- | ---------------------------------- |
+| `CURRICULUM_REBALANCED`  | CurriculumIntegration | SelfplayScheduler, SelfplayOrchestrator | Update selfplay allocation weights |
+| `CURRICULUM_ADVANCED`    | CurriculumIntegration | FeedbackLoopController                  | Move to harder curriculum tier     |
+| `WEIGHT_UPDATED`         | CurriculumIntegration | SelfplayScheduler                       | Curriculum weight change           |
+| `ELO_SIGNIFICANT_CHANGE` | EloSyncManager        | CurriculumIntegration, DataPipeline     | Trigger curriculum rebalancing     |
+
+#### Selfplay Feedback Events
+
+| Event                         | Emitter                | Subscribers              | Purpose                        |
+| ----------------------------- | ---------------------- | ------------------------ | ------------------------------ |
+| `SELFPLAY_COMPLETE`           | SelfplayRunner         | DataPipelineOrchestrator | Selfplay batch finished        |
+| `SELFPLAY_TARGET_UPDATED`     | FeedbackLoopController | SelfplayScheduler        | Request more/fewer games       |
+| `SELFPLAY_RATE_CHANGED`       | SelfplayScheduler      | IdleResourceDaemon       | Rate multiplier changed (>20%) |
+| `SELFPLAY_ALLOCATION_UPDATED` | SelfplayScheduler      | IdleResourceDaemon       | Allocation changed             |
+
+#### Batch Scheduling Events
+
+| Event              | Emitter           | Subscribers                 | Purpose                |
+| ------------------ | ----------------- | --------------------------- | ---------------------- |
+| `BATCH_SCHEDULED`  | SelfplayScheduler | JobManager                  | Batch of jobs selected |
+| `BATCH_DISPATCHED` | JobManager        | MetricsAnalysisOrchestrator | Batch sent to nodes    |
+
+#### Optimization Events
+
+| Event                     | Emitter                | Subscribers                                | Purpose                        |
+| ------------------------- | ---------------------- | ------------------------------------------ | ------------------------------ |
+| `CMAES_TRIGGERED`         | ImprovementOptimizer   | TrainingCoordinator                        | CMA-ES optimization triggered  |
+| `CMAES_COMPLETED`         | ImprovementOptimizer   | FeedbackLoop                               | CMA-ES optimization completed  |
+| `NAS_TRIGGERED`           | NASOrchestrator        | TrainingCoordinator                        | NAS search triggered           |
+| `PLATEAU_DETECTED`        | FeedbackLoopController | ImprovementOptimizer                       | Training plateau detected      |
+| `HYPERPARAMETER_UPDATED`  | ImprovementOptimizer   | EvaluationFeedbackHandler                  | Hyperparams changed            |
+| `ELO_VELOCITY_CHANGED`    | QueuePopulator         | SelfplayScheduler, UnifiedFeedback         | Adjust selfplay rate           |
+| `ADAPTIVE_PARAMS_CHANGED` | ImprovementOptimizer   | EvaluationFeedbackHandler, TrainingTrigger | Apply real-time LR adjustments |
+
+#### PBT Events
+
+| Event                     | Emitter         | Subscribers                 | Purpose                 |
+| ------------------------- | --------------- | --------------------------- | ----------------------- |
+| `PBT_STARTED`             | PBTOrchestrator | MetricsAnalysisOrchestrator | PBT training started    |
+| `PBT_GENERATION_COMPLETE` | PBTOrchestrator | MetricsAnalysisOrchestrator | PBT generation finished |
+| `PBT_COMPLETED`           | PBTOrchestrator | FeedbackLoop                | PBT training completed  |
+
+#### NAS Events
+
+| Event                     | Emitter         | Subscribers                 | Purpose                 |
+| ------------------------- | --------------- | --------------------------- | ----------------------- |
+| `NAS_STARTED`             | NASOrchestrator | MetricsAnalysisOrchestrator | NAS search started      |
+| `NAS_GENERATION_COMPLETE` | NASOrchestrator | MetricsAnalysisOrchestrator | NAS generation finished |
+| `NAS_COMPLETED`           | NASOrchestrator | FeedbackLoop                | NAS search completed    |
+| `NAS_BEST_ARCHITECTURE`   | NASOrchestrator | ModelRegistry               | Best architecture found |
+
+#### PER (Prioritized Experience Replay) Events
+
+| Event                    | Emitter   | Subscribers         | Purpose                   |
+| ------------------------ | --------- | ------------------- | ------------------------- |
+| `PER_BUFFER_REBUILT`     | PERBuffer | TrainingCoordinator | Experience buffer rebuilt |
+| `PER_PRIORITIES_UPDATED` | PERBuffer | TrainingCoordinator | Priorities recalculated   |
+
+#### Tier Gating Events
+
+| Event                  | Emitter    | Subscribers           | Purpose                 |
+| ---------------------- | ---------- | --------------------- | ----------------------- |
+| `TIER_PROMOTION`       | TierGating | CurriculumIntegration | Tier promotion achieved |
+| `CROSSBOARD_PROMOTION` | TierGating | CurriculumIntegration | Multi-config promotion  |
+
+#### Parity Validation Events
+
+| Event                         | Emitter         | Subscribers              | Purpose                     |
+| ----------------------------- | --------------- | ------------------------ | --------------------------- |
+| `PARITY_VALIDATION_STARTED`   | ParityValidator | DataPipelineOrchestrator | Parity check started        |
+| `PARITY_VALIDATION_COMPLETED` | ParityValidator | DataPipelineOrchestrator | Parity check completed      |
+| `PARITY_FAILURE_RATE_CHANGED` | ParityValidator | QualityMonitorDaemon     | Parity failure rate changed |
+
+#### Data Quality Events
+
+| Event                          | Emitter                  | Subscribers              | Purpose                      |
+| ------------------------------ | ------------------------ | ------------------------ | ---------------------------- |
+| `DATA_QUALITY_ALERT`           | QualityMonitorDaemon     | AlertManager             | Quality issue detected       |
+| `QUALITY_CHECK_REQUESTED`      | DataPipelineOrchestrator | QualityMonitorDaemon     | Request on-demand check      |
+| `QUALITY_CHECK_FAILED`         | QualityMonitorDaemon     | DataPipelineOrchestrator | Quality check failed         |
+| `QUALITY_SCORE_UPDATED`        | QualityMonitorDaemon     | DataPipelineOrchestrator | Quality recalculated         |
+| `QUALITY_DISTRIBUTION_CHANGED` | QualityMonitorDaemon     | CurriculumIntegration    | Significant quality shift    |
+| `HIGH_QUALITY_DATA_AVAILABLE`  | QualityMonitorDaemon     | TrainingTrigger          | Ready for training           |
+| `QUALITY_DEGRADED`             | QualityMonitorDaemon     | FeedbackLoop             | Quality below threshold      |
+| `LOW_QUALITY_DATA_WARNING`     | QualityMonitorDaemon     | AlertManager             | Below warning threshold      |
+| `TRAINING_BLOCKED_BY_QUALITY`  | QualityMonitorDaemon     | TrainingTrigger          | Quality too low to train     |
+| `QUALITY_FEEDBACK_ADJUSTED`    | QualityMonitorDaemon     | SelfplayScheduler        | Quality feedback updated     |
+| `QUALITY_PENALTY_APPLIED`      | QualityMonitorDaemon     | SelfplayScheduler        | Reduce selfplay rate         |
+| `SCHEDULER_REGISTERED`         | TemperatureScheduler     | SelfplayScheduler        | Scheduler registered         |
+| `EXPLORATION_BOOST`            | FeedbackLoopController   | SelfplayScheduler        | Boost exploration temp       |
+| `EXPLORATION_ADJUSTED`         | FeedbackLoopController   | SelfplayScheduler        | Exploration strategy changed |
+| `OPPONENT_MASTERED`            | CurriculumIntegration    | FeedbackLoop             | Advance curriculum           |
+
+#### Training Loss Monitoring Events
+
+| Event                   | Emitter            | Subscribers  | Purpose                 |
+| ----------------------- | ------------------ | ------------ | ----------------------- |
+| `TRAINING_LOSS_ANOMALY` | RegressionDetector | AlertManager | Unusual loss spike/drop |
+| `TRAINING_LOSS_TREND`   | RegressionDetector | FeedbackLoop | Loss trend changed      |
+
+#### Registry & Metrics Events
+
+| Event               | Emitter                     | Subscribers               | Purpose           |
+| ------------------- | --------------------------- | ------------------------- | ----------------- |
+| `REGISTRY_UPDATED`  | ModelRegistry               | UnifiedDistributionDaemon | Registry changed  |
+| `METRICS_UPDATED`   | MetricsAnalysisOrchestrator | Dashboard                 | Metrics updated   |
+| `CACHE_INVALIDATED` | CacheCoordinator            | DataPipelineOrchestrator  | Cache invalidated |
+
+#### Regression Detection Events
+
+| Event                 | Emitter                  | Subscribers                             | Purpose                         |
+| --------------------- | ------------------------ | --------------------------------------- | ------------------------------- |
+| `REGRESSION_DETECTED` | ModelPerformanceWatchdog | ModelLifecycleCoordinator, DataPipeline | Any regression detected         |
+| `REGRESSION_MINOR`    | RegressionDetector       | FeedbackLoop                            | Minor regression                |
+| `REGRESSION_MODERATE` | RegressionDetector       | FeedbackLoop                            | Moderate regression             |
+| `REGRESSION_SEVERE`   | RegressionDetector       | ModelLifecycleCoordinator               | Severe regression               |
+| `REGRESSION_CRITICAL` | RegressionDetector       | DaemonManager                           | Critical - rollback recommended |
+| `REGRESSION_CLEARED`  | RegressionDetector       | FeedbackLoop                            | Model recovered                 |
+
+#### P2P/Model Sync Events
+
+| Event                         | Emitter                   | Subscribers                 | Purpose                 |
+| ----------------------------- | ------------------------- | --------------------------- | ----------------------- |
+| `P2P_MODEL_SYNCED`            | UnifiedDistributionDaemon | MetricsAnalysisOrchestrator | Model synced to peer    |
+| `MODEL_SYNC_REQUESTED`        | SelfplayScheduler         | UnifiedDistributionDaemon   | Model sync requested    |
+| `MODEL_DISTRIBUTION_STARTED`  | UnifiedDistributionDaemon | MetricsAnalysisOrchestrator | Distribution initiated  |
+| `MODEL_DISTRIBUTION_COMPLETE` | UnifiedDistributionDaemon | SelfplayScheduler           | Distribution completed  |
+| `MODEL_DISTRIBUTION_FAILED`   | UnifiedDistributionDaemon | AlertManager                | Distribution failed     |
+| `P2P_CLUSTER_HEALTHY`         | P2POrchestrator           | DaemonManager               | Cluster is healthy      |
+| `P2P_CLUSTER_UNHEALTHY`       | P2POrchestrator           | AlertManager                | Cluster is unhealthy    |
+| `SYNC_STALLED`                | AutoSyncDaemon            | AlertManager                | Sync operation stalled  |
+| `SYNC_CHECKSUM_FAILED`        | AutoSyncDaemon            | AlertManager                | Checksum mismatch       |
+| `SYNC_NODE_UNREACHABLE`       | AutoSyncDaemon            | NodeRecoveryDaemon          | Node unreachable        |
+| `P2P_NODE_DEAD`               | P2POrchestrator           | NodeRecoveryDaemon          | Single node dead        |
+| `P2P_NODES_DEAD`              | P2POrchestrator           | NodeRecoveryDaemon          | Batch of nodes dead     |
+| `P2P_SELFPLAY_SCALED`         | SelfplayScheduler         | MetricsAnalysisOrchestrator | Selfplay scaled up/down |
+
+#### Orphan Detection Events
+
+| Event                     | Emitter                  | Subscribers                 | Purpose                  |
+| ------------------------- | ------------------------ | --------------------------- | ------------------------ |
+| `ORPHAN_GAMES_DETECTED`   | OrphanDetectionDaemon    | DataPipelineOrchestrator    | Unregistered games found |
+| `ORPHAN_GAMES_REGISTERED` | DataPipelineOrchestrator | MetricsAnalysisOrchestrator | Orphans auto-registered  |
+
+#### Replication Repair Events
+
+| Event               | Emitter                  | Subscribers              | Purpose                  |
+| ------------------- | ------------------------ | ------------------------ | ------------------------ |
+| `REPAIR_COMPLETED`  | UnifiedReplicationDaemon | DataPipelineOrchestrator | Repair job succeeded     |
+| `REPAIR_FAILED`     | UnifiedReplicationDaemon | AlertManager             | Repair job failed        |
+| `REPLICATION_ALERT` | UnifiedReplicationDaemon | AlertManager             | Replication health alert |
+
+#### Database Lifecycle Events
+
+| Event              | Emitter      | Subscribers              | Purpose              |
+| ------------------ | ------------ | ------------------------ | -------------------- |
+| `DATABASE_CREATED` | GameReplayDB | DataPipelineOrchestrator | New database created |
+
+#### System Events
+
+| Event                       | Emitter         | Subscribers                 | Purpose                |
+| --------------------------- | --------------- | --------------------------- | ---------------------- |
+| `DAEMON_STARTED`            | DaemonManager   | MetricsAnalysisOrchestrator | Daemon started         |
+| `DAEMON_STOPPED`            | DaemonManager   | MetricsAnalysisOrchestrator | Daemon stopped         |
+| `DAEMON_STATUS_CHANGED`     | DaemonWatchdog  | AlertManager                | Daemon status change   |
+| `DAEMON_PERMANENTLY_FAILED` | DaemonManager   | AlertManager                | Exceeded restart limit |
+| `HOST_ONLINE`               | P2POrchestrator | UnifiedHealthManager        | Node came online       |
+| `HOST_OFFLINE`              | P2POrchestrator | UnifiedHealthManager        | Node went offline      |
+| `ERROR`                     | Various         | AlertManager                | General error event    |
+
+#### Health & Recovery Events
+
+| Event                 | Emitter                 | Subscribers                 | Purpose                      |
+| --------------------- | ----------------------- | --------------------------- | ---------------------------- |
+| `HEALTH_CHECK_PASSED` | HealthCheckOrchestrator | MetricsAnalysisOrchestrator | Node healthy                 |
+| `HEALTH_CHECK_FAILED` | HealthCheckOrchestrator | NodeRecoveryDaemon          | Node unhealthy               |
+| `HEALTH_ALERT`        | HealthCheckOrchestrator | AlertManager                | General health warning       |
+| `RESOURCE_CONSTRAINT` | ResourceTargetManager   | IdleResourceDaemon          | CPU/GPU/Memory/Disk pressure |
+| `NODE_OVERLOADED`     | ResourceTargetManager   | SelfplayScheduler           | Node overloaded              |
+| `RECOVERY_INITIATED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator | Auto-recovery started        |
+| `RECOVERY_COMPLETED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator | Auto-recovery finished       |
+| `RECOVERY_FAILED`     | NodeRecoveryDaemon      | AlertManager                | Auto-recovery failed         |
+
+#### Work Queue Events
+
+| Event            | Emitter               | Subscribers                 | Purpose                 |
+| ---------------- | --------------------- | --------------------------- | ----------------------- |
+| `WORK_QUEUED`    | UnifiedQueuePopulator | MetricsAnalysisOrchestrator | Work added to queue     |
+| `WORK_CLAIMED`   | WorkQueue             | MetricsAnalysisOrchestrator | Work claimed by node    |
+| `WORK_STARTED`   | JobManager            | MetricsAnalysisOrchestrator | Work execution started  |
+| `WORK_COMPLETED` | JobManager            | DataPipelineOrchestrator    | Work completed          |
+| `WORK_FAILED`    | JobManager            | AlertManager                | Work failed permanently |
+| `WORK_RETRY`     | JobManager            | MetricsAnalysisOrchestrator | Work failed, will retry |
+| `WORK_TIMEOUT`   | JobReaperLoop         | AlertManager                | Work timed out          |
+| `WORK_CANCELLED` | JobManager            | MetricsAnalysisOrchestrator | Work cancelled          |
+| `JOB_PREEMPTED`  | JobManager            | MetricsAnalysisOrchestrator | Job preempted           |
+
+#### Cluster Status Events
+
+| Event                    | Emitter                 | Subscribers                   | Purpose               |
+| ------------------------ | ----------------------- | ----------------------------- | --------------------- |
+| `CLUSTER_STATUS_CHANGED` | ClusterMonitor          | DaemonManager                 | Cluster status change |
+| `CLUSTER_STALL_DETECTED` | ClusterWatchdog         | AlertManager                  | Node(s) stuck         |
+| `NODE_UNHEALTHY`         | HealthCheckOrchestrator | NodeRecoveryDaemon            | Node marked unhealthy |
+| `NODE_RECOVERED`         | NodeRecoveryDaemon      | SelfplayScheduler, SyncRouter | Node recovered        |
+| `NODE_ACTIVATED`         | ClusterActivator        | SelfplayScheduler             | Node activated        |
+| `NODE_TERMINATED`        | IdleShutdownDaemon      | SelfplayScheduler             | Node terminated       |
+
+#### Lock/Synchronization Events
+
+| Event               | Emitter         | Subscribers  | Purpose                  |
+| ------------------- | --------------- | ------------ | ------------------------ |
+| `LOCK_TIMEOUT`      | DistributedLock | AlertManager | Lock acquisition timeout |
+| `DEADLOCK_DETECTED` | DistributedLock | AlertManager | Deadlock detected        |
+
+#### Checkpoint Events
+
+| Event               | Emitter             | Subscribers   | Purpose           |
+| ------------------- | ------------------- | ------------- | ----------------- |
+| `CHECKPOINT_SAVED`  | TrainingCoordinator | ModelRegistry | Checkpoint saved  |
+| `CHECKPOINT_LOADED` | TrainingCoordinator | FeedbackLoop  | Checkpoint loaded |
+
+#### Backup Events
+
+| Event                   | Emitter                | Subscribers                 | Purpose                  |
+| ----------------------- | ---------------------- | --------------------------- | ------------------------ |
+| `DATA_BACKUP_COMPLETED` | CoordinatorDiskManager | MetricsAnalysisOrchestrator | External backup finished |
+
+#### CPU Pipeline Events
+
+| Event                        | Emitter                 | Subscribers              | Purpose               |
+| ---------------------------- | ----------------------- | ------------------------ | --------------------- |
+| `CPU_PIPELINE_JOB_COMPLETED` | CPUPipelineOrchestrator | DataPipelineOrchestrator | Vast CPU job finished |
+
+#### Task Lifecycle Events
+
+| Event            | Emitter       | Subscribers                 | Purpose                      |
+| ---------------- | ------------- | --------------------------- | ---------------------------- |
+| `TASK_SPAWNED`   | JobManager    | MetricsAnalysisOrchestrator | Task spawned                 |
+| `TASK_HEARTBEAT` | JobManager    | JobReaperLoop               | Task heartbeat               |
+| `TASK_COMPLETED` | JobManager    | DataPipelineOrchestrator    | Task completed               |
+| `TASK_FAILED`    | JobManager    | AlertManager                | Task failed                  |
+| `TASK_ORPHANED`  | JobReaperLoop | NodeRecoveryDaemon          | Task orphaned                |
+| `TASK_CANCELLED` | JobManager    | MetricsAnalysisOrchestrator | Task cancelled               |
+| `TASK_ABANDONED` | JobManager    | SelfplayOrchestrator        | Task intentionally abandoned |
+
+#### Capacity/Resource Events
+
+| Event                          | Emitter                 | Subscribers       | Purpose                  |
+| ------------------------------ | ----------------------- | ----------------- | ------------------------ |
+| `CLUSTER_CAPACITY_CHANGED`     | ClusterMonitor          | SelfplayScheduler | Cluster capacity changed |
+| `NODE_CAPACITY_UPDATED`        | HealthCheckOrchestrator | SelfplayScheduler | Node capacity updated    |
+| `BACKPRESSURE_ACTIVATED`       | BackpressureMonitor     | SyncRouter        | Backpressure activated   |
+| `BACKPRESSURE_RELEASED`        | BackpressureMonitor     | SyncRouter        | Backpressure released    |
+| `IDLE_RESOURCE_DETECTED`       | IdleResourceDaemon      | SelfplayScheduler | Idle GPU/CPU detected    |
+| `RESOURCE_CONSTRAINT_DETECTED` | ResourceTargetManager   | SelfplayScheduler | Resource limit hit       |
+
+#### Leader Election Events
+
+| Event                  | Emitter         | Subscribers           | Purpose                   |
+| ---------------------- | --------------- | --------------------- | ------------------------- |
+| `LEADER_ELECTED`       | P2POrchestrator | LeadershipCoordinator | Node became leader        |
+| `LEADER_LOST`          | P2POrchestrator | LeadershipCoordinator | Lost leadership           |
+| `LEADER_STEPDOWN`      | P2POrchestrator | LeadershipCoordinator | Leader stepping down      |
+| `SPLIT_BRAIN_DETECTED` | P2POrchestrator | AlertManager          | Multiple leaders detected |
+| `SPLIT_BRAIN_RESOLVED` | P2POrchestrator | LeadershipCoordinator | Split-brain resolved      |
+
+#### Error Recovery & Resilience Events
+
+| Event                         | Emitter       | Subscribers                 | Purpose                 |
+| ----------------------------- | ------------- | --------------------------- | ----------------------- |
+| `MODEL_CORRUPTED`             | ModelRegistry | AlertManager                | Model file corruption   |
+| `COORDINATOR_HEALTHY`         | DaemonManager | MetricsAnalysisOrchestrator | Coordinator healthy     |
+| `COORDINATOR_UNHEALTHY`       | DaemonManager | AlertManager                | Coordinator unhealthy   |
+| `COORDINATOR_HEALTH_DEGRADED` | DaemonManager | AlertManager                | Coordinator degraded    |
+| `COORDINATOR_SHUTDOWN`        | DaemonManager | MetricsAnalysisOrchestrator | Graceful shutdown       |
+| `COORDINATOR_INIT_FAILED`     | DaemonManager | AlertManager                | Init failed             |
+| `COORDINATOR_HEARTBEAT`       | DaemonManager | ClusterWatchdog             | Liveness signal         |
+| `HANDLER_TIMEOUT`             | EventRouter   | AlertManager                | Handler timed out       |
+| `HANDLER_FAILED`              | EventRouter   | AlertManager                | Handler threw exception |
+
+#### Idle State Broadcast Events
+
+| Event                  | Emitter            | Subscribers        | Purpose                   |
+| ---------------------- | ------------------ | ------------------ | ------------------------- |
+| `IDLE_STATE_BROADCAST` | IdleResourceDaemon | SelfplayScheduler  | Node idle state broadcast |
+| `IDLE_STATE_REQUEST`   | SelfplayScheduler  | IdleResourceDaemon | Request idle state update |
+
+#### Disk Space Management Events
+
+| Event                    | Emitter                | Subscribers                      | Purpose                    |
+| ------------------------ | ---------------------- | -------------------------------- | -------------------------- |
+| `DISK_SPACE_LOW`         | DiskSpaceManagerDaemon | MaintenanceDaemon, DaemonManager | Disk usage above threshold |
+| `DISK_CLEANUP_TRIGGERED` | DiskSpaceManagerDaemon | MetricsAnalysisOrchestrator      | Proactive cleanup started  |
 
 **Subscribing to Events:**
 
@@ -1004,6 +1346,29 @@ async def my_handler(event: dict) -> None:
     config_key = event.get("config_key")
     model_path = event.get("model_path")
     # Process event...
+```
+
+**Emitting Events:**
+
+```python
+from app.coordination.event_emitters import emit_training_complete
+
+# Typed emitter (preferred)
+emit_training_complete(
+    config_key="hex8_2p",
+    model_path="models/canonical_hex8_2p.pth",
+    epochs_completed=50,
+)
+
+# Or via EventBus
+from app.distributed.data_events import DataEventType, DataEvent
+
+event = DataEvent(
+    event_type=DataEventType.TRAINING_COMPLETED,
+    payload={"config_key": "hex8_2p", "model_path": "..."},
+    source="TrainingCoordinator",
+)
+bus.publish(event)
 ```
 
 ### P2P Background Loops (December 2025)
@@ -1759,3 +2124,49 @@ Verified existing tests for master loop mutual exclusion:
 | health_check_helper | 38      | 217         | Health check utilities         |
 | master_loop_guard   | 23      | 110         | Mutual exclusion               |
 | **Total**           | **172** | **1,348**   | Critical infrastructure        |
+
+### Infrastructure Fixes (Dec 28, 2025)
+
+**cross_process_events.py Circular Dependency Fix**:
+
+Fixed infinite recursion in lazy initialization pattern:
+
+- **Problem**: `_ensure_db()` → `_init_db()` → `_get_connection()` → `_ensure_db()` → recursion
+- **Fix**: Added `_from_init` parameter to `_get_connection()` to break cycle
+- **Location**: `app/coordination/cross_process_events.py:194-242`
+
+```python
+# _get_connection() now accepts _from_init flag
+def _get_connection(self, _from_init: bool = False) -> sqlite3.Connection:
+    if not _from_init:
+        self._ensure_db()  # Skip when called from _init_db
+    # ... connection logic
+
+# _init_db() passes flag to prevent recursion
+def _init_db(self) -> None:
+    conn = self._get_connection(_from_init=True)
+```
+
+**Lazy Initialization Pattern**:
+
+Applied to `work_queue.py` and `cross_process_events.py` (Dec 27-28):
+
+- Database initialization deferred until first use
+- Enables module import on read-only filesystems
+- Readonly mode gracefully degrades (logs warning, skips writes)
+
+**Documentation Additions**:
+
+- `docs/ENV_REFERENCE.md` - Comprehensive RINGRIFT\_\* environment variable reference
+- `docs/runbooks/DAEMON_FAILURE_RECOVERY.md` - Daemon troubleshooting guide (already existed, verified complete)
+
+**Verification Status**:
+
+| Component                           | Status          | Notes                                 |
+| ----------------------------------- | --------------- | ------------------------------------- |
+| cross_process_events import         | ✅ No recursion | \_from_init flag breaks cycle         |
+| SelfplayScheduler health_check      | ✅ Implemented  | Returns HealthCheckResult             |
+| FeedbackLoopController health_check | ✅ Implemented  | Returns HealthCheckResult             |
+| TrainingTriggerDaemon health_check  | ✅ Implemented  | Returns HealthCheckResult             |
+| Checkpoint format                   | ✅ Standardized | Uses \_versioning_metadata.config     |
+| Deprecated module archival          | ✅ Complete     | system_health_monitor.py is re-export |

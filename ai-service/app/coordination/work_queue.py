@@ -44,6 +44,14 @@ logger = logging.getLogger(__name__)
 _DEFAULT_DB_DIR = Path(__file__).parent.parent.parent / "data"
 DEFAULT_DB_PATH = Path(os.environ.get("RINGRIFT_WORK_QUEUE_DB", str(_DEFAULT_DB_DIR / "work_queue.db")))
 
+# Dec 28, 2025: Backpressure thresholds to prevent unbounded queue growth
+# Soft limit: Emit BACKPRESSURE_ACTIVATED event, warn callers
+# Hard limit: Reject new items, force callers to wait
+BACKPRESSURE_SOFT_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_SOFT_LIMIT", "500"))
+BACKPRESSURE_HARD_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_HARD_LIMIT", "1000"))
+# Recovery threshold: Emit BACKPRESSURE_RELEASED when queue drops below this
+BACKPRESSURE_RECOVERY_THRESHOLD = int(os.environ.get("RINGRIFT_WORK_QUEUE_RECOVERY", "400"))
+
 
 class SlackWorkQueueNotifier:
     """Simple Slack notifier for work queue events."""
@@ -259,6 +267,15 @@ class WorkQueue:
         # Track initialization state (December 2025: Lazy initialization)
         self._db_initialized = False
         self._readonly_mode = False
+
+        # Dec 28, 2025: Backpressure state tracking
+        self._backpressure_active = False
+        self._backpressure_stats = {
+            "activations": 0,
+            "rejections": 0,
+            "last_activation_at": 0.0,
+            "last_rejection_at": 0.0,
+        }
 
         # Database initialization is now lazy - deferred to first use
         # This allows importing the module on read-only filesystems
@@ -573,14 +590,45 @@ class WorkQueue:
                 except Exception:
                     pass
 
-    def add_work(self, item: WorkItem) -> str:
-        """Add work to the queue. Returns work_id."""
+    def add_work(self, item: WorkItem, force: bool = False) -> str:
+        """Add work to the queue. Returns work_id.
+
+        Args:
+            item: The work item to add
+            force: If True, bypass backpressure limits (use for critical work)
+
+        Returns:
+            work_id on success
+
+        Raises:
+            RuntimeError: If queue is at hard limit and force=False
+        """
         with self.lock:
+            # Dec 28, 2025: Check backpressure before adding
+            pending = sum(1 for i in self.items.values() if i.status == WorkStatus.PENDING)
+            should_reject = self._check_and_update_backpressure(pending)
+
+            if should_reject and not force:
+                self._backpressure_stats["rejections"] += 1
+                self._backpressure_stats["last_rejection_at"] = time.time()
+                raise RuntimeError(
+                    f"[BACKPRESSURE] Queue at hard limit ({pending}/{BACKPRESSURE_HARD_LIMIT}). "
+                    f"Work item {item.work_id} rejected. Wait for queue to drain or use force=True."
+                )
+
             self.items[item.work_id] = item
             self.stats["total_added"] += 1
             self._save_item(item)
             self._save_stats()
-            logger.info(f"Added work {item.work_id}: {item.work_type.value} (priority: {item.priority})")
+
+            if should_reject and force:
+                logger.warning(
+                    f"Added work {item.work_id} despite backpressure (force=True): "
+                    f"{item.work_type.value} (priority: {item.priority})"
+                )
+            else:
+                logger.info(f"Added work {item.work_id}: {item.work_type.value} (priority: {item.priority})")
+
         # Notify (outside lock to avoid blocking)
         self.notifier.on_work_added(item)
         # Emit event to unified coordination (December 2025)
@@ -788,6 +836,10 @@ class WorkQueue:
             self._save_item(item)
             self._save_stats()
 
+            # Dec 28, 2025: Check if backpressure should be released
+            pending = sum(1 for i in self.items.values() if i.status == WorkStatus.PENDING)
+            self._check_and_update_backpressure(pending)
+
             logger.info(f"Work {work_id} completed by {item.claimed_by}")
 
             # P0.3 Dec 2025: Event emission now atomic with state change
@@ -831,6 +883,11 @@ class WorkQueue:
                 self._save_stats()
                 logger.error(f"Work {work_id} permanently failed: {error}")
 
+            # Dec 28, 2025: Check if backpressure should be released (if permanent failure)
+            if permanent:
+                pending = sum(1 for i in self.items.values() if i.status == WorkStatus.PENDING)
+                self._check_and_update_backpressure(pending)
+
             # P0.3 Dec 2025: Event emission now atomic with state change
             try:
                 self._emit_work_event(
@@ -856,6 +913,10 @@ class WorkQueue:
             item.completed_at = time.time()
             self._save_item(item)
             logger.info(f"Work {work_id} cancelled")
+
+            # Dec 28, 2025: Check if backpressure should be released
+            pending = sum(1 for i in self.items.values() if i.status == WorkStatus.PENDING)
+            self._check_and_update_backpressure(pending)
 
         # Dec 2025: Emit WORK_CANCELLED event for unified coordination (outside lock)
         self._emit_work_event("WORK_CANCELLED", item)
@@ -1103,6 +1164,99 @@ class WorkQueue:
                 1 for item in self.items.values()
                 if item.status in (WorkStatus.CLAIMED, WorkStatus.RUNNING)
             )
+
+    # =========================================================================
+    # Backpressure Management (Dec 28, 2025)
+    # =========================================================================
+
+    def is_backpressure_active(self) -> bool:
+        """Check if backpressure is currently active."""
+        return self._backpressure_active
+
+    def get_backpressure_status(self) -> dict[str, Any]:
+        """Get detailed backpressure status."""
+        pending = self.get_pending_count()
+        return {
+            "active": self._backpressure_active,
+            "pending_count": pending,
+            "soft_limit": BACKPRESSURE_SOFT_LIMIT,
+            "hard_limit": BACKPRESSURE_HARD_LIMIT,
+            "recovery_threshold": BACKPRESSURE_RECOVERY_THRESHOLD,
+            "utilization_pct": round(100.0 * pending / BACKPRESSURE_HARD_LIMIT, 1) if BACKPRESSURE_HARD_LIMIT > 0 else 0.0,
+            "stats": dict(self._backpressure_stats),
+        }
+
+    def _check_and_update_backpressure(self, pending_count: int) -> bool:
+        """Check backpressure state and emit events on state changes.
+
+        Returns True if new items should be rejected (hard limit reached).
+        """
+        was_active = self._backpressure_active
+
+        if pending_count >= BACKPRESSURE_HARD_LIMIT:
+            # Hard limit - reject new items
+            if not was_active:
+                self._activate_backpressure(pending_count, "hard_limit")
+            return True
+
+        if pending_count >= BACKPRESSURE_SOFT_LIMIT:
+            # Soft limit - warn but accept
+            if not was_active:
+                self._activate_backpressure(pending_count, "soft_limit")
+            return False
+
+        if pending_count <= BACKPRESSURE_RECOVERY_THRESHOLD:
+            # Below recovery threshold - deactivate if active
+            if was_active:
+                self._deactivate_backpressure(pending_count)
+
+        return False
+
+    def _activate_backpressure(self, pending_count: int, trigger: str) -> None:
+        """Activate backpressure and emit event."""
+        self._backpressure_active = True
+        self._backpressure_stats["activations"] += 1
+        self._backpressure_stats["last_activation_at"] = time.time()
+
+        logger.warning(
+            f"[BACKPRESSURE ACTIVATED] Queue at {pending_count}/{BACKPRESSURE_HARD_LIMIT} items "
+            f"(trigger: {trigger}). New job submissions may be delayed."
+        )
+
+        # Emit event for coordination layer
+        try:
+            from app.coordination.event_router import get_event_bus
+            bus = get_event_bus()
+            bus.publish("BACKPRESSURE_ACTIVATED", {
+                "pending_count": pending_count,
+                "trigger": trigger,
+                "soft_limit": BACKPRESSURE_SOFT_LIMIT,
+                "hard_limit": BACKPRESSURE_HARD_LIMIT,
+                "timestamp": time.time(),
+            })
+        except ImportError:
+            pass  # Event system not available
+
+    def _deactivate_backpressure(self, pending_count: int) -> None:
+        """Deactivate backpressure and emit event."""
+        self._backpressure_active = False
+
+        logger.info(
+            f"[BACKPRESSURE RELEASED] Queue at {pending_count}/{BACKPRESSURE_HARD_LIMIT} items. "
+            f"Normal job submission resumed."
+        )
+
+        # Emit event for coordination layer
+        try:
+            from app.coordination.event_router import get_event_bus
+            bus = get_event_bus()
+            bus.publish("BACKPRESSURE_RELEASED", {
+                "pending_count": pending_count,
+                "recovery_threshold": BACKPRESSURE_RECOVERY_THRESHOLD,
+                "timestamp": time.time(),
+            })
+        except ImportError:
+            pass  # Event system not available
 
     # =========================================================================
     # Job Reaper Support Methods

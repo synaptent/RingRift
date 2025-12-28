@@ -43,7 +43,7 @@ Usage:
     should_pause, reasons = should_pause_pipeline()
 
     # Get individual node health
-    node = get_node_health("runpod-h100")
+    node = get_node_health("node-001")
     if node and node.state == NodeHealthState.HEALTHY:
         # Node is healthy
         pass

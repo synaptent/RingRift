@@ -2688,9 +2688,8 @@ class P2POrchestrator(
                 f"manager={'✓' if manager_events_ok else '✗'}"
             )
 
-        # December 27, 2025: Validate manager health at startup
-        # This catches initialization issues early rather than at first use
-        self._manager_health_status = self._validate_manager_health()
+        # NOTE: _manager_health_status validation is deferred to after _loop_manager
+        # initialization below (line ~2730). This avoids AttributeError on _loop_manager.
 
         print(
             f"[P2P] Initialized node {node_id} on {host}:{port} "
@@ -2728,6 +2727,11 @@ class P2POrchestrator(
         # Phase 4: LoopManager for extracted loops (Dec 2025)
         self._loop_manager: LoopManager | None = None
         self._loops_registered = False
+
+        # December 27, 2025: Validate manager health at startup
+        # This catches initialization issues early rather than at first use
+        # NOTE: Must be called AFTER _loop_manager is initialized (was causing AttributeError)
+        self._manager_health_status = self._validate_manager_health()
 
     def _get_loop_manager(self) -> "LoopManager | None":
         """Get the LoopManager, initializing if needed."""

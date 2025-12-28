@@ -16,6 +16,13 @@ Usage:
     # Get all available providers
     for provider in get_all_providers():
         print(f"{provider.name}: {await provider.get_available_gpus()}")
+
+    # Get provider config for a node (centralized registry)
+    from app.coordination.providers import ProviderRegistry
+
+    config = ProviderRegistry.get_for_node("vast-12345")
+    print(f"Idle threshold: {config.idle_threshold_seconds}s")
+    print(f"Ephemeral: {config.is_ephemeral}")
 """
 
 import logging
@@ -27,6 +34,12 @@ from app.coordination.providers.base import (
     InstanceStatus,
     ProviderType,
     GPUType,
+)
+from app.coordination.providers.registry import (
+    ProviderRegistry,
+    ProviderConfig,
+    CloudProviderProtocol,
+    PROVIDER_CONFIGS,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,11 +112,18 @@ def reset_providers() -> None:
 
 
 __all__ = [
+    # Base types
     "CloudProvider",
     "Instance",
     "InstanceStatus",
     "ProviderType",
     "GPUType",
+    # Provider registry (centralized configuration)
+    "ProviderRegistry",
+    "ProviderConfig",
+    "CloudProviderProtocol",
+    "PROVIDER_CONFIGS",
+    # Factory functions
     "get_provider",
     "get_all_providers",
     "reset_providers",

@@ -188,13 +188,30 @@ class OrchestratorInfo:
 
 
 class OrchestratorRegistry(SingletonMixin):
-    """
-    SQLite-based registry for orchestrator coordination.
+    """Central registry for coordinator discovery and health monitoring.
+
+    The OrchestratorRegistry tracks all instantiated coordinators and provides:
+    - Cross-coordinator discovery
+    - Health aggregation
+    - Dependency resolution
+    - SQLite-based persistence for crash recovery
+    - Heartbeat-based liveness detection
 
     December 27, 2025: Migrated to SingletonMixin (Wave 4 Phase 1).
 
-    Ensures mutual exclusion between orchestrators and provides
-    visibility into what's running across the cluster.
+    Usage:
+        from app.coordination.orchestrator_registry import OrchestratorRegistry
+
+        # Register a coordinator
+        registry = OrchestratorRegistry.get_instance()
+        registry.acquire_role(OrchestratorRole.CLUSTER_ORCHESTRATOR)
+
+        # Get all registered coordinators
+        all_coords = registry.get_active_orchestrators()
+
+    See Also:
+        - DaemonManager: Manages daemon lifecycle
+        - CoordinatorBase: Base class for coordinators
     """
 
     def __init__(self):

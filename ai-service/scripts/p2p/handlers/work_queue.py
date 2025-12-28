@@ -141,6 +141,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             config = data.get("config", {})
             timeout = data.get("timeout_seconds", 3600.0)
             depends_on = data.get("depends_on", [])
+            force = data.get("force", False)  # Dec 28, 2025: Allow bypassing backpressure
 
             from app.coordination.work_queue import WorkItem, WorkType
 
@@ -151,7 +152,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 timeout_seconds=timeout,
                 depends_on=depends_on,
             )
-            work_id = wq.add_work(item)
+            work_id = wq.add_work(item, force=force)
 
             return self.json_response({
                 "status": "added",
@@ -159,6 +160,17 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 "work_type": work_type,
                 "priority": priority,
             })
+        except RuntimeError as e:
+            # Dec 28, 2025: Backpressure rejection - return 429 Too Many Requests
+            if "BACKPRESSURE" in str(e):
+                logger.warning(f"Work rejected due to backpressure: {e}")
+                return self.error_response(
+                    str(e),
+                    status=429,
+                    error_code="BACKPRESSURE",
+                    details=wq.get_backpressure_status() if wq else {},
+                )
+            raise
         except Exception as e:
             logger.error(f"Error adding work: {e}")
             return self.error_response(str(e), status=500)
@@ -443,6 +455,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             status["is_leader"] = self.is_leader
             status["leader_id"] = self.leader_id
             status["timed_out_this_check"] = timed_out
+
+            # Dec 28, 2025: Include backpressure status
+            status["backpressure"] = wq.get_backpressure_status()
 
             return self.json_response(status)
         except Exception as e:

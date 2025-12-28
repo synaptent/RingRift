@@ -164,10 +164,12 @@ hosts:
   # ============================================================
   lambda-gh200-1:
     ssh_host: 192.222.57.210
+    tailscale_ip: 100.71.89.91
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_ed25519
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    # Dec 28, 2025: Use system Python (has CUDA), not venv
+    venv_activate: cd ~/ringrift/ai-service
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -181,10 +183,11 @@ hosts:
 
   lambda-gh200-2:
     ssh_host: 192.222.57.140
+    tailscale_ip: 100.110.143.119
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_ed25519
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    venv_activate: cd ~/ringrift/ai-service
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -197,10 +200,11 @@ hosts:
 
   lambda-gh200-3:
     ssh_host: 192.222.51.29
+    tailscale_ip: 100.69.101.108
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_ed25519
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    venv_activate: cd ~/ringrift/ai-service
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -213,10 +217,11 @@ hosts:
 
   lambda-gh200-4:
     ssh_host: 192.222.57.184
+    tailscale_ip: 100.77.186.124
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_ed25519
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    venv_activate: cd ~/ringrift/ai-service
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -229,10 +234,11 @@ hosts:
 
   lambda-gh200-5:
     ssh_host: 192.222.58.171
+    tailscale_ip: 100.83.177.16
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_ed25519
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    venv_activate: cd ~/ringrift/ai-service
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -245,10 +251,11 @@ hosts:
 
   lambda-gh200-training:
     ssh_host: 192.222.51.195
+    tailscale_ip: 100.68.208.43
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_ed25519
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    venv_activate: cd ~/ringrift/ai-service
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -508,7 +515,7 @@ hosts:
     is_ephemeral: true
 
   # ============================================================
-  # RUNPOD NODES (7 running)
+  # RUNPOD NODES (8 running)
   # ============================================================
   runpod-h100:
     ssh_host: 102.210.171.65
@@ -608,6 +615,41 @@ hosts:
     status: offline
     runpod_id: dqc6nvrwig8ajq
     p2p_enabled: true
+
+  # Dec 28, 2025: Added missing RunPod selfplay A100 pods
+  runpod-selfplay-a100:
+    ssh_host: 38.128.233.200
+    ssh_port: 32600
+    ssh_user: root
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: /workspace/ringrift/ai-service
+    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
+    memory_gb: 80
+    cpus: 24
+    gpu: A100 PCIe
+    gpu_vram_gb: 80
+    role: gpu_selfplay
+    status: ready
+    runpod_id: orevscgw5tx7cw
+    p2p_enabled: true
+    note: A100 80GB selfplay node
+
+  runpod-selfplay-a100-2:
+    ssh_host: 69.19.136.95
+    ssh_port: 28933
+    ssh_user: root
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: /workspace/ringrift/ai-service
+    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
+    memory_gb: 80
+    cpus: 24
+    gpu: A100 PCIe
+    gpu_vram_gb: 80
+    role: gpu_selfplay
+    status: ready
+    runpod_id: u7kw5bpu7pg1tj
+    p2p_enabled: true
+    note: A100 80GB selfplay node #2
 
   # ============================================================
   # VULTR NODES (1 running)

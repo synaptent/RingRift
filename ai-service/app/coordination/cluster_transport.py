@@ -43,12 +43,12 @@ Usage:
     result = await transport.transfer_file(
         local_path=Path("data/model.pth"),
         remote_path="ai-service/data/model.pth",
-        node=NodeConfig(hostname="runpod-h100"),
+        node=NodeConfig(hostname="node-001"),
     )
 
     # Execute HTTP request with failover
     result = await transport.http_request(
-        node=NodeConfig(hostname="runpod-h100"),
+        node=NodeConfig(hostname="node-001"),
         endpoint="/api/status",
     )
 

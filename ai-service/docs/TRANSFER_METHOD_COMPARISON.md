@@ -1,7 +1,7 @@
 # Transfer Method Comparison for RingRift Cluster
 
 **Date:** December 28, 2025
-**Test Environment:** 6 providers, 10+ nodes tested
+**Test Environment:** 7 providers, 15+ nodes tested
 
 ## Executive Summary
 
@@ -73,6 +73,36 @@
 | Rsync 10MB   | ✅ OK            | Works well               |
 | aria2c       | ❌ Not installed | CPU-only nodes           |
 | BitTorrent   | ❌ Not available | No tools                 |
+
+### Lambda Labs (gh200-1 through gh200-training)
+
+| Test         | Result           | Notes                        |
+| ------------ | ---------------- | ---------------------------- |
+| SSH Commands | ✅ OK            | Direct connection            |
+| SCP 1MB      | ✅ OK            | Works well                   |
+| SCP 10MB     | ❌ FAIL          | Connection resets            |
+| Rsync 10MB   | ❌ FAIL          | Same as SCP                  |
+| Chunked 2MB  | ⚠️ 3-5/5         | Variable, better than single |
+| GPU          | GH200 480GB 96GB | Best VRAM in cluster         |
+| aria2c       | ❌ Not installed | Not in Lambda image          |
+| BitTorrent   | ❌ Not available | No tools                     |
+
+**Lambda-specific notes:**
+
+- 6 GH200 nodes available (96GB VRAM each)
+- Training-only role (selfplay disabled)
+- Same connection reset issues as other providers
+- Chunked transfers work but less reliable than Nebius
+
+### AWS (Proxy Only)
+
+| Test         | Result  | Notes             |
+| ------------ | ------- | ----------------- |
+| SSH Commands | ✅ OK   | t2.micro instance |
+| Storage      | ❌ None | Proxy node only   |
+| GPU          | ❌ None | No GPU            |
+
+**AWS is used for S3 storage, not compute.** See AWS S3 Storage section below.
 
 ## Tool Availability
 
@@ -234,9 +264,140 @@ def chunked_transfer(source: Path, host: str, dest: Path,
 3. **Use Hetzner as distribution hub** - most stable connections
 4. **Pre-install aria2c** on Vast.ai images for public URL fallback
 
+## AWS S3 Storage (Cluster Backup)
+
+RingRift uses AWS S3 for long-term storage and backup of valuable cluster data.
+
+### Current Configuration
+
+```yaml
+# From config/data_aggregator.yaml
+s3_storage:
+  enabled: true
+  bucket: 'ringrift-models-20251214'
+  region: 'us-east-1'
+  sync_interval_minutes: 60
+
+  sync_targets:
+    models: true # Trained model checkpoints
+    databases: true # Consolidated game databases
+    state: true # Cluster state files
+    raw_data: false # Too large for S3 (TBs)
+```
+
+### What Gets Backed Up
+
+| Data Type          | S3 Sync | Location                                   | Retention         |
+| ------------------ | ------- | ------------------------------------------ | ----------------- |
+| **Models** (.pth)  | ✅ Yes  | `s3://ringrift-models-20251214/models/`    | Indefinite        |
+| **Canonical DBs**  | ✅ Yes  | `s3://ringrift-models-20251214/databases/` | Indefinite        |
+| **State files**    | ✅ Yes  | `s3://ringrift-models-20251214/state/`     | 30 days           |
+| **Raw selfplay**   | ❌ No   | Local only (OWC drive)                     | 30 days           |
+| **Training NPZ**   | ❌ No   | Local only                                 | 90 days           |
+| **Archived games** | ✅ Yes  | `s3://ringrift-archive/archives/`          | Glacier after 90d |
+
+### S3 Implementation
+
+The `MaintenanceDaemon` handles S3 uploads:
+
+```python
+# From app/coordination/maintenance_daemon.py
+archive_to_s3: bool = os.getenv("RINGRIFT_ARCHIVE_TO_S3", "false")
+archive_s3_bucket: str = os.getenv("RINGRIFT_ARCHIVE_S3_BUCKET", "ringrift-archive")
+```
+
+**Upload method:** Uses AWS CLI (`aws s3 cp`) rather than boto3 for simplicity.
+
+### Enabling S3 Backup
+
+```bash
+# Enable S3 archival
+export RINGRIFT_ARCHIVE_TO_S3=true
+export RINGRIFT_ARCHIVE_S3_BUCKET=ringrift-archive
+
+# Verify AWS credentials
+aws sts get-caller-identity
+
+# Manual sync to S3
+aws s3 sync /Volumes/RingRift-Data/models/ s3://ringrift-models-20251214/models/
+aws s3 sync /Volumes/RingRift-Data/selfplay_repository/synced/ s3://ringrift-models-20251214/databases/
+```
+
+### Glacier Deep Archive (Future)
+
+For cost-effective long-term storage of historical game data:
+
+```bash
+# Move old archives to Glacier Deep Archive
+aws s3 cp s3://ringrift-archive/archives/ s3://ringrift-archive/glacier/ \
+    --recursive --storage-class DEEP_ARCHIVE
+```
+
+**Cost estimate:**
+
+- S3 Standard: ~$23/TB/month
+- S3 Glacier Deep Archive: ~$1/TB/month
+- Current data volume: ~200GB models, ~500GB databases
+
+### Primary Storage (OWC Drive)
+
+The Mac Studio coordinator has an external OWC drive for primary cluster storage:
+
+```yaml
+# From config/distributed_hosts.yaml
+allowed_external_storage:
+  - host: mac-studio
+    path: /Volumes/RingRift-Data
+    subdirs:
+      games: selfplay_repository
+      npz: canonical_data
+      models: canonical_models
+```
+
+**Capacity:** 4TB (currently ~1.2TB used)
+
+### Data Flow
+
+```
+GPU Nodes (selfplay/training)
+    │
+    ▼ SyncPushDaemon (rsync)
+    │
+Mac Studio (/Volumes/RingRift-Data)  ←── Primary Storage (4TB)
+    │
+    ▼ MaintenanceDaemon (hourly)
+    │
+AWS S3 (ringrift-models-20251214)    ←── Cloud Backup
+    │
+    ▼ Lifecycle Policy (90 days)
+    │
+AWS Glacier Deep Archive              ←── Cold Storage
+```
+
+### Recovery Procedure
+
+To restore from S3:
+
+```bash
+# List available backups
+aws s3 ls s3://ringrift-models-20251214/models/
+
+# Restore specific model
+aws s3 cp s3://ringrift-models-20251214/models/canonical_hex8_2p.pth models/
+
+# Restore all models
+aws s3 sync s3://ringrift-models-20251214/models/ models/
+
+# Restore from Glacier (takes 12-48 hours)
+aws s3 cp s3://ringrift-archive/glacier/old_games.db.gz . \
+    --request-payer requester
+```
+
 ## See Also
 
 - `scripts/lib/transfer.py` - Transfer implementation
 - `app/coordination/sync_bandwidth.py` - Bandwidth-coordinated rsync
 - `app/coordination/unified_distribution_daemon.py` - Model distribution
+- `app/coordination/maintenance_daemon.py` - S3 archival implementation
+- `config/data_aggregator.yaml` - S3 configuration
 - `docs/architecture/SYNC_INFRASTRUCTURE_ARCHITECTURE.md` - Sync layer design
