@@ -1268,15 +1268,24 @@ class SyncRouter:
         except Exception as e:
             logger.error(f"[SyncRouter] Error handling model sync request: {e}")
 
+    # Transport escalation order (Dec 28, 2025)
+    # When a transport fails, try the next one in the chain
+    TRANSPORT_ESCALATION_ORDER = ["p2p", "http", "rsync", "base64"]
+
     async def _on_sync_stalled(self, event: Any) -> None:
-        """Handle SYNC_STALLED event - mark node as slow/unreliable for routing.
+        """Handle SYNC_STALLED event - escalate to alternate transport.
 
         December 2025: Added to complete sync reliability integration.
-        When a sync operation times out, reduce priority of the slow node
-        in future routing decisions.
+        December 28, 2025: Fixed to include transport escalation.
+        When a sync operation times out, try the next transport in the chain
+        before disabling the node entirely.
+
+        Transport escalation order: P2P -> HTTP -> rsync -> base64
+        Only disable sync after all transports have failed.
 
         Args:
-            event: Event with payload containing target_host, timeout_seconds, retry_count
+            event: Event with payload containing target_host, timeout_seconds,
+                   retry_count, failed_transport
         """
         try:
             payload = event.payload if hasattr(event, 'payload') else event
@@ -1284,24 +1293,63 @@ class SyncRouter:
             timeout_seconds = payload.get("timeout_seconds", 0)
             retry_count = payload.get("retry_count", 0)
             data_type = payload.get("data_type", "game")
+            failed_transport = payload.get("transport", "unknown")
 
             if not target_node:
                 return
 
-            logger.warning(
-                f"[SyncRouter] Sync stalled to {target_node}: "
-                f"timeout={timeout_seconds}s, retries={retry_count}, type={data_type}"
-            )
-
-            # Track stall count for this node
+            # Initialize transport failure tracking
+            if not hasattr(self, '_failed_transports'):
+                self._failed_transports: dict[str, set[str]] = {}
             if not hasattr(self, '_stall_counts'):
                 self._stall_counts: dict[str, int] = {}
+
+            # Track this failure
+            if target_node not in self._failed_transports:
+                self._failed_transports[target_node] = set()
+
+            if failed_transport != "unknown":
+                self._failed_transports[target_node].add(failed_transport)
 
             self._stall_counts[target_node] = self._stall_counts.get(target_node, 0) + 1
             stall_count = self._stall_counts[target_node]
 
-            # After 3 stalls, temporarily disable sync to this node
-            if stall_count >= 3:
+            # Find next transport to try
+            failed_set = self._failed_transports.get(target_node, set())
+            next_transport = None
+            for transport in self.TRANSPORT_ESCALATION_ORDER:
+                if transport not in failed_set:
+                    next_transport = transport
+                    break
+
+            if next_transport:
+                # There's another transport to try - emit SYNC_RETRY_WITH_TRANSPORT
+                logger.info(
+                    f"[SyncRouter] Sync stalled to {target_node} via {failed_transport}, "
+                    f"escalating to {next_transport}"
+                )
+                try:
+                    from app.coordination.event_router import safe_emit_event
+
+                    safe_emit_event(
+                        "SYNC_RETRY_REQUESTED",
+                        {
+                            "target_host": target_node,
+                            "data_type": data_type,
+                            "preferred_transport": next_transport,
+                            "failed_transports": list(failed_set),
+                        },
+                        source="SyncRouter",
+                    )
+                except Exception as e:
+                    logger.debug(f"[SyncRouter] Could not emit SYNC_RETRY_REQUESTED: {e}")
+            else:
+                # All transports have failed - disable sync to this node
+                logger.warning(
+                    f"[SyncRouter] All transports failed to {target_node}: "
+                    f"timeout={timeout_seconds}s, retries={retry_count}, type={data_type}"
+                )
+
                 if target_node in self._node_capabilities:
                     cap = self._node_capabilities[target_node]
                     # Disable based on data type that stalled
@@ -1319,7 +1367,7 @@ class SyncRouter:
 
                     logger.warning(
                         f"[SyncRouter] Disabled {data_type} sync to {target_node} "
-                        f"after {stall_count} stalls"
+                        f"after exhausting all transports (stalls={stall_count})"
                     )
 
         except (AttributeError, KeyError) as e:

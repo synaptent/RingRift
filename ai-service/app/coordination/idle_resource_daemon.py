@@ -172,7 +172,12 @@ class IdleResourceConfig:
 
 @dataclass
 class NodeStatus:
-    """Status of a cluster node."""
+    """Status of a cluster node.
+
+    Note: This is a local NodeStatus with fields specific to idle resource tracking.
+    See app/coordination/node_status.py for the canonical NodeMonitoringStatus.
+    Future consolidation requires adding idle_since, active_jobs to canonical class.
+    """
     node_id: str
     host: str
     gpu_utilization: float = 0.0

@@ -3262,7 +3262,8 @@ class AutoSyncDaemon:
     async def _emit_pull_sync_completed(self, games_pulled: int, sources_count: int) -> None:
         """Emit event when PULL sync completes successfully."""
         try:
-            from app.coordination.data_events import (
+            # Dec 28, 2025: Fixed import path - data_events is in app.distributed
+            from app.distributed.data_events import (
                 DataEventType,
                 emit_data_event,
             )

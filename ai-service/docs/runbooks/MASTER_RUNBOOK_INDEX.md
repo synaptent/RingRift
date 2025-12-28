@@ -1,6 +1,6 @@
 # Master Runbook Index - RingRift AI Service
 
-Centralized navigation for all 25 AI service operational runbooks.
+Centralized navigation for all 32 AI service operational runbooks.
 
 **Created**: December 28, 2025
 **Last Updated**: December 28, 2025
@@ -26,7 +26,9 @@ Is the cluster responding?
     │
     ├── Is data sync failing?
     │   ├── Cluster-wide sync → CLUSTER_SYNCHRONIZATION.md
-    │   └── Host-level sync → SYNC_HOST_CRITICAL.md
+    │   ├── Host-level sync → SYNC_HOST_CRITICAL.md
+    │   ├── Transport failures → TRANSPORT_ESCALATION_FAILURES.md
+    │   └── Orphan games → ORPHAN_GAMES_DETECTION.md
     │
     ├── Are events not flowing?
     │   ├── Event wiring verification → EVENT_WIRING_VERIFICATION.md
@@ -34,11 +36,16 @@ Is the cluster responding?
     │
     ├── Is training/parity failing?
     │   ├── Training loop stalled → TRAINING_LOOP_STALLED.md
+    │   ├── Pipeline stage failed → PIPELINE_STAGE_FAILURES.md
     │   ├── Parity gate stuck → PARITY_GATE_RESOLUTION.md
     │   ├── Parity mismatch → PARITY_MISMATCH_DEBUG.md
     │   ├── Hexagonal-specific → HEXAGONAL_PARITY_BUG.md
     │   ├── Model promotion issues → MODEL_PROMOTION_WORKFLOW.md
-    │   └── Feedback loops broken → FEEDBACK_LOOP_TROUBLESHOOTING.md
+    │   ├── Model distribution → MODEL_DISTRIBUTION_TROUBLESHOOTING.md
+    │   ├── Feedback loops broken → FEEDBACK_LOOP_TROUBLESHOOTING.md
+    │   ├── Feedback degraded → FEEDBACK_LOOP_DEGRADATION.md
+    │   ├── Data corruption → GAME_DATA_CORRUPTION_RECOVERY.md
+    │   └── Work queue stalled → WORK_QUEUE_STALLS.md
     │
     ├── Are GPUs stuck?
     │   ├── GPU OOM errors → GPU_OOM_DEBUG.md
@@ -78,10 +85,12 @@ Is the cluster responding?
 
 ### Data Synchronization
 
-| Runbook                                                  | Severity | When to Use                       |
-| -------------------------------------------------------- | -------- | --------------------------------- |
-| [CLUSTER_SYNCHRONIZATION.md](CLUSTER_SYNCHRONIZATION.md) | High     | Cluster-wide sync failures        |
-| [SYNC_HOST_CRITICAL.md](SYNC_HOST_CRITICAL.md)           | Critical | Host stuck in critical sync state |
+| Runbook                                                              | Severity | When to Use                       |
+| -------------------------------------------------------------------- | -------- | --------------------------------- |
+| [CLUSTER_SYNCHRONIZATION.md](CLUSTER_SYNCHRONIZATION.md)             | High     | Cluster-wide sync failures        |
+| [SYNC_HOST_CRITICAL.md](SYNC_HOST_CRITICAL.md)                       | Critical | Host stuck in critical sync state |
+| [TRANSPORT_ESCALATION_FAILURES.md](TRANSPORT_ESCALATION_FAILURES.md) | High     | All transports failed for a node  |
+| [ORPHAN_GAMES_DETECTION.md](ORPHAN_GAMES_DETECTION.md)               | High     | Games not synced from nodes       |
 
 ### Event System
 
@@ -92,19 +101,24 @@ Is the cluster responding?
 
 ### Training & Parity
 
-| Runbook                                                | Severity | When to Use                    |
-| ------------------------------------------------------ | -------- | ------------------------------ |
-| [TRAINING_LOOP_STALLED.md](TRAINING_LOOP_STALLED.md)   | High     | Training jobs not progressing  |
-| [PARITY_GATE_RESOLUTION.md](PARITY_GATE_RESOLUTION.md) | High     | Parity gate blocking training  |
-| [PARITY_MISMATCH_DEBUG.md](PARITY_MISMATCH_DEBUG.md)   | Critical | TS/Python game replay mismatch |
-| [HEXAGONAL_PARITY_BUG.md](HEXAGONAL_PARITY_BUG.md)     | Critical | Hexagonal board parity issues  |
+| Runbook                                                              | Severity | When to Use                          |
+| -------------------------------------------------------------------- | -------- | ------------------------------------ |
+| [TRAINING_LOOP_STALLED.md](TRAINING_LOOP_STALLED.md)                 | High     | Training jobs not progressing        |
+| [PIPELINE_STAGE_FAILURES.md](PIPELINE_STAGE_FAILURES.md)             | High     | Export/train/evaluate stage failures |
+| [PARITY_GATE_RESOLUTION.md](PARITY_GATE_RESOLUTION.md)               | High     | Parity gate blocking training        |
+| [PARITY_MISMATCH_DEBUG.md](PARITY_MISMATCH_DEBUG.md)                 | Critical | TS/Python game replay mismatch       |
+| [HEXAGONAL_PARITY_BUG.md](HEXAGONAL_PARITY_BUG.md)                   | Critical | Hexagonal board parity issues        |
+| [GAME_DATA_CORRUPTION_RECOVERY.md](GAME_DATA_CORRUPTION_RECOVERY.md) | Critical | Corrupted game data (moves, phases)  |
+| [WORK_QUEUE_STALLS.md](WORK_QUEUE_STALLS.md)                         | High     | Work queue not processing jobs       |
 
 ### Model Promotion & Feedback
 
-| Runbook                                                              | Severity | When to Use                              |
-| -------------------------------------------------------------------- | -------- | ---------------------------------------- |
-| [MODEL_PROMOTION_WORKFLOW.md](MODEL_PROMOTION_WORKFLOW.md)           | High     | Model promotion issues, gauntlet failing |
-| [FEEDBACK_LOOP_TROUBLESHOOTING.md](FEEDBACK_LOOP_TROUBLESHOOTING.md) | High     | Feedback loops not updating              |
+| Runbook                                                                        | Severity | When to Use                              |
+| ------------------------------------------------------------------------------ | -------- | ---------------------------------------- |
+| [MODEL_PROMOTION_WORKFLOW.md](MODEL_PROMOTION_WORKFLOW.md)                     | High     | Model promotion issues, gauntlet failing |
+| [MODEL_DISTRIBUTION_TROUBLESHOOTING.md](MODEL_DISTRIBUTION_TROUBLESHOOTING.md) | High     | Model sync, symlink, distribution issues |
+| [FEEDBACK_LOOP_TROUBLESHOOTING.md](FEEDBACK_LOOP_TROUBLESHOOTING.md)           | High     | Feedback loops not updating              |
+| [FEEDBACK_LOOP_DEGRADATION.md](FEEDBACK_LOOP_DEGRADATION.md)                   | Medium   | Feedback loops losing effectiveness      |
 
 ### GPU & Resources
 

@@ -1337,15 +1337,21 @@ class TestReverseSyncPullStrategy:
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
-                # Create the file to simulate rsync success
-                local_path.touch()
+                # Dec 28, 2025: Mock checksum verification to return success
+                with patch(
+                    "app.coordination.sync_integrity.verify_sync_checksum",
+                    new_callable=AsyncMock,
+                    return_value=(True, None),
+                ):
+                    # Create the file to simulate rsync success
+                    local_path.touch()
 
-                result = await pull_daemon._rsync_pull(
-                    "192.168.1.1", "ubuntu", "~/.ssh/key",
-                    "/data/games", "test.db", temp_dir
-                )
+                    result = await pull_daemon._rsync_pull(
+                        "192.168.1.1", "ubuntu", "~/.ssh/key",
+                        "/data/games", "test.db", temp_dir
+                    )
 
-                assert result == local_path
+                    assert result == local_path
 
     @pytest.mark.asyncio
     async def test_rsync_pull_failure(self, pull_daemon, temp_dir):
@@ -1366,8 +1372,9 @@ class TestReverseSyncPullStrategy:
     @pytest.mark.asyncio
     async def test_emit_pull_sync_completed(self, pull_daemon):
         """Test event emission for PULL sync completion."""
+        # Dec 28, 2025: data_events is in app.distributed, not app.coordination
         with patch(
-            "app.coordination.data_events.emit_data_event",
+            "app.distributed.data_events.emit_data_event",
             new_callable=AsyncMock
         ) as mock_emit:
             await pull_daemon._emit_pull_sync_completed(100, 3)
@@ -1375,7 +1382,7 @@ class TestReverseSyncPullStrategy:
             mock_emit.assert_called_once()
             call_args = mock_emit.call_args
             # Check event type
-            from app.coordination.data_events import DataEventType
+            from app.distributed.data_events import DataEventType
             assert call_args[0][0] == DataEventType.DATA_SYNC_COMPLETED
             # Check payload
             payload = call_args[0][1]
@@ -1404,15 +1411,20 @@ class TestMergeIntoCanonical:
     def merge_daemon(self, temp_dir):
         """Create daemon for merge testing."""
         reset_auto_sync_daemon()
+        # Dec 28, 2025: Removed is_coordinator - not a valid AutoSyncConfig field
+        # Coordinator detection happens via hostname/role in YAML config
         config = AutoSyncConfig(
             enabled=True,
             strategy=SyncStrategy.PULL,
-            is_coordinator=True,
         )
-        with patch("app.coordination.auto_sync_daemon.get_node_id", return_value="coordinator"):
-            daemon = AutoSyncDaemon(config=config)
-            daemon._data_dir = temp_dir
-            return daemon
+        # Dec 28, 2025: Fixed - node_id comes from socket.gethostname()
+        with patch("socket.gethostname", return_value="coordinator"):
+            with patch.object(AutoSyncDaemon, "_init_cluster_manifest"):
+                with patch.object(AutoSyncDaemon, "_detect_provider", return_value="test"):
+                    with patch.object(AutoSyncDaemon, "_check_nfs_mount", return_value=False):
+                        daemon = AutoSyncDaemon(config=config)
+                        daemon._data_dir = temp_dir
+                        return daemon
 
     @pytest.fixture
     def canonical_db(self, temp_dir):

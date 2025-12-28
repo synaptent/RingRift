@@ -425,12 +425,16 @@ class AdaptiveResourceManager:
 
         December 2025: Fixed bug - was trying to import non-existent get_cluster_monitor.
         Now uses ClusterMonitor class directly.
+
+        December 2025 (v2): Use async version to avoid blocking the event loop.
+        The sync get_cluster_status() uses concurrent.futures.as_completed() which
+        blocks the asyncio event loop, causing test timeouts.
         """
         try:
             from app.coordination.cluster_status_monitor import ClusterMonitor
 
             monitor = ClusterMonitor()
-            status = monitor.get_cluster_status()
+            status = await monitor.get_cluster_status_async()
             nodes: list[str] = []
             for node_id, node_info in getattr(status, "nodes", {}).items():
                 has_selfplay = False

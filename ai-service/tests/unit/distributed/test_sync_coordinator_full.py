@@ -34,6 +34,23 @@ def safe_reset_singleton():
         SyncCoordinator._instance = None
 
 
+@pytest.fixture(autouse=True)
+def reset_sync_coordinator_singleton():
+    """Reset singleton before and after each test (autouse ensures proper isolation)."""
+    # Reset before test
+    safe_reset_singleton()
+    yield
+    # Reset after test (runs even if test fails)
+    safe_reset_singleton()
+
+
+@pytest.fixture
+def mock_init_manifest():
+    """Mock _init_manifest to prevent database initialization during tests."""
+    with patch.object(SyncCoordinator, '_init_manifest', return_value=None) as mock:
+        yield mock
+
+
 # =============================================================================
 # Test SyncCategory Enum
 # =============================================================================
@@ -284,7 +301,7 @@ class TestSyncCoordinatorInit:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_init_with_defaults(self, mock_config, mock_provider):
+    def test_init_with_defaults(self, mock_config, mock_provider, mock_init_manifest):
         """Coordinator initializes with default provider and config."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -297,7 +314,7 @@ class TestSyncCoordinatorInit:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_init_with_custom_provider(self, mock_config, mock_provider):
+    def test_init_with_custom_provider(self, mock_config, mock_provider, mock_init_manifest):
         """Coordinator accepts custom provider."""
         custom_provider = MagicMock()
         mock_config.return_value = MagicMock()
@@ -308,7 +325,7 @@ class TestSyncCoordinatorInit:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_singleton_pattern(self, mock_config, mock_provider):
+    def test_singleton_pattern(self, mock_config, mock_provider, mock_init_manifest):
         """get_instance returns singleton."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -320,7 +337,7 @@ class TestSyncCoordinatorInit:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_reset_instance(self, mock_config, mock_provider):
+    def test_reset_instance(self, mock_config, mock_provider, mock_init_manifest):
         """reset_instance clears the singleton."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -348,7 +365,7 @@ class TestSyncCoordinatorTransports:
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
     @patch("app.distributed.sync_coordinator.HAS_ARIA2", True)
     @patch("app.distributed.sync_coordinator.check_aria2_available")
-    def test_init_aria2_available(self, mock_check, mock_config, mock_provider):
+    def test_init_aria2_available(self, mock_check, mock_config, mock_provider, mock_init_manifest):
         """Aria2 transport is initialized when available."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -364,7 +381,7 @@ class TestSyncCoordinatorTransports:
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
     @patch("app.distributed.sync_coordinator.HAS_P2P", True)
-    def test_init_p2p_transport(self, mock_config, mock_provider):
+    def test_init_p2p_transport(self, mock_config, mock_provider, mock_init_manifest):
         """P2P transport can be initialized."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -390,7 +407,7 @@ class TestSyncCoordinatorQuality:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_get_quality_lookup_empty(self, mock_config, mock_provider):
+    def test_get_quality_lookup_empty(self, mock_config, mock_provider, mock_init_manifest):
         """Quality lookup returns empty dict when not initialized."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -403,7 +420,7 @@ class TestSyncCoordinatorQuality:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_get_elo_lookup_empty(self, mock_config, mock_provider):
+    def test_get_elo_lookup_empty(self, mock_config, mock_provider, mock_init_manifest):
         """ELO lookup returns empty dict when not initialized."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -416,7 +433,7 @@ class TestSyncCoordinatorQuality:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_get_manifest_none(self, mock_config, mock_provider):
+    def test_get_manifest_none(self, mock_config, mock_provider, mock_init_manifest):
         """Manifest returns None when not initialized."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -510,7 +527,7 @@ class TestSyncCoordinatorSyncMethods:
     @pytest.mark.asyncio
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    async def test_sync_training_data_nfs_skip(self, mock_config, mock_provider):
+    async def test_sync_training_data_nfs_skip(self, mock_config, mock_provider, mock_init_manifest):
         """NFS provider skips sync (shared storage)."""
         provider = MagicMock()
         provider.name = "nfs"
@@ -528,7 +545,7 @@ class TestSyncCoordinatorSyncMethods:
     @pytest.mark.asyncio
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    async def test_is_data_server_running_false(self, mock_config, mock_provider):
+    async def test_is_data_server_running_false(self, mock_config, mock_provider, mock_init_manifest):
         """Data server is not running initially."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -552,7 +569,7 @@ class TestSyncCoordinatorStatus:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_get_status(self, mock_config, mock_provider):
+    def test_get_status(self, mock_config, mock_provider, mock_init_manifest):
         """get_status returns expected structure."""
         provider = MagicMock()
         provider.provider_type.value = "local"
@@ -571,7 +588,7 @@ class TestSyncCoordinatorStatus:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_get_sync_health(self, mock_config, mock_provider):
+    def test_get_sync_health(self, mock_config, mock_provider, mock_init_manifest):
         """get_sync_health returns health metrics."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -600,7 +617,7 @@ class TestSyncCoordinatorBackgroundSync:
     @pytest.mark.asyncio
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    async def test_stop_background_sync_when_not_running(self, mock_config, mock_provider):
+    async def test_stop_background_sync_when_not_running(self, mock_config, mock_provider, mock_init_manifest):
         """Stopping background sync when not running is safe."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -614,7 +631,7 @@ class TestSyncCoordinatorBackgroundSync:
     @pytest.mark.asyncio
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    async def test_shutdown(self, mock_config, mock_provider):
+    async def test_shutdown(self, mock_config, mock_provider, mock_init_manifest):
         """Shutdown cleans up resources."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()
@@ -688,7 +705,7 @@ class TestSyncCoordinatorEdgeCases:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_resolve_games_dir_default(self, mock_config, mock_provider, tmp_path):
+    def test_resolve_games_dir_default(self, mock_config, mock_provider, tmp_path, mock_init_manifest):
         """Games directory resolves from provider's selfplay_dir."""
         # Create mock selfplay dir structure
         selfplay_dir = tmp_path / "selfplay"
@@ -726,7 +743,7 @@ class TestSyncCoordinatorEdgeCases:
 
     @patch("app.distributed.sync_coordinator.get_storage_provider")
     @patch("app.distributed.sync_coordinator.get_optimal_transport_config")
-    def test_coordinator_tracks_last_sync_times(self, mock_config, mock_provider):
+    def test_coordinator_tracks_last_sync_times(self, mock_config, mock_provider, mock_init_manifest):
         """Coordinator maintains last sync time tracking."""
         mock_provider.return_value = MagicMock()
         mock_config.return_value = MagicMock()

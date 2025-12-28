@@ -2206,6 +2206,87 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         return self._daemons.get(daemon_type)
 
     # =========================================================================
+    # Lifecycle Tracking Methods (December 2025)
+    # =========================================================================
+
+    def get_lifecycle_summary(self) -> dict[str, Any]:
+        """Get aggregated lifecycle statistics for all daemons.
+
+        Returns:
+            Dict with total restarts, average uptime, oldest/newest daemon info
+        """
+        total_restarts = sum(info.restart_count for info in self._daemons.values())
+        uptimes = [
+            info.uptime_seconds
+            for info in self._daemons.values()
+            if info.state == DaemonState.RUNNING
+        ]
+        avg_uptime = sum(uptimes) / len(uptimes) if uptimes else 0.0
+        max_uptime = max(uptimes) if uptimes else 0.0
+        min_uptime = min(uptimes) if uptimes else 0.0
+
+        # Find daemon with most restarts
+        most_restarts = max(
+            self._daemons.values(),
+            key=lambda i: i.restart_count,
+            default=None,
+        )
+
+        return {
+            "manager_uptime_seconds": time.time() - self._start_time,
+            "total_restarts": total_restarts,
+            "average_uptime_seconds": round(avg_uptime, 1),
+            "max_uptime_seconds": round(max_uptime, 1),
+            "min_uptime_seconds": round(min_uptime, 1),
+            "most_restarts_daemon": most_restarts.daemon_type.value if most_restarts else None,
+            "most_restarts_count": most_restarts.restart_count if most_restarts else 0,
+        }
+
+    def get_failed_daemons(self) -> list[tuple[DaemonType, str | None]]:
+        """Get list of currently failed daemons with their error messages.
+
+        Returns:
+            List of (DaemonType, error_message) tuples for failed daemons
+        """
+        return [
+            (info.daemon_type, info.last_error)
+            for info in self._daemons.values()
+            if info.state == DaemonState.FAILED
+        ]
+
+    def get_recent_restarts(self, within_seconds: float = 300.0) -> list[DaemonType]:
+        """Get list of daemons that restarted recently.
+
+        Args:
+            within_seconds: Time window to check (default 5 minutes)
+
+        Returns:
+            List of DaemonTypes that have restarted within the window
+        """
+        cutoff = time.time() - within_seconds
+        recent = []
+        for daemon_name, timestamps in self._restart_timestamps.items():
+            if any(ts > cutoff for ts in timestamps):
+                try:
+                    daemon_type = DaemonType(daemon_name)
+                    recent.append(daemon_type)
+                except ValueError:
+                    pass  # Ignore unknown daemon types
+        return recent
+
+    def get_daemon_uptime(self, daemon_type: DaemonType) -> float:
+        """Get uptime in seconds for a specific daemon.
+
+        Args:
+            daemon_type: The daemon to check
+
+        Returns:
+            Uptime in seconds, or 0.0 if not running
+        """
+        info = self._daemons.get(daemon_type)
+        return info.uptime_seconds if info else 0.0
+
+    # =========================================================================
     # Liveness and Readiness Probes (December 2025)
     # =========================================================================
 
