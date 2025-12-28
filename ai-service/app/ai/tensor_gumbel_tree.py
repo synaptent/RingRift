@@ -749,7 +749,24 @@ class GPUGumbelMCTS:
 
             # Phase/move compatibility check (matches _assert_phase_move_invariant)
             phase_move_valid = True
-            if phase == GamePhase.LINE_PROCESSING:
+            if phase == GamePhase.RING_PLACEMENT:
+                allowed = {MoveType.PLACE_RING, MoveType.SKIP_PLACEMENT,
+                          MoveType.NO_PLACEMENT_ACTION}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.MOVEMENT:
+                allowed = {MoveType.MOVE_STACK, MoveType.MOVE_RING,
+                          MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                          MoveType.NO_MOVEMENT_ACTION, MoveType.RECOVERY_SLIDE,
+                          MoveType.SKIP_RECOVERY}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.CAPTURE:
+                allowed = {MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                          MoveType.SKIP_CAPTURE}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.CHAIN_CAPTURE:
+                allowed = {MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.LINE_PROCESSING:
                 allowed = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION,
                           MoveType.CHOOSE_LINE_REWARD, MoveType.NO_LINE_ACTION,
                           MoveType.ELIMINATE_RINGS_FROM_STACK}

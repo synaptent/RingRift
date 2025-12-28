@@ -683,6 +683,8 @@ def _emit_gauntlet_result_event(
     elo: float,
     win_rate: float,
     games: int,
+    vs_random_rate: float | None = None,
+    vs_heuristic_rate: float | None = None,
 ) -> None:
     """Emit EVALUATION_COMPLETED event to close eval→curriculum feedback loop.
 
@@ -694,6 +696,8 @@ def _emit_gauntlet_result_event(
         elo: Estimated Elo rating
         win_rate: Overall win rate (0.0-1.0)
         games: Total games played
+        vs_random_rate: Win rate vs RANDOM baseline (0.0-1.0)
+        vs_heuristic_rate: Win rate vs HEURISTIC baseline (0.0-1.0)
     """
     import asyncio
 
@@ -710,6 +714,9 @@ def _emit_gauntlet_result_event(
                     games=games,
                     win_rate=win_rate,
                     source="game_gauntlet",
+                    beats_current_best=False,  # Gauntlet is vs baselines, not champion
+                    vs_random_rate=vs_random_rate,
+                    vs_heuristic_rate=vs_heuristic_rate,
                 )
             )
             logger.debug(
@@ -726,6 +733,9 @@ def _emit_gauntlet_result_event(
                         games=games,
                         win_rate=win_rate,
                         source="game_gauntlet",
+                        beats_current_best=False,  # Gauntlet is vs baselines, not champion
+                        vs_random_rate=vs_random_rate,
+                        vs_heuristic_rate=vs_heuristic_rate,
                     )
                 )
             except (RuntimeError, asyncio.CancelledError) as e:
@@ -1146,11 +1156,20 @@ def run_baseline_gauntlet(
     # Emit EVALUATION_COMPLETED event for curriculum feedback (December 2025)
     # This closes the eval→curriculum feedback loop
     board_type_str = board_type.value if hasattr(board_type, "value") else str(board_type)
+
+    # Extract baseline-specific win rates for promotion daemon (Dec 28, 2025)
+    random_stats = result.opponent_results.get("random", {})
+    heuristic_stats = result.opponent_results.get("heuristic", {})
+    vs_random_rate = random_stats.get("win_rate") if random_stats else None
+    vs_heuristic_rate = heuristic_stats.get("win_rate") if heuristic_stats else None
+
     _emit_gauntlet_result_event(
         config_key=f"{board_type_str}_{num_players}p",
         elo=result.estimated_elo,
         win_rate=result.win_rate,
         games=result.total_games,
+        vs_random_rate=vs_random_rate,
+        vs_heuristic_rate=vs_heuristic_rate,
     )
 
     # Store results in gauntlet_results.db (December 2025)

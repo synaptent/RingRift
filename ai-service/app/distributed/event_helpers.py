@@ -357,7 +357,10 @@ async def emit_evaluation_completed_safe(
     elo: float,
     games: int,
     win_rate: float,
-    source: str = ""
+    source: str = "",
+    beats_current_best: bool = False,
+    vs_random_rate: float | None = None,
+    vs_heuristic_rate: float | None = None,
 ) -> bool:
     """Safely emit EVALUATION_COMPLETED event.
 
@@ -367,6 +370,10 @@ async def emit_evaluation_completed_safe(
         games: Number of games played
         win_rate: Win rate (0.0-1.0)
         source: Source component name
+        beats_current_best: True if model beat current champion in head-to-head.
+            Used by AutoPromotionDaemon for two-tier relative promotion.
+        vs_random_rate: Win rate vs RANDOM baseline (0.0-1.0)
+        vs_heuristic_rate: Win rate vs HEURISTIC baseline (0.0-1.0)
 
     Returns:
         True if emitted successfully, False otherwise.
@@ -376,7 +383,23 @@ async def emit_evaluation_completed_safe(
         return False
 
     try:
-        await _emit_evaluation_completed(config, elo, games, win_rate, source=source)
+        # Build extra payload for promotion daemon
+        extra_payload: dict[str, Any] = {
+            "source": source,
+            "beats_current_best": beats_current_best,
+        }
+        if vs_random_rate is not None:
+            extra_payload["vs_random_rate"] = vs_random_rate
+        if vs_heuristic_rate is not None:
+            extra_payload["vs_heuristic_rate"] = vs_heuristic_rate
+
+        await _emit_evaluation_completed(
+            model_id=config,
+            elo=elo,
+            win_rate=win_rate,
+            games_played=games,
+            **extra_payload,
+        )
         return True
     except Exception as e:
         logger.warning(f"Failed to emit EVALUATION_COMPLETED: {e}")

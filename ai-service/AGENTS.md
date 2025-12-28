@@ -213,3 +213,60 @@ When in doubt, prefer:
 
 - Printing instructions and exit codes,
 - Over direct file deletion in automated scripts.
+
+---
+
+## 9. Singleton Pattern
+
+The codebase uses the `@singleton` decorator as the preferred singleton pattern. Use it for new classes that should have only one instance.
+
+### Preferred Pattern: @singleton Decorator
+
+```python
+from app.coordination.singleton_mixin import singleton
+
+@singleton
+class MyDaemon:
+    def __init__(self):
+        self._running = False
+
+    def start(self):
+        self._running = True
+```
+
+### Alternative Patterns (Legacy)
+
+These patterns exist in the codebase but prefer `@singleton` for new code:
+
+- `SingletonMixin` - Mixin class, requires calling `reset_instance()` manually
+- `SingletonMeta` - Metaclass approach, more complex
+- `ThreadSafeSingletonMixin` - Use when thread safety is critical
+
+### Accessing Singletons
+
+For singletons with accessors, follow this pattern:
+
+```python
+# In module:
+_instance: Optional[MyDaemon] = None
+
+def get_my_daemon() -> MyDaemon:
+    global _instance
+    if _instance is None:
+        _instance = MyDaemon()
+    return _instance
+
+def reset_my_daemon() -> None:
+    global _instance
+    _instance = None
+```
+
+### Import Location
+
+All singleton utilities are in `app/coordination/singleton_mixin.py`:
+
+- `singleton` - Decorator (preferred)
+- `SingletonMixin` - Mixin base class
+- `SingletonMeta` - Metaclass
+- `ThreadSafeSingletonMixin` - Thread-safe mixin
+- `create_singleton_accessors` - Helper to create get/reset functions

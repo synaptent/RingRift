@@ -195,13 +195,35 @@ class AutoPromotionDaemon:
         candidate.model_path = model_path
         candidate.last_evaluation_time = time.time()
 
-        # Record result
+        # Record result - single opponent type
         if opponent_type in ("RANDOM", "HEURISTIC"):
             candidate.evaluation_results[opponent_type] = win_rate
             candidate.evaluation_games[opponent_type] = games_played
             logger.info(
                 f"[AutoPromotion] Recorded {config_key} vs {opponent_type}: "
                 f"{win_rate:.1%} ({games_played} games)"
+            )
+
+        # Dec 28, 2025: Also check for direct baseline win rates from gauntlet
+        # The gauntlet emits both rates in a single event
+        vs_random_rate = payload.get("vs_random_rate")
+        vs_heuristic_rate = payload.get("vs_heuristic_rate")
+        if vs_random_rate is not None:
+            candidate.evaluation_results["RANDOM"] = float(vs_random_rate)
+            # Use total games if per-opponent count not available
+            if "RANDOM" not in candidate.evaluation_games:
+                candidate.evaluation_games["RANDOM"] = games_played // 2 or 50
+            logger.info(
+                f"[AutoPromotion] Recorded {config_key} vs RANDOM from gauntlet: "
+                f"{vs_random_rate:.1%}"
+            )
+        if vs_heuristic_rate is not None:
+            candidate.evaluation_results["HEURISTIC"] = float(vs_heuristic_rate)
+            if "HEURISTIC" not in candidate.evaluation_games:
+                candidate.evaluation_games["HEURISTIC"] = games_played // 2 or 50
+            logger.info(
+                f"[AutoPromotion] Recorded {config_key} vs HEURISTIC from gauntlet: "
+                f"{vs_heuristic_rate:.1%}"
             )
 
         # Dec 27, 2025: Extract Elo information from payload

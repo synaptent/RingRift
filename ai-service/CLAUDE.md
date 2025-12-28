@@ -181,6 +181,70 @@ Quality checking for training data:
 - `DatabaseQualityChecker` - Validate database schema/content
 - `TrainingDataValidator` - Validate NPZ files
 
+### Move Data Integrity (Dec 2025)
+
+**Schema v14** enforces that all games have move data before completion. Games without moves are useless for training.
+
+**Key Components:**
+
+| Component                   | Location                                     | Purpose                                                              |
+| --------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| `MIN_MOVES_REQUIRED`        | `app/db/game_replay.py`                      | Constant = 1, enforced in `store_game()` and `GameWriter.finalize()` |
+| `InvalidGameError`          | `app/errors.py`                              | Raised when game has insufficient move data                          |
+| `enforce_moves_on_complete` | SQLite trigger                               | Prevents `game_status='completed'` if `total_moves=0`                |
+| `orphaned_games` table      | Schema v14                                   | Quarantine table for games detected without moves                    |
+| `IntegrityCheckDaemon`      | `app/coordination/integrity_check_daemon.py` | Hourly scan for orphan games                                         |
+
+**Configuration (environment variables):**
+
+```bash
+# IntegrityCheckDaemon settings
+RINGRIFT_INTEGRITY_ENABLED=true              # Enable daemon (default: true)
+RINGRIFT_INTEGRITY_CHECK_INTERVAL=3600       # Scan interval in seconds (default: 1 hour)
+RINGRIFT_INTEGRITY_QUARANTINE_DAYS=7         # Days before cleanup (default: 7)
+RINGRIFT_INTEGRITY_MAX_ORPHANS=1000          # Max orphans per scan (default: 1000)
+RINGRIFT_INTEGRITY_DATA_DIR=data/games       # Data directory to scan
+```
+
+**Cleanup Script:**
+
+```bash
+# Preview orphan games (dry run)
+python scripts/cleanup_games_without_moves.py --dry-run
+
+# Clean all canonical databases
+python scripts/cleanup_games_without_moves.py --execute
+
+# Clean specific database
+python scripts/cleanup_games_without_moves.py --db data/games/canonical_hex8.db --execute
+```
+
+**Consolidation Validation:**
+
+The `consolidate_jsonl_databases.py` script now validates source databases:
+
+```bash
+# Strict mode - fail on any integrity issues
+python scripts/consolidate_jsonl_databases.py --strict
+
+# Normal mode - warn and skip invalid games
+python scripts/consolidate_jsonl_databases.py
+```
+
+**Programmatic Usage:**
+
+```python
+from app.coordination.integrity_check_daemon import get_integrity_check_daemon
+
+# Get singleton daemon
+daemon = get_integrity_check_daemon()
+await daemon.start()
+
+# Check health
+health = daemon.health_check()
+print(f"Orphans found: {health.details['total_orphans_found']}")
+```
+
 ### Safe Checkpoint Loading (`app/utils/torch_utils.py`)
 
 Secure model checkpoint loading to mitigate pickle deserialization attacks:
