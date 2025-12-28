@@ -1693,3 +1693,69 @@ New runbook covering:
 - Common failure patterns: Startup failure, Crash loop, Health check failure, Event subscription loss
 - Exponential backoff table (1s → 16s max)
 - Full system recovery procedures
+
+### Test Coverage Additions (Dec 28, 2025)
+
+Added comprehensive unit tests for critical untested modules:
+
+**test_transport_base.py** (58 tests):
+
+Tests for `TransportBase` circuit breaker infrastructure:
+
+- `TransportState` enum values and transitions
+- `TransportResult` dataclass validation
+- `TransportError` exception formatting
+- `CircuitBreakerConfig` factory methods (aggressive, patient)
+- `TimeoutConfig` factory methods (fast, slow)
+- Circuit breaker state machine (CLOSED → OPEN → HALF_OPEN → CLOSED)
+- Timeout execution with retry logic
+- State persistence (save/load JSON)
+- Health check reporting
+
+**test_wal_sync_utils.py** (53 tests):
+
+Tests for SQLite WAL synchronization utilities:
+
+- `WAL_INCLUDE_PATTERNS` and `WAL_RSYNC_INCLUDES` constants
+- `get_wal_files()` WAL file detection
+- `get_db_with_wal_files()` file ordering for sync
+- `checkpoint_database()` WAL checkpointing
+- `prepare_db_for_sync()` pre-sync preparation
+- `validate_synced_database()` post-sync validation
+- `build_rsync_command_for_db()` command construction
+- `get_rsync_include_args_for_db()` include pattern generation
+
+**test_health_check_helper.py** (38 tests):
+
+Tests for `HealthCheckHelper` reusable methods:
+
+- `check_error_rate()` boundary conditions
+- `check_uptime_grace()` timing behavior
+- `check_recent_errors()` windowed counting
+- `check_queue_depth()` threshold handling (fixed edge case: max_depth=0 means no limit)
+- `check_last_activity()` staleness detection
+- `check_connection_health()` connection state
+- `build_details()` filtering
+
+**Bug Fix**: `HealthCheckHelper.check_queue_depth()` now treats `max_depth=0` as "no limit" instead of incorrectly marking as unhealthy.
+
+**test_master_loop_guard.py** (23 tests - already existed):
+
+Verified existing tests for master loop mutual exclusion:
+
+- PID file path configuration
+- Process existence checking via `os.kill(pid, 0)`
+- Stale PID file cleanup
+- Error handling (corrupted, permission denied)
+- `ensure_master_loop_running()` enforcement
+- `check_or_warn()` warning generation
+
+**Test Summary**:
+
+| Module              | Tests   | LOC Covered | Purpose                        |
+| ------------------- | ------- | ----------- | ------------------------------ |
+| transport_base.py   | 58      | 612         | Circuit breaker infrastructure |
+| wal_sync_utils.py   | 53      | 409         | Database sync integrity        |
+| health_check_helper | 38      | 217         | Health check utilities         |
+| master_loop_guard   | 23      | 110         | Mutual exclusion               |
+| **Total**           | **172** | **1,348**   | Critical infrastructure        |

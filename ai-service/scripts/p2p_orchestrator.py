@@ -2590,6 +2590,9 @@ class P2POrchestrator(
             check_disk_capacity=lambda: check_disk_has_capacity(),
             config=SyncPlannerConfig(),
         )
+        # December 2025: Subscribe to cluster events (LEADER_ELECTED, NODE_RECOVERED)
+        # to invalidate cached manifests and trigger re-collection
+        self.sync_planner.subscribe_to_events()
 
         # Phase 2B Refactoring: SelfplayScheduler for priority-based selfplay allocation
         # All callbacks wired for full delegation (Dec 2025)

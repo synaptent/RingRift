@@ -273,4 +273,8 @@ python scripts/update_all_nodes.py --max-parallel 5
 
 - Main orchestrator: `scripts/p2p_orchestrator.py`
 - Package: `scripts/p2p/`
-- Tests: `tests/unit/scripts/test_p2p_*.py`
+- Managers: `scripts/p2p/managers/`
+- Background loops: `scripts/p2p/loops/`
+- HTTP handlers: `scripts/p2p/handlers/`
+- Manager README: `scripts/p2p/managers/README.md`
+- Tests: `tests/unit/p2p/` and `tests/unit/scripts/test_p2p_*.py`

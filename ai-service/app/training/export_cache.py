@@ -217,6 +217,11 @@ class ExportCache:
             history_length=history_length,
             feature_version=feature_version,
             policy_encoding=policy_encoding,
+            min_quality=min_quality,
+            require_completed=require_completed,
+            encoder_version=encoder_version,
+            include_heuristics=include_heuristics,
+            full_heuristics=full_heuristics,
         )
         entry = self._load_cache_entry(cache_key)
         if entry is None:
@@ -273,6 +278,12 @@ class ExportCache:
         policy_encoding: str | None = None,
         samples_exported: int = 0,
         games_exported: int = 0,
+        # Quality filtering parameters (December 28, 2025)
+        min_quality: float | None = None,
+        require_completed: bool | None = None,
+        encoder_version: str | None = None,
+        include_heuristics: bool | None = None,
+        full_heuristics: bool | None = None,
     ) -> None:
         """Record a completed export to the cache."""
         cache_key = _get_cache_key(
@@ -282,6 +293,11 @@ class ExportCache:
             history_length=history_length,
             feature_version=feature_version,
             policy_encoding=policy_encoding,
+            min_quality=min_quality,
+            require_completed=require_completed,
+            encoder_version=encoder_version,
+            include_heuristics=include_heuristics,
+            full_heuristics=full_heuristics,
         )
 
         # Collect source DB stats
@@ -321,6 +337,12 @@ class ExportCache:
         history_length: int | None = None,
         feature_version: int | None = None,
         policy_encoding: str | None = None,
+        # Quality filtering parameters (December 28, 2025)
+        min_quality: float | None = None,
+        require_completed: bool | None = None,
+        encoder_version: str | None = None,
+        include_heuristics: bool | None = None,
+        full_heuristics: bool | None = None,
     ) -> bool:
         """Invalidate a cache entry. Returns True if entry was found and removed."""
         cache_key = _get_cache_key(
@@ -330,6 +352,11 @@ class ExportCache:
             history_length=history_length,
             feature_version=feature_version,
             policy_encoding=policy_encoding,
+            min_quality=min_quality,
+            require_completed=require_completed,
+            encoder_version=encoder_version,
+            include_heuristics=include_heuristics,
+            full_heuristics=full_heuristics,
         )
         cache_file = self.cache_dir / f"export_{cache_key}.json"
 
@@ -346,6 +373,12 @@ class ExportCache:
         history_length: int | None = None,
         feature_version: int | None = None,
         policy_encoding: str | None = None,
+        # Quality filtering parameters (December 28, 2025)
+        min_quality: float | None = None,
+        require_completed: bool | None = None,
+        encoder_version: str | None = None,
+        include_heuristics: bool | None = None,
+        full_heuristics: bool | None = None,
     ) -> dict[str, Any] | None:
         """Get cache entry info for debugging/inspection."""
         cache_key = _get_cache_key(
@@ -355,6 +388,11 @@ class ExportCache:
             history_length=history_length,
             feature_version=feature_version,
             policy_encoding=policy_encoding,
+            min_quality=min_quality,
+            require_completed=require_completed,
+            encoder_version=encoder_version,
+            include_heuristics=include_heuristics,
+            full_heuristics=full_heuristics,
         )
         entry = self._load_cache_entry(cache_key)
         if entry:
