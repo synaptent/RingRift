@@ -524,13 +524,68 @@ def is_daemon_deprecated(daemon_type: DaemonType) -> bool:
     return spec is not None and spec.deprecated
 
 
+def get_deprecated_types() -> set[DaemonType]:
+    """Get the set of deprecated daemon types.
+
+    This is computed from the registry entries with deprecated=True.
+
+    Returns:
+        Set of DaemonType values that are deprecated.
+
+    December 2025: Added to provide a single source of truth for deprecated types.
+    """
+    return {
+        daemon_type
+        for daemon_type, spec in DAEMON_REGISTRY.items()
+        if spec.deprecated
+    }
+
+
+# Convenience constant - computed lazily on first access
+# Use get_deprecated_types() for guaranteed freshness
+DEPRECATED_TYPES: set[DaemonType] = set()  # Populated at module load
+
+
+def _init_deprecated_types() -> None:
+    """Initialize DEPRECATED_TYPES constant at module load."""
+    global DEPRECATED_TYPES
+    DEPRECATED_TYPES = get_deprecated_types()
+
+
+# Initialize on module load
+_init_deprecated_types()
+
+
 def validate_registry() -> list[str]:
     """Validate the daemon registry for common issues.
 
+    Checks:
+        1. All DaemonType enum values have registry entries (except deprecated types)
+        2. All registry entries have runner functions in daemon_runners
+        3. No dependency references to non-existent daemon types
+        4. No self-dependencies
+
     Returns:
         List of validation error messages (empty if valid)
+
+    December 2025: Enhanced to check ALL DaemonType values have registrations.
     """
     errors: list[str] = []
+
+    # Check for DaemonType values missing from registry
+    all_daemon_types = set(DaemonType)
+    registered_types = set(DAEMON_REGISTRY.keys())
+    deprecated_types = get_deprecated_types()
+
+    # Missing types that are NOT deprecated should be errors
+    # Missing types that ARE deprecated are acceptable (may have been removed from registry)
+    missing_from_registry = all_daemon_types - registered_types
+    for daemon_type in sorted(missing_from_registry, key=lambda x: x.name):
+        # Only flag as error if not deprecated
+        if daemon_type not in deprecated_types:
+            errors.append(
+                f"{daemon_type.name}: DaemonType exists but has no DAEMON_REGISTRY entry"
+            )
 
     # Check for missing daemon_runners functions
     try:
@@ -560,3 +615,24 @@ def validate_registry() -> list[str]:
             errors.append(f"{daemon_type.name}: cannot depend on itself")
 
     return errors
+
+
+def validate_registry_or_raise() -> None:
+    """Validate registry and raise if there are any errors.
+
+    Raises:
+        ValueError: If there are any validation errors.
+
+    Usage:
+        Called at daemon_manager startup to catch configuration errors early.
+
+    December 2025: Added for startup validation.
+    """
+    errors = validate_registry()
+    if errors:
+        error_msg = (
+            "Daemon registry validation failed:\n"
+            + "\n".join(f"  - {e}" for e in errors)
+            + "\n\nFix: Add missing entries to DAEMON_REGISTRY in daemon_registry.py"
+        )
+        raise ValueError(error_msg)

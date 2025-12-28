@@ -1937,20 +1937,38 @@ class WebhookNotifier:
     async def send(
         self,
         title: str,
-        message: str,
+        message: str = "",
         level: str = "warning",
         fields: dict[str, str] | None = None,
         node_id: str = "",
+        # Aliases for backward compatibility (December 28, 2025)
+        severity: str | None = None,
+        context: dict[str, str] | None = None,
     ):
         """Send an alert to configured webhooks.
 
         Args:
-            title: Alert title/subject
+            title: Alert title/subject (or message if message not provided)
             message: Alert body text
             level: debug/info/warning/error
             fields: Additional key-value pairs to include
             node_id: Node ID for deduplication
+            severity: Alias for level (backward compatibility)
+            context: Alias for fields (backward compatibility)
+
+        December 28, 2025: Added severity and context aliases to fix API mismatch
+        with callers using the alternative parameter names.
         """
+        # Handle aliases - severity takes precedence if provided
+        if severity is not None:
+            level = severity
+        if context is not None:
+            fields = context
+        # If message is empty, use title as message (for single-arg callers)
+        if not message:
+            message = title
+            title = "RingRift Alert"
+
         if self.LEVELS.get(level, 2) < self.min_level:
             return
 
@@ -2554,6 +2572,9 @@ class P2POrchestrator(
             peers_lock=self.peers_lock,
             get_training_jobs=lambda: self.training_jobs,
         )
+        # December 2025: Subscribe to health events (HOST_OFFLINE, NODE_RECOVERED)
+        # to track unhealthy nodes for filtering during selection
+        self.node_selector.subscribe_to_events()
 
         # Phase 2A Refactoring: SyncPlanner for data synchronization
         # NOTE: request_peer_manifest is wired AFTER SyncPlanner creation
@@ -7335,345 +7356,11 @@ class P2POrchestrator(
 
         return conversions_done
 
-    # =========================================================================
-    # DEPRECATED: _data_management_loop - December 27, 2025
-    # This inline loop has been migrated to DataManagementLoop in LoopManager.
-    # See scripts/p2p/loops/data_loops.py for the new implementation.
-    # Task creation removed from _run() - this method is now DEAD CODE.
-    # Retained temporarily for reference; safe to remove in Q1 2026.
-    # =========================================================================
-    async def _data_management_loop_DEPRECATED(self):
-        """DEPRECATED: Use DataManagementLoop via LoopManager instead.
+    # NOTE: _data_management_loop_DEPRECATED() removed Dec 28, 2025 (~180 LOC).
+    # See scripts/p2p/loops/data_loops.py::DataManagementLoop for replacement.
 
-        Original docstring:
-        Background loop for automatic data management.
-
-        LEARNED LESSONS - Automated data pipeline:
-        - Triggers exports when databases exceed threshold
-        - Syncs training data to GPU nodes
-        - Auto-triggers training when enough data available
-        """
-        raise NotImplementedError(
-            "_data_management_loop is deprecated. "
-            "Use DataManagementLoop via LoopManager instead."
-        )
-
-        # ====================================================================
-        # DEAD CODE BELOW - Retained for historical reference only
-        # ====================================================================
-        logger.info(f"Data management loop started (interval: {DATA_MANAGEMENT_INTERVAL}s)")
-
-        # Track active export jobs
-        active_exports: dict[str, float] = {}  # path -> start_time
-
-        while self.running:
-            try:
-                await asyncio.sleep(DATA_MANAGEMENT_INTERVAL)
-
-                # ==== LOCAL NODE OPERATIONS (run on ALL nodes) ====
-                # Check disk usage and trigger cleanup if needed
-                has_capacity, disk_pct = check_disk_has_capacity(DISK_WARNING_THRESHOLD)
-                if not has_capacity:
-                    logger.info(f"Disk at {disk_pct:.1f}% (warning threshold {DISK_WARNING_THRESHOLD}%), triggering cleanup...")
-                    await self._cleanup_local_disk()
-                    has_capacity, disk_pct = check_disk_has_capacity(DISK_CRITICAL_THRESHOLD)
-
-                # Convert JSONL selfplay files to DB format (runs on ALL nodes)
-                # This enables training to access local selfplay data
-                data_dir = self.get_data_directory()
-                games_dir = data_dir / "games"
-                training_dir = data_dir / "training"
-                games_dir.mkdir(parents=True, exist_ok=True)
-                training_dir.mkdir(parents=True, exist_ok=True)
-
-                try:
-                    converted = await self._convert_jsonl_to_db(data_dir, games_dir)
-                    if converted > 0:
-                        logger.info(f"Local JSONL→DB conversion: {converted} games converted")
-                except Exception as conv_err:
-                    logger.info(f"JSONL→DB conversion error: {conv_err}")
-
-                # Also convert JSONL directly to NPZ for training (preferred path)
-                try:
-                    npz_created = await self._convert_jsonl_to_npz_for_training(data_dir, training_dir)
-                    if npz_created > 0:
-                        logger.info(f"Local JSONL→NPZ conversion: {npz_created} training files created")
-                except Exception as npz_err:
-                    logger.info(f"JSONL→NPZ conversion error: {npz_err}")
-
-                # ==== LEADER-ONLY OPERATIONS ====
-                if not self._is_leader():
-                    continue
-
-                logger.info("Running data management check (leader)...")
-
-                # Re-check disk after conversion
-                if not has_capacity:
-                    logger.info(f"Disk at {disk_pct:.1f}% after cleanup, skipping leader data operations")
-                    continue
-
-                # Check database integrity (every 6th cycle = ~30 min)
-                if not hasattr(self, "_db_integrity_counter"):
-                    self._db_integrity_counter = 0
-                self._db_integrity_counter += 1
-                if self._db_integrity_counter % 6 == 0:
-                    try:
-                        data_dir = Path(self.ringrift_path) / "ai-service" / "data" / "games"
-                        db_results = check_and_repair_databases(
-                            data_dir=data_dir,
-                            auto_repair=False,  # Just move corrupted, don't attempt recovery
-                            log_prefix="[P2P]"
-                        )
-                        if db_results["corrupted"] > 0:
-                            moved = db_results.get("failed", 0)  # "failed" = moved without recovery
-                            logger.info(f"DB integrity: {db_results['checked']} checked, "
-                                  f"{db_results['corrupted']} corrupted, {moved} moved")
-                    except Exception as db_err:
-                        logger.info(f"DB integrity check error: {db_err}")
-
-                # 1. Check local database sizes and trigger exports
-                # Count current exports
-                current_exports = len([p for p, t in active_exports.items()
-                                       if time.time() - t < 3600])  # 1 hour timeout
-
-                if games_dir.exists():
-                    for db_file in games_dir.glob("*.db"):
-                        db_size_mb = db_file.stat().st_size / (1024 * 1024)
-
-                        if db_size_mb >= DB_EXPORT_THRESHOLD_MB:
-                            # Check if already exporting
-                            export_key = str(db_file)
-                            if export_key in active_exports:
-                                continue
-
-                            # Check concurrent export limit
-                            if current_exports >= MAX_CONCURRENT_EXPORTS:
-                                logger.info(f"Skipping export for {db_file.name} (max concurrent reached)")
-                                continue
-
-                            # Determine board type from filename
-                            board_type = "square8"  # default
-                            if "hex" in db_file.name.lower():
-                                board_type = "hexagonal"
-                            elif "square19" in db_file.name.lower() or "sq19" in db_file.name.lower():
-                                board_type = "square19"
-
-                            # Start export job
-                            logger.info(f"Auto-triggering export for {db_file.name} ({db_size_mb:.0f}MB)")
-                            export_output = training_dir / f"auto_{db_file.stem}_{int(time.time())}.npz"
-
-                            try:
-                                cmd = [
-                                    sys.executable,  # Use venv Python, not system python3
-                                    f"{self.ringrift_path}/ai-service/scripts/export_replay_dataset.py",
-                                    "--db", str(db_file),
-                                    "--board-type", board_type,
-                                    "--num-players", "2",
-                                    "--board-aware-encoding",
-                                    "--require-completed",
-                                    "--min-moves", "10",
-                                    "--output", str(export_output),
-                                ]
-
-                                env = os.environ.copy()
-                                env["PYTHONPATH"] = f"{self.ringrift_path}/ai-service"
-
-                                subprocess.Popen(
-                                    cmd,
-                                    stdout=open(f"/tmp/auto_export_{db_file.stem}.log", "w"),
-                                    stderr=subprocess.STDOUT,
-                                    env=env,
-                                    cwd=f"{self.ringrift_path}/ai-service",
-                                )
-                                active_exports[export_key] = time.time()
-                                current_exports += 1
-                                logger.info(f"Started export job for {db_file.name}")
-
-                            except Exception as e:  # noqa: BLE001
-                                logger.error(f"Failed to start export for {db_file.name}: {e}")
-
-                # 2. Calculate total training data size
-                total_training_mb = 0.0
-                if training_dir.exists():
-                    for npz_file in training_dir.glob("*.npz"):
-                        total_training_mb += npz_file.stat().st_size / (1024 * 1024)
-
-                logger.info(f"Training data available: {total_training_mb:.1f}MB")
-
-                # 3. Auto-trigger training if threshold exceeded and GPU available
-                if total_training_mb >= AUTO_TRAINING_THRESHOLD_MB and self.self_info.is_gpu_node() and self.self_info.training_jobs == 0:
-                    logger.info(f"Auto-triggering training ({total_training_mb:.1f}MB data available)")
-                    # Find largest training file
-                    largest_npz = max(
-                        training_dir.glob("*.npz"),
-                        key=lambda f: f.stat().st_size,
-                        default=None
-                    )
-                    if largest_npz:
-                        await self._start_auto_training(str(largest_npz))
-
-                # 4. Request data sync from peers with large databases
-                await self._request_data_from_peers()
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:  # noqa: BLE001
-                logger.info(f"Data management loop error: {e}")
-                import traceback
-                traceback.print_exc()
-                await asyncio.sleep(60)
-
-    # =========================================================================
-    # DEPRECATED: _model_sync_loop - December 27, 2025
-    # This inline loop has been migrated to ModelSyncLoop in LoopManager.
-    # See scripts/p2p/loops/data_loops.py for the new implementation.
-    # Task creation removed from _run() - this method is now DEAD CODE.
-    # Retained temporarily for reference; safe to remove in Q1 2026.
-    # =========================================================================
-    async def _model_sync_loop_DEPRECATED(self):
-        """DEPRECATED: Use ModelSyncLoop via LoopManager instead.
-
-        Original docstring:
-        Background loop for syncing NN/NNUE models across the cluster.
-
-        LEARNED LESSONS - Model distribution:
-        - Training nodes produce new models that need distribution
-        - All GPU nodes should have access to latest models for selfplay
-        - Use sync_models.py infrastructure for hash-based deduplication
-        - Only leader runs this to avoid conflicts
-        """
-        raise NotImplementedError(
-            "_model_sync_loop is deprecated. "
-            "Use ModelSyncLoop via LoopManager instead."
-        )
-
-        # ====================================================================
-        # DEAD CODE BELOW - Retained for historical reference only
-        # ====================================================================
-        logger.info(f"Model sync loop started (interval: {MODEL_SYNC_INTERVAL}s)")
-
-        while self.running:
-            try:
-                await asyncio.sleep(MODEL_SYNC_INTERVAL)
-
-                if not self._is_leader():
-                    continue
-
-                if not HAS_MODEL_SYNC or not HAS_HOSTS_FOR_SYNC:
-                    if self.verbose:
-                        logger.info("Model sync skipped: sync_models module not available")
-                    continue
-
-                # Check disk capacity before downloading models (enforces 70% limit)
-                has_capacity, disk_pct = check_disk_has_capacity(DISK_CRITICAL_THRESHOLD)
-                if not has_capacity:
-                    logger.info(f"Model sync skipped: disk at {disk_pct:.1f}% (limit {DISK_CRITICAL_THRESHOLD}%)")
-                    continue
-
-                logger.info("Running model sync check...")
-
-                # Emit MODEL_DISTRIBUTION_STARTED event (Dec 2025)
-                sync_start_time = time.time()
-
-                # Run sync in a thread pool to avoid blocking the event loop
-                loop = asyncio.get_event_loop()
-
-                def do_model_sync():
-                    try:
-                        # Load remote hosts
-                        hosts = load_remote_hosts()
-                        if not hosts:
-                            return 0, 0, ["No remote hosts configured"], 0, 0
-
-                        # Scan cluster for model inventory
-                        state = scan_cluster_models(hosts, max_workers=5)
-
-                        # Calculate current total
-                        total_models = len(state.all_nn_models) + len(state.all_nnue_models)
-
-                        # Sync missing models with deduplication
-                        collected, distributed, errors = sync_missing_models(
-                            state, hosts, dry_run=False, collect_first=True
-                        )
-
-                        # Save state for future reference
-                        state.save()
-
-                        return collected, distributed, errors, total_models, len(hosts)
-
-                    except Exception as e:  # noqa: BLE001
-                        return 0, 0, [str(e)], 0, 0
-
-                # Get estimated host count for started event
-                estimated_hosts = 0
-                try:
-                    hosts = load_remote_hosts()
-                    estimated_hosts = len(hosts) if hosts else 0
-                except (FileNotFoundError, OSError, yaml.YAMLError) as e:
-                    # Dec 2025: Narrowed from bare Exception - config issues are expected
-                    logger.debug(f"[Model Sync] Failed to load remote hosts for estimate: {e}")
-
-                # Emit started event with estimates
-                await _emit_model_distribution_started(
-                    total_models=0,  # Unknown until scan completes
-                    target_hosts=estimated_hosts,
-                    source="p2p_model_sync_loop",
-                )
-
-                result = await loop.run_in_executor(None, do_model_sync)
-                sync_duration = time.time() - sync_start_time
-
-                if len(result) == 5:
-                    collected, distributed, errors, total_models, num_hosts = result
-
-                    if collected > 0 or distributed > 0:
-                        logger.info(f"Model sync: collected {collected}, distributed {distributed} "
-                              f"({total_models} total models across {num_hosts} hosts)")
-
-                        # Emit MODEL_DISTRIBUTION_COMPLETE event (Dec 2025)
-                        await _emit_model_distribution_complete(
-                            models_collected=collected,
-                            models_distributed=distributed,
-                            target_hosts=num_hosts,
-                            duration=sync_duration,
-                            source="p2p_model_sync_loop",
-                        )
-
-                    if errors:
-                        for err in errors[:3]:
-                            logger.info(f"Model sync error: {err}")
-
-                        # Emit MODEL_DISTRIBUTION_FAILED event if errors (Dec 2025)
-                        if collected == 0 and distributed == 0:
-                            await _emit_model_distribution_failed(
-                                error=errors[0] if errors else "Unknown error",
-                                partial_models=0,
-                                source="p2p_model_sync_loop",
-                            )
-
-                    # Use SyncCoordinator for additional transport methods (aria2, ssh, p2p)
-                    if HAS_SYNC_COORDINATOR and errors:
-                        try:
-                            coordinator = get_sync_coordinator()
-                            # Sync models using alternative transports
-                            model_stats = await coordinator.sync_models()
-                            if model_stats.files_synced > 0:
-                                logger.info(f"SyncCoordinator fallback: {model_stats.files_synced} models via {model_stats.transport_used}")
-                        except Exception as sync_err:
-                            if self.verbose:
-                                logger.info(f"SyncCoordinator fallback error: {sync_err}")
-                else:
-                    collected, distributed, errors = result[:3]
-                    if errors:
-                        logger.info(f"Model sync failed: {errors[0]}")
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:  # noqa: BLE001
-                logger.info(f"Model sync loop error: {e}")
-                import traceback
-                traceback.print_exc()
-                await asyncio.sleep(60)
+    # NOTE: _model_sync_loop_DEPRECATED() removed Dec 28, 2025 (~143 LOC).
+    # See scripts/p2p/loops/data_loops.py::ModelSyncLoop for replacement.
 
     async def _consolidate_selfplay_data(self):
         """Consolidate siloed job databases AND JSONL files into training DB.

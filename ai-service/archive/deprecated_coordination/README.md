@@ -281,74 +281,149 @@ This functionality is now provided by `UnifiedEventRouter` in `event_router.py`,
 
 The following 8 modules were archived from `app/coordination/deprecated/`:
 
-### _deprecated_auto_evaluation_daemon.py
+### \_deprecated_auto_evaluation_daemon.py
 
 **Original Purpose**: Background daemon for automatic model evaluation.
 
 **Superseded By**: Integrated into `daemon_manager.py` with EVALUATION_DAEMON type and modern event-driven triggers.
 
-### _deprecated_cross_process_events.py
+### \_deprecated_cross_process_events.py
 
 **Original Purpose**: SQLite-backed inter-process event queue.
 
 **Superseded By**: `app/coordination/event_router.py` with unified event routing.
 
-### _deprecated_event_emitters.py
+### \_deprecated_event_emitters.py
 
 **Original Purpose**: Helper functions for emitting training pipeline events.
 
-**Superseded By**: `app/coordination/event_router.py` emit_* functions.
+**Superseded By**: `app/coordination/event_router.py` emit\_\* functions.
 
-### _deprecated_health_check_orchestrator.py
+### \_deprecated_health_check_orchestrator.py
 
 **Original Purpose**: Orchestrated health checks across cluster nodes.
 
 **Superseded By**: `app/coordination/unified_health_manager.py` with SystemHealthScore tracking.
 
-### _deprecated_host_health_policy.py
+### \_deprecated_host_health_policy.py
 
 **Original Purpose**: Policy-based health evaluation for cluster hosts.
 
 **Superseded By**: `app/coordination/unified_health_manager.py` with configurable thresholds.
 
-### _deprecated_queue_populator_daemon.py
+### \_deprecated_queue_populator_daemon.py
 
 **Original Purpose**: Background daemon for maintaining work queues.
 
 **Superseded By**: `app/coordination/queue_populator.py` active implementation with Elo-based targets.
 
-### _deprecated_sync_coordinator.py
+### \_deprecated_sync_coordinator.py
 
 **Original Purpose**: Scheduling layer for sync operations (1,344 LOC).
 
 **Superseded By**:
+
 - `app/coordination/auto_sync_daemon.py` - Automated sync scheduling
 - `app/coordination/sync_router.py` - Intelligent routing
 - `app/distributed/sync_coordinator.py` - Active execution layer (2,204 LOC)
 
 **Note**: Two files named "sync_coordinator.py" existed with different purposes:
+
 - `app/coordination/sync_coordinator.py` (DEPRECATED) - Scheduling layer
 - `app/distributed/sync_coordinator.py` (ACTIVE) - Execution layer
 
-### _deprecated_system_health_monitor.py
+### \_deprecated_system_health_monitor.py
 
 **Original Purpose**: System-wide health monitoring and scoring.
 
 **Superseded By**: Health scoring consolidated into `app/coordination/unified_health_manager.py`:
+
 - `get_system_health_score()` - Calculate system health
 - `get_system_health_level()` - Classify health level
 - `should_pause_pipeline()` - Check if pipeline should pause
 
 ---
 
-## Verification
+## Batch Archive: December 28, 2025 (1,253 LOC)
 
-All 8 modules had **zero external imports** verified by:
+The following 5 modules were archived as part of consolidation cleanup:
 
-```bash
-grep -r "from app.coordination.deprecated._deprecated" --include="*.py" .
-# Result: No matches found
+### \_deprecated_core_base.py (141 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Re-export facade module that was never adopted. Part of "157→15 module consolidation (Phase 5)" that was planned but never completed.
+
+**Original Purpose**: Consolidated re-exports from `coordinator_base.py` and `coordinator_dependencies.py`.
+
+**Migration**: Not needed - no external callers. Use the original modules directly:
+
+```python
+from app.coordination.coordinator_base import CoordinatorBase, CoordinatorRegistry
+from app.coordination.coordinator_dependencies import get_initialization_order
 ```
 
-**Total LOC Archived**: 3,339 lines
-**Date**: December 27, 2025
+### \_deprecated_core_daemons.py (187 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Re-export facade module that was never adopted.
+
+**Original Purpose**: Consolidated re-exports for daemon-related classes.
+
+**Migration**: Use original modules directly.
+
+### \_deprecated_core_sync.py (199 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Re-export facade module that was never adopted.
+
+**Original Purpose**: Consolidated re-exports for sync-related classes.
+
+**Migration**: Use original modules directly.
+
+### \_deprecated_alert_types.py (380 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Only imported by test files, not used in production code.
+
+**Original Purpose**: Alert type enumerations and dataclasses including `AlertLevel`, `AlertCategory`, `ClusterAlert`.
+
+**Migration**: If alert types are needed, the active implementation is in `app/coordination/types.py`.
+
+### \_deprecated_event_subscription_mixin.py (346 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Never imported by any file.
+
+**Original Purpose**: Mixin for adding event subscription capabilities to classes.
+
+**Migration**: Not needed - functionality available via `app/coordination/event_router.py` subscribe/publish pattern.
+
+---
+
+## Verification
+
+All archived modules have **zero external imports** verified by:
+
+```bash
+# December 27, 2025 batch
+grep -r "from app.coordination.deprecated._deprecated" --include="*.py" .
+# Result: No matches found
+
+# December 28, 2025 batch
+grep -rn "core_base\|core_daemons\|core_sync\|alert_types\|event_subscription_mixin" app/ scripts/ --include="*.py" | grep -v __pycache__
+# Result: Only self-references and __init__.py re-exports (now removed)
+```
+
+## Archive Summary
+
+| Date              | Modules                                                                   | LOC        |
+| ----------------- | ------------------------------------------------------------------------- | ---------- |
+| December 26, 2025 | lambda_idle_daemon, vast_idle_daemon                                      | ~600       |
+| December 27, 2025 | 8 deprecated modules                                                      | 3,339      |
+| December 28, 2025 | core_base, core_daemons, core_sync, alert_types, event_subscription_mixin | 1,253      |
+| **Total**         | **15 modules**                                                            | **~5,192** |

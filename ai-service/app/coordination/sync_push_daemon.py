@@ -56,6 +56,14 @@ from app.distributed.cluster_manifest import (
     get_cluster_manifest,
 )
 
+# Dec 2025: Event emission for pipeline coordination
+try:
+    from app.distributed.data_events import DataEventType, get_event_bus
+
+    HAS_EVENT_BUS = True
+except ImportError:
+    HAS_EVENT_BUS = False
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -250,6 +258,34 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         )
 
     # =========================================================================
+    # Event Emission (Dec 2025)
+    # =========================================================================
+
+    async def _emit_event(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Emit event for pipeline coordination.
+
+        Dec 2025: Added for integration with DataPipelineOrchestrator.
+        Sync events enable downstream systems to trigger exports and training.
+        """
+        if not HAS_EVENT_BUS:
+            return
+
+        try:
+            bus = get_event_bus()
+            await bus.publish(event_type, {
+                **payload,
+                "source": self._get_daemon_name(),
+                "node_id": self.node_id,
+                "timestamp": time.time(),
+            })
+        except Exception as e:
+            logger.debug(f"[{self._get_daemon_name()}] Failed to emit {event_type}: {e}")
+
+    # =========================================================================
     # Main Cycle
     # =========================================================================
 
@@ -351,6 +387,8 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
 
         Returns:
             Number of files successfully pushed
+
+        Dec 2025: Added event emission for pipeline coordination.
         """
         if not self._coordinator_url:
             logger.warning(
@@ -376,6 +414,19 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         # Limit files per cycle
         files_to_push = pending[: self.config.max_files_per_cycle]
         pushed = 0
+        bytes_pushed = 0
+        start_time = time.time()
+
+        # Dec 2025: Emit sync started event
+        await self._emit_event(
+            DataEventType.DATA_SYNC_STARTED.value if HAS_EVENT_BUS else "sync_started",
+            {
+                "sync_type": "push",
+                "urgent": urgent,
+                "file_count": len(files_to_push),
+                "target": self._coordinator_url,
+            },
+        )
 
         for file_path in files_to_push:
             try:
@@ -391,6 +442,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 success = await self._push_file(file_path)
                 if success:
                     pushed += 1
+                    bytes_pushed += stat.st_size
                     self._files_pushed += 1
                     self._bytes_pushed += stat.st_size
                 else:
@@ -401,6 +453,32 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                     f"[{self._get_daemon_name()}] Error pushing {file_path}: {e}"
                 )
                 self._push_failures += 1
+
+        # Dec 2025: Emit sync completed event
+        duration = time.time() - start_time
+        if pushed > 0:
+            await self._emit_event(
+                DataEventType.DATA_SYNC_COMPLETED.value if HAS_EVENT_BUS else "sync_completed",
+                {
+                    "sync_type": "push",
+                    "urgent": urgent,
+                    "files_pushed": pushed,
+                    "bytes_pushed": bytes_pushed,
+                    "duration_seconds": duration,
+                    "target": self._coordinator_url,
+                },
+            )
+        elif self._push_failures > 0:
+            await self._emit_event(
+                DataEventType.DATA_SYNC_FAILED.value if HAS_EVENT_BUS else "sync_failed",
+                {
+                    "sync_type": "push",
+                    "urgent": urgent,
+                    "failure_count": self._push_failures,
+                    "duration_seconds": duration,
+                    "target": self._coordinator_url,
+                },
+            )
 
         return pushed
 

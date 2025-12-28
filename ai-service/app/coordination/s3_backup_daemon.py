@@ -474,6 +474,25 @@ class S3BackupDaemonAdapter:
         if self._daemon:
             await self._daemon.stop()
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check adapter health for DaemonManager integration.
+
+        December 2025: Added for CoordinatorProtocol compliance.
+        Delegates to underlying daemon if running.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        if self._daemon is None:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="S3BackupDaemonAdapter not started",
+                details={"config_set": self.config is not None},
+            )
+
+        # Delegate to underlying daemon
+        return self._daemon.health_check()
+
 
 async def main() -> None:
     """Run daemon standalone."""

@@ -177,8 +177,90 @@ class MaintenanceDaemon:
         self._stats.last_archive_run = now
         self._stats.last_dlq_cleanup = now
 
+        # December 2025: Subscribe to disk space events
+        await self._subscribe_to_disk_events()
+
         # Run initial maintenance check
         await self._run_maintenance_cycle()
+
+    async def _subscribe_to_disk_events(self) -> None:
+        """Subscribe to disk space events for reactive cleanup.
+
+        December 2025: Wire DISK_SPACE_LOW event to trigger cleanup.
+        Previously this event was emitted but not subscribed, meaning
+        disk space warnings never triggered cleanup.
+        """
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+            if router is None:
+                logger.debug("[Maintenance] Event router not available")
+                return
+
+            # Subscribe to DISK_SPACE_LOW to trigger cleanup
+            router.subscribe(
+                DataEventType.DISK_SPACE_LOW.value,
+                self._on_disk_space_low,
+            )
+
+            logger.info("[Maintenance] Subscribed to DISK_SPACE_LOW event")
+
+        except ImportError as e:
+            logger.warning(f"[Maintenance] Event router not available: {e}")
+        except (RuntimeError, AttributeError) as e:
+            logger.debug(f"[Maintenance] Failed to subscribe to disk events: {e}")
+
+    async def _on_disk_space_low(self, event) -> None:
+        """Handle DISK_SPACE_LOW event - trigger cleanup.
+
+        December 2025: React to disk space warnings by running cleanup.
+        This ensures maintenance runs proactively when disk space is low,
+        rather than waiting for scheduled cleanup.
+
+        Args:
+            event: Event with payload containing host, usage_percent, free_gb
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            host = payload.get("host", "unknown")
+            usage_percent = payload.get("usage_percent", 0)
+            free_gb = payload.get("free_gb", 0)
+            threshold = payload.get("threshold", 70)
+
+            logger.warning(
+                f"[Maintenance] DISK_SPACE_LOW on {host}: "
+                f"{usage_percent:.1f}% used (threshold: {threshold}%), "
+                f"{free_gb:.1f}GB free - triggering cleanup"
+            )
+
+            # Only respond to events for this host
+            import socket
+            local_hostname = socket.gethostname()
+            if host not in (local_hostname, "localhost", "127.0.0.1"):
+                logger.debug(f"[Maintenance] Ignoring disk event for other host: {host}")
+                return
+
+            # Run immediate cleanup cycle
+            await self._rotate_logs()
+            await self._cleanup_dlq()
+
+            # If very low space, also vacuum databases to reclaim space
+            if usage_percent >= 80:
+                logger.warning(
+                    f"[Maintenance] Critical disk usage ({usage_percent:.1f}%), "
+                    f"running database vacuum"
+                )
+                await self._vacuum_databases()
+
+            logger.info(
+                f"[Maintenance] Cleanup completed for disk space event. "
+                f"Stats: logs_rotated={self._stats.logs_rotated}, "
+                f"bytes_reclaimed={self._stats.bytes_reclaimed}"
+            )
+
+        except (RuntimeError, OSError, AttributeError) as e:
+            logger.error(f"[Maintenance] Error handling DISK_SPACE_LOW: {e}")
 
     async def stop(self) -> None:
         """Stop the daemon."""

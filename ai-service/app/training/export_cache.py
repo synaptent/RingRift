@@ -93,8 +93,32 @@ def _get_cache_key(
     history_length: int | None = None,
     feature_version: int | None = None,
     policy_encoding: str | None = None,
+    # Quality filtering parameters (December 28, 2025)
+    min_quality: float | None = None,
+    require_completed: bool | None = None,
+    encoder_version: str | None = None,
+    include_heuristics: bool | None = None,
+    full_heuristics: bool | None = None,
 ) -> str:
-    """Generate a unique cache key for this export configuration."""
+    """Generate a unique cache key for this export configuration.
+
+    December 28, 2025: Added quality filtering parameters to cache key.
+    Previously, changing min_quality or require_completed would not
+    invalidate the cache, leading to stale training data.
+
+    Args:
+        board_type: Board type (hex8, square8, etc.)
+        num_players: Number of players
+        output_path: Path to output NPZ file
+        history_length: Number of historical states to include
+        feature_version: Feature extraction version
+        policy_encoding: Policy encoding type
+        min_quality: Minimum game quality threshold
+        require_completed: Whether to require completed games
+        encoder_version: Encoder version string
+        include_heuristics: Whether to include heuristic features
+        full_heuristics: Whether to use full (49) vs fast (21) heuristics
+    """
     # Use a hash of the normalized output path plus feature context.
     output_norm = os.path.normpath(os.path.abspath(output_path))
     key_parts = [f"{board_type}_{num_players}p_{output_norm}"]
@@ -104,6 +128,17 @@ def _get_cache_key(
         key_parts.append(f"fv{int(feature_version)}")
     if policy_encoding:
         key_parts.append(str(policy_encoding))
+    # Quality filtering parameters (December 28, 2025)
+    if min_quality is not None and min_quality > 0.0:
+        key_parts.append(f"mq{min_quality:.2f}")
+    if require_completed is not None and require_completed:
+        key_parts.append("req_complete")
+    if encoder_version:
+        key_parts.append(f"enc{encoder_version}")
+    if include_heuristics:
+        key_parts.append("heur")
+    if full_heuristics:
+        key_parts.append("full_heur")
     key_str = "_".join(key_parts)
     return compute_string_checksum(key_str, algorithm="md5", truncate=16)
 
@@ -149,6 +184,12 @@ class ExportCache:
         feature_version: int | None = None,
         policy_encoding: str | None = None,
         force: bool = False,
+        # Quality filtering parameters (December 28, 2025)
+        min_quality: float | None = None,
+        require_completed: bool | None = None,
+        encoder_version: str | None = None,
+        include_heuristics: bool | None = None,
+        full_heuristics: bool | None = None,
     ) -> bool:
         """Check if export is needed or if cached output is still valid.
 

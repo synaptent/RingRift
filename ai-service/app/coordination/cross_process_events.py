@@ -146,14 +146,57 @@ class CrossProcessEventQueue:
 
     def __init__(self, db_path: Path | None = None, retention_hours: int = DEFAULT_RETENTION_HOURS):
         self.db_path = db_path or DEFAULT_EVENT_DB
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.retention_hours = retention_hours
         self._local = threading.local()
-        self._init_db()
+        # December 2025: Lazy initialization for readonly filesystem support
+        self._db_initialized = False
+        self._readonly_mode = False
+        # Defer db_path.parent.mkdir and _init_db to first use
+
+    def _ensure_db(self) -> bool:
+        """Lazily initialize database, returns True if writable.
+
+        December 2025: This enables import on read-only filesystems.
+        Database initialization is deferred until first actual use.
+
+        Returns:
+            True if database is writable, False if readonly or unavailable
+        """
+        if self._db_initialized:
+            return not self._readonly_mode
+
+        try:
+            # Create parent directory if needed
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+            self._db_initialized = True
+            return True
+        except sqlite3.OperationalError as e:
+            if "readonly" in str(e).lower() or "read-only" in str(e).lower():
+                self._readonly_mode = True
+                self._db_initialized = True
+                logger.warning(f"[CrossProcessEventQueue] Readonly mode enabled: {e}")
+                return False
+            raise
+        except PermissionError as e:
+            self._readonly_mode = True
+            self._db_initialized = True
+            logger.warning(f"[CrossProcessEventQueue] Readonly mode (permission denied): {e}")
+            return False
+        except OSError as e:
+            if "Read-only file system" in str(e):
+                self._readonly_mode = True
+                self._db_initialized = True
+                logger.warning(f"[CrossProcessEventQueue] Readonly mode (filesystem): {e}")
+                return False
+            raise
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get thread-local database connection with retry on BUSY errors."""
         import random
+
+        # Ensure database is initialized (lazy init)
+        self._ensure_db()
 
         if not hasattr(self._local, "conn") or self._local.conn is None:
             # Retry with jitter to prevent thundering herd
@@ -246,8 +289,12 @@ class CrossProcessEventQueue:
             max_retries: Maximum number of retry attempts on database lock
 
         Returns:
-            The event_id of the published event
+            The event_id of the published event, or -1 if database is readonly
         """
+        # Skip if readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
+            logger.debug(f"[CrossProcessEventQueue] Cannot publish {event_type} (readonly mode)")
+            return -1
         last_error = None
         for attempt in range(max_retries):
             try:
@@ -301,6 +348,12 @@ class CrossProcessEventQueue:
         else:
             # Per-instance ID: each process instance gets its own ack tracking
             subscriber_id = f"{socket.gethostname()}:{os.getpid()}:{process_name}"
+
+        # Skip DB write if readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
+            logger.debug(f"[CrossProcessEventQueue] Readonly mode, subscriber {subscriber_id} not persisted")
+            return subscriber_id
+
         conn = self._get_connection()
 
         conn.execute(
@@ -389,8 +442,11 @@ class CrossProcessEventQueue:
             event_id: Event ID to acknowledge
 
         Returns:
-            True if ack was recorded
+            True if ack was recorded, False if readonly or error
         """
+        # Skip if readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
+            return False
         conn = self._get_connection()
         try:
             conn.execute(
@@ -407,9 +463,12 @@ class CrossProcessEventQueue:
         """Acknowledge multiple events at once.
 
         Returns:
-            Number of events acknowledged
+            Number of events acknowledged, 0 if readonly
         """
         if not event_ids:
+            return 0
+        # Skip if readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
             return 0
 
         conn = self._get_connection()

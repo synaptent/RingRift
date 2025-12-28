@@ -876,11 +876,6 @@ from app.coordination.utils import (
 # Prefer importing from core_utils for new code
 from app.coordination import core_utils
 
-# Core Base Classes - Consolidated Module (December 2025)
-# This module consolidates: coordinator_base, coordinator_dependencies
-# Prefer importing from core_base for new code
-from app.coordination import core_base
-
 # Core Events - Consolidated Module (December 2025)
 # This module consolidates: event_router, event_mappings, event_emitters, event_normalization
 # Prefer importing from core_events for new code
@@ -1661,7 +1656,6 @@ def is_heartbeat_running() -> bool:
 __all__ = [
     # Consolidated modules (December 2025 - Phase 5)
     "core_utils",  # Consolidated tracing + distributed_lock + optional_imports + yaml_utils
-    "core_base",  # Consolidated coordinator_base + coordinator_dependencies
     "core_events",  # Consolidated event_router + event_mappings + event_emitters + event_normalization
     # Constants
     "ELO_CURRICULUM_ENABLED",

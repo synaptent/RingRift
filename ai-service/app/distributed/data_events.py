@@ -539,6 +539,64 @@ class EventBus:
             # No running loop - run synchronously
             asyncio.run(self.publish(event, bridge_cross_process=False))
 
+    def emit(
+        self,
+        event_type: DataEventType,
+        payload: dict[str, Any] | None = None,
+        source: str = "",
+        bridge_cross_process: bool = True,
+    ) -> None:
+        """Convenience method to emit an event with type and payload.
+
+        This is an alias for publish() that accepts event type and payload
+        separately, creating a DataEvent internally. It provides API
+        consistency with other event systems.
+
+        December 28, 2025: Added to fix API mismatch where code calls
+        bus.emit(DataEventType, payload) but EventBus only had publish(DataEvent).
+
+        Args:
+            event_type: The event type to emit
+            payload: Event payload dictionary
+            source: Component that generated the event
+            bridge_cross_process: If True, also bridge to cross-process queue
+
+        Usage:
+            bus = get_event_bus()
+            bus.emit(DataEventType.TRAINING_COMPLETED, {"config_key": "hex8_2p"})
+        """
+        event = DataEvent(
+            event_type=event_type,
+            payload=payload or {},
+            source=source,
+        )
+        # Use sync version since emit() is called from sync contexts
+        self.publish_sync(event, bridge_cross_process=bridge_cross_process)
+
+    async def emit_async(
+        self,
+        event_type: DataEventType,
+        payload: dict[str, Any] | None = None,
+        source: str = "",
+        bridge_cross_process: bool = True,
+    ) -> None:
+        """Async version of emit() for use in async contexts.
+
+        December 28, 2025: Added for async callers.
+
+        Args:
+            event_type: The event type to emit
+            payload: Event payload dictionary
+            source: Component that generated the event
+            bridge_cross_process: If True, also bridge to cross-process queue
+        """
+        event = DataEvent(
+            event_type=event_type,
+            payload=payload or {},
+            source=source,
+        )
+        await self.publish(event, bridge_cross_process=bridge_cross_process)
+
     def get_history(
         self,
         event_type: DataEventType | None = None,
@@ -737,6 +795,68 @@ class EventBus:
     def has_subscribers(self, event_type: DataEventType) -> bool:
         """Check if an event type has any subscribers (specific or global)."""
         return self.get_subscriber_count(event_type) > 0
+
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for daemon monitoring.
+
+        December 2025: Added for DaemonManager integration.
+
+        Health criteria:
+        - Error rate < 10% (healthy) or < 20% (degraded)
+        - p95 latency < 1000ms (healthy) or < 2000ms (degraded)
+        - Should have processed at least some events
+
+        Returns:
+            HealthCheckResult compatible with DaemonManager
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        # Get existing health status
+        health_status = self.get_health_status()
+        metrics = self.get_observability_metrics()
+
+        # Map status to HealthCheckResult
+        is_healthy = health_status["status"] == "healthy"
+        is_degraded = health_status["status"] == "degraded"
+
+        # Build detailed status
+        details = {
+            "health_score": health_status["health_score"],
+            "total_events_published": metrics["total_events_published"],
+            "total_callbacks_invoked": metrics["total_callbacks_invoked"],
+            "total_callback_errors": metrics["total_callback_errors"],
+            "error_rate": metrics["error_rate"],
+            "p95_latency_ms": metrics["latency"]["p95_ms"],
+            "events_per_second": metrics["events_per_second"],
+            "subscriber_count": sum(
+                len(subs) for subs in self._subscribers.values()
+            ) + len(self._global_subscribers),
+            "subscribed_types": len(self._subscribers),
+            "uptime_seconds": metrics["uptime_seconds"],
+            "issues": health_status.get("issues", []),
+        }
+
+        if is_healthy:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"EventBus healthy: {metrics['total_events_published']} events, {metrics['error_rate']:.1%} error rate",
+                details=details,
+            )
+        elif is_degraded:
+            return HealthCheckResult(
+                healthy=True,  # Degraded is still operational
+                status=CoordinatorStatus.DEGRADED,
+                message=f"EventBus degraded: {'; '.join(health_status.get('issues', []))}",
+                details=details,
+            )
+        else:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.UNHEALTHY,
+                message=f"EventBus unhealthy: {'; '.join(health_status.get('issues', []))}",
+                details=details,
+            )
 
 
 def get_event_bus() -> EventBus:

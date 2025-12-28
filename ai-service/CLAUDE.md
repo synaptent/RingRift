@@ -1252,25 +1252,45 @@ Recent stability improvements to P2P orchestrator:
 
 The P2P orchestrator has been decomposed into modular manager classes at `scripts/p2p/managers/`:
 
-| Manager               | Lines | Purpose                                        |
-| --------------------- | ----- | ---------------------------------------------- |
-| `StateManager`        | 629   | SQLite persistence, cluster epoch tracking     |
-| `NodeSelector`        | 330   | Node ranking and selection for job dispatch    |
-| `SyncPlanner`         | 704   | Manifest collection and sync planning          |
-| `JobManager`          | 663   | Job spawning and lifecycle management          |
-| `SelfplayScheduler`   | 737   | Priority-based selfplay config selection       |
-| `TrainingCoordinator` | 734   | Training dispatch, completion, model promotion |
-| `LoopManager`         | ~400  | Background loop orchestration (5 loops)        |
+| Manager               | Purpose                                      | Key Methods                                    |
+| --------------------- | -------------------------------------------- | ---------------------------------------------- |
+| `JobManager`          | Job spawning and lifecycle management        | `run_gpu_selfplay_job()`, `spawn_training()`   |
+| `TrainingCoordinator` | Training dispatch, gauntlet, model promotion | `dispatch_training_job()`, `check_readiness()` |
+| `SelfplayScheduler`   | Priority-based selfplay config selection     | `pick_weighted_config()`, `get_target_jobs()`  |
+| `NodeSelector`        | Node ranking and selection for job dispatch  | `get_best_gpu_node()`, `get_training_nodes()`  |
+| `SyncPlanner`         | Manifest collection and sync planning        | `collect_manifest()`, `create_sync_plan()`     |
+| `StateManager`        | SQLite persistence, cluster epoch tracking   | `load_state()`, `save_state()`                 |
 
 All managers use dependency injection for testability. See `scripts/p2p/managers/README.md` for architecture details.
 
-**LoopManager Background Loops** (Dec 27, 2025):
+**Event System Integration**:
 
-- `EloSyncLoop` - Elo rating synchronization
-- `IdleDetectionLoop` - GPU idle detection for termination
-- `AutoScalingLoop` - Cluster auto-scaling decisions
-- `JobReaperLoop` - Completed job cleanup
-- `QueuePopulatorLoop` - Work queue maintenance
+Managers emit events for pipeline coordination:
+
+| Event                 | Emitter             | Subscribers                     |
+| --------------------- | ------------------- | ------------------------------- |
+| `DATA_SYNC_COMPLETED` | SyncPlanner         | DataPipelineOrchestrator        |
+| `TRAINING_STARTED`    | TrainingCoordinator | SyncRouter, IdleShutdown        |
+| `TRAINING_COMPLETED`  | TrainingCoordinator | FeedbackLoop, ModelDistribution |
+| `HOST_OFFLINE`        | P2POrchestrator     | UnifiedHealthManager            |
+| `LEADER_ELECTED`      | P2POrchestrator     | LeadershipCoordinator           |
+
+**Health Check System**:
+
+All managers and loops implement `health_check()` returning `HealthCheckResult` for DaemonManager integration. Health is aggregated at the `/status` endpoint.
+
+**Background Loops** (`scripts/p2p/loops/`):
+
+| Loop                 | Interval | Purpose                              |
+| -------------------- | -------- | ------------------------------------ |
+| `JobReaperLoop`      | 5 min    | Clean stale/stuck jobs               |
+| `IdleDetectionLoop`  | 30 sec   | GPU idle detection, trigger selfplay |
+| `WorkerPullLoop`     | 30 sec   | Workers poll leader for work         |
+| `SelfHealingLoop`    | 5 min    | Recover stuck jobs                   |
+| `EloSyncLoop`        | 5 min    | Elo rating synchronization           |
+| `QueuePopulatorLoop` | 1 min    | Work queue maintenance               |
+
+Loops use `BaseLoop` with exponential backoff and `LoopManager` for lifecycle coordination.
 
 ### P2P SWIM/Raft Transition (December 2025)
 

@@ -265,50 +265,50 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
 
         def _check_sync() -> list[OrphanGame]:
             conn = sqlite3.connect(str(db_path))
+            try:
+                # Check if game_moves table exists
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
+                )
+                has_moves_table = cursor.fetchone() is not None
 
-            # Check if game_moves table exists
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
-            )
-            has_moves_table = cursor.fetchone() is not None
+                if not has_moves_table:
+                    # No moves table means all games might be orphans, but we can't verify
+                    return []
 
-            if not has_moves_table:
-                # No moves table means all games might be orphans, but we can't verify
-                conn.close()
-                return []
-
-            # Find games with no moves
-            cursor = conn.execute(
-                """
-                SELECT g.game_id, g.board_type, g.num_players, g.total_moves,
-                       g.created_at, g.game_status
-                FROM games g
-                LEFT JOIN game_moves m ON g.game_id = m.game_id
-                WHERE m.game_id IS NULL
-                LIMIT ?
-            """,
-                (self.config.max_orphans_per_scan,),
-            )
-
-            results = []
-            for row in cursor:
-                results.append(
-                    OrphanGame(
-                        game_id=row[0],
-                        db_path=str(db_path),
-                        board_type=row[1],
-                        num_players=row[2],
-                        total_moves=row[3],
-                        created_at=row[4],
-                        game_status=row[5],
-                    )
+                # Find games with no moves
+                cursor = conn.execute(
+                    """
+                    SELECT g.game_id, g.board_type, g.num_players, g.total_moves,
+                           g.created_at, g.game_status
+                    FROM games g
+                    LEFT JOIN game_moves m ON g.game_id = m.game_id
+                    WHERE m.game_id IS NULL
+                    LIMIT ?
+                """,
+                    (self.config.max_orphans_per_scan,),
                 )
 
-            conn.close()
-            return results
+                results = []
+                for row in cursor:
+                    results.append(
+                        OrphanGame(
+                            game_id=row[0],
+                            db_path=str(db_path),
+                            board_type=row[1],
+                            num_players=row[2],
+                            total_moves=row[3],
+                            created_at=row[4],
+                            game_status=row[5],
+                        )
+                    )
+
+                return results
+            finally:
+                conn.close()
 
         # Run sync DB operation in executor to avoid blocking
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         orphans = await loop.run_in_executor(None, _check_sync)
 
         return orphans
@@ -328,48 +328,49 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
 
         def _quarantine_sync() -> int:
             conn = sqlite3.connect(str(db_path))
-
-            # Create quarantine table if not exists
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS orphaned_games (
-                    game_id TEXT PRIMARY KEY,
-                    detected_at TEXT NOT NULL,
-                    reason TEXT,
-                    original_status TEXT,
-                    board_type TEXT,
-                    num_players INTEGER
-                )
-            """
-            )
-
-            quarantined = 0
-            for orphan in orphans:
-                try:
-                    conn.execute(
-                        """
-                        INSERT OR IGNORE INTO orphaned_games
-                        (game_id, detected_at, reason, original_status, board_type, num_players)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                        (
-                            orphan.game_id,
-                            datetime.now(timezone.utc).isoformat(),
-                            "No move data found",
-                            orphan.game_status,
-                            orphan.board_type,
-                            orphan.num_players,
-                        ),
+            try:
+                # Create quarantine table if not exists
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS orphaned_games (
+                        game_id TEXT PRIMARY KEY,
+                        detected_at TEXT NOT NULL,
+                        reason TEXT,
+                        original_status TEXT,
+                        board_type TEXT,
+                        num_players INTEGER
                     )
-                    quarantined += 1
-                except sqlite3.Error:
-                    pass
+                """
+                )
 
-            conn.commit()
-            conn.close()
-            return quarantined
+                quarantined = 0
+                for orphan in orphans:
+                    try:
+                        conn.execute(
+                            """
+                            INSERT OR IGNORE INTO orphaned_games
+                            (game_id, detected_at, reason, original_status, board_type, num_players)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                            (
+                                orphan.game_id,
+                                datetime.now(timezone.utc).isoformat(),
+                                "No move data found",
+                                orphan.game_status,
+                                orphan.board_type,
+                                orphan.num_players,
+                            ),
+                        )
+                        quarantined += 1
+                    except sqlite3.Error:
+                        pass
 
-        loop = asyncio.get_event_loop()
+                conn.commit()
+                return quarantined
+            finally:
+                conn.close()
+
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _quarantine_sync)
 
     async def _cleanup_quarantine(self, db_path: Path) -> int:
@@ -384,68 +385,63 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
 
         def _cleanup_sync() -> int:
             conn = sqlite3.connect(str(db_path))
+            try:
+                # Check if quarantine table exists
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='orphaned_games'"
+                )
+                if not cursor.fetchone():
+                    return 0
 
-            # Check if quarantine table exists
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='orphaned_games'"
-            )
-            if not cursor.fetchone():
-                conn.close()
-                return 0
+                # Find games to clean up (older than threshold)
+                # Approximate days by string comparison (ISO format works for this)
+                cursor = conn.execute(
+                    """
+                    SELECT game_id FROM orphaned_games
+                    WHERE detected_at < datetime('now', ?)
+                """,
+                    (f"-{self.config.quarantine_after_days} days",),
+                )
 
-            # Find games to clean up (older than threshold)
-            cutoff = datetime.now(timezone.utc).isoformat()
-            # Approximate days by string comparison (ISO format works for this)
-            cursor = conn.execute(
-                """
-                SELECT game_id FROM orphaned_games
-                WHERE detected_at < datetime('now', ?)
-            """,
-                (f"-{self.config.quarantine_after_days} days",),
-            )
+                game_ids = [row[0] for row in cursor.fetchall()]
 
-            game_ids = [row[0] for row in cursor.fetchall()]
+                if not game_ids:
+                    return 0
 
-            if not game_ids:
-                conn.close()
-                return 0
+                # Delete from games table and all related tables
+                RELATED_TABLES = [
+                    "game_moves",
+                    "game_initial_state",
+                    "game_state_snapshots",
+                    "game_players",
+                    "game_choices",
+                    "game_history_entries",
+                    "game_nnue_features",
+                    "games",
+                    "orphaned_games",
+                ]
 
-            # Delete from games table and all related tables
-            RELATED_TABLES = [
-                "game_moves",
-                "game_initial_state",
-                "game_state_snapshots",
-                "game_players",
-                "game_choices",
-                "game_history_entries",
-                "game_nnue_features",
-                "games",
-                "orphaned_games",
-            ]
-
-            cleaned = 0
-            for table in RELATED_TABLES:
-                try:
-                    cursor = conn.execute(
-                        f"SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                        (table,),
-                    )
-                    if cursor.fetchone():
-                        placeholders = ",".join(["?" for _ in game_ids])
-                        conn.execute(
-                            f"DELETE FROM {table} WHERE game_id IN ({placeholders})",
-                            game_ids,
+                for table in RELATED_TABLES:
+                    try:
+                        cursor = conn.execute(
+                            f"SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                            (table,),
                         )
-                except sqlite3.Error:
-                    pass
+                        if cursor.fetchone():
+                            placeholders = ",".join(["?" for _ in game_ids])
+                            conn.execute(
+                                f"DELETE FROM {table} WHERE game_id IN ({placeholders})",
+                                game_ids,
+                            )
+                    except sqlite3.Error:
+                        pass
 
-            cleaned = len(game_ids)
-            conn.commit()
-            conn.close()
+                conn.commit()
+                return len(game_ids)
+            finally:
+                conn.close()
 
-            return cleaned
-
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _cleanup_sync)
 
     async def _emit_integrity_event(self, result: IntegrityCheckResult) -> None:

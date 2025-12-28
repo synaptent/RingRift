@@ -256,13 +256,12 @@ class WorkQueue:
             "total_timeout": 0,
         }
 
-        # Track initialization state
+        # Track initialization state (December 2025: Lazy initialization)
         self._db_initialized = False
+        self._readonly_mode = False
 
-        # Initialize SQLite database and load existing items
-        self._init_db()
-        if self._db_initialized:
-            self._load_items()
+        # Database initialization is now lazy - deferred to first use
+        # This allows importing the module on read-only filesystems
 
     def _init_db(self) -> None:
         """Initialize SQLite database for work queue persistence."""
@@ -349,6 +348,45 @@ class WorkQueue:
 
         self._db_initialized = False
 
+    def _ensure_db(self) -> bool:
+        """Lazily initialize database, returns True if writable.
+
+        December 2025: This enables import on read-only filesystems.
+        Database initialization is deferred until first actual use.
+
+        Returns:
+            True if database is writable, False if readonly or unavailable
+        """
+        if self._db_initialized:
+            return not self._readonly_mode
+
+        try:
+            self._init_db()
+            if self._db_initialized:
+                self._load_items()
+            return self._db_initialized
+        except sqlite3.OperationalError as e:
+            if "readonly" in str(e).lower() or "read-only" in str(e).lower():
+                self._readonly_mode = True
+                self._db_initialized = True  # Mark as "initialized" in readonly mode
+                logger.warning(f"[WorkQueue] Readonly mode enabled: {e}")
+                return False
+            # Re-raise other operational errors
+            raise
+        except PermissionError as e:
+            self._readonly_mode = True
+            self._db_initialized = True
+            logger.warning(f"[WorkQueue] Readonly mode (permission denied): {e}")
+            return False
+        except OSError as e:
+            # Handle other filesystem errors (e.g., read-only filesystem)
+            if "Read-only file system" in str(e):
+                self._readonly_mode = True
+                self._db_initialized = True
+                logger.warning(f"[WorkQueue] Readonly mode (filesystem): {e}")
+                return False
+            raise
+
     def _get_connection(self, timeout: float = 10.0) -> sqlite3.Connection:
         """Get a SQLite connection with WAL mode and proper settings.
 
@@ -359,7 +397,14 @@ class WorkQueue:
 
         Returns:
             A configured sqlite3.Connection
+
+        Raises:
+            RuntimeError: If database is not initialized or in readonly mode
         """
+        # Ensure database is initialized (lazy init)
+        self._ensure_db()
+        if not self._db_initialized:
+            raise RuntimeError("WorkQueue database not initialized")
         conn = sqlite3.connect(str(self.db_path), timeout=timeout)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -429,6 +474,10 @@ class WorkQueue:
 
     def _save_item(self, item: WorkItem) -> None:
         """Save a work item to the database."""
+        # Skip write if in readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
+            logger.debug(f"[WorkQueue] Skipping save for {item.work_id} (readonly mode)")
+            return
         conn = None
         try:
             conn = self._get_connection()
@@ -474,6 +523,9 @@ class WorkQueue:
 
     def _save_stats(self) -> None:
         """Save stats to the database."""
+        # Skip write if in readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
+            return
         conn = None
         try:
             conn = self._get_connection()
@@ -500,6 +552,9 @@ class WorkQueue:
 
     def _delete_item(self, work_id: str) -> None:
         """Delete a work item from the database."""
+        # Skip write if in readonly mode (December 2025: Lazy init)
+        if self._readonly_mode:
+            return
         conn = None
         try:
             conn = self._get_connection()
@@ -645,9 +700,11 @@ class WorkQueue:
         Returns:
             True if claim succeeded, False if item was already claimed
         """
-        # Check if database is initialized
+        # Check if database is initialized and writable (December 2025: Lazy init)
         if not getattr(self, '_db_initialized', False):
-            logger.warning(f"Cannot claim {work_id}: database not initialized")
+            self._ensure_db()
+        if not self._db_initialized or self._readonly_mode:
+            logger.warning(f"Cannot claim {work_id}: database not initialized or readonly")
             return False
 
         try:

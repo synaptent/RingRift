@@ -229,6 +229,7 @@ class EventSource(str, Enum):
 
 # Import centralized event mappings (DRY - consolidated in event_mappings.py)
 from app.coordination.event_mappings import (
+    CROSS_PROCESS_TO_DATA_MAP,
     DATA_TO_STAGE_EVENT_MAP,
     STAGE_TO_DATA_EVENT_MAP,
 )
@@ -538,14 +539,36 @@ class UnifiedEventRouter:
         # Route to EventBus (data_events.py)
         if route_to_data_bus and HAS_DATA_EVENTS:
             data_event_type = None
+            # Dec 2025: Try multiple strategies to resolve DataEventType:
+            # 1. Direct value lookup (for lowercase enum values like "sync_completed")
+            # 2. CROSS_PROCESS_TO_DATA_MAP (for canonical uppercase like "DATA_SYNC_COMPLETED")
+            # 3. STAGE_TO_DATA_EVENT_MAP (for stage event names like "sync_complete")
+            # 4. Enum name lookup (for uppercase enum names)
             try:
                 data_event_type = DataEventType(event_type_str)
             except (ValueError, KeyError):
-                stage_mapped = STAGE_TO_DATA_EVENT_MAP.get(event_type_str)
-                if stage_mapped:
+                # Try mapping from canonical uppercase to lowercase enum value
+                data_value = CROSS_PROCESS_TO_DATA_MAP.get(event_type_str)
+                if data_value:
                     try:
-                        data_event_type = DataEventType(stage_mapped)
+                        data_event_type = DataEventType(data_value)
                     except (ValueError, KeyError):
+                        data_event_type = None
+
+                # Try stage event mapping
+                if data_event_type is None:
+                    stage_mapped = STAGE_TO_DATA_EVENT_MAP.get(event_type_str)
+                    if stage_mapped:
+                        try:
+                            data_event_type = DataEventType(stage_mapped)
+                        except (ValueError, KeyError):
+                            data_event_type = None
+
+                # Try enum name lookup (DataEventType['DATA_SYNC_COMPLETED'])
+                if data_event_type is None:
+                    try:
+                        data_event_type = DataEventType[event_type_str]
+                    except KeyError:
                         data_event_type = None
 
             if data_event_type is not None:
@@ -641,6 +664,11 @@ class UnifiedEventRouter:
         except RuntimeError:
             # No running loop - run synchronously
             return asyncio.run(self.publish(event_type, payload, source))
+
+    # Alias for backward compatibility with code using emit()
+    # December 28, 2025: Added to provide API consistency
+    emit = publish
+    emit_sync = publish_sync
 
     async def _dispatch(
         self,

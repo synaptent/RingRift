@@ -1,15 +1,18 @@
 # RingRift Cluster Configuration
-# Updated: 2025-12-26
-# Providers: vast.ai, runpod, vultr, nebius, hetzner, local
+# Updated: 2025-12-28
+# Providers: lambda, vast.ai, runpod, vultr, nebius, hetzner, local
 #
-# Lambda Labs account restored Dec 28, 2025. GH200 + H100 nodes added.
+# Lambda Labs account restored Dec 28, 2025. GH200 nodes configured for training-only.
+# GH200s (96GB VRAM) prioritized for training; other nodes handle selfplay.
+# Vast.ai nodes marked ephemeral for aggressive 5-second sync polling.
 
 sync_routing:
   # Dec 2025: max triggers cleanup, target is where we clean to (10% gap)
   max_disk_usage_percent: 70
   target_disk_usage_percent: 60
   min_free_disk_percent: 15
-  replication_target: 2
+  # Dec 28, 2025: Increased from 2 to 3 for better Vast.ai redundancy
+  replication_target: 3
   # Dec 2025: Removed mac-studio from excluded_hosts - use allowed_external_storage instead
   # This fixes the contradiction where mac-studio was both excluded and allowed
   excluded_hosts: []
@@ -25,13 +28,19 @@ sync_routing:
       games: selfplay_repository
       npz: canonical_data
       models: canonical_models
-  # Dec 2025: Priority hosts for data distribution (receive data first)
-  # These training nodes have high capacity or currently lack data
+  # Dec 28, 2025: Priority hosts for data distribution (receive data first)
+  # Lambda GH200 nodes are training-only; they need data synced TO them for training
+  # Other high-capacity nodes also prioritized for redundancy
   priority_hosts:
-    - runpod-a100-1          # 0 games - urgent need for training data
-    - runpod-a100-storage-1  # 500GB volume for large datasets
+    - lambda-gh200-1         # Training-only GH200 (96GB VRAM)
+    - lambda-gh200-2         # Training-only GH200 (96GB VRAM)
+    - lambda-gh200-3         # Training-only GH200 (96GB VRAM)
+    - lambda-gh200-4         # Training-only GH200 (96GB VRAM)
+    - lambda-gh200-5         # Training-only GH200 (96GB VRAM)
+    - lambda-gh200-training  # Training-only GH200 (96GB VRAM)
     - nebius-h100-3          # Primary training node, 452GB storage
     - nebius-h100-1          # Secondary training node
+    - runpod-a100-storage-1  # 500GB volume for large datasets
   # Underserved configs that need more selfplay data generation
   underserved_configs:
     - square19_4p    # 0 games in canonical
@@ -163,9 +172,10 @@ hosts:
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training
+    # Dec 28, 2025: Training-only - GH200s dedicated to training workloads
+    role: gpu_training_primary
     status: ready
-    selfplay_enabled: true
+    selfplay_enabled: false
     training_enabled: true
     p2p_enabled: true
 
@@ -179,9 +189,9 @@ hosts:
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training
+    role: gpu_training_primary
     status: ready
-    selfplay_enabled: true
+    selfplay_enabled: false
     training_enabled: true
     p2p_enabled: true
 
@@ -195,9 +205,9 @@ hosts:
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training
+    role: gpu_training_primary
     status: ready
-    selfplay_enabled: true
+    selfplay_enabled: false
     training_enabled: true
     p2p_enabled: true
 
@@ -211,9 +221,9 @@ hosts:
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training
+    role: gpu_training_primary
     status: ready
-    selfplay_enabled: true
+    selfplay_enabled: false
     training_enabled: true
     p2p_enabled: true
 
@@ -227,9 +237,9 @@ hosts:
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training
+    role: gpu_training_primary
     status: ready
-    selfplay_enabled: true
+    selfplay_enabled: false
     training_enabled: true
     p2p_enabled: true
 
@@ -243,14 +253,15 @@ hosts:
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training
+    role: gpu_training_primary
     status: ready
-    selfplay_enabled: true
+    selfplay_enabled: false
     training_enabled: true
     p2p_enabled: true
 
   # ============================================================
   # VAST.AI NODES (12 running)
+  # Dec 28, 2025: All Vast.ai nodes marked ephemeral for aggressive 5-second sync
   # ============================================================
 
   # --- TIER 1: Multi-GPU (Best for parallel selfplay) ---
@@ -269,6 +280,7 @@ hosts:
     status: ready
     vast_instance_id: '29129529'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29118471:
     ssh_host: ssh8.vast.ai
@@ -285,6 +297,7 @@ hosts:
     status: ready
     vast_instance_id: '29118471'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29128352:
     ssh_host: ssh9.vast.ai
@@ -301,6 +314,7 @@ hosts:
     status: ready
     vast_instance_id: '29128352'
     p2p_enabled: true
+    is_ephemeral: true
 
   # --- TIER 2: High-end single GPU ---
   vast-28925166:
@@ -318,6 +332,7 @@ hosts:
     status: ready
     vast_instance_id: '28925166'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29128356:
     ssh_host: ssh7.vast.ai
@@ -334,6 +349,7 @@ hosts:
     status: ready
     vast_instance_id: '29128356'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-28918742:
     ssh_host: ssh8.vast.ai
@@ -350,6 +366,7 @@ hosts:
     status: ready
     vast_instance_id: '28918742'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29031159:
     ssh_host: ssh5.vast.ai
@@ -366,6 +383,7 @@ hosts:
     status: ready
     vast_instance_id: '29031159'
     p2p_enabled: true
+    is_ephemeral: true
 
   # --- TIER 3: Mid-range GPUs ---
   vast-29126088:
@@ -383,6 +401,7 @@ hosts:
     status: ready
     vast_instance_id: '29126088'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29031161:
     ssh_host: ssh2.vast.ai
@@ -399,6 +418,7 @@ hosts:
     status: ready
     vast_instance_id: '29031161'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-28890015:
     ssh_host: ssh9.vast.ai
@@ -415,6 +435,7 @@ hosts:
     status: ready
     vast_instance_id: '28890015'
     p2p_enabled: true
+    is_ephemeral: true
 
   # --- TIER 4: Entry-level GPUs ---
   vast-28889766:
@@ -432,6 +453,7 @@ hosts:
     status: ready
     vast_instance_id: '28889766'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29046315:
     ssh_host: ssh2.vast.ai
@@ -448,8 +470,9 @@ hosts:
     status: ready
     vast_instance_id: '29046315'
     p2p_enabled: true
+    is_ephemeral: true
 
-  # NEW: RTX 5090 nodes discovered Dec 26 (not in original config)
+  # RTX 5090 nodes discovered Dec 26
   vast-29118472:
     ssh_host: ssh9.vast.ai
     ssh_port: 38472
@@ -465,6 +488,7 @@ hosts:
     status: ready
     vast_instance_id: '29118472'
     p2p_enabled: true
+    is_ephemeral: true
 
   vast-29129151:
     ssh_host: ssh4.vast.ai
@@ -481,6 +505,7 @@ hosts:
     status: ready
     vast_instance_id: '29129151'
     p2p_enabled: true
+    is_ephemeral: true
 
   # ============================================================
   # RUNPOD NODES (7 running)

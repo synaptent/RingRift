@@ -10,10 +10,14 @@ import pytest
 
 from app.coordination.daemon_registry import (
     DAEMON_REGISTRY,
+    DEPRECATED_TYPES,
     DaemonSpec,
     get_categories,
     get_daemons_by_category,
+    get_deprecated_types,
+    is_daemon_deprecated,
     validate_registry,
+    validate_registry_or_raise,
 )
 from app.coordination.daemon_types import DaemonType
 
@@ -420,3 +424,88 @@ class TestDaemonSpecAttributes:
                 assert spec.health_check_interval > 0, (
                     f"{daemon_type.name} has non-positive health_check_interval"
                 )
+
+
+class TestDeprecatedTypes:
+    """Test deprecated type handling (December 2025)."""
+
+    def test_get_deprecated_types_returns_set(self):
+        """Test that get_deprecated_types returns a set."""
+        deprecated = get_deprecated_types()
+        assert isinstance(deprecated, set)
+
+    def test_deprecated_types_constant_matches_function(self):
+        """Test that DEPRECATED_TYPES constant matches get_deprecated_types()."""
+        assert DEPRECATED_TYPES == get_deprecated_types()
+
+    def test_deprecated_types_are_daemon_types(self):
+        """Test that all deprecated types are DaemonType enum values."""
+        for dt in get_deprecated_types():
+            assert isinstance(dt, DaemonType)
+
+    def test_known_deprecated_types(self):
+        """Test that known deprecated types are in the set."""
+        deprecated = get_deprecated_types()
+        # These are documented as deprecated in daemon_registry.py
+        known_deprecated = [
+            DaemonType.SYNC_COORDINATOR,
+            DaemonType.HEALTH_CHECK,
+            DaemonType.LAMBDA_IDLE,
+        ]
+        for dt in known_deprecated:
+            if dt in DAEMON_REGISTRY and DAEMON_REGISTRY[dt].deprecated:
+                assert dt in deprecated
+
+    def test_is_daemon_deprecated_true(self):
+        """Test is_daemon_deprecated returns True for deprecated types."""
+        for dt in get_deprecated_types():
+            assert is_daemon_deprecated(dt) is True
+
+    def test_is_daemon_deprecated_false(self):
+        """Test is_daemon_deprecated returns False for active types."""
+        deprecated = get_deprecated_types()
+        for dt in DaemonType:
+            if dt not in deprecated and dt in DAEMON_REGISTRY:
+                if not DAEMON_REGISTRY[dt].deprecated:
+                    assert is_daemon_deprecated(dt) is False
+
+
+class TestValidateRegistryOrRaise:
+    """Test validate_registry_or_raise function (December 2025)."""
+
+    def test_does_not_raise_on_valid_registry(self):
+        """Test that validate_registry_or_raise does not raise on valid registry."""
+        # This should not raise since our registry is valid
+        validate_registry_or_raise()
+
+    def test_returns_none_on_success(self):
+        """Test that validate_registry_or_raise returns None on success."""
+        result = validate_registry_or_raise()
+        assert result is None
+
+
+class TestMissingDaemonTypeDetection:
+    """Test detection of DaemonType values missing from registry (December 2025)."""
+
+    def test_all_daemon_types_in_registry(self):
+        """Test that all DaemonType enum values are in the registry."""
+        all_types = set(DaemonType)
+        registered = set(DAEMON_REGISTRY.keys())
+        deprecated = get_deprecated_types()
+
+        missing = all_types - registered
+        # Allow deprecated types to be missing from registry
+        missing_non_deprecated = missing - deprecated
+
+        assert len(missing_non_deprecated) == 0, (
+            f"DaemonTypes missing from DAEMON_REGISTRY: "
+            f"{[dt.name for dt in missing_non_deprecated]}"
+        )
+
+    def test_validate_registry_catches_missing_types(self):
+        """Test that validate_registry would catch missing types if they existed."""
+        # We can't easily add a temporary DaemonType, so we just verify
+        # the current validation passes
+        errors = validate_registry()
+        missing_type_errors = [e for e in errors if "has no DAEMON_REGISTRY entry" in e]
+        assert len(missing_type_errors) == 0

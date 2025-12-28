@@ -28,15 +28,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import yaml
 
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import SyncDaemonStats
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

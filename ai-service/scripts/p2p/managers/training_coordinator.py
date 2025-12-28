@@ -14,6 +14,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -131,7 +132,9 @@ class TrainingCoordinator:
         self._training_trigger_cache: dict[str, float] = {}
 
         # Event subscription state (December 2025)
+        # Dec 28, 2025: Added _subscription_lock to prevent race conditions during subscribe_to_events
         self._subscribed = False
+        self._subscription_lock = threading.Lock()
         self._get_training_jobs = get_training_jobs  # Store for health_check
 
     # =========================================================================
@@ -146,53 +149,62 @@ class TrainingCoordinator:
         - DATA_SYNC_COMPLETED: Check training readiness after data sync
         - EVALUATION_COMPLETED: Handle model promotion after evaluation
         - REGRESSION_DETECTED: Pause or rollback training on regression
+
+        Dec 28, 2025: Added thread-safe double-check locking pattern.
         """
+        # Fast path - already initialized
         if self._subscribed:
             return
 
-        try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEventType
+        # Slow path with lock to prevent race conditions
+        with self._subscription_lock:
+            # Double-check after acquiring lock
+            if self._subscribed:
+                return
 
-            bus = get_event_bus()
+            try:
+                from app.coordination.event_router import get_event_bus
+                from app.distributed.data_events import DataEventType
 
-            # Subscribe to SELFPLAY_COMPLETE to check if enough data for training
-            if hasattr(DataEventType, "SELFPLAY_COMPLETE"):
-                bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-                logger.info("[TrainingCoordinator] Subscribed to SELFPLAY_COMPLETE")
+                bus = get_event_bus()
 
-            # Subscribe to DATA_SYNC_COMPLETED to check training readiness
-            if hasattr(DataEventType, "DATA_SYNC_COMPLETED"):
-                bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_data_sync_completed)
-                logger.info("[TrainingCoordinator] Subscribed to DATA_SYNC_COMPLETED")
+                # Subscribe to SELFPLAY_COMPLETE to check if enough data for training
+                if hasattr(DataEventType, "SELFPLAY_COMPLETE"):
+                    bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+                    logger.info("[TrainingCoordinator] Subscribed to SELFPLAY_COMPLETE")
 
-            # Subscribe to EVALUATION_COMPLETED for promotion workflows
-            if hasattr(DataEventType, "EVALUATION_COMPLETED"):
-                bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
-                logger.info("[TrainingCoordinator] Subscribed to EVALUATION_COMPLETED")
+                # Subscribe to DATA_SYNC_COMPLETED to check training readiness
+                if hasattr(DataEventType, "DATA_SYNC_COMPLETED"):
+                    bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_data_sync_completed)
+                    logger.info("[TrainingCoordinator] Subscribed to DATA_SYNC_COMPLETED")
 
-            # Subscribe to REGRESSION_DETECTED for training adjustments
-            if hasattr(DataEventType, "REGRESSION_DETECTED"):
-                bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
-                logger.info("[TrainingCoordinator] Subscribed to REGRESSION_DETECTED")
+                # Subscribe to EVALUATION_COMPLETED for promotion workflows
+                if hasattr(DataEventType, "EVALUATION_COMPLETED"):
+                    bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+                    logger.info("[TrainingCoordinator] Subscribed to EVALUATION_COMPLETED")
 
-            # December 2025: Subscribe to TASK_ABANDONED to cleanup abandoned training jobs
-            if hasattr(DataEventType, "TASK_ABANDONED"):
-                bus.subscribe(DataEventType.TASK_ABANDONED, self._on_task_abandoned)
-                logger.info("[TrainingCoordinator] Subscribed to TASK_ABANDONED")
+                # Subscribe to REGRESSION_DETECTED for training adjustments
+                if hasattr(DataEventType, "REGRESSION_DETECTED"):
+                    bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+                    logger.info("[TrainingCoordinator] Subscribed to REGRESSION_DETECTED")
 
-            # December 2025: Subscribe to P2P_NODE_DEAD to cancel training jobs on dead nodes
-            if hasattr(DataEventType, "P2P_NODE_DEAD"):
-                bus.subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead)
-                logger.info("[TrainingCoordinator] Subscribed to P2P_NODE_DEAD")
+                # December 2025: Subscribe to TASK_ABANDONED to cleanup abandoned training jobs
+                if hasattr(DataEventType, "TASK_ABANDONED"):
+                    bus.subscribe(DataEventType.TASK_ABANDONED, self._on_task_abandoned)
+                    logger.info("[TrainingCoordinator] Subscribed to TASK_ABANDONED")
 
-            self._subscribed = True
-        except ImportError:
-            logger.debug("[TrainingCoordinator] Event router not available")
-            self._subscribed = False  # December 2025: Explicit reset on failure
-        except (RuntimeError, AttributeError) as e:
-            logger.warning(f"[TrainingCoordinator] Failed to subscribe: {e}")
-            self._subscribed = False  # December 2025: Explicit reset on failure
+                # December 2025: Subscribe to P2P_NODE_DEAD to cancel training jobs on dead nodes
+                if hasattr(DataEventType, "P2P_NODE_DEAD"):
+                    bus.subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead)
+                    logger.info("[TrainingCoordinator] Subscribed to P2P_NODE_DEAD")
+
+                self._subscribed = True
+            except ImportError:
+                logger.debug("[TrainingCoordinator] Event router not available")
+                self._subscribed = False  # December 2025: Explicit reset on failure
+            except (RuntimeError, AttributeError) as e:
+                logger.warning(f"[TrainingCoordinator] Failed to subscribe: {e}")
+                self._subscribed = False  # December 2025: Explicit reset on failure
 
     async def _on_selfplay_complete(self, event) -> None:
         """Handle SELFPLAY_COMPLETE events - check training readiness."""

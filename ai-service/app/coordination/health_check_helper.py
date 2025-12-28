@@ -135,14 +135,17 @@ class HealthCheckHelper:
 
         Args:
             queue_size: Current queue size
-            max_depth: Maximum acceptable queue depth
+            max_depth: Maximum acceptable queue depth (0 means no limit)
 
         Returns:
             Tuple of (is_healthy, message)
         """
+        # max_depth <= 0 means no limit
+        if max_depth <= 0:
+            return True, f"Queue depth: {queue_size} (no limit)"
         if queue_size >= max_depth:
             return False, f"Queue depth too high: {queue_size} >= {max_depth}"
-        fill_percent = (queue_size / max_depth) * 100 if max_depth > 0 else 0
+        fill_percent = (queue_size / max_depth) * 100
         return True, f"Queue depth: {queue_size}/{max_depth} ({fill_percent:.0f}%)"
 
     @staticmethod

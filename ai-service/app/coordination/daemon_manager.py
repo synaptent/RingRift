@@ -452,17 +452,31 @@ class DaemonManager:
         and making configuration easier to test and introspect.
 
         Only _create_health_server remains inline (needs self access).
+
+        December 28, 2025: Added strict_registry_validation config option.
+        When enabled, raises ValueError if any DaemonType lacks a registry entry.
         """
-        from app.coordination.daemon_registry import DAEMON_REGISTRY, validate_registry
+        from app.coordination.daemon_registry import (
+            DAEMON_REGISTRY,
+            validate_registry,
+            validate_registry_or_raise,
+        )
 
         # Validate registry at startup to catch configuration errors early
         # December 2025: Added to prevent silent failures from typos/missing runners
-        validation_errors = validate_registry()
-        if validation_errors:
-            for error in validation_errors:
-                logger.error(f"[DaemonManager] Registry validation error: {error}")
-            # Don't raise - allow system to start with partial registry
-            # but log errors prominently for visibility
+        # December 28, 2025: Added strict mode via config
+        if self.config.strict_registry_validation:
+            # Strict mode: raise on any validation errors
+            validate_registry_or_raise()
+            logger.info("[DaemonManager] Registry validation passed (strict mode)")
+        else:
+            # Lenient mode: log errors but continue
+            validation_errors = validate_registry()
+            if validation_errors:
+                for error in validation_errors:
+                    logger.error(f"[DaemonManager] Registry validation error: {error}")
+                # Don't raise - allow system to start with partial registry
+                # but log errors prominently for visibility
 
         # Register all daemons from the declarative registry
         for daemon_type, spec in DAEMON_REGISTRY.items():
@@ -1112,7 +1126,13 @@ class DaemonManager:
                 router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
                 logger.debug("[DaemonManager] Subscribed to BACKPRESSURE_RELEASED")
 
-            logger.info("[DaemonManager] Subscribed to critical events (Phase 5, P0.3, P2P cluster, backpressure)")
+            # December 2025: Disk space events for daemon workload coordination
+            # DISK_SPACE_LOW - pause data-generating daemons when disk is low
+            if hasattr(DataEventType, 'DISK_SPACE_LOW'):
+                router.subscribe(DataEventType.DISK_SPACE_LOW.value, self._on_disk_space_low)
+                logger.debug("[DaemonManager] Subscribed to DISK_SPACE_LOW")
+
+            logger.info("[DaemonManager] Subscribed to critical events (Phase 5, P0.3, P2P cluster, backpressure, disk space)")
 
             # Phase 7: Wire AutoRollbackHandler to actually perform model rollbacks
             # Without this, REGRESSION_CRITICAL events are logged but no rollback happens
@@ -1595,6 +1615,84 @@ class DaemonManager:
 
         except (RuntimeError, OSError, AttributeError, KeyError) as e:
             logger.debug(f"[DaemonManager] Error handling BACKPRESSURE_RELEASED: {e}")
+
+    async def _on_disk_space_low(self, event) -> None:
+        """Handle DISK_SPACE_LOW event - pause data-generating daemons.
+
+        December 2025: When disk space is low, pause daemons that generate data
+        to prevent disk from filling up completely. This gives the cleanup
+        daemons (MaintenanceDaemon, DiskSpaceManagerDaemon) time to free space.
+
+        Daemons paused during low disk:
+        - SELFPLAY_COORDINATOR - generates game data
+        - IDLE_RESOURCE - spawns selfplay jobs
+        - AUTO_SYNC - downloads data from other nodes
+        - TRAINING_ACTIVITY - may trigger training data export
+
+        Args:
+            event: The DISK_SPACE_LOW event with payload containing
+                   host, usage_percent, free_gb, threshold
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            host = payload.get("host", "unknown")
+            usage_percent = payload.get("usage_percent", 0)
+            free_gb = payload.get("free_gb", 0)
+            threshold = payload.get("threshold", 70)
+
+            logger.warning(
+                f"[DaemonManager] DISK_SPACE_LOW: {host} at {usage_percent:.1f}% "
+                f"(threshold: {threshold}%, free: {free_gb:.1f}GB)"
+            )
+
+            # Only respond to events for this host
+            import socket
+            local_hostname = socket.gethostname()
+            if host not in (local_hostname, "localhost", "127.0.0.1"):
+                logger.debug(f"[DaemonManager] Ignoring disk event for other host: {host}")
+                return
+
+            # If disk usage is critical (>85%), pause data-generating daemons
+            if usage_percent >= 85:
+                logger.warning(
+                    f"[DaemonManager] Critical disk usage ({usage_percent:.1f}%), "
+                    f"pausing data-generating daemons"
+                )
+
+                data_generating_daemons = [
+                    DaemonType.SELFPLAY_COORDINATOR,
+                    DaemonType.IDLE_RESOURCE,
+                    DaemonType.AUTO_SYNC,
+                    DaemonType.TRAINING_ACTIVITY,
+                ]
+
+                paused_count = 0
+                for daemon_type in data_generating_daemons:
+                    if daemon_type in self._daemons:
+                        info = self._daemons[daemon_type]
+                        if info.state == DaemonState.RUNNING:
+                            daemon = getattr(info, 'instance', None)
+                            if daemon and hasattr(daemon, 'pause'):
+                                try:
+                                    daemon.pause()
+                                    paused_count += 1
+                                    logger.warning(
+                                        f"[DaemonManager] Paused {daemon_type.value} "
+                                        f"due to low disk space"
+                                    )
+                                except (RuntimeError, OSError) as e:
+                                    logger.debug(
+                                        f"[DaemonManager] Failed to pause {daemon_type.value}: {e}"
+                                    )
+
+                if paused_count > 0:
+                    logger.warning(
+                        f"[DaemonManager] Paused {paused_count} data-generating daemons "
+                        f"due to critical disk space"
+                    )
+
+        except (RuntimeError, OSError, AttributeError, KeyError) as e:
+            logger.debug(f"[DaemonManager] Error handling DISK_SPACE_LOW: {e}")
 
     async def _ensure_coordination_wired(self) -> None:
         """Ensure coordination events are wired exactly once.

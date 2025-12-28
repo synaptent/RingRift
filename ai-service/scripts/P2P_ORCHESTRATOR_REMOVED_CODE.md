@@ -11,7 +11,8 @@ This document tracks code removed from `scripts/p2p_orchestrator.py` during the 
 | Background Loops      | 5               | ~400            |
 | Sync Operations       | 2               | ~61             |
 | Job Management        | 3               | ~163            |
-| **Total**             | **22**          | **~1,255**      |
+| Deprecated Stubs      | 2               | ~323            |
+| **Total**             | **24**          | **~1,578**      |
 
 ---
 
@@ -197,6 +198,24 @@ The following thin wrapper methods were removed and call sites updated to use jo
 - `_run_distributed_selfplay()` -> `self.job_manager.run_distributed_selfplay()`
 - `_export_training_data()` -> `self.job_manager.export_training_data()`
 - `_run_training()` -> `self.job_manager.run_training()`
+
+---
+
+## Deprecated Loop Stubs (Dec 28, 2025)
+
+### `_data_management_loop_DEPRECATED()` - ~180 LOC
+
+- **Removal Date:** Dec 28, 2025
+- **Location:** Line 7356
+- **Replacement:** `scripts/p2p/loops/data_loops.py::DataManagementLoop`
+- **Reason:** Deprecated stub retained after loop extraction, marked for Q1 2026 removal
+
+### `_model_sync_loop_DEPRECATED()` - ~143 LOC
+
+- **Removal Date:** Dec 28, 2025
+- **Location:** Line 7544
+- **Replacement:** `scripts/p2p/loops/data_loops.py::ModelSyncLoop`
+- **Reason:** Deprecated stub retained after loop extraction, marked for Q1 2026 removal
 
 ---
 

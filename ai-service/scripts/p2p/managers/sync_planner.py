@@ -35,8 +35,13 @@ logger = logging.getLogger(__name__)
 # Event emission helper - imported lazily to avoid circular imports
 # Dec 2025: Added thread-safe initialization to prevent race conditions
 _publish_sync: Callable[[str, dict], None] | None = None
-_DataEventType: type | None = None  # Lazy-loaded DataEventType enum
 _event_emitter_lock = threading.Lock()
+
+# Dec 2025: Import DataEventType for type-safe event emission
+try:
+    from app.distributed.data_events import DataEventType
+except ImportError:
+    DataEventType = None  # type: ignore[misc, assignment]
 
 
 def _get_event_emitter() -> Callable[[str, dict], None] | None:
@@ -62,39 +67,13 @@ def _get_event_emitter() -> Callable[[str, dict], None] | None:
     return _publish_sync
 
 
-def _get_event_type_value(event_name: str) -> str:
-    """Get the actual event type value from DataEventType enum.
+# Required event types for sync operations (used for validation)
+REQUIRED_SYNC_EVENT_TYPES = [
+    "DATA_SYNC_STARTED",
+    "DATA_SYNC_COMPLETED",
+    "DATA_SYNC_FAILED",
+]
 
-    Dec 2025: Fixes event name mismatch where SyncPlanner was emitting
-    "DATA_SYNC_COMPLETED" but subscribers expected "sync_completed" (the enum value).
-
-    Args:
-        event_name: Enum member name (e.g., "DATA_SYNC_COMPLETED")
-
-    Returns:
-        The enum value (e.g., "sync_completed") or original name if enum not available
-    """
-    global _DataEventType
-    if _DataEventType is None:
-        try:
-            from app.distributed.data_events import DataEventType
-            _DataEventType = DataEventType
-        except ImportError:
-            logger.debug("DataEventType not available, using raw event names")
-            return event_name
-
-    # Dec 2025: Directly use enum member name without hardcoded mapping
-    # This ensures any new event types in DataEventType are automatically supported
-    try:
-        return getattr(_DataEventType, event_name).value
-    except AttributeError:
-        # Log warning for unknown event types - helps catch typos/mismatches
-        logger.warning(f"[SyncPlanner] Event type {event_name} not found in DataEventType enum")
-        return event_name
-
-
-# Required event types for sync operations
-REQUIRED_SYNC_EVENT_TYPES = ["DATA_SYNC_STARTED", "DATA_SYNC_COMPLETED", "DATA_SYNC_FAILED"]
 
 def _validate_event_types() -> bool:
     """Validate all required event types exist at startup.
@@ -104,20 +83,19 @@ def _validate_event_types() -> bool:
     Returns:
         True if all required event types exist, False otherwise
     """
-    try:
-        from app.distributed.data_events import DataEventType
-        missing = []
-        for event in REQUIRED_SYNC_EVENT_TYPES:
-            if not hasattr(DataEventType, event):
-                missing.append(event)
-        if missing:
-            logger.error(f"[SyncPlanner] Missing required event types: {missing}")
-            return False
-        logger.debug("[SyncPlanner] All required event types validated")
-        return True
-    except ImportError:
+    if DataEventType is None:
         logger.debug("[SyncPlanner] DataEventType not available, skipping validation")
         return True  # Not a failure if module unavailable
+
+    missing = []
+    for event in REQUIRED_SYNC_EVENT_TYPES:
+        if not hasattr(DataEventType, event):
+            missing.append(event)
+    if missing:
+        logger.error(f"[SyncPlanner] Missing required event types: {missing}")
+        return False
+    logger.debug("[SyncPlanner] All required event types validated")
+    return True
 
 
 # Constants (match p2p/constants.py)
@@ -243,18 +221,22 @@ class SyncPlanner:
         # Dec 2025: Validate event types at startup to catch config issues early
         _validate_event_types()
 
-    def _emit_sync_event(self, event_type: str, **kwargs) -> None:
+    def _emit_sync_event(self, event_type: "DataEventType", **kwargs) -> None:
         """Emit a sync lifecycle event if the event system is available.
 
-        Dec 2025: Improved error handling with stats tracking and warning-level
-        logging for production visibility.
+        Dec 2025: Now accepts DataEventType enum directly for type safety.
+        Uses .value to get the actual event string (e.g., "sync_completed").
 
         Args:
-            event_type: One of DATA_SYNC_STARTED, DATA_SYNC_COMPLETED, DATA_SYNC_FAILED
+            event_type: DataEventType enum member (e.g., DataEventType.DATA_SYNC_COMPLETED)
             **kwargs: Additional event data
         """
         emitter = _get_event_emitter()
         if emitter is None:
+            return
+
+        # DataEventType not available - skip event emission
+        if DataEventType is None:
             return
 
         payload = {
@@ -263,10 +245,9 @@ class SyncPlanner:
             **kwargs,
         }
 
-        # Dec 2025: Use correct event type value from DataEventType enum
-        # Fixes mismatch where we emitted "DATA_SYNC_COMPLETED" but subscribers
-        # expected "sync_completed" (the actual enum value)
-        actual_event_type = _get_event_type_value(event_type)
+        # Dec 2025: Use .value to get actual event type string from enum
+        # e.g., DataEventType.DATA_SYNC_COMPLETED.value == "sync_completed"
+        actual_event_type = event_type.value
 
         # Dec 2025: Track event emission with retry for transient errors
         max_retries = 2
@@ -274,7 +255,7 @@ class SyncPlanner:
             try:
                 emitter(actual_event_type, payload)
                 self.stats.events_emitted += 1
-                logger.debug(f"Emitted {actual_event_type} (from {event_type})")
+                logger.debug(f"Emitted {actual_event_type} (from {event_type.name})")
                 return  # Success
             except (OSError, ConnectionError, TimeoutError) as e:
                 # Transient errors - retry once
@@ -286,8 +267,11 @@ class SyncPlanner:
                 self.stats.events_failed += 1
                 self.stats.last_event_error = f"{actual_event_type}: {e}"
                 logger.warning(f"[SyncPlanner] Failed to emit {actual_event_type} after {max_retries} attempts: {e}")
-            except Exception as e:
-                # Non-transient errors - don't retry
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                # Dec 2025: Narrowed from broad Exception - non-transient errors
+                # RuntimeError: Event bus state errors
+                # ValueError/TypeError: Invalid event data
+                # AttributeError: Missing event attributes
                 self.stats.events_failed += 1
                 self.stats.last_event_error = f"{actual_event_type}: {e}"
                 logger.warning(f"[SyncPlanner] Failed to emit {actual_event_type}: {e}")
@@ -541,7 +525,8 @@ class SyncPlanner:
                 if peer_manifest:
                     manifest.node_manifests[peer.node_id] = peer_manifest
                     manifest.total_nodes += 1
-            except Exception as e:
+            except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError) as e:
+                # Dec 2025: Narrowed from broad Exception - network/peer communication errors
                 logger.debug(f"Failed to collect manifest from {peer.node_id}: {e}")
 
         # Aggregate totals
@@ -753,7 +738,7 @@ class SyncPlanner:
 
         # Emit sync started event
         self._emit_sync_event(
-            "DATA_SYNC_STARTED",
+            DataEventType.DATA_SYNC_STARTED,
             plan_id=plan.plan_id if hasattr(plan, "plan_id") else str(uuid.uuid4()),
             jobs_total=len(plan.sync_jobs),
         )
@@ -795,7 +780,11 @@ class SyncPlanner:
                             results["jobs_failed"] += 1
                             self.stats.sync_jobs_failed += 1
 
-                    except Exception as e:
+                    except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError) as e:
+                        # Dec 2025: Narrowed from broad Exception - sync job execution errors
+                        # OSError: File system errors during sync
+                        # ConnectionError/TimeoutError: Network issues
+                        # RuntimeError: Sync callback state errors
                         job.status = "failed"
                         job.error_message = str(e)
                         results["jobs_failed"] += 1
@@ -810,13 +799,13 @@ class SyncPlanner:
             # Emit sync completion event
             if results["jobs_failed"] == 0:
                 self._emit_sync_event(
-                    "DATA_SYNC_COMPLETED",
+                    DataEventType.DATA_SYNC_COMPLETED,
                     jobs_completed=results["jobs_completed"],
                     bytes_synced=results["bytes_synced"],
                 )
             else:
                 self._emit_sync_event(
-                    "DATA_SYNC_FAILED",
+                    DataEventType.DATA_SYNC_FAILED,
                     jobs_completed=results["jobs_completed"],
                     jobs_failed=results["jobs_failed"],
                     error="Some sync jobs failed",
@@ -1082,7 +1071,11 @@ class SyncPlanner:
                     eligible_training_nodes = [
                         n for n in training_nodes if should_sync_to_node(n)
                     ]
-            except Exception as e:
+            except (AttributeError, ValueError, KeyError, RuntimeError) as e:
+                # Dec 2025: Narrowed from broad Exception - SyncRouter errors
+                # AttributeError: Missing router method
+                # ValueError/KeyError: Invalid routing data
+                # RuntimeError: Router state errors
                 logger.debug(f"SyncRouter fallback: {e}")
                 eligible_training_nodes = [
                     n for n in training_nodes if should_sync_to_node(n)
@@ -1107,7 +1100,7 @@ class SyncPlanner:
         # Emit DATA_SYNC_STARTED event
         sync_start_time = time.time()
         self._emit_sync_event(
-            "DATA_SYNC_STARTED",
+            DataEventType.DATA_SYNC_STARTED,
             sync_type="training_sync",
             target_nodes=[n.node_id for n in eligible_training_nodes],
         )
@@ -1217,7 +1210,8 @@ class SyncPlanner:
                 else:
                     job.status = "failed"
                     self.stats.sync_jobs_failed += 1
-            except Exception as e:
+            except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError, RuntimeError) as e:
+                # Dec 2025: Narrowed from broad Exception - sync execution errors
                 logger.info(f"Sync job {job.job_id} failed: {e}")
                 job.status = "failed"
                 job.error_message = str(e)
@@ -1233,7 +1227,8 @@ class SyncPlanner:
                 try:
                     success = await cleanup_synced_files(source_id, files)
                     cleanup_results[source_id] = success
-                except Exception as e:
+                except (OSError, ConnectionError, TimeoutError, asyncio.TimeoutError) as e:
+                    # Dec 2025: Narrowed from broad Exception - cleanup errors
                     logger.debug(f"Cleanup failed for {source_id}: {e}")
                     cleanup_results[source_id] = False
 
@@ -1242,7 +1237,7 @@ class SyncPlanner:
         # Emit DATA_SYNC_COMPLETED event
         if successful_syncs > 0 or not sync_jobs:
             self._emit_sync_event(
-                "DATA_SYNC_COMPLETED",
+                DataEventType.DATA_SYNC_COMPLETED,
                 sync_type="training_sync",
                 duration_seconds=time.time() - sync_start_time,
                 sync_jobs_created=len(sync_jobs),
@@ -1251,7 +1246,7 @@ class SyncPlanner:
             )
         else:
             self._emit_sync_event(
-                "DATA_SYNC_FAILED",
+                DataEventType.DATA_SYNC_FAILED,
                 sync_type="training_sync",
                 duration_seconds=time.time() - sync_start_time,
                 sync_jobs_created=len(sync_jobs),

@@ -160,10 +160,17 @@ class JobManager:
         self.distributed_tournament_state = distributed_tournament_state or {}
 
         # Event subscription state (December 2025)
+        # Dec 28, 2025: Added _subscription_lock to prevent race conditions during subscribe_to_events
         self._subscribed = False
+        self._subscription_lock = threading.Lock()
 
         # Statistics tracking (December 27, 2025)
         self.stats = JobManagerStats()
+
+        # December 28, 2025: Track active subprocess handles for graceful shutdown
+        # Maps job_id -> asyncio.subprocess.Process
+        self._active_processes: dict[str, asyncio.subprocess.Process] = {}
+        self._processes_lock = threading.Lock()
 
     # =========================================================================
     # Event Subscriptions (December 2025)
@@ -176,36 +183,47 @@ class JobManager:
         - HOST_OFFLINE: Cancel jobs on offline hosts
         - HOST_ONLINE: Potentially reschedule cancelled jobs
         - NODE_RECOVERED: Re-enable job dispatch to recovered nodes
+
+        Dec 28, 2025: Added thread-safe double-check locking pattern.
         """
+        # Fast path - already initialized
         if self._subscribed:
             return
 
-        try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEventType
+        # Slow path with lock to prevent race conditions
+        with self._subscription_lock:
+            # Double-check after acquiring lock
+            if self._subscribed:
+                return
 
-            bus = get_event_bus()
+            try:
+                from app.coordination.event_router import get_event_bus
+                from app.distributed.data_events import DataEventType
 
-            # Subscribe to HOST_OFFLINE to cancel jobs on dead nodes
-            if hasattr(DataEventType, "HOST_OFFLINE"):
-                bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-                logger.info("[JobManager] Subscribed to HOST_OFFLINE")
+                bus = get_event_bus()
 
-            # Subscribe to HOST_ONLINE for potential job rescheduling
-            if hasattr(DataEventType, "HOST_ONLINE"):
-                bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
-                logger.info("[JobManager] Subscribed to HOST_ONLINE")
+                # Subscribe to HOST_OFFLINE to cancel jobs on dead nodes
+                if hasattr(DataEventType, "HOST_OFFLINE"):
+                    bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+                    logger.info("[JobManager] Subscribed to HOST_OFFLINE")
 
-            # Dec 27, 2025: Subscribe to NODE_RECOVERED to re-enable recovered nodes
-            if hasattr(DataEventType, "NODE_RECOVERED"):
-                bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
-                logger.info("[JobManager] Subscribed to NODE_RECOVERED")
+                # Subscribe to HOST_ONLINE for potential job rescheduling
+                if hasattr(DataEventType, "HOST_ONLINE"):
+                    bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
+                    logger.info("[JobManager] Subscribed to HOST_ONLINE")
 
-            self._subscribed = True
-        except ImportError:
-            logger.debug("[JobManager] Event router not available")
-        except (RuntimeError, AttributeError) as e:
-            logger.warning(f"[JobManager] Failed to subscribe: {e}")
+                # Dec 27, 2025: Subscribe to NODE_RECOVERED to re-enable recovered nodes
+                if hasattr(DataEventType, "NODE_RECOVERED"):
+                    bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
+                    logger.info("[JobManager] Subscribed to NODE_RECOVERED")
+
+                self._subscribed = True
+            except ImportError:
+                logger.debug("[JobManager] Event router not available")
+                self._subscribed = False  # Dec 28, 2025: Explicit reset on failure
+            except (RuntimeError, AttributeError) as e:
+                logger.warning(f"[JobManager] Failed to subscribe: {e}")
+                self._subscribed = False  # Dec 28, 2025: Explicit reset on failure
 
     async def _on_host_offline(self, event) -> None:
         """Handle HOST_OFFLINE events - cancel jobs on offline host."""
@@ -307,6 +325,104 @@ class JobManager:
         except (AttributeError, KeyError, TypeError) as e:
             logger.debug(f"[JobManager] Error handling node recovered: {e}")
 
+    # =========================================================================
+    # Subprocess Lifecycle Management (December 28, 2025)
+    # =========================================================================
+
+    def _register_process(self, job_id: str, proc: asyncio.subprocess.Process) -> None:
+        """Register a subprocess handle for tracking.
+
+        Args:
+            job_id: Job identifier
+            proc: asyncio subprocess handle
+        """
+        with self._processes_lock:
+            self._active_processes[job_id] = proc
+
+    def _unregister_process(self, job_id: str) -> None:
+        """Unregister a subprocess handle after completion.
+
+        Args:
+            job_id: Job identifier
+        """
+        with self._processes_lock:
+            self._active_processes.pop(job_id, None)
+
+    async def _kill_process(self, job_id: str, proc: asyncio.subprocess.Process | None = None) -> None:
+        """Kill a subprocess and wait for it to terminate.
+
+        December 28, 2025: Centralized subprocess cleanup to prevent zombie processes.
+        Tries SIGKILL first for immediate termination, falls back to SIGTERM.
+
+        Args:
+            job_id: Job identifier for logging
+            proc: Optional process handle. If None, looks up from _active_processes.
+        """
+        if proc is None:
+            with self._processes_lock:
+                proc = self._active_processes.get(job_id)
+
+        if proc is None:
+            logger.debug(f"No process found for job {job_id}, nothing to kill")
+            return
+
+        try:
+            # Check if process is still running
+            if proc.returncode is not None:
+                logger.debug(f"Process for job {job_id} already terminated (rc={proc.returncode})")
+                self._unregister_process(job_id)
+                return
+
+            # Try SIGKILL first for immediate termination
+            logger.info(f"Killing process for job {job_id} (pid={proc.pid})")
+            proc.kill()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
+                logger.debug(f"Process for job {job_id} killed successfully")
+            except asyncio.TimeoutError:
+                # SIGKILL didn't work, try SIGTERM as fallback
+                logger.warning(f"Process for job {job_id} didn't respond to SIGKILL, trying SIGTERM")
+                try:
+                    proc.terminate()
+                    await asyncio.wait_for(proc.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    logger.error(f"Process for job {job_id} (pid={proc.pid}) is stuck, may become zombie")
+                except ProcessLookupError:
+                    pass  # Process already dead
+        except ProcessLookupError:
+            logger.debug(f"Process for job {job_id} already dead (ProcessLookupError)")
+        except OSError as e:
+            logger.debug(f"OSError killing process for job {job_id}: {e}")
+        finally:
+            self._unregister_process(job_id)
+
+    async def cleanup_active_processes(self) -> int:
+        """Kill all active subprocesses during shutdown.
+
+        December 28, 2025: Added for graceful shutdown to prevent zombie processes.
+
+        Returns:
+            Number of processes killed
+        """
+        with self._processes_lock:
+            job_ids = list(self._active_processes.keys())
+
+        if not job_ids:
+            return 0
+
+        logger.info(f"Cleaning up {len(job_ids)} active processes during shutdown")
+        killed = 0
+
+        for job_id in job_ids:
+            try:
+                await self._kill_process(job_id)
+                killed += 1
+            except (OSError, ProcessLookupError, asyncio.CancelledError) as e:
+                # Dec 2025: Narrowed from broad Exception - these are expected process cleanup errors
+                logger.warning(f"Error killing process for job {job_id}: {e}")
+
+        return killed
+
     def _emit_task_event(self, event_type: str, job_id: str, job_type: str, **kwargs) -> None:
         """Emit a task lifecycle event if the event system is available.
 
@@ -331,7 +447,11 @@ class JobManager:
         try:
             emitter(event_type, payload)
             logger.debug(f"Emitted {event_type} for job {job_id}")
-        except Exception as e:
+        except (OSError, ConnectionError, RuntimeError, TypeError) as e:
+            # Dec 2025: Narrowed from broad Exception - event emission errors
+            # OSError/ConnectionError: Network issues
+            # RuntimeError: Event bus state errors
+            # TypeError: Payload serialization errors
             logger.debug(f"Failed to emit {event_type}: {e}")
 
     # =========================================================================
@@ -433,6 +553,8 @@ class JobManager:
         env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
         env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
 
+        # December 28, 2025: Initialize proc before try block for proper cleanup in except handlers
+        proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -440,6 +562,9 @@ class JobManager:
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
+
+            # December 28, 2025: Register process for tracking (enables graceful shutdown)
+            self._register_process(job_id, proc)
 
             # Track the job
             with self.jobs_lock:
@@ -467,6 +592,9 @@ class JobManager:
             )
 
             _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=7200)  # 2 hour max
+
+            # December 28, 2025: Unregister process after successful completion
+            self._unregister_process(job_id)
 
             # Update job status and emit completion event
             duration = time.time() - self.active_jobs.get("selfplay", {}).get(job_id, {}).get("started_at", time.time())
@@ -500,40 +628,36 @@ class JobManager:
                     del self.active_jobs["selfplay"][job_id]
 
         except asyncio.TimeoutError:
-            # December 2025: Kill the subprocess to prevent zombie processes
-            # December 27, 2025: Check if proc exists before attempting cleanup
-            if "proc" in dir() and proc is not None:
-                try:
-                    proc.kill()  # SIGKILL for immediate termination
-                    await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
-                except (ProcessLookupError, asyncio.TimeoutError):
-                    # Process already dead or won't die - try SIGTERM as fallback
-                    try:
-                        proc.terminate()
-                        await asyncio.wait_for(proc.wait(), timeout=2.0)
-                    except (ProcessLookupError, asyncio.TimeoutError, OSError) as e:
-                        logger.debug(f"Process cleanup for job {job_id}: {type(e).__name__}: {e}")
+            # December 28, 2025: Use centralized process cleanup
+            await self._kill_process(job_id, proc)
             with self.jobs_lock:
                 if job_id in self.active_jobs.get("selfplay", {}):
                     self.active_jobs["selfplay"][job_id]["status"] = "timeout"
                     del self.active_jobs["selfplay"][job_id]
             logger.warning(f"Selfplay job {job_id} timed out and was killed")
             self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="timeout", board_type=board_type)
-        except Exception as e:
-            # December 2025: Also kill subprocess on unexpected errors
-            # December 27, 2025: Check if proc exists before attempting cleanup
-            if "proc" in dir() and proc is not None:
-                try:
-                    proc.kill()
-                    await asyncio.wait_for(proc.wait(), timeout=OperationTimeouts.THREAD_JOIN)
-                except (ProcessLookupError, asyncio.TimeoutError, OSError) as cleanup_err:
-                    logger.debug(f"Process cleanup for job {job_id}: {type(cleanup_err).__name__}: {cleanup_err}")
+        except (OSError, ValueError, RuntimeError) as e:
+            # Dec 2025: Narrowed from broad Exception - subprocess execution errors
+            # OSError: File not found, permission denied, process creation failed
+            # ValueError: Invalid arguments to subprocess
+            # RuntimeError: Subprocess state errors
+            await self._kill_process(job_id, proc)
             with self.jobs_lock:
                 if job_id in self.active_jobs.get("selfplay", {}):
                     self.active_jobs["selfplay"][job_id]["status"] = "error"
                     del self.active_jobs["selfplay"][job_id]
             logger.error(f"Error running selfplay job {job_id}: {e}")
             self._emit_task_event("TASK_FAILED", job_id, "selfplay", error=str(e), board_type=board_type)
+        except Exception:
+            # Catch-all for truly unexpected errors - log with traceback and re-raise
+            await self._kill_process(job_id, proc)
+            with self.jobs_lock:
+                if job_id in self.active_jobs.get("selfplay", {}):
+                    self.active_jobs["selfplay"][job_id]["status"] = "error"
+                    del self.active_jobs["selfplay"][job_id]
+            logger.exception(f"Unexpected error in selfplay job {job_id}")
+            self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="unexpected_error", board_type=board_type)
+            raise
 
     async def run_distributed_selfplay(self, job_id: str) -> None:
         """Coordinate distributed selfplay for improvement loop.
@@ -666,7 +790,8 @@ class JobManager:
                             }
                 except asyncio.TimeoutError:
                     results[worker_id] = {"success": False, "error": "timeout"}
-                except Exception as e:
+                except (OSError, ConnectionError) as e:
+                    # Dec 2025: Narrowed from broad Exception - network/connection errors
                     results[worker_id] = {"success": False, "error": str(e)}
                     logger.debug(f"Failed to dispatch to {worker_id}: {e}")
 
@@ -709,6 +834,8 @@ class JobManager:
         env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
         env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
 
+        # December 28, 2025: Initialize proc before try block for proper cleanup
+        proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -717,10 +844,16 @@ class JobManager:
                 env=env,
             )
 
+            # December 28, 2025: Register process for tracking
+            self._register_process(job_id, proc)
+
             _stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=3600  # 1 hour max
             )
+
+            # December 28, 2025: Unregister process after completion
+            self._unregister_process(job_id)
 
             if proc.returncode == 0:
                 logger.info(f"Local selfplay completed: {num_games} games")
@@ -738,13 +871,22 @@ class JobManager:
                 )
 
         except asyncio.TimeoutError:
+            # December 28, 2025: Kill subprocess on timeout to prevent zombies
+            await self._kill_process(job_id, proc)
             logger.warning("Local selfplay timed out")
             # Dec 2025: Emit TASK_FAILED for timeout
             self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="timeout", board_type=board_type)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
+            # Dec 2025: Narrowed from broad Exception - subprocess errors
+            await self._kill_process(job_id, proc)
             logger.error(f"Local selfplay error: {e}")
-            # Dec 2025: Emit TASK_FAILED for exceptions
             self._emit_task_event("TASK_FAILED", job_id, "selfplay", error=str(e), board_type=board_type)
+        except Exception:
+            # Catch-all for truly unexpected errors - log with traceback and re-raise
+            await self._kill_process(job_id, proc)
+            logger.exception("Unexpected error in local selfplay")
+            self._emit_task_event("TASK_FAILED", job_id, "selfplay", error="unexpected_error", board_type=board_type)
+            raise
 
     # =========================================================================
     # Training Job Methods
@@ -797,6 +939,9 @@ class JobManager:
         env = os.environ.copy()
         env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
 
+        # December 28, 2025: Initialize proc before try block for proper cleanup
+        export_job_id = f"{job_id}_export"  # Unique ID for process tracking
+        proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -805,10 +950,16 @@ class JobManager:
                 env=env,
             )
 
+            # December 28, 2025: Register process for tracking
+            self._register_process(export_job_id, proc)
+
             _stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=600  # 10 minutes max
             )
+
+            # December 28, 2025: Unregister process after completion
+            self._unregister_process(export_job_id)
 
             if proc.returncode == 0:
                 logger.info(f"Exported training data to {output_file}")
@@ -823,13 +974,22 @@ class JobManager:
                 )
 
         except asyncio.TimeoutError:
+            # December 28, 2025: Kill subprocess on timeout to prevent zombies
+            await self._kill_process(export_job_id, proc)
             logger.warning("Training data export timed out")
             # Dec 2025: Emit TASK_FAILED for timeout
             self._emit_task_event("TASK_FAILED", job_id, "export", error="timeout")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
+            # Dec 2025: Narrowed from broad Exception - subprocess errors
+            await self._kill_process(export_job_id, proc)
             logger.error(f"Training data export error: {e}")
-            # Dec 2025: Emit TASK_FAILED for exceptions
             self._emit_task_event("TASK_FAILED", job_id, "export", error=str(e))
+        except Exception:
+            # Catch-all for truly unexpected errors - log with traceback and re-raise
+            await self._kill_process(export_job_id, proc)
+            logger.exception("Unexpected error in training data export")
+            self._emit_task_event("TASK_FAILED", job_id, "export", error="unexpected_error")
+            raise
 
     async def run_training(self, job_id: str) -> None:
         """Run neural network training on GPU node.
@@ -933,6 +1093,9 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
         env = os.environ.copy()
         env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
 
+        # December 28, 2025: Initialize proc before try block for proper cleanup
+        training_job_id = f"{job_id}_training"  # Unique ID for process tracking
+        proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -941,10 +1104,16 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 env=env,
             )
 
+            # December 28, 2025: Register process for tracking
+            self._register_process(training_job_id, proc)
+
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=3600  # 1 hour max
             )
+
+            # December 28, 2025: Unregister process after completion
+            self._unregister_process(training_job_id)
 
             logger.info(f"Training output: {stdout.decode()}")
             if proc.returncode != 0:
@@ -957,13 +1126,22 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 )
 
         except asyncio.TimeoutError:
+            # December 28, 2025: Kill subprocess on timeout to prevent zombies
+            await self._kill_process(training_job_id, proc)
             logger.warning("Local training timed out")
             # Dec 2025: Emit TASK_FAILED for timeout
             self._emit_task_event("TASK_FAILED", job_id, "training", error="timeout")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
+            # Dec 2025: Narrowed from broad Exception - subprocess errors
+            await self._kill_process(training_job_id, proc)
             logger.error(f"Local training error: {e}")
-            # Dec 2025: Emit TASK_FAILED for exceptions
             self._emit_task_event("TASK_FAILED", job_id, "training", error=str(e))
+        except Exception:
+            # Catch-all for truly unexpected errors - log with traceback and re-raise
+            await self._kill_process(training_job_id, proc)
+            logger.exception("Unexpected error in local training")
+            self._emit_task_event("TASK_FAILED", job_id, "training", error="unexpected_error")
+            raise
 
     # =========================================================================
     # Tournament Job Methods
@@ -1041,11 +1219,21 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 elo_updates=elo_updates,
             )
 
-        except Exception as e:
+        except (KeyError, AttributeError, ValueError, TypeError) as e:
+            # Dec 2025: Narrowed from broad Exception - tournament state/data errors
+            # KeyError: Missing state key
+            # AttributeError: Missing state attribute
+            # ValueError/TypeError: Invalid match data
             logger.error(f"Tournament coordinator error: {e}")
             if job_id in self.distributed_tournament_state:
                 self.distributed_tournament_state[job_id].status = f"error: {e}"
             self._emit_task_event("TASK_FAILED", job_id, "tournament", error=str(e))
+        except Exception:
+            # Catch-all for truly unexpected errors - log with traceback
+            logger.exception(f"Unexpected error in tournament {job_id}")
+            if job_id in self.distributed_tournament_state:
+                self.distributed_tournament_state[job_id].status = "error: unexpected"
+            self._emit_task_event("TASK_FAILED", job_id, "tournament", error="unexpected_error")
 
     def _generate_tournament_matches(
         self,
@@ -1214,7 +1402,8 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
         except asyncio.TimeoutError:
             logger.warning(f"Worker {worker_id} timed out")
             return []
-        except Exception as e:
+        except (OSError, ConnectionError) as e:
+            # Dec 2025: Narrowed from broad Exception - network/connection errors
             logger.warning(f"Worker {worker_id} error: {e}")
             return []
 
@@ -1258,7 +1447,12 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 if state:
                     state.completed_matches += 1
 
-            except Exception as e:
+            except (KeyError, ImportError, RuntimeError, ValueError) as e:
+                # Dec 2025: Narrowed from broad Exception - match execution errors
+                # KeyError: Missing match data
+                # ImportError: AI module not available
+                # RuntimeError: Game state error
+                # ValueError: Invalid game parameters
                 logger.warning(f"Local match error: {e}")
 
         return results

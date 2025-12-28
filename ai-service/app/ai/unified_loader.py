@@ -762,9 +762,9 @@ class UnifiedModelLoader:
         bt = board_type or BoardType.SQUARE8
         np_ = num_players or 2
 
-        from app.ai.neural_net.model_factory import create_model
+        from app.ai.neural_net.model_factory import create_model_for_board
 
-        model = create_model(board_type=bt, num_players=np_)
+        model = create_model_for_board(board_type=bt, num_players=np_)
         model = model.to(self.device)
         model.eval()
 

@@ -683,6 +683,93 @@ fi
         """Get the most recent coverage report."""
         return self._coverage_history[-1] if self._coverage_history else None
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for daemon monitoring.
+
+        December 2025: Added for DaemonManager integration.
+
+        Health criteria:
+        - Must have checked P2P coverage at least once
+        - Coverage should be above minimum threshold (90% default)
+        - Should not have excessive deployment failures
+
+        Returns:
+            HealthCheckResult indicating health status
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        # Check if we've ever run a check
+        if not self._coverage_history:
+            # Never checked - healthy if running, waiting for first check
+            if self._running:
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.RUNNING,
+                    message="P2PAutoDeployer running, awaiting first check",
+                    details={
+                        "running": self._running,
+                        "checks_completed": 0,
+                        "last_check": 0.0,
+                    },
+                )
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="P2PAutoDeployer not running",
+                details={"running": False, "checks_completed": 0},
+            )
+
+        # Get latest coverage report
+        latest = self._coverage_history[-1]
+        deployment_failures = sum(
+            1 for d in self._deployment_history[-20:] if not d.success
+        )
+
+        # Determine health
+        is_healthy = (
+            latest.coverage_percent >= self.config.min_coverage_percent
+            and deployment_failures < 10  # Less than 50% failure rate in last 20
+        )
+
+        # Build details
+        details = {
+            "running": self._running,
+            "coverage_percent": latest.coverage_percent,
+            "nodes_with_p2p": latest.nodes_with_p2p,
+            "total_nodes": latest.total_nodes,
+            "nodes_needing_deployment": len(latest.nodes_needing_deployment),
+            "unreachable_nodes": latest.unreachable_nodes,
+            "deployment_failures_recent": deployment_failures,
+            "last_check": self._last_check,
+            "checks_completed": len(self._coverage_history),
+        }
+
+        if is_healthy:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=f"P2P coverage {latest.coverage_percent:.1f}% ({latest.nodes_with_p2p}/{latest.total_nodes} nodes)",
+                details=details,
+            )
+        else:
+            # Unhealthy - coverage too low or too many failures
+            issues = []
+            if latest.coverage_percent < self.config.min_coverage_percent:
+                issues.append(
+                    f"coverage {latest.coverage_percent:.1f}% < {self.config.min_coverage_percent}%"
+                )
+            if deployment_failures >= 10:
+                issues.append(f"{deployment_failures} recent deployment failures")
+            if latest.unreachable_nodes > 0:
+                issues.append(f"{latest.unreachable_nodes} unreachable nodes")
+
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"P2P health issues: {'; '.join(issues)}",
+                details=details,
+            )
+
 
 async def main() -> None:
     """Run P2P auto-deployer standalone."""

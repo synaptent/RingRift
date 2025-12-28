@@ -16,12 +16,9 @@ import time
 import warnings
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from app.config.coordination_defaults import DaemonLoopDefaults
-
-if TYPE_CHECKING:
-    pass
 
 __all__ = [
     "CRITICAL_DAEMONS",
@@ -361,6 +358,12 @@ class DaemonManagerConfig:
         default_factory=lambda: DaemonLoopDefaults.HEALTH_CHECK_TIMEOUT
     )
     auto_restart_failed: bool = True  # Auto-restart failed daemons
+
+    # Registry validation (Dec 28, 2025)
+    # -------------------------------------------------------------------------
+    # When True, raise ValueError if registry validation fails at startup.
+    # When False (default), only log errors and continue with partial registry.
+    strict_registry_validation: bool = False
     max_restart_attempts: int = field(
         default_factory=lambda: DaemonLoopDefaults.MAX_CONSECUTIVE_ERRORS
     )
