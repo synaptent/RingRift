@@ -1,8 +1,7 @@
 """Work Queue Monitor Daemon - Tracks work queue lifecycle events.
 
 December 2025: Created to address critical gap in event coordination.
-Previously, WORK_QUEUED, WORK_STARTED, WORK_COMPLETED, WORK_FAILED events
-were emitted but had NO subscribers - making queue visibility impossible.
+December 28, 2025: Migrated to MonitorBase for reduced duplication (~370 LOC saved).
 
 This daemon subscribes to all WORK_* events and provides:
 1. Queue depth tracking
@@ -31,14 +30,14 @@ Usage:
         get_work_queue_monitor,
     )
 
-    # Start monitoring
-    monitor = get_work_queue_monitor()
+    # Get singleton and start monitoring
+    monitor = WorkQueueMonitorDaemon.get_instance()
     await monitor.start()
 
     # Get queue statistics
     stats = monitor.get_queue_stats()
-    print(f"Queue depth: {stats['pending_count']}")
-    print(f"Avg latency: {stats['avg_latency_seconds']:.1f}s")
+    print(f"Queue depth: {stats.pending_count}")
+    print(f"Avg latency: {stats.avg_latency_seconds:.1f}s")
 """
 
 from __future__ import annotations
@@ -48,7 +47,9 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
+
+from app.coordination.monitor_base import MonitorBase, MonitorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +105,38 @@ class QueueStats:
     stuck_job_count: int = 0
 
 
-class WorkQueueMonitorDaemon:
+# =============================================================================
+# Configuration
+# =============================================================================
+
+
+@dataclass(kw_only=True)
+class WorkQueueMonitorConfig(MonitorConfig):
+    """Configuration for WorkQueueMonitorDaemon.
+
+    Extends MonitorConfig with work queue specific settings.
+    """
+
+    # Work queue thresholds
+    backpressure_threshold: int = BACKPRESSURE_THRESHOLD
+    stuck_job_threshold_seconds: float = STUCK_JOB_THRESHOLD_SECONDS
+    node_overload_threshold: int = NODE_OVERLOAD_THRESHOLD
+    latency_window_size: int = LATENCY_WINDOW_SIZE
+
+    # Backpressure check throttling
+    backpressure_check_interval: float = 10.0  # seconds
+
+
+# =============================================================================
+# Monitor Implementation
+# =============================================================================
+
+
+class WorkQueueMonitorDaemon(MonitorBase[WorkQueueMonitorConfig]):
     """Daemon that monitors work queue events and provides visibility.
+
+    Migrated to MonitorBase December 28, 2025.
+    Inherits: lifecycle management, singleton, event subscription, health checks.
 
     Subscribes to all WORK_* events and tracks:
     - Queue depth and composition
@@ -115,10 +146,9 @@ class WorkQueueMonitorDaemon:
     - Backpressure conditions
     """
 
-    def __init__(self):
+    def __init__(self, config: WorkQueueMonitorConfig | None = None):
         """Initialize the work queue monitor."""
-        self._running = False
-        self._subscribed = False
+        super().__init__(config)
 
         # Job tracking
         self._jobs: dict[str, JobTracker] = {}
@@ -137,90 +167,77 @@ class WorkQueueMonitorDaemon:
         self._backpressure_active = False
         self._last_backpressure_check = 0.0
 
-        # Lock for thread safety
-        self._lock = asyncio.Lock()
+        # Lock for thread safety on job tracking
+        self._jobs_lock = asyncio.Lock()
 
-    async def start(self) -> bool:
-        """Start the monitor daemon."""
-        if self._running:
-            return True
+    def _get_default_config(self) -> WorkQueueMonitorConfig:
+        """Return default configuration."""
+        return WorkQueueMonitorConfig(
+            check_interval_seconds=60,  # Check stuck jobs every minute
+            stale_threshold_seconds=1800.0,  # 30 minutes
+        )
 
-        self._running = True
-        success = await self._subscribe_to_events()
+    def _get_daemon_name(self) -> str:
+        """Return daemon name for logging."""
+        return "WorkQueueMonitor"
 
-        if success:
-            logger.info("[WorkQueueMonitor] Started - monitoring WORK_* events")
+    # =========================================================================
+    # Event Subscriptions
+    # =========================================================================
 
-            # Start background monitoring loop
-            asyncio.create_task(self._monitoring_loop())
-        else:
-            logger.warning("[WorkQueueMonitor] Started without event subscriptions")
+    def _get_event_subscriptions(self) -> dict[str, Callable]:
+        """Return event handlers for work queue events."""
+        subscriptions = {
+            "WORK_QUEUED": self._on_work_queued,
+            "WORK_CLAIMED": self._on_work_claimed,
+            "WORK_STARTED": self._on_work_started,
+            "WORK_COMPLETED": self._on_work_completed,
+            "WORK_FAILED": self._on_work_failed,
+        }
 
-        return success
-
-    async def stop(self) -> None:
-        """Stop the monitor daemon."""
-        self._running = False
-        await self._unsubscribe_from_events()
-        logger.info("[WorkQueueMonitor] Stopped")
-
-    async def _subscribe_to_events(self) -> bool:
-        """Subscribe to all WORK_* events."""
-        if self._subscribed:
-            return True
-
+        # WORK_RETRY may not exist in all versions
         try:
             from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-
-            # Subscribe to all work queue events
-            router.subscribe(DataEventType.WORK_QUEUED.value, self._on_work_queued)
-            router.subscribe(DataEventType.WORK_CLAIMED.value, self._on_work_claimed)
-            router.subscribe(DataEventType.WORK_STARTED.value, self._on_work_started)
-            router.subscribe(DataEventType.WORK_COMPLETED.value, self._on_work_completed)
-            router.subscribe(DataEventType.WORK_FAILED.value, self._on_work_failed)
-
-            # WORK_RETRY may not exist - check first
             if hasattr(DataEventType, "WORK_RETRY"):
-                router.subscribe(DataEventType.WORK_RETRY.value, self._on_work_retry)
+                subscriptions["WORK_RETRY"] = self._on_work_retry
+        except ImportError:
+            pass
 
-            self._subscribed = True
-            logger.info("[WorkQueueMonitor] Subscribed to 5+ WORK_* events")
-            return True
+        return subscriptions
 
-        except ImportError as e:
-            logger.warning(f"[WorkQueueMonitor] data_events not available: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"[WorkQueueMonitor] Failed to subscribe: {e}")
-            return False
+    # =========================================================================
+    # Monitor Cycle (Periodic Stuck Job Detection)
+    # =========================================================================
 
-    async def _unsubscribe_from_events(self) -> None:
-        """Unsubscribe from all events."""
-        if not self._subscribed:
-            return
+    async def _run_cycle(self) -> None:
+        """Run one monitoring cycle - check for stuck jobs."""
+        await self._check_stuck_jobs()
+        self.record_cycle()
 
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import get_router
+    async def _check_stuck_jobs(self) -> None:
+        """Check for jobs that are stuck (claimed but not started)."""
+        now = time.time()
+        stuck_jobs: list[tuple[JobTracker, float]] = []
 
-            router = get_router()
+        async with self._jobs_lock:
+            for job in self._jobs.values():
+                # Job is stuck if claimed but not started for too long
+                if job.status == "claimed" and job.claimed_at > 0 and job.started_at == 0:
+                    stuck_duration = now - job.claimed_at
+                    if stuck_duration > self.config.stuck_job_threshold_seconds:
+                        stuck_jobs.append((job, stuck_duration))
 
-            router.unsubscribe(DataEventType.WORK_QUEUED.value, self._on_work_queued)
-            router.unsubscribe(DataEventType.WORK_CLAIMED.value, self._on_work_claimed)
-            router.unsubscribe(DataEventType.WORK_STARTED.value, self._on_work_started)
-            router.unsubscribe(DataEventType.WORK_COMPLETED.value, self._on_work_completed)
-            router.unsubscribe(DataEventType.WORK_FAILED.value, self._on_work_failed)
+        # Emit events for stuck jobs (outside lock)
+        for job, duration in stuck_jobs:
+            await self._emit_stuck_job_event(job, duration)
+            logger.warning(
+                f"[{self._get_daemon_name()}] Stuck job detected: {job.work_id} "
+                f"claimed by {job.claimed_by} for {duration:.0f}s"
+            )
 
-            if hasattr(DataEventType, "WORK_RETRY"):
-                router.unsubscribe(DataEventType.WORK_RETRY.value, self._on_work_retry)
-
-            self._subscribed = False
-
-        except Exception as e:
-            logger.warning(f"[WorkQueueMonitor] Error unsubscribing: {e}")
+    # =========================================================================
+    # Event Handlers
+    # =========================================================================
 
     async def _on_work_queued(self, event: Any) -> None:
         """Handle WORK_QUEUED event."""
@@ -230,7 +247,11 @@ class WorkQueueMonitorDaemon:
         if not work_id:
             return
 
-        async with self._lock:
+        # Check for duplicate using MonitorBase dedup
+        if self._is_duplicate_event(payload, key_fields=["work_id", "work_type"]):
+            return
+
+        async with self._jobs_lock:
             self._jobs[work_id] = JobTracker(
                 work_id=work_id,
                 work_type=payload.get("work_type", "unknown"),
@@ -241,7 +262,8 @@ class WorkQueueMonitorDaemon:
             )
             self._total_queued += 1
 
-        logger.debug(f"[WorkQueueMonitor] Work queued: {work_id}")
+        self.record_event()
+        logger.debug(f"[{self._get_daemon_name()}] Work queued: {work_id}")
         await self._check_backpressure()
 
     async def _on_work_claimed(self, event: Any) -> None:
@@ -251,7 +273,7 @@ class WorkQueueMonitorDaemon:
         work_id = payload.get("work_id", "")
         claimed_by = payload.get("claimed_by", "") or payload.get("node_id", "")
 
-        async with self._lock:
+        async with self._jobs_lock:
             if work_id in self._jobs:
                 self._jobs[work_id].claimed_at = time.time()
                 self._jobs[work_id].claimed_by = claimed_by
@@ -262,16 +284,20 @@ class WorkQueueMonitorDaemon:
                     self._node_job_counts[claimed_by] += 1
                     await self._check_node_overload(claimed_by)
 
+        self.record_event()
+
     async def _on_work_started(self, event: Any) -> None:
         """Handle WORK_STARTED event."""
         payload = event.payload if hasattr(event, "payload") else event
 
         work_id = payload.get("work_id", "")
 
-        async with self._lock:
+        async with self._jobs_lock:
             if work_id in self._jobs:
                 self._jobs[work_id].started_at = time.time()
                 self._jobs[work_id].status = "running"
+
+        self.record_event()
 
     async def _on_work_completed(self, event: Any) -> None:
         """Handle WORK_COMPLETED event."""
@@ -279,7 +305,7 @@ class WorkQueueMonitorDaemon:
 
         work_id = payload.get("work_id", "")
 
-        async with self._lock:
+        async with self._jobs_lock:
             if work_id in self._jobs:
                 job = self._jobs[work_id]
                 job.completed_at = time.time()
@@ -291,7 +317,7 @@ class WorkQueueMonitorDaemon:
                     latency = job.completed_at - job.queued_at
                     self._completed_latencies.append(latency)
                     # Keep rolling window
-                    if len(self._completed_latencies) > LATENCY_WINDOW_SIZE:
+                    if len(self._completed_latencies) > self.config.latency_window_size:
                         self._completed_latencies.pop(0)
 
                 # Decrement node load
@@ -303,6 +329,7 @@ class WorkQueueMonitorDaemon:
                 # Remove from active tracking
                 del self._jobs[work_id]
 
+        self.record_event()
         await self._check_backpressure()
 
     async def _on_work_failed(self, event: Any) -> None:
@@ -311,7 +338,7 @@ class WorkQueueMonitorDaemon:
 
         work_id = payload.get("work_id", "")
 
-        async with self._lock:
+        async with self._jobs_lock:
             if work_id in self._jobs:
                 job = self._jobs[work_id]
                 job.status = "failed"
@@ -326,7 +353,9 @@ class WorkQueueMonitorDaemon:
                 # Remove from active tracking
                 del self._jobs[work_id]
 
-        logger.warning(f"[WorkQueueMonitor] Work failed permanently: {work_id}")
+        self.record_event()
+        self.record_error(f"Work failed: {work_id}")
+        logger.warning(f"[{self._get_daemon_name()}] Work failed permanently: {work_id}")
 
     async def _on_work_retry(self, event: Any) -> None:
         """Handle WORK_RETRY event."""
@@ -334,7 +363,7 @@ class WorkQueueMonitorDaemon:
 
         work_id = payload.get("work_id", "")
 
-        async with self._lock:
+        async with self._jobs_lock:
             if work_id in self._jobs:
                 self._jobs[work_id].retry_count += 1
                 self._jobs[work_id].status = "pending"
@@ -342,42 +371,52 @@ class WorkQueueMonitorDaemon:
                 self._jobs[work_id].started_at = 0.0
                 self._total_retries += 1
 
+        self.record_event()
+
+    # =========================================================================
+    # Backpressure and Overload Detection
+    # =========================================================================
+
     async def _check_backpressure(self) -> None:
         """Check if backpressure should be activated/deactivated."""
         now = time.time()
 
         # Throttle checks to avoid spam
-        if now - self._last_backpressure_check < 10:
+        if now - self._last_backpressure_check < self.config.backpressure_check_interval:
             return
         self._last_backpressure_check = now
 
-        async with self._lock:
+        async with self._jobs_lock:
             pending_count = sum(1 for j in self._jobs.values() if j.status == "pending")
 
-        was_active = self._backpressure_active
+        threshold = self.config.backpressure_threshold
 
-        if pending_count > BACKPRESSURE_THRESHOLD and not self._backpressure_active:
+        if pending_count > threshold and not self._backpressure_active:
             self._backpressure_active = True
             await self._emit_backpressure_event(True, pending_count)
             logger.warning(
-                f"[WorkQueueMonitor] BACKPRESSURE ACTIVATED: {pending_count} pending jobs"
+                f"[{self._get_daemon_name()}] BACKPRESSURE ACTIVATED: {pending_count} pending jobs"
             )
 
-        elif pending_count <= BACKPRESSURE_THRESHOLD * 0.7 and self._backpressure_active:
+        elif pending_count <= threshold * 0.7 and self._backpressure_active:
             self._backpressure_active = False
             await self._emit_backpressure_event(False, pending_count)
             logger.info(
-                f"[WorkQueueMonitor] Backpressure deactivated: {pending_count} pending jobs"
+                f"[{self._get_daemon_name()}] Backpressure deactivated: {pending_count} pending jobs"
             )
 
     async def _check_node_overload(self, node_id: str) -> None:
         """Check if a node is overloaded."""
         job_count = self._node_job_counts.get(node_id, 0)
-        if job_count > NODE_OVERLOAD_THRESHOLD:
+        if job_count > self.config.node_overload_threshold:
             await self._emit_node_overload_event(node_id, job_count)
             logger.warning(
-                f"[WorkQueueMonitor] Node overloaded: {node_id} has {job_count} jobs"
+                f"[{self._get_daemon_name()}] Node overloaded: {node_id} has {job_count} jobs"
             )
+
+    # =========================================================================
+    # Event Emission
+    # =========================================================================
 
     async def _emit_backpressure_event(self, active: bool, queue_depth: int) -> None:
         """Emit backpressure activation/deactivation event."""
@@ -391,12 +430,12 @@ class WorkQueueMonitorDaemon:
                 {
                     "active": active,
                     "queue_depth": queue_depth,
-                    "threshold": BACKPRESSURE_THRESHOLD,
+                    "threshold": self.config.backpressure_threshold,
                     "timestamp": time.time(),
                 },
             )
         except Exception as e:
-            logger.debug(f"[WorkQueueMonitor] Failed to emit backpressure event: {e}")
+            logger.debug(f"[{self._get_daemon_name()}] Failed to emit backpressure event: {e}")
 
     async def _emit_node_overload_event(self, node_id: str, job_count: int) -> None:
         """Emit node overload event."""
@@ -409,12 +448,12 @@ class WorkQueueMonitorDaemon:
                 {
                     "node_id": node_id,
                     "job_count": job_count,
-                    "threshold": NODE_OVERLOAD_THRESHOLD,
+                    "threshold": self.config.node_overload_threshold,
                     "timestamp": time.time(),
                 },
             )
         except Exception as e:
-            logger.debug(f"[WorkQueueMonitor] Failed to emit overload event: {e}")
+            logger.debug(f"[{self._get_daemon_name()}] Failed to emit overload event: {e}")
 
     async def _emit_stuck_job_event(self, job: JobTracker, stuck_duration: float) -> None:
         """Emit stuck job detected event."""
@@ -429,45 +468,16 @@ class WorkQueueMonitorDaemon:
                     "work_type": job.work_type,
                     "claimed_by": job.claimed_by,
                     "stuck_duration_seconds": stuck_duration,
-                    "threshold": STUCK_JOB_THRESHOLD_SECONDS,
+                    "threshold": self.config.stuck_job_threshold_seconds,
                     "timestamp": time.time(),
                 },
             )
         except Exception as e:
-            logger.debug(f"[WorkQueueMonitor] Failed to emit stuck job event: {e}")
+            logger.debug(f"[{self._get_daemon_name()}] Failed to emit stuck job event: {e}")
 
-    async def _monitoring_loop(self) -> None:
-        """Background loop for periodic monitoring checks."""
-        while self._running:
-            try:
-                await self._check_stuck_jobs()
-                await asyncio.sleep(60)  # Check every minute
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"[WorkQueueMonitor] Monitoring loop error: {e}")
-                await asyncio.sleep(60)
-
-    async def _check_stuck_jobs(self) -> None:
-        """Check for jobs that are stuck (claimed but not started)."""
-        now = time.time()
-        stuck_jobs: list[tuple[JobTracker, float]] = []
-
-        async with self._lock:
-            for job in self._jobs.values():
-                # Job is stuck if claimed but not started for too long
-                if job.status == "claimed" and job.claimed_at > 0 and job.started_at == 0:
-                    stuck_duration = now - job.claimed_at
-                    if stuck_duration > STUCK_JOB_THRESHOLD_SECONDS:
-                        stuck_jobs.append((job, stuck_duration))
-
-        # Emit events for stuck jobs (outside lock)
-        for job, duration in stuck_jobs:
-            await self._emit_stuck_job_event(job, duration)
-            logger.warning(
-                f"[WorkQueueMonitor] Stuck job detected: {job.work_id} "
-                f"claimed by {job.claimed_by} for {duration:.0f}s"
-            )
+    # =========================================================================
+    # Statistics and Status
+    # =========================================================================
 
     def get_queue_stats(self) -> QueueStats:
         """Get current queue statistics."""
@@ -502,7 +512,7 @@ class WorkQueueMonitorDaemon:
         stuck_count = 0
         for job in self._jobs.values():
             if job.status == "claimed" and job.claimed_at > 0 and job.started_at == 0:
-                if now - job.claimed_at > STUCK_JOB_THRESHOLD_SECONDS:
+                if now - job.claimed_at > self.config.stuck_job_threshold_seconds:
                     stuck_count += 1
 
         return QueueStats(
@@ -521,11 +531,11 @@ class WorkQueueMonitorDaemon:
         )
 
     def get_status(self) -> dict[str, Any]:
-        """Get daemon status for health checks."""
+        """Get daemon status for monitoring."""
         stats = self.get_queue_stats()
-        return {
-            "running": self._running,
-            "subscribed": self._subscribed,
+
+        # Update custom stats in MonitorStats for health check details
+        self._monitor_stats.custom.update({
             "pending_count": stats.pending_count,
             "running_count": stats.running_count,
             "completed_count": stats.completed_count,
@@ -533,82 +543,46 @@ class WorkQueueMonitorDaemon:
             "backpressure_active": stats.backpressure_active,
             "stuck_job_count": stats.stuck_job_count,
             "avg_latency_seconds": round(stats.avg_latency_seconds, 2),
-        }
+        })
 
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health status."""
-        try:
-            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-
-            if not self._running:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.STOPPED,
-                    message="Work queue monitor not running",
-                )
-
-            if not self._subscribed:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.DEGRADED,
-                    message="Work queue monitor not subscribed to events",
-                )
-
-            stats = self.get_queue_stats()
-
-            # Check for issues
-            if stats.stuck_job_count > 5:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.DEGRADED,
-                    message=f"{stats.stuck_job_count} stuck jobs detected",
-                    details=self.get_status(),
-                )
-
-            if stats.backpressure_active:
-                return HealthCheckResult(
-                    healthy=True,
-                    status=CoordinatorStatus.DEGRADED,
-                    message=f"Backpressure active: {stats.pending_count} pending",
-                    details=self.get_status(),
-                )
-
-            return HealthCheckResult(
-                healthy=True,
-                status=CoordinatorStatus.RUNNING,
-                message=f"Queue monitor running (pending: {stats.pending_count}, running: {stats.running_count})",
-                details=self.get_status(),
-            )
-
-        except ImportError:
-            return {"healthy": self._running and self._subscribed}
+        # Return base status merged with queue-specific stats
+        base_status = super().get_status()
+        base_status.update({
+            "pending_count": stats.pending_count,
+            "running_count": stats.running_count,
+            "completed_count": stats.completed_count,
+            "failed_count": stats.failed_count,
+            "backpressure_active": stats.backpressure_active,
+            "stuck_job_count": stats.stuck_job_count,
+            "avg_latency_seconds": round(stats.avg_latency_seconds, 2),
+        })
+        return base_status
 
 
-# Singleton instance
-_monitor_instance: WorkQueueMonitorDaemon | None = None
-_monitor_lock = asyncio.Lock()
+# =============================================================================
+# Convenience Functions (Backward Compatibility)
+# =============================================================================
 
 
-async def get_work_queue_monitor() -> WorkQueueMonitorDaemon:
-    """Get or create the singleton WorkQueueMonitorDaemon instance."""
-    global _monitor_instance
+def get_work_queue_monitor() -> WorkQueueMonitorDaemon:
+    """Get the singleton WorkQueueMonitorDaemon instance.
 
-    async with _monitor_lock:
-        if _monitor_instance is None:
-            _monitor_instance = WorkQueueMonitorDaemon()
-        return _monitor_instance
+    Note: This is now synchronous - the monitor uses MonitorBase's singleton pattern.
+    """
+    return WorkQueueMonitorDaemon.get_instance()
 
 
 def get_work_queue_monitor_sync() -> WorkQueueMonitorDaemon:
-    """Get the singleton instance synchronously (may create if not exists)."""
-    global _monitor_instance
-    if _monitor_instance is None:
-        _monitor_instance = WorkQueueMonitorDaemon()
-    return _monitor_instance
+    """Get the singleton instance synchronously.
+
+    Alias for get_work_queue_monitor() - both are now synchronous.
+    """
+    return WorkQueueMonitorDaemon.get_instance()
 
 
 __all__ = [
     "WorkQueueMonitorDaemon",
+    "WorkQueueMonitorConfig",
     "QueueStats",
     "JobTracker",
     "get_work_queue_monitor",

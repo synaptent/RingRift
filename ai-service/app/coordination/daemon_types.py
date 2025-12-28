@@ -554,6 +554,12 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     # Data consolidation depends on event router and data pipeline
     DaemonType.DATA_CONSOLIDATION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
     DaemonType.S3_BACKUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
+    # S3 node sync (December 2025) - bi-directional S3 sync for cluster nodes
+    DaemonType.S3_NODE_SYNC: {DaemonType.EVENT_ROUTER},
+    # S3 consolidation (December 2025) - consolidates data from all nodes (coordinator only)
+    DaemonType.S3_CONSOLIDATION: {DaemonType.EVENT_ROUTER, DaemonType.S3_NODE_SYNC},
+    # Integrity check (December 2025) - scans for games without move data
+    DaemonType.INTEGRITY_CHECK: {DaemonType.EVENT_ROUTER},
 
     # Job/resource daemons
     DaemonType.JOB_SCHEDULER: {DaemonType.EVENT_ROUTER},

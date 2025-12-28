@@ -517,7 +517,11 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         node: NodeInfo,
         action: RecoveryAction,
     ) -> bool:
-        """Execute a recovery action for a node."""
+        """Execute a recovery action for a node.
+
+        P0.5 Dec 2025: Now includes post-restart health verification to ensure
+        the node actually came back up after restart API call.
+        """
         node.last_recovery_attempt = time.time()
 
         if action == RecoveryAction.NOTIFY:
@@ -526,22 +530,48 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             return True
 
         if action == RecoveryAction.RESTART:
-            success = await self._restart_node(node)
-            if success:
-                self._stats.record_recovery_success()
+            api_success = await self._restart_node(node)
+            if api_success:
+                # P0.5 Dec 2025: Verify node actually came back up
+                verified = await self._verify_node_health_after_restart(node)
+                if verified:
+                    self._stats.record_recovery_success()
+                    self._emit_recovery_event(node, action, success=True)
+                    return True
+                else:
+                    # API succeeded but node didn't come back up
+                    self._stats.record_recovery_failure(
+                        f"verification_failed:{node.node_id}"
+                    )
+                    self._emit_recovery_event(node, action, success=False)
+                    return False
             else:
                 self._stats.record_recovery_failure(f"restart_failed:{node.node_id}")
-            self._emit_recovery_event(node, action, success)
-            return success
+                self._emit_recovery_event(node, action, success=False)
+                return False
 
         if action == RecoveryAction.PREEMPTIVE_RESTART:
-            success = await self._restart_node(node)
-            if success:
-                self._stats.record_recovery_success(preemptive=True)
+            api_success = await self._restart_node(node)
+            if api_success:
+                # P0.5 Dec 2025: Verify node actually came back up
+                verified = await self._verify_node_health_after_restart(node)
+                if verified:
+                    self._stats.record_recovery_success(preemptive=True)
+                    self._emit_recovery_event(node, action, success=True)
+                    return True
+                else:
+                    # API succeeded but node didn't come back up
+                    self._stats.record_recovery_failure(
+                        f"preemptive_verification_failed:{node.node_id}"
+                    )
+                    self._emit_recovery_event(node, action, success=False)
+                    return False
             else:
-                self._stats.record_recovery_failure(f"preemptive_restart_failed:{node.node_id}")
-            self._emit_recovery_event(node, action, success)
-            return success
+                self._stats.record_recovery_failure(
+                    f"preemptive_restart_failed:{node.node_id}"
+                )
+                self._emit_recovery_event(node, action, success=False)
+                return False
 
         return False
 
@@ -814,6 +844,115 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         except Exception as e:
             logger.error(f"[NodeRecoveryDaemon] RunPod restart error: {e}")
             return False
+
+    async def _verify_node_health_after_restart(
+        self,
+        node: NodeInfo,
+        poll_intervals: list[float] | None = None,
+    ) -> bool:
+        """Verify node health after restart by polling at specified intervals.
+
+        P0.5 Dec 2025: Ensures restart actually succeeded by verifying node
+        becomes reachable after restart API call completes.
+
+        Args:
+            node: The node to verify
+            poll_intervals: List of seconds to wait between polls.
+                           Default: [10, 20, 30] (poll at 10s, 30s, 60s after restart)
+
+        Returns:
+            True if node becomes healthy within the poll window, False otherwise.
+        """
+        if poll_intervals is None:
+            poll_intervals = [10.0, 20.0, 30.0]
+
+        logger.info(
+            f"[NodeRecoveryDaemon] Verifying health of {node.node_id} "
+            f"after restart (intervals: {poll_intervals}s)"
+        )
+
+        for i, interval in enumerate(poll_intervals):
+            logger.debug(
+                f"[NodeRecoveryDaemon] Waiting {interval}s before health check {i + 1}"
+            )
+            await asyncio.sleep(interval)
+
+            # Check node health via P2P status or direct SSH
+            is_healthy = await self._check_single_node_health(node)
+
+            if is_healthy:
+                total_wait = sum(poll_intervals[:i + 1])
+                logger.info(
+                    f"[NodeRecoveryDaemon] Node {node.node_id} verified healthy "
+                    f"after {total_wait:.0f}s"
+                )
+                # Reset failure state on successful verification
+                node.status = "running"
+                node.consecutive_failures = 0
+                return True
+
+            logger.debug(
+                f"[NodeRecoveryDaemon] Node {node.node_id} not yet healthy "
+                f"after {sum(poll_intervals[:i + 1]):.0f}s"
+            )
+
+        # All polls failed
+        total_wait = sum(poll_intervals)
+        logger.warning(
+            f"[NodeRecoveryDaemon] Node {node.node_id} failed health verification "
+            f"after {total_wait:.0f}s"
+        )
+        return False
+
+    async def _check_single_node_health(self, node: NodeInfo) -> bool:
+        """Check if a single node is healthy via P2P or SSH.
+
+        P0.5 Dec 2025: Helper for post-restart verification.
+
+        Args:
+            node: The node to check
+
+        Returns:
+            True if node responds to health check, False otherwise.
+        """
+        # Try P2P status first
+        try:
+            from app.coordination.p2p_integration import get_p2p_orchestrator
+
+            p2p = get_p2p_orchestrator()
+            if p2p is not None:
+                status = await p2p.get_status()
+                if status:
+                    alive_peers = status.get("alive_peers", [])
+                    if isinstance(alive_peers, list):
+                        for peer in alive_peers:
+                            if isinstance(peer, dict):
+                                if peer.get("node_id") == node.node_id:
+                                    return True
+                            elif isinstance(peer, str) and peer == node.node_id:
+                                return True
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug(f"[NodeRecoveryDaemon] P2P check failed: {e}")
+
+        # Fallback: Try SSH health check
+        if node.host:
+            try:
+                from app.core.ssh import run_ssh_command_async
+
+                result = await asyncio.wait_for(
+                    run_ssh_command_async(
+                        node.node_id,  # Uses cluster config for SSH details
+                        "echo healthy",
+                        timeout=10,
+                    ),
+                    timeout=15.0,
+                )
+                if result and result.success and "healthy" in result.stdout:
+                    return True
+            except (ImportError, asyncio.TimeoutError, RuntimeError, OSError) as e:
+                logger.debug(f"[NodeRecoveryDaemon] SSH health check failed: {e}")
+
+        return False
 
     def _emit_recovery_event(
         self,

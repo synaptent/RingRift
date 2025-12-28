@@ -35,7 +35,10 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from app.coordination.contracts import HealthCheckResult
 
 from app.coordination.retry_strategies import (
     ExponentialBackoffStrategy,
@@ -596,19 +599,28 @@ class TransportChain:
     # Health and Statistics
     # =========================================================================
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> "HealthCheckResult":
         """Check health of all transports in the chain.
 
         Returns:
-            Aggregated health status
+            Aggregated HealthCheckResult for the transport chain.
+
+        December 2025: Standardized to return HealthCheckResult instead of dict.
         """
+        from app.coordination.contracts import HealthCheckResult
+
         transport_health = {}
         total_success = 0
         total_attempts = 0
 
         for transport in self._transports:
             health = transport.health_check()
-            transport_health[transport.name] = health
+            # Convert HealthCheckResult to dict for nested storage
+            transport_health[transport.name] = {
+                "healthy": health.healthy,
+                "status": health.status.value if hasattr(health.status, "value") else str(health.status),
+                "message": health.message,
+            }
 
             metrics = self._transport_metrics[transport.name]
             total_success += metrics.successes
@@ -622,23 +634,27 @@ class TransportChain:
 
         success_rate = total_success / total_attempts if total_attempts > 0 else 1.0
 
-        return {
-            "healthy": healthy_count > 0,
-            "status": "healthy" if all_healthy else ("degraded" if healthy_count > 0 else "unhealthy"),
-            "message": f"{healthy_count}/{len(self._transports)} transports healthy",
-            "details": {
-                "transports": transport_health,
-                "failover_mode": self._failover_mode.value,
-                "shared_circuits": {
-                    target: {
-                        "state": status.state.value,
-                        "failures": status.failure_count,
-                    }
-                    for target, status in self._shared_status.items()
-                },
-                "overall_success_rate": round(success_rate, 3),
+        details = {
+            "transports": transport_health,
+            "failover_mode": self._failover_mode.value,
+            "shared_circuits": {
+                target: {
+                    "state": status.state.value,
+                    "failures": status.failure_count,
+                }
+                for target, status in self._shared_status.items()
             },
+            "overall_success_rate": round(success_rate, 3),
         }
+
+        message = f"{healthy_count}/{len(self._transports)} transports healthy"
+
+        if all_healthy:
+            return HealthCheckResult.healthy(message).with_details(details)
+        elif healthy_count > 0:
+            return HealthCheckResult.degraded(message).with_details(details)
+        else:
+            return HealthCheckResult.unhealthy(message).with_details(details)
 
     def get_statistics(self) -> dict[str, Any]:
         """Get detailed statistics for all transports."""

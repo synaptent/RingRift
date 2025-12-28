@@ -953,15 +953,19 @@ class TestHybridTransportDownload:
             with tempfile.TemporaryDirectory() as tmpdir:
                 local_path = Path(tmpdir) / "file.npz"
 
+                # Use multiple URLs to trigger aria2 attempt (len(urls) > 1)
                 success, path = await transport.download_file(
                     node_id="test-node",
-                    urls=["http://example.com/file.npz"],
+                    urls=[
+                        "http://example.com/file.npz",
+                        "http://mirror.example.com/file.npz",
+                    ],
                     local_path=str(local_path),
                 )
 
-                # Verify aria2 was tried first
+                # Verify aria2 was tried first (triggered by len(urls) > 1)
                 mock_aria2.assert_called_once()
-                # HTTP fallback should be triggered
+                # HTTP fallback should be triggered after aria2 fails
                 mock_session_cls.assert_called_once()
 
     @pytest.mark.asyncio

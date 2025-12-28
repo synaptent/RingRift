@@ -52,12 +52,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# Import canonical CircuitState from circuit_breaker module (Dec 28, 2025 consolidation)
+from app.distributed.circuit_breaker import CircuitState
+
 __all__ = [
     "SSHClient",
     "SSHConfig",
     "SSHResult",
     "SSHHealth",
-    "CircuitState",  # Circuit breaker states (Dec 2025)
+    "CircuitState",  # Re-exported from circuit_breaker.py (Dec 2025)
     "get_ssh_client",
     "run_ssh_command",
     "run_ssh_command_async",
@@ -171,11 +174,9 @@ class SSHResult:
         return self.success
 
 
-class CircuitState:
-    """Circuit breaker states."""
-    CLOSED = "closed"  # Normal operation, requests pass through
-    OPEN = "open"  # Failing fast, rejecting all requests
-    HALF_OPEN = "half_open"  # Testing if service recovered
+# CircuitState is now imported from app.distributed.circuit_breaker (Dec 28, 2025 consolidation)
+# This class was removed as it duplicated the canonical CircuitState(Enum) definition.
+# The enum values are identical: CLOSED="closed", OPEN="open", HALF_OPEN="half_open"
 
 
 @dataclass
@@ -204,7 +205,7 @@ class SSHHealth:
 
     # State tracking
     _consecutive_opens: int = 0  # Track how many times circuit has opened
-    _circuit_state: str = field(default=CircuitState.CLOSED)
+    _circuit_state: CircuitState = field(default=CircuitState.CLOSED)  # Now uses enum (Dec 28, 2025)
     _circuit_opened_at: float | None = None  # When circuit entered OPEN state
     _last_probe_time: float | None = None  # When we last tried early recovery probe
 
@@ -239,8 +240,8 @@ class SSHHealth:
 
     @property
     def circuit_state(self) -> str:
-        """Get current circuit state."""
-        return self._circuit_state
+        """Get current circuit state as string value (for backward compat)."""
+        return self._circuit_state.value  # Return string value from enum (Dec 28, 2025)
 
     @property
     def is_healthy(self) -> bool:

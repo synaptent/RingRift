@@ -1,6 +1,6 @@
 # Master Runbook Index - RingRift AI Service
 
-Centralized navigation for all 23 AI service operational runbooks.
+Centralized navigation for all 25 AI service operational runbooks.
 
 **Created**: December 28, 2025
 **Last Updated**: December 28, 2025
@@ -36,7 +36,9 @@ Is the cluster responding?
     │   ├── Training loop stalled → TRAINING_LOOP_STALLED.md
     │   ├── Parity gate stuck → PARITY_GATE_RESOLUTION.md
     │   ├── Parity mismatch → PARITY_MISMATCH_DEBUG.md
-    │   └── Hexagonal-specific → HEXAGONAL_PARITY_BUG.md
+    │   ├── Hexagonal-specific → HEXAGONAL_PARITY_BUG.md
+    │   ├── Model promotion issues → MODEL_PROMOTION_WORKFLOW.md
+    │   └── Feedback loops broken → FEEDBACK_LOOP_TROUBLESHOOTING.md
     │
     ├── Are GPUs stuck?
     │   ├── GPU OOM errors → GPU_OOM_DEBUG.md
@@ -96,6 +98,13 @@ Is the cluster responding?
 | [PARITY_GATE_RESOLUTION.md](PARITY_GATE_RESOLUTION.md) | High     | Parity gate blocking training  |
 | [PARITY_MISMATCH_DEBUG.md](PARITY_MISMATCH_DEBUG.md)   | Critical | TS/Python game replay mismatch |
 | [HEXAGONAL_PARITY_BUG.md](HEXAGONAL_PARITY_BUG.md)     | Critical | Hexagonal board parity issues  |
+
+### Model Promotion & Feedback
+
+| Runbook                                                              | Severity | When to Use                              |
+| -------------------------------------------------------------------- | -------- | ---------------------------------------- |
+| [MODEL_PROMOTION_WORKFLOW.md](MODEL_PROMOTION_WORKFLOW.md)           | High     | Model promotion issues, gauntlet failing |
+| [FEEDBACK_LOOP_TROUBLESHOOTING.md](FEEDBACK_LOOP_TROUBLESHOOTING.md) | High     | Feedback loops not updating              |
 
 ### GPU & Resources
 

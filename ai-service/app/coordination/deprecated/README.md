@@ -24,6 +24,43 @@ The following modules have been moved here from the parent directory:
 
 Import from `app.coordination.deprecated.*` will emit deprecation warnings.
 
+## Deprecated Re-export Modules (December 28, 2025)
+
+The following modules are pure re-exports that now emit deprecation warnings.
+They remain functional for backward compatibility but will be removed in Q2 2026.
+
+| Module                                   | Canonical Imports                                          | Notes             |
+| ---------------------------------------- | ---------------------------------------------------------- | ----------------- |
+| `app.coordination.training.scheduler`    | `job_scheduler`, `duration_scheduler`, `unified_scheduler` | ~60 LOC re-export |
+| `app.coordination.training.orchestrator` | `training_coordinator`, `selfplay_orchestrator`            | ~65 LOC re-export |
+| `app.coordination.cluster.sync`          | `sync_coordinator`, `sync_bandwidth`, `sync_mutex`         | ~65 LOC re-export |
+
+### Migration Examples
+
+```python
+# Old (deprecated) - emits DeprecationWarning
+from app.coordination.training.scheduler import PriorityJobScheduler
+
+# New (canonical)
+from app.coordination.job_scheduler import PriorityJobScheduler
+```
+
+```python
+# Old (deprecated) - emits DeprecationWarning
+from app.coordination.training.orchestrator import TrainingCoordinator
+
+# New (canonical)
+from app.coordination.training_coordinator import TrainingCoordinator
+```
+
+```python
+# Old (deprecated) - emits DeprecationWarning
+from app.coordination.cluster.sync import SyncScheduler
+
+# New (canonical)
+from app.coordination.sync_coordinator import SyncScheduler
+```
+
 ## Consolidation Summary
 
 The `app/coordination/` module was consolidated from 75 modules → 15 focused components organized into 4 packages:

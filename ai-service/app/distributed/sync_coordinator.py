@@ -67,6 +67,9 @@ from .unified_manifest import (
     PriorityQueueEntry,
 )
 
+# December 2025: Centralized port constants
+from app.config.ports import P2P_DEFAULT_PORT
+
 logger = logging.getLogger(__name__)
 
 # Default paths
@@ -496,7 +499,7 @@ class SyncCoordinator:
             p2p_port = get_config().distributed.p2p_port
         except (ImportError, AttributeError, TypeError):
             # Config module missing, config structure mismatch, or type errors
-            p2p_port = 8770
+            p2p_port = P2P_DEFAULT_PORT
 
         hostname = socket.gethostname().lower()
         files_synced = 0
@@ -2316,6 +2319,51 @@ class HighQualityDataSyncWatcher:
         """
         self._last_sync_time = 0  # Reset cooldown
         return self._maybe_trigger_sync()
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the HighQualityDataSyncWatcher.
+
+        Returns:
+            HealthCheckResult with subscription status and sync state.
+        """
+        try:
+            from app.coordination.protocols import HealthCheckResult
+        except ImportError:
+            # Return dict if HealthCheckResult not available
+            return {
+                "healthy": self._subscribed,
+                "message": "HighQualityDataSyncWatcher subscribed" if self._subscribed else "Not subscribed",
+                "details": {"subscribed": self._subscribed, "sync_in_progress": self._sync_in_progress},
+            }
+
+        import time
+
+        details = {
+            "subscribed": self._subscribed,
+            "sync_in_progress": self._sync_in_progress,
+            "pending_hosts": len(self._pending_hosts),
+            "sync_cooldown_seconds": self.sync_cooldown_seconds,
+            "min_quality_score": self.min_quality_score,
+            "max_games_per_sync": self.max_games_per_sync,
+        }
+
+        # Add time since last sync if available
+        if self._last_sync_time > 0:
+            details["seconds_since_last_sync"] = time.time() - self._last_sync_time
+
+        # Not subscribed = unhealthy
+        if not self._subscribed:
+            return HealthCheckResult(
+                healthy=False,
+                message="HighQualityDataSyncWatcher not subscribed to events",
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            message="HighQualityDataSyncWatcher operational",
+            details=details,
+        )
 
 
 # Singleton high-quality sync watcher

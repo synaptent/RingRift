@@ -1,18 +1,22 @@
 """Shared Resilience Utilities for Distributed Operations.
 
-This module provides common resilience patterns for tournament scripts
-and other distributed operations:
+This module provides resilience patterns for tournament scripts
+and other distributed operations, focusing on HOST-LEVEL HEALTH
+tracking that goes beyond simple retry logic.
 
-- HostHealthTracker: Track host failures and mark degraded hosts
-- RetryExecutor: Execute operations with exponential backoff
-- Exponential backoff utilities
+Core utilities (HostHealthTracker, RetryExecutor) track per-host
+failure state and enable graceful degradation when hosts become
+unreliable.
+
+For simple retry logic (decorators, exponential backoff), use
+app.utils.retry instead.
 
 Usage:
     from scripts.lib.resilience import (
         HostHealthTracker,
         RetryExecutor,
-        exponential_backoff_delay,
-        retry_with_backoff,
+        is_network_error,
+        create_graceful_executor,
     )
 
     # Track host health
@@ -25,100 +29,41 @@ Usage:
             if tracker.record_failure("host1", str(e)):
                 logger.error("Host marked as degraded")
 
-    # Retry with backoff
-    result = retry_with_backoff(
-        lambda: ssh_command(),
-        max_retries=3,
-        on_retry=lambda attempt, err: logger.warning(f"Retry {attempt}: {err}")
-    )
+    # Retry with host health tracking
+    executor = RetryExecutor(health_tracker=tracker)
+    result = executor.execute("host1", lambda: ssh_command(), "sync data")
+
+December 2025: Refactored to use app.utils.retry for basic retry logic.
+This module focuses on host-level health tracking and graceful degradation.
 """
 
 from __future__ import annotations
 
 import logging
-import random
 import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
+
+# Import retry utilities from canonical location
+from app.utils.retry import RetryConfig as BaseRetryConfig
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-
-def exponential_backoff_delay(
-    attempt: int,
-    base_delay: float = 1.0,
-    max_delay: float = 30.0,
-    jitter_factor: float = 0.2,
-) -> float:
-    """Calculate exponential backoff delay with jitter.
-
-    Args:
-        attempt: Zero-indexed attempt number
-        base_delay: Base delay in seconds (default: 1.0)
-        max_delay: Maximum delay in seconds (default: 30.0)
-        jitter_factor: Random jitter as fraction of delay (default: 0.2)
-
-    Returns:
-        Delay in seconds with jitter applied
-    """
-    delay = min(base_delay * (2 ** attempt), max_delay)
-    # Add jitter to prevent thundering herd
-    jitter = delay * jitter_factor * random.random()
-    return delay + jitter
-
-
-def retry_with_backoff(
-    func: Callable[[], T],
-    max_retries: int = 3,
-    base_delay: float = 1.0,
-    max_delay: float = 30.0,
-    retry_exceptions: tuple = (Exception,),
-    on_retry: Callable[[int, Exception], None] | None = None,
-    should_retry: Callable[[Exception], bool] | None = None,
-) -> T:
-    """Execute a function with exponential backoff retries.
-
-    Args:
-        func: Function to execute
-        max_retries: Maximum number of attempts (default: 3)
-        base_delay: Base delay between retries in seconds (default: 1.0)
-        max_delay: Maximum delay between retries (default: 30.0)
-        retry_exceptions: Tuple of exception types to retry on
-        on_retry: Optional callback(attempt, exception) called before each retry
-        should_retry: Optional predicate to decide if exception should be retried
-
-    Returns:
-        Result of successful function call
-
-    Raises:
-        Last exception if all retries fail
-    """
-    last_exception: Exception | None = None
-
-    for attempt in range(max_retries):
-        try:
-            return func()
-        except retry_exceptions as e:
-            last_exception = e
-
-            # Check if we should retry this exception
-            if should_retry is not None and not should_retry(e):
-                raise
-
-            if attempt < max_retries - 1:
-                if on_retry:
-                    on_retry(attempt + 1, e)
-                delay = exponential_backoff_delay(attempt, base_delay, max_delay)
-                time.sleep(delay)
-
-    # All retries failed
-    if last_exception is not None:
-        raise last_exception
-    raise RuntimeError("retry_with_backoff failed without exception")
+__all__ = [
+    # Primary exports (unique to this module)
+    "HostHealthTracker",
+    "RetryExecutor",
+    "RetryConfig",
+    "is_network_error",
+    "create_graceful_executor",
+    # Backward-compat exports (use app.utils.retry instead)
+    "exponential_backoff_delay",
+    "retry_with_backoff",
+]
 
 
 @dataclass
@@ -242,13 +187,108 @@ class HostHealthTracker:
 
 @dataclass
 class RetryConfig:
-    """Configuration for retry behavior."""
+    """Configuration for retry behavior with SCP-specific settings.
+
+    This is a standalone config class for backward compatibility.
+    Uses app.utils.retry.RetryConfig internally for delay calculation.
+    """
 
     max_retries: int = 3
     base_delay: float = 1.0
     max_delay: float = 30.0
+    # SCP-specific settings
     scp_retries: int = 3
     scp_base_delay: float = 2.0
+
+    def get_delay(self, attempt: int) -> float:
+        """Calculate delay for given attempt (0-indexed)."""
+        config = BaseRetryConfig(
+            max_attempts=self.max_retries,
+            base_delay=self.base_delay,
+            max_delay=self.max_delay,
+        )
+        return config.get_delay(attempt + 1)  # BaseRetryConfig uses 1-indexed
+
+
+# Re-export commonly used functions from canonical location for backward compat
+def exponential_backoff_delay(
+    attempt: int,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    jitter_factor: float = 0.2,
+) -> float:
+    """Calculate exponential backoff delay with jitter.
+
+    DEPRECATED: Use app.utils.retry.RetryConfig.get_delay() instead.
+
+    Args:
+        attempt: Zero-indexed attempt number
+        base_delay: Base delay in seconds (default: 1.0)
+        max_delay: Maximum delay in seconds (default: 30.0)
+        jitter_factor: Random jitter as fraction of delay (default: 0.2)
+
+    Returns:
+        Delay in seconds with jitter applied
+    """
+    config = BaseRetryConfig(base_delay=base_delay, max_delay=max_delay, jitter=jitter_factor)
+    return config.get_delay(attempt + 1)  # get_delay uses 1-indexed attempts
+
+
+def retry_with_backoff(
+    func: Callable[[], T],
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    retry_exceptions: tuple = (Exception,),
+    on_retry: Callable[[int, Exception], None] | None = None,
+    should_retry: Callable[[Exception], bool] | None = None,
+) -> T:
+    """Execute a function with exponential backoff retries.
+
+    DEPRECATED: Use app.utils.retry.retry decorator or RetryConfig.attempts() instead.
+
+    Args:
+        func: Function to execute
+        max_retries: Maximum number of attempts (default: 3)
+        base_delay: Base delay between retries in seconds (default: 1.0)
+        max_delay: Maximum delay between retries (default: 30.0)
+        retry_exceptions: Tuple of exception types to retry on
+        on_retry: Optional callback(attempt, exception) called before each retry
+        should_retry: Optional predicate to decide if exception should be retried
+
+    Returns:
+        Result of successful function call
+
+    Raises:
+        Last exception if all retries fail
+    """
+    config = BaseRetryConfig(
+        max_attempts=max_retries,
+        base_delay=base_delay,
+        max_delay=max_delay,
+    )
+
+    last_exception: Exception | None = None
+
+    for attempt in config.attempts():
+        try:
+            return func()
+        except retry_exceptions as e:
+            last_exception = e
+
+            # Check if we should retry this exception
+            if should_retry is not None and not should_retry(e):
+                raise
+
+            if attempt.should_retry:
+                if on_retry:
+                    on_retry(attempt.number, e)
+                attempt.wait()
+
+    # All retries failed
+    if last_exception is not None:
+        raise last_exception
+    raise RuntimeError("retry_with_backoff failed without exception")
 
 
 class RetryExecutor:

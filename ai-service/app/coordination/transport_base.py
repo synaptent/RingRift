@@ -43,7 +43,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
+
+# Import HealthCheckResult for runtime use (not just type hints)
+from app.coordination.contracts import HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -477,16 +480,16 @@ class TransportBase(ABC):
     # Health Check
     # =========================================================================
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> "HealthCheckResult":
         """Check transport health for daemon monitoring.
 
         Returns:
-            Health check result dict with:
-            - healthy: bool
-            - status: str
-            - message: str
-            - details: dict with metrics
+            HealthCheckResult with transport health status.
+
+        December 2025: Standardized to return HealthCheckResult instead of dict.
         """
+        from app.coordination.contracts import HealthCheckResult
+
         all_states = self._target_status
         total_targets = len(all_states)
         open_circuits = sum(
@@ -503,40 +506,27 @@ class TransportBase(ABC):
             else 1.0
         )
 
+        details = {
+            "transport_name": self._name,
+            "total_targets": total_targets,
+            "open_circuits": open_circuits,
+            "half_open_circuits": half_open,
+            "closed_circuits": total_targets - open_circuits - half_open,
+            "total_operations": self._total_operations,
+            "total_successes": self._total_successes,
+            "total_failures": self._total_failures,
+            "success_rate": round(success_rate, 3),
+        }
+
         # Determine health status
         if total_targets == 0:
-            healthy = True
-            status = "idle"
-            message = "No targets tracked yet"
+            return HealthCheckResult.healthy("No targets tracked yet", **details)
         elif open_circuits == total_targets:
-            healthy = False
-            status = "unhealthy"
-            message = f"All {total_targets} circuits open"
+            return HealthCheckResult.unhealthy(f"All {total_targets} circuits open", **details)
         elif open_circuits > 0:
-            healthy = True
-            status = "degraded"
-            message = f"{open_circuits}/{total_targets} circuits open"
+            return HealthCheckResult.degraded(f"{open_circuits}/{total_targets} circuits open", **details)
         else:
-            healthy = True
-            status = "healthy"
-            message = f"All {total_targets} targets reachable"
-
-        return {
-            "healthy": healthy,
-            "status": status,
-            "message": message,
-            "details": {
-                "transport_name": self._name,
-                "total_targets": total_targets,
-                "open_circuits": open_circuits,
-                "half_open_circuits": half_open,
-                "closed_circuits": total_targets - open_circuits - half_open,
-                "total_operations": self._total_operations,
-                "total_successes": self._total_successes,
-                "total_failures": self._total_failures,
-                "success_rate": round(success_rate, 3),
-            },
-        }
+            return HealthCheckResult.healthy(f"All {total_targets} targets reachable", **details)
 
     # =========================================================================
     # Statistics

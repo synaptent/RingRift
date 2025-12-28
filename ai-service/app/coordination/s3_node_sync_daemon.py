@@ -247,6 +247,10 @@ class S3NodeSyncDaemon:
         self._running = True
         self._start_time = time.time()
 
+        # December 2025: Subscribe to events for immediate S3 sync
+        # This enables event-driven sync instead of just interval-based
+        self._subscribe_to_events()
+
         # Initial sync
         await self._run_push_cycle()
 
@@ -280,6 +284,96 @@ class S3NodeSyncDaemon:
         # Final push before shutdown
         logger.info("Running final S3 push before shutdown")
         await self._run_push_cycle()
+
+    def _subscribe_to_events(self) -> None:
+        """Subscribe to events for immediate S3 sync (December 2025).
+
+        This enables event-driven sync instead of just interval-based:
+        - TRAINING_COMPLETED: Push new model to S3 immediately
+        - SELFPLAY_COMPLETE: Push games to S3 after significant batches
+        - MODEL_PROMOTED: Trigger high-priority model backup
+        """
+        try:
+            from app.coordination.event_router import subscribe
+            from app.distributed.data_events import DataEventType
+
+            subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
+            subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+            subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+
+            logger.info("S3NodeSyncDaemon subscribed to training/selfplay/promotion events")
+
+        except ImportError as e:
+            logger.warning(f"Event router not available ({e}), using interval-only sync")
+        except Exception as e:
+            logger.error(f"Failed to subscribe to events: {e}")
+
+    def _on_training_completed(self, event: Any) -> None:
+        """Handle TRAINING_COMPLETED event - trigger immediate S3 push.
+
+        December 2025: Pushes new model to S3 immediately after training
+        instead of waiting for the next interval-based sync.
+        """
+        try:
+            payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+            config_key = payload.get("config_key") or payload.get("config", "")
+            model_path = payload.get("model_path", "")
+
+            logger.info(f"Training completed for {config_key}, triggering S3 push")
+
+            # Schedule push on next loop iteration (non-blocking)
+            if self._running:
+                asyncio.create_task(self._push_models())
+
+        except Exception as e:
+            logger.warning(f"Error handling TRAINING_COMPLETED event: {e}")
+            self._errors += 1
+
+    def _on_selfplay_complete(self, event: Any) -> None:
+        """Handle SELFPLAY_COMPLETE event - trigger S3 push for significant batches.
+
+        December 2025: Only triggers sync for significant batches (>=100 games)
+        to avoid excessive S3 operations from small selfplay runs.
+        """
+        try:
+            payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+            games_count = payload.get("games_count") or payload.get("games_added", 0)
+            config_key = payload.get("config_key") or payload.get("config", "")
+
+            # Only sync for significant batches (>=100 games)
+            if games_count >= 100:
+                logger.info(
+                    f"Selfplay batch complete ({games_count} games for {config_key}), "
+                    f"triggering S3 push"
+                )
+                if self._running:
+                    asyncio.create_task(self._push_games())
+            else:
+                logger.debug(f"Selfplay batch too small ({games_count} < 100), skipping S3 sync")
+
+        except Exception as e:
+            logger.warning(f"Error handling SELFPLAY_COMPLETE event: {e}")
+            self._errors += 1
+
+    def _on_model_promoted(self, event: Any) -> None:
+        """Handle MODEL_PROMOTED event - high-priority model backup.
+
+        December 2025: Immediately pushes promoted model to S3.
+        Promoted models are critical and should be backed up ASAP.
+        """
+        try:
+            payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+            model_path = payload.get("model_path", "")
+            config_key = payload.get("config_key") or payload.get("board_type", "")
+
+            logger.info(f"Model promoted ({config_key}), triggering high-priority S3 push")
+
+            if self._running:
+                asyncio.create_task(self._push_models())
+
+        except Exception as e:
+            logger.warning(f"Error handling MODEL_PROMOTED event: {e}")
+            self._errors += 1
 
     async def _run_push_cycle(self) -> SyncResult:
         """Run a push cycle - upload local data to S3."""

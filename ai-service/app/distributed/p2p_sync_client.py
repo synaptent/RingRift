@@ -35,6 +35,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# December 2025: Centralized port constants
+from app.config.ports import P2P_DEFAULT_PORT
+
 # Import circuit breaker for fault tolerance
 try:
     from app.distributed.circuit_breaker import (
@@ -393,7 +396,7 @@ class P2PFallbackSync:
 
     def __init__(
         self,
-        p2p_port: int = 8770,
+        p2p_port: int = P2P_DEFAULT_PORT,
         connect_timeout: int = 10,
     ):
         self.p2p_port = p2p_port
@@ -514,7 +517,7 @@ async def sync_with_p2p_fallback(
     ssh_port: int,
     remote_db_path: str,
     local_dir: Path,
-    p2p_port: int = 8770,
+    p2p_port: int = P2P_DEFAULT_PORT,
 ) -> tuple[bool, int, str]:
     """Convenience function for one-shot sync with P2P fallback.
 

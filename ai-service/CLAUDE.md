@@ -96,7 +96,7 @@ python scripts/master_loop.py --skip-daemons
 **What it orchestrates:**
 
 - `SelfplayScheduler` - Priority-based selfplay allocation using curriculum weights, Elo velocities
-- `DaemonManager` - Lifecycle for all background daemons (66 types)
+- `DaemonManager` - Lifecycle for all background daemons (73 types)
 - `ClusterMonitor` - Real-time cluster health
 - `FeedbackLoopController` - Training feedback signals
 - `DataPipelineOrchestrator` - Pipeline stage tracking
@@ -491,7 +491,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 - **`daemon_manager.py`**: Lifecycle management, health checks, auto-restart (~2,000 LOC)
 - **`daemon_runners.py`**: Async runner functions for all daemon types (~1,100 LOC, Dec 2025 extraction)
 - **`daemon_registry.py`**: Declarative daemon specifications (~150 LOC, Dec 2025)
-- **`daemon_types.py`**: `DaemonType` enum with all 66 daemon types
+- **`daemon_types.py`**: `DaemonType` enum with all 73 daemon types (11 deprecated)
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
 - **`training_activity_daemon.py`**: Detects training activity, triggers priority sync (Dec 2025)
@@ -501,7 +501,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 The daemon system uses a three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative configuration (NEW Dec 2025)
-   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 66 daemon configurations
+   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 73 daemon configurations
    - `DaemonSpec` dataclass: runner_name, depends_on, category, auto_restart, health_check_interval
    - `get_daemons_by_category()`, `get_categories()`, `validate_registry()`
    - Replaces ~330 lines of imperative code with ~30 lines of declarations
@@ -729,7 +729,7 @@ Three main options - use the recommended one:
 
 | Script                 | Purpose                                 | Recommended?       |
 | ---------------------- | --------------------------------------- | ------------------ |
-| `master_loop.py`       | Full cluster automation with 66 daemons | ✅ Yes             |
+| `master_loop.py`       | Full cluster automation with 73 daemons | ✅ Yes             |
 | `run_training_loop.py` | Simple 1-config pipeline                | For single configs |
 | `unified_ai_loop.py`   | Legacy wrapper                          | ❌ Deprecated      |
 
@@ -749,7 +749,7 @@ Major consolidation effort completed December 2025:
 | 28 `_init_*()` functions in `coordination_bootstrap.py`                                  | `COORDINATOR_REGISTRY` + generic handler | ~17             | Complete |
 | 5× NodeStatus definitions                                                                | `node_status.py`                         | ~200            | Complete |
 | 5× FeedbackState definitions                                                             | `feedback_state.py`                      | ~100            | Complete |
-| DaemonManager factory methods (65 of 66)                                                 | `daemon_runners.py`                      | ~1,580          | Complete |
+| DaemonManager factory methods (72 of 73)                                                 | `daemon_runners.py`                      | ~1,580          | Complete |
 | `tracing.py` + `distributed_lock.py` + `optional_imports.py` + `yaml_utils.py`           | `core_utils.py`                          | ~0 (re-exports) | Complete |
 | `coordinator_base.py` + `coordinator_dependencies.py`                                    | `core_base.py`                           | ~0 (re-exports) | Complete |
 | `event_router.py` + `event_mappings.py` + `event_emitters.py` + `event_normalization.py` | `core_events.py`                         | ~0 (re-exports) | Complete |
@@ -760,8 +760,8 @@ Major consolidation effort completed December 2025:
 | -------------------- | ------------------------------------------------------------- |
 | `node_status.py`     | Unified NodeHealthState enum + NodeMonitoringStatus dataclass |
 | `feedback_state.py`  | Canonical FeedbackState classes with 3-tier hierarchy         |
-| `daemon_runners.py`  | 66 daemon runner functions extracted from DaemonManager       |
-| `daemon_registry.py` | Declarative DaemonSpec registry for all 66 daemon types       |
+| `daemon_runners.py`  | 73 daemon runner functions extracted from DaemonManager       |
+| `daemon_registry.py` | Declarative DaemonSpec registry for all 73 daemon types       |
 
 **`node_status.py`** consolidates 5 duplicate NodeStatus definitions:
 
@@ -789,7 +789,7 @@ Major consolidation effort completed December 2025:
 
 **`daemon_registry.py`** provides declarative daemon configuration (Dec 27, 2025):
 
-- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 66 daemon configurations
+- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 73 daemon configurations
 - `DaemonSpec` dataclass with frozen=True for immutability:
   - `runner_name`: Function name in daemon_runners.py (e.g., "create_auto_sync")
   - `depends_on`: Tuple of DaemonTypes that must start first
@@ -1560,21 +1560,21 @@ ai-service/
 
 ## Cluster Infrastructure
 
-RingRift uses a P2P mesh network for distributed training across ~32 configured nodes (Dec 2025).
+RingRift uses a P2P mesh network for distributed training across ~36 configured nodes (Dec 2025).
 
-**Note:** Lambda Labs account restored Dec 28, 2025 - GH200 instances being setup.
+**Note:** Lambda Labs account restored Dec 28, 2025. GH200 nodes are dedicated to training workloads.
 
 ### Active Cluster (Dec 28, 2025)
 
-| Provider     | Nodes | GPUs                                        | Status  |
-| ------------ | ----- | ------------------------------------------- | ------- |
-| Lambda GH200 | TBD   | GH200 96GB (being setup)                    | Pending |
-| Vast.ai      | 14    | RTX 5090/5080, 4090, 3090, A40, 3060/4060Ti | Active  |
-| RunPod       | 8     | H100, A100 (5x), L40S, RTX 3090 Ti          | Active  |
-| Nebius       | 3     | H100 80GB (2x), L40S backbone               | Active  |
-| Vultr        | 2     | A100 20GB vGPU                              | Active  |
-| Hetzner      | 3     | CPU only (P2P voters)                       | Active  |
-| Local        | 2     | Mac Studio M3 (coordinator)                 | Active  |
+| Provider     | Nodes | GPUs                                        | Status |
+| ------------ | ----- | ------------------------------------------- | ------ |
+| Lambda GH200 | 6     | GH200 96GB × 6 (training-only)              | Active |
+| Vast.ai      | 14    | RTX 5090/5080, 4090, 3090, A40, 3060/4060Ti | Active |
+| RunPod       | 6     | H100, A100 (5x), L40S                       | Active |
+| Nebius       | 3     | H100 80GB (2x), L40S backbone               | Active |
+| Vultr        | 2     | A100 20GB vGPU                              | Active |
+| Hetzner      | 3     | CPU only (P2P voters)                       | Active |
+| Local        | 2     | Mac Studio M3 (coordinator)                 | Active |
 
 ### P2P Cluster Management
 
@@ -2036,6 +2036,55 @@ class MyDaemon(HandlerBase):
 
 # Supports both _get_event_subscriptions() and legacy _get_subscriptions()
 ```
+
+**MonitorBase Class** (`app/coordination/monitor_base.py`):
+
+Unified base class for health monitoring daemons with 800+ LOC, 41 tests (Dec 28, 2025):
+
+```python
+from app.coordination.monitor_base import MonitorBase, MonitorConfig
+from dataclasses import dataclass
+
+@dataclass(kw_only=True)
+class MyMonitorConfig(MonitorConfig):
+    my_threshold: float = 0.5
+
+class MyMonitorDaemon(MonitorBase[MyMonitorConfig]):
+    def _get_default_config(self) -> MyMonitorConfig:
+        return MyMonitorConfig(check_interval_seconds=60)
+
+    def _get_daemon_name(self) -> str:
+        return "MyMonitor"
+
+    def _get_event_subscriptions(self) -> dict[str, Callable]:
+        return {"MY_EVENT": self._on_my_event}
+
+    async def _run_cycle(self) -> None:
+        # Periodic monitoring logic
+        self.record_cycle()
+
+# Singleton pattern via get_instance()
+daemon = MyMonitorDaemon.get_instance()
+await daemon.start()
+```
+
+**Key Features:**
+
+- Singleton pattern with `get_instance()` / `has_instance()` / `reset_instance()`
+- Event subscription with automatic deduplication (`_is_duplicate_event()`)
+- Lifecycle management (start/stop)
+- Health checks with `health_check()` returning `HealthCheckResult`
+- Stats tracking with `record_event()`, `record_error()`, `record_cycle()`
+- Configurable stale detection via `stale_threshold_seconds`
+
+**Migrated Daemons (Dec 28, 2025):**
+
+| Daemon                     | Original LOC | After | Key Benefits                    |
+| -------------------------- | ------------ | ----- | ------------------------------- |
+| `WorkQueueMonitorDaemon`   | 620          | 594   | Unified singleton, event dedup  |
+| `ModelPerformanceWatchdog` | 384          | 378   | Event-driven with health checks |
+
+Remaining candidates for future migration: `CoordinatorHealthMonitorDaemon` (545 LOC), `QualityMonitorDaemon` (592 LOC).
 
 **HealthCheckHelper Class** (`app/coordination/health_check_helper.py`):
 

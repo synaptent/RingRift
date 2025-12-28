@@ -1,21 +1,29 @@
 """Training orchestration (December 2025).
 
-Consolidates training orchestration from:
-- training_coordinator.py (training lifecycle)
-- selfplay_orchestrator.py (selfplay coordination)
+DEPRECATED: This is a re-export module for backward compatibility.
+Import directly from the source modules instead:
 
-This module re-exports all training orchestration APIs.
+    # Instead of:
+    from app.coordination.training.orchestrator import TrainingCoordinator
 
-Usage:
-    from app.coordination.training.orchestrator import (
-        TrainingCoordinator,
-        get_training_coordinator,
-        SelfplayOrchestrator,
-        is_large_board,
-    )
+    # Use:
+    from app.coordination.training_coordinator import TrainingCoordinator
+    from app.coordination.selfplay_orchestrator import SelfplayOrchestrator
+
+This module will be removed in Q2 2026.
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "app.coordination.training.orchestrator is deprecated. "
+    "Import directly from app.coordination.training_coordinator or "
+    "app.coordination.selfplay_orchestrator instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Re-export from training_coordinator
 from app.coordination.training_coordinator import (

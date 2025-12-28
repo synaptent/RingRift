@@ -635,8 +635,15 @@ class MasterLoopController:
                 f"regression_to_rollback={wired.get('regression_to_rollback', False)}, "
                 f"plateau_to_curriculum={wired.get('plateau_to_curriculum', False)}"
             )
+        except ImportError as e:
+            # Module not available - optional coordination features disabled
+            logger.warning(f"[MasterLoop] Coordination module not available: {e}")
+        except (ValueError, KeyError, TypeError) as e:
+            # Configuration or wiring errors
+            logger.error(f"[MasterLoop] Coordination bootstrap configuration error: {e}")
         except Exception as e:
-            logger.error(f"[MasterLoop] Coordination bootstrap failed: {e}")
+            # Unexpected errors - Dec 2025: narrowed, added exc_info for debugging
+            logger.error(f"[MasterLoop] Coordination bootstrap failed: {e}", exc_info=True)
 
         # December 2025 (Phase E): Verify P2P cluster connectivity before proceeding
         # This prevents silent failures when P2P is unavailable
@@ -736,8 +743,15 @@ class MasterLoopController:
                     # 7. Update heartbeat for health monitoring (Dec 2025)
                     self._update_heartbeat("running")
 
+                except asyncio.CancelledError:
+                    # Allow cancellation to propagate for clean shutdown
+                    raise
+                except (OSError, ConnectionError, TimeoutError) as e:
+                    # Network/connection errors - log and continue
+                    logger.warning(f"[MasterLoop] Transient error in loop iteration: {e}")
                 except Exception as e:
-                    logger.error(f"[MasterLoop] Error in loop iteration: {e}")
+                    # Log unexpected errors but continue loop - Dec 2025: narrowed from bare except
+                    logger.error(f"[MasterLoop] Error in loop iteration: {e}", exc_info=True)
 
                 # Wait for next iteration
                 elapsed = time.time() - loop_start
@@ -809,6 +823,15 @@ class MasterLoopController:
             DaemonType.QUALITY_MONITOR,
         ]
 
+        # S3 backup daemons - only if AWS credentials are configured (December 2025)
+        # These require AWS_ACCESS_KEY_ID to be set for S3 operations
+        s3_daemons = []
+        if os.getenv("AWS_ACCESS_KEY_ID"):
+            s3_daemons = [
+                DaemonType.S3_BACKUP,      # Auto-backup after MODEL_PROMOTED
+                DaemonType.S3_NODE_SYNC,   # Bi-directional sync with S3
+            ]
+
         deprecated = {
             DaemonType.SYNC_COORDINATOR,
             DaemonType.HEALTH_CHECK,
@@ -822,6 +845,15 @@ class MasterLoopController:
         }
 
         daemons = profiles.get(self.daemon_profile, standard)
+
+        # December 2025: Add S3 backup daemons if AWS credentials are configured
+        # These enable automatic backup to S3 after model promotion and periodic sync
+        if s3_daemons and self.daemon_profile != "minimal":
+            daemons = daemons + s3_daemons
+            logger.info(
+                f"[MasterLoop] S3 backup enabled: adding {len(s3_daemons)} S3 daemons "
+                f"(AWS_ACCESS_KEY_ID set)"
+            )
 
         # December 2025: Coordinator-only mode filtering
         # When running on a coordinator node, filter out intensive daemons
@@ -853,6 +885,11 @@ class MasterLoopController:
             coordinator_daemons = {
                 DaemonType.COORDINATOR_DISK_MANAGER,  # Proactive disk cleanup with external sync
             }
+
+            # December 2025: Add S3_CONSOLIDATION on coordinator if AWS is configured
+            # This merges data from all nodes into consolidated S3 view
+            if os.getenv("AWS_ACCESS_KEY_ID"):
+                coordinator_daemons.add(DaemonType.S3_CONSOLIDATION)
             for daemon in coordinator_daemons:
                 if daemon not in daemons:
                     daemons.append(daemon)

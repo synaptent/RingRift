@@ -3,10 +3,12 @@
 Subscribes to EVALUATION_COMPLETED events and tracks rolling win rates per model.
 Emits alerts when a model's performance degrades below acceptable thresholds.
 
+Uses MonitorBase for lifecycle management, event subscription, and health checks.
+
 Usage:
     from app.coordination.model_performance_watchdog import ModelPerformanceWatchdog
 
-    watchdog = ModelPerformanceWatchdog()
+    watchdog = ModelPerformanceWatchdog.get_instance()
     await watchdog.start()
 
 Events Subscribed:
@@ -19,19 +21,24 @@ Events Emitted:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Callable
 
 from app.config.thresholds import PROMOTION_WIN_RATE_THRESHOLD
+from app.coordination.monitor_base import MonitorBase, MonitorConfig
+
+if TYPE_CHECKING:
+    from app.coordination.protocols import HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "ModelPerformance",
     "ModelPerformanceWatchdog",
+    "ModelPerformanceWatchdogConfig",
     "get_watchdog",
     "create_model_performance_watchdog",
 ]
@@ -63,9 +70,12 @@ class ModelPerformance:
     degraded_since: float | None = None
 
 
-@dataclass
-class WatchdogConfig:
-    """Configuration for ModelPerformanceWatchdog."""
+@dataclass(kw_only=True)
+class ModelPerformanceWatchdogConfig(MonitorConfig):
+    """Configuration for ModelPerformanceWatchdog.
+
+    Inherits from MonitorConfig for unified lifecycle management.
+    """
     # Thresholds (from app.config.thresholds)
     min_vs_random: float = 0.85  # Must beat RANDOM 85%+ of the time
     min_vs_heuristic: float = PROMOTION_WIN_RATE_THRESHOLD  # Must beat HEURISTIC at promotion rate
@@ -78,8 +88,14 @@ class WatchdogConfig:
     alert_cooldown: float = 300.0  # Seconds between repeated alerts for same model
 
 
-class ModelPerformanceWatchdog:
+class ModelPerformanceWatchdog(MonitorBase[ModelPerformanceWatchdogConfig]):
     """Watchdog that monitors model performance from evaluation events.
+
+    Uses MonitorBase for:
+    - Singleton pattern with get_instance()
+    - Lifecycle management (start/stop)
+    - Event subscription via _get_event_subscriptions()
+    - Health checks via health_check()
 
     Tracks win rates for each model and emits alerts when performance
     degrades below acceptable thresholds. This enables:
@@ -92,111 +108,55 @@ class ModelPerformanceWatchdog:
         models: Dict of model performance records
     """
 
-    def __init__(self, config: WatchdogConfig | None = None):
-        self.config = config or WatchdogConfig()
-        self._running = False
-        self._task: asyncio.Task | None = None
+    def __init__(self, config: ModelPerformanceWatchdogConfig | None = None):
+        super().__init__(config)
 
         # Model performance tracking
         self.models: dict[str, ModelPerformance] = {}
         self._last_alert_time: dict[str, float] = defaultdict(float)
 
-        # Subscription handle
-        self._unsubscribe: callable | None = None
+    def _get_default_config(self) -> ModelPerformanceWatchdogConfig:
+        """Return default configuration."""
+        return ModelPerformanceWatchdogConfig(
+            # This is an event-driven monitor - no periodic cycle needed
+            # But we set a long interval for health checks
+            check_interval_seconds=300,
+            stale_threshold_seconds=3600.0,  # 1 hour - this is event-driven
+        )
 
-    async def start(self) -> None:
-        """Start the watchdog and subscribe to evaluation events."""
-        if self._running:
-            logger.warning("ModelPerformanceWatchdog already running")
-            return
+    def _get_daemon_name(self) -> str:
+        """Return daemon name for logging and identification."""
+        return "ModelPerformanceWatchdog"
 
-        self._running = True
-        await self._subscribe_to_events()
-        logger.info("ModelPerformanceWatchdog started")
-
-    async def stop(self) -> None:
-        """Stop the watchdog."""
-        self._running = False
-        if self._unsubscribe:
-            try:
-                self._unsubscribe()
-            except Exception as e:
-                logger.debug(f"Error unsubscribing: {e}")
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        logger.info("ModelPerformanceWatchdog stopped")
-
-    def is_running(self) -> bool:
-        """Check if watchdog is running."""
-        return self._running
-
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health (CoordinatorProtocol compliance).
+    def _get_event_subscriptions(self) -> dict[str, Callable]:
+        """Define event subscriptions.
 
         Returns:
-            HealthCheckResult with health status and tracking details.
-
-        December 2025: Added for unified health monitoring.
-        December 2025 Session 2: Added exception handling.
+            Dict mapping event names to handlers.
         """
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        return {
+            "EVALUATION_COMPLETED": self._on_evaluation_completed,
+        }
 
-        try:
-            if not self._running:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.STOPPED,
-                    message="ModelPerformanceWatchdog not running",
-                )
+    async def _run_cycle(self) -> None:
+        """Periodic cycle - minimal for event-driven monitor.
 
-            # Count degraded models
-            degraded_count = sum(1 for p in self.models.values() if p.is_degraded)
-            model_count = len(self.models)
-
-            # Unhealthy if >50% of tracked models are degraded
-            is_healthy = degraded_count <= model_count // 2 if model_count > 0 else True
-
-            return HealthCheckResult(
-                healthy=is_healthy,
-                status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED,
-                message=f"Tracking {model_count} models, {degraded_count} degraded",
-                details={
-                    "model_count": model_count,
-                    "degraded_count": degraded_count,
-                    "models": list(self.models.keys())[:10],  # First 10 for brevity
-                },
-            )
-        except Exception as e:
-            logger.warning(f"[ModelPerformanceWatchdog] health_check error: {e}")
-            return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.ERROR,
-                message=f"Health check error: {e}",
-                details={"error": str(e)},
-            )
-
-    async def _subscribe_to_events(self) -> None:
-        """Subscribe to EVALUATION_COMPLETED events."""
-        try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
-            self._unsubscribe = router.subscribe(
-                DataEventType.EVALUATION_COMPLETED,
-                self._on_evaluation_completed
-            )
-            logger.debug("Subscribed to EVALUATION_COMPLETED events")
-
-        except ImportError as e:
-            logger.warning(f"Event system not available: {e}")
+        This daemon is primarily event-driven. The cycle just does
+        periodic housekeeping if needed.
+        """
+        # Just record the cycle for health tracking
+        self.record_cycle()
 
     async def _on_evaluation_completed(self, event) -> None:
         """Handle EVALUATION_COMPLETED events."""
         try:
+            # Check for duplicate events
+            if self._is_duplicate_event(event, key_fields=["model_id", "board_type", "num_players"]):
+                logger.debug("Skipping duplicate EVALUATION_COMPLETED event")
+                return
+
+            self.record_event("EVALUATION_COMPLETED")
+
             payload = event.payload if hasattr(event, 'payload') else event
 
             model_id = payload.get("model_id", payload.get("model_path", "unknown"))
@@ -227,6 +187,7 @@ class ModelPerformanceWatchdog:
             )
 
         except Exception as e:
+            self.record_error()
             logger.error(f"Error handling evaluation event: {e}")
 
     async def _update_model_performance(
@@ -341,9 +302,43 @@ class ModelPerformanceWatchdog:
             for model_id, perf in self.models.items()
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check daemon health with model-specific details.
 
-# Singleton instance
-_watchdog: ModelPerformanceWatchdog | None = None
+        Overrides base health_check to add model performance tracking info.
+
+        Returns:
+            HealthCheckResult with health status and model tracking details.
+        """
+        # Get base health check
+        base_result = super().health_check()
+
+        # Add model-specific details
+        degraded_count = sum(1 for p in self.models.values() if p.is_degraded)
+        model_count = len(self.models)
+
+        # Override healthy status if too many models degraded
+        if model_count > 0 and degraded_count > model_count // 2:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Too many degraded models: {degraded_count}/{model_count}",
+                details={
+                    **base_result.details,
+                    "model_count": model_count,
+                    "degraded_count": degraded_count,
+                    "models": list(self.models.keys())[:10],  # First 10 for brevity
+                },
+            )
+
+        # Add model tracking to base details
+        base_result.details["model_count"] = model_count
+        base_result.details["degraded_count"] = degraded_count
+        base_result.details["models"] = list(self.models.keys())[:10]
+
+        return base_result
 
 
 def get_watchdog() -> ModelPerformanceWatchdog:
@@ -356,10 +351,7 @@ def get_watchdog() -> ModelPerformanceWatchdog:
         watchdog = get_watchdog()
         await watchdog.start()
     """
-    global _watchdog
-    if _watchdog is None:
-        _watchdog = ModelPerformanceWatchdog()
-    return _watchdog
+    return ModelPerformanceWatchdog.get_instance()
 
 
 async def create_model_performance_watchdog() -> None:
@@ -371,6 +363,8 @@ async def create_model_performance_watchdog() -> None:
     Raises:
         asyncio.CancelledError: When the daemon is stopped.
     """
+    import asyncio
+
     watchdog = get_watchdog()
     await watchdog.start()
 

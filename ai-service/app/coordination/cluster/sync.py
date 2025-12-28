@@ -1,20 +1,30 @@
 """Unified cluster sync module (December 2025).
 
-Consolidates sync-related functionality from sync_coordinator.py and sync_bandwidth.py.
+DEPRECATED: This is a re-export module for backward compatibility.
+Import directly from the source modules instead:
 
-This is the RECOMMENDED import path for sync functionality.
+    # Instead of:
+    from app.coordination.cluster.sync import SyncScheduler
 
-Usage:
-    from app.coordination.cluster.sync import (
-        SyncScheduler,
-        ClusterDataStatus,
-        BandwidthCoordinatedRsync,
-    )
+    # Use:
+    from app.coordination.sync_coordinator import SyncScheduler
+    from app.coordination.sync_bandwidth import BandwidthCoordinatedRsync
+    from app.coordination.sync_mutex import SyncMutex
+
+This module will be removed in Q2 2026.
 """
 
 from __future__ import annotations
 
 import warnings
+
+warnings.warn(
+    "app.coordination.cluster.sync is deprecated. "
+    "Import directly from app.coordination.sync_coordinator, "
+    "app.coordination.sync_bandwidth, or app.coordination.sync_mutex instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Suppress deprecation warning when importing from package (December 2025)
 with warnings.catch_warnings():

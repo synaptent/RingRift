@@ -277,6 +277,7 @@ class DataEventType(Enum):
 
     # Backup events (December 2025)
     DATA_BACKUP_COMPLETED = "data_backup_completed"  # External drive backup finished
+    S3_BACKUP_COMPLETED = "s3_backup_completed"  # S3 backup finished (after model promotion)
 
     # CPU Pipeline events (December 2025)
     CPU_PIPELINE_JOB_COMPLETED = "cpu_pipeline_job_completed"  # Vast CPU job finished

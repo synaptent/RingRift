@@ -1,3 +1,43 @@
+"""Training Loop - Self-play, training, and evaluation iteration.
+
+This module provides the main training loop that iterates between:
+1. **Self-play**: Generate games using current best model
+2. **Training**: Train on accumulated game data
+3. **Evaluation**: Test against baselines and promote if better
+
+The loop integrates with the OptimizedTrainingPipeline (when available) for:
+- Export caching to avoid redundant NPZ generation
+- Curriculum feedback to adjust data selection
+- Health monitoring for pipeline state
+- Distributed locks for cluster coordination
+
+Usage:
+    from app.training.train_loop import run_training_loop
+    from app.training.config import TrainConfig
+
+    # Basic usage with defaults
+    run_training_loop()
+
+    # Custom configuration
+    config = TrainConfig(
+        board_type="hex8",
+        num_players=2,
+        epochs_per_iteration=20,
+        games_per_iteration=500,
+    )
+    run_training_loop(config=config)
+
+Integration:
+    - Called by scripts/run_training_loop.py CLI
+    - Emits training events for feedback loop
+    - Supports GPU-parallel selfplay via generate_dataset_gpu_parallel
+
+See Also:
+    - scripts/run_training_loop.py for CLI wrapper
+    - app.training.optimized_pipeline for enhanced pipeline features
+    - app.training.train for core training logic
+"""
+
 import json
 import os
 import shutil

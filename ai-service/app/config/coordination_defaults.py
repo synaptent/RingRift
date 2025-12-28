@@ -1548,6 +1548,165 @@ class SyncIntegrityDefaults:
 
 
 # =============================================================================
+# SSH Defaults (December 28, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class SSHDefaults:
+    """Default values for SSH operations.
+
+    Used by: scripts/p2p_orchestrator.py, app/coordination/auto_sync_daemon.py,
+             app/core/ssh.py, scripts/p2p/managers/*.py
+
+    Consolidates 40+ scattered SSH timeout values across the codebase.
+    """
+    # Command execution timeout (seconds) - for quick commands like nvidia-smi
+    COMMAND_TIMEOUT: float = _env_float("RINGRIFT_SSH_COMMAND_TIMEOUT", 30.0)
+
+    # Long command timeout (seconds) - for training, exports, migrations
+    LONG_COMMAND_TIMEOUT: float = _env_float("RINGRIFT_SSH_LONG_COMMAND_TIMEOUT", 300.0)
+
+    # SCP file transfer timeout (seconds) - for model/data transfers
+    SCP_TIMEOUT: float = _env_float("RINGRIFT_SCP_TIMEOUT", 60.0)
+
+    # Connection timeout (seconds) - initial SSH handshake
+    CONNECT_TIMEOUT: float = _env_float("RINGRIFT_SSH_CONNECT_TIMEOUT", 10.0)
+
+    # Rsync timeout (seconds) - for rsync operations
+    RSYNC_TIMEOUT: float = _env_float("RINGRIFT_RSYNC_TIMEOUT", 60.0)
+
+    # Health check SSH timeout (seconds) - quick connectivity tests
+    HEALTH_CHECK_TIMEOUT: float = _env_float("RINGRIFT_SSH_HEALTH_CHECK_TIMEOUT", 5.0)
+
+    # Maximum retries for SSH operations
+    MAX_RETRIES: int = _env_int("RINGRIFT_SSH_MAX_RETRIES", 3)
+
+
+# =============================================================================
+# Job Defaults (December 28, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class JobDefaults:
+    """Default values for job execution timeouts.
+
+    Used by: scripts/p2p_orchestrator.py, scripts/p2p/managers/job_manager.py,
+             app/coordination/job_reaper.py
+
+    Consolidates job-specific timeouts that were scattered across P2P code.
+    """
+    # Selfplay job timeout (seconds) - 2 hours
+    SELFPLAY_TIMEOUT: float = _env_float("RINGRIFT_JOB_SELFPLAY_TIMEOUT", 7200.0)
+
+    # Training job timeout (seconds) - 24 hours
+    TRAINING_TIMEOUT: float = _env_float("RINGRIFT_JOB_TRAINING_TIMEOUT", 86400.0)
+
+    # Job status check timeout (seconds) - 10 minutes
+    JOB_STATUS_TIMEOUT: float = _env_float("RINGRIFT_JOB_STATUS_TIMEOUT", 600.0)
+
+    # Health check timeout (seconds) - for node health checks
+    HEALTH_CHECK_TIMEOUT: float = _env_float("RINGRIFT_JOB_HEALTH_CHECK_TIMEOUT", 30.0)
+
+    # Tournament job timeout (seconds) - 4 hours
+    TOURNAMENT_TIMEOUT: float = _env_float("RINGRIFT_JOB_TOURNAMENT_TIMEOUT", 14400.0)
+
+    # Gauntlet evaluation timeout (seconds) - 2 hours
+    GAUNTLET_TIMEOUT: float = _env_float("RINGRIFT_JOB_GAUNTLET_TIMEOUT", 7200.0)
+
+    # Data export timeout (seconds) - 30 minutes
+    EXPORT_TIMEOUT: float = _env_float("RINGRIFT_JOB_EXPORT_TIMEOUT", 1800.0)
+
+    # Model sync timeout (seconds) - 30 minutes
+    MODEL_SYNC_TIMEOUT: float = _env_float("RINGRIFT_JOB_MODEL_SYNC_TIMEOUT", 1800.0)
+
+
+# =============================================================================
+# Peer Defaults (December 28, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class PeerDefaults:
+    """Default values for P2P peer management.
+
+    Used by: scripts/p2p_orchestrator.py, scripts/p2p/managers/*.py,
+             app/p2p/constants.py
+
+    Consolidates P2P timing constants for peer discovery and health.
+    """
+    # Heartbeat interval (seconds) - how often to send heartbeats
+    HEARTBEAT_INTERVAL: float = _env_float("RINGRIFT_PEER_HEARTBEAT_INTERVAL", 15.0)
+
+    # Peer timeout (seconds) - consider peer dead after no heartbeat
+    PEER_TIMEOUT: float = _env_float("RINGRIFT_PEER_TIMEOUT", 60.0)
+
+    # Gossip interval (seconds) - how often to exchange state
+    GOSSIP_INTERVAL: float = _env_float("RINGRIFT_PEER_GOSSIP_INTERVAL", 15.0)
+
+    # Manifest collection timeout (seconds) - for data manifest requests
+    MANIFEST_TIMEOUT: float = _env_float("RINGRIFT_PEER_MANIFEST_TIMEOUT", 300.0)
+
+    # Election timeout (seconds) - for leader election
+    ELECTION_TIMEOUT: float = _env_float("RINGRIFT_PEER_ELECTION_TIMEOUT", 30.0)
+
+    # Bootstrap interval (seconds) - for initial peer discovery
+    BOOTSTRAP_INTERVAL: float = _env_float("RINGRIFT_PEER_BOOTSTRAP_INTERVAL", 60.0)
+
+    # Suspect timeout (seconds) - grace period before marking dead
+    SUSPECT_TIMEOUT: float = _env_float("RINGRIFT_PEER_SUSPECT_TIMEOUT", 30.0)
+
+    # Retry dead node interval (seconds) - how often to retry dead nodes
+    RETRY_DEAD_NODE_INTERVAL: float = _env_float("RINGRIFT_PEER_RETRY_DEAD_INTERVAL", 120.0)
+
+
+def get_ssh_timeout(operation: str = "command") -> float:
+    """Get SSH timeout for a specific operation type.
+
+    Args:
+        operation: Operation type ("command", "long", "scp", "connect", "rsync", "health")
+
+    Returns:
+        Timeout in seconds
+
+    Example:
+        timeout = get_ssh_timeout("rsync")  # Returns 60.0
+    """
+    timeouts = {
+        "command": SSHDefaults.COMMAND_TIMEOUT,
+        "long": SSHDefaults.LONG_COMMAND_TIMEOUT,
+        "scp": SSHDefaults.SCP_TIMEOUT,
+        "connect": SSHDefaults.CONNECT_TIMEOUT,
+        "rsync": SSHDefaults.RSYNC_TIMEOUT,
+        "health": SSHDefaults.HEALTH_CHECK_TIMEOUT,
+    }
+    return timeouts.get(operation, SSHDefaults.COMMAND_TIMEOUT)
+
+
+def get_peer_timeout(timeout_type: str = "peer") -> float:
+    """Get P2P peer timeout for a specific type.
+
+    Args:
+        timeout_type: Type ("heartbeat", "peer", "gossip", "manifest", "election", "bootstrap")
+
+    Returns:
+        Timeout in seconds
+
+    Example:
+        timeout = get_peer_timeout("manifest")  # Returns 300.0
+    """
+    timeouts = {
+        "heartbeat": PeerDefaults.HEARTBEAT_INTERVAL,
+        "peer": PeerDefaults.PEER_TIMEOUT,
+        "gossip": PeerDefaults.GOSSIP_INTERVAL,
+        "manifest": PeerDefaults.MANIFEST_TIMEOUT,
+        "election": PeerDefaults.ELECTION_TIMEOUT,
+        "bootstrap": PeerDefaults.BOOTSTRAP_INTERVAL,
+        "suspect": PeerDefaults.SUSPECT_TIMEOUT,
+        "retry_dead": PeerDefaults.RETRY_DEAD_NODE_INTERVAL,
+    }
+    return timeouts.get(timeout_type, PeerDefaults.PEER_TIMEOUT)
+
+
+# =============================================================================
 # Curriculum Integration Defaults (December 28, 2025)
 # =============================================================================
 

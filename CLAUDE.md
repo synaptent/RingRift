@@ -142,15 +142,13 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 ## Cluster Infrastructure
 
-RingRift uses a P2P mesh network for distributed training across ~43 configured nodes (Dec 2025).
+RingRift uses a P2P mesh network for distributed training across ~36 configured nodes (Dec 2025).
 
 ### Active Cluster (Dec 28, 2025)
 
 | Provider     | Nodes | GPUs                                        | Status |
 | ------------ | ----- | ------------------------------------------- | ------ |
-| Lambda GH200 | 19    | GH200 96GB × 19                             | Active |
-| Lambda H100  | 2     | H100 80GB, 2×H100 160GB                     | Active |
-| Lambda A10   | 3     | A10 23GB × 3                                | Active |
+| Lambda GH200 | 6     | GH200 96GB × 6 (training-only)              | Active |
 | Vast.ai      | 14    | RTX 5090/5080, 4090, 3090, A40, 3060/4060Ti | Active |
 | RunPod       | 6     | H100, A100 (5x), L40S                       | Active |
 | Nebius       | 3     | H100 80GB (2x), L40S backbone               | Active |
@@ -158,7 +156,9 @@ RingRift uses a P2P mesh network for distributed training across ~43 configured 
 | Hetzner      | 3     | CPU only (P2P voters)                       | Active |
 | Local        | 2     | Mac Studio M3 (coordinator)                 | Active |
 
-**Total**: ~54 nodes, ~3.2TB GPU memory
+**Total**: ~36 nodes, ~1.3TB GPU memory
+
+**Note**: Lambda Labs account restored Dec 28, 2025. GH200 nodes are dedicated to training workloads only; other nodes handle selfplay.
 
 ### Cluster Management
 

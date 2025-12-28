@@ -42,6 +42,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar
 
+# December 2025: Use centralized port constants
+from app.config.ports import P2P_DEFAULT_PORT
+
 __all__ = [
     "NodeInfo",
     "NodeRole",
@@ -229,7 +232,7 @@ class ResourceMetrics:
 class ConnectionInfo:
     """Connection information for reaching a node."""
     host: str = ""
-    port: int = 8770
+    port: int = P2P_DEFAULT_PORT
     scheme: str = "http"
     tailscale_ip: str | None = None
     ssh_host: str | None = None
@@ -550,7 +553,7 @@ class NodeInfo:
 
         connection = ConnectionInfo(
             host=data.get("host", ""),
-            port=data.get("port", 8770),
+            port=data.get("port", P2P_DEFAULT_PORT),
             tailscale_ip=data.get("tailscale_ip"),
             nat_blocked=data.get("nat_blocked", False),
             nat_blocked_since=data.get("nat_blocked_since"),
@@ -779,7 +782,7 @@ async def check_p2p_leader_status(timeout: float = 5.0) -> tuple[bool, str | Non
         from app.config.ports import get_local_p2p_url
         p2p_base = get_local_p2p_url()
     except ImportError:
-        p2p_base = os.environ.get("RINGRIFT_P2P_URL", "http://localhost:8770")
+        p2p_base = os.environ.get("RINGRIFT_P2P_URL", f"http://localhost:{P2P_DEFAULT_PORT}")
 
     p2p_url = f"{p2p_base}/status"
 

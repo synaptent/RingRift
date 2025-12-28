@@ -1011,6 +1011,12 @@ class DataPipelineOrchestrator:
                 self._on_curriculum_advanced,
             )
 
+            # December 2025: Subscribe to S3 backup events for pipeline tracking
+            router.subscribe(
+                DataEventType.S3_BACKUP_COMPLETED.value,
+                self._on_s3_backup_completed,
+            )
+
             logger.info("[DataPipelineOrchestrator] Subscribed to data events")
             return True
 
@@ -1598,6 +1604,36 @@ class DataPipelineOrchestrator:
         if not hasattr(self, "_curriculum_tiers"):
             self._curriculum_tiers: dict = {}
         self._curriculum_tiers[config_key] = new_tier
+
+    async def _on_s3_backup_completed(self, event: Any) -> None:
+        """Handle S3_BACKUP_COMPLETED - track S3 backup status for pipeline health.
+
+        December 2025: Tracks S3 backup completions for monitoring and
+        pipeline health reporting. Part of Phase 3 S3 infrastructure.
+        """
+        payload = getattr(event, "payload", {}) or {}
+        files_count = payload.get("uploaded_count", 0)
+        bucket = payload.get("bucket", "")
+        duration = payload.get("duration_seconds", 0.0)
+        promotions = payload.get("promotions", [])
+
+        # Track S3 backup metrics
+        if not hasattr(self, "_s3_backup_stats"):
+            self._s3_backup_stats = {
+                "backups_completed": 0,
+                "files_backed_up": 0,
+                "last_backup_time": 0.0,
+            }
+
+        self._s3_backup_stats["backups_completed"] += 1
+        self._s3_backup_stats["files_backed_up"] += files_count
+        self._s3_backup_stats["last_backup_time"] = time.time()
+
+        logger.info(
+            f"[DataPipelineOrchestrator] S3 backup completed: "
+            f"{files_count} files to {bucket} in {duration:.1f}s "
+            f"(promotions: {len(promotions)})"
+        )
 
     def _extract_stage_result(self, event_or_result) -> Any:
         """Extract StageCompletionResult from RouterEvent or return as-is.

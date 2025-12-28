@@ -91,6 +91,8 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_ephemeral_sync",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
         category="sync",
+        deprecated=True,
+        deprecated_message="Use AutoSyncDaemon(strategy='ephemeral') instead. Removal: Q2 2026.",
     ),
     DaemonType.GOSSIP_SYNC: DaemonSpec(
         runner_name="create_gossip_sync",
@@ -137,11 +139,15 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_node_health_monitor",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="health",
+        deprecated=True,
+        deprecated_message="Use health_check_orchestrator.py instead. Removal: Q2 2026.",
     ),
     DaemonType.SYSTEM_HEALTH_MONITOR: DaemonSpec(
         runner_name="create_system_health_monitor",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR),
         category="health",
+        deprecated=True,
+        deprecated_message="Use unified_health_manager.py instead. Removal: Q2 2026.",
     ),
     DaemonType.QUALITY_MONITOR: DaemonSpec(
         runner_name="create_quality_monitor",
@@ -423,6 +429,8 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         runner_name="create_cluster_data_sync",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="misc",
+        deprecated=True,
+        deprecated_message="Use AutoSyncDaemon(strategy='broadcast') instead. Removal: Q2 2026.",
     ),
     DaemonType.P2P_BACKEND: DaemonSpec(
         runner_name="create_p2p_backend",

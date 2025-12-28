@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.coordination.contracts import CoordinatorStatus
 from app.coordination.transport_base import (
     CircuitBreakerConfig,
     TargetStatus,
@@ -601,9 +602,10 @@ class TestHealthCheck:
     def test_health_check_idle(self, transport):
         """Health check with no targets."""
         health = transport.health_check()
-        assert health["healthy"] is True
-        assert health["status"] == "idle"
-        assert health["details"]["total_targets"] == 0
+        assert health.healthy is True
+        # No targets tracked = healthy/running status
+        assert health.status.value == "running"
+        assert health.details["total_targets"] == 0
 
     def test_health_check_healthy(self, transport):
         """Health check with all circuits closed."""
@@ -611,10 +613,11 @@ class TestHealthCheck:
         transport.record_success("host-2")
 
         health = transport.health_check()
-        assert health["healthy"] is True
-        assert health["status"] == "healthy"
-        assert health["details"]["closed_circuits"] == 2
-        assert health["details"]["open_circuits"] == 0
+        assert health.healthy is True
+        # All circuits closed = healthy/running status
+        assert health.status.value == "running"
+        assert health.details["closed_circuits"] == 2
+        assert health.details["open_circuits"] == 0
 
     def test_health_check_degraded(self, transport):
         """Health check with some circuits open."""
@@ -623,10 +626,11 @@ class TestHealthCheck:
             transport.record_failure("host-2")
 
         health = transport.health_check()
-        assert health["healthy"] is True
-        assert health["status"] == "degraded"
-        assert health["details"]["open_circuits"] == 1
-        assert health["details"]["closed_circuits"] == 1
+        assert health.healthy is True
+        # Some circuits open = degraded status
+        assert health.status.value == "degraded"
+        assert health.details["open_circuits"] == 1
+        assert health.details["closed_circuits"] == 1
 
     def test_health_check_unhealthy(self, transport):
         """Health check with all circuits open."""
@@ -635,9 +639,10 @@ class TestHealthCheck:
             transport.record_failure("host-2")
 
         health = transport.health_check()
-        assert health["healthy"] is False
-        assert health["status"] == "unhealthy"
-        assert health["details"]["open_circuits"] == 2
+        assert health.healthy is False
+        # All circuits open = error/unhealthy status
+        assert health.status.value == "error"
+        assert health.details["open_circuits"] == 2
 
     def test_health_check_includes_metrics(self, transport):
         """Health check includes operation metrics."""
@@ -646,7 +651,7 @@ class TestHealthCheck:
         transport.record_failure("host-1")
 
         health = transport.health_check()
-        details = health["details"]
+        details = health.details
         assert details["total_operations"] == 3
         assert details["total_successes"] == 2
         assert details["total_failures"] == 1
@@ -655,7 +660,7 @@ class TestHealthCheck:
     def test_health_check_includes_transport_name(self, transport):
         """Health check includes transport name."""
         health = transport.health_check()
-        assert health["details"]["transport_name"] == "ConcreteTransport"
+        assert health.details["transport_name"] == "ConcreteTransport"
 
 
 # =============================================================================

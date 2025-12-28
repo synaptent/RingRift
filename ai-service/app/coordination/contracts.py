@@ -105,6 +105,24 @@ class HealthCheckResult:
         }
 
     @classmethod
+    def healthy(cls, message: str = "", **details: Any) -> HealthCheckResult:
+        """Create a healthy result.
+
+        Args:
+            message: Optional status message
+            **details: Additional details to include
+
+        Returns:
+            HealthCheckResult with healthy=True
+        """
+        return cls(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=message,
+            details=details,
+        )
+
+    @classmethod
     def unhealthy(cls, message: str, **details: Any) -> HealthCheckResult:
         """Create an unhealthy result."""
         return cls(

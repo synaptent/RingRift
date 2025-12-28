@@ -14,9 +14,12 @@ import pytest
 from app.coordination.model_performance_watchdog import (
     ModelPerformance,
     ModelPerformanceWatchdog,
-    WatchdogConfig,
+    ModelPerformanceWatchdogConfig,  # Fixed: was WatchdogConfig
     get_watchdog,
 )
+
+# Alias for backward compatibility with existing tests
+WatchdogConfig = ModelPerformanceWatchdogConfig
 
 
 # =============================================================================

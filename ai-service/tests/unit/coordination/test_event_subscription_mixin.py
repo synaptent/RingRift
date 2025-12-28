@@ -1,12 +1,27 @@
-"""Tests for EventSubscribingDaemonMixin (December 2025)."""
+"""Tests for EventSubscribingDaemonMixin (December 2025).
+
+NOTE: This test file references a module that was consolidated into handler_base.py.
+Tests are skipped - use test_handler_base.py instead for the unified implementation.
+"""
 
 import pytest
+
+# Skip all tests - module was consolidated
+pytestmark = pytest.mark.skip(
+    reason="app.coordination.event_subscription_mixin was consolidated into "
+    "handler_base.py. Use test_handler_base.py for event subscription tests."
+)
+
 from unittest.mock import MagicMock, patch
 
-from app.coordination.event_subscription_mixin import (
-    EventSubscribingDaemonMixin,
-    create_event_subscribing_daemon,
-)
+# These imports will fail - kept for documentation
+try:
+    from app.coordination.event_subscription_mixin import (
+        EventSubscribingDaemonMixin,
+        create_event_subscribing_daemon,
+    )
+except ImportError:
+    pass  # Expected - consolidated into handler_base.py
 
 
 class MockDaemon:

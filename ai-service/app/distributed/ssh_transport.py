@@ -154,7 +154,12 @@ except ImportError:
         SSH_MAX_RETRIES = 2
         SSH_RETRY_DELAY = 1.0  # seconds
         SSH_ADDRESS_CACHE_TTL = 300  # 5 minutes
-        LOCAL_P2P_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
+        # Use canonical P2P port constant (Dec 2025)
+        try:
+            from app.config.ports import P2P_DEFAULT_PORT
+            LOCAL_P2P_PORT = P2P_DEFAULT_PORT
+        except ImportError:
+            LOCAL_P2P_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
 
 # Default SSH user for Vast instances (env override always available)
 VAST_SSH_USER = os.environ.get("RINGRIFT_VAST_SSH_USER", "root")

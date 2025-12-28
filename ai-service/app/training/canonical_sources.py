@@ -1,3 +1,48 @@
+"""Canonical Training Data Sources - Registry and validation utilities.
+
+This module provides utilities for working with TRAINING_DATA_REGISTRY.md,
+which is the source of truth for which game databases are approved for
+training. It handles:
+
+1. **Registry Parsing**: Extract database status from the markdown table
+2. **Validation**: Check if databases meet quality gates (parity, move data)
+3. **Discovery**: Find canonical databases by board type and player count
+4. **Cluster Support**: Handle pending_gate status for cluster nodes without npx
+
+Key Functions:
+    parse_registry(path)
+        Parse TRAINING_DATA_REGISTRY.md and return database info.
+
+    get_canonical_db_path(board_type, num_players)
+        Get the canonical database path for a configuration.
+
+    validate_db_for_training(db_path, allow_pending_gate=False)
+        Check if a database is approved for training.
+
+Environment Variables:
+    RINGRIFT_ALLOW_PENDING_GATE
+        Set to "1" or "true" to allow databases with pending_gate status.
+        Needed on cluster nodes that lack npx for parity validation.
+
+Example:
+    from app.training.canonical_sources import (
+        get_canonical_db_path,
+        validate_db_for_training,
+    )
+
+    # Get canonical database for hex8 2-player
+    db_path = get_canonical_db_path("hex8", 2)
+
+    # Validate it's approved for training
+    is_valid, reason = validate_db_for_training(db_path)
+    if not is_valid:
+        raise ValueError(f"Database not approved: {reason}")
+
+See Also:
+    - TRAINING_DATA_REGISTRY.md for the canonical source registry
+    - scripts/export_replay_dataset.py for training data export
+"""
+
 from __future__ import annotations
 
 import json

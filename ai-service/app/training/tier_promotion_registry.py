@@ -1,3 +1,41 @@
+"""Tier Promotion Registry - Model tier tracking and promotion management.
+
+This module manages the tier candidate registry for trained models across all
+board/player configurations. It tracks models that have qualified for different
+strength tiers (Beginner, Intermediate, Advanced, Expert, Master) and their
+promotion status.
+
+Key Components:
+    - Registry files stored in ``config/tier_registries/``
+    - Per-configuration registries (e.g., ``tier_candidate_registry.hex8_2p.json``)
+    - Promotion history tracking for audit trails
+
+Usage:
+    # Load registry for a specific configuration
+    registry = load_registry("hex8", 2)
+
+    # Register a model as a tier candidate
+    register_tier_candidate(
+        board="hex8",
+        num_players=2,
+        tier="Advanced",
+        model_path="models/hex8_2p_v42.pth",
+        elo_rating=1850,
+    )
+
+    # Get models at a specific tier
+    candidates = get_tier_candidates("hex8", 2, "Advanced")
+
+Integration:
+    - Called by auto_promotion_daemon.py after gauntlet evaluation
+    - Used by SelfplayScheduler for opponent selection
+    - Supports TIER_PROMOTION events in the feedback loop
+
+See Also:
+    - docs/training/TIER_PROMOTION_SYSTEM.md for full documentation
+    - app.coordination.auto_promotion_daemon for automated promotion
+"""
+
 from __future__ import annotations
 
 import json

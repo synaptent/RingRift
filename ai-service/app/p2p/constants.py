@@ -27,15 +27,17 @@ except ImportError:
     CONFIG_MIN_MEMORY_GB_FOR_TRAINING = 32
 
 try:
-    from app.config.ports import SWIM_PORT
+    from app.config.ports import SWIM_PORT, P2P_DEFAULT_PORT
 except ImportError:
     SWIM_PORT = 7947
+    P2P_DEFAULT_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
 
 # ============================================
 # Network Configuration
 # ============================================
 
-DEFAULT_PORT = 8770
+# Use canonical P2P port from ports.py
+DEFAULT_PORT = P2P_DEFAULT_PORT
 
 # Tailscale uses the IPv4 CGNAT range 100.64.0.0/10 for node IPs.
 # Helpers treat hosts in this range as "Tailscale endpoints".
