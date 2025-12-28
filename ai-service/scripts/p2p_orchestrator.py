@@ -2544,8 +2544,8 @@ class P2POrchestrator(
         )
         # December 2025: Subscribe to health events (HOST_OFFLINE, NODE_RECOVERED)
         # to track unhealthy nodes for filtering during selection
-        # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
-        self.node_selector.subscribe_to_events_with_retry()
+        # Note: NodeSelector uses its own subscribe_to_events (not mixin)
+        self.node_selector.subscribe_to_events()
 
         # Phase 2A Refactoring: SyncPlanner for data synchronization
         # NOTE: request_peer_manifest is wired AFTER SyncPlanner creation
