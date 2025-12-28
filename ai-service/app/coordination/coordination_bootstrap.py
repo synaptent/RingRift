@@ -116,8 +116,9 @@ def _emit_coordinator_health_event(status: "BootstrapCoordinatorStatus") -> None
     except ImportError:
         # Event emitters not available - skip silently
         pass
-    except Exception as e:
+    except (RuntimeError, TypeError, AttributeError) as e:
         # Don't fail bootstrap due to event emission issues
+        # RuntimeError: no event loop, TypeError: wrong args, AttributeError: API mismatch
         logger.debug(f"[Bootstrap] Could not emit health event for {status.name}: {e}")
 
 
@@ -519,7 +520,9 @@ def _init_coordinator_from_spec(
 
             except ImportError:
                 logger.debug(f"[Bootstrap] Extra wiring module not available: {spec.extra_wiring[0]}")
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+                # AttributeError: missing method, TypeError: wrong signature
+                # ValueError: config issue, RuntimeError: wiring setup failed
                 logger.warning(f"[Bootstrap] Extra wiring failed: {e}")
 
     except ImportError as e:
@@ -1262,7 +1265,9 @@ def _start_unified_feedback_orchestrator() -> bool:
     except ImportError as e:
         logger.warning(f"[Bootstrap] Unified feedback module not available: {e}")
         return False
-    except Exception as e:
+    except (RuntimeError, AttributeError, TypeError) as e:
+        # RuntimeError: asyncio issues, AttributeError: missing methods
+        # TypeError: wrong method signatures
         logger.warning(f"[Bootstrap] Failed to start unified feedback orchestrator: {e}")
         return False
 

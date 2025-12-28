@@ -409,8 +409,13 @@ class OrphanDetectionDaemon:
             return None
 
     async def _register_orphans(self, orphans: list[OrphanInfo]) -> int:
-        """Register orphaned databases in ClusterManifest."""
+        """Register orphaned databases in ClusterManifest.
+
+        P0.2 Dec 2025: Added retry with exponential backoff and persistence
+        of failed orphans to prevent permanent data loss.
+        """
         registered_count = 0
+        registered_orphans: list[OrphanInfo] = []
 
         try:
             from app.distributed.cluster_manifest import get_cluster_manifest
@@ -418,38 +423,82 @@ class OrphanDetectionDaemon:
             manifest = get_cluster_manifest()
 
             for orphan in orphans:
-                try:
-                    # Get local node ID
-                    node_id = os.environ.get("RINGRIFT_NODE_ID", "local")
-
-                    # Register the database
-                    if hasattr(manifest, "register_database"):
-                        manifest.register_database(
-                            node_id=node_id,
-                            db_path=str(orphan.path),
-                            board_type=orphan.board_type,
-                            num_players=orphan.num_players,
-                            game_count=orphan.game_count,
-                        )
-                        registered_count += 1
-                        logger.info(
-                            f"Registered orphan: {orphan.path.name} "
-                            f"({orphan.game_count} games)"
-                        )
-
-                except Exception as e:
-                    logger.error(f"Failed to register orphan {orphan.path}: {e}")
+                success = await self._register_single_orphan_with_retry(
+                    orphan, manifest
+                )
+                if success:
+                    registered_count += 1
+                    registered_orphans.append(orphan)
+                    self._clear_failed_orphan(orphan.path)
 
             # Emit registration event if any orphans were registered
             if registered_count > 0:
-                await self._emit_registration_event(orphans[:registered_count])
+                await self._emit_registration_event(registered_orphans)
 
         except ImportError:
             logger.debug("ClusterManifest not available for registration")
         except Exception as e:
-            logger.error(f"Failed to register orphans: {e}")
+            # P0.2: Log at ERROR level for visibility
+            logger.error(
+                f"Failed to get ClusterManifest for orphan registration: {e}. "
+                f"Persisting {len(orphans)} orphans for later retry."
+            )
+            self._registration_errors += 1
+            for orphan in orphans:
+                self._persist_failed_orphan(orphan, str(e))
 
         return registered_count
+
+    async def _register_single_orphan_with_retry(
+        self, orphan: OrphanInfo, manifest: Any
+    ) -> bool:
+        """Register a single orphan with exponential backoff retry.
+
+        P0.2 Dec 2025: Prevents data loss from transient manifest failures.
+        Retries: 30s, 60s, 120s (exponential backoff).
+        """
+        node_id = os.environ.get("RINGRIFT_NODE_ID", "local")
+        last_error = ""
+
+        for attempt in range(self._REGISTRATION_MAX_RETRIES):
+            try:
+                if hasattr(manifest, "register_database"):
+                    manifest.register_database(
+                        node_id=node_id,
+                        db_path=str(orphan.path),
+                        board_type=orphan.board_type,
+                        num_players=orphan.num_players,
+                        game_count=orphan.game_count,
+                    )
+                    logger.info(
+                        f"Registered orphan: {orphan.path.name} "
+                        f"({orphan.game_count} games)"
+                        + (f" [attempt {attempt + 1}]" if attempt > 0 else "")
+                    )
+                    return True
+                else:
+                    logger.warning("ClusterManifest missing register_database method")
+                    return False
+
+            except Exception as e:
+                last_error = str(e)
+                backoff = self._REGISTRATION_BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    f"Orphan registration attempt {attempt + 1}/{self._REGISTRATION_MAX_RETRIES} "
+                    f"failed for {orphan.path.name}: {e}. "
+                    f"Retrying in {backoff:.0f}s..."
+                )
+                if attempt < self._REGISTRATION_MAX_RETRIES - 1:
+                    await asyncio.sleep(backoff)
+
+        # All retries exhausted - persist for later
+        logger.error(
+            f"Failed to register orphan {orphan.path.name} after "
+            f"{self._REGISTRATION_MAX_RETRIES} attempts: {last_error}"
+        )
+        self._registration_errors += 1
+        self._persist_failed_orphan(orphan, last_error)
+        return False
 
     async def _emit_registration_event(self, registered: list[OrphanInfo]) -> None:
         """Emit ORPHAN_GAMES_REGISTERED event."""

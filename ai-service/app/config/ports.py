@@ -10,13 +10,16 @@ Usage:
     url = f"http://localhost:{P2P_DEFAULT_PORT}/status"
 """
 
+import os
+
 # =============================================================================
 # P2P Cluster Communication
 # =============================================================================
 
 # Main P2P orchestrator port for cluster coordination, leader election,
 # job dispatch, and status queries
-P2P_DEFAULT_PORT = 8770
+# Dec 2025: Support environment variable override via RINGRIFT_P2P_PORT
+P2P_DEFAULT_PORT = int(os.environ.get("RINGRIFT_P2P_PORT", "8770"))
 
 # Gossip protocol port for P2P data replication and peer discovery
 GOSSIP_PORT = 8771

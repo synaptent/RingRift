@@ -2668,6 +2668,12 @@ class AutoSyncDaemon:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._sync_task
 
+        # December 2025: Stop pending writes processor
+        if self._pending_writes_task:
+            self._pending_writes_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._pending_writes_task
+
         # Stop gossip daemon
         if self._gossip_daemon:
             await self._gossip_daemon.stop()

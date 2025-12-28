@@ -617,7 +617,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
 
         # Try to discover from P2P
         try:
-            p2p_port = int(os.environ.get("RINGRIFT_P2P_PORT", str(P2P_DEFAULT_PORT)))
+            p2p_port = get_p2p_port()
             p2p_url = f"http://localhost:{p2p_port}/status"
 
             async with aiohttp.ClientSession() as session:

@@ -258,6 +258,28 @@ CREATE TABLE IF NOT EXISTS game_nnue_features (
 
 CREATE INDEX IF NOT EXISTS idx_nnue_game ON game_nnue_features(game_id);
 CREATE INDEX IF NOT EXISTS idx_nnue_board_type ON game_nnue_features(board_type);
+
+-- Move data integrity enforcement (v14)
+-- Quarantine table for games detected without move data
+CREATE TABLE IF NOT EXISTS orphaned_games (
+    game_id TEXT PRIMARY KEY,
+    detected_at TEXT NOT NULL,
+    reason TEXT,
+    original_status TEXT,
+    board_type TEXT,
+    num_players INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_orphaned_detected ON orphaned_games(detected_at);
+
+-- Trigger to prevent completing games without moves
+CREATE TRIGGER IF NOT EXISTS enforce_moves_on_complete
+BEFORE UPDATE ON games
+WHEN NEW.game_status IN ('completed', 'finished')
+     AND NEW.total_moves = 0
+     AND OLD.total_moves = 0
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot complete game without moves: total_moves must be > 0');
+END;
 """
 
 
