@@ -307,14 +307,57 @@ class SwimMembershipManager:
             return []
 
         try:
+            # Dec 28, 2025: swim-p2p 1.2.x MemberList is not directly iterable
+            # Use .all() or .list() method if available, otherwise try .values()
+            members = self._swim.members
+            if hasattr(members, 'all'):
+                members_list = members.all()
+            elif hasattr(members, 'list'):
+                members_list = members.list()
+            elif hasattr(members, 'values'):
+                members_list = list(members.values())
+            elif hasattr(members, '__iter__'):
+                members_list = list(members)
+            else:
+                # Last resort: try to access via alive/suspect/faulty methods
+                alive = []
+                if hasattr(members, 'alive'):
+                    alive = list(members.alive()) if callable(members.alive) else list(members.alive)
+                return [m.id if hasattr(m, 'id') else str(m) for m in alive if str(m) != self.node_id]
+
             return [
-                member.id
-                for member in self._swim.members
-                if member.state == "alive" and member.id != self.node_id
+                member.id if hasattr(member, 'id') else str(member)
+                for member in members_list
+                if (member.state if hasattr(member, 'state') else "alive") == "alive"
+                and (member.id if hasattr(member, 'id') else str(member)) != self.node_id
             ]
         except Exception as e:
             logger.error(f"Error getting alive peers: {e}")
             return []
+
+    def _get_members_list(self) -> list:
+        """Get members as a list, handling swim-p2p API variations.
+
+        Returns:
+            List of member objects
+        """
+        if not self._swim:
+            return []
+
+        members = self._swim.members
+        if hasattr(members, 'all'):
+            return members.all()
+        elif hasattr(members, 'list'):
+            return members.list()
+        elif hasattr(members, 'values'):
+            return list(members.values())
+        elif hasattr(members, '__iter__'):
+            try:
+                return list(members)
+            except TypeError:
+                pass
+        # Last resort: return empty list
+        return []
 
     def is_peer_alive(self, peer_id: str) -> bool:
         """Check if a specific peer is alive.
@@ -329,11 +372,16 @@ class SwimMembershipManager:
             return False
 
         try:
+            members_list = self._get_members_list()
             member = next(
-                (m for m in self._swim.members if m.id == peer_id),
+                (m for m in members_list
+                 if (m.id if hasattr(m, 'id') else str(m)) == peer_id),
                 None
             )
-            return member is not None and member.state == "alive"
+            if member is None:
+                return False
+            state = member.state if hasattr(member, 'state') else "unknown"
+            return state == "alive"
         except Exception as e:
             logger.error(f"Error checking peer {peer_id}: {e}")
             return False
@@ -348,7 +396,7 @@ class SwimMembershipManager:
             return 0
 
         try:
-            return len(list(self._swim.members))
+            return len(self._get_members_list())
         except (AttributeError, TypeError, StopIteration) as e:
             # Dec 2025: SWIM member iteration may fail if not fully initialized
             logger.debug(f"[SWIMAdapter] Member count failed: {e}")
@@ -371,10 +419,10 @@ class SwimMembershipManager:
             }
 
         try:
-            members = list(self._swim.members)
-            alive = sum(1 for m in members if m.state == "alive")
-            suspected = sum(1 for m in members if m.state == "suspected")
-            failed = sum(1 for m in members if m.state == "failed")
+            members = self._get_members_list()
+            alive = sum(1 for m in members if (m.state if hasattr(m, 'state') else "unknown") == "alive")
+            suspected = sum(1 for m in members if (m.state if hasattr(m, 'state') else "unknown") == "suspected")
+            failed = sum(1 for m in members if (m.state if hasattr(m, 'state') else "unknown") == "failed")
 
             return {
                 "node_id": self.node_id,

@@ -75,7 +75,7 @@ python scripts/master_loop.py --dry-run
 This orchestrates:
 
 - **SelfplayScheduler**: Priority-based selfplay allocation (staleness, Elo velocity, curriculum weights)
-- **DaemonManager**: 70 background daemons for sync, training, evaluation (7 deprecated)
+- **DaemonManager**: 72 background daemons for sync, training, evaluation (6 deprecated)
 - **FeedbackLoopController**: Training feedback signals and curriculum adjustments
 - **DataPipelineOrchestrator**: Export → training → evaluation → promotion
 
@@ -203,6 +203,24 @@ See `ai-service/config/distributed_hosts.yaml` for full cluster configuration.
 - **Gumbel MCTS**: Quality-focused tree search for training data
 - **Transfer Learning**: Train 4-player models from 2-player checkpoints
 - **Parity Testing**: Verify Python engine matches TypeScript rules
+
+## Known Issues
+
+### Parity Gates on Cluster Nodes
+
+Cluster nodes (Vast.ai, RunPod, Nebius) lack Node.js runtime, so TypeScript parity gates fail with "pending_gate" status in databases.
+
+**Workaround**:
+
+```bash
+# Skip parity gates on cluster nodes (selfplay only, no TS validation)
+export RINGRIFT_ALLOW_PENDING_GATE=1
+
+# Run parity validation locally (has npx) before syncing to cluster
+python scripts/check_ts_python_replay_parity.py --db data/games/canonical_hex8.db
+```
+
+**Root cause**: Container images and cloud nodes don't include Node.js. The parity gate script (`scripts/selfplay-db-ts-replay.ts`) requires `npx ts-node`.
 
 ## See Also
 

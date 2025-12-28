@@ -811,6 +811,7 @@ class MasterLoopController:
             DaemonType.IDLE_RESOURCE,
             DaemonType.UTILIZATION_OPTIMIZER,
             DaemonType.QUEUE_POPULATOR,
+            DaemonType.SELFPLAY_COORDINATOR,  # Dec 28: Priority-based selfplay scheduling
             DaemonType.AUTO_EXPORT,
             # Dec 2025: DATA_CONSOLIDATION merges scattered selfplay games into canonical DBs
             # Must run after AUTO_SYNC (games need to be synced first) and before training
