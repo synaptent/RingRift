@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.contracts import CoordinatorStatus
 from app.coordination.protocols import HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -484,8 +485,8 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
             details["last_errors"] = len(self._last_result.errors)
 
         return HealthCheckResult(
-            is_healthy=is_healthy,
-            status="healthy" if is_healthy else "unhealthy",
+            healthy=is_healthy,
+            status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.STOPPED,
             message="Integrity check daemon running" if is_healthy else "Daemon not running",
             details=details,
         )

@@ -337,6 +337,80 @@ class TrainingFreshnessChecker:
             logger.warning(f"Failed to get game count from {db_path}: {e}")
             return 0
 
+    def _get_db_newest_game_time(self, db_path: Path) -> float | None:
+        """Get the timestamp of the newest game in a database.
+
+        P1.6 Dec 2025: Returns the newest game's created_at timestamp as Unix time.
+        This is more accurate than file mtime for determining actual data freshness,
+        as file mtime can be preserved when files are synced between nodes.
+
+        Args:
+            db_path: Path to SQLite database
+
+        Returns:
+            Unix timestamp of newest game, or None if unavailable
+        """
+        try:
+            import sqlite3
+            from datetime import datetime
+
+            with sqlite3.connect(db_path, timeout=5.0) as conn:
+                # Get the newest game's created_at timestamp
+                cursor = conn.execute(
+                    "SELECT MAX(created_at) FROM games WHERE created_at IS NOT NULL"
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    # Parse ISO format timestamp
+                    timestamp_str = row[0]
+                    # Handle both timezone-aware and naive timestamps
+                    try:
+                        if timestamp_str.endswith("Z"):
+                            timestamp_str = timestamp_str[:-1] + "+00:00"
+                        dt = datetime.fromisoformat(timestamp_str)
+                        return dt.timestamp()
+                    except ValueError:
+                        # Try simpler format
+                        dt = datetime.strptime(timestamp_str[:19], "%Y-%m-%dT%H:%M:%S")
+                        return dt.timestamp()
+        except Exception as e:
+            logger.debug(f"Failed to get newest game time from {db_path}: {e}")
+        return None
+
+    def _get_npz_creation_time(self, npz_path: Path) -> float | None:
+        """Get the export timestamp from NPZ metadata.
+
+        P1.6 Dec 2025: NPZ files exported by export_replay_dataset.py may contain
+        export metadata with the timestamp when the data was generated.
+
+        Args:
+            npz_path: Path to NPZ file
+
+        Returns:
+            Unix timestamp of export, or None if unavailable
+        """
+        try:
+            import numpy as np
+            from datetime import datetime
+
+            with np.load(npz_path, allow_pickle=True) as data:
+                # Check for metadata array (may contain export timestamp)
+                if "metadata" in data:
+                    metadata = data["metadata"]
+                    if hasattr(metadata, "item"):
+                        metadata = metadata.item()
+                    if isinstance(metadata, dict):
+                        export_time = metadata.get("export_time") or metadata.get("created_at")
+                        if export_time:
+                            if isinstance(export_time, (int, float)):
+                                return float(export_time)
+                            if isinstance(export_time, str):
+                                dt = datetime.fromisoformat(export_time.replace("Z", "+00:00"))
+                                return dt.timestamp()
+        except Exception as e:
+            logger.debug(f"Failed to get NPZ creation time from {npz_path}: {e}")
+        return None
+
     def check_freshness(
         self,
         board_type: str,

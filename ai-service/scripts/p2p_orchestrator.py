@@ -26882,6 +26882,7 @@ print(json.dumps({{
         job_id: str | None = None,
         cuda_visible_devices: str | None = None,
         export_params: dict[str, Any] | None = None,
+        simulation_budget: int | None = None,  # Gumbel MCTS budget (None = use tier default)
     ) -> ClusterJob | None:
         """Start a job on the local node.
 
