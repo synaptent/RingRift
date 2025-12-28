@@ -36,6 +36,7 @@ class TestPipelineStage:
         assert "selfplay" in stages
         assert "data_sync" in stages
         assert "npz_export" in stages
+        assert "npz_combination" in stages  # Added December 2025
         assert "training" in stages
         assert "evaluation" in stages
         assert "promotion" in stages
@@ -43,7 +44,7 @@ class TestPipelineStage:
 
     def test_stage_count(self):
         """Verify stage count matches expected."""
-        assert len(PipelineStage) == 8
+        assert len(PipelineStage) == 9  # Updated: NPZ_COMBINATION added December 2025
 
     def test_stage_values_are_strings(self):
         """All stage values should be strings."""

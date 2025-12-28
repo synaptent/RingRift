@@ -238,6 +238,12 @@ DATA_TO_CROSS_PROCESS_MAP: Final[dict[str, str]] = {
     # Data consolidation events
     "consolidation_started": "CONSOLIDATION_STARTED",
     "consolidation_complete": "CONSOLIDATION_COMPLETE",
+    # NPZ export and combination events (December 2025 - training data pipeline)
+    "npz_export_started": "NPZ_EXPORT_STARTED",
+    "npz_export_complete": "NPZ_EXPORT_COMPLETE",
+    "npz_combination_started": "NPZ_COMBINATION_STARTED",
+    "npz_combination_complete": "NPZ_COMBINATION_COMPLETE",
+    "npz_combination_failed": "NPZ_COMBINATION_FAILED",
     # Replication/repair events
     "repair_completed": "REPAIR_COMPLETED",
     "repair_failed": "REPAIR_FAILED",
@@ -290,6 +296,10 @@ STAGE_TO_CROSS_PROCESS_MAP: Final[dict[str, str]] = {
     "parity_validation_complete": "PARITY_VALIDATION_COMPLETE",
     "npz_export_started": "NPZ_EXPORT_STARTED",
     "npz_export_complete": "NPZ_EXPORT_COMPLETE",
+    # Dec 2025: NPZ combination events (quality-weighted data combination for training)
+    "npz_combination_started": "NPZ_COMBINATION_STARTED",
+    "npz_combination_complete": "NPZ_COMBINATION_COMPLETE",
+    "npz_combination_failed": "NPZ_COMBINATION_FAILED",
     "cluster_sync_complete": "CLUSTER_SYNC_COMPLETE",
     "model_sync_complete": "MODEL_SYNC_COMPLETE",
     # Optimization events

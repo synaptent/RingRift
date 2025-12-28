@@ -1365,6 +1365,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.SELFPLAY_COORDINATOR.name: create_selfplay_coordinator,
         DaemonType.TRAINING_TRIGGER.name: create_training_trigger,
         DaemonType.AUTO_EXPORT.name: create_auto_export,
+        DaemonType.NPZ_COMBINATION.name: create_npz_combination,  # Dec 2025: NPZ combination
         DaemonType.TOURNAMENT_DAEMON.name: create_tournament_daemon,
         DaemonType.EVALUATION.name: create_evaluation_daemon,
         DaemonType.AUTO_PROMOTION.name: create_auto_promotion,

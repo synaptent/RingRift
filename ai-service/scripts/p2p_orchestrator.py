@@ -4399,7 +4399,7 @@ class P2POrchestrator(
             self.last_lease_renewal = 0.0
             self._release_voter_grant_if_self()
             self._save_state()
-            _emit_p2p_leader_lost_sync(old_leader_id, "lease_expired")
+            self._emit_leader_lost_sync(old_leader_id, "lease_expired")
             # CRITICAL: Check quorum before starting election to prevent quorum bypass
             if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
                 logger.warning("Skipping election after lease expired: no voter quorum available")
@@ -4418,7 +4418,7 @@ class P2POrchestrator(
             self.last_lease_renewal = 0.0
             self._release_voter_grant_if_self()
             self._save_state()
-            _emit_p2p_leader_lost_sync(old_leader_id, "quorum_lost")
+            self._emit_leader_lost_sync(old_leader_id, "quorum_lost")
             # NOTE: Don't start election here - we just lost quorum, so election would fail anyway
             # Wait for quorum to be restored before attempting election
             logger.warning("Skipping election after quorum loss: no voter quorum available")
@@ -8171,7 +8171,7 @@ class P2POrchestrator(
                     capabilities.append(gpu_type)
                 else:
                     capabilities.append("cpu")
-                await _emit_p2p_host_online(peer_info.node_id, capabilities)
+                await self._emit_host_online(peer_info.node_id, capabilities)
                 logger.info(f"First-contact peer registered: {peer_info.node_id} (caps: {capabilities})")
 
             # Return our info
@@ -9280,7 +9280,7 @@ class P2POrchestrator(
                     capabilities.append(gpu_type)
                 else:
                     capabilities.append("cpu")
-                await _emit_p2p_host_online(node_id, capabilities)
+                await self._emit_host_online(node_id, capabilities)
 
             return web.json_response({
                 "success": True,
@@ -13090,7 +13090,7 @@ print(json.dumps(result))
             # Enables: model distribution, model selector hot-reload, temperature adjustment
             config_key = f"{board_type}_{num_players}p"
             model_id = Path(model_path).name
-            await _emit_model_promoted(
+            await self._emit_model_promoted(
                 model_id=model_id,
                 config_key=config_key,
                 elo=0.0,  # Elo not available in this context
@@ -19502,7 +19502,7 @@ print(json.dumps(result))
                     self.local_jobs[job_id] = local_job
                 self._save_state()
                 # Emit TASK_ABANDONED event (December 2025)
-                await _emit_task_abandoned(
+                await self._emit_task_abandoned(
                     task_id=job_id,
                     task_type=getattr(local_job, "job_type", "local"),
                     reason="user_cancelled",
@@ -19521,7 +19521,7 @@ print(json.dumps(result))
                     ssh_run.completed_at = time.time()
                     self.ssh_tournament_runs[job_id] = ssh_run
                 # Emit TASK_ABANDONED event (December 2025)
-                await _emit_task_abandoned(
+                await self._emit_task_abandoned(
                     task_id=job_id,
                     task_type="ssh_tournament",
                     reason="user_cancelled",
@@ -19544,7 +19544,7 @@ print(json.dumps(result))
                         }, status=400)
             if training_cancelled:
                 # Emit TASK_ABANDONED event (December 2025)
-                await _emit_task_abandoned(
+                await self._emit_task_abandoned(
                     task_id=job_id,
                     task_type="training",
                     reason="user_cancelled",
@@ -20684,7 +20684,7 @@ print(json.dumps({{
                                 capabilities.append(gpu_type)
                             else:
                                 capabilities.append("cpu")
-                            await _emit_p2p_host_online(info.node_id, capabilities)
+                            await self._emit_host_online(info.node_id, capabilities)
                             logger.info(f"First-contact peer via heartbeat loop: {info.node_id}")
                         if info.role == NodeRole.LEADER and info.node_id != self.node_id:
                             async with AsyncLockWrapper(self.peers_lock):
@@ -21434,15 +21434,15 @@ print(json.dumps({{
                         logger.info(f"Retiring peer {node_id} (offline for {int(dead_for)}s)")
                         # CRITICAL: Emit HOST_OFFLINE event (Dec 2025 fix)
                         last_hb = getattr(info, "last_heartbeat", None)
-                        asyncio.create_task(_emit_p2p_host_offline(node_id, "retired", last_hb))
+                        asyncio.create_task(self._emit_host_offline(node_id, "retired", last_hb))
                         # CRITICAL: Emit P2P_NODE_DEAD for work reassignment (Dec 2025)
-                        asyncio.create_task(_emit_p2p_node_dead(
+                        asyncio.create_task(self._emit_node_dead(
                             node_id, "retired", last_hb, dead_for
                         ))
                         # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
                         alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
                         gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
-                        asyncio.create_task(_emit_cluster_capacity_changed(
+                        asyncio.create_task(self._emit_cluster_capacity_changed(
                             change_type="node_removed",
                             node_id=node_id,
                             total_nodes=alive_count,
@@ -21457,11 +21457,11 @@ print(json.dumps({{
                     caps = []
                     if hasattr(info, "gpu_type") and info.gpu_type:
                         caps.append(f"gpu:{info.gpu_type}")
-                    asyncio.create_task(_emit_p2p_host_online(node_id, caps))
+                    asyncio.create_task(self._emit_host_online(node_id, caps))
                     # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
                     alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
                     gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
-                    asyncio.create_task(_emit_cluster_capacity_changed(
+                    asyncio.create_task(self._emit_cluster_capacity_changed(
                         change_type="node_added",
                         node_id=node_id,
                         total_nodes=alive_count,
@@ -21513,7 +21513,7 @@ print(json.dumps({{
             self.last_lease_renewal = 0.0
             self.role = NodeRole.FOLLOWER
             # Emit LEADER_LOST before starting election (Dec 2025 fix)
-            asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, "lease_expired"))
+            asyncio.create_task(self._emit_leader_lost(old_leader_id, "lease_expired"))
             # CRITICAL: Check quorum before starting election to prevent quorum bypass
             if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
                 logger.warning("Skipping election after stale lease clear: no voter quorum available")
@@ -21576,13 +21576,13 @@ print(json.dumps({{
                         logger.info(f"Retiring peer {node_id} (offline for {int(dead_for)}s)")
                         # CRITICAL: Emit HOST_OFFLINE event (Dec 2025 fix) - sync version
                         last_hb = getattr(info, "last_heartbeat", None)
-                        _emit_p2p_host_offline_sync(node_id, "retired", last_hb)
+                        self._emit_host_offline_sync(node_id, "retired", last_hb)
                         # CRITICAL: Emit P2P_NODE_DEAD for work reassignment (Dec 2025) - sync version
-                        _emit_p2p_node_dead_sync(node_id, "retired", last_hb, dead_for)
+                        self._emit_node_dead_sync(node_id, "retired", last_hb, dead_for)
                         # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
                         alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
                         gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
-                        _emit_cluster_capacity_changed_sync(
+                        self._emit_cluster_capacity_changed_sync(
                             change_type="node_removed",
                             node_id=node_id,
                             total_nodes=alive_count,
@@ -21597,11 +21597,11 @@ print(json.dumps({{
                     caps = []
                     if hasattr(info, "gpu_type") and info.gpu_type:
                         caps.append(f"gpu:{info.gpu_type}")
-                    _emit_p2p_host_online_sync(node_id, caps)
+                    self._emit_host_online_sync(node_id, caps)
                     # Emit CLUSTER_CAPACITY_CHANGED (Dec 2025 - enables SyncRouter reaction)
                     alive_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
                     gpu_count = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
-                    _emit_cluster_capacity_changed_sync(
+                    self._emit_cluster_capacity_changed_sync(
                         change_type="node_added",
                         node_id=node_id,
                         total_nodes=alive_count,
