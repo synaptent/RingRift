@@ -160,7 +160,9 @@ class ConfigState:
     games_since_last_export: int = 0
 
     # Quality metrics
-    last_quality_score: float = 0.0
+    # Default 0.7 allows initial training (threshold is 0.5) before actual quality metrics arrive
+    # Will be overwritten once QUALITY_SCORE_UPDATED events are received
+    last_quality_score: float = 0.7
     last_policy_accuracy: float = 0.0
     last_evaluation_win_rate: float = 0.0
 
@@ -313,7 +315,7 @@ class MasterLoopController:
                     config_key TEXT PRIMARY KEY,
                     exploration_boost REAL NOT NULL DEFAULT 1.0,
                     training_intensity TEXT NOT NULL DEFAULT 'normal',
-                    last_quality_score REAL NOT NULL DEFAULT 0.0,
+                    last_quality_score REAL NOT NULL DEFAULT 0.7,
                     updated_at REAL NOT NULL
                 )
             """)

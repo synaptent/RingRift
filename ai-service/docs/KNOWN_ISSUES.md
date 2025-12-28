@@ -143,6 +143,30 @@ result = robust_push("file.npz", "host", 22, "/path/file.npz", TransferConfig())
 
 ---
 
+### Quality Score Blocks Training (FIXED Dec 28, 2025)
+
+**Issue:** Master loop automation never triggered training because quality scores initialized to 0.0, which blocked the training readiness check (requires >= 0.5).
+
+**Root Cause:** `ConfigState.last_quality_score` defaulted to `0.0`. The `needs_training` property required quality >= 0.5 to return True. For new configs with no prior training data, no quality events had been generated yet - creating a circular dependency where training couldn't start without quality data, but quality data required prior training.
+
+**Symptoms:**
+
+- `master_loop.py` running 51+ hours without triggering training
+- `_check_training_readiness()` returning "Low quality: 0.00" even with sufficient games
+- TRAINING_THRESHOLD_REACHED events emitted but training never started
+
+**Fix Applied (Dec 28, 2025):**
+
+- Changed `last_quality_score` default from `0.0` → `0.7` in both:
+  - `ConfigState` dataclass (line 165)
+  - SQLite schema default (line 318)
+- 0.7 is above the 0.5 threshold, allowing initial training to proceed
+- Quality score is overwritten once actual QUALITY_SCORE_UPDATED events arrive
+
+**Status:** FIXED
+
+---
+
 ### Gauntlet Semaphore Leak (Non-Critical)
 
 **Issue:** Gauntlet evaluation shows `resource_tracker: 5 leaked semaphore objects` warning on macOS with Python 3.10 spawn multiprocessing.
