@@ -1245,6 +1245,45 @@ def get_timeout(operation: str) -> int:
     return timeouts.get(operation, TransportDefaults.HTTP_TIMEOUT)
 
 
+def get_aiohttp_timeout(operation: str = "http"):
+    """Get aiohttp ClientTimeout for an operation type.
+
+    This is the preferred way to get timeouts for aiohttp sessions.
+    ALWAYS use this instead of creating sessions without timeout.
+
+    Args:
+        operation: Operation type ("http", "health", "connect", etc.)
+
+    Returns:
+        aiohttp.ClientTimeout configured for the operation
+
+    Example:
+        from app.config.coordination_defaults import get_aiohttp_timeout
+
+        # Health check (5s timeout)
+        async with aiohttp.ClientSession(timeout=get_aiohttp_timeout("health")) as session:
+            ...
+
+        # Standard HTTP (30s timeout)
+        async with aiohttp.ClientSession(timeout=get_aiohttp_timeout()) as session:
+            ...
+
+    Note:
+        Import aiohttp in your module - we use lazy import to avoid
+        circular dependencies in this config module.
+    """
+    # Lazy import to avoid circular dependencies
+    try:
+        import aiohttp
+    except ImportError:
+        # Return None if aiohttp not available - caller should handle
+        return None
+
+    timeout_seconds = get_timeout(operation)
+    # Use total timeout - this covers the entire request lifecycle
+    return aiohttp.ClientTimeout(total=timeout_seconds)
+
+
 # =============================================================================
 # Job Reaper Defaults (December 27, 2025)
 # =============================================================================
@@ -1772,6 +1811,7 @@ __all__ = [
     "UtilizationDefaults",
     "WorkQueueMonitorDefaults",
     # Utility functions
+    "get_aiohttp_timeout",
     "get_all_defaults",
     "get_backpressure_multiplier",
     "get_circuit_breaker_configs",

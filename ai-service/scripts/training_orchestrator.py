@@ -265,47 +265,84 @@ class TrainingOrchestrator:
                     # Parse config name (e.g., "hex8_2p" from "hex8_2p")
                     game_counts[name] = int(count) if count.isdigit() else 0
 
-        # Get NPZ file info
+        # Get NPZ file info with modification times
+        # Format: filename:size_bytes:mtime_epoch
         code, npz_output = await self._run_ssh(
             self.owc_host,
-            f"ls -l {self.owc_data_path}/canonical_data/*.npz 2>/dev/null | "
-            f"awk '{{print $5\":\"$6\" \"$7\" \"$8\":\"$9}}'",
+            f"for f in {self.owc_data_path}/canonical_data/*.npz; do "
+            f"[ -f \"$f\" ] && stat -f '%N:%z:%m' \"$f\" 2>/dev/null || "
+            f"stat --printf='%n:%s:%Y\\n' \"$f\" 2>/dev/null; done",
             timeout=30,
         )
 
         npz_info = {}
+        current_time = datetime.now().timestamp()
         if code == 0:
-            for line in npz_output.split("\n"):
-                if ":" in line:
+            for line in npz_output.strip().split("\n"):
+                if ":" in line and line.strip():
+                    parts = line.split(":")
+                    if len(parts) >= 3:
+                        filepath = parts[0]
+                        size_bytes = parts[1]
+                        mtime_epoch = parts[2]
+                        # Extract config name from filename
+                        filename = filepath.split("/")[-1].replace(".npz", "")
+                        try:
+                            mtime = float(mtime_epoch)
+                            age_hours = (current_time - mtime) / 3600
+                            npz_info[filename] = {
+                                "size_mb": int(size_bytes) / 1024 / 1024,
+                                "mtime": mtime,
+                                "age_hours": age_hours,
+                            }
+                        except (ValueError, IndexError):
+                            pass
+
+        # Get DB file modification times for comparison
+        code, db_output = await self._run_ssh(
+            self.owc_host,
+            f"for f in {self.owc_data_path}/canonical_games/canonical_*.db; do "
+            f"[ -f \"$f\" ] && stat -f '%N:%m' \"$f\" 2>/dev/null || "
+            f"stat --printf='%n:%Y\\n' \"$f\" 2>/dev/null; done",
+            timeout=30,
+        )
+
+        db_mtimes = {}
+        if code == 0:
+            for line in db_output.strip().split("\n"):
+                if ":" in line and line.strip():
                     parts = line.split(":")
                     if len(parts) >= 2:
-                        size_bytes = parts[0]
-                        rest = parts[1]
-                        # Extract filename
-                        if "/" in rest:
-                            filename = rest.split("/")[-1].replace(".npz", "")
-                            try:
-                                npz_info[filename] = {
-                                    "size_mb": int(size_bytes) / 1024 / 1024,
-                                }
-                            except ValueError:
-                                pass
+                        filepath = parts[0]
+                        mtime_epoch = parts[1]
+                        # Extract config name: canonical_hex8_2p.db -> hex8_2p
+                        filename = filepath.split("/")[-1].replace("canonical_", "").replace(".db", "")
+                        try:
+                            db_mtimes[filename] = float(mtime_epoch)
+                        except ValueError:
+                            pass
 
         # Build config status
         for config, priority in CONFIG_PRIORITIES.items():
             games = game_counts.get(config, 0)
-            npz = npz_info.get(config, {"size_mb": 0})
+            npz = npz_info.get(config, {"size_mb": 0, "age_hours": float("inf"), "mtime": 0})
             min_games = MIN_GAMES_PER_CONFIG.get(config, 5000)
+
+            # Calculate if NPZ needs re-export (DB newer than NPZ, or NPZ missing)
+            db_mtime = db_mtimes.get(config, 0)
+            npz_mtime = npz.get("mtime", 0)
+            # Need export if: no NPZ exists, or DB was modified after NPZ was created
+            needs_export = npz_mtime == 0 or (db_mtime > npz_mtime and games > 0)
 
             configs[config] = ConfigStatus(
                 config=config,
                 games_on_owc=games,
                 npz_size_mb=npz.get("size_mb", 0),
-                npz_age_hours=0,  # TODO: Calculate from mtime
+                npz_age_hours=npz.get("age_hours", float("inf")),
                 priority=priority,
                 is_underserved=games < min_games,
-                needs_export=False,  # TODO: Compare DB vs NPZ mtime
-                needs_distribution=False,  # TODO: Check nodes
+                needs_export=needs_export,
+                needs_distribution=False,  # Checked separately via node status
             )
 
         return configs

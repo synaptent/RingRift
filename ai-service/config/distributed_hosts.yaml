@@ -480,7 +480,8 @@ hosts:
     gpu: RTX 3090 Ti
     gpu_vram_gb: 24
     role: gpu_selfplay
-    status: ready
+    # Dec 28, 2025: Marked offline - ringrift directory not set up on this node
+    status: offline
     runpod_id: dqc6nvrwig8ajq
     p2p_enabled: true
 

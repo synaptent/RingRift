@@ -615,6 +615,11 @@ def main():
     parser.add_argument("--source-dir", type=str, default=str(OWC_SELFPLAY_DIR))
     parser.add_argument("--dest-dir", type=str, default=str(OWC_CANONICAL_DIR))
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail on any data integrity issues (games without move data)"
+    )
     args = parser.parse_args()
 
     if args.verbose:
@@ -629,6 +634,9 @@ def main():
 
     if args.dry_run:
         logger.info("DRY RUN - no changes will be made")
+
+    if args.strict:
+        logger.info("STRICT MODE - will fail on any data integrity issues")
 
     # Determine which configs to process
     if args.config:
@@ -646,15 +654,20 @@ def main():
     # Process each config
     results = []
     total_added = 0
+    total_skipped_no_moves = 0
 
     for board_type, num_players in configs:
         result = consolidate_config(
             board_type, num_players,
             source_dir, dest_dir,
             args.dry_run,
+            args.strict,
         )
         results.append(result)
         total_added += result.games_added
+        # Sum games skipped due to no move data
+        for stats in result.merge_stats:
+            total_skipped_no_moves += stats.games_no_moves
 
     # Summary
     print("\n" + "=" * 60)
