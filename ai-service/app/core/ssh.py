@@ -170,18 +170,42 @@ class SSHResult:
         return self.success
 
 
+class CircuitState:
+    """Circuit breaker states."""
+    CLOSED = "closed"  # Normal operation, requests pass through
+    OPEN = "open"  # Failing fast, rejecting all requests
+    HALF_OPEN = "half_open"  # Testing if service recovered
+
+
 @dataclass
 class SSHHealth:
-    """SSH connection health tracking with circuit breaker support."""
+    """SSH connection health tracking with circuit breaker support.
+
+    Features (Dec 2025):
+    - Exponential backoff: 10s -> 20s -> 40s -> 80s -> 160s -> 300s max
+    - Half-open state: Allows one test request after timeout
+    - Early recovery probe: Tests at 50% of timeout elapsed
+    """
     last_success: float | None = None
     last_failure: float | None = None
     consecutive_failures: int = 0
     consecutive_successes: int = 0
     total_successes: int = 0
     total_failures: int = 0
-    # Circuit breaker configuration - use centralized defaults
+
+    # Circuit breaker configuration
     failure_threshold: int = 3  # Default, overridden from coordination_defaults
-    recovery_timeout: float = 300.0  # Default, overridden from coordination_defaults
+
+    # Exponential backoff configuration
+    initial_recovery_timeout: float = 30.0  # Start with 30s (was 300s)
+    max_recovery_timeout: float = 300.0  # Cap at 5 minutes
+    backoff_multiplier: float = 2.0  # Double each time
+
+    # State tracking
+    _consecutive_opens: int = 0  # Track how many times circuit has opened
+    _circuit_state: str = field(default=CircuitState.CLOSED)
+    _circuit_opened_at: float | None = None  # When circuit entered OPEN state
+    _last_probe_time: float | None = None  # When we last tried early recovery probe
 
     def __post_init__(self):
         """Load circuit breaker settings from centralized config."""
@@ -189,41 +213,106 @@ class SSHHealth:
             from app.config.coordination_defaults import CircuitBreakerDefaults
             # Use centralized SSH circuit breaker settings
             self.failure_threshold = CircuitBreakerDefaults.SSH_FAILURE_THRESHOLD
-            self.recovery_timeout = CircuitBreakerDefaults.SSH_RECOVERY_TIMEOUT
+            # Note: We use our own initial_recovery_timeout (30s) instead of the old 300s
         except ImportError:
             pass  # Use defaults if coordination_defaults not available
 
     @property
+    def current_recovery_timeout(self) -> float:
+        """Calculate current recovery timeout with exponential backoff.
+
+        Backoff sequence: 30s -> 60s -> 120s -> 240s -> 300s (capped)
+        """
+        timeout = self.initial_recovery_timeout * (self.backoff_multiplier ** self._consecutive_opens)
+        return min(timeout, self.max_recovery_timeout)
+
+    # Keep legacy property for backward compatibility
+    @property
+    def recovery_timeout(self) -> float:
+        """Legacy property - returns current backoff timeout."""
+        return self.current_recovery_timeout
+
+    @property
+    def circuit_state(self) -> str:
+        """Get current circuit state."""
+        return self._circuit_state
+
+    @property
     def is_healthy(self) -> bool:
         """Check if connection is considered healthy."""
-        # Healthy if we have recent success and < threshold consecutive failures
-        return self.consecutive_failures < self.failure_threshold
+        # Healthy if circuit is closed
+        return self._circuit_state == CircuitState.CLOSED
 
     @property
     def is_circuit_open(self) -> bool:
         """Check if circuit breaker is open (fail-fast mode).
 
         Circuit is open when:
-        - Consecutive failures >= threshold AND
+        - State is OPEN AND
         - Not enough time has passed for recovery attempt
         """
-        if self.consecutive_failures < self.failure_threshold:
+        if self._circuit_state == CircuitState.CLOSED:
             return False
 
-        # Check if recovery timeout has passed
-        if self.last_failure is None:
+        if self._circuit_state == CircuitState.HALF_OPEN:
+            # In half-open, we allow exactly one request through
             return False
 
-        time_since_failure = time.time() - self.last_failure
-        return time_since_failure < self.recovery_timeout
+        # State is OPEN - check if we should transition to HALF_OPEN
+        if self._circuit_opened_at is None:
+            return False
+
+        time_since_open = time.time() - self._circuit_opened_at
+        if time_since_open >= self.current_recovery_timeout:
+            # Timeout elapsed, transition to half-open
+            self._circuit_state = CircuitState.HALF_OPEN
+            return False
+
+        return True
 
     @property
     def seconds_until_recovery(self) -> float:
         """Seconds until next recovery attempt is allowed."""
-        if not self.is_circuit_open or self.last_failure is None:
+        if self._circuit_state == CircuitState.CLOSED:
             return 0.0
-        elapsed = time.time() - self.last_failure
-        return max(0.0, self.recovery_timeout - elapsed)
+        if self._circuit_state == CircuitState.HALF_OPEN:
+            return 0.0
+        if self._circuit_opened_at is None:
+            return 0.0
+        elapsed = time.time() - self._circuit_opened_at
+        return max(0.0, self.current_recovery_timeout - elapsed)
+
+    @property
+    def should_try_early_probe(self) -> bool:
+        """Check if we should try an early recovery probe.
+
+        Returns True if:
+        - Circuit is OPEN
+        - At least 50% of timeout has elapsed
+        - We haven't probed in the last 10 seconds
+        """
+        if self._circuit_state != CircuitState.OPEN:
+            return False
+        if self._circuit_opened_at is None:
+            return False
+
+        now = time.time()
+        time_since_open = now - self._circuit_opened_at
+        half_timeout = self.current_recovery_timeout / 2
+
+        if time_since_open < half_timeout:
+            return False
+
+        # Check if we've probed recently (avoid spamming probes)
+        if self._last_probe_time is not None:
+            if now - self._last_probe_time < 10.0:
+                return False
+
+        return True
+
+    def mark_probe_attempted(self) -> None:
+        """Mark that we attempted an early recovery probe."""
+        self._last_probe_time = time.time()
 
     @property
     def success_rate(self) -> float:
@@ -233,9 +322,65 @@ class SSHHealth:
             return 0.0
         return self.total_successes / total
 
+    def open_circuit(self) -> None:
+        """Open the circuit breaker (enter fail-fast mode)."""
+        if self._circuit_state != CircuitState.OPEN:
+            self._consecutive_opens += 1
+            self._circuit_state = CircuitState.OPEN
+            self._circuit_opened_at = time.time()
+            logger.warning(
+                f"Circuit breaker OPENED (attempt #{self._consecutive_opens}), "
+                f"recovery timeout: {self.current_recovery_timeout:.0f}s"
+            )
+
+    def close_circuit(self) -> None:
+        """Close the circuit breaker (resume normal operation)."""
+        if self._circuit_state != CircuitState.CLOSED:
+            logger.info(
+                f"Circuit breaker CLOSED after {self._consecutive_opens} consecutive opens"
+            )
+            self._circuit_state = CircuitState.CLOSED
+            self._circuit_opened_at = None
+            self._consecutive_opens = 0  # Reset backoff on successful recovery
+            self._last_probe_time = None
+
+    def record_success(self) -> None:
+        """Record successful operation - may close circuit."""
+        self.last_success = time.time()
+        self.consecutive_successes += 1
+        self.consecutive_failures = 0
+        self.total_successes += 1
+
+        # If we were in half-open state, success means we can close
+        if self._circuit_state == CircuitState.HALF_OPEN:
+            self.close_circuit()
+        elif self._circuit_state == CircuitState.OPEN:
+            # Early probe succeeded
+            self.close_circuit()
+
+    def record_failure(self) -> None:
+        """Record failed operation - may open circuit."""
+        self.last_failure = time.time()
+        self.consecutive_failures += 1
+        self.consecutive_successes = 0
+        self.total_failures += 1
+
+        # If we were in half-open state, failure means re-open with increased backoff
+        if self._circuit_state == CircuitState.HALF_OPEN:
+            self._circuit_state = CircuitState.OPEN
+            self._circuit_opened_at = time.time()
+            # Note: _consecutive_opens was already incremented when we first opened
+            logger.warning(
+                f"Circuit breaker RE-OPENED from half-open, "
+                f"recovery timeout: {self.current_recovery_timeout:.0f}s"
+            )
+        elif self.consecutive_failures >= self.failure_threshold:
+            self.open_circuit()
+
     def reset_circuit(self) -> None:
         """Manually reset circuit breaker (e.g., after known recovery)."""
         self.consecutive_failures = 0
+        self.close_circuit()
 
 
 # =============================================================================

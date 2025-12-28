@@ -331,7 +331,7 @@ class TransactionIsolation(SingletonMixin):
                     self.backup_dir / f"txn_{transaction_id}" / dest_path_obj.name
                 )
                 Path(backup_path).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(dest_path, backup_path)
+                atomic_copy(Path(dest_path), Path(backup_path))
                 checksum_before = self._compute_checksum(dest_path)
 
             cursor = conn.execute(

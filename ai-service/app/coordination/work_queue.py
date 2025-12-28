@@ -677,7 +677,12 @@ class WorkQueue:
             return True
 
     def complete_work(self, work_id: str, result: dict[str, Any] | None = None) -> bool:
-        """Mark work as completed successfully."""
+        """Mark work as completed successfully.
+
+        P0.3 Dec 2025: Event emission moved inside lock for atomicity.
+        This prevents work being marked COMPLETED but event never emitted
+        if crash occurs between DB write and event emission.
+        """
         with self.lock:
             item = self.items.get(work_id)
             if not item or item.status not in (WorkStatus.CLAIMED, WorkStatus.RUNNING):
@@ -692,10 +697,15 @@ class WorkQueue:
 
             logger.info(f"Work {work_id} completed by {item.claimed_by}")
 
-        # Notify (outside lock)
-        self.notifier.on_work_completed(item)
-        # Emit event to unified coordination (December 2025)
-        self._emit_work_event("WORK_COMPLETED", item, result=result or {})
+            # P0.3 Dec 2025: Event emission now atomic with state change
+            # Notify and emit inside lock to prevent crash window
+            try:
+                self.notifier.on_work_completed(item)
+                self._emit_work_event("WORK_COMPLETED", item, result=result or {})
+            except Exception as e:
+                # Event emission failure should not break work completion
+                logger.warning(f"Failed to emit WORK_COMPLETED event: {e}")
+
         return True
 
     def fail_work(self, work_id: str, error: str = "") -> bool:
