@@ -626,17 +626,18 @@ hosts:
     ssh_port: 29473
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
-    ringrift_path: /root/ringrift/ai-service
-    venv_activate: source /root/ringrift/ai-service/venv/bin/activate
+    # Dec 28, 2025: Node has /workspace/ai-service but no git repo - needs full clone
+    ringrift_path: /workspace/ringrift/ai-service
+    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 24
     cpus: 32
     gpu: RTX 3090 Ti
     gpu_vram_gb: 24
     role: gpu_selfplay
-    # Dec 28, 2025: Marked offline - ringrift directory not set up on this node
-    status: offline
+    # Dec 28, 2025: Needs git clone - has tarball but no repo
+    status: needs_setup
     runpod_id: dqc6nvrwig8ajq
-    p2p_enabled: true
+    p2p_enabled: false
 
   # Dec 28, 2025: Added missing RunPod selfplay A100 pods
   runpod-selfplay-a100:

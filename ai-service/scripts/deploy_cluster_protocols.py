@@ -179,9 +179,10 @@ async def deploy_to_node(
 
     packages_to_install = []
     if install_swim:
-        packages_to_install.append(SWIM_PACKAGE)
+        # Quote package spec to prevent shell interpretation of >=
+        packages_to_install.append(f"'{SWIM_PACKAGE}'")
     if install_raft:
-        packages_to_install.append(RAFT_PACKAGE)
+        packages_to_install.append(f"'{RAFT_PACKAGE}'")
 
     if not packages_to_install:
         return DeployResult(
@@ -237,15 +238,19 @@ async def deploy_to_node(
             message=f"All pip paths failed: {last_error[:100]}",
         )
 
-    # Verify installation
+    # Verify installation using venv python
     verify_msgs = []
     swim_ok = False
     raft_ok = False
 
+    # Use venv python for verification (same as where pip installed)
+    venv_python = f"{ringrift_path}/venv/bin/python"
+
     if install_swim:
+        # Try venv python first, then system python
         success, output = await run_ssh_command(
             node,
-            "python3 -c 'import swim; print(swim.__version__)'",
+            f"{venv_python} -c 'import swim; print(swim.__version__)' 2>/dev/null || python3 -c 'import swim; print(swim.__version__)'",
             timeout=30,
         )
         swim_ok = success
@@ -254,7 +259,7 @@ async def deploy_to_node(
     if install_raft:
         success, output = await run_ssh_command(
             node,
-            "python3 -c 'import pysyncobj; print(\"OK\")'",
+            f"{venv_python} -c 'import pysyncobj; print(\"OK\")' 2>/dev/null || python3 -c 'import pysyncobj; print(\"OK\")'",
             timeout=30,
         )
         raft_ok = success

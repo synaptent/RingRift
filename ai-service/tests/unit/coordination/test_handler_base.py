@@ -519,4 +519,7 @@ class TestModuleExports:
         assert hasattr(handler_base, "BaseEventHandler")
         assert hasattr(handler_base, "BaseSingletonHandler")
         assert hasattr(handler_base, "MultiEventHandler")
-        assert len(handler_base.__all__) == 8
+        # Helper functions (backward-compat for base_handler.py)
+        assert hasattr(handler_base, "create_handler_stats")
+        assert hasattr(handler_base, "safe_subscribe")
+        assert len(handler_base.__all__) == 10

@@ -121,6 +121,9 @@ class DaemonType(Enum):
     # Training node watcher (December 2025 - Phase 6)
     TRAINING_NODE_WATCHER = "training_node_watcher"
 
+    # Training data sync (December 2025) - pre-training data sync from OWC/S3
+    TRAINING_DATA_SYNC = "training_data_sync"
+
     # DEPRECATED (Dec 2025): Use AutoSyncDaemon(strategy="ephemeral") - removal Q2 2026
     EPHEMERAL_SYNC = "ephemeral_sync"
 

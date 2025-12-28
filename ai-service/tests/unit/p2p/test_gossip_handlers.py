@@ -534,8 +534,11 @@ class TestAntiEntropyEventEmission:
     @pytest.mark.asyncio
     async def test_anti_entropy_emits_node_online_for_new_peers(self, handler):
         """Anti-entropy should emit node online events for new peers."""
-        with patch("scripts.p2p.handlers.gossip.HAS_EVENT_BRIDGE", True), \
-             patch("scripts.p2p.handlers.gossip.emit_p2p_node_online", new_callable=AsyncMock) as mock_emit:
+        # Mock the event bridge
+        mock_bridge = MagicMock()
+        mock_bridge.emit = AsyncMock()
+
+        with patch("scripts.p2p.handlers.gossip._event_bridge", mock_bridge):
 
             handler._gossip_peer_states = {}
 
@@ -555,17 +558,22 @@ class TestAntiEntropyEventEmission:
 
             await handler.handle_gossip_anti_entropy(request)
 
-            mock_emit.assert_called_once()
-            call_kwargs = mock_emit.call_args.kwargs
-            assert call_kwargs["node_id"] == "new-peer"
-            assert call_kwargs["host_type"] == "worker"
-            assert call_kwargs["capabilities"]["has_gpu"] is True
+            mock_bridge.emit.assert_called_once()
+            args = mock_bridge.emit.call_args
+            assert args[0][0] == "p2p_node_online"
+            event_data = args[0][1]
+            assert event_data["node_id"] == "new-peer"
+            assert event_data["host_type"] == "worker"
+            assert event_data["capabilities"]["has_gpu"] is True
 
     @pytest.mark.asyncio
     async def test_anti_entropy_no_event_for_existing_peers(self, handler):
         """Anti-entropy should not emit events for known peers (even with updates)."""
-        with patch("scripts.p2p.handlers.gossip.HAS_EVENT_BRIDGE", True), \
-             patch("scripts.p2p.handlers.gossip.emit_p2p_node_online", new_callable=AsyncMock) as mock_emit:
+        # Mock the event bridge
+        mock_bridge = MagicMock()
+        mock_bridge.emit = AsyncMock()
+
+        with patch("scripts.p2p.handlers.gossip._event_bridge", mock_bridge):
 
             # Peer already known
             handler._gossip_peer_states = {
@@ -583,7 +591,7 @@ class TestAntiEntropyEventEmission:
             await handler.handle_gossip_anti_entropy(request)
 
             # Should not emit for existing peers
-            mock_emit.assert_not_called()
+            mock_bridge.emit.assert_not_called()
 
 
 class TestGossipErrorHandling:

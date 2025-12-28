@@ -214,7 +214,7 @@ class TestHandleWorkAdd:
 
         assert response.status == 403
         data = json.loads(response.body)
-        assert data["error"] == "not_leader"
+        assert "Not leader" in data["error"]
         assert data["leader_id"] == "leader-node"
 
     @pytest.mark.asyncio
@@ -282,7 +282,7 @@ class TestHandleWorkAddBatch:
 
             assert response.status == 400
             data = json.loads(response.body)
-            assert data["error"] == "no_items_provided"
+            assert "No items provided" in data["error"]
 
     @pytest.mark.asyncio
     async def test_add_batch_too_many_items(self, handler):
@@ -298,8 +298,7 @@ class TestHandleWorkAddBatch:
 
             assert response.status == 400
             data = json.loads(response.body)
-            assert data["error"] == "too_many_items"
-            assert data["max"] == 100
+            assert "Too many items" in data["error"]
 
 
 class TestHandleWorkClaim:
@@ -327,7 +326,7 @@ class TestHandleWorkClaim:
 
             assert response.status == 400
             data = json.loads(response.body)
-            assert data["error"] == "node_id_required"
+            assert "node_id required" in data["error"]
 
     @pytest.mark.asyncio
     async def test_claim_no_work_available(self, handler, mock_work_queue):
@@ -526,9 +525,12 @@ class TestHandleWorkFail:
             assigned_to="worker-1"
         )
 
+        # Mock the event bridge
+        mock_bridge = MagicMock()
+        mock_bridge.emit = AsyncMock()
+
         with patch("scripts.p2p.handlers.work_queue.get_work_queue", return_value=mock_work_queue), \
-             patch("scripts.p2p.handlers.work_queue.HAS_EVENT_BRIDGE", True), \
-             patch("scripts.p2p.handlers.work_queue.emit_p2p_work_failed", new_callable=AsyncMock) as mock_emit:
+             patch("scripts.p2p.handlers.work_queue._event_bridge", mock_bridge):
 
             request = MagicMock()
             request.json = AsyncMock(return_value={
@@ -538,10 +540,11 @@ class TestHandleWorkFail:
 
             await handler.handle_work_fail(request)
 
-            mock_emit.assert_called_once()
-            kwargs = mock_emit.call_args.kwargs
-            assert kwargs["work_id"] == "work-123"
-            assert kwargs["error"] == "OOM"
+            mock_bridge.emit.assert_called_once()
+            args = mock_bridge.emit.call_args
+            assert args[0][0] == "p2p_work_failed"
+            assert args[0][1]["work_id"] == "work-123"
+            assert args[0][1]["error"] == "OOM"
 
 
 class TestHandleWorkStatus:

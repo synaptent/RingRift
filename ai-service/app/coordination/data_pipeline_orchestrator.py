@@ -115,6 +115,12 @@ from app.coordination.protocols import (
     unregister_coordinator,
 )
 
+# December 2025: Import mixin classes for DataPipelineOrchestrator decomposition
+from app.coordination.pipeline_event_handler_mixin import PipelineEventHandlerMixin
+from app.coordination.pipeline_metrics_mixin import PipelineMetricsMixin
+from app.coordination.pipeline_stage_mixin import PipelineStageMixin
+from app.coordination.pipeline_trigger_mixin import PipelineTriggerMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -350,11 +356,23 @@ class PipelineStats:
     last_activity_time: float = 0.0
 
 
-class DataPipelineOrchestrator:
+class DataPipelineOrchestrator(
+    PipelineEventHandlerMixin,
+    PipelineTriggerMixin,
+    PipelineStageMixin,
+    PipelineMetricsMixin,
+):
     """Orchestrates the self-improvement pipeline stages.
 
     Tracks stage transitions, provides coordination between stages,
     and maintains pipeline-wide metrics and observability.
+
+    December 2025: Refactored to use mixin pattern for better maintainability.
+    Inherits from:
+    - PipelineEventHandlerMixin: All _on_data_* event handlers (~1,200 lines)
+    - PipelineTriggerMixin: Stage triggering methods (~600 lines)
+    - PipelineStageMixin: Stage callback handlers (~500 lines)
+    - PipelineMetricsMixin: Metrics, status, and health reporting (~400 lines)
     """
 
     def __init__(
