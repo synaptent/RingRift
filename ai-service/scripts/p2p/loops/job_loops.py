@@ -162,6 +162,10 @@ class IdleDetectionConfig:
     check_interval_seconds: float = 30.0  # Check every 30 seconds
     min_nodes_to_keep: int = 2  # Never flag last N nodes as idle
 
+    # Zombie detection: nodes with jobs but 0% GPU (stuck processes)
+    zombie_gpu_threshold_percent: float = 5.0  # GPU below this with jobs = zombie
+    zombie_duration_threshold_seconds: float = 600.0  # 10 minutes of zombie state
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.gpu_idle_threshold_percent <= 0:
@@ -174,6 +178,12 @@ class IdleDetectionConfig:
             raise ValueError("check_interval_seconds must be > 0")
         if self.min_nodes_to_keep < 0:
             raise ValueError("min_nodes_to_keep must be >= 0")
+        if self.zombie_gpu_threshold_percent <= 0:
+            raise ValueError("zombie_gpu_threshold_percent must be > 0")
+        if self.zombie_gpu_threshold_percent > 100:
+            raise ValueError("zombie_gpu_threshold_percent must be <= 100")
+        if self.zombie_duration_threshold_seconds <= 0:
+            raise ValueError("zombie_duration_threshold_seconds must be > 0")
 
 
 class IdleDetectionLoop(BaseLoop):
@@ -189,6 +199,7 @@ class IdleDetectionLoop(BaseLoop):
         get_peers: Callable[[], dict[str, Any]] | None = None,
         get_work_queue: Callable[[], Any] | None = None,
         on_idle_detected: Callable[[Any, float], Coroutine[Any, Any, None]] | None = None,
+        on_zombie_detected: Callable[[Any, float], Coroutine[Any, Any, None]] | None = None,
         config: IdleDetectionConfig | None = None,
         # Legacy parameters for backward compatibility
         get_node_metrics: Callable[[], dict[str, dict[str, Any]]] | None = None,
@@ -200,6 +211,7 @@ class IdleDetectionLoop(BaseLoop):
             get_peers: Callback returning dict of node_id -> peer info
             get_work_queue: Callback returning work queue (to check for pending work)
             on_idle_detected: Optional async callback (peer, idle_duration) - auto-start selfplay
+            on_zombie_detected: Optional async callback (peer, zombie_duration) - handle stuck processes
             config: Detection configuration
             get_node_metrics: Legacy param - if provided, used instead of get_peers
         """
@@ -212,10 +224,13 @@ class IdleDetectionLoop(BaseLoop):
         self._get_peers = get_peers
         self._get_work_queue = get_work_queue
         self._on_idle_detected = on_idle_detected
+        self._on_zombie_detected = on_zombie_detected
         # Legacy support
         self._get_node_metrics = get_node_metrics
         self._idle_since: dict[str, float] = {}  # node_id -> timestamp when became idle
+        self._zombie_since: dict[str, float] = {}  # node_id -> timestamp when became zombie
         self._detected_count = 0
+        self._zombie_detected_count = 0
         self._skipped_not_leader = 0
 
     async def _run_once(self) -> None:

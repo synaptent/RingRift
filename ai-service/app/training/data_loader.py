@@ -513,6 +513,14 @@ class FileHandle:
     def __del__(self) -> None:
         self.close()
 
+    def __enter__(self) -> "FileHandle":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit - ensures cleanup."""
+        self.close()
+
 
 class StreamingDataLoader:
     """
@@ -1035,6 +1043,14 @@ class StreamingDataLoader:
         self._file_handles = []
 
     def __del__(self) -> None:
+        self.close()
+
+    def __enter__(self) -> "StreamingDataLoader":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit - ensures cleanup."""
         self.close()
 
 

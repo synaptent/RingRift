@@ -303,6 +303,8 @@ class DataEventType(Enum):
     LEADER_ELECTED = "leader_elected"
     LEADER_LOST = "leader_lost"
     LEADER_STEPDOWN = "leader_stepdown"
+    SPLIT_BRAIN_DETECTED = "split_brain_detected"  # Multiple leaders detected in cluster
+    SPLIT_BRAIN_RESOLVED = "split_brain_resolved"  # Split-brain resolved (non-canonical leaders demoted)
 
     # Encoding/Processing events (December 2025)
 

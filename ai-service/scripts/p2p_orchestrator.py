@@ -17336,23 +17336,27 @@ print(json.dumps(result))
 
             # Diverse profile configurations for high-quality training data
             # Each profile targets different aspects of game understanding
+            # Dec 28, 2025: CRITICAL FIX - Changed "hex" to "hex8" in all profiles.
+            # "hex" was being normalized to "hexagonal" (large board with 469 cells)
+            # instead of "hex8" (small board with 61 cells), causing hex8_* configs
+            # to receive no selfplay games for 52+ hours.
             DIVERSE_PROFILES = [
                 # High-quality neural-guided profiles (50% of games)
                 {
                     "engine_mode": "gumbel-mcts",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 2,
                     "profile": "balanced",
                     "weight": 0.18,
-                    "description": "Gumbel MCTS 2P hex - highest quality",
+                    "description": "Gumbel MCTS 2P hex8 - highest quality",
                 },
                 {
                     "engine_mode": "policy-only",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 2,
                     "profile": "balanced",
                     "weight": 0.12,
-                    "description": "Policy-only 2P hex - fast NN inference",
+                    "description": "Policy-only 2P hex8 - fast NN inference",
                 },
                 {
                     "engine_mode": "nnue-guided",
@@ -17372,21 +17376,21 @@ print(json.dumps(result))
                 },
                 {
                     "engine_mode": "mcts",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 2,
                     "profile": "territorial",
                     "weight": 0.06,
-                    "description": "MCTS 2P hex - territorial focus",
+                    "description": "MCTS 2P hex8 - territorial focus",
                 },
                 # MaxN/BRS multiplayer profiles (15% of games)
                 # Benchmarks show: MaxN >> Descent in 3P/4P, MaxN ≈ BRS
                 {
                     "engine_mode": "maxn",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 3,
                     "profile": "balanced",
                     "weight": 0.05,
-                    "description": "MaxN 3P hex - optimal multiplayer search",
+                    "description": "MaxN 3P hex8 - optimal multiplayer search",
                 },
                 {
                     "engine_mode": "maxn",
@@ -17398,11 +17402,11 @@ print(json.dumps(result))
                 },
                 {
                     "engine_mode": "brs",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 3,
                     "profile": "aggressive",
                     "weight": 0.03,
-                    "description": "BRS 3P hex - fast multiplayer search",
+                    "description": "BRS 3P hex8 - fast multiplayer search",
                 },
                 {
                     "engine_mode": "brs",
@@ -17415,11 +17419,11 @@ print(json.dumps(result))
                 # GPU-accelerated throughput profiles (25% of games)
                 {
                     "engine_mode": "heuristic-only",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 2,
                     "profile": "balanced",
                     "weight": 0.10,
-                    "description": "GPU heuristic 2P hex - fast throughput",
+                    "description": "GPU heuristic 2P hex8 - fast throughput",
                 },
                 {
                     "engine_mode": "heuristic-only",
@@ -17431,11 +17435,11 @@ print(json.dumps(result))
                 },
                 {
                     "engine_mode": "heuristic-only",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 4,
                     "profile": "balanced",
                     "weight": 0.05,
-                    "description": "GPU heuristic 4P hex - large multiplayer",
+                    "description": "GPU heuristic 4P hex8 - large multiplayer",
                 },
                 # Exploration profiles (10% of games)
                 {
@@ -17448,11 +17452,11 @@ print(json.dumps(result))
                 },
                 {
                     "engine_mode": "nnue-guided",
-                    "board_type": "hex",
+                    "board_type": "hex8",
                     "num_players": 3,
                     "profile": "aggressive",
                     "weight": 0.04,
-                    "description": "NNUE 3P hex - aggressive multiplayer",
+                    "description": "NNUE 3P hex8 - aggressive multiplayer",
                 },
                 {
                     "engine_mode": "policy-only",

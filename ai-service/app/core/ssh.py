@@ -57,6 +57,7 @@ __all__ = [
     "SSHConfig",
     "SSHResult",
     "SSHHealth",
+    "CircuitState",  # Circuit breaker states (Dec 2025)
     "get_ssh_client",
     "run_ssh_command",
     "run_ssh_command_async",
@@ -561,24 +562,39 @@ class SSHClient:
             env: Environment variables to set
             bypass_circuit_breaker: Skip circuit breaker check (for health checks)
         """
+        # Try early recovery probe if circuit is open but probe window is available
+        if not bypass_circuit_breaker and self._health.circuit_state == CircuitState.OPEN:
+            if self._health.should_try_early_probe:
+                probe_succeeded = await self._try_early_recovery_probe()
+                if probe_succeeded:
+                    logger.info(f"Early probe recovered {self._config.host}, proceeding with request")
+                    # Circuit is now closed, continue with request
+
         # Circuit breaker check - fail fast for hosts with repeated failures
         if not bypass_circuit_breaker and self._health.is_circuit_open:
             recovery_seconds = self._health.seconds_until_recovery
+            state = self._health.circuit_state
+            backoff_level = self._health._consecutive_opens
             logger.warning(
-                f"Circuit breaker OPEN for {self._config.host}: "
-                f"{self._health.consecutive_failures} consecutive failures, "
+                f"Circuit breaker {state.upper()} for {self._config.host}: "
+                f"{self._health.consecutive_failures} failures, "
+                f"backoff level {backoff_level}, "
                 f"recovery in {recovery_seconds:.0f}s"
             )
             return SSHResult(
                 success=False,
                 returncode=-1,
                 stdout="",
-                stderr=f"Circuit breaker open: host unavailable, retry in {recovery_seconds:.0f}s",
+                stderr=f"Circuit breaker {state}: host unavailable, retry in {recovery_seconds:.0f}s",
                 elapsed_ms=0.0,
                 command=command,
                 host=self._config.host,
                 transport_used="circuit_breaker",
             )
+
+        # Log if we're in half-open state (testing recovery)
+        if self._health.circuit_state == CircuitState.HALF_OPEN:
+            logger.info(f"Circuit breaker HALF-OPEN for {self._config.host}: testing recovery with this request")
 
         timeout = timeout or self._config.command_timeout
         start_time = time.time()
