@@ -683,6 +683,9 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
             "uptime_seconds": self.uptime_seconds,
             "cycles_completed": self._cycles_completed,
             "errors_count": self._errors_count,
+            "sync_cleanup_stats": self._sync_cleanup_stats,
+            "sync_aware_cleanup_enabled": self.config.enable_sync_aware_cleanup,
+            "min_copies_before_delete": self.config.min_copies_before_delete,
         }
 
         if not self._running:

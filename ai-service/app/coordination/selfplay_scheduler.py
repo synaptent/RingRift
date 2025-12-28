@@ -159,6 +159,7 @@ class ConfigPriority:
     game_count: int = 0  # Dec 2025: Current game count for this config
     is_large_board: bool = False  # Dec 2025: True for square19, hexagonal
     priority_override: int = 3  # Dec 2025: From config (0=CRITICAL, 1=HIGH, 2=MEDIUM, 3=LOW)
+    search_budget: int = 400  # Dec 28 2025: Gumbel MCTS budget from velocity feedback
 
     # Computed priority
     priority_score: float = 0.0

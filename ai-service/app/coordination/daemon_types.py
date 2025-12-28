@@ -250,6 +250,11 @@ class DaemonType(Enum):
     # Syncs data to remote storage (OWC) before cleanup, more aggressive thresholds
     COORDINATOR_DISK_MANAGER = "coordinator_disk_manager"
 
+    # Sync push daemon (December 28, 2025) - push-based sync for GPU training nodes
+    # GPU nodes proactively push data to coordinator before disk fills
+    # Part of "sync then clean" pattern - never delete without verified receipt
+    SYNC_PUSH = "sync_push"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -559,6 +564,9 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.DISK_SPACE_MANAGER: {DaemonType.EVENT_ROUTER},
     # Coordinator disk manager (Dec 27, 2025) - specialized for coordinator-only nodes
     DaemonType.COORDINATOR_DISK_MANAGER: {DaemonType.EVENT_ROUTER},
+
+    # Sync push daemon (Dec 28, 2025) - GPU nodes push data before cleanup
+    DaemonType.SYNC_PUSH: {DaemonType.EVENT_ROUTER},
 
     # Provider-specific idle daemons
     DaemonType.VAST_IDLE: {DaemonType.EVENT_ROUTER},
