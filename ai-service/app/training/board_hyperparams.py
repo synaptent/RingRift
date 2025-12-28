@@ -66,32 +66,41 @@ class BoardHyperparams:
 # Board-specific configurations (empirically tuned)
 BOARD_HYPERPARAMS: dict[str, BoardHyperparams] = {
     # Square 8x8 - baseline, fast training
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square8_2p": BoardHyperparams(
-        learning_rate=0.0005,
-        batch_size=256,
-        epochs=50,
-        hidden_dim=256,
-        num_hidden_layers=2,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         label_smoothing=0.05,
         augmentation_factor=4,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square8_3p": BoardHyperparams(
-        learning_rate=0.0004,
-        batch_size=192,
-        epochs=60,
-        hidden_dim=320,
-        num_hidden_layers=3,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         policy_weight=1.2,
         label_smoothing=0.07,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square8_4p": BoardHyperparams(
         learning_rate=0.0003,
-        batch_size=128,
-        epochs=75,
-        hidden_dim=384,
-        num_hidden_layers=3,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         policy_weight=1.5,
         label_smoothing=0.08,
+        early_stopping_patience=30,
     ),
 
     # Square 19x19 - large state space
@@ -157,35 +166,48 @@ BOARD_HYPERPARAMS: dict[str, BoardHyperparams] = {
         label_smoothing=0.08,
     ),
 
-    # Hex8 (small hex) - fastest convergence
+    # Hex8 (small hex) - balanced for good generalization
+    # Dec 28, 2025: Major architecture upgrade to reach 2000+ Elo
+    # - Increased hidden_dim 192→512 and layers 2→6 for deeper representation
+    # - Reduced batch_size 256→64 for ~5K sample datasets
+    # - Reduced learning_rate 0.0006→0.0003 for stable convergence
+    # - Increased patience 10→30 and epochs 40→100 to let it train fully
+    # - Reduced weight_decay 0.001→0.0001 to prevent underfitting
     "hex8_2p": BoardHyperparams(
-        learning_rate=0.0006,
-        batch_size=256,
-        epochs=40,
-        hidden_dim=192,
-        num_hidden_layers=2,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         augmentation_factor=6,
-        label_smoothing=0.03,
-        early_stopping_patience=10,
+        label_smoothing=0.05,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hex8_3p": BoardHyperparams(
-        learning_rate=0.0005,
-        batch_size=192,
-        epochs=50,
-        hidden_dim=256,
-        num_hidden_layers=3,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         augmentation_factor=6,
-        label_smoothing=0.04,
+        label_smoothing=0.05,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hex8_4p": BoardHyperparams(
-        learning_rate=0.0004,
-        batch_size=160,
-        epochs=60,
-        hidden_dim=320,
-        num_hidden_layers=3,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         augmentation_factor=6,
         policy_weight=1.2,
         label_smoothing=0.05,
+        early_stopping_patience=30,
     ),
 }
 

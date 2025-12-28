@@ -80,6 +80,23 @@ if str(ROOT) not in sys.path:
 
 
 # =============================================================================
+# Remote Path Detection
+# =============================================================================
+
+# Known remote path patterns for different providers (in order of preference)
+REMOTE_PATH_PATTERNS: list[str] = [
+    "/workspace/ringrift/ai-service",      # RunPod, some Vast.ai
+    "~/ringrift/ai-service",                # Lambda, Nebius, most providers
+    "/root/ringrift/ai-service",            # Vultr, Hetzner (non-tilde expanded)
+    "~/Development/RingRift/ai-service",    # Mac Studio coordinator
+]
+
+# Cache for discovered remote paths per host
+_remote_path_cache: dict[str, str] = {}
+_remote_path_cache_lock = threading.Lock()
+
+
+# =============================================================================
 # Enums and Configuration
 # =============================================================================
 

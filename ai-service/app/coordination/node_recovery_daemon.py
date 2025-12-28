@@ -584,7 +584,9 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             import aiohttp
 
             if self._http_session is None:
-                self._http_session = aiohttp.ClientSession()
+                # Use 60s default timeout for Lambda API operations
+                timeout = aiohttp.ClientTimeout(total=60)
+                self._http_session = aiohttp.ClientSession(timeout=timeout)
 
             # Lambda API uses Basic Auth with API key as username
             # The trailing colon indicates no password

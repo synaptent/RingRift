@@ -1393,7 +1393,9 @@ class P2PBackend(OrchestratorBackend):
         """Get or create aiohttp session."""
         if self._session is None:
             import aiohttp
-            self._session = aiohttp.ClientSession()
+            # Use 30s default timeout to prevent hanging on unresponsive P2P nodes
+            timeout = aiohttp.ClientTimeout(total=30)
+            self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
 
     async def _get_leader_url(self) -> str:
