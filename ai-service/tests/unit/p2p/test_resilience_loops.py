@@ -256,7 +256,7 @@ class TestSelfHealingLoop:
             get_health_manager=lambda: None,
             get_work_queue=lambda: None,
             cleanup_stale_processes=mock_cleanup,
-            config=SelfHealingConfig(stale_process_check_interval_seconds=0),
+            config=SelfHealingConfig(stale_process_check_interval_seconds=0.01),
         )
 
         await loop._run_once()
@@ -276,7 +276,7 @@ class TestSelfHealingLoop:
             get_health_manager=lambda: health_manager,
             get_work_queue=lambda: work_queue,
             cleanup_stale_processes=lambda: 0,
-            config=SelfHealingConfig(stale_process_check_interval_seconds=0),
+            config=SelfHealingConfig(stale_process_check_interval_seconds=0.01),
         )
 
         await loop._run_once()
@@ -322,7 +322,7 @@ class TestSelfHealingLoop:
             get_health_manager=lambda: None,  # Returns None
             get_work_queue=lambda: MockWorkQueue(),
             cleanup_stale_processes=lambda: 0,
-            config=SelfHealingConfig(stale_process_check_interval_seconds=0),
+            config=SelfHealingConfig(stale_process_check_interval_seconds=0.01),
         )
 
         # Should not raise
@@ -338,7 +338,7 @@ class TestSelfHealingLoop:
             get_health_manager=lambda: health_manager,
             get_work_queue=lambda: None,  # Returns None
             cleanup_stale_processes=lambda: 0,
-            config=SelfHealingConfig(stale_process_check_interval_seconds=0),
+            config=SelfHealingConfig(stale_process_check_interval_seconds=0.01),
         )
 
         # Should not raise
@@ -629,7 +629,7 @@ class TestResilienceLoopsIntegration:
             config=SelfHealingConfig(
                 initial_delay_seconds=0,
                 healing_interval_seconds=0.05,
-                stale_process_check_interval_seconds=0,
+                stale_process_check_interval_seconds=0.01,
             ),
         )
 

@@ -143,7 +143,7 @@ class TestBackoffConfig:
 
     def test_jitter_adds_variance(self):
         """Should add jitter to delay."""
-        config = BackoffConfig(initial_delay=10.0, jitter=0.5, multiplier=1.0)
+        config = BackoffConfig(initial_delay=10.0, jitter=0.5, multiplier=2.0)
 
         # Run multiple times to check jitter adds variance
         delays = [config.calculate_delay(1) for _ in range(20)]

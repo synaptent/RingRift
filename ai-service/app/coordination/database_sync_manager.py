@@ -435,7 +435,7 @@ class DatabaseSyncManager(SyncManagerBase):
                             # Retryable server errors (5xx)
                             if resp.status >= 500 and attempt < HTTP_MAX_RETRIES:
                                 logger.warning(
-                                    f"[{self.db_type}] HTTP {resp.status} from {node.node_id}, "
+                                    f"[{self.db_type}] HTTP {resp.status} from {node.name}, "
                                     f"retry {attempt + 1}/{HTTP_MAX_RETRIES + 1} in {backoff:.1f}s"
                                 )
                                 await asyncio.sleep(backoff)
@@ -464,7 +464,7 @@ class DatabaseSyncManager(SyncManagerBase):
                     tmp_path.unlink(missing_ok=True)
                 if attempt < HTTP_MAX_RETRIES:
                     logger.warning(
-                        f"[{self.db_type}] HTTP sync to {node.node_id} failed: {e}. "
+                        f"[{self.db_type}] HTTP sync to {node.name} failed: {e}. "
                         f"Retry {attempt + 1}/{HTTP_MAX_RETRIES + 1} in {backoff:.1f}s"
                     )
                     await asyncio.sleep(backoff)

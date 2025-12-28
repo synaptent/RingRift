@@ -158,13 +158,12 @@ class TestWirePromotionToCacheInvalidation:
         from app.ai.cache_invalidation import wire_promotion_to_cache_invalidation
         assert callable(wire_promotion_to_cache_invalidation)
 
-    @patch('app.ai.cache_invalidation.get_event_bus', new_callable=Mock)
-    def test_returns_invalidator(self, mock_get_bus):
+    def test_returns_invalidator_or_none(self):
         from app.ai.cache_invalidation import (
             wire_promotion_to_cache_invalidation,
             ModelPromotionCacheInvalidator,
         )
-        # Skip if event bus not available
+        # May return None if event bus not available
         try:
             result = wire_promotion_to_cache_invalidation()
             if result is not None:

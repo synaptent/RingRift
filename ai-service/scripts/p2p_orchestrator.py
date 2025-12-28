@@ -5458,13 +5458,6 @@ class P2POrchestrator(
             metadata=metadata,
         )
 
-    def _flush_metrics_buffer(self):
-        """Flush buffered metrics to database.
-
-        Phase 1 Refactoring: Delegated to MetricsManager.
-        """
-        self.metrics_manager.flush()
-
     def get_metrics_history(
         self,
         metric_type: str,

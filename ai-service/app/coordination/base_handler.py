@@ -34,16 +34,22 @@ from app.coordination.handler_base import (
     HandlerBase,
     HandlerStats,
     EventHandlerConfig,
+    create_handler_stats,
+    safe_subscribe,
 )
 
 # Backward-compat aliases
 BaseEventHandler = HandlerBase
 BaseSingletonHandler = HandlerBase
+MultiEventHandler = HandlerBase
 
 __all__ = [
     "BaseEventHandler",
     "BaseSingletonHandler",
+    "MultiEventHandler",
     "HandlerBase",
     "HandlerStats",
     "EventHandlerConfig",
+    "create_handler_stats",
+    "safe_subscribe",
 ]

@@ -1146,12 +1146,13 @@ class SelfplayScheduler:
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            # Dec 2025 fix: Use get_router() instead of get_event_bus() because:
+            # 1. get_router() always returns a valid UnifiedEventRouter singleton
+            # 2. get_event_bus() can return None if data_events module unavailable
+            # 3. UnifiedEventRouter handles event type normalization automatically
+            from app.coordination.event_router import DataEventType, get_router
 
-            bus = get_event_bus()
-            if not bus:
-                logger.warning("[SelfplayScheduler] No event bus available, skipping subscriptions")
-                return
+            router = get_router()
 
             # Dec 2025: Use per-subscription error handling to ensure one failure
             # doesn't prevent other subscriptions from being registered
@@ -1162,11 +1163,10 @@ class SelfplayScheduler:
                 """Subscribe with individual error handling."""
                 nonlocal subscribed_count, failed_count
                 try:
-                    if hasattr(DataEventType, event_type.__name__ if hasattr(event_type, '__name__') else str(event_type)):
-                        bus.subscribe(event_type, handler)
-                        subscribed_count += 1
-                        return True
-                    return False
+                    # UnifiedEventRouter.subscribe() handles both enum and string types
+                    router.subscribe(event_type, handler)
+                    subscribed_count += 1
+                    return True
                 except Exception as e:
                     failed_count += 1
                     logger.warning(f"[SelfplayScheduler] Failed to subscribe to {name}: {e}")

@@ -98,6 +98,7 @@ with patch.dict("sys.modules", {
         ConsensusMixin,
         get_work_queue,
     )
+    import scripts.p2p.consensus_mixin as consensus_mixin_module
 
 
 class TestableConsensusMixin(ConsensusMixin):
@@ -368,7 +369,7 @@ class TestClaimWorkSqlite:
         """Test that None is returned when work queue is not available."""
         consensus = TestableConsensusMixin()
 
-        with patch("scripts.p2p.consensus_mixin.get_work_queue", return_value=None):
+        with patch.object(consensus_mixin_module, "get_work_queue", return_value=None):
             result = consensus._claim_work_sqlite("node-1")
 
         assert result is None
@@ -384,7 +385,7 @@ class TestClaimWorkSqlite:
         mock_wq = MagicMock()
         mock_wq.claim_work.return_value = mock_item
 
-        with patch("scripts.p2p.consensus_mixin.get_work_queue", return_value=mock_wq):
+        with patch.object(consensus_mixin_module, "get_work_queue", return_value=mock_wq):
             result = consensus._claim_work_sqlite("node-1", ["selfplay"])
             # Verify the mock was used
             assert mock_wq.claim_work.called
@@ -398,7 +399,7 @@ class TestClaimWorkSqlite:
         mock_wq = MagicMock()
         mock_wq.claim_work.return_value = {"work_id": "test-2", "work_type": "training"}
 
-        with patch("scripts.p2p.consensus_mixin.get_work_queue", return_value=mock_wq):
+        with patch.object(consensus_mixin_module, "get_work_queue", return_value=mock_wq):
             result = consensus._claim_work_sqlite("node-1")
             assert result == {"work_id": "test-2", "work_type": "training"}
 
@@ -408,7 +409,7 @@ class TestClaimWorkSqlite:
         mock_wq = MagicMock()
         mock_wq.claim_work.return_value = None
 
-        with patch("scripts.p2p.consensus_mixin.get_work_queue", return_value=mock_wq):
+        with patch.object(consensus_mixin_module, "get_work_queue", return_value=mock_wq):
             result = consensus._claim_work_sqlite("node-1")
 
         assert result is None
@@ -419,7 +420,7 @@ class TestClaimWorkSqlite:
         mock_wq = MagicMock()
         mock_wq.claim_work.side_effect = Exception("Database error")
 
-        with patch("scripts.p2p.consensus_mixin.get_work_queue", return_value=mock_wq):
+        with patch.object(consensus_mixin_module, "get_work_queue", return_value=mock_wq):
             result = consensus._claim_work_sqlite("node-1")
 
         assert result is None

@@ -179,6 +179,9 @@ class HandlerBase(ABC):
         self._event_subscribed = False
         self._event_router: Any | None = None
 
+        # MultiEventHandler compatibility (backward-compat for base_handler.py)
+        self._event_handlers: dict[str, Callable[[Any], Any]] = {}
+
         # Deduplication
         self._seen_events: dict[str, float] = {}  # hash -> timestamp
 
@@ -192,14 +195,152 @@ class HandlerBase(ABC):
         return self._name
 
     @property
+    def handler_name(self) -> str:
+        """Backward-compat alias for name (base_handler.py naming)."""
+        return self._name
+
+    @property
     def is_running(self) -> bool:
         """Check if handler is running."""
         return self._running
 
     @property
+    def is_subscribed(self) -> bool:
+        """Backward-compat alias for _event_subscribed (base_handler.py naming)."""
+        return self._event_subscribed
+
+    @property
+    def emit_metrics(self) -> bool:
+        """Backward-compat property (base_handler.py naming). Always True."""
+        return True
+
+    @property
+    def uptime_seconds(self) -> float:
+        """Get uptime in seconds since handler started."""
+        if self._stats.started_at:
+            return time.time() - self._stats.started_at
+        return 0.0
+
+    @property
     def stats(self) -> HandlerStats:
         """Get handler stats."""
         return self._stats
+
+    # =========================================================================
+    # Backward-Compatible Methods (base_handler.py API)
+    # =========================================================================
+
+    def _record_success(self) -> None:
+        """Record a successful event processing (backward-compat)."""
+        self._stats.events_processed += 1
+        self._stats.success_count += 1
+        self._stats.last_activity = time.time()
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get stats as dict (backward-compat for base_handler.py API).
+
+        Returns:
+            Dictionary with handler statistics
+        """
+        result = {
+            "subscribed": self._event_subscribed,
+            "events_processed": self._stats.events_processed,
+            "success_count": self._stats.success_count,
+            "errors_count": self._stats.errors_count,
+            "success_rate": self._stats.success_rate,
+            "last_event_time": self._stats.last_activity,
+            "last_error": self._stats.last_error,
+        }
+        # Add custom stats
+        if hasattr(self._stats, "custom_stats"):
+            result.update(self._stats.custom_stats)
+        return result
+
+    def subscribe(self) -> bool:
+        """Subscribe to events (backward-compat for base_handler.py API).
+
+        Returns:
+            True if subscribed successfully
+        """
+        if self._event_subscribed:
+            return True
+        if hasattr(self, "_do_subscribe"):
+            result = self._do_subscribe()
+            if result:
+                self._event_subscribed = True
+                self._stats.subscribed = True
+            return result
+        # Default: just mark as subscribed
+        self._event_subscribed = True
+        self._stats.subscribed = True
+        return True
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from events (backward-compat for base_handler.py API)."""
+        self._event_subscribed = False
+        self._stats.subscribed = False
+        if hasattr(self, "_subscribed"):
+            self._subscribed = False
+
+    def _get_payload(self, event: Any) -> dict[str, Any]:
+        """Extract payload from event (backward-compat for base_handler.py API).
+
+        Args:
+            event: Event object or dict
+
+        Returns:
+            Payload dictionary
+        """
+        if hasattr(event, "payload"):
+            return event.payload
+        if isinstance(event, dict):
+            return event
+        return {}
+
+    def add_custom_stat(self, key: str, value: Any) -> None:
+        """Add a custom stat (backward-compat for base_handler.py API).
+
+        Args:
+            key: Stat key
+            value: Stat value
+        """
+        if not hasattr(self._stats, "custom_stats"):
+            self._stats.custom_stats = {}
+        self._stats.custom_stats[key] = value
+
+    def reset(self) -> None:
+        """Reset stats counters (backward-compat for base_handler.py API).
+
+        Preserves subscription state.
+        """
+        # Preserve both subscription flags (old and new API)
+        was_subscribed = self._event_subscribed
+        if hasattr(self, "_subscribed"):
+            was_subscribed = was_subscribed or self._subscribed
+        self._stats.events_processed = 0
+        self._stats.success_count = 0
+        self._stats.errors_count = 0
+        self._stats.last_error = ""
+        self._stats.last_activity = 0.0
+        if hasattr(self._stats, "custom_stats"):
+            self._stats.custom_stats = {}
+        # Restore subscription state
+        self._event_subscribed = was_subscribed
+        self._stats.subscribed = was_subscribed
+
+    async def _handle_event(self, event: dict[str, Any]) -> None:
+        """Route event to registered handler (MultiEventHandler compatibility).
+
+        Args:
+            event: Event dict with 'type' key for routing
+        """
+        event_type = event.get("type", "")
+        handler = self._event_handlers.get(event_type)
+        if handler:
+            if asyncio.iscoroutinefunction(handler):
+                await handler(event)
+            else:
+                handler(event)
 
     # =========================================================================
     # Singleton Management
@@ -225,6 +366,11 @@ class HandlerBase(ABC):
                 # Try to stop if running
                 if hasattr(instance, "_running") and instance._running:
                     logger.warning(f"Resetting running instance: {cls.__name__}")
+
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Alias for reset_instance() (backward-compat for base_handler.py API)."""
+        cls.reset_instance()
 
     @classmethod
     def has_instance(cls) -> bool:
@@ -552,9 +698,11 @@ class HandlerBase(ABC):
             error: Error message
             exc: Optional exception
         """
+        self._stats.events_processed += 1  # Backward-compat: errors count as processed
         self._stats.errors_count += 1
         self._stats.last_error = error
         self._stats.last_error_time = time.time()
+        self._stats.last_activity = time.time()
 
         entry = {
             "timestamp": time.time(),
@@ -599,6 +747,42 @@ class EventHandlerConfig:
 
 
 # =============================================================================
+# Backward-Compatible Helper Functions (base_handler.py API)
+# =============================================================================
+
+
+def create_handler_stats(**custom_stats: Any) -> HandlerStats:
+    """Factory function to create HandlerStats with custom stats.
+
+    Args:
+        **custom_stats: Custom statistics to include
+
+    Returns:
+        HandlerStats instance with custom_stats populated
+    """
+    stats = HandlerStats()
+    stats.custom_stats = custom_stats
+    return stats
+
+
+def safe_subscribe(handler: HandlerBase, fallback: bool = True) -> bool:
+    """Safely subscribe a handler, catching any exceptions.
+
+    Args:
+        handler: Handler to subscribe
+        fallback: Value to return on error
+
+    Returns:
+        True if subscribed successfully, fallback value on error
+    """
+    try:
+        return handler.subscribe()
+    except Exception as e:
+        logger.warning(f"safe_subscribe failed for {type(handler).__name__}: {e}")
+        return fallback
+
+
+# =============================================================================
 # Backward-Compatible Aliases (December 2025)
 # =============================================================================
 
@@ -625,4 +809,7 @@ __all__ = [
     "BaseEventHandler",
     "BaseSingletonHandler",
     "MultiEventHandler",
+    # Helper functions
+    "create_handler_stats",
+    "safe_subscribe",
 ]

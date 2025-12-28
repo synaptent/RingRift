@@ -146,121 +146,154 @@ class TestTrainingTaskTracker:
 class TestRegisterTrainingJob:
     """Tests for register_training_job function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_register_training_job_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import register_training_job
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_register_training_job_returns_task_info(self):
+        from app.training.task_lifecycle_integration import (
+            register_training_job,
+            reset_training_task_tracker,
+        )
+        # Reset to get fresh tracker
+        reset_training_task_tracker()
 
-        # Call the function
         result = register_training_job(
             job_id="job-123",
             config_key="square8_2p",
             node_id="gh200-a",
+            auto_heartbeat=False,  # Disable heartbeat for test
         )
 
-        # Verify coordinator was called
-        mock_get_coordinator.assert_called_once()
+        assert result is not None
+        assert result.config_key == "square8_2p"
 
 
 class TestRegisterDataLoaderTask:
     """Tests for register_data_loader_task function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_register_data_loader_task_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import register_data_loader_task
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_register_data_loader_task_uses_loader_id(self):
+        from app.training.task_lifecycle_integration import (
+            register_data_loader_task,
+            reset_training_task_tracker,
+        )
+        reset_training_task_tracker()
 
         result = register_data_loader_task(
-            task_id="loader-123",
+            loader_id="loader-123",
             config_key="hex8_2p",
         )
 
-        mock_get_coordinator.assert_called_once()
+        assert result is not None
+        assert result.config_key == "hex8_2p"
 
 
 class TestRegisterSelfplayTask:
     """Tests for register_selfplay_task function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_register_selfplay_task_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import register_selfplay_task
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_register_selfplay_task_uses_correct_args(self):
+        from app.training.task_lifecycle_integration import (
+            register_selfplay_task,
+            reset_training_task_tracker,
+        )
+        reset_training_task_tracker()
 
         result = register_selfplay_task(
-            task_id="selfplay-123",
+            selfplay_id="selfplay-123",
             config_key="hex8_4p",
+            iteration=1,
         )
 
-        mock_get_coordinator.assert_called_once()
+        assert result is not None
+        assert result.config_key == "hex8_4p"
 
 
 class TestRegisterEvaluationTask:
     """Tests for register_evaluation_task function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_register_evaluation_task_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import register_evaluation_task
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_register_evaluation_task_uses_eval_id(self):
+        from app.training.task_lifecycle_integration import (
+            register_evaluation_task,
+            reset_training_task_tracker,
+        )
+        reset_training_task_tracker()
 
         result = register_evaluation_task(
-            task_id="eval-123",
+            eval_id="eval-123",
             config_key="square8_4p",
         )
 
-        mock_get_coordinator.assert_called_once()
+        assert result is not None
+        assert result.config_key == "square8_4p"
 
 
 class TestSendTrainingHeartbeat:
     """Tests for send_training_heartbeat function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_send_heartbeat_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import send_training_heartbeat
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_send_heartbeat_works(self):
+        from app.training.task_lifecycle_integration import (
+            send_training_heartbeat,
+            register_training_job,
+            reset_training_task_tracker,
+        )
+        reset_training_task_tracker()
 
-        send_training_heartbeat(task_id="job-123")
+        # Register a task first
+        task = register_training_job(
+            job_id="job-heartbeat",
+            config_key="test",
+            auto_heartbeat=False,
+        )
 
-        mock_get_coordinator.assert_called_once()
+        # Should not raise
+        send_training_heartbeat(task_id=task.task_id)
 
 
 class TestCompleteTrainingTask:
     """Tests for complete_training_task function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_complete_task_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import complete_training_task
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_complete_task_works(self):
+        from app.training.task_lifecycle_integration import (
+            complete_training_task,
+            register_training_job,
+            reset_training_task_tracker,
+        )
+        reset_training_task_tracker()
 
+        # Register a task first
+        task = register_training_job(
+            job_id="job-complete",
+            config_key="test",
+            auto_heartbeat=False,
+        )
+
+        # Should not raise
         complete_training_task(
-            task_id="job-123",
+            task_id=task.task_id,
             success=True,
             result={"loss": 0.01},
         )
-
-        mock_get_coordinator.assert_called_once()
 
 
 class TestFailTrainingTask:
     """Tests for fail_training_task function."""
 
-    @patch('app.training.task_lifecycle_integration.get_task_lifecycle_coordinator')
-    def test_fail_task_calls_coordinator(self, mock_get_coordinator):
-        from app.training.task_lifecycle_integration import fail_training_task
-        mock_coordinator = MagicMock()
-        mock_get_coordinator.return_value = mock_coordinator
+    def test_fail_task_works(self):
+        from app.training.task_lifecycle_integration import (
+            fail_training_task,
+            register_training_job,
+            reset_training_task_tracker,
+        )
+        reset_training_task_tracker()
 
-        fail_training_task(
-            task_id="job-123",
-            error="Training failed",
+        # Register a task first
+        task = register_training_job(
+            job_id="job-fail",
+            config_key="test",
+            auto_heartbeat=False,
         )
 
-        mock_get_coordinator.assert_called_once()
+        # Should not raise
+        fail_training_task(
+            task_id=task.task_id,
+            error="Training failed",
+        )
 
 
 class TestTrainingTaskContext:

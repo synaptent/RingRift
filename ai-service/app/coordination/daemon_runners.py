@@ -923,7 +923,8 @@ async def create_curriculum_integration() -> None:
         )
 
         bridge = MomentumToCurriculumBridge()
-        await bridge.start()
+        # Dec 2025 fix: start() is synchronous (uses threading internally), don't await
+        bridge.start()
         await _wait_for_daemon(bridge)
     except ImportError as e:
         logger.error(f"MomentumToCurriculumBridge not available: {e}")

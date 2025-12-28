@@ -322,35 +322,40 @@ class UnifiedDistributionDaemon:
         # Subscribe to distribution events
         self._subscribe_to_events()
 
-        # Main loop
-        while self._running:
-            try:
-                if self._pending_items:
-                    await self._process_pending_items()
+        # Main loop - Dec 2025 fix: Use while True to prevent natural exit
+        # which triggers daemon restart loop. Only exit via CancelledError.
+        try:
+            while True:
+                try:
+                    if self._pending_items:
+                        await self._process_pending_items()
 
-                # Periodic sync check
-                if time.time() - self._last_sync_time > self.config.poll_interval_seconds:
-                    await self._periodic_sync_check()
+                    # Periodic sync check
+                    if time.time() - self._last_sync_time > self.config.poll_interval_seconds:
+                        await self._periodic_sync_check()
 
-                # Wait for event or timeout
-                if self._pending_event:
-                    try:
-                        await asyncio.wait_for(self._pending_event.wait(), timeout=5.0)
-                        self._pending_event.clear()
-                    except asyncio.TimeoutError:
-                        pass
-                else:
-                    await asyncio.sleep(5.0)
+                    # Wait for event or timeout
+                    if self._pending_event:
+                        try:
+                            await asyncio.wait_for(self._pending_event.wait(), timeout=5.0)
+                            self._pending_event.clear()
+                        except asyncio.TimeoutError:
+                            pass
+                    else:
+                        await asyncio.sleep(5.0)
 
-            except asyncio.CancelledError:
-                break
-            except (OSError, RuntimeError, ValueError) as e:
-                logger.error(f"Error in distribution daemon loop: {e}")
-                self._errors_count += 1
-                self._last_error = str(e)
-                await asyncio.sleep(10.0)
-
-        logger.info("UnifiedDistributionDaemon stopped")
+                except (OSError, RuntimeError, ValueError) as e:
+                    logger.error(f"Error in distribution daemon loop: {e}")
+                    self._errors_count += 1
+                    self._last_error = str(e)
+                    await asyncio.sleep(10.0)
+        except asyncio.CancelledError:
+            logger.info("UnifiedDistributionDaemon cancelled")
+        finally:
+            self._running = False
+            self._coordinator_status = CoordinatorStatus.STOPPED
+            unregister_coordinator(self.name)
+            logger.info("UnifiedDistributionDaemon stopped")
 
     async def stop(self) -> None:
         """Stop the daemon gracefully."""
