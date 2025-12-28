@@ -134,14 +134,21 @@ class DiskSpaceConfig(DaemonConfig):
     min_checkpoints_per_config: int = 3
     min_logs_to_keep: int = 10
 
+    # Sync-aware cleanup settings (December 2025)
+    # Require N verified copies before deleting a file
+    min_copies_before_delete: int = 2
+    # Enable sync-aware cleanup (requires ClusterManifest)
+    enable_sync_aware_cleanup: bool = True
+
     # Cleanup priorities (lower = delete first)
     cleanup_priorities: list[str] = field(
         default_factory=lambda: [
             "logs",  # 1. Old logs first
             "cache",  # 2. Pip/torch cache
             "empty_dbs",  # 3. Empty databases
-            "old_checkpoints",  # 4. Old checkpoints (keep N newest)
-            "quarantine",  # 5. Quarantined databases
+            "synced_games",  # 4. Games with verified N+ copies (NEW - Dec 2025)
+            "old_checkpoints",  # 5. Old checkpoints (keep N newest)
+            "quarantine",  # 6. Quarantined databases
         ]
     )
 
@@ -253,6 +260,42 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
         self._bytes_cleaned: int = 0
         self._cleanups_performed: int = 0
         self._current_status: DiskStatus | None = None
+        self._manifest: "ClusterManifest | None" = None
+        self._manifest_initialized: bool = False
+        self._sync_cleanup_stats: dict[str, int] = {
+            "files_checked": 0,
+            "files_deleted": 0,
+            "files_skipped_no_sync": 0,
+            "files_skipped_protected": 0,
+        }
+
+    def _get_manifest(self) -> "ClusterManifest | None":
+        """Lazy-load ClusterManifest for sync-aware cleanup."""
+        if self._manifest_initialized:
+            return self._manifest
+
+        try:
+            from app.distributed.cluster_manifest import ClusterManifest
+
+            self._manifest = ClusterManifest.get_instance()
+            self._manifest_initialized = True
+            logger.info(f"[{self._get_daemon_name()}] ClusterManifest initialized for sync-aware cleanup")
+        except ImportError:
+            logger.warning(
+                f"[{self._get_daemon_name()}] ClusterManifest not available - "
+                "sync-aware cleanup disabled"
+            )
+            self._manifest = None
+            self._manifest_initialized = True
+        except Exception as e:
+            logger.warning(
+                f"[{self._get_daemon_name()}] Failed to initialize ClusterManifest: {e} - "
+                "sync-aware cleanup disabled"
+            )
+            self._manifest = None
+            self._manifest_initialized = True
+
+        return self._manifest
 
     def _get_default_config(self) -> DiskSpaceConfig:
         return DiskSpaceConfig.from_env()
@@ -329,6 +372,10 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
                 bytes_freed += self._cleanup_cache()
             elif priority == "empty_dbs":
                 bytes_freed += self._cleanup_empty_databases()
+            elif priority == "synced_games":
+                # NEW: Sync-aware cleanup (December 2025)
+                if self.config.enable_sync_aware_cleanup:
+                    bytes_freed += self._cleanup_synced_databases()
             elif priority == "old_checkpoints":
                 bytes_freed += self._cleanup_old_checkpoints()
             elif priority == "quarantine":
@@ -530,6 +577,90 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
                 logger.debug(f"Removed quarantined: {file.name}")
             except (OSError, PermissionError) as e:
                 logger.debug(f"Failed to remove quarantined {file}: {e}")
+
+        return bytes_freed
+
+    def _cleanup_synced_databases(self) -> int:
+        """Delete databases that have been verified synced to N+ locations.
+
+        SAFE VERSION (December 2025): Only deletes if ClusterManifest confirms
+        the file exists on at least min_copies_before_delete other nodes.
+
+        This replaces the disabled _cleanup_synced_games method that previously
+        deleted databases without verifying sync actually succeeded.
+
+        Returns:
+            Number of bytes freed.
+        """
+        manifest = self._get_manifest()
+        if manifest is None:
+            logger.debug(
+                f"[{self._get_daemon_name()}] Skipping sync-aware cleanup - "
+                "ClusterManifest not available"
+            )
+            return 0
+
+        bytes_freed = 0
+        min_copies = self.config.min_copies_before_delete
+        games_path = self._root_path / self.config.games_dir
+
+        if not games_path.exists():
+            return 0
+
+        logger.info(
+            f"[{self._get_daemon_name()}] Starting sync-aware cleanup "
+            f"(require {min_copies}+ verified copies before delete)"
+        )
+
+        for db_file in games_path.glob("**/*.db"):
+            self._sync_cleanup_stats["files_checked"] += 1
+
+            # CRITICAL: Check centralized protection first
+            if _is_protected_file(db_file):
+                self._sync_cleanup_stats["files_skipped_protected"] += 1
+                continue
+
+            # Get relative path for manifest lookup
+            try:
+                relative_path = db_file.relative_to(self._root_path)
+            except ValueError:
+                relative_path = db_file
+
+            # Check if file is safe to delete (has N+ verified copies)
+            try:
+                if manifest.is_safe_to_delete(str(relative_path), min_copies=min_copies):
+                    # Verify file size before deletion
+                    try:
+                        size = db_file.stat().st_size
+                        db_file.unlink()
+                        bytes_freed += size
+                        self._sync_cleanup_stats["files_deleted"] += 1
+                        logger.info(
+                            f"[{self._get_daemon_name()}] Safe delete: {db_file.name} "
+                            f"(verified {min_copies}+ copies, freed {size / 1024 / 1024:.1f}MB)"
+                        )
+                    except (OSError, PermissionError) as e:
+                        logger.warning(f"Failed to delete synced database {db_file}: {e}")
+                else:
+                    # Not enough verified copies - skip
+                    self._sync_cleanup_stats["files_skipped_no_sync"] += 1
+                    replication_count = manifest.get_verified_replication_count(str(relative_path))
+                    logger.debug(
+                        f"[{self._get_daemon_name()}] Skipping {db_file.name}: "
+                        f"only {replication_count} verified copies (need {min_copies})"
+                    )
+            except Exception as e:
+                logger.debug(f"Error checking sync status for {db_file}: {e}")
+                self._sync_cleanup_stats["files_skipped_no_sync"] += 1
+
+        # Log cleanup summary
+        stats = self._sync_cleanup_stats
+        logger.info(
+            f"[{self._get_daemon_name()}] Sync-aware cleanup complete: "
+            f"checked={stats['files_checked']}, deleted={stats['files_deleted']}, "
+            f"skipped_no_sync={stats['files_skipped_no_sync']}, "
+            f"skipped_protected={stats['files_skipped_protected']}"
+        )
 
         return bytes_freed
 

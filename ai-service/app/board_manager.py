@@ -730,31 +730,30 @@ class BoardManager:
         pos: Position, board_type: BoardType
     ) -> list[Position]:
         if board_type in (BoardType.HEXAGONAL, BoardType.HEX8):
+            # Dec 28, 2025: Fixed hex directions to match TypeScript.
+            # Old directions caused 98% ANM parity failures (HEX-PARITY-02).
+            # These are the correct cube coordinate directions (x+y+z=0):
+            #   East:      (+1,  0, -1)
+            #   Southeast: (+1, -1,  0)
+            #   Southwest: ( 0, -1, +1)
+            #   West:      (-1,  0, +1)
+            #   Northwest: (-1, +1,  0)
+            #   Northeast: ( 0, +1, -1)
+            directions = [
+                (1, 0, -1),   # East
+                (1, -1, 0),   # Southeast
+                (0, -1, 1),   # Southwest
+                (-1, 0, 1),   # West
+                (-1, 1, 0),   # Northwest
+                (0, 1, -1),   # Northeast
+            ]
             return [
                 Position(
-                    x=pos.x+1, y=pos.y,
-                    z=pos.z-1 if pos.z is not None else None
-                ),
-                Position(
-                    x=pos.x, y=pos.y+1,
-                    z=pos.z-1 if pos.z is not None else None
-                ),
-                Position(
-                    x=pos.x-1, y=pos.y+1,
-                    z=pos.z if pos.z is not None else None
-                ),
-                Position(
-                    x=pos.x-1, y=pos.y,
-                    z=pos.z+1 if pos.z is not None else None
-                ),
-                Position(
-                    x=pos.x, y=pos.y-1,
-                    z=pos.z+1 if pos.z is not None else None
-                ),
-                Position(
-                    x=pos.x+1, y=pos.y-1,
-                    z=pos.z if pos.z is not None else None
+                    x=pos.x + dx,
+                    y=pos.y + dy,
+                    z=(pos.z + dz) if pos.z is not None else None
                 )
+                for dx, dy, dz in directions
             ]
         else:
             # Von Neumann (4-direction)
