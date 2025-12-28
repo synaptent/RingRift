@@ -10,6 +10,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+try:
+    from app.config.ports import P2P_DEFAULT_PORT
+except ImportError:
+    P2P_DEFAULT_PORT = 8770
+
 
 class NodeRole(str, Enum):
     """Role a node plays in the cluster."""
@@ -104,7 +109,7 @@ class NodeSummary:
     node_id: str
     hostname: str
     ip_address: str
-    port: int = 8770
+    port: int = P2P_DEFAULT_PORT
     role: NodeRole = NodeRole.FOLLOWER
     health: NodeHealth = NodeHealth.HEALTHY
     resources: ResourceMetrics = field(default_factory=ResourceMetrics)

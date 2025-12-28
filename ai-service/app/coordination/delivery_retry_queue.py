@@ -384,6 +384,47 @@ class DeliveryRetryQueue:
             return self._queue[0].retry_at
         return None
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the delivery retry queue.
+
+        Returns:
+            HealthCheckResult with queue status and statistics.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        stats = self._stats.copy()
+        queue_size = len(self._queue)
+        active_retries = len(self._active_retries)
+
+        # Compute health status
+        if not self._running:
+            status = CoordinatorStatus.STOPPED
+            healthy = False
+            message = "Retry queue not running"
+        elif stats.get("retries_exhausted", 0) > 10:
+            status = CoordinatorStatus.DEGRADED
+            healthy = True
+            message = f"High exhausted retries: {stats['retries_exhausted']}"
+        else:
+            status = CoordinatorStatus.RUNNING
+            healthy = True
+            message = ""
+
+        return HealthCheckResult(
+            healthy=healthy,
+            status=status,
+            message=message,
+            details={
+                "running": self._running,
+                "queue_size": queue_size,
+                "active_retries": active_retries,
+                "retries_attempted": stats.get("retries_attempted", 0),
+                "retries_succeeded": stats.get("retries_succeeded", 0),
+                "retries_failed": stats.get("retries_failed", 0),
+                "retries_exhausted": stats.get("retries_exhausted", 0),
+            },
+        )
+
 
 def get_delivery_retry_queue() -> DeliveryRetryQueue:
     """Get the singleton DeliveryRetryQueue instance.

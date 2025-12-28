@@ -662,6 +662,39 @@ class SyncFacade:
                 logger.debug(
                     f"[SyncFacade] Emitted DATA_SYNC_COMPLETED: {response.nodes_synced} games"
                 )
+
+                # December 2025: When syncing for orphan recovery, also emit ORPHAN_GAMES_REGISTERED
+                # This bridges the gap between DATA_SYNC_COMPLETED and NEW_GAMES_AVAILABLE
+                # Required for the full orphan recovery chain to complete
+                if reason == "orphan_games_recovery" and response.nodes_synced > 0:
+                    from app.distributed.data_events import DataEventType, emit_data_event
+
+                    # Parse board_type and num_players from config_key
+                    board_type = None
+                    num_players = None
+                    if config_key and "_" in config_key:
+                        parts = config_key.rsplit("_", 1)
+                        if len(parts) == 2 and parts[1].endswith("p"):
+                            board_type = parts[0]
+                            try:
+                                num_players = int(parts[1][:-1])
+                            except ValueError:
+                                pass
+
+                    await emit_data_event(
+                        event_type=DataEventType.ORPHAN_GAMES_REGISTERED,
+                        payload={
+                            "registered_count": response.nodes_synced,
+                            "config_key": config_key,
+                            "board_type": board_type,
+                            "num_players": num_players,
+                            "source_node": source_node,
+                        },
+                    )
+                    logger.info(
+                        f"[SyncFacade] Emitted ORPHAN_GAMES_REGISTERED: "
+                        f"{response.nodes_synced} games ({config_key})"
+                    )
             else:
                 from app.distributed.data_events import emit_data_sync_failed
 

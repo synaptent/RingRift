@@ -33,6 +33,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Import port configuration
+try:
+    from app.config.ports import P2P_DEFAULT_PORT, get_p2p_base_url
+except ImportError:
+    P2P_DEFAULT_PORT = 8770
+    def get_p2p_base_url() -> str:
+        return f"http://localhost:{P2P_DEFAULT_PORT}"
 
 # Import canonical config values
 try:
@@ -121,7 +128,7 @@ class LifecycleConfig:
 
     # Sync settings
     sync_interval_seconds: float = 300.0
-    p2p_api_base: str = "http://localhost:8770"
+    p2p_api_base: str = field(default_factory=get_p2p_base_url)
     sync_timeout_seconds: float = 60.0
 
     # Rollback settings - from thresholds.py
@@ -857,7 +864,7 @@ class ModelSyncCoordinator:
             if node["node_id"] == node_id:
                 scheme = node.get("scheme", "http")
                 host = node.get("host", "")
-                port = node.get("port", 8770)
+                port = node.get("port", P2P_DEFAULT_PORT)
                 return f"{scheme}://{host}:{port}"
         return None
 
@@ -1440,10 +1447,10 @@ async def create_lifecycle_manager(
 
 def integrate_with_p2p(
     manager: ModelLifecycleManager,
-    p2p_base_url: str = "http://localhost:8770"
+    p2p_base_url: str | None = None
 ) -> None:
     """Configure lifecycle manager for P2P integration."""
-    manager.config.p2p_api_base = p2p_base_url
+    manager.config.p2p_api_base = p2p_base_url or get_p2p_base_url()
 
 
 def integrate_with_pipeline(

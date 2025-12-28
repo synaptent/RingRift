@@ -1,1 +1,1 @@
-"""Integration tests for coordination modules."""
+"""Integration tests for coordination layer."""

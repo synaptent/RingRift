@@ -419,6 +419,57 @@ grep -rn "core_base\|core_daemons\|core_sync\|alert_types\|event_subscription_mi
 # Result: Only self-references and __init__.py re-exports (now removed)
 ```
 
+## Batch Archive: December 28, 2025 Session 9 - Re-export Shims (~160 LOC)
+
+The following 3 modules were identified as unused re-export shims and archived:
+
+### \_deprecated_sync_safety.py (~54 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Pure re-export module with no external callers.
+
+**Original Purpose**: Convenience re-export of sync reliability features.
+
+**Migration**: Import directly from specialized modules:
+
+```python
+# OLD
+from app.coordination.sync_safety import SyncWAL, check_sqlite_integrity
+
+# NEW
+from app.coordination.sync_durability import SyncWAL
+from app.coordination.sync_integrity import check_sqlite_integrity
+```
+
+### \_deprecated_base_handler.py (~56 LOC)
+
+**Archived**: December 28, 2025
+
+**Reason**: Pure re-export module superseded by handler_base.py.
+
+**Original Purpose**: Base classes for event handlers.
+
+**Migration**:
+
+```python
+# OLD
+from app.coordination.base_handler import BaseEventHandler
+
+# NEW
+from app.coordination.handler_base import HandlerBase
+```
+
+### \_deprecated_event_subscription_mixin.py (~346 LOC)
+
+**Archived**: December 27, 2025 (updated December 28, 2025)
+
+**Reason**: Superseded by handler_base.py event subscription pattern.
+
+**Migration**: Use HandlerBase.\_get_event_subscriptions() instead.
+
+---
+
 ## Archive Summary
 
 | Date              | Modules                                                                   | LOC        |
@@ -426,4 +477,5 @@ grep -rn "core_base\|core_daemons\|core_sync\|alert_types\|event_subscription_mi
 | December 26, 2025 | lambda_idle_daemon, vast_idle_daemon                                      | ~600       |
 | December 27, 2025 | 8 deprecated modules                                                      | 3,339      |
 | December 28, 2025 | core_base, core_daemons, core_sync, alert_types, event_subscription_mixin | 1,253      |
-| **Total**         | **15 modules**                                                            | **~5,192** |
+| December 28, 2025 | sync_safety, base_handler (re-export shims)                               | ~160       |
+| **Total**         | **17 modules**                                                            | **~5,352** |

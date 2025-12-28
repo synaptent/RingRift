@@ -2297,6 +2297,44 @@ async def emit_p2p_cluster_unhealthy(
     )
 
 
+async def emit_split_brain_detected(
+    leaders_seen: list[str],
+    *,
+    severity: str = "warning",
+    voter_count: int = 0,
+    resolution_action: str = "step_down",
+    source: str = "",
+) -> bool:
+    """Emit SPLIT_BRAIN_DETECTED event when multiple leaders are detected.
+
+    December 2025: Critical for cluster coordination - indicates P2P split-brain
+    condition where multiple nodes believe they are the leader. This triggers:
+    - AlertManager: Send critical alert
+    - UnifiedHealthManager: Track cluster degradation
+    - LeadershipCoordinator: Initiate resolution
+
+    Args:
+        leaders_seen: List of node IDs claiming leadership
+        severity: "warning" (2 leaders) or "critical" (3+ leaders)
+        voter_count: Number of voter nodes in quorum
+        resolution_action: Action taken (step_down, force_election, wait)
+        source: Source component emitting the event
+    """
+    return await _emit_data_event(
+        DataEventType.SPLIT_BRAIN_DETECTED,
+        {
+            "leaders_seen": leaders_seen,
+            "leader_count": len(leaders_seen),
+            "severity": severity,
+            "voter_count": voter_count,
+            "resolution_action": resolution_action,
+        },
+        source=source or "event_emitters",
+        log_message=f"Emitted split_brain_detected: {len(leaders_seen)} leaders ({severity})",
+        log_level="error" if severity == "critical" else "warning",
+    )
+
+
 async def emit_p2p_node_dead(
     node_id: str,
     *,

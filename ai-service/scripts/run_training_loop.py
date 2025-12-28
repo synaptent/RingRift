@@ -4,7 +4,7 @@
 This script provides a single entry point that:
 1. Initializes the pipeline orchestrator with auto-trigger enabled
 2. Runs selfplay to generate training data
-3. Automatically triggers: sync → export → train → evaluate → promote
+3. Automatically triggers: sync → export → combine → train → evaluate → promote
 
 Usage:
     # Basic usage (uses defaults)
@@ -23,15 +23,21 @@ Usage:
         --board-type hex8 --num-players 2 \
         --skip-selfplay
 
+    # Use specific training data (skip best-data selection)
+    python scripts/run_training_loop.py \
+        --board-type hex8 --num-players 2 \
+        --data-path data/training/hex8_2p_custom.npz
+
 Pipeline Flow:
     Selfplay → SELFPLAY_COMPLETE event
                     ↓
     Orchestrator auto-triggers:
     1. Data sync (if cluster nodes configured)
     2. NPZ export from databases
-    3. Training with early stopping
-    4. Evaluation (Elo rating)
-    5. Promotion (automatic if model wins gauntlet, disable with --no-auto-promote)
+    3. NPZ combination (quality-weighted combining of historical + fresh data)
+    4. Training with early stopping (uses combined NPZ or best single file)
+    5. Evaluation (Elo rating)
+    6. Promotion (automatic if model wins gauntlet, disable with --no-auto-promote)
 """
 
 from __future__ import annotations
@@ -122,6 +128,24 @@ def parse_args() -> argparse.Namespace:
         default="v2",
         help="Model version/architecture (default: v2)",
     )
+    training_group.add_argument(
+        "--best-data",
+        action="store_true",
+        default=True,
+        help="Use best available training data: combined NPZ if available, else largest fresh (default: True)",
+    )
+    training_group.add_argument(
+        "--no-best-data",
+        action="store_false",
+        dest="best_data",
+        help="Disable best-data selection, use explicit data path instead",
+    )
+    training_group.add_argument(
+        "--data-path",
+        type=str,
+        default=None,
+        help="Explicit path to training NPZ file (disables --best-data)",
+    )
 
     # Pipeline options
     pipeline_group = parser.add_argument_group("Pipeline Options")
@@ -182,6 +206,10 @@ def bootstrap_pipeline(args: argparse.Namespace) -> dict[str, Any]:
 
     logger.info("Bootstrapping coordination infrastructure with auto-trigger enabled...")
 
+    # Determine effective data path (explicit or best-data selection)
+    # If explicit data path is provided, disable best_data
+    effective_best_data = args.best_data and args.data_path is None
+
     result = bootstrap_coordination(
         pipeline_auto_trigger=True,
         enable_selfplay=True,
@@ -192,11 +220,22 @@ def bootstrap_pipeline(args: argparse.Namespace) -> dict[str, Any]:
         training_epochs=args.training_epochs,
         training_batch_size=args.batch_size,
         training_model_version=args.model_version,
+        # Pass data selection config (December 2025)
+        training_use_best_data=effective_best_data,
+        training_data_path=args.data_path,
     )
 
     active = [k for k, v in result.items() if v]
     logger.info(f"Initialized {len(active)} coordinators: {', '.join(active[:5])}...")
     logger.info(f"Training config: epochs={args.training_epochs}, batch_size={args.batch_size}, model_version={args.model_version}")
+
+    # Log data selection mode
+    if args.data_path:
+        logger.info(f"Data selection: explicit path = {args.data_path}")
+    elif effective_best_data:
+        logger.info("Data selection: best available (combined NPZ if available, else largest fresh)")
+    else:
+        logger.info("Data selection: disabled (will use default pipeline behavior)")
 
     return result
 

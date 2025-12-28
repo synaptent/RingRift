@@ -385,6 +385,12 @@ class FeedbackLoopController:
                 bus.subscribe(DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
                 event_count += 1
 
+            # Dec 28, 2025: Subscribe to TRAINING_ROLLBACK_COMPLETED for post-rollback recovery
+            # Closes feedback loop: rollback complete → update state, resume training with adjustments
+            if hasattr(DataEventType, 'TRAINING_ROLLBACK_COMPLETED'):
+                bus.subscribe(DataEventType.TRAINING_ROLLBACK_COMPLETED, self._on_training_rollback_completed)
+                event_count += 1
+
             # Dec 2025: Subscribe to QUALITY_CHECK_FAILED for quality feedback
             if hasattr(DataEventType, 'QUALITY_CHECK_FAILED'):
                 bus.subscribe(DataEventType.QUALITY_CHECK_FAILED, self._on_quality_check_failed)
@@ -2446,6 +2452,67 @@ class FeedbackLoopController:
                         source="feedback_loop_controller",
                     ),
                     "exploration_boost_emit"
+                )
+            except ImportError:
+                pass
+
+    def _on_training_rollback_completed(self, event) -> None:
+        """Handle TRAINING_ROLLBACK_COMPLETED - checkpoint rollback completed.
+
+        Updates feedback state after a rollback has been completed:
+        1. Resets consecutive failure count to allow fresh start
+        2. Reduces exploration boost gradually (rollback fixed the issue)
+        3. Emits TRAINING_INTENSITY_CHANGED to resume training with adjusted params
+
+        Added: December 28, 2025 - Fixes orphan event (no prior subscriber)
+        """
+        payload = event.payload if hasattr(event, "payload") else {}
+        config_key = payload.get("config_key") or payload.get("config", "")
+        model_id = payload.get("model_id", "")
+        rollback_from = payload.get("rollback_from", "")
+        rollback_to = payload.get("rollback_to", "")
+
+        logger.info(
+            f"[FeedbackLoopController] Training rollback completed: {config_key} "
+            f"(from {rollback_from} to {rollback_to})"
+        )
+
+        if config_key:
+            state = self._get_or_create_state(config_key)
+
+            # Reset failure count - rollback gives us a fresh start
+            old_failures = state.consecutive_failures
+            state.consecutive_failures = max(0, state.consecutive_failures - 1)
+
+            # Reduce exploration boost (rollback should have fixed the issue)
+            if state.exploration_boost > 1.0:
+                state.exploration_boost = max(1.0, state.exploration_boost * 0.7)
+
+            # Update training intensity to resume
+            old_intensity = state.training_intensity
+            if old_intensity == "paused":
+                state.training_intensity = "reduced"  # Cautious restart
+            elif old_intensity == "reduced":
+                state.training_intensity = "normal"  # Gradual increase
+
+            logger.info(
+                f"[FeedbackLoopController] Post-rollback: {config_key} "
+                f"failures={old_failures}→{state.consecutive_failures}, "
+                f"intensity={old_intensity}→{state.training_intensity}"
+            )
+
+            # Emit training intensity change to inform training triggers
+            try:
+                from app.coordination.event_emitters import emit_training_intensity_changed
+
+                _safe_create_task(
+                    emit_training_intensity_changed(
+                        config_key=config_key,
+                        old_intensity=old_intensity,
+                        new_intensity=state.training_intensity,
+                        reason="post_rollback_recovery",
+                    ),
+                    "training_intensity_post_rollback"
                 )
             except ImportError:
                 pass

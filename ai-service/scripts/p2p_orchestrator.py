@@ -836,6 +836,61 @@ def _emit_cluster_health_event_sync(
         pass
 
 
+async def _emit_p2p_split_brain_detected(
+    leaders_seen: list[str],
+    voter_count: int = 0,
+    resolution_action: str = "step_down",
+) -> None:
+    """Emit SPLIT_BRAIN_DETECTED when multiple leaders are detected.
+
+    December 2025: Critical for cluster coordination - triggers alerts and
+    enables UnifiedHealthManager to track split-brain resolution.
+
+    Args:
+        leaders_seen: List of node IDs claiming leadership
+        voter_count: Number of voter nodes in quorum
+        resolution_action: Action taken (step_down, force_election, wait)
+    """
+    if not _check_event_emitters():
+        return
+
+    severity = "critical" if len(leaders_seen) >= 3 else "warning"
+
+    try:
+        from app.coordination.event_emitters import emit_split_brain_detected
+        await emit_split_brain_detected(
+            leaders_seen=leaders_seen,
+            severity=severity,
+            voter_count=voter_count,
+            resolution_action=resolution_action,
+            source="p2p_orchestrator",
+        )
+        logger.error(f"[P2P Event] Emitted SPLIT_BRAIN_DETECTED: {len(leaders_seen)} leaders ({severity})")
+    except ImportError:
+        pass  # Event emitters not available
+    except (AttributeError, RuntimeError, TypeError) as e:
+        logger.debug(f"[P2P Event] Failed to emit SPLIT_BRAIN_DETECTED: {e}")
+
+
+def _emit_p2p_split_brain_detected_sync(
+    leaders_seen: list[str],
+    voter_count: int = 0,
+    resolution_action: str = "step_down",
+) -> None:
+    """Synchronous version for use in blocking code paths."""
+    try:
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(
+            _emit_p2p_split_brain_detected(leaders_seen, voter_count, resolution_action)
+        )
+    except RuntimeError:
+        # No running event loop - fire and forget
+        fire_and_forget(
+            _emit_p2p_split_brain_detected(leaders_seen, voter_count, resolution_action),
+            name="emit_split_brain_detected",
+        )
+
+
 async def _emit_data_sync_started(
     host: str,
     sync_type: str = "incremental",
@@ -3156,6 +3211,115 @@ class P2POrchestrator(
                 manager.register(predictive_monitoring)
             except (ImportError, TypeError) as e:
                 logger.debug(f"PredictiveMonitoringLoop: not available: {e}")
+
+            # TrainingSyncLoop - December 28, 2025
+            # CRITICAL for training: Syncs selfplay data to training nodes
+            # Only runs when this node is the cluster leader
+            # Emits DATA_SYNC_STARTED/COMPLETED/FAILED events for pipeline coordination
+            try:
+                from scripts.p2p.loops import TrainingSyncLoop
+
+                training_sync = TrainingSyncLoop(
+                    is_leader=self._is_leader,
+                    sync_to_training_nodes=self._sync_selfplay_to_training_nodes,
+                    get_last_sync_time=lambda: getattr(self, 'last_training_sync_time', 0.0),
+                    check_disk_capacity=lambda: check_disk_has_capacity(70.0),
+                )
+                manager.register(training_sync)
+                logger.info("[P2P] TrainingSyncLoop registered (critical for training pipeline)")
+            except (ImportError, TypeError) as e:
+                logger.warning(f"TrainingSyncLoop: failed to register (CRITICAL): {e}")
+
+            # DataAggregationLoop - December 28, 2025
+            # IMPORTANT for training: Collects selfplay game databases from distributed nodes
+            # Consolidates data to central storage for training pipeline
+            try:
+                from scripts.p2p.loops import DataAggregationLoop
+
+                def _get_node_game_counts_for_aggregation() -> dict[str, int]:
+                    """Get game counts per node from manifest."""
+                    result: dict[str, int] = {}
+                    if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
+                        for node_id, node_data in self.cluster_data_manifest.items():
+                            games = node_data.get("games", {})
+                            total_games = sum(
+                                g.get("count", 0) for g in games.values()
+                            ) if isinstance(games, dict) else 0
+                            result[node_id] = total_games
+                    return result
+
+                async def _aggregate_from_node_for_loop(node_id: str) -> dict[str, Any]:
+                    """Aggregate selfplay data from a specific node."""
+                    try:
+                        peer = self.peers.get(node_id)
+                        if not peer:
+                            return {"success": False, "error": "peer_not_found"}
+                        # Use SyncPlanner if available
+                        if hasattr(self, 'sync_planner') and self.sync_planner:
+                            result = await self.sync_planner.sync_from_node(node_id)
+                            return {"success": result, "node_id": node_id}
+                        return {"success": False, "error": "sync_planner_unavailable"}
+                    except Exception as e:
+                        return {"success": False, "error": str(e)}
+
+                data_aggregation = DataAggregationLoop(
+                    get_node_game_counts=_get_node_game_counts_for_aggregation,
+                    aggregate_from_node=_aggregate_from_node_for_loop,
+                )
+                manager.register(data_aggregation)
+                logger.info("[P2P] DataAggregationLoop registered (important for training data)")
+            except (ImportError, TypeError) as e:
+                logger.debug(f"DataAggregationLoop: not available: {e}")
+
+            # HealthAggregationLoop - December 28, 2025
+            # IMPORTANT for scheduling: Aggregates health metrics from all nodes
+            # Provides cluster-wide health view for SelfplayScheduler decisions
+            try:
+                from scripts.p2p.loops import HealthAggregationLoop
+
+                def _get_node_ids_for_health() -> list[str]:
+                    """Get list of alive peer node IDs."""
+                    with self.peers_lock:
+                        return [p.node_id for p in self.peers.values() if p.is_alive()]
+
+                async def _fetch_node_health_for_loop(node_id: str) -> dict[str, Any]:
+                    """Fetch health metrics from a specific node."""
+                    try:
+                        peer = self.peers.get(node_id)
+                        if not peer:
+                            return {"healthy": False, "error": "peer_not_found"}
+                        host = peer.host or peer.ip
+                        port = peer.port or DEFAULT_PORT
+                        url = f"http://{host}:{port}/health"
+                        timeout = ClientTimeout(total=10)
+                        async with get_client_session(timeout) as session:
+                            async with session.get(url) as resp:
+                                if resp.status == 200:
+                                    data = await resp.json()
+                                    return {
+                                        "healthy": True,
+                                        "cpu_percent": data.get("cpu_percent", 0),
+                                        "memory_percent": data.get("memory_percent", 0),
+                                        "gpu_percent": data.get("gpu_percent", 0),
+                                        "disk_percent": data.get("disk_percent", 0),
+                                    }
+                                return {"healthy": False, "error": f"status_{resp.status}"}
+                    except Exception as e:
+                        return {"healthy": False, "error": str(e)}
+
+                def _on_health_updated_callback(health_data: dict[str, dict[str, Any]]) -> None:
+                    """Store aggregated health data for scheduling decisions."""
+                    self._aggregated_node_health = health_data
+
+                health_aggregation = HealthAggregationLoop(
+                    get_node_ids=_get_node_ids_for_health,
+                    fetch_node_health=_fetch_node_health_for_loop,
+                    on_health_updated=_on_health_updated_callback,
+                )
+                manager.register(health_aggregation)
+                logger.info("[P2P] HealthAggregationLoop registered (important for scheduling)")
+            except (ImportError, TypeError) as e:
+                logger.debug(f"HealthAggregationLoop: not available: {e}")
 
             self._loops_registered = True
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
@@ -24731,6 +24895,13 @@ print(json.dumps({{
                 print(
                     f"[P2P] SPLIT-BRAIN detected, but {self.node_id} is not a voter; stepping down."
                 )
+                # December 2025: Emit SPLIT_BRAIN_DETECTED event
+                leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
+                await _emit_p2p_split_brain_detected(
+                    leaders_seen=leaders_detected,
+                    voter_count=len(voter_ids),
+                    resolution_action="step_down_non_voter",
+                )
                 self.role = NodeRole.FOLLOWER
                 self.leader_id = None
                 self.leader_lease_id = ""
@@ -24773,6 +24944,13 @@ print(json.dumps({{
             # We're not the highest-priority leader - step down
             logger.info(f"SPLIT-BRAIN detected! Found leaders: {[p.node_id for p in other_leaders]}")
             logger.info(f"Stepping down in favor of higher-priority leader: {highest_leader.node_id}")
+            # December 2025: Emit SPLIT_BRAIN_DETECTED event
+            leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
+            await _emit_p2p_split_brain_detected(
+                leaders_seen=leaders_detected,
+                voter_count=len(voter_ids),
+                resolution_action="step_down_bully",
+            )
             self.role = NodeRole.FOLLOWER
             self.leader_id = highest_leader.node_id
             self.leader_lease_id = ""
@@ -24784,6 +24962,15 @@ print(json.dumps({{
         # We are the highest - other leaders should step down
         # Send coordinator message to assert our leadership
         logger.info(f"SPLIT-BRAIN detected! Asserting leadership over: {[p.node_id for p in other_leaders]}")
+
+        # Emit SPLIT_BRAIN_DETECTED event for this case (asserting leadership)
+        leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
+        await _emit_p2p_split_brain_detected(
+            leaders_seen=leaders_detected,
+            voter_count=len(voter_ids),
+            resolution_action="assert_leadership",
+        )
+
         timeout = ClientTimeout(total=5)
         async with get_client_session(timeout) as session:
             for peer in other_leaders:

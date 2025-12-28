@@ -335,6 +335,25 @@ class PeerManagerMixin(P2PMixinBase):
             "nat_blocked_count": nat_blocked,
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for peer manager mixin (DaemonManager integration).
+
+        December 2025: Added for unified health check interface.
+        Wraps peer_health_check() with standard format.
+
+        Returns:
+            dict with healthy status, message, and details
+        """
+        status = self.peer_health_check()
+        is_healthy = status.get("is_healthy", False)
+        active = status.get("active_peers", 0)
+        cached = status.get("cached_peers", 0)
+        return {
+            "healthy": is_healthy,
+            "message": f"Peer manager healthy ({active} active, {cached} cached)" if is_healthy else "No peers available",
+            "details": status,
+        }
+
 
 # Convenience function to get singleton (if P2POrchestrator uses this)
 _peer_manager: PeerManagerMixin | None = None

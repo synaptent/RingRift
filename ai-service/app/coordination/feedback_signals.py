@@ -455,7 +455,18 @@ def emit_promotion_signal(
 
 @dataclass
 class FeedbackState:
-    """Current state of all feedback signals for a config."""
+    """Current state of all feedback signals for a config.
+
+    DEPRECATION NOTE (December 28, 2025):
+    This class will be consolidated with SignalFeedbackState in
+    app.coordination.feedback_state in Q1 2026. New code should prefer:
+
+        from app.coordination.feedback_state import SignalFeedbackState
+
+    Field mapping for migration:
+        intensity -> training_intensity
+        exploration_multiplier -> exploration_boost
+    """
 
     config_key: str
     intensity: str = "normal"

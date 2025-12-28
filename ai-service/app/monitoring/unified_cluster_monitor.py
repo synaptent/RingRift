@@ -61,6 +61,11 @@ except ImportError:
     HAS_CLUSTER_CONFIG = False
     get_cluster_config = None
 
+try:
+    from app.config.ports import P2P_DEFAULT_PORT
+except ImportError:
+    P2P_DEFAULT_PORT = 8770
+
 # Event router for status change notifications (Phase 10 consolidation)
 # Using unified router for cross-system event routing (December 2025)
 try:
@@ -216,13 +221,13 @@ class ClusterConfig:
                         "ssh_user": host_data.get("ssh_user", "ubuntu"),
                         "ssh_port": host_data.get("ssh_port", 22),
                         "tailscale_ip": host_data.get("tailscale_ip"),
-                        "p2p_port": host_data.get("p2p_port", 8770),
+                        "p2p_port": host_data.get("p2p_port", P2P_DEFAULT_PORT),
                         "is_leader": host_data.get("role") == "coordinator",
                     }
                     # Build URLs
                     ip = host_data.get("ssh_host", "")
                     ts_ip = host_data.get("tailscale_ip")
-                    port = host_data.get("p2p_port", 8770)
+                    port = host_data.get("p2p_port", P2P_DEFAULT_PORT)
                     self.nodes[name]["primary_url"] = f"http://{ip}:{port}/health" if ip else None
                     self.nodes[name]["tailscale_url"] = f"http://{ts_ip}:{port}/health" if ts_ip else None
 

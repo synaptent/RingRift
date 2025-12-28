@@ -2,10 +2,10 @@
 
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
-**Last updated:** December 27, 2025 (Session 6 - Code Quality)
-**Total Daemon Types:** 66 (65 in `daemon_runners.py` + 1 inline in `daemon_manager.py`)
+**Last updated:** December 28, 2025 (Session - Event Subscriptions & Documentation)
+**Total Daemon Types:** 73 (72 in `daemon_runners.py` + 1 inline in `daemon_manager.py`, 7 deprecated)
 **Startup Order:** 18 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
-**Dependencies:** All 66 daemons have entries in `DAEMON_DEPENDENCIES`
+**Dependencies:** All 73 daemons have entries in `DAEMON_DEPENDENCIES`
 
 > **Architecture Note (December 2025):** Factory methods have been extracted from `daemon_manager.py` to `daemon_runners.py`. Factory methods named `create_*()` are in `daemon_runners.py`; methods named `_create_*()` remain in `daemon_manager.py` for legacy or special cases.
 
@@ -71,20 +71,24 @@ These daemons form the foundation of the cluster coordination system.
 
 Data synchronization across the cluster.
 
-| Daemon Type             | Priority     | Description                                                                                                                | Dependencies |
-| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `AUTO_SYNC`             | **CRITICAL** | Primary data sync mechanism. Pulls game data to coordinator; includes min-move completeness checks to avoid mid-write DBs. | None         |
-| `SYNC_COORDINATOR`      | DEPRECATED   | Legacy sync coordinator. Use `AUTO_SYNC` instead. Scheduled for removal Q2 2026.                                           | None         |
-| `GOSSIP_SYNC`           | MEDIUM       | P2P gossip-based data synchronization for eventual consistency.                                                            | None         |
-| `EPHEMERAL_SYNC`        | HIGH         | Aggressive 5-second sync for Vast.ai ephemeral nodes to prevent data loss on termination.                                  | None         |
-| `MODEL_SYNC`            | MEDIUM       | Syncs trained models across the cluster.                                                                                   | None         |
-| `MODEL_DISTRIBUTION`    | MEDIUM       | Auto-distributes models after promotion. Subscribes to MODEL_PROMOTED events.                                              | EVENT_ROUTER |
-| `NPZ_DISTRIBUTION`      | MEDIUM       | Syncs training data (NPZ files) after export.                                                                              | EVENT_ROUTER |
-| `EXTERNAL_DRIVE_SYNC`   | LOW          | Backup to external drives for disaster recovery.                                                                           | None         |
-| `CLUSTER_DATA_SYNC`     | MEDIUM       | Full cluster-wide data distribution and replication.                                                                       | EVENT_ROUTER |
-| `TRAINING_NODE_WATCHER` | MEDIUM       | Detects active training processes and triggers priority data sync.                                                         | None         |
-| `HIGH_QUALITY_SYNC`     | MEDIUM       | Priority sync for high-quality game data (quality score > 0.7).                                                            | None         |
-| `ELO_SYNC`              | MEDIUM       | Synchronize ELO ratings across cluster.                                                                                    | None         |
+| Daemon Type             | Priority     | Description                                                                                                                | Dependencies               |
+| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `AUTO_SYNC`             | **CRITICAL** | Primary data sync mechanism. Pulls game data to coordinator; includes min-move completeness checks to avoid mid-write DBs. | None                       |
+| `SYNC_COORDINATOR`      | DEPRECATED   | Legacy sync coordinator. Use `AUTO_SYNC` instead. Scheduled for removal Q2 2026.                                           | None                       |
+| `GOSSIP_SYNC`           | MEDIUM       | P2P gossip-based data synchronization for eventual consistency.                                                            | None                       |
+| `EPHEMERAL_SYNC`        | HIGH         | Aggressive 5-second sync for Vast.ai ephemeral nodes to prevent data loss on termination.                                  | None                       |
+| `MODEL_SYNC`            | MEDIUM       | Syncs trained models across the cluster.                                                                                   | None                       |
+| `MODEL_DISTRIBUTION`    | MEDIUM       | Auto-distributes models after promotion. Subscribes to MODEL_PROMOTED events.                                              | EVENT_ROUTER               |
+| `NPZ_DISTRIBUTION`      | MEDIUM       | Syncs training data (NPZ files) after export.                                                                              | EVENT_ROUTER               |
+| `EXTERNAL_DRIVE_SYNC`   | LOW          | Backup to external drives for disaster recovery.                                                                           | None                       |
+| `CLUSTER_DATA_SYNC`     | MEDIUM       | Full cluster-wide data distribution and replication.                                                                       | EVENT_ROUTER               |
+| `TRAINING_NODE_WATCHER` | MEDIUM       | Detects active training processes and triggers priority data sync.                                                         | None                       |
+| `HIGH_QUALITY_SYNC`     | MEDIUM       | Priority sync for high-quality game data (quality score > 0.7).                                                            | None                       |
+| `ELO_SYNC`              | MEDIUM       | Synchronize ELO ratings across cluster.                                                                                    | None                       |
+| `TRAINING_DATA_SYNC`    | MEDIUM       | Pre-training data sync from OWC/S3. Ensures training nodes have fresh data before training.                                | EVENT_ROUTER               |
+| `SYNC_PUSH`             | MEDIUM       | Push-based sync for GPU nodes. Pushes data to coordinator before cleanup to prevent data loss.                             | EVENT_ROUTER               |
+| `S3_NODE_SYNC`          | MEDIUM       | Bi-directional S3 sync for cluster nodes. Syncs game data, models, and training files to/from S3.                          | EVENT_ROUTER               |
+| `S3_CONSOLIDATION`      | LOW          | Consolidates data from all nodes to S3 (coordinator only). Runs after S3_NODE_SYNC.                                        | EVENT_ROUTER, S3_NODE_SYNC |
 
 **Factory Methods:**
 
@@ -100,6 +104,10 @@ Data synchronization across the cluster.
 - `_create_training_node_watcher()` → Uses `cluster_data_sync.get_training_node_watcher()`
 - `_create_high_quality_sync()` → Creates `HighQualitySyncDaemon`
 - `_create_elo_sync()` → Creates `EloSyncDaemon`
+- `create_training_data_sync()` → Creates `TrainingDataSyncDaemon` (in daemon_runners.py)
+- `create_sync_push()` → Creates `SyncPushDaemon` (in daemon_runners.py)
+- `create_s3_node_sync()` → Creates `S3NodeSyncDaemon` (in daemon_runners.py)
+- `create_s3_consolidation()` → Creates `S3ConsolidationDaemon` (in daemon_runners.py)
 
 ---
 
@@ -107,15 +115,16 @@ Data synchronization across the cluster.
 
 Training pipeline orchestration and coordination.
 
-| Daemon Type                | Priority | Description                                                                                 | Dependencies                |
-| -------------------------- | -------- | ------------------------------------------------------------------------------------------- | --------------------------- |
-| `DATA_PIPELINE`            | HIGH     | Orchestrates pipeline stages: selfplay → sync → export → train → evaluate → promote.        | EVENT_ROUTER                |
-| `DATA_CONSOLIDATION`       | HIGH     | Merges scattered selfplay games into canonical databases. Runs after sync, before training. | EVENT_ROUTER, DATA_PIPELINE |
-| `CONTINUOUS_TRAINING_LOOP` | MEDIUM   | Continuous training loop that runs indefinitely.                                            | EVENT_ROUTER                |
-| `UNIFIED_PROMOTION`        | HIGH     | Auto-promotes models after evaluation. Subscribes to EVALUATION_COMPLETED events.           | EVENT_ROUTER                |
-| `AUTO_PROMOTION`           | HIGH     | Auto-promotes models based on evaluation thresholds. Emits MODEL_PROMOTED.                  | EVENT_ROUTER, EVALUATION    |
-| `DISTILLATION`             | LOW      | Creates smaller student models from larger teacher models for deployment.                   | EVENT_ROUTER                |
-| `SELFPLAY_COORDINATOR`     | MEDIUM   | Distributes selfplay workloads across the cluster.                                          | EVENT_ROUTER                |
+| Daemon Type                | Priority | Description                                                                                                        | Dependencies                |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| `DATA_PIPELINE`            | HIGH     | Orchestrates pipeline stages: selfplay → sync → export → train → evaluate → promote.                               | EVENT_ROUTER                |
+| `DATA_CONSOLIDATION`       | HIGH     | Merges scattered selfplay games into canonical databases. Runs after sync, before training.                        | EVENT_ROUTER, DATA_PIPELINE |
+| `CONTINUOUS_TRAINING_LOOP` | MEDIUM   | Continuous training loop that runs indefinitely.                                                                   | EVENT_ROUTER                |
+| `UNIFIED_PROMOTION`        | HIGH     | Auto-promotes models after evaluation. Subscribes to EVALUATION_COMPLETED events.                                  | EVENT_ROUTER                |
+| `AUTO_PROMOTION`           | HIGH     | Auto-promotes models based on evaluation thresholds. Emits MODEL_PROMOTED.                                         | EVENT_ROUTER, EVALUATION    |
+| `DISTILLATION`             | LOW      | Creates smaller student models from larger teacher models for deployment.                                          | EVENT_ROUTER                |
+| `SELFPLAY_COORDINATOR`     | MEDIUM   | Distributes selfplay workloads across the cluster.                                                                 | EVENT_ROUTER                |
+| `NPZ_COMBINATION`          | MEDIUM   | Quality-weighted NPZ combination daemon. Combines multiple NPZ training files with quality-based sampling weights. | EVENT_ROUTER, DATA_PIPELINE |
 
 **DATA_CONSOLIDATION Details (December 2025):**
 
@@ -138,6 +147,7 @@ Fixes critical training pipeline gap where selfplay games remain scattered acros
 - `_create_auto_promotion()` → Uses `auto_promotion_daemon.get_auto_promotion_daemon()`
 - `_create_distillation()` → Creates `DistillationDaemon`
 - `_create_selfplay_coordinator()` → Creates `SelfplayScheduler`
+- `create_npz_combination()` → Creates `NPZCombinationDaemon` (in daemon_runners.py)
 
 ---
 
@@ -163,17 +173,18 @@ Model evaluation and tournament scheduling.
 
 Cluster health monitoring and alerting.
 
-| Daemon Type                  | Priority   | Description                                                                              | Dependencies                      |
-| ---------------------------- | ---------- | ---------------------------------------------------------------------------------------- | --------------------------------- |
-| `NODE_HEALTH_MONITOR`        | HIGH       | Unified cluster health maintenance. Canonical health daemon.                             | None                              |
-| `COORDINATOR_HEALTH_MONITOR` | HIGH       | Tracks coordinator lifecycle events (healthy/unhealthy/degraded, heartbeat, init).       | EVENT_ROUTER                      |
-| `WORK_QUEUE_MONITOR`         | HIGH       | Tracks work queue lifecycle (depth, latency, stuck jobs, backpressure).                  | EVENT_ROUTER, QUEUE_POPULATOR     |
-| `HEALTH_CHECK`               | DEPRECATED | Legacy health checker. Use `NODE_HEALTH_MONITOR` instead. Scheduled for removal Q2 2026. | None                              |
-| `QUALITY_MONITOR`            | MEDIUM     | Continuous selfplay data quality monitoring. Triggers throttling feedback.               | EVENT_ROUTER                      |
-| `MODEL_PERFORMANCE_WATCHDOG` | MEDIUM     | Monitors model win rates and performance metrics.                                        | EVENT_ROUTER                      |
-| `ORPHAN_DETECTION`           | LOW        | Detects orphaned game databases not in the cluster manifest.                             | None                              |
-| `SYSTEM_HEALTH_MONITOR`      | HIGH       | Global system health with pipeline pause capability.                                     | EVENT_ROUTER, NODE_HEALTH_MONITOR |
-| `HEALTH_SERVER`              | HIGH       | HTTP endpoints: /health, /ready, /metrics for external monitoring.                       | None                              |
+| Daemon Type                  | Priority   | Description                                                                                                                                                    | Dependencies                      |
+| ---------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `NODE_HEALTH_MONITOR`        | HIGH       | Unified cluster health maintenance. Canonical health daemon.                                                                                                   | None                              |
+| `COORDINATOR_HEALTH_MONITOR` | HIGH       | Tracks coordinator lifecycle events (healthy/unhealthy/degraded, heartbeat, init).                                                                             | EVENT_ROUTER                      |
+| `WORK_QUEUE_MONITOR`         | HIGH       | Tracks work queue lifecycle (depth, latency, stuck jobs, backpressure).                                                                                        | EVENT_ROUTER, QUEUE_POPULATOR     |
+| `HEALTH_CHECK`               | DEPRECATED | Legacy health checker. Use `NODE_HEALTH_MONITOR` instead. Scheduled for removal Q2 2026.                                                                       | None                              |
+| `QUALITY_MONITOR`            | MEDIUM     | Continuous selfplay data quality monitoring. Triggers throttling feedback.                                                                                     | EVENT_ROUTER                      |
+| `MODEL_PERFORMANCE_WATCHDOG` | MEDIUM     | Monitors model win rates and performance metrics.                                                                                                              | EVENT_ROUTER                      |
+| `ORPHAN_DETECTION`           | LOW        | Detects orphaned game databases not in the cluster manifest.                                                                                                   | None                              |
+| `SYSTEM_HEALTH_MONITOR`      | HIGH       | Global system health with pipeline pause capability.                                                                                                           | EVENT_ROUTER, NODE_HEALTH_MONITOR |
+| `HEALTH_SERVER`              | HIGH       | HTTP endpoints: /health, /ready, /metrics for external monitoring.                                                                                             | None                              |
+| `INTEGRITY_CHECK`            | MEDIUM     | Data integrity checking daemon. Scans for games without moves, orphaned databases, and schema violations. Quarantines invalid games to `orphaned_games` table. | EVENT_ROUTER                      |
 
 **Factory Methods:**
 
@@ -186,6 +197,7 @@ Cluster health monitoring and alerting.
 - `_create_orphan_detection()` → Creates `OrphanDetectionDaemon`
 - `_create_system_health_monitor()` → Creates `SystemHealthMonitorDaemon`
 - `_create_health_server()` → Creates `HealthServerDaemon`
+- `create_integrity_check()` → Creates `IntegrityCheckDaemon` (in daemon_runners.py)
 
 ---
 
@@ -546,6 +558,7 @@ EVENT_ROUTER (CRITICAL - no dependencies)
 ├── QUALITY_MONITOR
 ├── MODEL_PERFORMANCE_WATCHDOG
 ├── NPZ_DISTRIBUTION
+├── INTEGRITY_CHECK
 ├── DISTILLATION
 ├── CLUSTER_DATA_SYNC
 ├── JOB_SCHEDULER
@@ -558,7 +571,11 @@ EVENT_ROUTER (CRITICAL - no dependencies)
 ├── AUTO_EXPORT
 │   └── TRAINING_TRIGGER
 ├── GAUNTLET_FEEDBACK
-└── METRICS_ANALYSIS
+├── METRICS_ANALYSIS
+├── TRAINING_DATA_SYNC
+├── SYNC_PUSH
+└── S3_NODE_SYNC
+    └── S3_CONSOLIDATION
 
 NODE_HEALTH_MONITOR
 ├── SYSTEM_HEALTH_MONITOR
@@ -582,7 +599,8 @@ DATA_PIPELINE (CRITICAL - event subscribers before emitters!)
 ├── EPHEMERAL_SYNC - depends on DATA_PIPELINE
 ├── TRAINING_NODE_WATCHER - depends on DATA_PIPELINE
 ├── NPZ_DISTRIBUTION
-└── DATA_CONSOLIDATION
+├── DATA_CONSOLIDATION
+└── NPZ_COMBINATION
 
 FEEDBACK_LOOP (CRITICAL - subscribes to training events!)
 └── AUTO_SYNC (CRITICAL) - depends on FEEDBACK_LOOP

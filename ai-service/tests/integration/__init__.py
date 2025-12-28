@@ -1,1 +1,1 @@
-"""Integration tests for training infrastructure."""
+"""Integration tests for coordination layer."""

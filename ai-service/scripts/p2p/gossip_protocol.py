@@ -978,6 +978,24 @@ class GossipProtocolMixin(P2PMixinBase):
             "metrics": summary,
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for gossip protocol mixin (DaemonManager integration).
+
+        December 2025: Added for unified health check interface.
+        Wraps _get_gossip_health_status() with standard format.
+
+        Returns:
+            dict with healthy status, message, and details
+        """
+        status = self._get_gossip_health_status()
+        is_healthy = status.get("is_healthy", False)
+        warnings = status.get("warnings", [])
+        return {
+            "healthy": is_healthy,
+            "message": "Gossip healthy" if is_healthy else f"Gossip issues: {', '.join(warnings)}",
+            "details": status,
+        }
+
 
 # Standalone utility function (from GossipMetricsMixin)
 def calculate_compression_ratio(original: int, compressed: int) -> float:

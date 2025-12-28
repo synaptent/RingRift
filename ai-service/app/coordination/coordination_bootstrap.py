@@ -4,6 +4,63 @@ This module provides a single entry point for initializing the entire
 coordination layer. It handles the correct initialization order, event
 wiring, and registry registration for all coordinators.
 
+INITIALIZATION ORDER
+====================
+
+Coordinators are initialized in dependency order across 8 layers:
+
+Layer 1 - Foundational (no dependencies):
+    - task_coordinator: Task lifecycle event wiring
+    - global_task_coordinator: Global task tracking
+    - resource_coordinator: Resource monitoring events
+    - cache_orchestrator: Cache coordination events
+
+Layer 2 - Infrastructure Support:
+    - health_manager: Unified health monitoring (replaces error + recovery)
+    - model_coordinator: Model lifecycle events
+
+Layer 3 - Sync and Training:
+    - sync_coordinator: Data synchronization events
+    - training_coordinator: Training pipeline events
+
+Layer 4 - Data Integrity:
+    - transfer_verifier: Transfer verification events
+    - ephemeral_guard: Ephemeral data protection
+    - queue_populator: Work queue maintenance
+
+Layer 5 - Selfplay (depends on task_lifecycle, resources):
+    - selfplay_orchestrator: Selfplay coordination
+    - selfplay_scheduler: Priority-based selfplay allocation
+
+Layer 6 - Multi-Provider and Jobs:
+    - multi_provider: Multi-provider orchestration
+    - job_scheduler: Job scheduling events
+
+Layer 7 - Daemons (December 2025 critical automation):
+    - auto_export_daemon: Auto NPZ export
+    - evaluation_daemon: Auto evaluation
+    - model_distribution_daemon: Model sync to cluster
+    - idle_resource_daemon: GPU idle detection
+    - quality_monitor_daemon: Data quality monitoring
+    - orphan_detection_daemon: Orphan game recovery
+    - pipeline_orchestrator: Pipeline stage coordination (special case)
+    - curriculum_integration: Curriculum feedback loops (special case)
+
+Layer 8 - Top-Level Coordination:
+    - metrics_orchestrator: Metrics analysis (depends on pipeline)
+    - optimization_coordinator: CMA-ES/NAS optimization (depends on metrics)
+    - leadership_coordinator: Leader election (coordinates all others)
+
+Post-Initialization Steps:
+    1. Register coordinators with OrchestratorRegistry
+    2. Wire integration modules to event router
+    3. Wire missing event subscriptions (audit findings)
+    4. Start unified feedback orchestrator
+    5. Validate event wiring (detect orphaned events)
+
+CRITICAL: Subscribers must start before emitters. FEEDBACK_LOOP and
+DATA_PIPELINE must initialize before AUTO_SYNC to receive sync events.
+
 Usage:
     from app.coordination.coordination_bootstrap import (
         bootstrap_coordination,
@@ -1636,45 +1693,46 @@ def bootstrap_coordination(
             f"Some coordination features will be unavailable."
         )
 
-    # Initialize in dependency order using registry-based pattern
-    # Format: (name, enabled_flag) - uses COORDINATOR_REGISTRY
-    # Special cases have custom handlers below the loop
+    # ==========================================================================
+    # INITIALIZATION ORDER (See module docstring for full documentation)
+    # ==========================================================================
+    # Format: (name, enabled_flag) - looks up COORDINATOR_REGISTRY
+    # CRITICAL: Subscribers must start before emitters!
+    # Special cases (pipeline_orchestrator, curriculum_integration) handled below
     init_order: list[tuple[str, bool]] = [
-        # Foundational layer (no dependencies)
+        # --- Layer 1: Foundational (no dependencies) ---
         ("task_coordinator", enable_task),
         ("global_task_coordinator", enable_global_task),
         ("resource_coordinator", enable_resources),
         ("cache_orchestrator", enable_cache),
-        # Infrastructure support layer - UnifiedHealthManager replaces error + recovery
+        # --- Layer 2: Infrastructure Support ---
+        # UnifiedHealthManager replaces deprecated error + recovery coordinators
         ("health_manager", enable_health or enable_error),
         ("model_coordinator", enable_model),
-        # Sync and training layer
+        # --- Layer 3: Sync and Training ---
         ("sync_coordinator", enable_sync),
         ("training_coordinator", enable_training),
-        # Data integrity layer
+        # --- Layer 4: Data Integrity ---
         ("transfer_verifier", enable_transfer),
         ("ephemeral_guard", enable_ephemeral),
         ("queue_populator", enable_queue),
-        # Selfplay layer (depends on task_lifecycle, resources)
+        # --- Layer 5: Selfplay (depends on task_lifecycle, resources) ---
         ("selfplay_orchestrator", enable_selfplay),
         ("selfplay_scheduler", enable_selfplay),
-        # Multi-provider layer
+        # --- Layer 6: Multi-Provider and Jobs ---
         ("multi_provider", enable_multi_provider),
-        # Job scheduler layer
         ("job_scheduler", enable_job_scheduler),
-        # Daemon layer (December 2025 - critical automation daemons)
+        # --- Layer 7: Daemons (December 2025 automation) ---
         ("auto_export_daemon", enable_auto_export),
-        ("evaluation_daemon", enable_auto_evaluation),  # Note: renamed from auto_evaluation_daemon
+        ("evaluation_daemon", enable_auto_evaluation),
         ("model_distribution_daemon", enable_model_distribution),
         ("idle_resource_daemon", enable_idle_resource),
         ("quality_monitor_daemon", enable_quality_monitor),
         ("orphan_detection_daemon", enable_orphan_detection),
-        # Metrics layer (depends on pipeline)
-        ("metrics_orchestrator", enable_metrics),
-        # Optimization layer (depends on metrics)
-        ("optimization_coordinator", enable_optimization),
-        # Leadership layer (coordinates all others)
-        ("leadership_coordinator", enable_leadership),
+        # --- Layer 8: Top-Level Coordination ---
+        ("metrics_orchestrator", enable_metrics),  # Depends on pipeline
+        ("optimization_coordinator", enable_optimization),  # Depends on metrics
+        ("leadership_coordinator", enable_leadership),  # Coordinates all others
     ]
 
     # Initialize coordinators from registry

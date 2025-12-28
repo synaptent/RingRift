@@ -94,6 +94,11 @@ class DataEventType(Enum):
     CONSOLIDATION_STARTED = "consolidation_started"  # Consolidation in progress
     CONSOLIDATION_COMPLETE = "consolidation_complete"  # Games merged to canonical DB
 
+    # NPZ combination events (December 2025 - quality-weighted data combination)
+    NPZ_COMBINATION_STARTED = "npz_combination_started"  # Combination in progress
+    NPZ_COMBINATION_COMPLETE = "npz_combination_complete"  # Combined NPZ ready
+    NPZ_COMBINATION_FAILED = "npz_combination_failed"  # Combination failed
+
     # Training events
     TRAINING_THRESHOLD_REACHED = "training_threshold"
     TRAINING_STARTED = "training_started"

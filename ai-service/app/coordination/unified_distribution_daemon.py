@@ -485,12 +485,47 @@ class UnifiedDistributionDaemon:
         )
 
     def _on_model_distribution_failed(self, event: dict[str, Any] | Any) -> None:
-        """Handle MODEL_DISTRIBUTION_FAILED event (external distribution)."""
+        """Handle MODEL_DISTRIBUTION_FAILED event (external distribution) with retry.
+
+        December 2025: Added retry logic for distribution failures.
+        Re-enqueues failed distributions up to max_retries times.
+        """
         payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
         error = payload.get("error", "unknown_error")
+        model_name = payload.get("model_name", "")
+        expected_path = payload.get("expected_path", "")
+        retry_count = payload.get("retry_count", 0)
+
         self._errors_count += 1
         self._last_error = str(error)
-        logger.warning(f"MODEL_DISTRIBUTION_FAILED (external): {error}")
+
+        # Maximum 3 retries per distribution
+        max_retries = 3
+        if retry_count >= max_retries:
+            logger.error(
+                f"MODEL_DISTRIBUTION_FAILED (final, {retry_count} retries): "
+                f"{model_name} - {error}"
+            )
+            return
+
+        # Re-enqueue for retry with exponential backoff
+        if model_name and expected_path:
+            retry_delay = 2 ** retry_count * 10  # 10s, 20s, 40s
+            item = {
+                "data_type": DataType.MODEL,
+                "path": expected_path,
+                "model_name": model_name,
+                "retry_count": retry_count + 1,
+                "retry_after": time.time() + retry_delay,
+                "timestamp": time.time(),
+            }
+            self._enqueue_item(item)
+            logger.warning(
+                f"MODEL_DISTRIBUTION_FAILED (retry {retry_count + 1}/{max_retries}): "
+                f"{model_name} - {error} - retrying in {retry_delay}s"
+            )
+        else:
+            logger.warning(f"MODEL_DISTRIBUTION_FAILED (no retry - missing info): {error}")
 
     def _on_npz_exported(self, event: dict[str, Any] | Any) -> None:
         """Handle NPZ_EXPORT_COMPLETE event."""
@@ -519,13 +554,33 @@ class UnifiedDistributionDaemon:
     # =========================================================================
 
     async def _process_pending_items(self) -> None:
-        """Process all pending distribution items."""
+        """Process all pending distribution items.
+
+        December 2025: Added retry_after support for exponential backoff retries.
+        Items with retry_after > now are kept in queue until their delay expires.
+        """
         async with self._sync_lock:
             with self._pending_lock:
                 if not self._pending_items:
                     return
-                items = self._pending_items.copy()
-                self._pending_items.clear()
+
+                # Separate items ready to process from items still waiting for retry
+                now = time.time()
+                ready_items = []
+                waiting_items = []
+                for item in self._pending_items:
+                    retry_after = item.get("retry_after", 0)
+                    if retry_after <= now:
+                        ready_items.append(item)
+                    else:
+                        waiting_items.append(item)
+
+                # Keep waiting items in queue, process ready items
+                self._pending_items = waiting_items
+
+                if not ready_items:
+                    return
+                items = ready_items
 
             logger.info(f"Processing {len(items)} pending distributions")
 

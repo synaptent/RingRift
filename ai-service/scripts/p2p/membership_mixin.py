@@ -328,3 +328,22 @@ class MembershipMixin(P2PMixinBase):
             "is_healthy": is_healthy,
             **summary,
         }
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for membership mixin (DaemonManager integration).
+
+        December 2025: Added for unified health check interface.
+        Wraps membership_health_check() with standard format.
+
+        Returns:
+            dict with healthy status, message, and details
+        """
+        status = self.membership_health_check()
+        is_healthy = status.get("is_healthy", False)
+        mode = status.get("membership_mode", "unknown")
+        peers = status.get("peer_count", 0)
+        return {
+            "healthy": is_healthy,
+            "message": f"Membership healthy ({mode}, {peers} peers)" if is_healthy else f"Membership unhealthy ({mode})",
+            "details": status,
+        }

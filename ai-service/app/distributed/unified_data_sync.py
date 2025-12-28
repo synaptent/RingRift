@@ -69,6 +69,8 @@ from typing import Any
 
 import yaml
 
+from app.config.ports import P2P_DEFAULT_PORT
+
 # Emit deprecation warning at import time
 warnings.warn(
     "UnifiedDataSyncService is deprecated and will be archived in Q2 2026. "
@@ -361,7 +363,7 @@ class SyncConfig:
     # Sync method
     sync_method: str = "incremental"  # "incremental" or "full"
     enable_p2p_fallback: bool = True
-    p2p_port: int = 8770
+    p2p_port: int = P2P_DEFAULT_PORT
 
     # Deduplication
     deduplication: bool = True

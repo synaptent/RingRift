@@ -1276,6 +1276,24 @@ async def create_data_consolidation() -> None:
         raise
 
 
+async def create_npz_combination() -> None:
+    """Create and run NPZ combination daemon (December 2025).
+
+    Combines multiple NPZ training files with quality-aware weighting.
+    Subscribes to NPZ_EXPORT_COMPLETE event to trigger combination.
+    Emits NPZ_COMBINATION_COMPLETE event after combining files.
+    """
+    try:
+        from app.coordination.npz_combination_daemon import get_npz_combination_daemon
+
+        daemon = await get_npz_combination_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"NPZCombinationDaemon not available: {e}")
+        raise
+
+
 # =============================================================================
 # Data Integrity (December 2025)
 # =============================================================================

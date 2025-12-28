@@ -267,35 +267,45 @@ class TestDiskUsage:
 
 
 class TestChecksum:
-    """Tests for checksum computation."""
+    """Tests for checksum computation via sync_integrity.
 
-    def test_compute_sha256(self, daemon, temp_data_dir):
-        """Test SHA256 checksum computation."""
+    Note: SyncPushDaemon now uses compute_file_checksum from sync_integrity
+    instead of internal _compute_sha256 method (Dec 2025 consolidation).
+    """
+
+    def test_compute_file_checksum(self, temp_data_dir):
+        """Test SHA256 checksum computation via sync_integrity."""
+        from app.coordination.sync_integrity import compute_file_checksum
+
         test_file = temp_data_dir / "selfplay_001.db"
 
-        checksum = daemon._compute_sha256(test_file)
+        checksum = compute_file_checksum(test_file)
 
         # Verify it's a valid SHA256 hash (64 hex characters)
         assert checksum is not None
         assert len(checksum) == 64
         assert all(c in "0123456789abcdef" for c in checksum)
 
-    def test_compute_sha256_consistency(self, daemon, temp_data_dir):
+    def test_compute_file_checksum_consistency(self, temp_data_dir):
         """Test checksum is consistent for same file."""
+        from app.coordination.sync_integrity import compute_file_checksum
+
         test_file = temp_data_dir / "selfplay_001.db"
 
-        checksum1 = daemon._compute_sha256(test_file)
-        checksum2 = daemon._compute_sha256(test_file)
+        checksum1 = compute_file_checksum(test_file)
+        checksum2 = compute_file_checksum(test_file)
 
         assert checksum1 == checksum2
 
-    def test_compute_sha256_different_files(self, daemon, temp_data_dir):
+    def test_compute_file_checksum_different_files(self, temp_data_dir):
         """Test different files have different checksums."""
+        from app.coordination.sync_integrity import compute_file_checksum
+
         file1 = temp_data_dir / "selfplay_001.db"
         file2 = temp_data_dir / "selfplay_002.db"
 
-        checksum1 = daemon._compute_sha256(file1)
-        checksum2 = daemon._compute_sha256(file2)
+        checksum1 = compute_file_checksum(file1)
+        checksum2 = compute_file_checksum(file2)
 
         assert checksum1 != checksum2
 

@@ -70,7 +70,16 @@ class FeedbackSignal:
 
 @dataclass
 class FeedbackState:
-    """Persistent state for feedback system."""
+    """Persistent state for feedback system.
+
+    NOTE (December 28, 2025):
+    This class is distinct from per-config FeedbackState classes. It holds
+    global/persistent state for the entire feedback system, not per-config state.
+    Consider renaming to PipelineFeedbackState for clarity in Q1 2026.
+
+    For per-config feedback state, use:
+        from app.coordination.feedback_state import CanonicalFeedbackState
+    """
     # Curriculum weights by config (config_key -> weight multiplier)
     curriculum_weights: dict[str, float] = field(default_factory=lambda: defaultdict(lambda: 1.0))
 

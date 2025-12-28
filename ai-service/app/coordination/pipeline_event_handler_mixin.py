@@ -4,7 +4,7 @@ December 2025: Extracted from data_pipeline_orchestrator.py as part of mixin-bas
 
 This mixin provides all `_on_*` event handlers for DataEventType events:
 - Core pipeline events: selfplay complete, sync, training, evaluation, promotion
-- Data lifecycle events: orphan games, consolidation, repair
+- Data lifecycle events: orphan games, consolidation, repair, NPZ combination
 - Quality and feedback events: quality score updates, curriculum changes
 - Resource events: backpressure, resource constraints
 - Infrastructure events: S3 backup, database creation, work queue
@@ -390,6 +390,120 @@ class PipelineEventHandlerMixin:
                 pass  # data_events not available
             except Exception as e:
                 logger.debug(f"[DataPipelineOrchestrator] Failed to emit new_games_available: {e}")
+
+    # =========================================================================
+    # NPZ Combination Handlers (December 28, 2025)
+    # =========================================================================
+
+    async def _on_npz_combination_complete(self, event: Any) -> None:
+        """Handle NPZ_COMBINATION_COMPLETE - trigger training with combined data.
+
+        December 2025: After NPZ files are combined with quality-weighted sampling,
+        trigger training using the combined file instead of single NPZ files.
+        """
+        from app.coordination.data_pipeline_orchestrator import PipelineStage
+
+        payload = getattr(event, "payload", {}) or {}
+        config_key = payload.get("config_key", "")
+        output_path = payload.get("output_path", "")
+        total_samples = payload.get("total_samples", 0)
+        samples_by_source = payload.get("samples_by_source", {})
+
+        logger.info(
+            f"[DataPipelineOrchestrator] NPZ combination complete for {config_key}: "
+            f"{total_samples} samples in {output_path}"
+        )
+
+        # Transition to NPZ_COMBINATION stage and mark complete
+        iteration = self._current_iteration
+        self._transition_to(PipelineStage.NPZ_COMBINATION, iteration, success=True)
+
+        # Track combination stats
+        if not hasattr(self, "_combination_stats"):
+            self._combination_stats: dict[str, Any] = {}
+        self._combination_stats[config_key] = {
+            "output_path": output_path,
+            "total_samples": total_samples,
+            "samples_by_source": samples_by_source,
+            "timestamp": time.time(),
+        }
+
+        # Trigger training with the combined NPZ file
+        if output_path and total_samples > 0:
+            try:
+                from app.distributed.data_events import emit_data_event, DataEventType
+
+                # Emit training threshold with combined data path
+                emit_data_event(
+                    DataEventType.TRAINING_THRESHOLD_REACHED,
+                    config_key=config_key,
+                    data_path=output_path,
+                    total_samples=total_samples,
+                    source="npz_combination",
+                    combined=True,
+                )
+                logger.info(
+                    f"[DataPipelineOrchestrator] Triggered training for {config_key} "
+                    f"with combined data ({total_samples} samples)"
+                )
+            except ImportError:
+                pass  # data_events not available
+            except Exception as e:
+                logger.debug(
+                    f"[DataPipelineOrchestrator] Failed to trigger training after combination: {e}"
+                )
+
+    async def _on_npz_combination_failed(self, event: Any) -> None:
+        """Handle NPZ_COMBINATION_FAILED - fall back to single file training.
+
+        December 2025: If NPZ combination fails, we fall back to using the best
+        single NPZ file (largest or freshest) for training instead.
+        """
+        from app.coordination.data_pipeline_orchestrator import PipelineStage
+
+        payload = getattr(event, "payload", {}) or {}
+        config_key = payload.get("config_key", "")
+        error = payload.get("error", "Unknown error")
+
+        logger.warning(
+            f"[DataPipelineOrchestrator] NPZ combination failed for {config_key}: {error}. "
+            f"Falling back to single file training."
+        )
+
+        # Record circuit breaker failure
+        if hasattr(self, "circuit_breaker"):
+            self.circuit_breaker.record_failure("npz_combination", error)
+
+        # Transition with failure but don't block pipeline
+        iteration = self._current_iteration
+        self._transition_to(
+            PipelineStage.NPZ_COMBINATION,
+            iteration,
+            success=False,
+            metadata={"error": error, "fallback": True},
+        )
+
+        # Emit training threshold with fallback indicator
+        # Training trigger will pick best single file instead
+        try:
+            from app.distributed.data_events import emit_data_event, DataEventType
+
+            emit_data_event(
+                DataEventType.TRAINING_THRESHOLD_REACHED,
+                config_key=config_key,
+                source="npz_combination_fallback",
+                combined=False,
+                combination_error=error,
+            )
+            logger.info(
+                f"[DataPipelineOrchestrator] Triggered fallback training for {config_key}"
+            )
+        except ImportError:
+            pass  # data_events not available
+        except Exception as e:
+            logger.debug(
+                f"[DataPipelineOrchestrator] Failed to trigger fallback training: {e}"
+            )
 
     # =========================================================================
     # Repair Event Handlers (December 27, 2025)

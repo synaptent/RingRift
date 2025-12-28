@@ -170,8 +170,13 @@ def load_host_bandwidth_hints() -> dict[str, int]:
     except ImportError:
         logger.debug("cluster_config not available, using empty bandwidth hints")
         return {}
-    except Exception as e:
-        logger.debug(f"Failed to load bandwidth hints: {e}")
+    except (KeyError, ValueError, AttributeError, TypeError) as e:
+        # Config structure errors: missing keys, invalid values, wrong types
+        logger.debug(f"Failed to load bandwidth hints (config error): {e}")
+        return {}
+    except OSError as e:
+        # File system errors: file not found, permission denied
+        logger.debug(f"Failed to load bandwidth hints (filesystem error): {e}")
         return {}
 
 

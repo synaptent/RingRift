@@ -251,6 +251,10 @@ class DaemonType(Enum):
     # Data consolidation (December 2025) - consolidate scattered selfplay games into canonical DBs
     DATA_CONSOLIDATION = "data_consolidation"
 
+    # NPZ combination (December 2025) - quality-weighted NPZ combination for training
+    # Combines historical data with fresh data using quality and freshness weighting
+    NPZ_COMBINATION = "npz_combination"
+
     # Disk space manager (December 2025) - proactive disk space management
     # Monitors disk usage and triggers cleanup before reaching critical thresholds
     DISK_SPACE_MANAGER = "disk_space_manager"
@@ -557,6 +561,8 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Data consolidation depends on event router and data pipeline
     DaemonType.DATA_CONSOLIDATION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+    # NPZ combination (Dec 2025) - combines NPZ files after export
+    DaemonType.NPZ_COMBINATION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
     DaemonType.S3_BACKUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
     # S3 node sync (December 2025) - bi-directional S3 sync for cluster nodes
     DaemonType.S3_NODE_SYNC: {DaemonType.EVENT_ROUTER},

@@ -143,7 +143,14 @@ class FeedbackConfig:
 
 @dataclass
 class FeedbackState:
-    """Unified feedback state for a single configuration."""
+    """Unified feedback state for a single configuration.
+
+    DEPRECATION NOTE (December 28, 2025):
+    This class will be consolidated with SignalFeedbackState in
+    app.coordination.feedback_state in Q1 2026. New code should prefer:
+
+        from app.coordination.feedback_state import SignalFeedbackState
+    """
 
     config_key: str
 

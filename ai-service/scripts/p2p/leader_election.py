@@ -379,6 +379,25 @@ class LeaderElectionMixin(P2PMixinBase):
             "lease_remaining_seconds": lease_remaining,
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for leader election mixin (DaemonManager integration).
+
+        December 2025: Added for unified health check interface.
+        Wraps election_health_check() with standard format.
+
+        Returns:
+            dict with healthy status, message, and details
+        """
+        status = self.election_health_check()
+        is_healthy = status.get("is_healthy", False)
+        role = status.get("role", "unknown")
+        leader = status.get("leader_id", "none")
+        return {
+            "healthy": is_healthy,
+            "message": f"Election healthy (role={role}, leader={leader})" if is_healthy else "No quorum",
+            "details": status,
+        }
+
 
 # Convenience functions for external use
 def check_quorum(

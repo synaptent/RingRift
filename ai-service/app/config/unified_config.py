@@ -37,6 +37,8 @@ from typing import Any
 
 import yaml
 
+from app.config.ports import P2P_DEFAULT_PORT, get_p2p_base_url
+
 # Import canonical threshold constants
 try:
     from app.config.thresholds import (
@@ -730,8 +732,8 @@ class DistributedConfig:
     tailscale_check_interval_seconds: int = 120  # 2 minutes
 
     # P2P orchestrator settings
-    p2p_port: int = 8770
-    p2p_base_url: str = "http://localhost:8770"
+    p2p_port: int = P2P_DEFAULT_PORT
+    p2p_base_url: str = field(default_factory=get_p2p_base_url)
 
     # Gossip sync
     gossip_port: int = 8771
@@ -1105,7 +1107,7 @@ class P2PClusterConfig:
     Migrated from scripts/unified_loop/config.py for consolidation.
     """
     enabled: bool = False  # Enable P2P cluster coordination
-    p2p_base_url: str = "http://localhost:8770"  # P2P orchestrator URL
+    p2p_base_url: str = field(default_factory=get_p2p_base_url)  # P2P orchestrator URL
     auth_token: str | None = None  # Auth token (defaults to RINGRIFT_CLUSTER_AUTH_TOKEN env)
     model_sync_enabled: bool = True  # Auto-sync models to cluster
     model_sync_on_promotion: bool = True  # Auto-sync when model is promoted

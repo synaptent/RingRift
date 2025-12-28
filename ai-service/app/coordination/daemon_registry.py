@@ -483,6 +483,13 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
         category="pipeline",
     ),
+    # NPZ Combination (December 2025) - quality-weighted NPZ combination
+    DaemonType.NPZ_COMBINATION: DaemonSpec(
+        runner_name="create_npz_combination",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
+        category="pipeline",
+        health_check_interval=60.0,
+    ),
     # =========================================================================
     # Data Integrity (December 2025)
     # =========================================================================

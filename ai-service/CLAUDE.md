@@ -96,7 +96,7 @@ python scripts/master_loop.py --skip-daemons
 **What it orchestrates:**
 
 - `SelfplayScheduler` - Priority-based selfplay allocation using curriculum weights, Elo velocities
-- `DaemonManager` - Lifecycle for all background daemons (70 types, 7 deprecated)
+- `DaemonManager` - Lifecycle for all background daemons (73 types, 7 deprecated)
 - `ClusterMonitor` - Real-time cluster health
 - `FeedbackLoopController` - Training feedback signals
 - `DataPipelineOrchestrator` - Pipeline stage tracking
@@ -491,7 +491,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 - **`daemon_manager.py`**: Lifecycle management, health checks, auto-restart (~2,000 LOC)
 - **`daemon_runners.py`**: Async runner functions for all daemon types (~1,100 LOC, Dec 2025 extraction)
 - **`daemon_registry.py`**: Declarative daemon specifications (~150 LOC, Dec 2025)
-- **`daemon_types.py`**: `DaemonType` enum with all 71 daemon types (7 deprecated)
+- **`daemon_types.py`**: `DaemonType` enum with all 73 daemon types (7 deprecated)
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
 - **`training_activity_daemon.py`**: Detects training activity, triggers priority sync (Dec 2025)
@@ -501,7 +501,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 The daemon system uses a three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative configuration (NEW Dec 2025)
-   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 71 daemon configurations
+   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 73 daemon configurations
    - `DaemonSpec` dataclass: runner_name, depends_on, category, auto_restart, health_check_interval
    - `get_daemons_by_category()`, `get_categories()`, `validate_registry()`
    - Replaces ~330 lines of imperative code with ~30 lines of declarations
@@ -729,7 +729,7 @@ Three main options - use the recommended one:
 
 | Script                 | Purpose                                 | Recommended?       |
 | ---------------------- | --------------------------------------- | ------------------ |
-| `master_loop.py`       | Full cluster automation with 71 daemons | ✅ Yes             |
+| `master_loop.py`       | Full cluster automation with 73 daemons | ✅ Yes             |
 | `run_training_loop.py` | Simple 1-config pipeline                | For single configs |
 | `unified_ai_loop.py`   | Legacy wrapper                          | ❌ Deprecated      |
 
@@ -737,23 +737,26 @@ Three main options - use the recommended one:
 
 Major consolidation effort completed December 2025:
 
-| Original Modules                                                                         | Consolidated To                          | LOC Saved       | Status   |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------- | --------------- | -------- |
-| `model_distribution_daemon.py` + `npz_distribution_daemon.py`                            | `unified_distribution_daemon.py`         | ~1,100          | Complete |
-| `lambda_idle_daemon.py` + `vast_idle_daemon.py`                                          | `unified_idle_shutdown_daemon.py`        | ~318            | Complete |
-| `replication_monitor.py` + `replication_repair_daemon.py`                                | `unified_replication_daemon.py`          | ~600            | Complete |
-| `system_health_monitor.py` (scoring)                                                     | `unified_health_manager.py`              | ~200            | Complete |
-| 3× GumbelAction/GumbelNode copies                                                        | `gumbel_common.py`                       | ~150            | Complete |
-| `distributed/cluster_monitor.py`                                                         | `coordination/cluster_status_monitor.py` | ~40 (shim)      | Complete |
-| `EloSyncManager` + `RegistrySyncManager`                                                 | `DatabaseSyncManager` base class         | ~567            | Complete |
-| 28 `_init_*()` functions in `coordination_bootstrap.py`                                  | `COORDINATOR_REGISTRY` + generic handler | ~17             | Complete |
-| 5× NodeStatus definitions                                                                | `node_status.py`                         | ~200            | Complete |
-| 5× FeedbackState definitions                                                             | `feedback_state.py`                      | ~100            | Complete |
-| DaemonManager factory methods (72 of 73)                                                 | `daemon_runners.py`                      | ~1,580          | Complete |
-| `GossipMetricsMixin` (226 LOC)                                                           | Merged into `GossipProtocolMixin`        | ~226            | Complete |
-| `tracing.py` + `distributed_lock.py` + `optional_imports.py` + `yaml_utils.py`           | `core_utils.py`                          | ~0 (re-exports) | Complete |
-| `coordinator_base.py` + `coordinator_dependencies.py`                                    | `core_base.py`                           | ~0 (re-exports) | Complete |
-| `event_router.py` + `event_mappings.py` + `event_emitters.py` + `event_normalization.py` | `core_events.py`                         | ~0 (re-exports) | Complete |
+| Original Modules                                                                         | Consolidated To                            | LOC Saved       | Status   |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------ | --------------- | -------- |
+| `model_distribution_daemon.py` + `npz_distribution_daemon.py`                            | `unified_distribution_daemon.py`           | ~1,100          | Complete |
+| `lambda_idle_daemon.py` + `vast_idle_daemon.py`                                          | `unified_idle_shutdown_daemon.py`          | ~318            | Complete |
+| `replication_monitor.py` + `replication_repair_daemon.py`                                | `unified_replication_daemon.py`            | ~600            | Complete |
+| `system_health_monitor.py` (scoring)                                                     | `unified_health_manager.py`                | ~200            | Complete |
+| 3× GumbelAction/GumbelNode copies                                                        | `gumbel_common.py`                         | ~150            | Complete |
+| `distributed/cluster_monitor.py`                                                         | `coordination/cluster_status_monitor.py`   | ~40 (shim)      | Complete |
+| `EloSyncManager` + `RegistrySyncManager`                                                 | `DatabaseSyncManager` base class           | ~567            | Complete |
+| 28 `_init_*()` functions in `coordination_bootstrap.py`                                  | `COORDINATOR_REGISTRY` + generic handler   | ~17             | Complete |
+| 5× NodeStatus definitions                                                                | `node_status.py`                           | ~200            | Complete |
+| 5× FeedbackState definitions                                                             | `feedback_state.py`                        | ~100            | Complete |
+| DaemonManager factory methods (72 of 73)                                                 | `daemon_runners.py`                        | ~1,580          | Complete |
+| `GossipMetricsMixin` (226 LOC)                                                           | Merged into `GossipProtocolMixin`          | ~226            | Complete |
+| `tracing.py` + `distributed_lock.py` + `optional_imports.py` + `yaml_utils.py`           | `core_utils.py`                            | ~0 (re-exports) | Complete |
+| `coordinator_base.py` + `coordinator_dependencies.py`                                    | `core_base.py`                             | ~0 (re-exports) | Complete |
+| `event_router.py` + `event_mappings.py` + `event_emitters.py` + `event_normalization.py` | `core_events.py`                           | ~0 (re-exports) | Complete |
+| CloudProvider `get_instance()` + `get_instance_status()` duplicates                      | Base class defaults in `providers/base.py` | ~36             | Complete |
+| VastProvider `_parse_gpu_type()` duplication                                             | `GPUType.from_string()` in base            | ~17             | Complete |
+| `sync_push_daemon._compute_sha256()` duplicate                                           | `sync_integrity.compute_file_checksum()`   | ~17             | Complete |
 
 **New Canonical Modules (December 2025 Wave 2):**
 
@@ -761,8 +764,8 @@ Major consolidation effort completed December 2025:
 | -------------------- | ------------------------------------------------------------- |
 | `node_status.py`     | Unified NodeHealthState enum + NodeMonitoringStatus dataclass |
 | `feedback_state.py`  | Canonical FeedbackState classes with 3-tier hierarchy         |
-| `daemon_runners.py`  | 71 daemon runner functions extracted from DaemonManager       |
-| `daemon_registry.py` | Declarative DaemonSpec registry for all 71 daemon types       |
+| `daemon_runners.py`  | 73 daemon runner functions extracted from DaemonManager       |
+| `daemon_registry.py` | Declarative DaemonSpec registry for all 73 daemon types       |
 
 **`node_status.py`** consolidates 5 duplicate NodeStatus definitions:
 
@@ -790,7 +793,7 @@ Major consolidation effort completed December 2025:
 
 **`daemon_registry.py`** provides declarative daemon configuration (Dec 27, 2025):
 
-- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 71 daemon configurations
+- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 73 daemon configurations
 - `DaemonSpec` dataclass with frozen=True for immutability:
   - `runner_name`: Function name in daemon_runners.py (e.g., "create_auto_sync")
   - `depends_on`: Tuple of DaemonTypes that must start first
@@ -2274,6 +2277,31 @@ Verified existing tests for master loop mutual exclusion:
 | **Total**           | **172** | **1,348**   | Critical infrastructure        |
 
 ### Infrastructure Fixes (Dec 28, 2025)
+
+**Code Consolidation (Session 8)**:
+
+- **TransportResult/TransportError**: Consolidated to `transport_base.py` as canonical location
+  - `cluster_transport.py` now imports from `transport_base.py`
+  - Added `RetryableTransportError` and `PermanentTransportError` subclasses
+  - Added `data` field and `to_dict()` method to TransportResult
+- **EventRouterStats**: Renamed from `CoordinatorStats` in `event_router.py` to avoid collision with `coordinator_base.py`
+- **FeedbackState**: Added deprecation notices to 4 duplicate classes pointing to `feedback_state.py`
+  - `feedback_loop_controller.py` → MonitoringFeedbackState
+  - `unified_feedback.py` → SignalFeedbackState
+  - `feedback_signals.py` → SignalFeedbackState
+  - `pipeline_feedback.py` → CanonicalFeedbackState (different purpose: global state)
+
+**Async Health Check for Cluster Monitor**:
+
+- Added `run_check_async()` to `HealthMonitor` base class (`app/monitoring/base.py`)
+- Added `check_health_async()` to `CompositeMonitor` for concurrent node checks
+- Fixes blocking behavior when nodes are slow/unreachable
+
+**AutoSyncDaemon Backpressure Integration**:
+
+- Added `_sync_paused` flag to pause sync during high cluster load
+- Subscribed to `BACKPRESSURE_ACTIVATED` and `BACKPRESSURE_RELEASED` events
+- Handlers in `sync_event_mixin.py` pause/resume sync operations
 
 **cross_process_events.py Circular Dependency Fix**:
 

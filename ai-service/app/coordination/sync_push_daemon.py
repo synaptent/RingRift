@@ -495,9 +495,13 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         if not self._session:
             return False
 
-        # Compute checksum
-        checksum = self._compute_sha256(file_path)
-        if not checksum:
+        # Compute checksum using consolidated sync_integrity module
+        try:
+            checksum = compute_file_checksum(file_path)
+        except (FileNotFoundError, PermissionError, OSError) as e:
+            logger.warning(
+                f"[{self._get_daemon_name()}] Error computing checksum for {file_path}: {e}"
+            )
             return False
 
         # Prepare request
@@ -661,26 +665,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
     # Utilities
     # =========================================================================
 
-    def _compute_sha256(self, file_path: Path) -> str | None:
-        """Compute SHA256 checksum of a file.
-
-        Args:
-            file_path: Path to the file
-
-        Returns:
-            Hex-encoded SHA256 hash, or None on error
-        """
-        try:
-            hasher = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                while chunk := f.read(8192):
-                    hasher.update(chunk)
-            return hasher.hexdigest()
-        except Exception as e:
-            logger.warning(
-                f"[{self._get_daemon_name()}] Error computing checksum for {file_path}: {e}"
-            )
-            return None
+    # _compute_sha256 removed Dec 2025 - use compute_file_checksum from sync_integrity
 
     async def _discover_coordinator(self) -> None:
         """Discover coordinator URL from P2P status.

@@ -2707,6 +2707,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
+        DaemonType.NPZ_COMBINATION,  # Dec 2025: Quality-weighted NPZ combination for training
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.DLQ_RETRY,  # P0.3: Dead letter queue remediation (Dec 2025)
         DaemonType.GAUNTLET_FEEDBACK,  # Dec 2025: Process evaluation results → emit REGRESSION_CRITICAL
@@ -2736,6 +2737,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.UTILIZATION_OPTIMIZER,  # Phase 4: Match GPU capabilities to workloads
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for local self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met
+        DaemonType.NPZ_COMBINATION,  # Dec 2025: Quality-weighted NPZ combination for training
         DaemonType.TRAINING_TRIGGER,  # Decide when to trigger training
         DaemonType.FEEDBACK_LOOP,  # Phase 21.2: Orchestrate all feedback signals
         DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback

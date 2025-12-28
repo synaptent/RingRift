@@ -47,6 +47,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config.ports import get_p2p_base_url
 from app.execution.executor import (
     ExecutorPool,
     LocalExecutor,
@@ -1412,8 +1413,8 @@ class P2PBackend(OrchestratorBackend):
         except ImportError:
             pass
 
-        # Try common localhost port
-        return "http://localhost:8770"
+        # Use canonical P2P URL
+        return get_p2p_base_url()
 
     async def get_available_workers(self) -> list[WorkerStatus]:
         """Get available workers from P2P cluster."""

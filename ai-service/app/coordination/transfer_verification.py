@@ -469,7 +469,8 @@ class TransferVerifier(SingletonMixin):
                 try:
                     path.unlink()
                     deleted += 1
-                except Exception as e:
+                except (OSError, PermissionError) as e:
+                    # Filesystem errors: permission denied, file in use, etc.
                     logger.warning(f"[TransferVerifier] Failed to delete {path}: {e}")
 
         # Remove from database

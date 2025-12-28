@@ -5,7 +5,7 @@ pipeline stages. It tracks stage transitions, coordinates downstream triggering,
 and provides pipeline-wide observability.
 
 Pipeline Stages:
-    SELFPLAY -> SYNC -> NPZ_EXPORT -> TRAINING -> EVALUATION -> PROMOTION
+    SELFPLAY -> SYNC -> NPZ_EXPORT -> NPZ_COMBINATION -> TRAINING -> EVALUATION -> PROMOTION
 
 Module Structure
 ----------------
@@ -300,6 +300,7 @@ class PipelineStage(Enum):
     SELFPLAY = "selfplay"
     DATA_SYNC = "data_sync"
     NPZ_EXPORT = "npz_export"
+    NPZ_COMBINATION = "npz_combination"  # December 2025: Quality-weighted NPZ combination
     TRAINING = "training"
     EVALUATION = "evaluation"
     PROMOTION = "promotion"
@@ -975,6 +976,17 @@ class DataPipelineOrchestrator(
             router.subscribe(
                 DataEventType.CONSOLIDATION_COMPLETE.value,
                 self._on_consolidation_complete,
+            )
+
+            # December 2025: Subscribe to NPZ combination events for quality-weighted data
+            # NPZ combination combines historical + fresh data with quality weighting
+            router.subscribe(
+                DataEventType.NPZ_COMBINATION_COMPLETE.value,
+                self._on_npz_combination_complete,
+            )
+            router.subscribe(
+                DataEventType.NPZ_COMBINATION_FAILED.value,
+                self._on_npz_combination_failed,
             )
 
             # December 2025: Wire previously orphaned critical events

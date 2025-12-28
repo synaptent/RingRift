@@ -502,6 +502,118 @@ async def trigger_npz_export(
         )
 
 
+async def trigger_npz_combination(
+    board_type: str,
+    num_players: int,
+    iteration: int,
+    config: ActionConfig | None = None,
+    freshness_weight: float = 1.5,
+    min_quality_score: float = 0.2,
+) -> StageCompletionResult:
+    """Trigger NPZ combination with quality-weighted weighting.
+
+    Combines all available NPZ files for the config into a single
+    combined file using quality and freshness weighting.
+
+    Args:
+        board_type: Board type (e.g., "hex8", "square8")
+        num_players: Number of players (2, 3, 4)
+        iteration: Pipeline iteration number
+        config: Action configuration
+        freshness_weight: Weight for fresher data (default: 1.5)
+        min_quality_score: Minimum quality score threshold (default: 0.2)
+
+    Returns:
+        StageCompletionResult with combination results
+    """
+    start_time = time.time()
+    config_key = f"{board_type}_{num_players}p"
+
+    try:
+        from app.training.npz_combiner import (
+            NPZCombinerConfig,
+            discover_and_combine_for_config,
+        )
+        from app.distributed.data_events import DataEventType, emit_data_event
+
+        root = _get_ai_service_root()
+        output_path = root / "data" / "training" / f"{config_key}_combined.npz"
+
+        combiner_config = NPZCombinerConfig(
+            freshness_weight=freshness_weight,
+            min_quality_score=min_quality_score,
+            deduplicate=True,
+        )
+
+        # Run combination
+        result = discover_and_combine_for_config(
+            config_key=config_key,
+            output_path=output_path,
+            combiner_config=combiner_config,
+        )
+
+        duration = time.time() - start_time
+
+        if result.success:
+            logger.info(
+                f"[PipelineActions] NPZ combination completed in {duration:.1f}s: "
+                f"{result.total_samples} samples -> {output_path}"
+            )
+
+            # Emit completion event
+            emit_data_event(
+                DataEventType.NPZ_COMBINATION_COMPLETE,
+                config_key=config_key,
+                output_path=str(output_path),
+                total_samples=result.total_samples,
+                samples_by_source=result.samples_by_source,
+                source="pipeline_actions",
+            )
+
+            return StageCompletionResult(
+                success=True,
+                stage="npz_combination",
+                iteration=iteration,
+                duration_seconds=duration,
+                output_path=str(output_path),
+                metadata={
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "total_samples": result.total_samples,
+                    "samples_by_source": result.samples_by_source,
+                },
+            )
+        else:
+            logger.warning(f"[PipelineActions] NPZ combination failed: {result.error}")
+
+            # Emit failure event
+            emit_data_event(
+                DataEventType.NPZ_COMBINATION_FAILED,
+                config_key=config_key,
+                error=result.error,
+                source="pipeline_actions",
+            )
+
+            return StageCompletionResult(
+                success=False,
+                stage="npz_combination",
+                iteration=iteration,
+                duration_seconds=duration,
+                error=result.error,
+            )
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.exception(f"[PipelineActions] NPZ combination error: {e}")
+        return StageCompletionResult(
+            success=False,
+            stage="npz_combination",
+            iteration=iteration,
+            duration_seconds=duration,
+            error=str(e),
+        )
+
+
 async def trigger_training(
     board_type: str,
     num_players: int,
