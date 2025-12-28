@@ -1218,6 +1218,23 @@ class AutoSyncDaemon:
             )
             return False
 
+        # Dec 2025: CRITICAL - Checkpoint WAL before transfer to prevent corruption
+        # Without this, WAL mode databases may transfer without their -wal files,
+        # resulting in missing transactions and data corruption
+        try:
+            from app.coordination.sync_integrity import prepare_database_for_transfer
+            success, msg = prepare_database_for_transfer(Path(db_path))
+            if not success:
+                logger.warning(
+                    f"[AutoSyncDaemon] Failed to prepare {db_path} for transfer: {msg}"
+                )
+                # Continue anyway - may still work for non-WAL databases
+        except ImportError:
+            logger.debug("[AutoSyncDaemon] sync_integrity not available, skipping prepare step")
+        except (OSError, sqlite3.Error) as e:
+            logger.warning(f"[AutoSyncDaemon] Error preparing database: {e}")
+            # Continue anyway - database may still be transferable
+
         # Check circuit breaker before attempting sync (December 2025)
         if self._circuit_breaker and not self._circuit_breaker.allow_request(target_node):
             logger.debug(
