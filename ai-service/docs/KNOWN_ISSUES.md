@@ -69,16 +69,25 @@ result = robust_push("file.npz", "host", 22, "/path/file.npz", TransferConfig())
 
 ---
 
-### Lambda Labs Nodes Terminated (Dec 2025)
+### Lambda Labs Nodes (Dec 2025)
 
-**Issue:** Lambda Labs account terminated December 2025. All Lambda nodes permanently offline.
+**History:**
 
-**Impact:**
+- December 2025: Account terminated, all nodes offline
+- December 28, 2025: Account restored, new GH200 instances being provisioned
 
-- GH200 nodes (a, b-new, d, g, h, i, o, p, q, r, s, t) unavailable
-- H100 nodes (lambda-h100, lambda-2xh100) unavailable
+**Current Status:** ACTIVE - 6 GH200 nodes being set up
 
-**Status:** PERMANENT - Use alternative providers (Vast.ai, RunPod, Nebius, Vultr)
+**Nodes Configured:**
+
+- lambda-gh200-1 through lambda-gh200-5 (96GB each)
+- lambda-gh200-training (96GB)
+
+**Setup Required:**
+
+- Tailscale registration pending
+- RingRift repository needs deployment
+- See `config/distributed_hosts.yaml` for configuration
 
 ---
 

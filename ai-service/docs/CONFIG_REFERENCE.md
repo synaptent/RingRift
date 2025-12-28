@@ -312,26 +312,26 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 
 #### Core cluster and routing
 
-| Variable                           | Description                            | Default                 |
-| ---------------------------------- | -------------------------------------- | ----------------------- |
-| `RINGRIFT_COORDINATOR_URL`         | Coordinator service URL                | `unset`                 |
-| `RINGRIFT_COORDINATOR_IP`          | Coordinator IP address                 | `unset`                 |
-| `RINGRIFT_P2P_URL`                 | P2P service URL                        | `http://localhost:8770` |
-| `RINGRIFT_P2P_SEEDS`               | Comma list of P2P seed nodes           | `unset`                 |
-| `RINGRIFT_P2P_LEADER_URL`          | P2P leader URL override                | `unset`                 |
-| `RINGRIFT_P2P_AGENT_MODE`          | Enable P2P agent mode                  | `false`                 |
-| `RINGRIFT_CLUSTER_AUTH_TOKEN`      | Cluster auth token                     | `unset`                 |
-| `RINGRIFT_CLUSTER_AUTH_TOKEN_FILE` | Cluster auth token file                | `unset`                 |
-| `RINGRIFT_BUILD_VERSION`           | Build/version label                    | `dev`                   |
-| `RINGRIFT_DISABLE_LOCAL_TASKS`     | Disable local tasks (coordinator-only) | `false`                 |
-| `RINGRIFT_HEALTH_PORT`             | Health server port (daemon manager)    | `8790`                  |
-| `RINGRIFT_DISCOVERY_INTERVAL`      | Discovery interval (seconds)           | `60`                    |
-| `RINGRIFT_IDLE_CHECK_INTERVAL`     | Idle check interval (seconds)          | `60`                    |
+| Variable                           | Description                                                                      | Default                 |
+| ---------------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
+| `RINGRIFT_COORDINATOR_URL`         | Coordinator service URL                                                          | `unset`                 |
+| `RINGRIFT_COORDINATOR_IP`          | Coordinator IP address                                                           | `unset`                 |
+| `RINGRIFT_P2P_URL`                 | P2P service URL                                                                  | `http://localhost:8770` |
+| `RINGRIFT_P2P_SEEDS`               | Comma list of P2P seed nodes                                                     | `unset`                 |
+| `RINGRIFT_P2P_LEADER_URL`          | P2P leader URL override                                                          | `unset`                 |
+| `RINGRIFT_P2P_AGENT_MODE`          | Enable P2P agent mode                                                            | `false`                 |
+| `RINGRIFT_CLUSTER_AUTH_TOKEN`      | Cluster auth token                                                               | `unset`                 |
+| `RINGRIFT_CLUSTER_AUTH_TOKEN_FILE` | Cluster auth token file                                                          | `unset`                 |
+| `RINGRIFT_BUILD_VERSION`           | Build/version label                                                              | `dev`                   |
+| `RINGRIFT_DISABLE_LOCAL_TASKS`     | Disable local tasks (coordinator-only)                                           | `false`                 |
+| `RINGRIFT_HEALTH_PORT`             | Health server port (daemon manager)                                              | `8790`                  |
+| `RINGRIFT_DISCOVERY_INTERVAL`      | Discovery interval (seconds)                                                     | `60`                    |
+| `RINGRIFT_IDLE_CHECK_INTERVAL`     | Idle check interval (seconds)                                                    | `60`                    |
 | `RINGRIFT_IDLE_THRESHOLD`          | Idle GPU utilization threshold (%). Legacy alias: `RINGRIFT_IDLE_GPU_THRESHOLD`. | `10.0`                  |
-| `RINGRIFT_IDLE_DURATION`           | Seconds before a resource is idle      | `120`                   |
-| `RINGRIFT_IDLE_RESOURCE_ENABLED`   | Enable idle resource daemon            | `true`                  |
-| `RINGRIFT_AUTO_ASSIGN_ENABLED`     | Auto-assign work to idle nodes         | `true`                  |
-| `RINGRIFT_MAX_DISK_PERCENT`        | Max disk usage percent                 | `70.0`                  |
+| `RINGRIFT_IDLE_DURATION`           | Seconds before a resource is idle                                                | `120`                   |
+| `RINGRIFT_IDLE_RESOURCE_ENABLED`   | Enable idle resource daemon                                                      | `true`                  |
+| `RINGRIFT_AUTO_ASSIGN_ENABLED`     | Auto-assign work to idle nodes                                                   | `true`                  |
+| `RINGRIFT_MAX_DISK_PERCENT`        | Max disk usage percent                                                           | `70.0`                  |
 
 #### Node role and workload gating
 
@@ -397,7 +397,7 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 
 #### Provider idle controls (Lambda)
 
-> **Note:** Lambda account is suspended; these remain for eventual restoration.
+> **Note:** Lambda account restored Dec 28, 2025. GH200 nodes being provisioned.
 
 | Variable                         | Description                              | Default |
 | -------------------------------- | ---------------------------------------- | ------- |
