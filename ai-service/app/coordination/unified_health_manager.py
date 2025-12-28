@@ -17,6 +17,7 @@ Event Integration:
 - Subscribes to TASK_FAILED: Track task failures
 - Subscribes to REGRESSION_DETECTED: Track model regressions
 - Subscribes to HOST_OFFLINE: Track offline hosts for recovery
+- Subscribes to HOST_ONLINE: Track hosts coming online (Dec 2025)
 - Subscribes to NODE_RECOVERED: Update recovery state
 - Subscribes to PARITY_FAILURE_RATE_CHANGED: Alert on TS/Python parity issues (Dec 2025)
 - Subscribes to COORDINATOR_HEALTH_DEGRADED: Track coordinator health issues (Dec 2025)
@@ -511,8 +512,9 @@ class UnifiedHealthManager(CoordinatorBase):
             router.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
             router.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
 
-            # Node events (from RecoveryManager)
+            # Node events (from RecoveryManager and P2P orchestrator)
             router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+            router.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
             router.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
 
             # Parity monitoring (December 2025 - closes parity → alert loop)
@@ -527,6 +529,12 @@ class UnifiedHealthManager(CoordinatorBase):
 
             # Deadlock detection (December 2025 - critical lock contention handler)
             router.subscribe(DataEventType.DEADLOCK_DETECTED, self._on_deadlock_detected)
+
+            # Split-brain detection (December 2025 - P2P cluster integrity)
+            router.subscribe(DataEventType.SPLIT_BRAIN_DETECTED, self._on_split_brain_detected)
+
+            # Cluster stall detection (December 2025 - stuck nodes recovery)
+            router.subscribe(DataEventType.CLUSTER_STALL_DETECTED, self._on_cluster_stall_detected)
 
             # Daemon lifecycle events (December 2025 - wires orphaned events to health monitor)
             router.subscribe(DataEventType.DAEMON_STARTED, self._on_daemon_started)
@@ -869,6 +877,24 @@ class UnifiedHealthManager(CoordinatorBase):
 
         logger.warning(f"[UnifiedHealthManager] Host offline: {node_id}")
 
+    async def _on_host_online(self, event) -> None:
+        """Handle HOST_ONLINE event from P2P orchestrator.
+
+        December 2025: Added for P2P cluster integration.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+        node_id = payload.get("node_id") or payload.get("host_id", "")
+
+        if not node_id:
+            return
+
+        state = self._get_node_state(node_id)
+        state.is_online = True
+        state.offline_since = 0.0
+        state.consecutive_failures = 0
+
+        logger.info(f"[UnifiedHealthManager] Host online: {node_id}")
+
     async def _on_node_recovered(self, event) -> None:
         """Handle NODE_RECOVERED event."""
         payload = event.payload
@@ -1198,6 +1224,116 @@ class UnifiedHealthManager(CoordinatorBase):
             "lock_manager",
             f"Deadlock detected: {len(resources)} resources involved",
         )
+
+    async def _on_split_brain_detected(self, event) -> None:
+        """Handle SPLIT_BRAIN_DETECTED event - log and trigger resolution.
+
+        Dec 2025: Critical handler for P2P cluster split-brain scenarios.
+        When multiple leaders are detected in the cluster:
+        1. Log critical error for immediate investigation
+        2. Record involved leaders and voter information
+        3. Trigger circuit breaker for P2P subsystem
+        4. Escalate for human intervention
+
+        Note: Actual split-brain resolution (demoting stale leaders) is handled
+        by leader_election.py's _resolve_split_brain() method.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        leaders_seen = payload.get("leaders_seen", [])
+        voter_count = payload.get("voter_count", 0)
+        severity = payload.get("severity", "warning")
+
+        logger.critical(
+            f"[UnifiedHealthManager] SPLIT-BRAIN DETECTED: "
+            f"Leaders: {leaders_seen}, Voters: {voter_count}, Severity: {severity}"
+        )
+
+        # Create error record
+        error = ErrorRecord(
+            error_id=f"split_brain_{int(time.time() * 1000)}",
+            timestamp=time.time(),
+            component="p2p_cluster",
+            error_type="split_brain",
+            message=f"Split-brain detected: {len(leaders_seen)} leaders seen",
+            severity=ErrorSeverity.CRITICAL if severity == "critical" else ErrorSeverity.ERROR,
+            context={
+                "leaders_seen": leaders_seen,
+                "voter_count": voter_count,
+                "severity": severity,
+            },
+        )
+        self._record_error(error)
+
+        # Trigger circuit breaker for P2P subsystem
+        for _ in range(3):
+            self._on_component_failure("p2p_cluster")
+
+        # Escalate for manual intervention
+        await self._escalate_to_human(
+            "p2p_cluster",
+            f"Split-brain detected: {len(leaders_seen)} leaders in cluster",
+        )
+
+    async def _on_cluster_stall_detected(self, event) -> None:
+        """Handle CLUSTER_STALL_DETECTED event - trigger node recovery.
+
+        Dec 2025: Handler for stuck nodes that aren't making game progress.
+        When cluster stall is detected:
+        1. Log warning for investigation
+        2. Record stalled nodes
+        3. Mark nodes as unhealthy in tracking
+        4. Trigger recovery action via node_recovery_daemon
+
+        This handler connects stall detection to the recovery pipeline.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        stalled_nodes = payload.get("stalled_nodes", [])
+        stall_duration_seconds = payload.get("stall_duration_seconds", 0)
+        last_game_progress = payload.get("last_game_progress", 0)
+
+        logger.warning(
+            f"[UnifiedHealthManager] CLUSTER STALL DETECTED: "
+            f"Nodes: {stalled_nodes}, Stall duration: {stall_duration_seconds}s"
+        )
+
+        # Mark stalled nodes as unhealthy
+        for node_id in stalled_nodes:
+            if node_id in self._node_states:
+                state = self._node_states[node_id]
+                state.is_responsive = False
+                state.consecutive_failures += 1
+
+        # Create error record
+        error = ErrorRecord(
+            error_id=f"cluster_stall_{int(time.time() * 1000)}",
+            timestamp=time.time(),
+            component="cluster",
+            error_type="stall_detected",
+            message=f"Cluster stall: {len(stalled_nodes)} nodes stuck for {stall_duration_seconds}s",
+            severity=ErrorSeverity.WARNING,
+            context={
+                "stalled_nodes": stalled_nodes,
+                "stall_duration_seconds": stall_duration_seconds,
+                "last_game_progress": last_game_progress,
+            },
+        )
+        self._record_error(error)
+
+        # Emit NODE_UNHEALTHY for each stalled node to trigger recovery
+        try:
+            from app.distributed.data_events import DataEventType, get_event_bus
+
+            bus = get_event_bus()
+            for node_id in stalled_nodes:
+                bus.emit(DataEventType.NODE_UNHEALTHY, {
+                    "node_id": node_id,
+                    "reason": "cluster_stall",
+                    "stall_duration_seconds": stall_duration_seconds,
+                })
+        except ImportError:
+            logger.debug("[UnifiedHealthManager] data_events not available for recovery trigger")
 
     async def _on_daemon_started(self, event) -> None:
         """Handle DAEMON_STARTED event - track daemon health (December 2025).

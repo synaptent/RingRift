@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.health_check_helper import HealthCheckHelper
 from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -298,16 +299,19 @@ class TrainingActivityDaemon(BaseDaemon[TrainingActivityConfig]):
                 details=details,
             )
 
-        # Check for high error rate
-        if self._cycles_completed > 10:
-            error_rate = self._errors_count / self._cycles_completed
-            if error_rate > 0.5:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.ERROR,
-                    message=f"High error rate: {error_rate:.1%}",
-                    details=details,
-                )
+        # Check for high error rate using HealthCheckHelper
+        is_healthy, msg = HealthCheckHelper.check_error_rate(
+            errors=self._errors_count,
+            cycles=self._cycles_completed,
+            threshold=0.5,
+        )
+        if not is_healthy:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=msg,
+                details=details,
+            )
 
         return HealthCheckResult(
             healthy=True,

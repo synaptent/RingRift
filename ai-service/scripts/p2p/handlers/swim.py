@@ -2,6 +2,8 @@
 
 Provides HTTP endpoints for SWIM membership protocol status and member listing.
 
+December 2025: Migrated to use BaseP2PHandler for consistent response formatting.
+
 Usage:
     class P2POrchestrator(SwimHandlersMixin, ...):
         pass
@@ -18,6 +20,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
+
+from scripts.p2p.handlers.base import BaseP2PHandler
 
 if TYPE_CHECKING:
     pass
@@ -49,12 +53,14 @@ except ImportError:
     MEMBERSHIP_MODE = "http"
 
 
-class SwimHandlersMixin:
+class SwimHandlersMixin(BaseP2PHandler):
     """Mixin providing SWIM HTTP handlers.
 
+    Inherits from BaseP2PHandler for consistent response formatting.
+
     Requires the implementing class to have:
-    - node_id: str
-    - auth_token: str | None
+    - node_id: str (from BaseP2PHandler)
+    - auth_token: str | None (from BaseP2PHandler)
     - _swim_manager: SwimMembershipManager | None
     - _swim_started: bool
     - _is_request_authorized(request) method
@@ -62,8 +68,6 @@ class SwimHandlersMixin:
     """
 
     # Type hints for IDE support
-    node_id: str
-    auth_token: str | None
     _swim_manager: Any  # Optional[SwimMembershipManager]
     _swim_started: bool
 
@@ -120,18 +124,17 @@ class SwimHandlersMixin:
                 "timestamp": time.time(),
             }
 
-            return web.json_response(response)
+            return self.json_response(response)
 
         except Exception as e:
             logger.error(f"Error in handle_swim_status: {e}", exc_info=True)
-            return web.json_response(
-                {
-                    "error": str(e),
-                    "node_id": self.node_id,
+            return self.error_response(
+                str(e),
+                status=500,
+                details={
                     "swim_enabled": SWIM_ENABLED,
                     "swim_available": SWIM_AVAILABLE,
                 },
-                status=500,
             )
 
     async def handle_swim_members(self, request: web.Request) -> web.Response:
@@ -167,7 +170,7 @@ class SwimHandlersMixin:
             swim_manager = getattr(self, "_swim_manager", None)
 
             if not swim_started or swim_manager is None:
-                return web.json_response(
+                return self.json_response(
                     {
                         "node_id": self.node_id,
                         "swim_started": False,
@@ -221,7 +224,7 @@ class SwimHandlersMixin:
                 logger.warning(f"Error getting SWIM members: {e}")
                 # Return what we have
 
-            return web.json_response(
+            return self.json_response(
                 {
                     "node_id": self.node_id,
                     "swim_started": swim_started,
@@ -235,12 +238,11 @@ class SwimHandlersMixin:
 
         except Exception as e:
             logger.error(f"Error in handle_swim_members: {e}", exc_info=True)
-            return web.json_response(
-                {
-                    "error": str(e),
-                    "node_id": self.node_id,
+            return self.error_response(
+                str(e),
+                status=500,
+                details={
                     "swim_started": False,
                     "members": [],
                 },
-                status=500,
             )

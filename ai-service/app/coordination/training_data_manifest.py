@@ -46,6 +46,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +75,7 @@ class TrainingDataEntry:
     sample_count: int | None = None  # If known from NPZ metadata
     version: str | None = None  # Model version (v2, v3, v4, etc.)
     quality_score: float | None = None  # 0-1 quality metric
+    newest_game_time: datetime | None = None  # Timestamp of newest game in dataset
 
     @property
     def size_mb(self) -> float:
@@ -79,6 +86,14 @@ class TrainingDataEntry:
     def size_gb(self) -> float:
         """Size in gigabytes."""
         return self.size_bytes / (1024 * 1024 * 1024)
+
+    @property
+    def age_hours(self) -> float | None:
+        """Age in hours since newest game (or file modified time as fallback)."""
+        ref_time = self.newest_game_time or self.modified_time
+        if not ref_time:
+            return None
+        return (datetime.now(tz=timezone.utc) - ref_time).total_seconds() / 3600
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -93,6 +108,9 @@ class TrainingDataEntry:
             "sample_count": self.sample_count,
             "version": self.version,
             "quality_score": self.quality_score,
+            "newest_game_time": (
+                self.newest_game_time.isoformat() if self.newest_game_time else None
+            ),
         }
 
     @classmethod
@@ -111,6 +129,11 @@ class TrainingDataEntry:
             sample_count=data.get("sample_count"),
             version=data.get("version"),
             quality_score=data.get("quality_score"),
+            newest_game_time=(
+                datetime.fromisoformat(data["newest_game_time"])
+                if data.get("newest_game_time")
+                else None
+            ),
         )
 
 
@@ -193,18 +216,21 @@ class TrainingDataManifest:
         config_key: str,
         prefer_source: DataSource | None = None,
         min_size_mb: float = 0,
+        max_age_hours: float | None = None,
+        freshness_weight: float = 0.4,
     ) -> TrainingDataEntry | None:
         """Get the best available training data for a config.
 
-        Priority:
-        1. Preferred source (if specified)
-        2. Largest file size
-        3. Quality score (if available)
+        Uses combined scoring that balances data size and freshness:
+            score = size_weight * (size / max_size) + freshness_weight * (1 / (1 + age_hours))
 
         Args:
             config_key: Config key (e.g., 'hex8_2p')
             prefer_source: Preferred data source (optional)
             min_size_mb: Minimum file size in MB
+            max_age_hours: Maximum acceptable data age in hours (optional)
+            freshness_weight: Weight for freshness (0-1). Size weight = 1 - freshness_weight.
+                              Default 0.4 means 40% freshness, 60% size.
 
         Returns:
             Best training data entry, or None if not found
@@ -219,14 +245,45 @@ class TrainingDataManifest:
         if not filtered:
             return None
 
-        # If preferred source specified, try to get from that source
+        # Filter by max age if specified
+        if max_age_hours is not None:
+            filtered = [
+                e for e in filtered
+                if e.age_hours is None or e.age_hours <= max_age_hours
+            ]
+            if not filtered:
+                return None
+
+        # If preferred source specified, filter to that source
         if prefer_source:
             source_data = [e for e in filtered if e.source == prefer_source]
             if source_data:
-                return source_data[0]  # Already sorted by size
+                filtered = source_data
 
-        # Otherwise return largest
-        return filtered[0]
+        # Single entry - no scoring needed
+        if len(filtered) == 1:
+            return filtered[0]
+
+        # Combined scoring
+        max_size = max(e.size_bytes for e in filtered)
+        size_weight = 1.0 - freshness_weight
+
+        def score(entry: TrainingDataEntry) -> float:
+            # Size score: proportion of max size
+            size_score = entry.size_bytes / max_size if max_size > 0 else 0
+
+            # Freshness score: inverse decay with age
+            # age=0h -> 1.0, age=1h -> 0.5, age=3h -> 0.25, etc.
+            age = entry.age_hours
+            if age is None:
+                # Unknown age - assume moderately stale (equivalent to 12h)
+                freshness_score = 1.0 / (1.0 + 12.0)
+            else:
+                freshness_score = 1.0 / (1.0 + age)
+
+            return size_weight * size_score + freshness_weight * freshness_score
+
+        return max(filtered, key=score)
 
     def get_configs(self) -> list[str]:
         """Get all config keys with available data."""
@@ -247,6 +304,34 @@ class TrainingDataManifest:
             }
         return summary
 
+    def _extract_npz_freshness(self, npz_path: Path) -> datetime | None:
+        """Extract newest_game_time from NPZ metadata.
+
+        NPZ files exported by export_replay_dataset.py contain a 'metadata'
+        array with 'newest_game_time' field indicating when the newest game
+        in the dataset was completed.
+
+        Args:
+            npz_path: Path to the NPZ file
+
+        Returns:
+            Datetime of newest game, or None if unavailable
+        """
+        if not NUMPY_AVAILABLE:
+            return None
+
+        try:
+            with np.load(npz_path, allow_pickle=True) as npz:
+                if "metadata" in npz.files:
+                    metadata = npz["metadata"].item()
+                    if isinstance(metadata, dict) and "newest_game_time" in metadata:
+                        newest_time_str = metadata["newest_game_time"]
+                        if newest_time_str:
+                            return datetime.fromisoformat(newest_time_str)
+        except (OSError, ValueError, TypeError, KeyError) as e:
+            logger.debug(f"Failed to extract freshness from {npz_path}: {e}")
+        return None
+
     async def refresh_local(self, data_dir: Path | None = None) -> int:
         """Refresh entries from local disk."""
         data_dir = data_dir or LOCAL_TRAINING_DIR
@@ -262,12 +347,17 @@ class TrainingDataManifest:
                 continue
 
             stat = npz_file.stat()
+
+            # Extract freshness from NPZ metadata
+            newest_game_time = self._extract_npz_freshness(npz_file)
+
             entry = TrainingDataEntry(
                 config_key=config_key,
                 source=DataSource.LOCAL,
                 path=str(npz_file.absolute()),
                 size_bytes=stat.st_size,
                 modified_time=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                newest_game_time=newest_game_time,
             )
             self.add_entry(entry)
             count += 1

@@ -780,6 +780,7 @@ hosts:
   # Provisioned Dec 26, 2025 to replace deleted nodes
   nebius-h100-3:
     ssh_host: 89.169.110.128
+    tailscale_ip: 100.109.195.71
     ssh_port: 22
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster

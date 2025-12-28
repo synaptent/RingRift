@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.health_check_helper import HealthCheckHelper
 from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
 
 logger = logging.getLogger(__name__)
@@ -871,16 +872,20 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
                 details=details,
             )
 
-        # Check error rate in recent consolidations
+        # Check error rate in recent consolidations using HealthCheckHelper
         recent = self._stats_history[-20:] if self._stats_history else []
         if recent:
             error_count = sum(1 for s in recent if not s.success)
-            error_rate = error_count / len(recent)
-            if error_rate > 0.5:
+            is_healthy, msg = HealthCheckHelper.check_error_rate(
+                errors=error_count,
+                cycles=len(recent),
+                threshold=0.5,
+            )
+            if not is_healthy:
                 return HealthCheckResult(
                     healthy=False,
                     status=CoordinatorStatus.DEGRADED,
-                    message=f"DataConsolidationDaemon has high error rate: {error_rate:.1%}",
+                    message=f"DataConsolidationDaemon {msg}",
                     details=details,
                 )
 

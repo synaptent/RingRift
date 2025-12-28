@@ -611,9 +611,38 @@ class CompositeScaleAdapter:
         return new_nodes
 
     async def scale_down(self, node_ids: list[str]) -> int:
-        """Terminate specified nodes.
+        """Terminate specified nodes with DATA PROTECTION.
 
         RELUCTANT TERMINATION: Only terminates after extensive verification.
+
+        DATA PROTECTION REQUIREMENTS (December 2025):
+        Before terminating ANY node, this method MUST:
+
+        1. TRY UTILIZATION FIRST:
+           - Attempt to reassign pending work to the node
+           - Check if jobs from other overloaded nodes can be rebalanced here
+           - Only proceed if node genuinely cannot be utilized
+
+        2. SYNC ALL VALUABLE DATA:
+           - Sync game databases (*.db) to coordinator or OWC drive
+           - Sync model checkpoints (*.pth) if any
+           - Sync training NPZ files if generated on this node
+           - Use _sync_node_data_before_termination()
+
+        3. VERIFY DATA INTEGRITY:
+           - Confirm data was received on destination nodes
+           - Verify checksums match source files
+           - Use _verify_data_synced()
+
+        4. ONLY THEN TERMINATE:
+           - Record termination reason for audit
+           - Clean up tracking state
+
+        IMPLEMENTATION STATUS:
+        - [STUB] _try_utilize_node() - Not yet implemented
+        - [STUB] _sync_node_data_before_termination() - Not yet implemented
+        - [STUB] _verify_data_synced() - Not yet implemented
+        - [DONE] Basic termination flow with provider detection
         """
         now = time.time()
 
@@ -709,6 +738,132 @@ class CompositeScaleAdapter:
     def get_all_idle_statuses(self) -> dict[str, NodeIdleStatus]:
         """Get idle status for all tracked nodes."""
         return self._node_idle_status.copy()
+
+    # ========================================================================
+    # Data Protection Methods (STUBS - December 2025)
+    # ========================================================================
+    # These methods implement the DATA PROTECTION REQUIREMENTS for scale-down.
+    # They must be completed before enabling production auto-termination.
+
+    async def _try_utilize_node(self, node_id: str) -> bool:
+        """Attempt to utilize a node before considering termination.
+
+        DATA PROTECTION STEP 1: Try all available methods to use the node.
+
+        Checks performed:
+        1. Is there pending work in the queue that can be assigned?
+        2. Can jobs from overloaded nodes be rebalanced here?
+        3. Are there upcoming scheduled jobs that need this capacity?
+
+        Returns:
+            True if node was successfully assigned work (don't terminate).
+            False if node genuinely cannot be utilized (may terminate).
+
+        TODO (P1 - Required before production):
+        - Integrate with WorkQueue to check pending items
+        - Integrate with JobManager to check rebalancing opportunities
+        - Check scheduled jobs from SelfplayScheduler
+        """
+        logger.warning(f"[STUB] _try_utilize_node({node_id}): Not implemented")
+        # Default: allow termination (stub returns False = not utilized)
+        return False
+
+    async def _sync_node_data_before_termination(self, node_id: str) -> bool:
+        """Sync all valuable data from a node before termination.
+
+        DATA PROTECTION STEP 2: Backup all data to coordinator/OWC.
+
+        Data types to sync:
+        1. Game databases (data/games/*.db) -> coordinator OWC drive
+        2. Model checkpoints (models/*.pth) -> coordinator OWC drive
+        3. Training NPZ files (data/training/*.npz) -> coordinator OWC drive
+        4. Logs if valuable (logs/) -> optional
+
+        Returns:
+            True if all valuable data was synced successfully.
+            False if sync failed (DO NOT terminate).
+
+        TODO (P0 - Critical for data safety):
+        - Get SSH connection info for node from cluster_config
+        - Use rsync or SyncFacade to transfer files
+        - Handle partial failures gracefully (retry before giving up)
+        - Log transferred file sizes for audit
+        """
+        logger.warning(f"[STUB] _sync_node_data_before_termination({node_id}): Not implemented")
+        # Default: block termination if sync not implemented
+        logger.error(f"Data sync not implemented - refusing to terminate {node_id}")
+        return False
+
+    async def _verify_data_synced(self, node_id: str) -> bool:
+        """Verify data integrity after sync and before termination.
+
+        DATA PROTECTION STEP 3: Confirm data reached destination safely.
+
+        Verification checks:
+        1. All synced files exist on destination
+        2. File sizes match source
+        3. Checksums (SHA256) match for critical files (models, databases)
+
+        Returns:
+            True if all data verified successfully.
+            False if verification failed (DO NOT terminate).
+
+        TODO (P0 - Critical for data safety):
+        - Query destination node for file inventory
+        - Compare checksums with source files
+        - Handle network failures gracefully
+        """
+        logger.warning(f"[STUB] _verify_data_synced({node_id}): Not implemented")
+        # Default: block termination if verification not implemented
+        logger.error(f"Data verification not implemented - refusing to terminate {node_id}")
+        return False
+
+    async def _safe_terminate_with_data_protection(self, node_id: str) -> bool:
+        """Terminate a node with full data protection workflow.
+
+        This is the SAFE termination method that implements all data protection
+        requirements. Use this instead of direct provider.terminate_instance().
+
+        Workflow:
+        1. Try to utilize the node first (_try_utilize_node)
+        2. If not utilizable, sync data (_sync_node_data_before_termination)
+        3. Verify sync (_verify_data_synced)
+        4. Only then terminate via provider
+
+        Returns:
+            True if node was terminated safely (data protected).
+            False if termination was blocked (utilization found or data protection failed).
+        """
+        # Step 1: Try to utilize before terminating
+        if await self._try_utilize_node(node_id):
+            logger.info(f"Node {node_id} was assigned work - skipping termination")
+            return False
+
+        # Step 2: Sync data before termination
+        if not await self._sync_node_data_before_termination(node_id):
+            logger.error(f"Failed to sync data from {node_id} - blocking termination")
+            return False
+
+        # Step 3: Verify data was synced
+        if not await self._verify_data_synced(node_id):
+            logger.error(f"Failed to verify data sync for {node_id} - blocking termination")
+            return False
+
+        # Step 4: Safe to terminate
+        provider = self._get_provider_for_node(node_id)
+        if not provider:
+            logger.warning(f"No provider found for {node_id} - cannot terminate")
+            return False
+
+        try:
+            success = await provider.terminate_instance(node_id)
+            if success:
+                logger.info(f"Successfully terminated {node_id} with data protection")
+                self._node_idle_status.pop(node_id, None)
+            return success
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to terminate {node_id}: {e}")
+            return False
 
 
 # ============================================================================

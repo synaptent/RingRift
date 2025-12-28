@@ -47,7 +47,7 @@ from app.config.thresholds import (
 )
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_router import DataEventType
-from app.coordination.base_event_handler import BaseEventHandler, EventHandlerConfig
+from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
 
 logger = logging.getLogger(__name__)
 

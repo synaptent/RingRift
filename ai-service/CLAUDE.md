@@ -491,7 +491,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 - **`daemon_manager.py`**: Lifecycle management, health checks, auto-restart (~2,000 LOC)
 - **`daemon_runners.py`**: Async runner functions for all daemon types (~1,100 LOC, Dec 2025 extraction)
 - **`daemon_registry.py`**: Declarative daemon specifications (~150 LOC, Dec 2025)
-- **`daemon_types.py`**: `DaemonType` enum with all 70 daemon types (7 deprecated)
+- **`daemon_types.py`**: `DaemonType` enum with all 71 daemon types (7 deprecated)
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
 - **`training_activity_daemon.py`**: Detects training activity, triggers priority sync (Dec 2025)
@@ -501,7 +501,7 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 The daemon system uses a three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative configuration (NEW Dec 2025)
-   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 70 daemon configurations
+   - `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 71 daemon configurations
    - `DaemonSpec` dataclass: runner_name, depends_on, category, auto_restart, health_check_interval
    - `get_daemons_by_category()`, `get_categories()`, `validate_registry()`
    - Replaces ~330 lines of imperative code with ~30 lines of declarations
@@ -729,7 +729,7 @@ Three main options - use the recommended one:
 
 | Script                 | Purpose                                 | Recommended?       |
 | ---------------------- | --------------------------------------- | ------------------ |
-| `master_loop.py`       | Full cluster automation with 70 daemons | ✅ Yes             |
+| `master_loop.py`       | Full cluster automation with 71 daemons | ✅ Yes             |
 | `run_training_loop.py` | Simple 1-config pipeline                | For single configs |
 | `unified_ai_loop.py`   | Legacy wrapper                          | ❌ Deprecated      |
 
@@ -750,6 +750,7 @@ Major consolidation effort completed December 2025:
 | 5× NodeStatus definitions                                                                | `node_status.py`                         | ~200            | Complete |
 | 5× FeedbackState definitions                                                             | `feedback_state.py`                      | ~100            | Complete |
 | DaemonManager factory methods (72 of 73)                                                 | `daemon_runners.py`                      | ~1,580          | Complete |
+| `GossipMetricsMixin` (226 LOC)                                                           | Merged into `GossipProtocolMixin`        | ~226            | Complete |
 | `tracing.py` + `distributed_lock.py` + `optional_imports.py` + `yaml_utils.py`           | `core_utils.py`                          | ~0 (re-exports) | Complete |
 | `coordinator_base.py` + `coordinator_dependencies.py`                                    | `core_base.py`                           | ~0 (re-exports) | Complete |
 | `event_router.py` + `event_mappings.py` + `event_emitters.py` + `event_normalization.py` | `core_events.py`                         | ~0 (re-exports) | Complete |
@@ -760,8 +761,8 @@ Major consolidation effort completed December 2025:
 | -------------------- | ------------------------------------------------------------- |
 | `node_status.py`     | Unified NodeHealthState enum + NodeMonitoringStatus dataclass |
 | `feedback_state.py`  | Canonical FeedbackState classes with 3-tier hierarchy         |
-| `daemon_runners.py`  | 70 daemon runner functions extracted from DaemonManager       |
-| `daemon_registry.py` | Declarative DaemonSpec registry for all 70 daemon types       |
+| `daemon_runners.py`  | 71 daemon runner functions extracted from DaemonManager       |
+| `daemon_registry.py` | Declarative DaemonSpec registry for all 71 daemon types       |
 
 **`node_status.py`** consolidates 5 duplicate NodeStatus definitions:
 
@@ -789,7 +790,7 @@ Major consolidation effort completed December 2025:
 
 **`daemon_registry.py`** provides declarative daemon configuration (Dec 27, 2025):
 
-- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 70 daemon configurations
+- `DAEMON_REGISTRY`: Dict[DaemonType, DaemonSpec] with all 71 daemon configurations
 - `DaemonSpec` dataclass with frozen=True for immutability:
   - `runner_name`: Function name in daemon_runners.py (e.g., "create_auto_sync")
   - `depends_on`: Tuple of DaemonTypes that must start first
@@ -800,6 +801,51 @@ Major consolidation effort completed December 2025:
 - Helper functions: `get_daemons_by_category()`, `get_categories()`, `validate_registry()`
 - Unit tests: 42 tests in `tests/unit/coordination/test_daemon_registry.py`
 - Benefits: Data-driven configuration, dependency graph validation, testable in isolation
+
+**P2PMixinBase and GossipProtocolMixin Consolidation (Dec 28, 2025):**
+
+The P2P orchestrator uses a mixin-based architecture. `P2PMixinBase` provides shared helpers that all P2P mixins inherit from:
+
+```python
+from scripts.p2p.p2p_mixin_base import P2PMixinBase
+
+class MyP2PMixin(P2PMixinBase):
+    MIXIN_TYPE = "my_mixin"
+
+    def my_method(self):
+        # Use base class helpers
+        self._safe_emit_event("MY_EVENT", {"data": "value"})
+        self._log_info("Operation completed")
+        self._ensure_state_attr("_my_state", {})
+```
+
+**P2PMixinBase (995 LOC)** provides:
+
+- Database helpers: `_execute_db_query()`, `_db_connection()`, `_ensure_table()`, `_table_exists()`
+- State initialization: `_ensure_state_attr()`, `_ensure_multiple_state_attrs()`
+- Peer management: `_count_alive_peers()`, `_get_alive_peer_list()`
+- Event emission: `_safe_emit_event()`
+- Configuration: `_load_config_constant()`, `_load_config_constants()`
+- Logging: `_log_debug/info/warning/error()` (prefixed with MIXIN_TYPE)
+- Timing: `_get_timestamp()`, `_is_expired()`
+
+**Mixin Inheritance Status:**
+
+| Mixin                             | Inherits P2PMixinBase | Status                                |
+| --------------------------------- | --------------------- | ------------------------------------- |
+| `ConsensusMixin` (709 LOC)        | ✅ Yes                | Active                                |
+| `MembershipMixin` (330 LOC)       | ✅ Yes                | Active                                |
+| `GossipProtocolMixin` (~1000 LOC) | ✅ Yes                | Active (Dec 28, 2025)                 |
+| `GossipMetricsMixin` (226 LOC)    | ✅ Merged             | Archived to `archive/deprecated_p2p/` |
+
+**GossipMetricsMixin → GossipProtocolMixin Merge (Dec 28, 2025):**
+
+The `GossipMetricsMixin` class was merged into `GossipProtocolMixin`:
+
+- 6 methods moved: `_record_gossip_metrics()`, `_reset_gossip_metrics_hourly()`, `_record_gossip_compression()`, `_get_gossip_metrics_summary()`, `_get_gossip_health_status()`, `calculate_compression_ratio()`
+- Backward-compat alias: `from scripts.p2p import GossipMetricsMixin` (deprecated, use `GossipProtocolMixin` directly)
+- Archived to: `archive/deprecated_p2p/_deprecated_gossip_metrics.py`
+- Removal date: Q2 2026
 
 **New Canonical Modules (Phase 5 - 157→15 Consolidation):**
 

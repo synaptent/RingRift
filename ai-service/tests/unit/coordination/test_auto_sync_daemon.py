@@ -665,7 +665,8 @@ class TestEventHandling:
             "data_age_hours": 5.0,
         }
 
-        with patch("app.coordination.auto_sync_daemon.fire_and_forget") as mock_fire:
+        # Dec 28, 2025: fire_and_forget is now imported in sync_event_mixin.py
+        with patch("app.coordination.sync_event_mixin.fire_and_forget") as mock_fire:
             await daemon._on_data_stale(mock_event)
 
         assert daemon._events_processed == 1
@@ -681,7 +682,8 @@ class TestEventHandling:
             "config_key": "square8_2p",
         }
 
-        with patch("app.coordination.auto_sync_daemon.fire_and_forget") as mock_fire:
+        # Dec 28, 2025: fire_and_forget is now imported in sync_event_mixin.py
+        with patch("app.coordination.sync_event_mixin.fire_and_forget") as mock_fire:
             await daemon._on_sync_triggered(mock_event)
 
         assert daemon._events_processed == 1
@@ -698,7 +700,8 @@ class TestEventHandling:
         }
         daemon.config.min_games_to_sync = 10
 
-        with patch("app.coordination.auto_sync_daemon.fire_and_forget") as mock_fire:
+        # Dec 28, 2025: fire_and_forget is now imported in sync_event_mixin.py
+        with patch("app.coordination.sync_event_mixin.fire_and_forget") as mock_fire:
             await daemon._on_new_games_available(mock_event)
 
         assert daemon._events_processed == 1
@@ -715,7 +718,8 @@ class TestEventHandling:
         }
         daemon.config.min_games_to_sync = 10
 
-        with patch("app.coordination.auto_sync_daemon.fire_and_forget") as mock_fire:
+        # Dec 28, 2025: fire_and_forget is now imported in sync_event_mixin.py
+        with patch("app.coordination.sync_event_mixin.fire_and_forget") as mock_fire:
             await daemon._on_new_games_available(mock_event)
 
         assert daemon._events_processed == 0

@@ -86,6 +86,12 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
         category="sync",
     ),
+    # Training data sync (December 2025) - pre-training data sync from OWC/S3
+    DaemonType.TRAINING_DATA_SYNC: DaemonSpec(
+        runner_name="create_training_data_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="sync",
+    ),
     # Ephemeral sync for Vast.ai (Phase 4)
     DaemonType.EPHEMERAL_SYNC: DaemonSpec(
         runner_name="create_ephemeral_sync",

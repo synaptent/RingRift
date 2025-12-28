@@ -572,6 +572,7 @@ class TrainingDataSyncDaemon:
             HealthCheckResult for DaemonManager integration.
         """
         from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+        from app.coordination.health_check_helper import HealthCheckHelper
 
         if not self._running:
             return HealthCheckResult(
@@ -584,17 +585,20 @@ class TrainingDataSyncDaemon:
         # Check for recent activity
         syncs_completed = self._stats.get("syncs_completed", 0)
         syncs_failed = self._stats.get("syncs_failed", 0)
-        total_syncs = syncs_completed + syncs_failed
 
-        # Calculate error rate if we have syncs
-        error_rate = syncs_failed / total_syncs if total_syncs > 0 else 0.0
+        # Check error rate using HealthCheckHelper (degraded if >50% failure rate)
+        is_healthy, msg = HealthCheckHelper.check_error_rate(
+            errors=syncs_failed,
+            cycles=syncs_completed + syncs_failed,
+            threshold=0.5,
+        )
+        error_rate = syncs_failed / max(syncs_completed + syncs_failed, 1)
 
-        # Degraded if error rate > 50%
-        if error_rate > 0.5 and total_syncs >= 5:
+        if not is_healthy:
             return HealthCheckResult(
                 healthy=True,  # Still running but degraded
                 status=CoordinatorStatus.DEGRADED,
-                message=f"High sync error rate: {error_rate:.1%} ({syncs_failed}/{total_syncs})",
+                message=f"High sync {msg}",
                 details={
                     "running": True,
                     "error_rate": error_rate,

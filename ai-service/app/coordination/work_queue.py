@@ -282,73 +282,80 @@ class WorkQueue:
         # This allows importing the module on read-only filesystems
 
     def _init_db(self) -> None:
-        """Initialize SQLite database for work queue persistence."""
+        """Initialize SQLite database for work queue persistence.
+
+        Uses context manager to ensure connection is properly closed even if
+        exceptions occur during initialization (December 2025 resource leak fix).
+        """
         max_retries = 3
         retry_delay = 0.5
 
         for attempt in range(max_retries):
             try:
                 os.makedirs(self.db_path.parent, exist_ok=True)
-                conn = sqlite3.connect(str(self.db_path), timeout=10.0)
-                cursor = conn.cursor()
 
-                # Enable WAL mode for better crash recovery and concurrent access
-                # WAL (Write-Ahead Logging) ensures data integrity on crash
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA synchronous=NORMAL")  # Good balance of safety/performance
-                cursor.execute("PRAGMA wal_autocheckpoint=1000")  # Checkpoint every 1000 pages
-                cursor.execute("PRAGMA busy_timeout=10000")  # 10s timeout for locked db
+                # Use context manager to ensure connection is closed on any exception
+                with sqlite3.connect(str(self.db_path), timeout=10.0) as conn:
+                    cursor = conn.cursor()
 
-                # Work items table
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS work_items (
-                        work_id TEXT PRIMARY KEY,
-                        work_type TEXT NOT NULL,
-                        priority INTEGER NOT NULL DEFAULT 50,
-                        config TEXT NOT NULL DEFAULT '{}',
-                        created_at REAL NOT NULL,
-                        claimed_at REAL NOT NULL DEFAULT 0.0,
-                        started_at REAL NOT NULL DEFAULT 0.0,
-                        completed_at REAL NOT NULL DEFAULT 0.0,
-                        status TEXT NOT NULL DEFAULT 'pending',
-                        claimed_by TEXT NOT NULL DEFAULT '',
-                        attempts INTEGER NOT NULL DEFAULT 0,
-                        max_attempts INTEGER NOT NULL DEFAULT 3,
-                        timeout_seconds REAL NOT NULL DEFAULT 3600.0,
-                        result TEXT NOT NULL DEFAULT '{}',
-                        error TEXT NOT NULL DEFAULT '',
-                        depends_on TEXT NOT NULL DEFAULT '[]'
-                    )
-                """)
+                    # Enable WAL mode for better crash recovery and concurrent access
+                    # WAL (Write-Ahead Logging) ensures data integrity on crash
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA synchronous=NORMAL")  # Good balance of safety/performance
+                    cursor.execute("PRAGMA wal_autocheckpoint=1000")  # Checkpoint every 1000 pages
+                    cursor.execute("PRAGMA busy_timeout=10000")  # 10s timeout for locked db
 
-                # Add depends_on column if missing (migration for existing databases)
-                try:
-                    cursor.execute("SELECT depends_on FROM work_items LIMIT 1")
-                except sqlite3.OperationalError:
-                    cursor.execute("ALTER TABLE work_items ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'")
+                    # Work items table
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS work_items (
+                            work_id TEXT PRIMARY KEY,
+                            work_type TEXT NOT NULL,
+                            priority INTEGER NOT NULL DEFAULT 50,
+                            config TEXT NOT NULL DEFAULT '{}',
+                            created_at REAL NOT NULL,
+                            claimed_at REAL NOT NULL DEFAULT 0.0,
+                            started_at REAL NOT NULL DEFAULT 0.0,
+                            completed_at REAL NOT NULL DEFAULT 0.0,
+                            status TEXT NOT NULL DEFAULT 'pending',
+                            claimed_by TEXT NOT NULL DEFAULT '',
+                            attempts INTEGER NOT NULL DEFAULT 0,
+                            max_attempts INTEGER NOT NULL DEFAULT 3,
+                            timeout_seconds REAL NOT NULL DEFAULT 3600.0,
+                            result TEXT NOT NULL DEFAULT '{}',
+                            error TEXT NOT NULL DEFAULT '',
+                            depends_on TEXT NOT NULL DEFAULT '[]'
+                        )
+                    """)
 
-                # Stats table
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS work_stats (
-                        key TEXT PRIMARY KEY,
-                        value INTEGER NOT NULL DEFAULT 0
-                    )
-                """)
+                    # Add depends_on column if missing (migration for existing databases)
+                    try:
+                        cursor.execute("SELECT depends_on FROM work_items LIMIT 1")
+                    except sqlite3.OperationalError:
+                        cursor.execute("ALTER TABLE work_items ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'")
 
-                # Initialize stats if not present
-                for key in ["total_added", "total_completed", "total_failed", "total_timeout"]:
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO work_stats (key, value) VALUES (?, 0)",
-                        (key,)
-                    )
+                    # Stats table
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS work_stats (
+                            key TEXT PRIMARY KEY,
+                            value INTEGER NOT NULL DEFAULT 0
+                        )
+                    """)
 
-                # Create indexes for common queries
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_status ON work_items(status)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_priority ON work_items(priority DESC)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_claimed_by ON work_items(claimed_by)")
+                    # Initialize stats if not present
+                    for key in ["total_added", "total_completed", "total_failed", "total_timeout"]:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO work_stats (key, value) VALUES (?, 0)",
+                            (key,)
+                        )
 
-                conn.commit()
-                conn.close()
+                    # Create indexes for common queries
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_status ON work_items(status)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_priority ON work_items(priority DESC)")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_claimed_by ON work_items(claimed_by)")
+
+                    conn.commit()
+
+                # Connection closed by context manager exit
                 self._db_initialized = True
                 logger.info(f"Work queue database initialized at {self.db_path}")
                 return

@@ -822,7 +822,8 @@ class SyncRouter:
             metadata = self._manifest.get_game_metadata(game_id)
             if metadata and hasattr(metadata, 'quality_score'):
                 return metadata.quality_score or 0.0
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
+            # Narrow to data access errors (December 2025 exception narrowing)
             logger.debug(f"Failed to get quality score from manifest for {game_id}: {e}")
 
         # Try unified quality scorer

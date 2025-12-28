@@ -34,6 +34,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Generic, TypeVar
 
+from app.coordination.health_check_helper import HealthCheckHelper
 from app.coordination.protocols import (
     CoordinatorStatus,
     HealthCheckResult,
@@ -383,16 +384,19 @@ class BaseDaemon(ABC, Generic[ConfigT]):
                 message=f"{self._get_daemon_name()} is not running",
             )
 
-        # Check error rate (unhealthy if >50% failure rate with sufficient cycles)
-        if self._cycles_completed > 10:
-            error_rate = self._errors_count / self._cycles_completed
-            if error_rate > 0.5:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.ERROR,
-                    message=f"High error rate: {error_rate:.1%}",
-                    details=self.get_status(),
-                )
+        # Check error rate using HealthCheckHelper (unhealthy if >50% failure rate)
+        is_healthy, msg = HealthCheckHelper.check_error_rate(
+            errors=self._errors_count,
+            cycles=self._cycles_completed,
+            threshold=0.5,
+        )
+        if not is_healthy:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=msg,
+                details=self.get_status(),
+            )
 
         return HealthCheckResult(
             healthy=True,

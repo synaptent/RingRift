@@ -150,7 +150,8 @@ class UnifiedRegistry:
                 limit=limit,
             )
             return [m.to_dict() if hasattr(m, 'to_dict') else m for m in models]
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError) as e:
+            # Narrow to data access/schema errors (December 2025 exception narrowing)
             logger.warning(f"[UnifiedRegistry] Failed to get models: {e}")
             return []
 

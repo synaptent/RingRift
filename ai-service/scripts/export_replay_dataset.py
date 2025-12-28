@@ -547,6 +547,7 @@ def export_replay_dataset_multi(
     games_deduplicated = 0
     games_skipped_recovery = 0
     games_partial = 0  # Games where replay failed but samples were extracted using DB winner
+    newest_game_time: str | None = None  # Track newest game timestamp for freshness metadata
 
     # Build query filters
     query_filters: dict[str, Any] = {

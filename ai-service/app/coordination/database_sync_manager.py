@@ -759,7 +759,8 @@ class DatabaseSyncManager(SyncManagerBase):
                     await callback(node, transport, self._db_state)
                 else:
                     callback(node, transport, self._db_state)
-            except Exception as e:
+            except (TypeError, AttributeError, RuntimeError) as e:
+                # Narrow to callback-specific errors (December 2025 exception narrowing)
                 logger.warning(f"[{self.db_type}] Sync complete callback error: {e}")
 
     async def _notify_sync_failed(self, node: str, reason: str) -> None:
@@ -770,7 +771,8 @@ class DatabaseSyncManager(SyncManagerBase):
                     await callback(node, reason, self._db_state)
                 else:
                     callback(node, reason, self._db_state)
-            except Exception as e:
+            except (TypeError, AttributeError, RuntimeError) as e:
+                # Narrow to callback-specific errors (December 2025 exception narrowing)
                 logger.warning(f"[{self.db_type}] Sync failed callback error: {e}")
 
     # =========================================================================

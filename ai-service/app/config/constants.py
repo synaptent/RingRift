@@ -118,9 +118,13 @@ GPU_MEMORY_THRESHOLDS = {
 # ==============================================================================
 # Gumbel MCTS Budget Tiers
 # ==============================================================================
-# NOTE: Source of truth is app/config/thresholds.py to avoid torch import issues.
-# These values must match thresholds.py. December 2025: STANDARD raised to 800.
-GUMBEL_BUDGET_THROUGHPUT = 64   # Fast selfplay (multi-game parallel)
-GUMBEL_BUDGET_STANDARD = 800    # Default for training (AlphaZero uses 800)
-GUMBEL_BUDGET_QUALITY = 800     # High quality for evaluation
-GUMBEL_BUDGET_ULTIMATE = 1600   # Maximum quality for benchmarks
+# Re-exported from thresholds.py (canonical source of truth)
+# December 2025: Consolidated to avoid duplicate definitions and missing values.
+from app.config.thresholds import (
+    GUMBEL_BUDGET_THROUGHPUT,  # 64 - Fast selfplay (multi-game parallel)
+    GUMBEL_BUDGET_STANDARD,    # 800 - Default for training (AlphaZero uses 800)
+    GUMBEL_BUDGET_QUALITY,     # 800 - High quality for evaluation
+    GUMBEL_BUDGET_ULTIMATE,    # 1600 - Maximum quality for benchmarks
+    GUMBEL_BUDGET_MASTER,      # 3200 - 2000+ Elo training (was MISSING here)
+    GUMBEL_DEFAULT_BUDGET,     # GUMBEL_BUDGET_STANDARD
+)

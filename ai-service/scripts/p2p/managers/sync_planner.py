@@ -233,23 +233,28 @@ class SyncPlanner(EventSubscriptionMixin):
         # Dec 2025: Validate event types at startup to catch config issues early
         _validate_event_types()
 
-    def _emit_sync_event(self, event_type: "DataEventType", **kwargs) -> None:
+    def _emit_sync_event(self, event_type: "DataEventType", **kwargs) -> bool:
         """Emit a sync lifecycle event if the event system is available.
 
         Dec 2025: Now accepts DataEventType enum directly for type safety.
         Uses .value to get the actual event string (e.g., "sync_completed").
 
+        Dec 2025 (P0-1 fix): Returns bool for caller to check success/failure.
+
         Args:
             event_type: DataEventType enum member (e.g., DataEventType.DATA_SYNC_COMPLETED)
             **kwargs: Additional event data
+
+        Returns:
+            True if event was emitted successfully, False otherwise.
         """
         emitter = _get_event_emitter()
         if emitter is None:
-            return
+            return False
 
         # DataEventType not available - skip event emission
         if DataEventType is None:
-            return
+            return False
 
         payload = {
             "node_id": self.node_id,
@@ -268,7 +273,7 @@ class SyncPlanner(EventSubscriptionMixin):
                 emitter(actual_event_type, payload)
                 self.stats.events_emitted += 1
                 logger.debug(f"Emitted {actual_event_type} (from {event_type.name})")
-                return  # Success
+                return True  # Success
             except (OSError, ConnectionError, TimeoutError) as e:
                 # Transient errors - retry once
                 if attempt < max_retries - 1:
@@ -279,6 +284,7 @@ class SyncPlanner(EventSubscriptionMixin):
                 self.stats.events_failed += 1
                 self.stats.last_event_error = f"{actual_event_type}: {e}"
                 logger.warning(f"[SyncPlanner] Failed to emit {actual_event_type} after {max_retries} attempts: {e}")
+                return False
             except (RuntimeError, ValueError, TypeError, AttributeError) as e:
                 # Dec 2025: Narrowed from broad Exception - non-transient errors
                 # RuntimeError: Event bus state errors
@@ -287,7 +293,9 @@ class SyncPlanner(EventSubscriptionMixin):
                 self.stats.events_failed += 1
                 self.stats.last_event_error = f"{actual_event_type}: {e}"
                 logger.warning(f"[SyncPlanner] Failed to emit {actual_event_type}: {e}")
-                break
+                return False
+
+        return False  # Should not reach here, but be explicit
 
     # ============================================
     # Local Manifest Collection

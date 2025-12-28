@@ -13,18 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-# Create a mock PipelineStage enum for testing
-class PipelineStage(Enum):
-    """Mock pipeline stages for testing."""
-    IDLE = auto()
-    SELFPLAY = auto()
-    SYNC = auto()
-    DATA_SYNC = auto()
-    NPZ_EXPORT = auto()
-    TRAINING = auto()
-    EVALUATION = auto()
-    PROMOTION = auto()
+# Import the real PipelineStage to match what the mixin uses
+from app.coordination.data_pipeline_orchestrator import PipelineStage
 
 
 class TestHelper:
@@ -859,7 +849,7 @@ class TestSyncAndFeedbackEvents:
     @pytest.mark.asyncio
     async def test_on_game_synced_triggers_export_in_sync_stage(self, handler, mock_event):
         """Test game sync triggers export when in SYNC stage."""
-        handler._current_stage = PipelineStage.SYNC
+        handler._current_stage = PipelineStage.DATA_SYNC
         event = mock_event({
             "node_id": "vast-12345",
             "games_pushed": 25,
@@ -898,7 +888,7 @@ class TestSyncAndFeedbackEvents:
         await handler._on_sync_triggered(event)
 
         assert handler._sync_trigger_count == 1
-        assert handler._current_stage == PipelineStage.SYNC
+        assert handler._current_stage == PipelineStage.DATA_SYNC
 
     @pytest.mark.asyncio
     async def test_on_data_stale(self, handler, mock_event):
@@ -910,7 +900,7 @@ class TestSyncAndFeedbackEvents:
             "source": "train_cli",
         })
 
-        with patch("app.coordination.pipeline_event_handler_mixin.get_sync_facade", return_value=None):
+        with patch("app.coordination.sync_facade.get_sync_facade", return_value=None):
             await handler._on_data_stale(event)
 
         assert handler._stale_data_count == 1

@@ -282,7 +282,8 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 "node_id": self.node_id,
                 "timestamp": time.time(),
             })
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError, TimeoutError) as e:
+            # Narrow to event bus errors (December 2025 exception narrowing)
             logger.debug(f"[{self._get_daemon_name()}] Failed to emit {event_type}: {e}")
 
     # =========================================================================

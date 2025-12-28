@@ -378,7 +378,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         target_jobs: int | None = None,
         effective_priority: int | None = None,
         exploration_boost: float | None = None,
-    ) -> None:
+    ) -> bool:
         """Emit SELFPLAY_TARGET_UPDATED event for feedback loop integration.
 
         P0.2 (December 2025): Enables pipeline coordination to respond to
@@ -387,6 +387,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
         - FeedbackLoopController priority adjustments
         - Training pipeline data freshness checks
 
+        Dec 2025 (P0-1 fix): Returns bool for caller to check success/failure.
+
         Args:
             config_key: Config key (e.g., "hex8_2p")
             priority: Priority level ("urgent", "high", "normal")
@@ -394,6 +396,9 @@ class SelfplayScheduler(EventSubscriptionMixin):
             target_jobs: Optional target job count
             effective_priority: Optional effective priority value
             exploration_boost: Optional exploration boost multiplier
+
+        Returns:
+            True if event was emitted successfully, False otherwise.
         """
         try:
             from app.coordination.event_router import publish_sync
@@ -417,10 +422,13 @@ class SelfplayScheduler(EventSubscriptionMixin):
                     f"[SelfplayScheduler] Emitted SELFPLAY_TARGET_UPDATED: "
                     f"{config_key} priority={priority} reason={reason}"
                 )
+            return True
         except ImportError:
             logger.debug("[SelfplayScheduler] Event router not available for target updates")
+            return False
         except (RuntimeError, AttributeError) as e:
             logger.debug(f"[SelfplayScheduler] Failed to emit target update: {e}")
+            return False
 
     def pick_weighted_config(self, node: NodeInfo) -> dict[str, Any] | None:
         """Pick a selfplay config weighted by priority and node capabilities.

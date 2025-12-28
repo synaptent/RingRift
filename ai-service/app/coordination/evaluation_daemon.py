@@ -42,8 +42,8 @@ logger = logging.getLogger(__name__)
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import EvaluationDaemonStats
 
-# December 27, 2025: Use BaseEventHandler for subscription lifecycle
-from app.coordination.base_event_handler import BaseEventHandler, EventHandlerConfig
+# December 27, 2025: Use HandlerBase for subscription lifecycle (canonical location)
+from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
 
 __all__ = [
     "EvaluationConfig",

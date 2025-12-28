@@ -283,19 +283,38 @@ class TestSyncMethod:
 
     @pytest.mark.asyncio
     async def test_sync_handles_exception(self, facade):
-        """Should handle exceptions gracefully."""
-        with patch.object(facade, "_sync_via_auto_sync") as mock_sync:
-            mock_sync.side_effect = RuntimeError("Sync failed")
+        """Should handle exceptions gracefully and try fallback backends.
+
+        The fallback chain for AUTO_SYNC is: AUTO_SYNC → ROUTER → DISTRIBUTED
+        All backends must fail for the sync to return failure.
+        """
+        with (
+            patch.object(facade, "_sync_via_auto_sync") as mock_auto_sync,
+            patch.object(facade, "_sync_via_router") as mock_router,
+            patch.object(facade, "_sync_via_distributed") as mock_distributed,
+        ):
+            mock_auto_sync.side_effect = RuntimeError("Auto sync failed")
+            mock_router.side_effect = RuntimeError("Router failed")
+            mock_distributed.side_effect = RuntimeError("Distributed failed")
             response = await facade.sync("games")
             assert response.success is False
-            assert len(response.errors) == 1
-            assert "Sync failed" in response.errors[0]
+            # Should have 3 errors - one from each backend in the fallback chain
+            assert len(response.errors) == 3
+            assert "Auto sync failed" in response.errors[0]
+            assert "Router failed" in response.errors[1]
+            assert "Distributed failed" in response.errors[2]
 
     @pytest.mark.asyncio
     async def test_sync_tracks_errors_in_stats(self, facade):
-        """Should track errors in stats."""
-        with patch.object(facade, "_sync_via_auto_sync") as mock_sync:
-            mock_sync.side_effect = RuntimeError("Error")
+        """Should track errors in stats when all backends fail."""
+        with (
+            patch.object(facade, "_sync_via_auto_sync") as mock_auto_sync,
+            patch.object(facade, "_sync_via_router") as mock_router,
+            patch.object(facade, "_sync_via_distributed") as mock_distributed,
+        ):
+            mock_auto_sync.side_effect = RuntimeError("Error")
+            mock_router.side_effect = RuntimeError("Error")
+            mock_distributed.side_effect = RuntimeError("Error")
             await facade.sync("games")
             stats = facade.get_stats()
             assert stats["total_errors"] == 1

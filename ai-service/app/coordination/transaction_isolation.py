@@ -862,6 +862,22 @@ class TransactionIsolation(SingletonMixin):
                 message=f"Health check error: {e}",
             )
 
+    def close(self) -> None:
+        """Close thread-local database connections.
+
+        December 2025: Added to fix resource leak - thread-local connections
+        were never explicitly closed. Call this on shutdown to release resources.
+        """
+        if hasattr(self._local, "conn") and self._local.conn is not None:
+            try:
+                self._local.conn.close()
+            except Exception as e:
+                logger.debug(f"Error closing TransactionIsolation connection: {e}")
+            finally:
+                self._local.conn = None
+
+        logger.debug("TransactionIsolation connection closed")
+
 
 # Module-level singleton access
 _instance: TransactionIsolation | None = None

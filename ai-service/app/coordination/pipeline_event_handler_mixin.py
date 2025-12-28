@@ -777,8 +777,8 @@ class PipelineEventHandlerMixin:
             f"to {len(target_nodes)} nodes (ephemeral={is_ephemeral})"
         )
 
-        # If in SYNC stage and auto-trigger is enabled, consider triggering export
-        if (self._current_stage == PipelineStage.SYNC
+        # If in DATA_SYNC stage and auto-trigger is enabled, consider triggering export
+        if (self._current_stage == PipelineStage.DATA_SYNC
                 and self.auto_trigger
                 and self.auto_trigger_export):
             # Transition to NPZ_EXPORT stage
@@ -867,10 +867,10 @@ class PipelineEventHandlerMixin:
             self._sync_trigger_count = 0
         self._sync_trigger_count += 1
 
-        # If we're idle and sync was triggered, transition to SYNC stage
+        # If we're idle and sync was triggered, transition to DATA_SYNC stage
         if self._current_stage == PipelineStage.IDLE and self.auto_trigger:
             self._transition_to(
-                PipelineStage.SYNC,
+                PipelineStage.DATA_SYNC,
                 self._current_iteration,
                 metadata={
                     "trigger_reason": reason,

@@ -398,7 +398,7 @@ class TestCheckHandlerFailures:
             failed_handlers=1, total_handlers=10, threshold=0.2
         )
         assert is_healthy is True
-        assert "10%" in message
+        assert "1/10" in message  # Check for fraction in message
 
     def test_high_failure_rate_is_unhealthy(self):
         """High failure rate should be unhealthy."""

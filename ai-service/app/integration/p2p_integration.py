@@ -24,6 +24,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config.ports import P2P_DEFAULT_PORT, get_local_p2p_url
+
 try:
     from aiohttp import ClientSession, ClientTimeout
     HAS_AIOHTTP = True
@@ -42,7 +44,7 @@ logger = logging.getLogger(__name__)
 class P2PIntegrationConfig:
     """Configuration for P2P orchestrator integration."""
     # Connection settings
-    p2p_base_url: str = "http://localhost:8770"
+    p2p_base_url: str = field(default_factory=get_local_p2p_url)
     auth_token: str | None = None
     connect_timeout: float = 10.0
     request_timeout: float = 60.0
@@ -183,7 +185,7 @@ class P2PAPIClient:
             nodes.append(P2PNode(
                 node_id=node_data.get("node_id", ""),
                 host=node_data.get("host", ""),
-                port=node_data.get("port", 8770),
+                port=node_data.get("port", P2P_DEFAULT_PORT),
                 is_alive=node_data.get("is_alive", False),
                 is_healthy=node_data.get("is_healthy", False),
                 has_gpu=node_data.get("has_gpu", False),
@@ -1071,7 +1073,7 @@ class P2PIntegrationManager:
 
                 try:
                     # Fetch Elo leaderboard from node
-                    node_elo = await self._fetch_node_elo(host, node.get("port", 8770))
+                    node_elo = await self._fetch_node_elo(host, node.get("port", P2P_DEFAULT_PORT))
                     if node_elo:
                         # Compare and detect divergence
                         diverged = await self._check_elo_divergence(local_elo_db, node_elo)
@@ -1181,7 +1183,7 @@ class P2PIntegrationManager:
 # ============================================
 
 async def connect_to_cluster(
-    base_url: str = "http://localhost:8770",
+    base_url: str | None = None,
     auth_token: str | None = None
 ) -> P2PIntegrationManager:
     """
@@ -1192,8 +1194,9 @@ async def connect_to_cluster(
         await manager.start()
         summary = await manager.get_cluster_summary()
     """
+    effective_url = base_url or get_local_p2p_url()
     config = P2PIntegrationConfig(
-        p2p_base_url=base_url,
+        p2p_base_url=effective_url,
         auth_token=auth_token
     )
     manager = P2PIntegrationManager(config)
