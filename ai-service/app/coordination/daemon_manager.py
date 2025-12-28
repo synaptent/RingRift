@@ -498,13 +498,27 @@ class DaemonManager:
                 health_check_interval = 60.0
 
         self._factories[daemon_type] = factory
+
+        # Dec 2025: Apply persisted restart count if available
+        # This ensures restart counts survive daemon manager restarts
+        daemon_name = daemon_type.value
+        persisted_count = self._persisted_restart_counts.get(daemon_name, 0)
+
         self._daemons[daemon_type] = DaemonInfo(
             daemon_type=daemon_type,
             depends_on=depends_on or [],
             health_check_interval=health_check_interval,
             auto_restart=auto_restart,
             max_restarts=max_restarts,
+            restart_count=persisted_count,
         )
+
+        # Log if daemon has non-zero restart count from persistence
+        if persisted_count > 0:
+            logger.info(
+                f"[DaemonManager] {daemon_name} starting with persisted restart count: "
+                f"{persisted_count}/{max_restarts}"
+            )
 
     def _handle_daemon_ready(self, daemon_type: DaemonType) -> None:
         """Handle daemon readiness signal from mark_daemon_ready().

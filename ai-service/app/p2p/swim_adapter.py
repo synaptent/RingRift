@@ -241,7 +241,8 @@ class SwimMembershipManager:
             }
 
             # Create node using factory method
-            self._swim = SwimNode.create(
+            # Dec 28, 2025: Fixed missing await - SwimNode.create() is async
+            self._swim = await SwimNode.create(
                 bind_addr=bind_addr,
                 transport=transport,
                 seed_addrs=self.config.seeds if self.config.seeds else None,

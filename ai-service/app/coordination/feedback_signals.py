@@ -50,13 +50,17 @@ logger = logging.getLogger(__name__)
 try:
     from app.coordination.event_router import (
         DataEventType,
-        emit_event,
+        get_event_bus,
     )
     HAS_EVENT_BUS = True
-except ImportError:
+    emit_event = None  # Use get_event_bus().publish() instead
+except ImportError as e:
+    import logging as _logging
+    _logging.getLogger(__name__).debug(f"Event bus not available: {e}")
     HAS_EVENT_BUS = False
     DataEventType = None
     emit_event = None
+    get_event_bus = None
 
 
 # =============================================================================

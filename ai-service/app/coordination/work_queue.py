@@ -368,6 +368,7 @@ class WorkQueue:
 
     def _load_items(self) -> None:
         """Load work items from database on startup."""
+        conn = None
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
@@ -413,13 +414,22 @@ class WorkQueue:
                 if row["key"] in self.stats:
                     self.stats[row["key"]] = row["value"]
 
-            conn.close()
             logger.info(f"Loaded {len(self.items)} work items from database")
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            logger.error(f"Database error loading work items: {e}")
         except Exception as e:
             logger.error(f"Failed to load work items from database: {e}")
+        finally:
+            # Dec 2025: Ensure connection is closed even on error
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _save_item(self, item: WorkItem) -> None:
         """Save a work item to the database."""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -450,12 +460,21 @@ class WorkQueue:
             ))
 
             conn.commit()
-            conn.close()
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            logger.error(f"Database error saving work item {item.work_id}: {e}")
         except Exception as e:
             logger.error(f"Failed to save work item {item.work_id}: {e}")
+        finally:
+            # Dec 2025: Ensure connection is closed even on error
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _save_stats(self) -> None:
         """Save stats to the database."""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -467,20 +486,37 @@ class WorkQueue:
                 )
 
             conn.commit()
-            conn.close()
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            logger.error(f"Database error saving work stats: {e}")
         except Exception as e:
             logger.error(f"Failed to save work stats: {e}")
+        finally:
+            # Dec 2025: Ensure connection is closed even on error
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _delete_item(self, work_id: str) -> None:
         """Delete a work item from the database."""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM work_items WHERE work_id = ?", (work_id,))
             conn.commit()
-            conn.close()
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            logger.error(f"Database error deleting work item {work_id}: {e}")
         except Exception as e:
             logger.error(f"Failed to delete work item {work_id}: {e}")
+        finally:
+            # Dec 2025: Ensure connection is closed even on error
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def add_work(self, item: WorkItem) -> str:
         """Add work to the queue. Returns work_id."""

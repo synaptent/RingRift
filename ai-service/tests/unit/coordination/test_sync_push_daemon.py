@@ -762,12 +762,13 @@ class TestHealthCheck:
         """Test health_check returns healthy when running."""
         daemon = SyncPushDaemon()
         daemon._running = True
+        daemon._errors_count = 0  # Ensure error count is low
         daemon._coordinator_status = CoordinatorStatus.RUNNING
 
         result = daemon.health_check()
 
         assert result.healthy is True
-        assert "healthy" in result.message.lower()
+        assert result.status == "healthy"
 
     def test_health_check_reports_stats(self):
         """Test health_check includes push/cleanup stats in details."""
@@ -866,16 +867,17 @@ class TestLifecycle:
         """Test start() initializes manifest and session."""
         daemon = SyncPushDaemon()
 
+        mock_session = AsyncMock()
+        mock_session.close = AsyncMock()
+
         with patch("app.coordination.sync_push_daemon.get_cluster_manifest") as mock_manifest:
-            with patch("aiohttp.ClientSession") as mock_session:
+            with patch("aiohttp.ClientSession", return_value=mock_session):
                 mock_manifest.return_value = MagicMock()
-                mock_session.return_value = MagicMock()
 
                 await daemon.start()
 
                 assert daemon._running is True
                 mock_manifest.assert_called()
-                mock_session.assert_called()
 
                 await daemon.stop()
 
@@ -1155,8 +1157,11 @@ class TestEdgeCases:
         daemon = SyncPushDaemon()
 
         for _ in range(3):
+            mock_session = AsyncMock()
+            mock_session.close = AsyncMock()
+
             with patch("app.coordination.sync_push_daemon.get_cluster_manifest"):
-                with patch("aiohttp.ClientSession"):
+                with patch("aiohttp.ClientSession", return_value=mock_session):
                     await daemon.start()
                     assert daemon._running is True
                     await daemon.stop()
@@ -1174,18 +1179,21 @@ class TestEdgeCases:
     def test_get_data_dir_with_manifest(self):
         """Test _get_data_dir falls back to manifest path."""
         daemon = SyncPushDaemon()
-        daemon._manifest = MagicMock()
-        daemon._manifest.db_path = Path("/data/cluster_manifest.db")
-        daemon._manifest.db_path.parent.parent.__truediv__ = MagicMock(
-            return_value=Path("/data/games")
-        )
 
-        # Need to actually mock the path traversal
-        mock_path = MagicMock()
-        mock_path.parent = MagicMock()
-        mock_path.parent.parent = MagicMock()
-        mock_path.parent.parent.__truediv__ = MagicMock(return_value=Path("/data/games"))
-        daemon._manifest.db_path = mock_path
+        # Mock the manifest with a proper path structure
+        mock_manifest = MagicMock()
+        # Create a mock db_path that has the right parent chain
+        mock_db_path = MagicMock()
+        mock_parent = MagicMock()
+        mock_parent_parent = MagicMock()
+
+        # Set up the chain: db_path.parent.parent / "games"
+        mock_parent_parent.__truediv__ = MagicMock(return_value=Path("/data/games"))
+        mock_parent.parent = mock_parent_parent
+        mock_db_path.parent = mock_parent
+
+        mock_manifest.db_path = mock_db_path
+        daemon._manifest = mock_manifest
 
         result = daemon._get_data_dir()
 

@@ -496,6 +496,8 @@ class InvalidGameError(DataQualityError):
         message: str,
         game_id: str | None = None,
         move_count: int | None = None,
+        quality_score: float | None = None,
+        samples_affected: int | None = None,
         context: dict[str, Any] | None = None,
     ):
         super().__init__(message, context=context)
@@ -503,15 +505,6 @@ class InvalidGameError(DataQualityError):
             self.context["game_id"] = game_id
         if move_count is not None:
             self.context["move_count"] = move_count
-
-    def __init__(
-        self,
-        message: str,
-        quality_score: float | None = None,
-        samples_affected: int | None = None,
-        context: dict[str, Any] | None = None,
-    ):
-        super().__init__(message, context=context)
         if quality_score is not None:
             self.context["quality_score"] = quality_score
         if samples_affected is not None:

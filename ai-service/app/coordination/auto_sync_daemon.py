@@ -1567,13 +1567,25 @@ class AutoSyncDaemon:
             ssh_key = os.path.expanduser(ssh_key)
             remote_full = f"{ssh_user}@{ssh_host}:{remote_games_path}/"
 
+            # Dec 2025: Checkpoint WAL before sync to ensure all data is in main .db file
+            # This prevents corruption from missing WAL transactions
+            checkpoint_database(db_path)
+
+            # Dec 2025: Include WAL files in rsync to prevent data loss
+            # WAL files (.db-wal, .db-shm) contain uncommitted transactions
+            db_name = Path(db_path).name
+            wal_include_args = get_rsync_include_args_for_db(db_name)
+            parent_dir = str(Path(db_path).parent) + "/"
+
             rsync_cmd = [
                 "rsync",
                 "-avz",
                 "--compress",
                 *bwlimit_args,
+                *wal_include_args,
+                "--exclude=*",  # Exclude other files in directory
                 "-e", f"ssh -i {ssh_key} -o StrictHostKeyChecking=no -o ConnectTimeout=10",
-                db_path,
+                parent_dir,
                 remote_full,
             ]
 

@@ -102,8 +102,9 @@ def _is_protected_file(file_path: Path) -> bool:
 class DiskSpaceConfig(DaemonConfig):
     """Configuration for disk space management."""
 
-    # Check interval (seconds) - default 30 minutes
-    check_interval_seconds: int = 1800
+    # P1.3 Dec 2025: Reduced from 30 minutes to 5 minutes
+    # 30-minute interval allowed disk to fill silently during active selfplay
+    check_interval_seconds: int = 300
 
     # Thresholds (percentages) - imported from centralized config
     # See app/config/thresholds.py for DISK_WARNING_PERCENT, DISK_CRITICAL_PERCENT

@@ -113,9 +113,9 @@ def _emit_coordinator_health_event(status: "BootstrapCoordinatorStatus") -> None
                 except RuntimeError:
                     logger.debug(f"[Bootstrap] Could not emit unhealthy event for {status.name} (no event loop)")
 
-    except ImportError:
-        # Event emitters not available - skip silently
-        pass
+    except ImportError as e:
+        # Event emitters not available - log at debug level
+        logger.debug(f"[Bootstrap] Event emitters not available: {e}")
     except (RuntimeError, TypeError, AttributeError) as e:
         # Don't fail bootstrap due to event emission issues
         # RuntimeError: no event loop, TypeError: wrong args, AttributeError: API mismatch

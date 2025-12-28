@@ -85,6 +85,19 @@ class StateUpdateCallback(Protocol):
         ...
 
 
+class RecordRestartCallback(Protocol):
+    """Protocol for the restart recording callback from DaemonManager.
+
+    December 2025: Added to support restart count persistence and hourly
+    limit checking. Returns False if the daemon should not be restarted
+    (e.g., exceeded hourly restart limit).
+    """
+
+    def __call__(self, daemon_type: DaemonType) -> bool:
+        """Record a restart and check if it should proceed."""
+        ...
+
+
 class DaemonLifecycleManager:
     """Manages lifecycle operations for daemons.
 
@@ -110,6 +123,7 @@ class DaemonLifecycleManager:
         update_daemon_state: StateUpdateCallback,
         running_flag_getter: Callable[[], bool],
         running_flag_setter: Callable[[bool], None],
+        record_restart: RecordRestartCallback | None = None,
     ):
         """Initialize the lifecycle manager.
 
@@ -122,6 +136,9 @@ class DaemonLifecycleManager:
             update_daemon_state: Callback to update daemon state and emit events
             running_flag_getter: Callable to get the running flag
             running_flag_setter: Callable to set the running flag
+            record_restart: Callback to record restart and check hourly limits.
+                December 2025: Added to support restart count persistence.
+                Returns False if daemon has exceeded hourly restart limit.
         """
         self._daemons = daemons
         self._factories = factories
@@ -131,6 +148,7 @@ class DaemonLifecycleManager:
         self._update_daemon_state = update_daemon_state
         self._get_running = running_flag_getter
         self._set_running = running_flag_setter
+        self._record_restart = record_restart
 
     def _emit_daemon_lifecycle_event(
         self, daemon_type: DaemonType, event_type: str
@@ -376,6 +394,20 @@ class DaemonLifecycleManager:
                                 self._cascade_restart_dependent(dependent, daemon_type, cascade_delay)
                             )
                     break
+
+                # December 2025: Check hourly restart limit before proceeding
+                # This prevents infinite restart loops for daemons that fail repeatedly
+                if self._record_restart is not None:
+                    if not self._record_restart(daemon_type):
+                        logger.error(
+                            f"{daemon_type.value} exceeded hourly restart limit, "
+                            "marked permanently failed"
+                        )
+                        self._update_daemon_state(
+                            info, DaemonState.FAILED,
+                            reason="hourly_limit_exceeded", error=str(e)
+                        )
+                        break
 
                 # Restart with exponential backoff + jitter to prevent thundering herd
                 info.restart_count += 1

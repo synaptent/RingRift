@@ -21929,7 +21929,11 @@ print(json.dumps({{
             self.role = NodeRole.FOLLOWER
             # Emit LEADER_LOST before starting election (Dec 2025 fix)
             asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, "lease_expired"))
-            asyncio.create_task(self._start_election())
+            # CRITICAL: Check quorum before starting election to prevent quorum bypass
+            if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                logger.warning("Skipping election after stale lease clear: no voter quorum available")
+            else:
+                asyncio.create_task(self._start_election())
 
         # If leader is dead, start election
         if self.leader_id and self.leader_id != self.node_id:
@@ -21949,7 +21953,11 @@ print(json.dumps({{
                     self.last_lease_renewal = 0.0
                     self.role = NodeRole.FOLLOWER
                     asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
-                    asyncio.create_task(self._start_election())
+                    # CRITICAL: Check quorum before starting election to prevent quorum bypass
+                    if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                        logger.warning(f"Skipping election after leader {reason}: no voter quorum available")
+                    else:
+                        asyncio.create_task(self._start_election())
 
         # If we're leaderless, periodically retry elections
         if not self.leader_id and not self.election_in_progress:
@@ -21958,7 +21966,11 @@ print(json.dumps({{
             last_attempt = float(getattr(self, "last_election_attempt", 0.0) or 0.0)
             if now - last_attempt >= backoff_seconds:
                 self.last_election_attempt = now
-                asyncio.create_task(self._start_election())
+                # CRITICAL: Check quorum before starting election to prevent quorum bypass
+                if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                    logger.warning("Skipping periodic election retry: no voter quorum available")
+                else:
+                    asyncio.create_task(self._start_election())
 
     def _check_dead_peers(self):
         """Check for peers that have stopped responding."""
@@ -22064,7 +22076,11 @@ print(json.dumps({{
             self.leader_lease_expires = 0.0
             self.last_lease_renewal = 0.0
             self.role = NodeRole.FOLLOWER
-            asyncio.create_task(self._start_election())
+            # CRITICAL: Check quorum before starting election to prevent quorum bypass
+            if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                logger.warning("Skipping election after stale lease clear (sync): no voter quorum available")
+            else:
+                asyncio.create_task(self._start_election())
 
         # If leader is dead, start election
         if self.leader_id and self.leader_id != self.node_id:
@@ -22084,7 +22100,11 @@ print(json.dumps({{
                     self.last_lease_renewal = 0.0
                     self.role = NodeRole.FOLLOWER
                     asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
-                    asyncio.create_task(self._start_election())
+                    # CRITICAL: Check quorum before starting election to prevent quorum bypass
+                    if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                        logger.warning(f"Skipping election after leader {reason} (sync): no voter quorum available")
+                    else:
+                        asyncio.create_task(self._start_election())
 
         # If we're leaderless, periodically retry elections so the cluster can
         # recover without requiring manual restarts.
@@ -22094,7 +22114,11 @@ print(json.dumps({{
             last_attempt = float(getattr(self, "last_election_attempt", 0.0) or 0.0)
             if now - last_attempt >= backoff_seconds:
                 self.last_election_attempt = now
-                asyncio.create_task(self._start_election())
+                # CRITICAL: Check quorum before starting election to prevent quorum bypass
+                if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                    logger.warning("Skipping periodic election retry (sync): no voter quorum available")
+                else:
+                    asyncio.create_task(self._start_election())
 
     async def _start_election(self):
         """Start leader election using Bully algorithm."""

@@ -515,3 +515,252 @@ class TestDaemonRemotePathMethods:
 
         # Cleanup
         clear_remote_path_cache()
+
+
+# =============================================================================
+# Model Validation Tests (December 2025 Improvements)
+# =============================================================================
+
+
+class TestIsValidModelFile:
+    """Test model file validation functionality."""
+
+    def test_nonexistent_file_returns_false(self, tmp_path):
+        """Test validation returns False for non-existent file."""
+        from app.coordination.unified_distribution_daemon import is_valid_model_file
+
+        nonexistent = tmp_path / "does_not_exist.pth"
+        assert is_valid_model_file(nonexistent) is False
+
+    def test_too_small_file_returns_false(self, tmp_path):
+        """Test validation returns False for files < 1MB."""
+        from app.coordination.unified_distribution_daemon import is_valid_model_file
+
+        small_file = tmp_path / "small.pth"
+        small_file.write_bytes(b"small content" * 100)  # ~1300 bytes
+        assert is_valid_model_file(small_file) is False
+
+    def test_invalid_magic_bytes_returns_false(self, tmp_path):
+        """Test validation returns False for files without zip magic bytes."""
+        from app.coordination.unified_distribution_daemon import is_valid_model_file
+
+        # Create a 1.5MB file with wrong magic bytes
+        invalid_file = tmp_path / "invalid.pth"
+        invalid_file.write_bytes(b"INVALID!" + b"\x00" * 1_500_000)
+        assert is_valid_model_file(invalid_file) is False
+
+    def test_valid_model_file_returns_true(self, tmp_path):
+        """Test validation returns True for valid model file."""
+        from app.coordination.unified_distribution_daemon import is_valid_model_file
+
+        # Create a valid-looking model file (zip magic + size > 1MB)
+        valid_file = tmp_path / "valid.pth"
+        # PK\x03\x04 is ZIP file magic number
+        valid_file.write_bytes(b"PK\x03\x04" + b"\x00" * 1_500_000)
+        assert is_valid_model_file(valid_file) is True
+
+    def test_accepts_string_path(self, tmp_path):
+        """Test validation accepts string paths."""
+        from app.coordination.unified_distribution_daemon import is_valid_model_file
+
+        valid_file = tmp_path / "valid.pth"
+        valid_file.write_bytes(b"PK\x03\x04" + b"\x00" * 1_500_000)
+        assert is_valid_model_file(str(valid_file)) is True
+
+    def test_private_function_also_works(self, tmp_path):
+        """Test private _is_valid_model_file function."""
+        from app.coordination.unified_distribution_daemon import _is_valid_model_file
+
+        valid_file = tmp_path / "valid.pth"
+        valid_file.write_bytes(b"PK\x03\x04" + b"\x00" * 1_500_000)
+        assert _is_valid_model_file(valid_file) is True
+
+
+class TestCheckModelAvailabilityValidation:
+    """Test check_model_availability with validation parameter."""
+
+    def test_validate_true_checks_file_validity(self, tmp_path, monkeypatch):
+        """Test validate=True performs full validation."""
+        from app.coordination.unified_distribution_daemon import (
+            check_model_availability,
+        )
+
+        # Create invalid model file (too small)
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        model_path = models_dir / "canonical_hex8_2p.pth"
+        model_path.write_bytes(b"small")
+
+        # Patch ROOT to use temp directory
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.ROOT",
+            tmp_path,
+        )
+
+        # With validation, should fail (file too small)
+        assert check_model_availability("hex8", 2, validate=True) is False
+
+    def test_validate_false_only_checks_existence(self, tmp_path, monkeypatch):
+        """Test validate=False only checks existence."""
+        from app.coordination.unified_distribution_daemon import (
+            check_model_availability,
+        )
+
+        # Create invalid but existing model file
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        model_path = models_dir / "canonical_hex8_2p.pth"
+        model_path.write_bytes(b"small")
+
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.ROOT",
+            tmp_path,
+        )
+
+        # Without validation, should pass (file exists)
+        assert check_model_availability("hex8", 2, validate=False) is True
+
+    def test_valid_model_passes_both_modes(self, tmp_path, monkeypatch):
+        """Test valid model passes with either validate setting."""
+        from app.coordination.unified_distribution_daemon import (
+            check_model_availability,
+        )
+
+        # Create valid model file
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        model_path = models_dir / "canonical_hex8_2p.pth"
+        model_path.write_bytes(b"PK\x03\x04" + b"\x00" * 1_500_000)
+
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.ROOT",
+            tmp_path,
+        )
+
+        assert check_model_availability("hex8", 2, validate=True) is True
+        assert check_model_availability("hex8", 2, validate=False) is True
+
+
+class TestWaitForModelDistributionFallback:
+    """Test wait_for_model_distribution timeout fallback behavior."""
+
+    @pytest.mark.asyncio
+    async def test_returns_immediately_for_valid_existing_model(
+        self, tmp_path, monkeypatch
+    ):
+        """Test returns True immediately if valid model already exists."""
+        from app.coordination.unified_distribution_daemon import (
+            wait_for_model_distribution,
+        )
+
+        # Create valid model file
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        model_path = models_dir / "canonical_hex8_2p.pth"
+        model_path.write_bytes(b"PK\x03\x04" + b"\x00" * 1_500_000)
+
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.ROOT",
+            tmp_path,
+        )
+
+        result = await wait_for_model_distribution("hex8", 2, timeout=5.0)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_fallback_uses_disk_on_timeout(self, tmp_path, monkeypatch):
+        """Test fallback checks disk after timeout if model appeared."""
+        from app.coordination.unified_distribution_daemon import (
+            wait_for_model_distribution,
+        )
+
+        # Create model directory but no model initially
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        model_path = models_dir / "canonical_hex8_2p.pth"
+
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.ROOT",
+            tmp_path,
+        )
+
+        # Mock event system to avoid import issues
+        def mock_import_error(*args, **kwargs):
+            raise ImportError("No event system")
+
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.subscribe",
+            mock_import_error,
+            raising=False,
+        )
+
+        # Start waiting, but create file after a short delay
+        async def create_model_later():
+            await asyncio.sleep(0.5)
+            model_path.write_bytes(b"PK\x03\x04" + b"\x00" * 1_500_000)
+
+        # Run both concurrently
+        task = asyncio.create_task(create_model_later())
+
+        # Use a short timeout - file should appear during wait
+        result = await wait_for_model_distribution(
+            "hex8", 2, timeout=2.0, disk_check_interval=0.3
+        )
+
+        await task  # Ensure background task completes
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_timeout_no_model(self, tmp_path, monkeypatch):
+        """Test returns False when timeout expires and no model exists."""
+        from app.coordination.unified_distribution_daemon import (
+            wait_for_model_distribution,
+        )
+
+        # Create model directory but no model
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+
+        monkeypatch.setattr(
+            "app.coordination.unified_distribution_daemon.ROOT",
+            tmp_path,
+        )
+
+        # Use very short timeout - should return False
+        result = await wait_for_model_distribution(
+            "hex8", 2, timeout=0.3, disk_check_interval=0.1
+        )
+
+        assert result is False
+
+
+class TestEmitDistributionFailedEvent:
+    """Test the distribution failure event emission."""
+
+    @pytest.mark.asyncio
+    async def test_emit_function_exists(self):
+        """Test _emit_distribution_failed_event function exists."""
+        from app.coordination.unified_distribution_daemon import (
+            _emit_distribution_failed_event,
+        )
+        assert callable(_emit_distribution_failed_event)
+
+    @pytest.mark.asyncio
+    async def test_emit_handles_import_error(self):
+        """Test emit function handles missing event router gracefully."""
+        from app.coordination.unified_distribution_daemon import (
+            _emit_distribution_failed_event,
+        )
+
+        # Should not raise even if event_router is not available
+        # (function catches ImportError)
+        try:
+            await _emit_distribution_failed_event(
+                model_name="test_model.pth",
+                expected_path="/path/to/model",
+                timeout_seconds=60.0,
+                reason="test",
+            )
+        except ImportError:
+            # This is acceptable - means event router truly unavailable
+            pass

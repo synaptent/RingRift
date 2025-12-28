@@ -382,11 +382,9 @@ class JobReaperDaemon:
                 f"(expected: {job.get('expected_timeout', 0):.0f}s)"
             )
 
-            # Kill the process if we have a PID
-            if pid and node_id:
-                await self._kill_remote_process(node_id, pid)
-
-            # Mark as timed out in work queue
+            # P1.4 Dec 2025: FIRST mark as timeout in DB, THEN kill process
+            # Previous order (kill then update) caused jobs to stay RUNNING forever
+            # if reaper crashed between kill and DB update
             try:
                 self.work_queue.timeout_work(job_id)
                 self.stats.record_job_timeout()
@@ -413,6 +411,11 @@ class JobReaperDaemon:
             except Exception as e:
                 logger.error(f"Error marking job {job_id} as timeout: {e}")
                 self.stats.record_failure(e)
+
+            # P1.4 Dec 2025: NOW kill the process (after DB is updated)
+            # Even if kill fails, the job is already marked as TIMEOUT
+            if pid and node_id:
+                await self._kill_remote_process(node_id, pid)
 
             # Blacklist the node if it's a repeat offender
             if node_id:

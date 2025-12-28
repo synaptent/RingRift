@@ -133,14 +133,38 @@ def _build_evaluation_result(payload: dict[str, Any]) -> "EvaluationResult" | No
     )
 
 
+def _task_error_callback(task: asyncio.Task) -> None:
+    """Handle errors from fire-and-forget tasks.
+
+    Dec 2025: Added to fix CRITICAL issue where task exceptions were silently lost.
+    """
+    try:
+        exc = task.exception()
+        if exc is not None:
+            logger.error(f"[IntegrationBridge] Background task failed: {exc}", exc_info=exc)
+    except (asyncio.CancelledError, asyncio.InvalidStateError):
+        pass  # Task was cancelled or still pending
+
+
 def _run_coroutine(coro: Any) -> None:
+    """Run coroutine in fire-and-forget mode with error handling.
+
+    Dec 2025: Fixed to add error callback so task exceptions are logged
+    rather than silently lost.
+    """
     if coro is None:
         return
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(coro)
+        task = loop.create_task(coro)
+        # Add error callback to catch and log task exceptions
+        task.add_done_callback(_task_error_callback)
     except RuntimeError:
-        asyncio.run(coro)
+        # No running loop - create new one (blocking)
+        try:
+            asyncio.run(coro)
+        except Exception as e:
+            logger.error(f"[IntegrationBridge] Failed to run coroutine: {e}")
 
 
 def wire_model_lifecycle_events(manager: ModelLifecycleManager) -> None:

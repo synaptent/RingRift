@@ -784,6 +784,7 @@ Special handlers retained for `_init_pipeline_orchestrator` (extra args) and `_i
 | Completed                             | Original LOC | New LOC         | Savings                  |
 | ------------------------------------- | ------------ | --------------- | ------------------------ |
 | daemon_manager.py → daemon_runners.py | ~3,600       | ~2,000 + ~1,100 | ~1,580 (deprecated code) |
+| HealthCheckMixin extraction           | ~600 (dupl.) | 214             | ~400 (76+ files can use) |
 
 **Bug Fixes (December 2025):**
 

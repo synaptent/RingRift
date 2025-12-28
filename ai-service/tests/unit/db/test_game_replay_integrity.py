@@ -65,11 +65,12 @@ class TestSchemaVersion14:
         db = GameReplayDB(str(temp_db_path))
 
         conn = sqlite3.connect(str(temp_db_path))
-        # Insert a game with 0 moves
+        # Insert a game with 0 moves - include all NOT NULL columns
         conn.execute(
             """
-            INSERT INTO games (game_id, board_type, num_players, total_moves, game_status, created_at)
-            VALUES ('trigger-test', 'hex8', 2, 0, 'in_progress', datetime('now'))
+            INSERT INTO games (game_id, board_type, num_players, total_moves, total_turns,
+                             game_status, created_at, schema_version)
+            VALUES ('trigger-test', 'hex8', 2, 0, 0, 'in_progress', datetime('now'), 14)
         """
         )
         conn.commit()
@@ -89,11 +90,12 @@ class TestSchemaVersion14:
         db = GameReplayDB(str(temp_db_path))
 
         conn = sqlite3.connect(str(temp_db_path))
-        # Insert a game with moves
+        # Insert a game with moves - include all NOT NULL columns
         conn.execute(
             """
-            INSERT INTO games (game_id, board_type, num_players, total_moves, game_status, created_at)
-            VALUES ('trigger-test-ok', 'hex8', 2, 10, 'in_progress', datetime('now'))
+            INSERT INTO games (game_id, board_type, num_players, total_moves, total_turns,
+                             game_status, created_at, schema_version)
+            VALUES ('trigger-test-ok', 'hex8', 2, 10, 5, 'in_progress', datetime('now'), 14)
         """
         )
         conn.commit()
