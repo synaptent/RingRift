@@ -489,13 +489,34 @@ class NodeSelector:
     # Health Check (December 2025)
     # =========================================================================
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self):
         """Check health status of NodeSelector.
 
         Returns:
-            Dict with status, node counts, and error info
+            HealthCheckResult with status, node counts, and error info
         """
-        status = "healthy"
+        # Import HealthCheckResult with fallback
+        try:
+            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        except ImportError:
+            from dataclasses import dataclass as _dc, field as _field
+            import time as _time
+
+            @_dc
+            class HealthCheckResult:
+                healthy: bool
+                status: str = "running"
+                message: str = ""
+                timestamp: float = _field(default_factory=_time.time)
+                details: dict = _field(default_factory=dict)
+
+            class CoordinatorStatus:
+                RUNNING = "running"
+                DEGRADED = "degraded"
+                ERROR = "error"
+
+        status = CoordinatorStatus.RUNNING
+        is_healthy = True
         errors_count = 0
         last_error: str | None = None
 
@@ -514,24 +535,28 @@ class NodeSelector:
 
         # Degrade if too few nodes
         if len(alive_nodes) == 0:
-            status = "unhealthy"
+            status = CoordinatorStatus.ERROR
+            is_healthy = False
             last_error = "No alive nodes available"
             errors_count = 1
         elif len(gpu_nodes) == 0 and len(all_nodes) > 0:
-            status = "degraded"
+            status = CoordinatorStatus.DEGRADED
             if not last_error:
                 last_error = "No GPU nodes available"
         elif unhealthy_count > len(all_nodes) // 2:
-            status = "degraded"
+            status = CoordinatorStatus.DEGRADED
 
-        return {
-            "status": status,
-            "operations_count": len(all_nodes),
-            "errors_count": errors_count,
-            "last_error": last_error,
-            "total_nodes": len(all_nodes),
-            "alive_nodes": len(alive_nodes),
-            "healthy_nodes": len(healthy_nodes),
-            "gpu_nodes": len(gpu_nodes),
-            "unhealthy_node_ids": list(self._unhealthy_nodes),
-        }
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status if isinstance(status, str) else status,
+            message=last_error or "NodeSelector healthy",
+            details={
+                "operations_count": len(all_nodes),
+                "errors_count": errors_count,
+                "total_nodes": len(all_nodes),
+                "alive_nodes": len(alive_nodes),
+                "healthy_nodes": len(healthy_nodes),
+                "gpu_nodes": len(gpu_nodes),
+                "unhealthy_node_ids": list(self._unhealthy_nodes),
+            },
+        )

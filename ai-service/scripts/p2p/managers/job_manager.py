@@ -1575,13 +1575,33 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
     # Health Check (December 2025)
     # =========================================================================
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self):
         """Check health status of JobManager.
 
         Returns:
-            Dict with status, job counts, and error info
+            HealthCheckResult with status, job counts, and error info
         """
-        status = "healthy"
+        # Import HealthCheckResult with fallback
+        try:
+            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        except ImportError:
+            from dataclasses import dataclass as _dc, field as _field
+
+            @_dc
+            class HealthCheckResult:
+                healthy: bool
+                status: str = "running"
+                message: str = ""
+                timestamp: float = _field(default_factory=time.time)
+                details: dict = _field(default_factory=dict)
+
+            class CoordinatorStatus:
+                RUNNING = "running"
+                DEGRADED = "degraded"
+                ERROR = "error"
+
+        status = CoordinatorStatus.RUNNING
+        is_healthy = True
         errors_count = 0
         last_error: str | None = None
         total_jobs = 0
@@ -1602,27 +1622,31 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
         if total_jobs > 0:
             failure_rate = failed_jobs / total_jobs
             if failure_rate > 0.5:
-                status = "unhealthy"
+                status = CoordinatorStatus.ERROR
+                is_healthy = False
                 last_error = f"High job failure rate: {failure_rate:.0%}"
                 errors_count = failed_jobs
             elif failure_rate > 0.2:
-                status = "degraded"
+                status = CoordinatorStatus.DEGRADED
                 last_error = f"Elevated job failure rate: {failure_rate:.0%}"
                 errors_count = failed_jobs
 
         # Check if subscribed to events
         if not self._subscribed:
-            if status == "healthy":
-                status = "degraded"
+            if is_healthy:
+                status = CoordinatorStatus.DEGRADED
                 last_error = "Not subscribed to events"
 
-        return {
-            "status": status,
-            "operations_count": total_jobs,
-            "errors_count": errors_count,
-            "last_error": last_error,
-            "running_jobs": running_jobs,
-            "failed_jobs": failed_jobs,
-            "job_types": list(self.active_jobs.keys()),
-            "subscribed": self._subscribed,
-        }
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status if isinstance(status, str) else status,
+            message=last_error or "JobManager healthy",
+            details={
+                "operations_count": total_jobs,
+                "errors_count": errors_count,
+                "running_jobs": running_jobs,
+                "failed_jobs": failed_jobs,
+                "job_types": list(self.active_jobs.keys()),
+                "subscribed": self._subscribed,
+            },
+        )

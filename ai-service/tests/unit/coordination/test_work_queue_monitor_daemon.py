@@ -79,7 +79,7 @@ class TestWorkQueueMonitorDaemon:
         """Test daemon initializes correctly."""
         daemon = WorkQueueMonitorDaemon()
         assert daemon._running is False
-        assert daemon._subscribed is False
+        assert daemon._event_subscribed is False  # MonitorBase uses _event_subscribed
         assert len(daemon._jobs) == 0
 
     def test_singleton_accessor(self):

@@ -20387,81 +20387,10 @@ print(json.dumps({{
 
         return success
 
-    async def _follower_discovery_loop(self) -> None:
-        """Phase 30.2: Background discovery for non-leader nodes.
-
-        This loop ensures followers actively discover peers, not just the leader.
-        It probes gossip-learned endpoints and cached peers that we haven't
-        connected to yet.
-        """
-        # Wait for initial startup
-        await asyncio.sleep(90)
-
-        while self.running:
-            try:
-                await asyncio.sleep(300)  # Every 5 minutes
-
-                # Skip if we're the leader (leader has its own discovery loops)
-                if self.role == NodeRole.LEADER:
-                    continue
-
-                # Check if we have enough peers
-                with self.peers_lock:
-                    alive_count = sum(1 for p in self.peers.values() if p.is_alive())
-
-                if alive_count >= MIN_CONNECTED_PEERS * 2:
-                    # We have plenty of peers, less aggressive discovery
-                    continue
-
-                # 1. Probe gossip-learned endpoints we haven't connected to
-                endpoints_to_try = []
-                now = time.time()
-                for node_id, endpoint in list(self._gossip_learned_endpoints.items()):
-                    if node_id == self.node_id:
-                        continue
-                    if node_id in self.peers and self.peers[node_id].is_alive():
-                        continue
-
-                    # Only try endpoints learned in the last hour
-                    if now - endpoint.get("learned_at", 0) > 3600:
-                        continue
-
-                    endpoints_to_try.append((node_id, endpoint))
-
-                # Limit attempts per cycle
-                for node_id, endpoint in endpoints_to_try[:5]:
-                    host = endpoint.get("host")
-                    port = endpoint.get("port", DEFAULT_PORT)
-                    if host and port:
-                        try:
-                            logger.debug(f"Follower discovery: trying {node_id} at {host}:{port}")
-                            info = await self._send_heartbeat_to_peer(host, port)
-                            if info:
-                                # Dec 2025: Track first-contact for HOST_ONLINE emission
-                                with self.peers_lock:
-                                    is_first_contact = info.node_id not in self.peers
-                                    self.peers[info.node_id] = info
-                                logger.info(f"Follower discovery: connected to {info.node_id}")
-                                # Dec 2025: Emit HOST_ONLINE for newly discovered peers
-                                if is_first_contact:
-                                    capabilities = []
-                                    if getattr(info, "has_gpu", False):
-                                        gpu_type = getattr(info, "gpu_type", "") or "gpu"
-                                        capabilities.append(gpu_type)
-                                    else:
-                                        capabilities.append("cpu")
-                                    await _emit_p2p_host_online(info.node_id, capabilities)
-                        except (KeyError, IndexError, AttributeError):
-                            pass
-
-                # 2. Bootstrap from any reachable cached peer
-                await self._bootstrap_from_known_peers()
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Error in follower discovery loop: {e}")
-                await asyncio.sleep(60)
+    # NOTE: _follower_discovery_loop() removed Dec 2025 (75 LOC).
+    # Now runs via LoopManager as FollowerDiscoveryLoop.
+    # See scripts/p2p/loops/discovery_loop.py for implementation.
+    # The loop uses callbacks: get_known_peers, query_peer_list, add_peer, is_leader.
 
     async def _send_relay_heartbeat(self, relay_url: str) -> dict[str, Any]:
         """Send heartbeat via relay endpoint for NAT-blocked nodes.

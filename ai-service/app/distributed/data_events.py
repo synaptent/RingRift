@@ -94,6 +94,10 @@ class DataEventType(Enum):
     CONSOLIDATION_STARTED = "consolidation_started"  # Consolidation in progress
     CONSOLIDATION_COMPLETE = "consolidation_complete"  # Games merged to canonical DB
 
+    # NPZ export events (December 2025 - triggers combination daemon)
+    NPZ_EXPORT_STARTED = "npz_export_started"  # Export in progress
+    NPZ_EXPORT_COMPLETE = "npz_export_complete"  # NPZ export finished
+
     # NPZ combination events (December 2025 - quality-weighted data combination)
     NPZ_COMBINATION_STARTED = "npz_combination_started"  # Combination in progress
     NPZ_COMBINATION_COMPLETE = "npz_combination_complete"  # Combined NPZ ready

@@ -1286,13 +1286,33 @@ class SyncPlanner(EventSubscriptionMixin):
     # Health Check (December 2025)
     # =========================================================================
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self):
         """Check health status of SyncPlanner.
 
         Returns:
-            Dict with status, sync metrics, and error info
+            HealthCheckResult with status, sync metrics, and error info
         """
-        status = "healthy"
+        # Import HealthCheckResult with fallback
+        try:
+            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        except ImportError:
+            from dataclasses import dataclass as _dc, field as _field
+
+            @_dc
+            class HealthCheckResult:
+                healthy: bool
+                status: str = "running"
+                message: str = ""
+                timestamp: float = _field(default_factory=time.time)
+                details: dict = _field(default_factory=dict)
+
+            class CoordinatorStatus:
+                RUNNING = "running"
+                DEGRADED = "degraded"
+                ERROR = "error"
+
+        status = CoordinatorStatus.RUNNING
+        is_healthy = True
         errors_count = 0
         last_error: str | None = None
 
@@ -1307,11 +1327,12 @@ class SyncPlanner(EventSubscriptionMixin):
         if self.stats.sync_jobs_created > 0:
             failure_rate = failed_jobs / self.stats.sync_jobs_created
             if failure_rate > 0.5:
-                status = "unhealthy"
+                status = CoordinatorStatus.ERROR
+                is_healthy = False
                 last_error = f"High sync failure rate: {failure_rate:.0%}"
                 errors_count = failed_jobs
             elif failure_rate > 0.2:
-                status = "degraded"
+                status = CoordinatorStatus.DEGRADED
                 last_error = f"Elevated sync failure rate: {failure_rate:.0%}"
                 errors_count = failed_jobs
 
@@ -1319,23 +1340,26 @@ class SyncPlanner(EventSubscriptionMixin):
         if self.stats.last_sync_execution > 0:
             time_since_last = time.time() - self.stats.last_sync_execution
             if time_since_last > 1800:  # 30 minutes
-                if status == "healthy":
-                    status = "degraded"
+                if is_healthy:
+                    status = CoordinatorStatus.DEGRADED
                     last_error = f"No sync in {time_since_last / 60:.0f} minutes"
 
-        return {
-            "status": status,
-            "operations_count": total_ops,
-            "errors_count": errors_count,
-            "last_error": last_error,
-            "manifests_collected": self.stats.manifests_collected,
-            "sync_plans_generated": self.stats.sync_plans_generated,
-            "sync_jobs_created": self.stats.sync_jobs_created,
-            "sync_jobs_completed": self.stats.sync_jobs_completed,
-            "sync_jobs_failed": self.stats.sync_jobs_failed,
-            "bytes_synced": self.stats.bytes_synced,
-            "last_sync_execution": self.stats.last_sync_execution,
-        }
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status if isinstance(status, str) else status,
+            message=last_error or "SyncPlanner healthy",
+            details={
+                "operations_count": total_ops,
+                "errors_count": errors_count,
+                "manifests_collected": self.stats.manifests_collected,
+                "sync_plans_generated": self.stats.sync_plans_generated,
+                "sync_jobs_created": self.stats.sync_jobs_created,
+                "sync_jobs_completed": self.stats.sync_jobs_completed,
+                "sync_jobs_failed": self.stats.sync_jobs_failed,
+                "bytes_synced": self.stats.bytes_synced,
+                "last_sync_execution": self.stats.last_sync_execution,
+            },
+        )
 
     # =========================================================================
     # Event Subscriptions (December 2025 - uses EventSubscriptionMixin)

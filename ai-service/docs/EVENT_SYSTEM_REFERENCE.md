@@ -1,8 +1,9 @@
 # Event System Reference
 
-The RingRift coordination infrastructure uses an event-driven architecture with 130+ event types organized into 25+ categories. This document provides a comprehensive reference for the event system.
+The RingRift coordination infrastructure uses an event-driven architecture with 140+ event types organized into 25+ categories. This document provides a comprehensive reference for the event system.
 
 **Created**: December 2025 (Wave 4 Phase 2)
+**Updated**: December 28, 2025 (Cross-process bridging documentation)
 
 ## Overview
 
@@ -71,6 +72,101 @@ await bus.publish(DataEvent(
     source="TrainingCoordinator",
 ))
 ```
+
+---
+
+## Cross-Process Event Bridging
+
+The event system supports cross-process communication via SQLite-backed queues. Events published in one process (e.g., P2P orchestrator) can be received by handlers in another process (e.g., training script).
+
+### How It Works
+
+1. Events are published to the in-memory `EventBus`
+2. The `UnifiedEventRouter` checks if the event type is in `DATA_TO_CROSS_PROCESS_MAP`
+3. If mapped, the event is also written to a SQLite queue (`coordination.db`)
+4. Other processes poll this queue and deliver events to local subscribers
+
+### Bridged Event Types (December 28, 2025)
+
+The following 129 event types are bridged for cross-process communication:
+
+#### Cluster Coordination Events
+
+| Event                        | Cross-Process Key            | Purpose                            |
+| ---------------------------- | ---------------------------- | ---------------------------------- |
+| `MODEL_DISTRIBUTION_STARTED` | `model_distribution_started` | Model sync initiated               |
+| `MODEL_DISTRIBUTION_FAILED`  | `model_distribution_failed`  | Model sync failed (triggers retry) |
+| `SPLIT_BRAIN_DETECTED`       | `split_brain_detected`       | Multiple leaders detected          |
+| `SPLIT_BRAIN_RESOLVED`       | `split_brain_resolved`       | Split-brain resolved               |
+| `CLUSTER_STALL_DETECTED`     | `cluster_stall_detected`     | Cluster stall detected             |
+| `NODE_TERMINATED`            | `node_terminated`            | Node shutdown notification         |
+
+#### Data Integrity Events
+
+| Event                    | Cross-Process Key        | Purpose                    |
+| ------------------------ | ------------------------ | -------------------------- |
+| `CONSOLIDATION_STARTED`  | `consolidation_started`  | Database merge started     |
+| `CONSOLIDATION_COMPLETE` | `consolidation_complete` | Database merge finished    |
+| `REPAIR_COMPLETED`       | `repair_completed`       | Data repair succeeded      |
+| `REPAIR_FAILED`          | `repair_failed`          | Data repair failed         |
+| `REPLICATION_ALERT`      | `replication_alert`      | Replication health warning |
+
+#### Sync Integrity Events
+
+| Event                   | Cross-Process Key       | Purpose                      |
+| ----------------------- | ----------------------- | ---------------------------- |
+| `SYNC_REQUEST`          | `sync_request`          | Explicit sync requested      |
+| `SYNC_CHECKSUM_FAILED`  | `sync_checksum_failed`  | Checksum mismatch detected   |
+| `SYNC_NODE_UNREACHABLE` | `sync_node_unreachable` | Node unreachable during sync |
+
+#### Recovery Events
+
+| Event                | Cross-Process Key    | Purpose                 |
+| -------------------- | -------------------- | ----------------------- |
+| `RECOVERY_INITIATED` | `recovery_initiated` | Auto-recovery started   |
+| `RECOVERY_COMPLETED` | `recovery_completed` | Auto-recovery succeeded |
+| `RECOVERY_FAILED`    | `recovery_failed`    | Auto-recovery failed    |
+
+### Configuring Cross-Process Bridging
+
+Events are mapped in `app/coordination/event_mappings.py`:
+
+```python
+from app.coordination.event_mappings import DATA_TO_CROSS_PROCESS_MAP
+
+# Check if an event is bridged
+is_bridged = "my_event" in DATA_TO_CROSS_PROCESS_MAP
+
+# Get the cross-process key
+cross_key = DATA_TO_CROSS_PROCESS_MAP.get("my_event")
+```
+
+### Adding New Bridged Events
+
+To bridge a new event type:
+
+1. Add the mapping to `DATA_TO_CROSS_PROCESS_MAP` in `event_mappings.py`:
+
+   ```python
+   DATA_TO_CROSS_PROCESS_MAP = {
+       # ... existing mappings ...
+       "my_new_event": "MY_NEW_EVENT",
+   }
+   ```
+
+2. Ensure the event type exists in `DataEventType` enum in `data_events.py`
+
+3. Test with:
+
+   ```python
+   from app.coordination.cross_process_events import get_cross_process_queue
+
+   queue = get_cross_process_queue()
+   # Publish in process A
+   queue.publish("my_new_event", {"data": "value"})
+   # Poll in process B
+   events = queue.poll()
+   ```
 
 ---
 

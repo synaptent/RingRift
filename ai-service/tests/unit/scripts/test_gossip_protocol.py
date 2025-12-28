@@ -11,8 +11,10 @@ from unittest.mock import MagicMock, AsyncMock, patch
 import pytest
 
 from scripts.p2p.gossip_protocol import GossipProtocolMixin
-from scripts.p2p.gossip_metrics import GossipMetricsMixin
 from scripts.p2p.models import NodeInfo
+
+# Note: GossipMetricsMixin was merged into GossipProtocolMixin (Dec 2025)
+# The deprecated gossip_metrics module now re-exports GossipProtocolMixin
 
 
 class MockNodeRole:
@@ -28,7 +30,7 @@ class MockNodeRole:
         self._value = value
 
 
-class GossipProtocolTestClass(GossipProtocolMixin, GossipMetricsMixin):
+class GossipProtocolTestClass(GossipProtocolMixin):
     """Test class that uses the gossip protocol mixin."""
 
     def __init__(self):

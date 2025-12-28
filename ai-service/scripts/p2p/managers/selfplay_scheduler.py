@@ -1128,13 +1128,33 @@ class SelfplayScheduler(EventSubscriptionMixin):
     # Health Check (December 2025)
     # =========================================================================
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self):
         """Check health status of SelfplayScheduler.
 
         Returns:
-            Dict with status, scheduling metrics, and error info
+            HealthCheckResult with status, scheduling metrics, and error info
         """
-        status = "healthy"
+        # Import HealthCheckResult with fallback
+        try:
+            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+        except ImportError:
+            from dataclasses import dataclass as _dc, field as _field
+
+            @_dc
+            class HealthCheckResult:
+                healthy: bool
+                status: str = "running"
+                message: str = ""
+                timestamp: float = _field(default_factory=time.time)
+                details: dict = _field(default_factory=dict)
+
+            class CoordinatorStatus:
+                RUNNING = "running"
+                DEGRADED = "degraded"
+                ERROR = "error"
+
+        status = CoordinatorStatus.RUNNING
+        is_healthy = True
         errors_count = 0
         last_error: str | None = None
 
@@ -1143,8 +1163,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
         # Check if subscribed to events
         if not self._subscribed:
-            if status == "healthy":
-                status = "degraded"
+            if is_healthy:
+                status = CoordinatorStatus.DEGRADED
                 last_error = "Not subscribed to events"
 
         # Check config coverage (all configs should have some targets)
@@ -1154,11 +1174,11 @@ class SelfplayScheduler(EventSubscriptionMixin):
         total_configs = len(self._previous_targets) if self._previous_targets else 0
 
         if total_configs > 0 and configs_with_targets == 0:
-            status = "degraded"
+            status = CoordinatorStatus.DEGRADED
             last_error = "No configs have selfplay targets"
         elif total_configs > 0 and configs_with_targets < total_configs // 2:
-            if status == "healthy":
-                status = "degraded"
+            if is_healthy:
+                status = CoordinatorStatus.DEGRADED
                 last_error = f"Only {configs_with_targets}/{total_configs} configs have targets"
 
         # Count active exploration boosts
@@ -1169,17 +1189,20 @@ class SelfplayScheduler(EventSubscriptionMixin):
             if expiry > now
         )
 
-        return {
-            "status": status,
-            "operations_count": total_configs,
-            "errors_count": errors_count,
-            "last_error": last_error,
-            "subscribed": self._subscribed,
-            "configs_tracked": total_configs,
-            "configs_with_targets": configs_with_targets,
-            "active_exploration_boosts": active_boosts,
-            "diversity_metrics": diversity,
-        }
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status if isinstance(status, str) else status,
+            message=last_error or "SelfplayScheduler healthy",
+            details={
+                "operations_count": total_configs,
+                "errors_count": errors_count,
+                "subscribed": self._subscribed,
+                "configs_tracked": total_configs,
+                "configs_with_targets": configs_with_targets,
+                "active_exploration_boosts": active_boosts,
+                "diversity_metrics": diversity,
+            },
+        )
 
     def record_promotion_failure(self, config_key: str) -> None:
         """Record a promotion failure for curriculum feedback.

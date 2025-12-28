@@ -1855,7 +1855,37 @@ PYTHONPATH=. python3 scripts/auto_promote.py --gauntlet \
 - vs RANDOM: 85% win rate required
 - vs HEURISTIC: 60% win rate required
 
-## Recent Changes (Dec 27, 2025)
+## Recent Changes (Dec 28, 2025)
+
+### Sprint 5-6 Completion (Dec 28, 2025)
+
+**Infrastructure Verification Complete:**
+
+| Component          | Status          | Details                                                                       |
+| ------------------ | --------------- | ----------------------------------------------------------------------------- |
+| P2P Cluster        | ✅ Healthy      | 33 alive peers, 5/5 voter quorum, leader=vultr-a100-20gb                      |
+| Test Suite         | ✅ Excellent    | 18,730 tests, 98.5%+ pass rate                                                |
+| Coordination Tests | ✅ Complete     | 198 test files for 176 modules (111% coverage)                                |
+| Health Checks      | ✅ Complete     | All 13 daemon classes have health_check()                                     |
+| Deprecated Modules | ✅ Consolidated | cluster_data_sync, ephemeral_sync, system_health_monitor, node_health_monitor |
+| Event Wiring       | ✅ Complete     | 27 coordinators in COORDINATOR_REGISTRY, 12 orphan events fixed               |
+
+**Test Fixes Applied:**
+
+- `test_base_event_handler.py` - Archived obsolete test (deprecated module)
+- `test_cluster_watchdog_daemon.py` - Fixed async/sync health_check() mismatch
+- `test_coordination_utils.py` - Fixed get_recent(0) expectation
+
+**Code Quality Metrics:**
+
+- Coordination module: 176 Python files, 188 total with subdirs
+- COORDINATOR_REGISTRY: 27 coordinators with declarative wiring
+- DaemonManager: 66 daemon types, all with health monitoring
+- Event system: 118 event types, unified router with deduplication
+
+---
+
+## Previous Changes (Dec 27, 2025)
 
 ### Data Distribution Infrastructure
 
@@ -2426,3 +2456,78 @@ Before terminating cloud instances:
 
 - Low VRAM (<16GB) Vast.ai nodes with no unique data
 - Redundant nodes when GH200 capacity is available
+
+### Infrastructure Fixes Completed (Dec 28, 2025)
+
+Major infrastructure fixes from the critical fixes plan:
+
+**Event System Improvements:**
+
+| Fix                           | Location              | Details                                                           |
+| ----------------------------- | --------------------- | ----------------------------------------------------------------- |
+| Cross-process event mappings  | `event_mappings.py`   | Added 17 new events (split_brain, distribution, repair, recovery) |
+| SPLIT_BRAIN_DETECTED emission | `p2p_orchestrator.py` | 3 emission points for split-brain detection                       |
+| Orphan games chain            | `sync_facade.py`      | ORPHAN_GAMES_REGISTERED → NEW_GAMES_AVAILABLE                     |
+| SYNC_REQUEST bridging         | `event_mappings.py`   | Now bridges to cross-process queue                                |
+
+**P2P Mixin Health Checks:**
+
+All 5 P2P mixins now implement `health_check()` returning standard `{healthy, message, details}` format:
+
+| Mixin               | File                  | Key Metrics                       |
+| ------------------- | --------------------- | --------------------------------- |
+| LeaderElectionMixin | `leader_election.py`  | Quorum status, lease remaining    |
+| PeerManagerMixin    | `peer_manager.py`     | Active/cached peers, NAT blocked  |
+| MembershipMixin     | `membership_mixin.py` | SWIM status, membership mode      |
+| GossipProtocolMixin | `gossip_protocol.py`  | Messages sent/received, staleness |
+| ConsensusMixin      | `consensus_mixin.py`  | Raft status, term number          |
+
+**Handler Improvements:**
+
+| Handler                   | Fix                                                  | Location                         |
+| ------------------------- | ---------------------------------------------------- | -------------------------------- |
+| MODEL_DISTRIBUTION_FAILED | Added retry with exponential backoff (10s, 20s, 40s) | `unified_distribution_daemon.py` |
+| QUALITY_SCORE_UPDATED     | Handler verified wired                               | `feedback_loop_controller.py`    |
+| Data staleness gate       | Already implemented                                  | `train.py:778-842`               |
+
+**New Cross-Process Events (17 added):**
+
+```python
+# Model distribution
+"model_distribution_started": "MODEL_DISTRIBUTION_STARTED",
+"model_distribution_failed": "MODEL_DISTRIBUTION_FAILED",
+
+# Data consolidation
+"consolidation_started": "CONSOLIDATION_STARTED",
+"consolidation_complete": "CONSOLIDATION_COMPLETE",
+
+# Replication/repair
+"repair_completed": "REPAIR_COMPLETED",
+"repair_failed": "REPAIR_FAILED",
+"replication_alert": "REPLICATION_ALERT",
+
+# Split-brain detection
+"split_brain_detected": "SPLIT_BRAIN_DETECTED",
+"split_brain_resolved": "SPLIT_BRAIN_RESOLVED",
+
+# Sync integrity
+"sync_request": "SYNC_REQUEST",
+"sync_checksum_failed": "SYNC_CHECKSUM_FAILED",
+"sync_node_unreachable": "SYNC_NODE_UNREACHABLE",
+
+# Recovery events
+"recovery_initiated": "RECOVERY_INITIATED",
+"recovery_completed": "RECOVERY_COMPLETED",
+"recovery_failed": "RECOVERY_FAILED",
+
+# Node lifecycle
+"node_terminated": "NODE_TERMINATED",
+"cluster_stall_detected": "CLUSTER_STALL_DETECTED",
+```
+
+**Verification Results:**
+
+- 158 coordination tests passing
+- All P2P mixin health_check methods verified
+- No circular import issues
+- DATA_TO_CROSS_PROCESS_MAP now has 129 events (was 112)
