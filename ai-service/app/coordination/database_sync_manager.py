@@ -491,9 +491,9 @@ class DatabaseSyncManager(SyncManagerBase):
             True if pull and merge succeeded
         """
         try:
-            # Create temp file for download
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
-                tmp_path = Path(tmp.name)
+            # Create temp directory for download (to hold DB and WAL files)
+            tmp_dir = Path(tempfile.mkdtemp(prefix="db_sync_"))
+            tmp_path = tmp_dir / Path(remote_path).name
 
             # Build rsync command (Dec 2025: use centralized timeout)
             from app.config.thresholds import RSYNC_TIMEOUT
@@ -503,13 +503,23 @@ class DatabaseSyncManager(SyncManagerBase):
             ssh_cmd = f"ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
             if ssh_key:
                 ssh_cmd += f" -i {ssh_key}"
+
+            # Dec 2025: Include WAL files (.db-wal, .db-shm) to prevent data loss
+            # Remote path might be /path/to/file.db, we need to sync from directory
+            remote_dir = str(Path(remote_path).parent) + "/"
+            db_name = Path(remote_path).name
+
             rsync_cmd = [
                 "rsync",
                 "-avz",
                 f"--timeout={RSYNC_TIMEOUT}",
+                f"--include={db_name}",
+                f"--include={db_name}-wal",
+                f"--include={db_name}-shm",
+                "--exclude=*",
                 "-e", ssh_cmd,
-                f"{ssh_user}@{host}:{remote_path}",
-                str(tmp_path),
+                f"{ssh_user}@{host}:{remote_dir}",
+                str(tmp_dir) + "/",
             ]
 
             # Run rsync

@@ -236,8 +236,10 @@ class TestInvalidGameError:
 
         # Can create instance
         error = InvalidGameError("Test error", game_id="test-123", move_count=0)
-        assert "test-123" in str(error.context)
-        assert error.context["move_count"] == 0
+        # Uses 'details' dict for additional context (not 'context')
+        assert "test-123" in str(error.details)
+        assert error.details["move_count"] == 0
+        assert error.game_id == "test-123"
 
     def test_invalid_game_error_inherits_from_data_quality_error(self):
         """Test that InvalidGameError inherits from DataQualityError."""
