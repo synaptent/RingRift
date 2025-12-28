@@ -518,40 +518,32 @@ class StateManager:
         Returns:
             The loaded cluster epoch value
         """
-        conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=SQLiteDefaults.READ_TIMEOUT)
-            cursor = conn.cursor()
-            cursor.execute("SELECT value FROM config WHERE key = 'cluster_epoch'")
-            row = cursor.fetchone()
-            if row:
-                self._cluster_epoch = int(row[0])
-                logger.info(f"Loaded cluster epoch: {self._cluster_epoch}")
-        except Exception as e:
+            with self._db_connection(read_only=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM config WHERE key = 'cluster_epoch'")
+                row = cursor.fetchone()
+                if row:
+                    self._cluster_epoch = int(row[0])
+                    logger.info(f"Loaded cluster epoch: {self._cluster_epoch}")
+        except (sqlite3.Error, ValueError, TypeError) as e:
             if self.verbose:
                 logger.debug(f"Error loading cluster epoch: {e}")
-        finally:
-            if conn:
-                conn.close()
         return self._cluster_epoch
 
     def save_cluster_epoch(self) -> None:
         """Save cluster epoch to database."""
-        conn = None
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=SQLiteDefaults.WRITE_TIMEOUT)
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO config (key, value) VALUES ('cluster_epoch', ?)",
-                (str(self._cluster_epoch),),
-            )
-            conn.commit()
-        except Exception as e:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT OR REPLACE INTO config (key, value) VALUES ('cluster_epoch', ?)",
+                    (str(self._cluster_epoch),),
+                )
+                conn.commit()
+        except sqlite3.Error as e:
             if self.verbose:
                 logger.debug(f"Error saving cluster epoch: {e}")
-        finally:
-            if conn:
-                conn.close()
 
     def increment_cluster_epoch(self) -> int:
         """Increment cluster epoch (called on leader change).
@@ -585,17 +577,13 @@ class StateManager:
         Args:
             job_id: The job ID to delete
         """
-        conn = None
         try:
-            conn = self._db_connect()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
-            conn.commit()
-        except Exception as e:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+                conn.commit()
+        except sqlite3.Error as e:
             logger.error(f"Failed to delete job {job_id}: {e}")
-        finally:
-            if conn:
-                conn.close()
 
     def update_job_status(self, job_id: str, status: str) -> None:
         """Update a job's status in the database.
@@ -604,20 +592,16 @@ class StateManager:
             job_id: The job ID to update
             status: The new status value
         """
-        conn = None
         try:
-            conn = self._db_connect()
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE jobs SET status = ? WHERE job_id = ?",
-                (status, job_id),
-            )
-            conn.commit()
-        except Exception as e:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE jobs SET status = ? WHERE job_id = ?",
+                    (status, job_id),
+                )
+                conn.commit()
+        except sqlite3.Error as e:
             logger.error(f"Failed to update job {job_id} status: {e}")
-        finally:
-            if conn:
-                conn.close()
 
     def clear_stale_jobs(self) -> int:
         """Clear jobs that are no longer running.
@@ -625,21 +609,17 @@ class StateManager:
         Returns:
             Number of jobs cleared
         """
-        conn = None
         cleared = 0
         try:
-            conn = self._db_connect()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM jobs WHERE status != 'running'")
-            cleared = cursor.rowcount
-            conn.commit()
-            if cleared > 0:
-                logger.info(f"Cleared {cleared} stale jobs from database")
-        except Exception as e:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM jobs WHERE status != 'running'")
+                cleared = cursor.rowcount
+                conn.commit()
+                if cleared > 0:
+                    logger.info(f"Cleared {cleared} stale jobs from database")
+        except sqlite3.Error as e:
             logger.error(f"Failed to clear stale jobs: {e}")
-        finally:
-            if conn:
-                conn.close()
         return cleared
 
     # =========================================================================

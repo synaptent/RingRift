@@ -743,7 +743,12 @@ class DataPipelineOrchestrator:
         """Subscribe to pipeline stage events.
 
         Returns:
-            True if successfully subscribed
+            True if ALL subscriptions succeeded, False if any failed
+
+        Note:
+            December 28, 2025: Fixed to properly track subscription failures.
+            Previously _subscribed was set True in finally block even on failure,
+            which hid partial subscription failures.
         """
         if self._subscribed:
             return True
@@ -754,23 +759,50 @@ class DataPipelineOrchestrator:
 
             router = get_router()
 
-            # Subscribe to all pipeline stage events
-            router.subscribe(StageEvent.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-            router.subscribe(
-                StageEvent.CANONICAL_SELFPLAY_COMPLETE, self._on_selfplay_complete
-            )
-            router.subscribe(StageEvent.GPU_SELFPLAY_COMPLETE, self._on_selfplay_complete)
-            router.subscribe(StageEvent.SYNC_COMPLETE, self._on_sync_complete)
-            router.subscribe(StageEvent.NPZ_EXPORT_COMPLETE, self._on_npz_export_complete)
-            router.subscribe(StageEvent.TRAINING_STARTED, self._on_training_started)
-            router.subscribe(StageEvent.TRAINING_COMPLETE, self._on_training_complete)
-            router.subscribe(StageEvent.TRAINING_FAILED, self._on_training_failed)
-            router.subscribe(StageEvent.EVALUATION_COMPLETE, self._on_evaluation_complete)
-            router.subscribe(StageEvent.PROMOTION_COMPLETE, self._on_promotion_complete)
-            router.subscribe(StageEvent.ITERATION_COMPLETE, self._on_iteration_complete)
+            # Track subscriptions for proper error reporting
+            subscriptions = [
+                (StageEvent.SELFPLAY_COMPLETE, self._on_selfplay_complete, "SELFPLAY_COMPLETE"),
+                (StageEvent.CANONICAL_SELFPLAY_COMPLETE, self._on_selfplay_complete, "CANONICAL_SELFPLAY_COMPLETE"),
+                (StageEvent.GPU_SELFPLAY_COMPLETE, self._on_selfplay_complete, "GPU_SELFPLAY_COMPLETE"),
+                (StageEvent.SYNC_COMPLETE, self._on_sync_complete, "SYNC_COMPLETE"),
+                (StageEvent.NPZ_EXPORT_COMPLETE, self._on_npz_export_complete, "NPZ_EXPORT_COMPLETE"),
+                (StageEvent.TRAINING_STARTED, self._on_training_started, "TRAINING_STARTED"),
+                (StageEvent.TRAINING_COMPLETE, self._on_training_complete, "TRAINING_COMPLETE"),
+                (StageEvent.TRAINING_FAILED, self._on_training_failed, "TRAINING_FAILED"),
+                (StageEvent.EVALUATION_COMPLETE, self._on_evaluation_complete, "EVALUATION_COMPLETE"),
+                (StageEvent.PROMOTION_COMPLETE, self._on_promotion_complete, "PROMOTION_COMPLETE"),
+                (StageEvent.ITERATION_COMPLETE, self._on_iteration_complete, "ITERATION_COMPLETE"),
+            ]
 
+            successful_subscriptions: list[str] = []
+            failed_subscriptions: list[tuple[str, str]] = []  # (event_name, error_message)
+
+            for event, handler, event_name in subscriptions:
+                try:
+                    router.subscribe(event, handler)
+                    successful_subscriptions.append(event_name)
+                except Exception as sub_error:
+                    failed_subscriptions.append((event_name, str(sub_error)))
+                    logger.error(
+                        f"[DataPipelineOrchestrator] Failed to subscribe to {event_name}: {sub_error}"
+                    )
+
+            # Report subscription results
+            if failed_subscriptions:
+                failed_names = [name for name, _ in failed_subscriptions]
+                logger.error(
+                    f"[DataPipelineOrchestrator] Failed to subscribe to {len(failed_subscriptions)} "
+                    f"events: {failed_names}. Successfully subscribed to: {successful_subscriptions}"
+                )
+                # Don't set _subscribed = True since we have failures
+                return False
+
+            # All subscriptions succeeded
+            self._subscribed = True
             self._prefer_stage_events = True
-            logger.info("[DataPipelineOrchestrator] Subscribed to stage events")
+            logger.info(
+                f"[DataPipelineOrchestrator] Subscribed to {len(successful_subscriptions)} stage events"
+            )
             return True
 
         except ImportError as e:
@@ -783,10 +815,6 @@ class DataPipelineOrchestrator:
                 exc_info=True,
             )
             return False
-        finally:
-            # December 27, 2025: Always set _subscribed = True in finally block
-            # This ensures cleanup runs even if subscription partially fails
-            self._subscribed = True
 
     def subscribe_to_data_events(self) -> bool:
         """Subscribe to DataEventBus events (December 2025).

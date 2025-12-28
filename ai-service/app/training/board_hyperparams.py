@@ -34,9 +34,9 @@ class BoardHyperparams:
     num_hidden_layers: int = 2
 
     # Regularization
-    # Dec 28, 2025: Increased weight_decay from 0.0001 to 0.001 to reduce overfitting
-    # Training logs showed 46% train/val divergence - models memorizing instead of generalizing
-    weight_decay: float = 0.001  # 10x increase for better generalization
+    # Dec 28, 2025: Using 0.0001 to prevent underfitting while maintaining generalization
+    # Higher values (0.001) were causing models to plateau at 1500 Elo
+    weight_decay: float = 0.0001  # Balanced regularization
     dropout: float = 0.1
     label_smoothing: float = 0.05
 

@@ -744,19 +744,16 @@ class UnifiedDistributionDaemon:
         December 27, 2025: Added external storage routing.
         Nodes with use_external_storage: true get files routed to their
         configured storage_paths (e.g., mac-studio -> /Volumes/RingRift-Data).
+
+        December 28, 2025: Added remote path discovery fallback.
+        When no explicit remote_path is provided, probes the node to discover
+        the correct path from REMOTE_PATH_PATTERNS.
         """
-        if isinstance(target, str):
-            host = target
-            user = "root"
-            remote_path = "~/ringrift/ai-service"
-            ssh_key = None
-            node_name = None
-        else:
-            host = target.get("host", "")
-            user = target.get("user", target.get("ssh_user", "root"))
-            remote_path = target.get("remote_path", "~/ringrift/ai-service")
-            ssh_key = target.get("ssh_key")
-            node_name = target.get("node_id")
+        # Get node_name before path resolution for external storage lookup
+        node_name = target.get("node_id") if isinstance(target, dict) else None
+
+        # December 28, 2025: Use path discovery with fallback
+        host, user, remote_path, ssh_key = await self._get_remote_path(target)
 
         # December 27, 2025: Check for external storage routing
         # Nodes with use_external_storage get files routed to OWC/external drives
@@ -1051,23 +1048,23 @@ class UnifiedDistributionDaemon:
         expected_checksum: str,
         data_type: DataType,
     ) -> bool:
-        """Verify checksum on remote node."""
-        if isinstance(target, str):
-            host = target
-            user = "root"
-            remote_path = "~/ringrift/ai-service"
-        else:
-            host = target.get("host", "")
-            user = target.get("user", target.get("ssh_user", "root"))
-            remote_path = target.get("remote_path", "~/ringrift/ai-service")
+        """Verify checksum on remote node.
+
+        December 28, 2025: Uses remote path discovery for consistent paths.
+        """
+        # December 28, 2025: Use path discovery with fallback
+        host, user, remote_path, ssh_key = await self._get_remote_path(target)
 
         if data_type == DataType.MODEL:
             remote_file = f"{remote_path}/models/{file_path.name}"
         else:
             remote_file = f"{remote_path}/data/training/{file_path.name}"
 
-        cmd = [
-            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+        ssh_opts = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+        if ssh_key:
+            ssh_opts.extend(["-i", ssh_key])
+
+        cmd = ["ssh"] + ssh_opts + [
             f"{user}@{host}",
             f"sha256sum {remote_file} 2>/dev/null | cut -d' ' -f1",
         ]
