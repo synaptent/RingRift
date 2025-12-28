@@ -41,12 +41,12 @@ class TestGetAvailableDiskSpace:
         available = get_available_disk_space(nested_path)
         assert available > 0
 
-    def test_raises_for_invalid_root(self) -> None:
-        """Test that it raises OSError for invalid path."""
-        # Use a path that doesn't exist and has no valid parent
-        invalid_path = Path("/nonexistent_root_12345/file.db")
-        with pytest.raises(OSError, match="no existing path found"):
-            get_available_disk_space(invalid_path)
+    def test_handles_paths_with_missing_intermediate_dirs(self, tmp_path: Path) -> None:
+        """Test that it handles paths with missing intermediate directories."""
+        # Even a deeply nested non-existent path should work if parent exists
+        nested_path = tmp_path / "deeply" / "nested" / "path" / "file.db"
+        available = get_available_disk_space(nested_path)
+        assert available > 0  # Should resolve to tmp_path
 
 
 class TestCheckDiskSpaceAvailable:
@@ -70,12 +70,13 @@ class TestCheckDiskSpaceAvailable:
         result = check_disk_space_available(tmp_path)
         assert isinstance(result, bool)
 
-    def test_returns_false_on_error(self) -> None:
+    def test_returns_false_when_mocked_to_fail(self, tmp_path: Path) -> None:
         """Test returns False (with warning) on error."""
-        invalid_path = Path("/nonexistent_root_12345/file.db")
-        # Should not raise, should return False
-        result = check_disk_space_available(invalid_path)
-        assert result is False
+        # Mock the statvfs to simulate failure
+        with patch("app.utils.disk_utils.get_available_disk_space") as mock:
+            mock.side_effect = OSError("Mocked disk error")
+            result = check_disk_space_available(tmp_path)
+            assert result is False
 
     def test_works_with_string_path(self, tmp_path: Path) -> None:
         """Test that string paths work."""
@@ -104,14 +105,15 @@ class TestEnsureDiskSpace:
         assert "available_bytes" in error.details
         assert "required_bytes" in error.details
 
-    def test_raises_on_invalid_path(self) -> None:
-        """Test raises DiskSpaceError when path is invalid."""
-        invalid_path = Path("/nonexistent_root_12345/file.db")
-        with pytest.raises(DiskSpaceError) as exc_info:
-            ensure_disk_space(invalid_path, operation="test")
+    def test_raises_on_disk_check_failure(self, tmp_path: Path) -> None:
+        """Test raises DiskSpaceError when disk check fails."""
+        with patch("app.utils.disk_utils.get_available_disk_space") as mock:
+            mock.side_effect = OSError("Mocked disk error")
+            with pytest.raises(DiskSpaceError) as exc_info:
+                ensure_disk_space(tmp_path, operation="test")
 
-        error = exc_info.value
-        assert "Cannot verify disk space" in str(error)
+            error = exc_info.value
+            assert "Cannot verify disk space" in str(error)
 
     def test_includes_operation_in_error_message(self, tmp_path: Path) -> None:
         """Test that operation name is included in error."""

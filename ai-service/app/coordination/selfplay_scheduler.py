@@ -353,14 +353,16 @@ class SelfplayScheduler:
     # Priority Calculation
     # =========================================================================
 
-    async def get_priority_configs(self, top_n: int = 6) -> list[tuple[str, float]]:
+    async def get_priority_configs(self, top_n: int = 12) -> list[tuple[str, float]]:
         """Get configs ranked by priority for selfplay allocation.
 
         Args:
-            top_n: Number of top priority configs to return
+            top_n: Number of top priority configs to return (default: 12 for all configs)
 
         Returns:
             List of (config_key, priority_score) tuples, sorted by priority
+
+        December 28, 2025: Changed default from 6 to 12 to include all board/player configs.
         """
         await self._update_priorities()
 

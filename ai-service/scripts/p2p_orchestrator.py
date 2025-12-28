@@ -9490,6 +9490,69 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_admin_reset_node_jobs(self, request: web.Request) -> web.Response:
+        """Reset job counts for a specific node (for zombie cleanup).
+
+        POST /admin/reset_node_jobs with JSON body:
+            {"node_id": "node-id-to-reset"}
+
+        Leader-only: Resets selfplay_jobs and training_jobs to 0 for a node.
+        Use when zombie processes have been killed and job counts are stale.
+
+        Returns:
+            JSON with success status and updated node info
+        """
+        try:
+            # Leader-only endpoint
+            if self.role != NodeRole.LEADER:
+                return web.json_response({
+                    "error": "This endpoint is only available on the cluster leader"
+                }, status=403)
+
+            data = await request.json()
+            node_id = data.get("node_id", "").strip()
+            if not node_id:
+                return web.json_response({
+                    "error": "node_id is required in request body"
+                }, status=400)
+
+            async with AsyncLockWrapper(self.peers_lock):
+                if node_id not in self.peers:
+                    available = list(self.peers.keys())
+                    return web.json_response({
+                        "error": f"Node '{node_id}' not found in peer registry",
+                        "available_nodes": available[:20],
+                        "total_nodes": len(available),
+                    }, status=404)
+
+                peer_info = self.peers[node_id]
+
+                # Get old values for logging
+                old_selfplay = getattr(peer_info, "selfplay_jobs", 0)
+                old_training = getattr(peer_info, "training_jobs", 0)
+
+                # Reset job counts
+                peer_info.selfplay_jobs = 0
+                peer_info.training_jobs = 0
+
+                logger.info(
+                    f"Reset job counts for {node_id}: "
+                    f"selfplay {old_selfplay}->0, training {old_training}->0 (admin request)"
+                )
+
+            return web.json_response({
+                "success": True,
+                "node_id": node_id,
+                "message": f"Reset job counts for '{node_id}'",
+                "previous_selfplay_jobs": old_selfplay,
+                "previous_training_jobs": old_training,
+                "current_selfplay_jobs": 0,
+                "current_training_jobs": 0,
+            })
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error in handle_admin_reset_node_jobs: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_training_sync(self, request: web.Request) -> web.Response:
         """Manually trigger sync of selfplay data to training nodes.
 

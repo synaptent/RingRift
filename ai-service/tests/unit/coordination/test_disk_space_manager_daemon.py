@@ -99,9 +99,9 @@ class TestDiskSpaceConfig:
         config = DiskSpaceConfig()
         assert config.check_interval_seconds == 1800
         assert config.proactive_cleanup_threshold == 60
-        assert config.warning_threshold == 70
-        assert config.critical_threshold == 85
-        assert config.emergency_threshold == 95
+        assert config.warning_threshold == 65
+        assert config.critical_threshold == 70
+        assert config.emergency_threshold == 85
         assert config.target_disk_usage == 50
         assert config.log_retention_days == 7
         assert config.enable_cleanup is True

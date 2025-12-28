@@ -1774,19 +1774,26 @@ async def wait_for_model_distribution(
 def check_model_availability(
     board_type: str,
     num_players: int,
+    validate: bool = True,
 ) -> bool:
     """Synchronously check if a model is available locally.
 
     Args:
         board_type: Board type (hex8, square8, etc.)
         num_players: Number of players (2, 3, 4)
+        validate: If True, also validates file integrity (size > 1MB, valid zip header)
+                  If False, only checks existence (backward compatible behavior)
 
     Returns:
-        True if model exists locally, False otherwise
+        True if model exists locally (and is valid if validate=True), False otherwise
 
     Example:
         if not check_model_availability("hex8", 2):
             logger.warning("Model not available yet")
+
+        # Quick existence check only
+        if check_model_availability("hex8", 2, validate=False):
+            logger.info("Model file exists (may still be downloading)")
     """
     config_key = f"{board_type}_{num_players}p"
     model_name = f"canonical_{config_key}.pth"
@@ -1797,7 +1804,38 @@ def check_model_availability(
     symlink_name = f"ringrift_best_{config_key}.pth"
     symlink_path = models_dir / symlink_name
 
-    return model_path.exists() or symlink_path.exists()
+    if validate:
+        # Check for valid model file (preferred)
+        if _is_valid_model_file(model_path):
+            return True
+        # Fall back to symlink
+        if _is_valid_model_file(symlink_path):
+            return True
+        return False
+    else:
+        # Backward-compatible existence check only
+        return model_path.exists() or symlink_path.exists()
+
+
+def is_valid_model_file(path: str | Path) -> bool:
+    """Check if a model file exists and appears to be valid.
+
+    Public wrapper for model validation. Validates that:
+    1. File exists
+    2. File is at least 1MB (smaller files are likely corrupted)
+    3. File starts with PK header (zip/pth format)
+
+    Args:
+        path: Path to the model file
+
+    Returns:
+        True if file exists and appears valid, False otherwise
+
+    Example:
+        if is_valid_model_file("models/canonical_hex8_2p.pth"):
+            logger.info("Model is valid and ready to use")
+    """
+    return _is_valid_model_file(path)
 
 
 # =============================================================================
