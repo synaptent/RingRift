@@ -1581,6 +1581,7 @@ async def wait_for_model_distribution(
     board_type: str,
     num_players: int,
     timeout: float = 300.0,
+    disk_check_interval: float = 30.0,
 ) -> bool:
     """Wait for a model to be distributed to this node.
 
@@ -1589,10 +1590,18 @@ async def wait_for_model_distribution(
     to avoid race conditions where nodes try to load models before
     distribution completes.
 
+    Features (Dec 2025 improvements):
+        - Initial check for existing valid model on disk
+        - Periodic disk checks every 30s during wait (catches rsync from other sources)
+        - Fallback to local disk on timeout (if model appeared but event was missed)
+        - Emits MODEL_DISTRIBUTION_FAILED event on final timeout
+        - Validates model file integrity (size > 1MB, valid zip header)
+
     Args:
         board_type: Board type (hex8, square8, etc.)
         num_players: Number of players (2, 3, 4)
         timeout: Maximum time to wait in seconds (default: 300)
+        disk_check_interval: How often to check disk during wait (default: 30)
 
     Returns:
         True if model is available, False if timed out
@@ -1610,18 +1619,25 @@ async def wait_for_model_distribution(
     models_dir = ROOT / "models"
     model_path = models_dir / model_name
 
-    # Check if model already exists locally
-    if model_path.exists():
-        logger.debug(f"[ModelDistribution] Model already available: {model_path}")
+    # Check if model already exists locally and is valid
+    if _is_valid_model_file(model_path):
+        logger.debug(f"[ModelDistribution] Valid model already available: {model_path}")
         return True
+
+    # Also check if file exists but may not be valid yet (still downloading)
+    if model_path.exists():
+        logger.debug(
+            f"[ModelDistribution] Model file exists but may be incomplete: {model_path}"
+        )
 
     # Wait for MODEL_DISTRIBUTION_COMPLETE event
     logger.info(
         f"[ModelDistribution] Waiting for {model_name} distribution "
-        f"(timeout: {timeout}s)..."
+        f"(timeout: {timeout}s, disk_check_interval: {disk_check_interval}s)..."
     )
 
     distribution_event = asyncio.Event()
+    disk_found_event = asyncio.Event()
 
     def on_distribution_complete(event: Any) -> None:
         """Handle MODEL_DISTRIBUTION_COMPLETE event."""
@@ -1639,36 +1655,119 @@ async def wait_for_model_distribution(
         except (AttributeError, KeyError, TypeError) as e:
             logger.warning(f"[ModelDistribution] Error handling event: {e}")
 
+    async def periodic_disk_check() -> None:
+        """Periodically check if model appeared on disk (e.g., via rsync)."""
+        while not distribution_event.is_set() and not disk_found_event.is_set():
+            await asyncio.sleep(disk_check_interval)
+            if _is_valid_model_file(model_path):
+                logger.info(
+                    f"[ModelDistribution] Model {model_name} found on disk during wait "
+                    "(may have been synced via rsync from another source)"
+                )
+                disk_found_event.set()
+                return
+
     # Subscribe to distribution events
     try:
         from app.coordination.event_router import DataEventType, subscribe
 
         subscribe(DataEventType.MODEL_DISTRIBUTION_COMPLETE, on_distribution_complete)
 
+        # Start periodic disk check task
+        disk_check_task = asyncio.create_task(periodic_disk_check())
+
         try:
-            await asyncio.wait_for(distribution_event.wait(), timeout=timeout)
-            logger.info(f"[ModelDistribution] Model {model_name} is now available")
-            return True
-        except asyncio.TimeoutError:
+            # Wait for either event or disk discovery
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                # Check if either event fired
+                if distribution_event.is_set():
+                    disk_check_task.cancel()
+                    logger.info(
+                        f"[ModelDistribution] Model {model_name} is now available (via event)"
+                    )
+                    return True
+
+                if disk_found_event.is_set():
+                    disk_check_task.cancel()
+                    logger.info(
+                        f"[ModelDistribution] Model {model_name} is now available (via disk check)"
+                    )
+                    return True
+
+                # Wait a short time before checking again
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            distribution_event.wait(),
+                            disk_found_event.wait(),
+                            return_exceptions=True,
+                        ),
+                        timeout=min(5.0, timeout - (time.time() - start_time)),
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Keep waiting
+
+            # Timeout reached - cancel disk check task
+            disk_check_task.cancel()
+
+            # FALLBACK: Check if model appeared on disk after timeout
+            if _is_valid_model_file(model_path):
+                logger.info(
+                    f"[ModelDistribution] Using existing local model after distribution "
+                    f"timeout: {model_path}"
+                )
+                return True
+
+            # Final failure - emit event
             logger.warning(
                 f"[ModelDistribution] Timed out waiting for {model_name} "
-                f"after {timeout}s"
+                f"after {timeout}s and no local fallback found"
+            )
+            await _emit_distribution_failed_event(
+                model_name=model_name,
+                expected_path=model_path,
+                timeout_seconds=timeout,
+                reason=f"Distribution timeout after {timeout}s, no local fallback",
             )
             return False
+
+        except asyncio.CancelledError:
+            disk_check_task.cancel()
+            raise
 
     except ImportError:
         logger.debug("[ModelDistribution] Event system not available")
         # Without event system, just check if file appeared
         start_time = time.time()
         while time.time() - start_time < timeout:
-            if model_path.exists():
-                logger.info(f"[ModelDistribution] Model {model_name} found on disk")
+            if _is_valid_model_file(model_path):
+                logger.info(
+                    f"[ModelDistribution] Valid model {model_name} found on disk"
+                )
                 return True
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(disk_check_interval)
+
+        # Final fallback check
+        if _is_valid_model_file(model_path):
+            logger.info(
+                f"[ModelDistribution] Using existing local model after wait: {model_path}"
+            )
+            return True
 
         logger.warning(
             f"[ModelDistribution] Model {model_name} not found after {timeout}s"
         )
+        # Emit failure event (best effort without event system)
+        try:
+            await _emit_distribution_failed_event(
+                model_name=model_name,
+                expected_path=model_path,
+                timeout_seconds=timeout,
+                reason=f"Distribution timeout after {timeout}s (event system unavailable)",
+            )
+        except (ImportError, RuntimeError):
+            pass  # Event system truly unavailable
         return False
 
 

@@ -265,6 +265,8 @@ class JobReaperDaemon:
         if time.time() > bl.expires_at:
             # Expired, remove from blacklist
             del self.blacklisted_nodes[node_id]
+            # P0.4: Also remove from persistence
+            self._remove_blacklist_entry(node_id)
             logger.info(f"Node {node_id} removed from blacklist (expired)")
             return False
 
