@@ -127,6 +127,18 @@ class SyncDefaults:
     # Registry sync interval (seconds)
     REGISTRY_SYNC_INTERVAL: float = _env_float("RINGRIFT_REGISTRY_SYNC_INTERVAL", 120.0)
 
+    # Sync operation timeout (seconds) - for waiting for sync to complete
+    SYNC_TIMEOUT: float = _env_float("RINGRIFT_SYNC_TIMEOUT", 300.0)
+
+    # Stall detection timeout (seconds) - consider sync stalled after this
+    STALL_DETECTION_TIMEOUT: float = _env_float("RINGRIFT_SYNC_STALL_TIMEOUT", 600.0)
+
+    # Emergency sync cooldown (seconds) - minimum time between emergency syncs
+    EMERGENCY_SYNC_COOLDOWN: float = _env_float("RINGRIFT_EMERGENCY_SYNC_COOLDOWN", 600.0)
+
+    # Fast sync interval (seconds) - for training freshness or high-priority syncs
+    FAST_SYNC_INTERVAL: float = _env_float("RINGRIFT_FAST_SYNC_INTERVAL", 30.0)
+
 
 # =============================================================================
 # Heartbeat Defaults
@@ -231,7 +243,11 @@ class CircuitBreakerDefaults:
     RECOVERY_TIMEOUT: float = _env_float("RINGRIFT_CB_RECOVERY_TIMEOUT", 60.0)
 
     # Maximum backoff timeout (seconds)
-    MAX_BACKOFF: float = _env_float("RINGRIFT_CB_MAX_BACKOFF", 600.0)
+    # Dec 28, 2025: Reduced from 600 (10 min) to 180 (3 min) to prevent long stalls
+    # in training pipelines. With sync decoupled from circuit breaker backpressure,
+    # data continues to flow even during circuit-open periods, so shorter recovery
+    # attempts are safe and improve overall pipeline throughput.
+    MAX_BACKOFF: float = _env_float("RINGRIFT_CB_MAX_BACKOFF", 180.0)
 
     # Half-open state max calls for testing recovery
     HALF_OPEN_MAX_CALLS: int = _env_int("RINGRIFT_CB_HALF_OPEN_MAX_CALLS", 1)
@@ -1532,6 +1548,87 @@ class SyncIntegrityDefaults:
 
 
 # =============================================================================
+# Curriculum Integration Defaults (December 28, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class CurriculumDefaults:
+    """Default values for curriculum integration and feedback loops.
+
+    Used by: app/coordination/curriculum_integration.py
+
+    These control the feedback loops between training performance and
+    curriculum weight adjustments.
+    """
+    # Win rate threshold - opponent considered mastered above this (fraction)
+    MASTERY_THRESHOLD: float = _env_float("RINGRIFT_MASTERY_THRESHOLD", 0.85)
+
+    # Interval between curriculum checks (seconds)
+    CHECK_INTERVAL: float = _env_float("RINGRIFT_CURRICULUM_CHECK_INTERVAL", 120.0)
+
+    # Temperature boost factor for exploration on low quality (1.3 = +30%)
+    EXPLORATION_BOOST_FACTOR: float = _env_float(
+        "RINGRIFT_EXPLORATION_BOOST_FACTOR", 1.3
+    )
+
+    # Quality threshold below which exploration is boosted (fraction)
+    LOW_QUALITY_THRESHOLD: float = _env_float(
+        "RINGRIFT_LOW_QUALITY_THRESHOLD", 0.3
+    )
+
+    # Minimum games before updating curriculum weights
+    MIN_GAMES_FOR_UPDATE: int = _env_int("RINGRIFT_MIN_GAMES_FOR_UPDATE", 100)
+
+    # Weight decay for stale configs (per hour)
+    WEIGHT_STALE_DECAY: float = _env_float("RINGRIFT_WEIGHT_STALE_DECAY", 0.1)
+
+    # Maximum weight for any single config (prevents monopolization)
+    MAX_WEIGHT: float = _env_float("RINGRIFT_MAX_CURRICULUM_WEIGHT", 0.5)
+
+    # Minimum weight for any config (ensures diversity)
+    MIN_WEIGHT: float = _env_float("RINGRIFT_MIN_CURRICULUM_WEIGHT", 0.05)
+
+
+# =============================================================================
+# Health Check Orchestrator Defaults (December 28, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class HealthCheckOrchestratorDefaults:
+    """Default values for health check orchestrator.
+
+    Used by: app/coordination/health_check_orchestrator.py
+
+    These control the intervals and timeouts for different types of
+    health checks across the cluster.
+    """
+    # P2P health check interval (seconds) - fastest checks
+    P2P_CHECK_INTERVAL: int = _env_int("RINGRIFT_P2P_CHECK_INTERVAL", 60)
+
+    # SSH health check interval (seconds)
+    SSH_CHECK_INTERVAL: int = _env_int("RINGRIFT_SSH_CHECK_INTERVAL", 120)
+
+    # Cloud provider API check interval (seconds)
+    PROVIDER_CHECK_INTERVAL: int = _env_int("RINGRIFT_PROVIDER_CHECK_INTERVAL", 120)
+
+    # GPU/CPU utilization check interval (seconds)
+    UTILIZATION_CHECK_INTERVAL: int = _env_int(
+        "RINGRIFT_UTILIZATION_CHECK_INTERVAL", 60
+    )
+
+    # Default check interval for the orchestrator main loop (seconds)
+    DEFAULT_CHECK_INTERVAL: float = _env_float(
+        "RINGRIFT_HEALTH_CHECK_ORCHESTRATOR_INTERVAL", 60.0
+    )
+
+    # Timeout for individual health check operations (seconds)
+    CHECK_TIMEOUT: int = _env_int("RINGRIFT_HEALTH_CHECK_TIMEOUT", 10)
+
+    # Maximum concurrent health checks to run in parallel
+    MAX_CONCURRENT: int = _env_int("RINGRIFT_HEALTH_CHECK_MAX_CONCURRENT", 20)
+
+
+# =============================================================================
 # Convenience Functions
 # =============================================================================
 
@@ -1760,6 +1857,25 @@ def get_all_defaults() -> dict:
             "max_nodes": InventoryDefaults.MAX_NODES,
             "fetch_timeout": InventoryDefaults.FETCH_TIMEOUT,
         },
+        # December 28, 2025: Curriculum defaults
+        "curriculum": {
+            "mastery_threshold": CurriculumDefaults.MASTERY_THRESHOLD,
+            "check_interval": CurriculumDefaults.CHECK_INTERVAL,
+            "exploration_boost_factor": CurriculumDefaults.EXPLORATION_BOOST_FACTOR,
+            "low_quality_threshold": CurriculumDefaults.LOW_QUALITY_THRESHOLD,
+            "min_games_for_update": CurriculumDefaults.MIN_GAMES_FOR_UPDATE,
+            "max_weight": CurriculumDefaults.MAX_WEIGHT,
+            "min_weight": CurriculumDefaults.MIN_WEIGHT,
+        },
+        # December 28, 2025: Health check orchestrator defaults
+        "health_orchestrator": {
+            "p2p_check_interval": HealthCheckOrchestratorDefaults.P2P_CHECK_INTERVAL,
+            "ssh_check_interval": HealthCheckOrchestratorDefaults.SSH_CHECK_INTERVAL,
+            "provider_check_interval": HealthCheckOrchestratorDefaults.PROVIDER_CHECK_INTERVAL,
+            "utilization_check_interval": HealthCheckOrchestratorDefaults.UTILIZATION_CHECK_INTERVAL,
+            "check_timeout": HealthCheckOrchestratorDefaults.CHECK_TIMEOUT,
+            "max_concurrent": HealthCheckOrchestratorDefaults.MAX_CONCURRENT,
+        },
     }
 
 
@@ -1772,11 +1888,13 @@ __all__ = [
     "ClusterWatchdogDefaults",
     "CoordinatorHealthDefaults",
     "CrossProcessDefaults",
+    "CurriculumDefaults",  # December 28, 2025
     "DaemonHealthDefaults",
     "DaemonLoopDefaults",
     "DurationDefaults",
     "EphemeralDefaults",
     "EphemeralGuardDefaults",
+    "HealthCheckOrchestratorDefaults",  # December 28, 2025
     "HealthDefaults",
     "HeartbeatDefaults",
     "IdleThresholdDefaults",  # December 27, 2025

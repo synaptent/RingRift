@@ -535,12 +535,10 @@ def _emit_p2p_leader_lost_sync(old_leader_id: str, reason: str = "") -> None:
         return
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
-        else:
-            pass
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(_emit_p2p_leader_lost(old_leader_id, reason))
     except RuntimeError:
+        # No running event loop - skip (event system likely not initialized)
         pass
 
 
@@ -553,14 +551,10 @@ def _emit_p2p_host_offline_sync(node_id: str, reason: str = "timeout", last_seen
         return
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(_emit_p2p_host_offline(node_id, reason, last_seen))
-        else:
-            # No running loop - skip (event system likely not initialized)
-            pass
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(_emit_p2p_host_offline(node_id, reason, last_seen))
     except RuntimeError:
-        # No event loop available
+        # No running event loop - skip (event system likely not initialized)
         pass
 
 
@@ -573,12 +567,10 @@ def _emit_p2p_host_online_sync(node_id: str, capabilities: list[str] | None = No
         return
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(_emit_p2p_host_online(node_id, capabilities))
-        else:
-            pass
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(_emit_p2p_host_online(node_id, capabilities))
     except RuntimeError:
+        # No running event loop - skip (event system likely not initialized)
         pass
 
 
@@ -635,14 +627,12 @@ def _emit_p2p_node_dead_sync(
         return
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(
-                _emit_p2p_node_dead(node_id, reason, last_seen, offline_duration_seconds)
-            )
-        else:
-            pass
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(
+            _emit_p2p_node_dead(node_id, reason, last_seen, offline_duration_seconds)
+        )
     except RuntimeError:
+        # No running event loop - skip (event system likely not initialized)
         pass
 
 
@@ -706,12 +696,12 @@ def _emit_cluster_capacity_changed_sync(
         return
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(
-                _emit_cluster_capacity_changed(change_type, node_id, total_nodes, gpu_nodes, reason)
-            )
+        loop = asyncio.get_running_loop()
+        asyncio.create_task(
+            _emit_cluster_capacity_changed(change_type, node_id, total_nodes, gpu_nodes, reason)
+        )
     except RuntimeError:
+        # No running event loop - skip (event system likely not initialized)
         pass
 
 
@@ -856,13 +846,13 @@ def _emit_cluster_health_event_sync(
     _previous_cluster_healthy = is_healthy
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            if is_healthy:
-                asyncio.create_task(_emit_p2p_cluster_healthy(healthy_nodes, node_count))
-            else:
-                asyncio.create_task(_emit_p2p_cluster_unhealthy(healthy_nodes, node_count, alerts))
+        loop = asyncio.get_running_loop()
+        if is_healthy:
+            asyncio.create_task(_emit_p2p_cluster_healthy(healthy_nodes, node_count))
+        else:
+            asyncio.create_task(_emit_p2p_cluster_unhealthy(healthy_nodes, node_count, alerts))
     except RuntimeError:
+        # No running event loop - skip (event system likely not initialized)
         pass
 
 
@@ -2828,18 +2818,40 @@ class P2POrchestrator(
             manager.register(idle_detection)
 
             # AutoScalingLoop - provision/deprovision cloud instances
-            # December 27, 2025: Disabled until proper adapters are implemented
-            # The current interface mismatch causes LoopManager initialization to fail
-            # TODO: Implement get_pending_work, get_active_nodes, get_idle_nodes,
-            #       scale_up, scale_down adapters for AutoScalingLoop
-            # auto_scaling = AutoScalingLoop(
-            #     get_pending_work=lambda: len(get_work_queue().pending_items()),
-            #     get_active_nodes=lambda: len([p for p in self.peers.values() if p.get("alive")]),
-            #     get_idle_nodes=lambda: [p["node_id"] for p in self.peers.values() if p.get("idle")],
-            #     scale_up=self._provision_nodes,
-            #     scale_down=self._deprovision_nodes,
-            # )
-            # manager.register(auto_scaling)
+            # December 28, 2025 (Wave 7 Phase 2.2): Enabled with CompositeScaleAdapter
+            # Uses RELUCTANT TERMINATION - nodes only terminated after confirmed unusability
+            try:
+                from scripts.p2p.adapters.scale_adapters import (
+                    CompositeScaleAdapter,
+                    AutoScalingConfig,
+                    create_scale_adapter,
+                )
+
+                # Create scale adapter with conservative (reluctant) configuration
+                scale_adapter = create_scale_adapter(
+                    work_queue=get_work_queue(),
+                    peers_getter=lambda: self.peers,
+                    config=AutoScalingConfig.conservative(),  # Reluctant termination
+                )
+
+                # Store adapter for job activity tracking
+                self._scale_adapter = scale_adapter
+
+                auto_scaling = AutoScalingLoop(
+                    get_pending_work=scale_adapter.get_pending_work,
+                    get_active_nodes=scale_adapter.get_active_nodes,
+                    get_idle_nodes=scale_adapter.get_idle_nodes,
+                    scale_up=scale_adapter.scale_up,
+                    scale_down=scale_adapter.scale_down,
+                )
+                manager.register(auto_scaling)
+                logger.info("[P2P] AutoScalingLoop enabled with reluctant termination")
+            except ImportError as e:
+                logger.debug(f"[P2P] AutoScalingLoop disabled: {e}")
+                self._scale_adapter = None
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[P2P] AutoScalingLoop initialization failed: {e}")
+                self._scale_adapter = None
 
             # WorkQueueMaintenanceLoop - leader cleans up timeouts and old items
             # December 27, 2025: Migrated from inline _work_queue_maintenance_loop
@@ -6085,17 +6097,20 @@ class P2POrchestrator(
 
         # Run async version in event loop
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're in an async context, use run_coroutine_threadsafe
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(
-                    self._request_peer_manifest(peer_info), loop
-                )
-                return future.result(timeout=15)
-            else:
-                # If no loop is running, use asyncio.run
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, use run_coroutine_threadsafe
+            import concurrent.futures
+            future = asyncio.run_coroutine_threadsafe(
+                self._request_peer_manifest(peer_info), loop
+            )
+            return future.result(timeout=15)
+        except RuntimeError:
+            # No running loop - use asyncio.run
+            try:
                 return asyncio.run(self._request_peer_manifest(peer_info))
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Failed to request manifest from {peer_id}: {e}")
+                return None
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to request manifest from {peer_id}: {e}")
             return None
@@ -7536,7 +7551,7 @@ class P2POrchestrator(
                         )
                         logger.info(f"Started JSONL aggregation (PID: {proc.pid})")
                         # Reset flag after ~10 minutes
-                        asyncio.get_event_loop().call_later(
+                        asyncio.get_running_loop().call_later(
                             600, lambda: setattr(self, "_jsonl_aggregation_running", False)
                         )
 
@@ -7614,7 +7629,7 @@ class P2POrchestrator(
                                 )
 
                         # Reset flag after 30 minutes (export is slow)
-                        asyncio.get_event_loop().call_later(
+                        asyncio.get_running_loop().call_later(
                             1800, lambda: setattr(self, "_npz_export_running", False)
                         )
                 except Exception as e:  # noqa: BLE001
@@ -10276,11 +10291,9 @@ print(wins / total)
                 logger.info(f"Semaphore acquired, running match {match_id}...")
                 # Run the match in a thread pool to avoid blocking
                 # Add 5-minute timeout to prevent hung matches
-                loop = asyncio.get_event_loop()
                 try:
                     result = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            None,
+                        asyncio.to_thread(
                             self._play_elo_match_sync,
                             agent_configs,
                             board_type_str,
@@ -12782,7 +12795,7 @@ print(json.dumps(result))
         try:
             # Wait for GPU selfplay to complete (with timeout)
             return_code = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, proc.wait),
+                asyncio.to_thread(proc.wait),
                 timeout=7200,  # 2 hour max
             )
 
@@ -14604,21 +14617,25 @@ print(json.dumps(result))
             import subprocess
             logger.info(f"Auto-deploying model: {model_path}")
 
+            # Build command args
+            cmd_args = [
+                sys.executable, "scripts/auto_deploy_models.py",
+                "--model-path", model_path,
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--skip-eval",  # Already evaluated
+            ]
+            if self._is_leader():
+                cmd_args.append("--sync-cluster")
+
             # Run deployment script
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    [
-                        sys.executable, "scripts/auto_deploy_models.py",
-                        "--model-path", model_path,
-                        "--board-type", board_type,
-                        "--num-players", str(num_players),
-                        "--skip-eval",  # Already evaluated
-                        "--sync-cluster" if self._is_leader() else "",
-                    ],
-                    capture_output=True, text=True, timeout=300,
-                    cwd=str(Path(__file__).parent.parent)
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd_args,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=str(Path(__file__).parent.parent),
             )
 
             if result.returncode == 0:

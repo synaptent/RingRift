@@ -224,14 +224,12 @@ class ClusterActivator:
 
         start_time = time.time()
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ssh_args,
-                    capture_output=True,
-                    timeout=self.ssh_timeout + 5,
-                    text=True,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ssh_args,
+                capture_output=True,
+                timeout=self.ssh_timeout + 5,
+                text=True,
             )
             latency_ms = (time.time() - start_time) * 1000
 
@@ -272,13 +270,11 @@ class ClusterActivator:
         except ImportError:
             # Fall back to curl
             try:
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: subprocess.run(
-                        ["curl", "-s", "--connect-timeout", str(self.p2p_timeout), url],
-                        capture_output=True,
-                        timeout=self.p2p_timeout + 2,
-                    )
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    ["curl", "-s", "--connect-timeout", str(self.p2p_timeout), url],
+                    capture_output=True,
+                    timeout=self.p2p_timeout + 2,
                 )
                 return result.returncode == 0, "" if result.returncode == 0 else "curl failed"
             except Exception as e:
@@ -418,13 +414,11 @@ class ClusterActivator:
         ssh_args.extend([f"{node.ssh_user}@{node.ssh_host}", activate_cmd])
 
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ssh_args,
-                    capture_output=True,
-                    timeout=30,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ssh_args,
+                capture_output=True,
+                timeout=30,
             )
 
             if result.returncode == 0:
@@ -612,14 +606,12 @@ class ClusterActivator:
         """
         nodes = []
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ["vastai", "show", "instances", "--raw"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["vastai", "show", "instances", "--raw"],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode != 0:
                 logger.warning(f"vastai CLI failed: {result.stderr}")
@@ -666,14 +658,12 @@ class ClusterActivator:
         """
         nodes = []
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ["runpodctl", "get", "pod"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["runpodctl", "get", "pod"],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode != 0:
                 logger.warning(f"runpodctl CLI failed: {result.stderr}")
@@ -730,14 +720,12 @@ class ClusterActivator:
         """
         nodes = []
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ["vultr-cli", "instance", "list", "--output", "json"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["vultr-cli", "instance", "list", "--output", "json"],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode != 0:
                 logger.warning(f"vultr-cli failed: {result.stderr}")
@@ -847,14 +835,12 @@ class ClusterActivator:
         ssh_args.extend([f"{node.ssh_user}@{node.ssh_host}", cmd])
 
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ssh_args,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.ssh_timeout + 5,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ssh_args,
+                capture_output=True,
+                text=True,
+                timeout=self.ssh_timeout + 5,
             )
 
             if result.returncode != 0:
@@ -972,13 +958,11 @@ class ClusterActivator:
         ssh_args.extend([f"{node.ssh_user}@{node.ssh_host}", selfplay_cmd])
 
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    ssh_args,
-                    capture_output=True,
-                    timeout=30,
-                )
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ssh_args,
+                capture_output=True,
+                timeout=30,
             )
 
             if result.returncode == 0:

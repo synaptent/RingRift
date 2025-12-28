@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.coordination_defaults import SyncDefaults
 from app.coordination.sync_constants import (
     SyncDirection,
     SyncPriority,
@@ -118,16 +119,19 @@ class SyncManagerBase(ABC):
     def __init__(
         self,
         state_path: Path | None = None,
-        sync_interval: float = 300.0,
+        sync_interval: float | None = None,
         circuit_breaker_config: CircuitBreakerConfig | None = None,
     ):
         """Initialize base sync manager.
 
         Args:
             state_path: Path to persist sync state (JSON file)
-            sync_interval: Seconds between sync cycles
+            sync_interval: Seconds between sync cycles (defaults to SyncDefaults.DATA_SYNC_INTERVAL)
             circuit_breaker_config: Config for per-node circuit breakers
         """
+        # Use centralized default from coordination_defaults
+        if sync_interval is None:
+            sync_interval = SyncDefaults.DATA_SYNC_INTERVAL
         self.state_path = state_path
         self.sync_interval = sync_interval
         self.circuit_breaker_config = circuit_breaker_config or CircuitBreakerConfig()

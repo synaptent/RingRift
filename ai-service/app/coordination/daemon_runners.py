@@ -1083,6 +1083,38 @@ async def create_s3_backup() -> None:
         raise
 
 
+async def create_s3_node_sync() -> None:
+    """Create and run S3 node sync daemon (December 2025).
+
+    Bi-directional S3 sync for all cluster nodes.
+    """
+    try:
+        from app.coordination.s3_node_sync_daemon import S3NodeSyncDaemon
+
+        daemon = S3NodeSyncDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"S3NodeSyncDaemon not available: {e}")
+        raise
+
+
+async def create_s3_consolidation() -> None:
+    """Create and run S3 consolidation daemon (December 2025).
+
+    Consolidates data from all nodes (coordinator only).
+    """
+    try:
+        from app.coordination.s3_node_sync_daemon import S3ConsolidationDaemon
+
+        daemon = S3ConsolidationDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"S3ConsolidationDaemon not available: {e}")
+        raise
+
+
 async def create_distillation() -> None:
     """Create and run distillation daemon."""
     try:
@@ -1312,6 +1344,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.COORDINATOR_DISK_MANAGER.name: create_coordinator_disk_manager,
         DaemonType.SYNC_PUSH.name: create_sync_push,
         DaemonType.S3_BACKUP.name: create_s3_backup,
+        DaemonType.S3_NODE_SYNC.name: create_s3_node_sync,
+        DaemonType.S3_CONSOLIDATION.name: create_s3_consolidation,
         DaemonType.DISTILLATION.name: create_distillation,
         DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,
         DaemonType.VAST_CPU_PIPELINE.name: create_vast_cpu_pipeline,

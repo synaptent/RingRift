@@ -2,6 +2,9 @@
 
 Extracted from p2p_orchestrator.py for better modularity.
 Handles job spawning, execution, monitoring, and cleanup across different job types.
+
+December 28, 2025: Updated to use EventSubscriptionMixin for consolidated event handling.
+This eliminates ~50 LOC of duplicate subscription boilerplate.
 """
 
 from __future__ import annotations
@@ -17,6 +20,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from app.config.coordination_defaults import DaemonHealthDefaults, OperationTimeouts
+
+# Import mixin for consolidated event handling (Dec 28, 2025)
+from scripts.p2p.p2p_mixin_base import EventSubscriptionMixin
 
 if TYPE_CHECKING:
     from ..models import ClusterJob, ImprovementLoopState, NodeInfo
@@ -87,8 +93,10 @@ def _get_event_emitter() -> Callable[[str, dict], None] | None:
     return _emit_event
 
 
-class JobManager:
+class JobManager(EventSubscriptionMixin):
     """Manages job spawning and lifecycle for P2P orchestrator.
+
+    Inherits from EventSubscriptionMixin for consolidated event handling (Dec 28, 2025).
 
     Responsibilities:
     - Spawn selfplay jobs (GPU, hybrid, heuristic)
@@ -97,6 +105,7 @@ class JobManager:
     - Track running jobs per node
     - Monitor job status and cleanup
     - Provide job metrics
+    - Handle HOST_OFFLINE, HOST_ONLINE, NODE_RECOVERED events
 
     Usage:
         job_mgr = JobManager(
@@ -107,6 +116,9 @@ class JobManager:
             active_jobs={},
             jobs_lock=threading.Lock(),
         )
+
+        # Subscribe to events
+        job_mgr.subscribe_to_events()
 
         # Spawn a selfplay job
         await job_mgr.run_gpu_selfplay_job(
@@ -126,6 +138,9 @@ class JobManager:
         "maxn", "brs", "mcts", "gumbel-mcts",
         "policy-only", "nn-descent", "nn-minimax"
     }
+
+    # Mixin type identifier (required by EventSubscriptionMixin)
+    MIXIN_TYPE = "job_manager"
 
     def __init__(
         self,
@@ -176,6 +191,21 @@ class JobManager:
     # Event Subscriptions (December 2025)
     # =========================================================================
 
+    def _get_event_subscriptions(self) -> dict[str, Any]:
+        """Define event subscriptions for JobManager.
+
+        Returns:
+            Dict mapping event names to handler methods.
+
+        December 28, 2025: Uses EventSubscriptionMixin pattern for consolidated
+        event handling. This replaces ~35 LOC of duplicate subscription code.
+        """
+        return {
+            "HOST_OFFLINE": self._on_host_offline,
+            "HOST_ONLINE": self._on_host_online,
+            "NODE_RECOVERED": self._on_node_recovered,
+        }
+
     def subscribe_to_events(self) -> None:
         """Subscribe to job-relevant events.
 
@@ -184,146 +214,113 @@ class JobManager:
         - HOST_ONLINE: Potentially reschedule cancelled jobs
         - NODE_RECOVERED: Re-enable job dispatch to recovered nodes
 
-        Dec 28, 2025: Added thread-safe double-check locking pattern.
+        Dec 28, 2025: Refactored to use EventSubscriptionMixin for consolidated
+        subscription logic with thread-safe double-check locking.
         """
-        # Fast path - already initialized
-        if self._subscribed:
-            return
-
-        # Slow path with lock to prevent race conditions
-        with self._subscription_lock:
-            # Double-check after acquiring lock
-            if self._subscribed:
-                return
-
-            try:
-                from app.coordination.event_router import get_event_bus
-                from app.distributed.data_events import DataEventType
-
-                bus = get_event_bus()
-
-                # Subscribe to HOST_OFFLINE to cancel jobs on dead nodes
-                if hasattr(DataEventType, "HOST_OFFLINE"):
-                    bus.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-                    logger.info("[JobManager] Subscribed to HOST_OFFLINE")
-
-                # Subscribe to HOST_ONLINE for potential job rescheduling
-                if hasattr(DataEventType, "HOST_ONLINE"):
-                    bus.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
-                    logger.info("[JobManager] Subscribed to HOST_ONLINE")
-
-                # Dec 27, 2025: Subscribe to NODE_RECOVERED to re-enable recovered nodes
-                if hasattr(DataEventType, "NODE_RECOVERED"):
-                    bus.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
-                    logger.info("[JobManager] Subscribed to NODE_RECOVERED")
-
-                self._subscribed = True
-            except ImportError:
-                logger.debug("[JobManager] Event router not available")
-                self._subscribed = False  # Dec 28, 2025: Explicit reset on failure
-            except (RuntimeError, AttributeError) as e:
-                logger.warning(f"[JobManager] Failed to subscribe: {e}")
-                self._subscribed = False  # Dec 28, 2025: Explicit reset on failure
+        # Use mixin's consolidated subscription method (inherited from EventSubscriptionMixin)
+        EventSubscriptionMixin.subscribe_to_events(self)
 
     async def _on_host_offline(self, event) -> None:
-        """Handle HOST_OFFLINE events - cancel jobs on offline host."""
-        try:
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id", "")
+        """Handle HOST_OFFLINE events - cancel jobs on offline host.
 
-            if not node_id:
-                return
+        December 28, 2025: Uses EventSubscriptionMixin helpers for logging and event emission.
+        """
+        # Use mixin helper to extract payload safely
+        payload = self._extract_event_payload(event)
+        node_id = payload.get("node_id", "")
 
-            logger.info(f"[JobManager] HOST_OFFLINE: {node_id}, cancelling jobs")
+        if not node_id:
+            return
 
-            # Cancel all jobs running on offline host
-            cancelled = 0
-            cancelled_jobs: list[tuple[str, str]] = []  # (job_type, job_id) tuples
-            with self.jobs_lock:
-                for job_type, jobs in self.active_jobs.items():
-                    for job_id, job in list(jobs.items()):
-                        job_node = job.get("node_id") if isinstance(job, dict) else getattr(job, "node_id", None)
-                        if job_node == node_id:
-                            job_status = job.get("status") if isinstance(job, dict) else getattr(job, "status", "running")
-                            if job_status == "running":
-                                if isinstance(job, dict):
-                                    job["status"] = "cancelled"
-                                else:
-                                    job.status = "cancelled"
-                                cancelled += 1
-                                cancelled_jobs.append((job_type, job_id))
-                                logger.info(f"[JobManager] Cancelled {job_type} job {job_id} on offline node {node_id}")
+        self._log_info(f"HOST_OFFLINE: {node_id}, cancelling jobs")
 
-            # December 27, 2025: Emit TASK_ABANDONED events for cancelled jobs
-            # This allows SelfplayOrchestrator and other subscribers to track abandoned work
-            for job_type, job_id in cancelled_jobs:
-                self._emit_task_event(
-                    "TASK_ABANDONED",
-                    job_id=job_id,
-                    job_type=job_type,
-                    reason="host_offline",
-                    offline_node=node_id,
-                )
-                self.stats.jobs_cancelled += 1
+        # Cancel all jobs running on offline host
+        cancelled = 0
+        cancelled_jobs: list[tuple[str, str]] = []  # (job_type, job_id) tuples
+        with self.jobs_lock:
+            for job_type, jobs in self.active_jobs.items():
+                for job_id, job in list(jobs.items()):
+                    job_node = job.get("node_id") if isinstance(job, dict) else getattr(job, "node_id", None)
+                    if job_node == node_id:
+                        job_status = job.get("status") if isinstance(job, dict) else getattr(job, "status", "running")
+                        if job_status == "running":
+                            if isinstance(job, dict):
+                                job["status"] = "cancelled"
+                            else:
+                                job.status = "cancelled"
+                            cancelled += 1
+                            cancelled_jobs.append((job_type, job_id))
+                            self._log_info(f"Cancelled {job_type} job {job_id} on offline node {node_id}")
 
-            if cancelled > 0:
-                self.stats.hosts_offline += 1
-                logger.info(f"[JobManager] Cancelled {cancelled} jobs on offline node {node_id}")
+        # December 27, 2025: Emit TASK_ABANDONED events for cancelled jobs
+        # This allows SelfplayOrchestrator and other subscribers to track abandoned work
+        for job_type, job_id in cancelled_jobs:
+            # Use mixin's safe event emission helper
+            self._safe_emit_event(
+                "TASK_ABANDONED",
+                {
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "reason": "host_offline",
+                    "offline_node": node_id,
+                    "node_id": self.node_id,
+                }
+            )
+            self.stats.jobs_cancelled += 1
 
-        except (AttributeError, KeyError, TypeError) as e:
-            logger.debug(f"[JobManager] Error handling host offline: {e}")
+        if cancelled > 0:
+            self.stats.hosts_offline += 1
+            self._log_info(f"Cancelled {cancelled} jobs on offline node {node_id}")
 
     async def _on_host_online(self, event) -> None:
-        """Handle HOST_ONLINE events - log for potential job rescheduling."""
-        try:
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id", "")
+        """Handle HOST_ONLINE events - log for potential job rescheduling.
 
-            if not node_id:
-                return
+        December 28, 2025: Uses EventSubscriptionMixin helpers for payload extraction.
+        """
+        # Use mixin helper to extract payload safely
+        payload = self._extract_event_payload(event)
+        node_id = payload.get("node_id", "")
 
-            logger.info(f"[JobManager] HOST_ONLINE: {node_id}, node available for jobs")
+        if not node_id:
+            return
 
-            # Track for observability
-            self.stats.hosts_online += 1
+        self._log_info(f"HOST_ONLINE: {node_id}, node available for jobs")
 
-            # Note: Job rescheduling is handled by the scheduler, not the job manager
-            # This is logged for observability
+        # Track for observability
+        self.stats.hosts_online += 1
 
-        except (AttributeError, KeyError, TypeError) as e:
-            logger.debug(f"[JobManager] Error handling host online: {e}")
+        # Note: Job rescheduling is handled by the scheduler, not the job manager
+        # This is logged for observability
 
     async def _on_node_recovered(self, event) -> None:
         """Handle NODE_RECOVERED events - re-enable job dispatch to recovered node.
 
         December 27, 2025: Added to complete health event integration.
-        When a node recovers from an unhealthy state, we can consider it for new jobs again.
+        December 28, 2025: Uses EventSubscriptionMixin helpers for payload extraction.
 
+        When a node recovers from an unhealthy state, we can consider it for new jobs again.
         Unlike HOST_ONLINE (which is for new connections), NODE_RECOVERED indicates
         a node that was degraded/unhealthy is now healthy again.
         """
-        try:
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id", "") or payload.get("host", "")
-            recovery_reason = payload.get("reason", "unknown")
+        # Use mixin helper to extract payload safely
+        payload = self._extract_event_payload(event)
+        node_id = payload.get("node_id", "") or payload.get("host", "")
+        recovery_reason = payload.get("reason", "unknown")
 
-            if not node_id:
-                return
+        if not node_id:
+            return
 
-            logger.info(
-                f"[JobManager] NODE_RECOVERED: {node_id} recovered "
-                f"(reason: {recovery_reason}), available for new jobs"
-            )
+        self._log_info(
+            f"NODE_RECOVERED: {node_id} recovered (reason: {recovery_reason}), "
+            f"available for new jobs"
+        )
 
-            # Track recovery for scheduling decisions
-            self.stats.nodes_recovered += 1
+        # Track recovery for scheduling decisions
+        self.stats.nodes_recovered += 1
 
-            # Note: Actual job dispatch decisions are made by SelfplayScheduler
-            # and TrainingCoordinator. This event is tracked for observability
-            # and to inform scheduling heuristics.
-
-        except (AttributeError, KeyError, TypeError) as e:
-            logger.debug(f"[JobManager] Error handling node recovered: {e}")
+        # Note: Actual job dispatch decisions are made by SelfplayScheduler
+        # and TrainingCoordinator. This event is tracked for observability
+        # and to inform scheduling heuristics.
 
     # =========================================================================
     # Subprocess Lifecycle Management (December 28, 2025)

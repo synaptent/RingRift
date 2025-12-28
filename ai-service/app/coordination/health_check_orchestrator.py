@@ -164,14 +164,27 @@ class HealthCheckOrchestrator:
 
     Runs periodic health checks and maintains current health state
     for all nodes in the cluster.
+
+    Check intervals are configurable via environment variables (December 28, 2025):
+    - RINGRIFT_P2P_CHECK_INTERVAL (default: 60)
+    - RINGRIFT_SSH_CHECK_INTERVAL (default: 120)
+    - RINGRIFT_PROVIDER_CHECK_INTERVAL (default: 120)
+    - RINGRIFT_UTILIZATION_CHECK_INTERVAL (default: 60)
     """
 
-    # Check intervals (seconds)
-    # Dec 2025: Reduced SSH/Provider from 300s to 120s for faster failure detection
-    P2P_CHECK_INTERVAL = 60
-    SSH_CHECK_INTERVAL = 120
-    PROVIDER_CHECK_INTERVAL = 120
-    UTILIZATION_CHECK_INTERVAL = 60
+    # Check intervals (seconds) - loaded from centralized defaults (December 28, 2025)
+    try:
+        from app.config.coordination_defaults import HealthCheckOrchestratorDefaults
+        P2P_CHECK_INTERVAL = HealthCheckOrchestratorDefaults.P2P_CHECK_INTERVAL
+        SSH_CHECK_INTERVAL = HealthCheckOrchestratorDefaults.SSH_CHECK_INTERVAL
+        PROVIDER_CHECK_INTERVAL = HealthCheckOrchestratorDefaults.PROVIDER_CHECK_INTERVAL
+        UTILIZATION_CHECK_INTERVAL = HealthCheckOrchestratorDefaults.UTILIZATION_CHECK_INTERVAL
+    except ImportError:
+        # Fallback for standalone testing
+        P2P_CHECK_INTERVAL = 60
+        SSH_CHECK_INTERVAL = 120
+        PROVIDER_CHECK_INTERVAL = 120
+        UTILIZATION_CHECK_INTERVAL = 60
 
     def __init__(
         self,

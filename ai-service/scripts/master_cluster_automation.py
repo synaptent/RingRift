@@ -277,7 +277,7 @@ source venv/bin/activate
 mkdir -p logs
 pkill -f p2p_orchestrator 2>/dev/null || true
 sleep 1
-nohup python scripts/p2p_orchestrator.py \\
+setsid python scripts/p2p_orchestrator.py \\
     --node-id {node_id} \\
     --advertise-host {advertise_host} \\
     --peers {peer_host}:8770 \\

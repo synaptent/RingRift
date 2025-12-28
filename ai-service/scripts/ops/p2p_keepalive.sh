@@ -57,7 +57,7 @@ fi
 cd "$RINGRIFT_AI_SERVICE"
 export PYTHONPATH="$RINGRIFT_AI_SERVICE"
 
-nohup $PYTHON scripts/p2p_orchestrator.py \
+setsid $PYTHON scripts/p2p_orchestrator.py \
     --node-id "$NODE_ID" \
     --port "$P2P_PORT" \
     --peers "$P2P_SEEDS" \

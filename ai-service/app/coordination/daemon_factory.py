@@ -290,6 +290,14 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
             import_path="app.coordination.s3_backup_daemon",
             class_name="S3BackupDaemon",
         ),
+        DaemonType.S3_NODE_SYNC.name: DaemonSpec(
+            import_path="app.coordination.s3_node_sync_daemon",
+            class_name="S3NodeSyncDaemon",
+        ),
+        DaemonType.S3_CONSOLIDATION.name: DaemonSpec(
+            import_path="app.coordination.s3_node_sync_daemon",
+            class_name="S3ConsolidationDaemon",
+        ),
 
         # =================================================================
         # Resource & Utilization Daemons
@@ -421,6 +429,35 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
         DaemonType.HEALTH_SERVER.name: DaemonSpec(
             import_path="app.coordination.unified_health_manager",
             class_name="UnifiedHealthManager",  # Provides health endpoints
+        ),
+
+        # =================================================================
+        # Data Integrity & Sync Push Daemons (December 2025)
+        # =================================================================
+        DaemonType.INTEGRITY_CHECK.name: DaemonSpec(
+            import_path="app.coordination.integrity_check_daemon",
+            class_name="IntegrityCheckDaemon",
+        ),
+        DaemonType.SYNC_PUSH.name: DaemonSpec(
+            import_path="app.coordination.sync_push_daemon",
+            class_name="SyncPushDaemon",
+            factory_fn="get_sync_push_daemon",  # Uses singleton pattern
+        ),
+
+        # =================================================================
+        # S3/Cloud Storage Daemons (December 2025)
+        # =================================================================
+        DaemonType.S3_NODE_SYNC.name: DaemonSpec(
+            import_path="app.coordination.s3_node_sync_daemon",
+            class_name="S3NodeSyncDaemon",
+        ),
+        DaemonType.S3_CONSOLIDATION.name: DaemonSpec(
+            import_path="app.coordination.s3_node_sync_daemon",
+            class_name="S3ConsolidationDaemon",
+        ),
+        DaemonType.DATA_CONSOLIDATION.name: DaemonSpec(
+            import_path="app.coordination.data_consolidation_daemon",
+            class_name="DataConsolidationDaemon",
         ),
     }
 

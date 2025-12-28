@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from app.config.coordination_defaults import SyncDefaults
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,9 @@ class TrainingTriggerConfig:
     max_data_age_hours: float = 1.0
     # December 2025: Use training_freshness to trigger sync when data is stale
     enforce_freshness_with_sync: bool = True  # If True, trigger sync instead of just rejecting
-    freshness_sync_timeout_seconds: float = 300.0  # Wait up to 5 min for sync
+    freshness_sync_timeout_seconds: float = field(
+        default_factory=lambda: SyncDefaults.SYNC_TIMEOUT  # Wait up to 5 min for sync
+    )
     # Minimum samples to trigger training
     min_samples_threshold: int = 10000
     # Cooldown between training runs for same config

@@ -663,6 +663,119 @@ class EventSubscriptionMixin:
             "subscription_count": len(self._get_event_subscriptions()),
         }
 
+    # =========================================================================
+    # Event Handler Helpers (December 28, 2025)
+    # =========================================================================
+
+    def _extract_event_payload(self, event: Any) -> dict[str, Any]:
+        """Safely extract payload from an event object.
+
+        Handles both DataEvent objects with `.payload` attribute and raw dicts.
+        Centralizes the duplicate pattern found across all event handlers.
+
+        Args:
+            event: Event object or dict
+
+        Returns:
+            Event payload as a dict (empty dict if extraction fails)
+
+        Example:
+            async def _on_host_offline(self, event) -> None:
+                payload = self._extract_event_payload(event)
+                node_id = payload.get("node_id", "")
+        """
+        try:
+            if hasattr(event, "payload"):
+                return event.payload if isinstance(event.payload, dict) else {}
+            if isinstance(event, dict):
+                return event
+            return {}
+        except (AttributeError, TypeError):
+            return {}
+
+    def _log_info(self, message: str) -> None:
+        """Log info message with mixin type prefix.
+
+        Uses MIXIN_TYPE if available (from P2PMixinBase inheritance),
+        otherwise uses _subscription_log_prefix.
+        """
+        prefix = getattr(self, "MIXIN_TYPE", None) or getattr(
+            self, "_subscription_log_prefix", "EventSubscriptionMixin"
+        )
+        logger.info(f"[{prefix}] {message}")
+
+    def _log_debug(self, message: str) -> None:
+        """Log debug message with mixin type prefix."""
+        prefix = getattr(self, "MIXIN_TYPE", None) or getattr(
+            self, "_subscription_log_prefix", "EventSubscriptionMixin"
+        )
+        logger.debug(f"[{prefix}] {message}")
+
+    def _log_warning(self, message: str) -> None:
+        """Log warning message with mixin type prefix."""
+        prefix = getattr(self, "MIXIN_TYPE", None) or getattr(
+            self, "_subscription_log_prefix", "EventSubscriptionMixin"
+        )
+        logger.warning(f"[{prefix}] {message}")
+
+    def _log_error(self, message: str) -> None:
+        """Log error message with mixin type prefix."""
+        prefix = getattr(self, "MIXIN_TYPE", None) or getattr(
+            self, "_subscription_log_prefix", "EventSubscriptionMixin"
+        )
+        logger.error(f"[{prefix}] {message}")
+
+    def _safe_emit_event(
+        self,
+        event_type: str,
+        payload: dict[str, Any] | None = None,
+    ) -> bool:
+        """Safely emit an event using the event router.
+
+        Wraps event emission in try-catch to prevent event failures
+        from crashing the caller. Tries multiple emission methods.
+
+        Args:
+            event_type: Event type string to emit
+            payload: Optional event payload dict
+
+        Returns:
+            True if event was emitted successfully, False otherwise
+
+        Example:
+            self._safe_emit_event(
+                "TASK_ABANDONED",
+                {"job_id": job_id, "reason": "host_offline"},
+            )
+        """
+        try:
+            # Try using event router directly
+            try:
+                from app.coordination.event_router import emit_sync
+                emit_sync(event_type, payload or {})
+                return True
+            except ImportError:
+                pass
+
+            # Fallback to instance emit methods
+            emit_fn = getattr(self, "_emit_event", None)
+            if callable(emit_fn):
+                emit_fn(event_type, payload or {})
+                return True
+
+            for method_name in ("emit_event", "publish_event", "_publish"):
+                alt_fn = getattr(self, method_name, None)
+                if callable(alt_fn):
+                    alt_fn(event_type, payload or {})
+                    return True
+
+            return False
+
+        except (OSError, ConnectionError, RuntimeError, TypeError) as e:
+            # Dec 28, 2025: Specific exception types for event emission errors
+            self._log_debug(f"Event emission error: {e}")
+            return False
+
 
 class P2PManagerBase(P2PMixinBase, EventSubscriptionMixin):
     """Combined base class for P2P managers with event subscription support.

@@ -1326,11 +1326,18 @@ class SyncRouter:
             logger.debug(f"[SyncRouter] Error handling sync stalled: {e}")
 
     async def _on_backpressure_activated(self, event: Any) -> None:
-        """Handle BACKPRESSURE_ACTIVATED event - pause or slow sync operations.
+        """Handle BACKPRESSURE_ACTIVATED event - track state but DO NOT reduce sync priority.
 
         December 27, 2025: Added to prevent overwhelming nodes under pressure.
-        When backpressure is activated, we reduce sync throughput to allow
-        the system to recover.
+        December 28, 2025 FIX: Removed priority reduction that was causing feedback loops.
+
+        CRITICAL: We MUST NOT reduce sync priority when backpressure is activated.
+        Reducing sync priority causes training data to become stale, which causes
+        more training failures, which causes circuit breakers to stay open longer,
+        creating a self-reinforcing negative feedback loop.
+
+        Instead, we only track backpressure state for monitoring/alerting.
+        Data sync should ALWAYS continue regardless of backpressure state.
 
         Args:
             event: Event with payload containing source_node, queue_depth, threshold
@@ -1341,7 +1348,7 @@ class SyncRouter:
             queue_depth = payload.get("queue_depth", 0)
             threshold = payload.get("threshold", 100)
 
-            # Track backpressure state
+            # Track backpressure state for monitoring
             if not hasattr(self, '_backpressure_active'):
                 self._backpressure_active: set[str] = set()
 
@@ -1349,32 +1356,28 @@ class SyncRouter:
                 self._backpressure_active.add(source_node)
                 logger.warning(
                     f"[SyncRouter] Backpressure activated on {source_node}: "
-                    f"queue_depth={queue_depth}, threshold={threshold}"
+                    f"queue_depth={queue_depth}, threshold={threshold}. "
+                    f"NOTE: Sync priority NOT reduced to avoid feedback loops."
                 )
-
-                # Reduce routing priority for this node temporarily
-                if source_node in self._node_capabilities:
-                    cap = self._node_capabilities[source_node]
-                    # Store original priority if not already stored
-                    if not hasattr(cap, '_original_priority'):
-                        cap._original_priority = getattr(cap, 'priority', 0)
-                    # Reduce priority to deprioritize this node
-                    cap.priority = max(0, cap._original_priority - 2)
+                # Dec 28, 2025: REMOVED priority reduction code that was causing feedback loops
+                # The old code reduced sync priority, which made data stale, causing more failures.
+                # See CLAUDE.md "Circuit Breaker Feedback Loop Fix" for details.
             else:
-                # Global backpressure - mark all nodes
+                # Global backpressure - just track it
                 self._backpressure_active.add("__global__")
                 logger.warning(
                     f"[SyncRouter] Global backpressure activated: "
-                    f"queue_depth={queue_depth}"
+                    f"queue_depth={queue_depth}. Sync continues normally."
                 )
 
         except (AttributeError, KeyError) as e:
             logger.debug(f"[SyncRouter] Error handling backpressure activated: {e}")
 
     async def _on_backpressure_released(self, event: Any) -> None:
-        """Handle BACKPRESSURE_RELEASED event - resume normal sync operations.
+        """Handle BACKPRESSURE_RELEASED event - clear tracking state.
 
         December 27, 2025: Added to restore sync throughput after recovery.
+        December 28, 2025: Simplified - sync was never throttled, just tracking cleared.
 
         Args:
             event: Event with payload containing source_node
@@ -1391,12 +1394,7 @@ class SyncRouter:
                 logger.info(
                     f"[SyncRouter] Backpressure released on {source_node}"
                 )
-
-                # Restore original priority
-                if source_node in self._node_capabilities:
-                    cap = self._node_capabilities[source_node]
-                    if hasattr(cap, '_original_priority'):
-                        cap.priority = cap._original_priority
+                # Dec 28, 2025: No priority restoration needed - we don't reduce priority anymore
             else:
                 # Global backpressure released
                 self._backpressure_active.discard("__global__")

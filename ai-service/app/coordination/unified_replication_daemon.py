@@ -55,6 +55,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # December 2025: Use consolidated daemon stats base classes
+from app.config.coordination_defaults import SyncDefaults
 from app.coordination.daemon_stats import DaemonStatsBase, JobDaemonStats, PerNodeSyncStats
 
 __all__ = [
@@ -252,10 +253,12 @@ class UnifiedReplicationConfig:
     # December 2025: Bandwidth limiting per repair
     bandwidth_limit_mbps: float = 50.0  # Default 50 MB/s per transfer
 
-    # Emergency sync
+    # Emergency sync - use centralized defaults
     enable_emergency_sync: bool = True
     emergency_sync_threshold_games: int = 500
-    emergency_sync_cooldown_seconds: float = 600.0  # 10 minutes
+    emergency_sync_cooldown_seconds: float = field(
+        default_factory=lambda: SyncDefaults.EMERGENCY_SYNC_COOLDOWN  # 10 minutes
+    )
 
     # Event emission
     emit_events: bool = True

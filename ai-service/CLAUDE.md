@@ -464,6 +464,7 @@ Unified training pipeline orchestration:
 - **`idle_resource_daemon.py`**: Spawns selfplay on idle GPUs using SelfplayScheduler priorities
 - **`utilization_optimizer.py`**: Matches GPU capabilities to board sizes, optimizes cluster utilization
 - **`feedback_loop_controller.py`**: Manages training feedback signals and quality thresholds
+- **`feedback_state.py`**: Canonical FeedbackState dataclasses (consolidated from 5 duplicates, Dec 2025)
 - **`sync_facade.py`**: Unified programmatic entry point for sync (routes to AutoSyncDaemon, SyncRouter, etc.)
 
 **Event System:**
@@ -594,6 +595,41 @@ python scripts/launch_daemons.py --all
 # Check daemon status
 python scripts/launch_daemons.py --status
 ```
+
+**FeedbackState Classes (Dec 2025):**
+
+Canonical feedback state dataclasses in `app/coordination/feedback_state.py` (consolidated from 5 duplicates):
+
+```python
+from app.coordination.feedback_state import (
+    CanonicalFeedbackState,  # Base class (22 fields)
+    SignalFeedbackState,     # Extended for orchestrator (+6 fields)
+    MonitoringFeedbackState, # Extended for monitoring (+9 fields, +4 methods)
+    FeedbackState,           # Alias for CanonicalFeedbackState
+)
+
+# Basic per-config tracking
+state = CanonicalFeedbackState(config_key="hex8_2p")
+state.quality_score = 0.85
+state.elo_current = 1650.0
+
+# For unified feedback orchestration
+signal_state = SignalFeedbackState(config_key="hex8_2p")
+signal_state.training_intensity = "hot_path"  # paused|reduced|normal|accelerated|hot_path
+signal_state.exploration_boost = 1.5
+
+# For monitoring with urgency computation
+monitor_state = MonitoringFeedbackState(config_key="hex8_2p")
+monitor_state.update_elo(1700.0)
+monitor_state.update_parity(passed=True)
+urgency = monitor_state.compute_urgency()  # 0-1 score
+
+# Serialization
+data = state.to_dict()
+restored = CanonicalFeedbackState.from_dict(data)
+```
+
+Inheritance: `CanonicalFeedbackState` → `SignalFeedbackState` → `MonitoringFeedbackState`
 
 ### Temperature Scheduling (`app/training/temperature_scheduling.py`)
 

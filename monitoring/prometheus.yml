@@ -4,7 +4,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: 'ringrift-p2p-monitor'
-    leader_node: 'local-mac'
+    leader_node: 'mac-studio'
 
 rule_files:
   # - /etc/prometheus/alerting-rules.yaml
@@ -20,22 +20,52 @@ scrape_configs:
   # P2P orchestrator on all nodes
   - job_name: 'ringrift-p2p'
     static_configs:
-      - targets: ['208.167.249.164:9091']
+      - targets: ['104.255.9.187:9091']
+        labels:
+          node="runpod-a100-2"
+      - targets: ['100.94.201.92:9091']
         labels:
           node="vultr-a100-20gb"
+      - targets: ['100.110.28.41:9091']
+        labels:
+          node="nebius-backbone-1"
+      - targets: ['100.109.195.71:9091']
+        labels:
+          node="nebius-h100-3"
+      - targets: ['135.181.39.239:9091']
+        labels:
+          node="hetzner-cpu2"
+      - targets: ['100.126.21.102:9091']
+        labels:
+          node="hetzner-cpu3"
       - targets: ['localhost:8770']
         labels:
-          node="local-mac", role="leader"
+          node="mac-studio", role="leader"
 
   # Node exporter on all nodes
   - job_name: 'node_exporter'
     static_configs:
-      - targets: ['208.167.249.164:9100']
+      - targets: ['104.255.9.187:9100']
+        labels:
+          node="runpod-a100-2"
+      - targets: ['100.94.201.92:9100']
         labels:
           node="vultr-a100-20gb"
+      - targets: ['100.110.28.41:9100']
+        labels:
+          node="nebius-backbone-1"
+      - targets: ['100.109.195.71:9100']
+        labels:
+          node="nebius-h100-3"
+      - targets: ['135.181.39.239:9100']
+        labels:
+          node="hetzner-cpu2"
+      - targets: ['100.126.21.102:9100']
+        labels:
+          node="hetzner-cpu3"
       - targets: ['localhost:9100']
         labels:
-          node="local-mac", role="leader"
+          node="mac-studio", role="leader"
 
   # Unified AI loop (leader only by default)
   - job_name: 'ringrift-unified-loop'

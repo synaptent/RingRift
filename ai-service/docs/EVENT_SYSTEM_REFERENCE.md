@@ -78,22 +78,33 @@ await bus.publish(DataEvent(
 
 ### Data Collection Events
 
-| Event                    | Value                    | Emitters                       | Subscribers                                 | Purpose               |
-| ------------------------ | ------------------------ | ------------------------------ | ------------------------------------------- | --------------------- |
-| `NEW_GAMES_AVAILABLE`    | `new_games`              | SelfplayRunner, AutoSyncDaemon | DataPipelineOrchestrator, ExportScheduler   | Trigger data export   |
-| `DATA_SYNC_STARTED`      | `sync_started`           | SyncPlanner, AutoSyncDaemon    | DataPipelineOrchestrator                    | Track sync progress   |
-| `DATA_SYNC_COMPLETED`    | `sync_completed`         | SyncPlanner, P2POrchestrator   | DataPipelineOrchestrator, SelfplayScheduler | Trigger export stage  |
-| `DATA_SYNC_FAILED`       | `sync_failed`            | SyncPlanner                    | RecoveryOrchestrator                        | Retry sync            |
-| `GAME_SYNCED`            | `game_synced`            | AutoSyncDaemon                 | ClusterManifest                             | Update game registry  |
-| `DATA_STALE`             | `data_stale`             | TrainingFreshness              | SyncRouter                                  | Trigger priority sync |
-| `DATA_FRESH`             | `data_fresh`             | TrainingFreshness              | TrainCLI                                    | Proceed with training |
-| `SYNC_TRIGGERED`         | `sync_triggered`         | TrainingFreshness              | SyncRouter                                  | Force immediate sync  |
-| `CONSOLIDATION_STARTED`  | `consolidation_started`  | DatabaseConsolidator           | ProgressTracker                             | Track consolidation   |
-| `CONSOLIDATION_COMPLETE` | `consolidation_complete` | DatabaseConsolidator           | DataPipelineOrchestrator                    | Trigger export        |
-| `ORPHAN_GAMES_DETECTED`  | `orphan_games_detected`  | OrphanDetectionDaemon          | DataPipelineOrchestrator                    | Trigger priority sync |
-| `REPAIR_COMPLETED`       | `repair_completed`       | RecoveryOrchestrator           | DataPipelineOrchestrator                    | Retrigger sync        |
-| `REPAIR_FAILED`          | `repair_failed`          | RecoveryOrchestrator           | DataPipelineOrchestrator                    | Track repair failures |
-| `TASK_ABANDONED`         | `task_abandoned`         | P2POrchestrator                | SelfplayOrchestrator                        | Track cancelled jobs  |
+| Event                     | Value                     | Emitters                       | Subscribers                                 | Purpose                  |
+| ------------------------- | ------------------------- | ------------------------------ | ------------------------------------------- | ------------------------ |
+| `NEW_GAMES_AVAILABLE`     | `new_games`               | SelfplayRunner, AutoSyncDaemon | DataPipelineOrchestrator, ExportScheduler   | Trigger data export      |
+| `DATA_SYNC_STARTED`       | `sync_started`            | SyncPlanner, AutoSyncDaemon    | DataPipelineOrchestrator                    | Track sync progress      |
+| `DATA_SYNC_COMPLETED`     | `sync_completed`          | SyncPlanner, P2POrchestrator   | DataPipelineOrchestrator, SelfplayScheduler | Trigger export stage     |
+| `DATA_SYNC_FAILED`        | `sync_failed`             | SyncPlanner                    | RecoveryOrchestrator                        | Retry sync               |
+| `GAME_SYNCED`             | `game_synced`             | AutoSyncDaemon                 | ClusterManifest                             | Update game registry     |
+| `DATA_STALE`              | `data_stale`              | TrainingFreshness              | SyncRouter                                  | Trigger priority sync    |
+| `DATA_FRESH`              | `data_fresh`              | TrainingFreshness              | TrainCLI                                    | Proceed with training    |
+| `SYNC_TRIGGERED`          | `sync_triggered`          | TrainingFreshness              | SyncRouter                                  | Force immediate sync     |
+| `SYNC_REQUEST`            | `sync_request`            | SyncRouter                     | AutoSyncDaemon                              | Explicit sync request    |
+| `CONSOLIDATION_STARTED`   | `consolidation_started`   | DatabaseConsolidator           | ProgressTracker                             | Track consolidation      |
+| `CONSOLIDATION_COMPLETE`  | `consolidation_complete`  | DatabaseConsolidator           | DataPipelineOrchestrator                    | Trigger export           |
+| `ORPHAN_GAMES_DETECTED`   | `orphan_games_detected`   | OrphanDetectionDaemon          | DataPipelineOrchestrator                    | Trigger priority sync    |
+| `ORPHAN_GAMES_REGISTERED` | `orphan_games_registered` | DataPipelineOrchestrator       | MetricsAnalysisOrchestrator                 | Orphans auto-registered  |
+| `REPAIR_COMPLETED`        | `repair_completed`        | RecoveryOrchestrator           | DataPipelineOrchestrator                    | Retrigger sync           |
+| `REPAIR_FAILED`           | `repair_failed`           | RecoveryOrchestrator           | DataPipelineOrchestrator                    | Track repair failures    |
+| `REPLICATION_ALERT`       | `replication_alert`       | UnifiedReplicationDaemon       | AlertManager                                | Replication health alert |
+| `DATABASE_CREATED`        | `database_created`        | GameReplayDB                   | DataPipelineOrchestrator                    | New database created     |
+| `TASK_ABANDONED`          | `task_abandoned`          | P2POrchestrator                | SelfplayOrchestrator                        | Track cancelled jobs     |
+
+### Batch Scheduling Events
+
+| Event              | Value              | Emitters          | Subscribers                 | Purpose                |
+| ------------------ | ------------------ | ----------------- | --------------------------- | ---------------------- |
+| `BATCH_SCHEDULED`  | `batch_scheduled`  | SelfplayScheduler | JobManager                  | Batch of jobs selected |
+| `BATCH_DISPATCHED` | `batch_dispatched` | JobManager        | MetricsAnalysisOrchestrator | Batch sent to nodes    |
 
 ### Training Events
 

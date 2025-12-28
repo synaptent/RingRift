@@ -93,7 +93,8 @@ except ImportError:
     }
     DEFAULT_FAILURE_THRESHOLD = 5
     DEFAULT_RECOVERY_TIMEOUT = 60.0
-    DEFAULT_MAX_BACKOFF = 600.0
+    # Dec 28, 2025: Reduced from 600 to 180 to prevent long stalls in training pipelines
+    DEFAULT_MAX_BACKOFF = 180.0
     DEFAULT_HALF_OPEN_MAX_CALLS = 1
 
 # ============================================

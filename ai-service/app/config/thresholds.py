@@ -1217,6 +1217,78 @@ ELO_PLATEAU_THRESHOLD = 5.0
 MAX_INTENSITY_MULTIPLIER = 2.5
 MIN_INTENSITY_MULTIPLIER = 0.5
 
+# -----------------------------------------------------------------------------
+# FeedbackLoopController Constants (December 28, 2025)
+# Extracted from feedback_loop_controller.py to enable configuration
+# -----------------------------------------------------------------------------
+
+# Policy accuracy threshold - trigger evaluation above this
+POLICY_ACCURACY_EVALUATION_THRESHOLD = 0.75
+
+# Exploration boost on promotion failure
+FAILURE_EXPLORATION_BOOST = 1.3
+
+# Intensity reduction on promotion success
+SUCCESS_INTENSITY_REDUCTION = 0.9
+
+# ELO change that triggers curriculum rebalancing
+ELO_SIGNIFICANT_CHANGE = 30.0
+
+# Cooldown after plateau detection (seconds)
+PLATEAU_COOLDOWN_SECONDS = 600.0
+
+# Cooldown between tournament triggers (seconds)
+TOURNAMENT_COOLDOWN_SECONDS = 300.0
+
+# Exploration boost multiplier on failure (applied repeatedly, up to max)
+EXPLORATION_BOOST_MULTIPLIER = 1.2
+
+# Maximum exploration boost value
+EXPLORATION_BOOST_MAX = 2.0
+
+# Exploration boost for recovery scenarios
+EXPLORATION_BOOST_RECOVERY = 1.5
+
+# Rate change threshold - significant selfplay rate change (percent)
+RATE_CHANGE_SIGNIFICANT_PERCENT = 20.0
+
+# Curriculum weight adjustments
+CURRICULUM_WEIGHT_ADJUSTMENT_DOWN = -0.05  # Reduce weight (less urgent)
+CURRICULUM_WEIGHT_ADJUSTMENT_UP = 0.10     # Increase weight (more urgent)
+
+# Policy accuracy thresholds for weight adjustment
+POLICY_LOW_THRESHOLD = 0.65   # Below this: boost training weight
+POLICY_HIGH_THRESHOLD = 0.80  # Above this: reduce training weight
+
+# ELO velocity thresholds (per hour)
+ELO_PLATEAU_PER_HOUR = 10.0          # Below this is considered plateau
+ELO_FAST_IMPROVEMENT_PER_HOUR = 50.0  # Above this is fast improvement
+
+# Loss anomaly severity threshold (consecutive anomalies)
+LOSS_ANOMALY_SEVERE_COUNT = 3
+
+# Exploration boost per anomaly (up to max)
+EXPLORATION_BOOST_PER_ANOMALY = 0.15
+
+# Exploration boost per stall epochs (stall_epochs // 5)
+EXPLORATION_BOOST_PER_STALL_GROUP = 0.10
+EXPLORATION_BOOST_STALL_MAX = 1.5
+
+# Exploration boost decay factor (reduce toward 1.0)
+EXPLORATION_BOOST_DECAY = 0.9
+
+# Exploration boost adjustments on promotion result
+EXPLORATION_BOOST_BASE = 1.0              # Minimum (floor) value
+EXPLORATION_BOOST_SUCCESS_DECREMENT = 0.1  # Decrease on success
+EXPLORATION_BOOST_FAILURE_INCREMENT = 0.2  # Increase on failure
+
+# Trend duration thresholds (epochs)
+TREND_DURATION_MODERATE = 3   # Moderate intervention
+TREND_DURATION_SEVERE = 5     # Severe intervention
+
+# Consecutive success threshold before reducing exploration
+CONSECUTIVE_SUCCESS_THRESHOLD = 3
+
 
 # =============================================================================
 # Alert Levels and Monitoring Thresholds

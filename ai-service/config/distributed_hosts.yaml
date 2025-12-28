@@ -92,7 +92,7 @@ elo_sync:
 # Dec 27, 2025: Fixed voters - only nodes with nat_blocked=false
 # Previous config had mac-studio (NAT blocked), vast-29129529 (retired)
 # Selecting nodes that are: online, not NAT blocked, not retired
-# With 5 voters, quorum = 3 (majority)
+# With 7 voters, quorum = 4 (majority)
 # Dec 26, 2025: Removed aws-staging (undefined host), added vultr-a100-20gb
 # Dec 27, 2025: Replaced runpod-h100 (containerized) with hetzner-cpu2 (bare metal)
 #   P2P voters should be non-containerized for stability during leader elections
@@ -102,6 +102,10 @@ p2p_voters:
   - hetzner-cpu1      # Hetzner CPU - stable, bare metal, direct IP
   - hetzner-cpu2      # Hetzner CPU - stable, bare metal, direct IP (backup)
   - vultr-a100-20gb   # Vultr A100 - stable, VM, direct IP
+  # Dec 28, 2025: Added Lambda GH200 nodes for increased redundancy
+  # GH200s are training-only bare metal with direct IPs - ideal voters
+  - lambda-gh200-1    # Lambda GH200 - stable, bare metal, direct IP
+  - lambda-gh200-2    # Lambda GH200 - stable, bare metal, direct IP
 
 hosts:
   # ============================================================

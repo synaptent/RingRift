@@ -338,7 +338,7 @@ if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT}/health" > /dev/nu
         echo "$(date): No python found for p2p_orchestrator" >&2
         exit 0
     fi
-    PYTHONPATH="$RINGRIFT_DIR" nohup "$PY" scripts/p2p_orchestrator.py --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "$RINGRIFT_DIR/.." >> /var/log/ringrift/p2p.log 2>&1 &
+    PYTHONPATH="$RINGRIFT_DIR" setsid "$PY" scripts/p2p_orchestrator.py --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "$RINGRIFT_DIR/.." >> /var/log/ringrift/p2p.log 2>&1 &
     echo "$(date): P2P orchestrator restarted (PID $!)"
 fi
 EOF
@@ -409,7 +409,7 @@ if [ "$HAS_USABLE_SYSTEMD" != "1" ]; then
   if ! curl -s --connect-timeout 5 "http://localhost:${P2P_PORT:-8770}/health" >/dev/null 2>&1; then
     pkill -f '[p]2p_orchestrator.py' 2>/dev/null || true
     cd "${RINGRIFT_DIR:-/root/ringrift/ai-service}"
-    nohup "$PY_P2P" scripts/p2p_orchestrator.py \
+    setsid "$PY_P2P" scripts/p2p_orchestrator.py \
       --node-id "${NODE_ID:-unknown}" \
       --port "${P2P_PORT:-8770}" \
       --peers "${COORDINATOR_URL:-}" \

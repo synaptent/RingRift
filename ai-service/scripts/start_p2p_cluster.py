@@ -126,7 +126,7 @@ cd {ringrift_path} && \\
 {venv_activate} && \\
 mkdir -p logs && \\
 export RINGRIFT_ADVERTISE_HOST={advertise_ip} && \\
-nohup python scripts/p2p_orchestrator.py --node-id {host_name} > logs/p2p.log 2>&1 &
+setsid python scripts/p2p_orchestrator.py --node-id {host_name} > logs/p2p.log 2>&1 &
 echo $!
 """
     ok, output = await run_ssh(host_name, host_config, start_cmd, timeout=30)

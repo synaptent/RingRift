@@ -704,7 +704,7 @@ class VastNodeManager:
         cd ~/ringrift/ai-service &&
         pkill -f p2p_orchestrator || true &&
         mkdir -p logs &&
-        PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py \\
+        setsid python3 scripts/p2p_orchestrator.py \\
             --node-id {node_id} --port 8770 \\
             --peers {peers_str} \\
             --ringrift-path ~/ringrift \\

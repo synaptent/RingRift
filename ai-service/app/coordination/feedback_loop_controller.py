@@ -77,7 +77,39 @@ def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
 
 # Event emission for selfplay feedback loops (Phase 21.2 - Dec 2025)
 # December 2025: Use canonical event_router imports
-from app.config.thresholds import PROMOTION_WIN_RATE_THRESHOLD
+from app.config.thresholds import (
+    PROMOTION_WIN_RATE_THRESHOLD,
+    # December 28, 2025: Extracted constants from magic numbers
+    POLICY_ACCURACY_EVALUATION_THRESHOLD,
+    FAILURE_EXPLORATION_BOOST,
+    SUCCESS_INTENSITY_REDUCTION,
+    ELO_SIGNIFICANT_CHANGE,
+    PLATEAU_COOLDOWN_SECONDS,
+    TOURNAMENT_COOLDOWN_SECONDS,
+    EXPLORATION_BOOST_MAX,
+    EXPLORATION_BOOST_MULTIPLIER,
+    EXPLORATION_BOOST_RECOVERY,
+    EXPLORATION_BOOST_PER_ANOMALY,
+    EXPLORATION_BOOST_PER_STALL_GROUP,
+    EXPLORATION_BOOST_STALL_MAX,
+    EXPLORATION_BOOST_DECAY,
+    EXPLORATION_BOOST_BASE,
+    EXPLORATION_BOOST_SUCCESS_DECREMENT,
+    EXPLORATION_BOOST_FAILURE_INCREMENT,
+    RATE_CHANGE_SIGNIFICANT_PERCENT,
+    CURRICULUM_WEIGHT_ADJUSTMENT_DOWN,
+    CURRICULUM_WEIGHT_ADJUSTMENT_UP,
+    POLICY_LOW_THRESHOLD,
+    POLICY_HIGH_THRESHOLD,
+    ELO_PLATEAU_PER_HOUR,
+    ELO_FAST_IMPROVEMENT_PER_HOUR,
+    ELO_TARGET_ALL_CONFIGS,
+    LOSS_ANOMALY_SEVERE_COUNT,
+    TREND_DURATION_MODERATE,
+    TREND_DURATION_SEVERE,
+    CONSECUTIVE_SUCCESS_THRESHOLD,
+    MEDIUM_QUALITY_THRESHOLD,
+)
 
 try:
     from app.coordination.event_router import emit_selfplay_target_updated
@@ -185,10 +217,10 @@ class FeedbackLoopController:
         self._cluster_healthy = True
 
         # Configuration (Dec 2025: thresholds from app.config.thresholds)
-        self.policy_accuracy_threshold = 0.75  # Trigger evaluation above this
+        self.policy_accuracy_threshold = POLICY_ACCURACY_EVALUATION_THRESHOLD
         self.promotion_threshold = PROMOTION_WIN_RATE_THRESHOLD  # Win rate for promotion
-        self.failure_exploration_boost = 1.3  # Boost exploration on failure
-        self.success_intensity_reduction = 0.9  # Reduce intensity on success
+        self.failure_exploration_boost = FAILURE_EXPLORATION_BOOST
+        self.success_intensity_reduction = SUCCESS_INTENSITY_REDUCTION
 
     def _get_or_create_state(self, config_key: str) -> FeedbackState:
         """Get or create state for a config."""
@@ -454,9 +486,9 @@ class FeedbackLoopController:
             from app.training.curriculum_feedback import wire_all_curriculum_feedback
 
             watchers = wire_all_curriculum_feedback(
-                elo_significant_change=30.0,
-                plateau_cooldown_seconds=600.0,
-                tournament_cooldown_seconds=300.0,
+                elo_significant_change=ELO_SIGNIFICANT_CHANGE,
+                plateau_cooldown_seconds=PLATEAU_COOLDOWN_SECONDS,
+                tournament_cooldown_seconds=TOURNAMENT_COOLDOWN_SECONDS,
                 promotion_failure_urgency="high",
                 auto_export=True,
             )
@@ -660,7 +692,7 @@ class FeedbackLoopController:
 
             # Gap 2 fix (Dec 2025): Sync curriculum weight when rate changes significantly
             # When Elo momentum drives big rate changes, adjust curriculum priority accordingly
-            if abs(change_percent) >= 20.0:  # 20% change threshold
+            if abs(change_percent) >= RATE_CHANGE_SIGNIFICANT_PERCENT:
                 try:
                     from app.training.curriculum_feedback import get_curriculum_feedback
 
@@ -670,9 +702,9 @@ class FeedbackLoopController:
                     # Increasing rate = model improving = can reduce curriculum weight slightly
                     # Decreasing rate = model struggling = increase curriculum weight for more focus
                     if change_percent > 0:  # Rate increased
-                        adjustment = -0.05  # Reduce weight (less urgent)
+                        adjustment = CURRICULUM_WEIGHT_ADJUSTMENT_DOWN
                     else:  # Rate decreased
-                        adjustment = 0.10  # Increase weight (more urgent)
+                        adjustment = CURRICULUM_WEIGHT_ADJUSTMENT_UP
 
                     current_weight = feedback._current_weights.get(config_key, 1.0)
                     new_weight = max(
@@ -826,8 +858,8 @@ class FeedbackLoopController:
             # Trigger quality check on training data
             self._trigger_quality_check(config_key, reason="training_loss_anomaly")
 
-            # If severe (>3σ deviation) or consecutive (3+ anomalies), boost exploration
-            if severity == "severe" or state.loss_anomaly_count >= 3:
+            # If severe (>3σ deviation) or consecutive anomalies, boost exploration
+            if severity == "severe" or state.loss_anomaly_count >= LOSS_ANOMALY_SEVERE_COUNT:
                 self._boost_exploration_for_anomaly(config_key, state.loss_anomaly_count)
 
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:
@@ -863,13 +895,13 @@ class FeedbackLoopController:
 
             if trend == "stalled":
                 # Training has stagnated - boost exploration to generate diverse data
-                if trend_duration_epochs >= 5:
+                if trend_duration_epochs >= TREND_DURATION_SEVERE:
                     self._boost_exploration_for_stall(config_key, trend_duration_epochs)
 
             elif trend == "degrading":
                 # Loss is getting worse - check data quality, consider rollback
                 self._trigger_quality_check(config_key, reason="training_loss_degrading")
-                if trend_duration_epochs >= 3:
+                if trend_duration_epochs >= TREND_DURATION_MODERATE:
                     logger.warning(
                         f"[FeedbackLoopController] Sustained loss degradation for {config_key}, "
                         f"consider training pause or rollback"
@@ -901,7 +933,7 @@ class FeedbackLoopController:
 
             config_key = payload.get("config_key", "")
             quality_score = payload.get("quality_score", 0.5)
-            threshold = payload.get("threshold", 0.6)
+            threshold = payload.get("threshold", MEDIUM_QUALITY_THRESHOLD)
 
             if not config_key:
                 return
@@ -987,8 +1019,8 @@ class FeedbackLoopController:
         P11-CRITICAL-1 (Dec 2025): Now emits EXPLORATION_BOOST event to close
         the feedback loop to selfplay exploration rates.
         """
-        # Calculate boost: 15% per anomaly, up to 2.0x
-        boost = min(2.0, 1.0 + 0.15 * anomaly_count)
+        # Calculate boost: EXPLORATION_BOOST_PER_ANOMALY per anomaly, up to max
+        boost = min(EXPLORATION_BOOST_MAX, 1.0 + EXPLORATION_BOOST_PER_ANOMALY * anomaly_count)
 
         # Always update local state (fallback for when schedulers aren't available)
         state = self._get_or_create_state(config_key)
@@ -1042,8 +1074,8 @@ class FeedbackLoopController:
         December 2025: Now includes fallback to store boost in FeedbackState.
         P11-CRITICAL-1 (Dec 2025): Now emits EXPLORATION_BOOST event.
         """
-        # Boost by 10% per 5 epochs of stall, up to 1.5x
-        boost = min(1.5, 1.0 + 0.10 * (stall_epochs // 5))
+        # Boost per TREND_DURATION_SEVERE epochs of stall, up to max
+        boost = min(EXPLORATION_BOOST_STALL_MAX, 1.0 + EXPLORATION_BOOST_PER_STALL_GROUP * (stall_epochs // TREND_DURATION_SEVERE))
 
         # Always update local state (fallback)
         state = self._get_or_create_state(config_key)
@@ -1095,8 +1127,8 @@ class FeedbackLoopController:
         current_boost = state.current_exploration_boost
 
         if current_boost > 1.0:
-            # Reduce by 10% towards 1.0
-            new_boost = max(1.0, current_boost * 0.9)
+            # Reduce towards 1.0 using decay factor
+            new_boost = max(1.0, current_boost * EXPLORATION_BOOST_DECAY)
             state.current_exploration_boost = new_boost
             logger.debug(
                 f"[FeedbackLoopController] Reduced exploration boost to {new_boost:.2f}x "
@@ -1181,13 +1213,12 @@ class FeedbackLoopController:
             feedback = get_curriculum_feedback()
 
             # Determine curriculum adjustment based on accuracy
-            # Low accuracy (<0.65) = boost training weight
-            # High accuracy (>0.80) = reduce training weight
+            # Low accuracy = boost training weight, high accuracy = reduce
             adjustment = 0.0
-            if policy_accuracy < 0.65:
-                adjustment = 0.15  # Boost - needs more training
-            elif policy_accuracy > 0.80:
-                adjustment = -0.10  # Reduce - learning well
+            if policy_accuracy < POLICY_LOW_THRESHOLD:
+                adjustment = CURRICULUM_WEIGHT_ADJUSTMENT_UP  # Boost - needs more training
+            elif policy_accuracy > POLICY_HIGH_THRESHOLD:
+                adjustment = CURRICULUM_WEIGHT_ADJUSTMENT_DOWN  # Reduce - learning well
 
             if adjustment != 0.0:
                 # Update internal weights
@@ -1283,13 +1314,9 @@ class FeedbackLoopController:
         - High velocity (improving) → Maintain current settings
         - Near 2000 Elo goal → Fine-tune with higher budget
         """
-        TARGET_ELO = 2000.0
-        PLATEAU_THRESHOLD = 10.0  # Elo per hour - below this is a plateau
-        FAST_IMPROVEMENT_THRESHOLD = 50.0  # Elo per hour
-
-        elo_gap = TARGET_ELO - elo
-        is_plateau = velocity < PLATEAU_THRESHOLD and len(state.elo_history) >= 3
-        is_fast = velocity > FAST_IMPROVEMENT_THRESHOLD
+        elo_gap = ELO_TARGET_ALL_CONFIGS - elo
+        is_plateau = velocity < ELO_PLATEAU_PER_HOUR and len(state.elo_history) >= 3
+        is_fast = velocity > ELO_FAST_IMPROVEMENT_PER_HOUR
 
         # Determine new search budget based on velocity and gap
         if is_plateau:
@@ -1297,7 +1324,7 @@ class FeedbackLoopController:
             old_budget = state.current_search_budget
             new_budget = min(800, old_budget + 100)  # Increase by 100, cap at 800
             state.current_search_budget = new_budget
-            state.current_exploration_boost = min(2.0, state.current_exploration_boost * 1.2)
+            state.current_exploration_boost = min(EXPLORATION_BOOST_MAX, state.current_exploration_boost * EXPLORATION_BOOST_MULTIPLIER)
 
             logger.warning(
                 f"[FeedbackLoopController] PLATEAU DETECTED for {config_key}: "
@@ -1341,7 +1368,7 @@ class FeedbackLoopController:
                     "exploration_boost": state.current_exploration_boost,
                     "elo_gap": elo_gap,
                     "velocity": velocity,
-                    "priority": "HIGH" if elo_gap > 500 or velocity < 10 else "NORMAL",
+                    "priority": "HIGH" if elo_gap > 500 or velocity < ELO_PLATEAU_PER_HOUR else "NORMAL",
                     "reason": "velocity_feedback",
                 })
                 logger.debug(
@@ -1402,7 +1429,7 @@ class FeedbackLoopController:
 
                 # Boost exploration to generate more diverse data
                 old_boost = state.current_exploration_boost
-                state.current_exploration_boost = min(2.0, old_boost * 1.4)
+                state.current_exploration_boost = min(EXPLORATION_BOOST_MAX, old_boost * FAILURE_EXPLORATION_BOOST)
 
                 # Emit event for selfplay boost
                 try:
@@ -1456,9 +1483,9 @@ class FeedbackLoopController:
                 f"total_failures={state.consecutive_failures}"
             )
 
-            # Set exploration boost to 1.5x to generate more diverse data
+            # Set exploration boost to generate more diverse data
             # Use max to preserve any higher existing boost
-            exploration_boost = 1.5
+            exploration_boost = EXPLORATION_BOOST_RECOVERY
             old_boost = state.current_exploration_boost
             new_boost = max(state.current_exploration_boost, exploration_boost)
             state.current_exploration_boost = new_boost
@@ -1619,7 +1646,7 @@ class FeedbackLoopController:
                     # Still improving - use accelerated training
                     state.current_training_intensity = "accelerated"
 
-                state.current_exploration_boost = max(1.0, state.current_exploration_boost - 0.1)
+                state.current_exploration_boost = max(EXPLORATION_BOOST_BASE, state.current_exploration_boost - EXPLORATION_BOOST_SUCCESS_DECREMENT)
 
             else:
                 state.consecutive_failures += 1
@@ -1630,7 +1657,7 @@ class FeedbackLoopController:
                 )
 
                 # Boost exploration and intensity on failure
-                state.current_exploration_boost = min(2.0, state.current_exploration_boost + 0.2)
+                state.current_exploration_boost = min(EXPLORATION_BOOST_MAX, state.current_exploration_boost + EXPLORATION_BOOST_FAILURE_INCREMENT)
 
                 if state.consecutive_failures >= 3:
                     state.current_training_intensity = "hot_path"

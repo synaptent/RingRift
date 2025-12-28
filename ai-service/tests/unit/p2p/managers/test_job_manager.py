@@ -557,7 +557,9 @@ class TestSelfplayJobLifecycle:
         event = MagicMock()
         event.payload = {"node_id": "test-node-1"}
 
-        with patch.object(job_manager, "_emit_task_event") as mock_emit:
+        # December 28, 2025: Updated to mock _safe_emit_event (from EventSubscriptionMixin)
+        # instead of _emit_task_event due to refactoring
+        with patch.object(job_manager, "_safe_emit_event") as mock_emit:
             await job_manager._on_host_offline(event)
 
         # Job should be marked as cancelled

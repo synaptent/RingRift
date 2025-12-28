@@ -487,8 +487,8 @@ class WorkQueue:
             if conn is not None:
                 try:
                     conn.close()
-                except Exception:
-                    pass
+                except (sqlite3.Error, OSError):
+                    pass  # Suppress cleanup errors to avoid masking original error
 
     def _save_item(self, item: WorkItem) -> None:
         """Save a work item to the database."""
@@ -541,8 +541,8 @@ class WorkQueue:
             if conn is not None:
                 try:
                     conn.close()
-                except Exception:
-                    pass
+                except (sqlite3.Error, OSError):
+                    pass  # Suppress cleanup errors to avoid masking original error
 
     def _save_stats(self) -> None:
         """Save stats to the database."""
@@ -575,8 +575,8 @@ class WorkQueue:
             if conn is not None:
                 try:
                     conn.close()
-                except Exception:
-                    pass
+                except (sqlite3.Error, OSError):
+                    pass  # Suppress cleanup errors to avoid masking original error
 
     def _delete_item(self, work_id: str) -> None:
         """Delete a work item from the database."""
@@ -603,8 +603,8 @@ class WorkQueue:
             if conn is not None:
                 try:
                     conn.close()
-                except Exception:
-                    pass
+                except (sqlite3.Error, OSError):
+                    pass  # Suppress cleanup errors to avoid masking original error
 
     def add_work(self, item: WorkItem, force: bool = False) -> str:
         """Add work to the queue. Returns work_id.
@@ -771,6 +771,9 @@ class WorkQueue:
             logger.warning(f"Cannot claim {work_id}: database not initialized or readonly")
             return False
 
+        # Dec 28, 2025 (Wave 7 Phase 3.1): Proper connection cleanup with finally block
+        conn = None
+        success = False
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -786,7 +789,6 @@ class WorkQueue:
             row = cursor.fetchone()
             if not row:
                 conn.rollback()
-                conn.close()
                 return False
 
             current_attempts = row[0]
@@ -804,22 +806,37 @@ class WorkQueue:
             # Check if update affected exactly one row
             if cursor.rowcount == 1:
                 conn.commit()
-                conn.close()
-                return True
+                success = True
             else:
                 # Item was already claimed by another worker
                 conn.rollback()
-                conn.close()
-                return False
+                success = False
 
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            logger.error(f"Database error in atomic claim for {work_id}: {e}")
+            if conn:
+                try:
+                    conn.rollback()
+                except (sqlite3.Error, OSError):
+                    pass
+            success = False
         except Exception as e:
             logger.error(f"Atomic claim failed for {work_id}: {e}")
-            try:
-                conn.rollback()
-                conn.close()
-            except (sqlite3.Error, OSError):
-                pass
-            return False
+            if conn:
+                try:
+                    conn.rollback()
+                except (sqlite3.Error, OSError):
+                    pass
+            success = False
+        finally:
+            # Always close connection, even on error
+            if conn is not None:
+                try:
+                    conn.close()
+                except (sqlite3.Error, OSError):
+                    pass  # Suppress cleanup errors
+
+        return success
 
     def start_work(self, work_id: str) -> bool:
         """Mark work as started (running)."""
@@ -1126,6 +1143,9 @@ class WorkQueue:
         Returns:
             List of work items as dicts, most recent first
         """
+        # Dec 28, 2025 (Wave 7 Phase 3.1): Proper connection cleanup with finally block
+        conn = None
+        items: list[dict[str, Any]] = []
         try:
             conn = self._get_connection()
             conn.row_factory = sqlite3.Row
@@ -1145,7 +1165,6 @@ class WorkQueue:
                     LIMIT ?
                 """, (limit,))
 
-            items = []
             for row in cursor.fetchall():
                 items.append({
                     "work_id": row["work_id"],
@@ -1162,11 +1181,18 @@ class WorkQueue:
                     "error": row["error"],
                 })
 
-            conn.close()
-            return items
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
+            logger.error(f"Database error getting work history: {e}")
         except Exception as e:
             logger.error(f"Failed to get work history: {e}")
-            return []
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except (sqlite3.Error, OSError):
+                    pass
+
+        return items
 
     def get_pending_count(self) -> int:
         """Get number of pending work items."""

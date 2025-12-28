@@ -28,10 +28,12 @@ class SyncStallHandler:
     - Bounded retry attempts to prevent infinite loops
 
     Example:
+        from app.config.coordination_defaults import SyncDefaults
+
         handler = SyncStallHandler(stall_penalty_seconds=300, max_retries=3)
 
-        # Check if sync is stalled
-        if handler.check_stall(sync_id, started_at, timeout=600):
+        # Check if sync is stalled (use centralized timeout)
+        if handler.check_stall(sync_id, started_at, timeout=SyncDefaults.STALL_DETECTION_TIMEOUT):
             # Record the stall
             handler.record_stall(host="node-5", sync_id=sync_id)
 

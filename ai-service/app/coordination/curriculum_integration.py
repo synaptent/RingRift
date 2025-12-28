@@ -596,10 +596,20 @@ class PFSPWeaknessWatcher:
     4. CurriculumFeedback reduces weight for that config
     """
 
-    # Thresholds
-    MASTERY_THRESHOLD = 0.85  # Win rate above this = opponent mastered
-    MIN_GAMES_FOR_MASTERY = 20  # Minimum games to declare mastery
-    CHECK_INTERVAL = 120.0  # Seconds between checks
+    # Thresholds - imported from centralized defaults (December 28, 2025)
+    # Can be overridden via environment variables:
+    # - RINGRIFT_MASTERY_THRESHOLD (default: 0.85)
+    # - RINGRIFT_CURRICULUM_CHECK_INTERVAL (default: 120.0)
+    # - RINGRIFT_MIN_GAMES_FOR_UPDATE (default: 100, MIN_GAMES_FOR_MASTERY uses 20)
+    try:
+        from app.config.coordination_defaults import CurriculumDefaults
+        MASTERY_THRESHOLD = CurriculumDefaults.MASTERY_THRESHOLD
+        CHECK_INTERVAL = CurriculumDefaults.CHECK_INTERVAL
+    except ImportError:
+        # Fallback for standalone testing
+        MASTERY_THRESHOLD = 0.85
+        CHECK_INTERVAL = 120.0
+    MIN_GAMES_FOR_MASTERY = 20  # Minimum games to declare mastery (not centralized)
 
     def __init__(self):
         self._running = False
@@ -1343,18 +1353,38 @@ class QualityToTemperatureWatcher:
     1. QualityFeedbackWatcher detects low quality
     2. This watcher receives QUALITY_FEEDBACK_ADJUSTED event
     3. Updates temperature schedule exploration_boost
+
+    Thresholds (December 28, 2025 - migrated to coordination_defaults.py):
+    - RINGRIFT_EXPLORATION_BOOST_FACTOR (default: 1.3, i.e., +30% exploration)
+    - RINGRIFT_LOW_QUALITY_THRESHOLD (default: 0.3)
     """
 
-    EXPLORATION_BOOST_FACTOR = 1.3  # Increase temperature by 30% on low quality
+    # Load from centralized defaults (December 28, 2025)
+    try:
+        from app.config.coordination_defaults import CurriculumDefaults
+        EXPLORATION_BOOST_FACTOR = CurriculumDefaults.EXPLORATION_BOOST_FACTOR
+        _LOW_QUALITY_DEFAULT = CurriculumDefaults.LOW_QUALITY_THRESHOLD
+    except ImportError:
+        # Fallback for standalone testing
+        EXPLORATION_BOOST_FACTOR = 1.3
+        _LOW_QUALITY_DEFAULT = 0.3
 
     @property
     def LOW_QUALITY_THRESHOLD(self) -> float:
-        """Get low quality threshold from centralized config."""
+        """Get low quality threshold from centralized config.
+
+        Note: Still supports thresholds.py for backward compatibility,
+        but prefers coordination_defaults.py.
+        """
         try:
-            from app.config.thresholds import LOW_QUALITY_THRESHOLD
-            return LOW_QUALITY_THRESHOLD
+            from app.config.coordination_defaults import CurriculumDefaults
+            return CurriculumDefaults.LOW_QUALITY_THRESHOLD
         except ImportError:
-            return 0.4  # Fallback default
+            try:
+                from app.config.thresholds import LOW_QUALITY_THRESHOLD
+                return LOW_QUALITY_THRESHOLD
+            except ImportError:
+                return 0.3  # Fallback default
 
     def __init__(self):
         self._subscribed = False

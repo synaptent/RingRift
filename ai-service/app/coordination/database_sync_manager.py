@@ -99,8 +99,8 @@ def atomic_copy(src: Path, dst: Path) -> None:
         shutil.copy2(src, tmp_path)
         # Atomic rename (POSIX guarantees atomicity for same-filesystem renames)
         tmp_path.rename(dst)
-    except Exception:
-        # Clean up temp file on failure
+    except (OSError, shutil.Error):
+        # Clean up temp file on failure (file operations can raise OSError or shutil.Error)
         tmp_path.unlink(missing_ok=True)
         raise
 
@@ -269,7 +269,7 @@ class DatabaseSyncManager(SyncManagerBase):
                     data = json.load(f)
                     self._db_state = DatabaseSyncState.from_dict(data)
                     logger.debug(f"Loaded {self.db_type} sync state from {self.state_path}")
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, TypeError, KeyError) as e:
             logger.warning(f"Failed to load {self.db_type} sync state: {e}")
 
     def _save_db_state(self) -> None:
@@ -279,7 +279,8 @@ class DatabaseSyncManager(SyncManagerBase):
                 self.state_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(self.state_path, "w") as f:
                     json.dump(self._db_state.to_dict(), f, indent=2)
-        except Exception as e:
+        except (OSError, TypeError) as e:
+            # OSError for file operations, TypeError if to_dict returns non-serializable data
             logger.warning(f"Failed to save {self.db_type} sync state: {e}")
 
     # =========================================================================
@@ -571,7 +572,9 @@ class DatabaseSyncManager(SyncManagerBase):
 
             return result
 
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, sqlite3.Error, shutil.Error) as e:
+            # OSError: subprocess/file errors, TimeoutError: async timeout
+            # sqlite3.Error: database validation, shutil.Error: cleanup operations
             logger.error(f"[{self.db_type}] Rsync pull error: {e}")
             # Clean up on exception
             if 'tmp_dir' in locals():
@@ -654,7 +657,9 @@ class DatabaseSyncManager(SyncManagerBase):
             logger.info(f"[{self.db_type}] Pushed to {host}")
             return True
 
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, sqlite3.Error) as e:
+            # OSError: subprocess/file errors, TimeoutError: async timeout
+            # sqlite3.Error: checkpoint operation errors
             logger.error(f"[{self.db_type}] Rsync push error: {e}")
             return False
 
@@ -694,7 +699,9 @@ class DatabaseSyncManager(SyncManagerBase):
 
         except ImportError:
             pass
-        except Exception as e:
+        except (OSError, asyncio.TimeoutError, ValueError, KeyError) as e:
+            # OSError: network errors, TimeoutError: request timeout
+            # ValueError/KeyError: malformed P2P response
             logger.debug(f"[{self.db_type}] P2P discovery failed: {e}")
 
         # Fallback to YAML config
@@ -727,7 +734,9 @@ class DatabaseSyncManager(SyncManagerBase):
 
         except ImportError:
             logger.warning(f"[{self.db_type}] cluster_config not available for discovery")
-        except Exception as e:
+        except (OSError, ValueError, KeyError, AttributeError, TypeError) as e:
+            # OSError: file not found
+            # ValueError/KeyError/AttributeError/TypeError: malformed config data
             logger.warning(f"[{self.db_type}] YAML discovery failed: {e}")
 
     # =========================================================================

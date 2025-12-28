@@ -438,16 +438,14 @@ class GameDiscovery:
         placeholders = ",".join("?" * len(aliases))
 
         try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
-            cursor = conn.execute(
-                f"SELECT COUNT(*) FROM games WHERE winner IS NOT NULL "
-                f"AND board_type IN ({placeholders}) AND num_players = ?",
-                (*aliases, num_players),
-            )
-            count = cursor.fetchone()[0]
-            conn.close()
-            return count
-        except Exception as e:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0) as conn:
+                cursor = conn.execute(
+                    f"SELECT COUNT(*) FROM games WHERE winner IS NOT NULL "
+                    f"AND board_type IN ({placeholders}) AND num_players = ?",
+                    (*aliases, num_players),
+                )
+                return cursor.fetchone()[0]
+        except (sqlite3.Error, OSError) as e:
             logger.debug(f"Error counting games in {db_path}: {e}")
             return 0
 
@@ -457,14 +455,12 @@ class GameDiscovery:
             return 0
 
         try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
-            cursor = conn.execute(
-                "SELECT COUNT(*) FROM games WHERE winner IS NOT NULL"
-            )
-            count = cursor.fetchone()[0]
-            conn.close()
-            return count
-        except Exception as e:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0) as conn:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM games WHERE winner IS NOT NULL"
+                )
+                return cursor.fetchone()[0]
+        except (sqlite3.Error, OSError) as e:
             logger.debug(f"Error counting games in {db_path}: {e}")
             return 0
 
@@ -479,20 +475,19 @@ class GameDiscovery:
             return {}
 
         try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0)
-            cursor = conn.execute(
-                "SELECT board_type, num_players, COUNT(*) "
-                "FROM games WHERE winner IS NOT NULL "
-                "GROUP BY board_type, num_players"
-            )
-            results = {}
-            for row in cursor.fetchall():
-                board_type, num_players, count = row
-                if board_type and num_players:
-                    results[(board_type, num_players)] = count
-            conn.close()
-            return results
-        except Exception as e:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0) as conn:
+                cursor = conn.execute(
+                    "SELECT board_type, num_players, COUNT(*) "
+                    "FROM games WHERE winner IS NOT NULL "
+                    "GROUP BY board_type, num_players"
+                )
+                results = {}
+                for row in cursor.fetchall():
+                    board_type, num_players, count = row
+                    if board_type and num_players:
+                        results[(board_type, num_players)] = count
+                return results
+        except (sqlite3.Error, OSError) as e:
             logger.debug(f"Error getting config counts from {db_path}: {e}")
             return {}
 
@@ -947,12 +942,11 @@ def run_diagnostics(discovery: GameDiscovery) -> None:
                 if not found:
                     # Check if it has games
                     try:
-                        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=2.0)
-                        cursor = conn.execute("SELECT COUNT(*) FROM games")
-                        game_count = cursor.fetchone()[0]
-                        conn.close()
-                        if game_count > 0:
-                            issues.append(f"Undiscovered DB with {game_count:,} games: {db_file}")
+                        with sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=2.0) as conn:
+                            cursor = conn.execute("SELECT COUNT(*) FROM games")
+                            game_count = cursor.fetchone()[0]
+                            if game_count > 0:
+                                issues.append(f"Undiscovered DB with {game_count:,} games: {db_file}")
                     except (sqlite3.Error, OSError, PermissionError):
                         pass
 

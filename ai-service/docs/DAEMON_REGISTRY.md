@@ -385,7 +385,7 @@ Profiles group daemons by node role for easier management.
 
 Runs on the central coordinator node (typically MacBook M3).
 
-**Daemon Count:** 32
+**Daemon Count:** 35
 
 **Daemons:**
 
@@ -421,6 +421,9 @@ Runs on the central coordinator node (typically MacBook M3).
 - `CLUSTER_DATA_SYNC`
 - `CLUSTER_WATCHDOG`
 - `METRICS_ANALYSIS`
+- `DATA_CONSOLIDATION` (December 2025)
+- `DISK_SPACE_MANAGER` (December 2025)
+- `COORDINATOR_DISK_MANAGER` (December 2025)
 
 **Use Case:** Centralized coordination, monitoring, and job scheduling for the entire cluster.
 
@@ -430,7 +433,7 @@ Runs on the central coordinator node (typically MacBook M3).
 
 Runs on GPU training nodes (H100, Nebius, RunPod, Vultr; Lambda legacy).
 
-**Daemon Count:** 18
+**Daemon Count:** 19
 
 **Daemons:**
 
@@ -453,6 +456,7 @@ Runs on GPU training nodes (H100, Nebius, RunPod, Vultr; Lambda legacy).
 - `FEEDBACK_LOOP` (CRITICAL)
 - `METRICS_ANALYSIS`
 - `DLQ_RETRY`
+- `DISK_SPACE_MANAGER` (December 2025)
 
 **Use Case:** Dedicated training and evaluation on stable GPU nodes.
 

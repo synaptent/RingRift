@@ -392,6 +392,18 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.MODEL_DISTRIBUTION),
         category="misc",
     ),
+    # S3 node sync (December 2025) - bi-directional S3 sync for all cluster nodes
+    DaemonType.S3_NODE_SYNC: DaemonSpec(
+        runner_name="create_s3_node_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="sync",
+    ),
+    # S3 consolidation (December 2025) - consolidates data from all nodes (coordinator only)
+    DaemonType.S3_CONSOLIDATION: DaemonSpec(
+        runner_name="create_s3_consolidation",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.S3_NODE_SYNC),
+        category="sync",
+    ),
     DaemonType.DISTILLATION: DaemonSpec(
         runner_name="create_distillation",
         depends_on=(DaemonType.EVENT_ROUTER,),

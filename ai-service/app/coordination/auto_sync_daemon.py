@@ -3148,56 +3148,54 @@ class AutoSyncDaemon:
             )
             return
 
-        # Merge games from pulled into canonical (Dec 27, 2025: Use context manager)
-        conn = None
+        # Merge games from pulled into canonical (Dec 28, 2025: Context manager pattern)
         try:
-            conn = sqlite3.connect(str(canonical_path), timeout=30.0)
-            cursor = conn.cursor()
+            with sqlite3.connect(str(canonical_path), timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            # Attach pulled database
-            cursor.execute(f"ATTACH DATABASE ? AS pulled", (str(pulled_db),))
+                # Attach pulled database
+                cursor.execute("ATTACH DATABASE ? AS pulled", (str(pulled_db),))
 
-            # Get count before merge
-            cursor.execute("SELECT COUNT(*) FROM games")
-            before_count = cursor.fetchone()[0]
+                try:
+                    # Get count before merge
+                    cursor.execute("SELECT COUNT(*) FROM games")
+                    before_count = cursor.fetchone()[0]
 
-            # Copy games that don't exist
-            cursor.execute("""
-                INSERT OR IGNORE INTO games
-                SELECT * FROM pulled.games
-                WHERE game_id NOT IN (SELECT game_id FROM games)
-            """)
+                    # Copy games that don't exist
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO games
+                        SELECT * FROM pulled.games
+                        WHERE game_id NOT IN (SELECT game_id FROM games)
+                    """)
 
-            # Copy moves for new games
-            cursor.execute("""
-                INSERT OR IGNORE INTO game_moves
-                SELECT * FROM pulled.game_moves
-                WHERE game_id NOT IN (SELECT DISTINCT game_id FROM game_moves)
-            """)
+                    # Copy moves for new games
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO game_moves
+                        SELECT * FROM pulled.game_moves
+                        WHERE game_id NOT IN (SELECT DISTINCT game_id FROM game_moves)
+                    """)
 
-            conn.commit()
+                    conn.commit()
 
-            # Get count after merge
-            cursor.execute("SELECT COUNT(*) FROM games")
-            after_count = cursor.fetchone()[0]
+                    # Get count after merge
+                    cursor.execute("SELECT COUNT(*) FROM games")
+                    after_count = cursor.fetchone()[0]
 
-            try:
-                cursor.execute("DETACH DATABASE pulled")
-            except sqlite3.Error:
-                pass  # May already be detached
-
-            new_games = after_count - before_count
-            if new_games > 0:
-                logger.info(
-                    f"[AutoSyncDaemon] Merged {new_games} games from {source_node} "
-                    f"into {canonical_name}"
-                )
+                    new_games = after_count - before_count
+                    if new_games > 0:
+                        logger.info(
+                            f"[AutoSyncDaemon] Merged {new_games} games from {source_node} "
+                            f"into {canonical_name}"
+                        )
+                finally:
+                    # Always detach pulled database
+                    try:
+                        cursor.execute("DETACH DATABASE pulled")
+                    except sqlite3.Error:
+                        pass  # May already be detached
 
         except sqlite3.Error as e:
             logger.warning(f"[AutoSyncDaemon] Merge failed for {db_name}: {e}")
-        finally:
-            if conn:
-                conn.close()
 
     def _get_canonical_name(self, db_name: str) -> str:
         """Convert a database name to its canonical form.
@@ -3994,9 +3992,11 @@ def create_training_sync_daemon() -> AutoSyncDaemon:
     Returns:
         AutoSyncDaemon configured for training sync mode
     """
+    from app.config.coordination_defaults import SyncDefaults
+
     config = AutoSyncConfig.from_config_file()
     config.strategy = SyncStrategy.BROADCAST
-    config.sync_interval = 30.0  # Faster sync for training freshness
+    config.sync_interval = SyncDefaults.FAST_SYNC_INTERVAL  # 30s for training freshness
     return AutoSyncDaemon(config=config)
 
 
