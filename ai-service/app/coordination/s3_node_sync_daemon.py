@@ -811,6 +811,12 @@ class S3ConsolidationDaemon:
         self.config = config or S3NodeSyncConfig()
         self._running = False
         self._consolidation_interval = 3600.0  # 1 hour
+        # Health tracking (Dec 2025)
+        self._last_consolidation_time: float = 0.0
+        self._consolidation_errors: int = 0
+        self._nodes_consolidated: int = 0
+        self._models_consolidated: int = 0
+        self._npz_consolidated: int = 0
 
     async def start(self) -> None:
         """Start consolidation daemon."""
@@ -820,16 +826,84 @@ class S3ConsolidationDaemon:
         while self._running:
             try:
                 await self._run_consolidation()
+                self._last_consolidation_time = time.time()
                 await asyncio.sleep(self._consolidation_interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Consolidation error: {e}")
+                self._consolidation_errors += 1
                 await asyncio.sleep(60.0)
 
     async def stop(self) -> None:
         """Stop consolidation daemon."""
         self._running = False
+
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for DaemonManager integration (Dec 2025).
+
+        Implements the health check protocol required for daemon monitoring.
+
+        Returns:
+            HealthCheckResult with status and metrics
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            # Fallback if protocols not available
+            from dataclasses import dataclass
+
+            @dataclass
+            class HealthCheckResult:
+                healthy: bool
+                status: str
+                message: str
+                details: dict | None = None
+
+            CoordinatorStatus = type("CoordinatorStatus", (), {
+                "RUNNING": "running",
+                "STOPPED": "stopped",
+                "DEGRADED": "degraded",
+            })()
+
+        # Check staleness - if no consolidation in 2x interval, mark degraded
+        max_age = self._consolidation_interval * 2
+        is_stale = (
+            self._last_consolidation_time > 0
+            and (time.time() - self._last_consolidation_time) > max_age
+        )
+
+        # Determine health status
+        if not self._running:
+            status = CoordinatorStatus.STOPPED
+            healthy = False
+            message = "S3ConsolidationDaemon stopped"
+        elif is_stale:
+            status = CoordinatorStatus.DEGRADED
+            healthy = False
+            message = f"Consolidation stale (last: {int(time.time() - self._last_consolidation_time)}s ago)"
+        elif self._consolidation_errors > 5:
+            status = CoordinatorStatus.DEGRADED
+            healthy = False
+            message = f"Excessive consolidation errors: {self._consolidation_errors}"
+        else:
+            status = CoordinatorStatus.RUNNING
+            healthy = True
+            message = "S3ConsolidationDaemon operational"
+
+        return HealthCheckResult(
+            healthy=healthy,
+            status=status,
+            message=message,
+            details={
+                "running": self._running,
+                "last_consolidation_time": self._last_consolidation_time,
+                "nodes_consolidated": self._nodes_consolidated,
+                "models_consolidated": self._models_consolidated,
+                "npz_consolidated": self._npz_consolidated,
+                "consolidation_errors": self._consolidation_errors,
+            },
+        )
 
     async def _run_consolidation(self) -> None:
         """Consolidate data from all nodes."""

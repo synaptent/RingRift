@@ -219,7 +219,8 @@ async def sync_from_owc(
             duration_seconds=time.time() - start_time,
         )
 
-    except Exception as e:
+    except (OSError, IOError, subprocess.SubprocessError, PermissionError) as e:
+        # File system, subprocess, or permission errors during sync
         return SyncResult(
             config_key=config_key,
             success=False,
@@ -308,7 +309,8 @@ async def sync_from_s3(
             duration_seconds=time.time() - start_time,
         )
 
-    except Exception as e:
+    except (OSError, IOError, subprocess.SubprocessError, PermissionError) as e:
+        # File system, subprocess, or permission errors during S3 sync
         return SyncResult(
             config_key=config_key,
             success=False,
@@ -485,7 +487,8 @@ class TrainingDataSyncDaemon:
                     if self.config.emit_events:
                         await self._emit_sync_event(result)
 
-            except Exception as e:
+            except (OSError, IOError, asyncio.CancelledError) as e:
+                # File/network errors or task cancellation in sync loop
                 logger.exception(f"Error in sync loop: {e}")
 
             # Wait before next check
@@ -520,7 +523,8 @@ class TrainingDataSyncDaemon:
                                     if p2 == "--num-players" and j + 1 < len(parts):
                                         num_players = parts[j + 1]
                                         configs.add(f"{board_type}_{num_players}p")
-        except Exception:
+        except (OSError, subprocess.SubprocessError, FileNotFoundError):
+            # pgrep may not exist or may fail on some systems
             pass
 
         # Check P2P work queue for training jobs
@@ -531,7 +535,8 @@ class TrainingDataSyncDaemon:
             for item in queue.get_pending_items():
                 if item.job_type == "training" and item.config_key:
                     configs.add(item.config_key)
-        except Exception:
+        except (ImportError, AttributeError, OSError):
+            # Work queue module may not be available or DB may be inaccessible
             pass
 
         return list(configs)
@@ -560,13 +565,53 @@ class TrainingDataSyncDaemon:
         except Exception as e:
             logger.debug(f"Failed to emit sync event: {e}")
 
-    def health_check(self) -> dict[str, Any]:
-        """Return health check status."""
-        return {
-            "status": "healthy" if self._running else "stopped",
-            "running": self._running,
-            "stats": self._stats,
-        }
+    def health_check(self) -> "HealthCheckResult":
+        """Return health check status.
+
+        Returns:
+            HealthCheckResult for DaemonManager integration.
+        """
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="TrainingDataSyncDaemon is not running",
+                details={"stats": self._stats},
+            )
+
+        # Check for recent activity
+        syncs_completed = self._stats.get("syncs_completed", 0)
+        syncs_failed = self._stats.get("syncs_failed", 0)
+        total_syncs = syncs_completed + syncs_failed
+
+        # Calculate error rate if we have syncs
+        error_rate = syncs_failed / total_syncs if total_syncs > 0 else 0.0
+
+        # Degraded if error rate > 50%
+        if error_rate > 0.5 and total_syncs >= 5:
+            return HealthCheckResult(
+                healthy=True,  # Still running but degraded
+                status=CoordinatorStatus.DEGRADED,
+                message=f"High sync error rate: {error_rate:.1%} ({syncs_failed}/{total_syncs})",
+                details={
+                    "running": True,
+                    "error_rate": error_rate,
+                    "stats": self._stats,
+                },
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"TrainingDataSyncDaemon healthy: {syncs_completed} syncs, {self._stats.get('bytes_transferred', 0) / 1024 / 1024:.1f}MB transferred",
+            details={
+                "running": True,
+                "error_rate": error_rate,
+                "stats": self._stats,
+            },
+        )
 
 
 # Singleton instance

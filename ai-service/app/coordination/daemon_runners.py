@@ -150,6 +150,39 @@ async def create_training_node_watcher() -> None:
         raise
 
 
+async def create_training_data_sync() -> None:
+    """Create and run training data sync daemon (December 2025).
+
+    Pre-training data synchronization from OWC drive and S3.
+    Ensures training nodes have access to the best available training
+    data before starting training jobs.
+
+    Features:
+    - Multi-source: OWC external drive, S3 bucket
+    - Config-aware: Only syncs data for configs being trained
+    - Size-based selection: Downloads largest available dataset
+    - Resume support: Skips already-downloaded files
+    """
+    try:
+        from app.coordination.training_data_sync_daemon import (
+            TrainingDataSyncDaemon,
+            get_training_data_sync_daemon,
+        )
+
+        daemon = get_training_data_sync_daemon()
+        await daemon.start()
+
+        # Keep running until stopped
+        while True:
+            await asyncio.sleep(60)
+            if not daemon._running:
+                break
+
+    except ImportError as e:
+        logger.error(f"TrainingDataSyncDaemon not available: {e}")
+        raise
+
+
 async def create_ephemeral_sync() -> None:
     """Create and run ephemeral sync daemon (Phase 4, December 2025).
 
@@ -1291,6 +1324,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.ELO_SYNC.name: create_elo_sync,
         DaemonType.AUTO_SYNC.name: create_auto_sync,
         DaemonType.TRAINING_NODE_WATCHER.name: create_training_node_watcher,
+        DaemonType.TRAINING_DATA_SYNC.name: create_training_data_sync,
         DaemonType.EPHEMERAL_SYNC.name: create_ephemeral_sync,
         DaemonType.GOSSIP_SYNC.name: create_gossip_sync,
         DaemonType.EVENT_ROUTER.name: create_event_router,

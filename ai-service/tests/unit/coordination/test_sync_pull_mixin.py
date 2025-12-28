@@ -111,9 +111,10 @@ class TestCoordinatorRoleDetection:
             
             with patch.object(mock_mixin, "_get_sync_sources", return_value=[]):
                 result = await mock_mixin._pull_from_cluster_nodes()
-                
+
                 # Should return 0 if no sources but not skip
-    
+                assert result == 0
+
     def test_hostname_fallback_mac_studio(self, mock_mixin):
         """Test hostname fallback for mac-studio."""
         with patch("socket.gethostname", return_value="mac-studio.local"):

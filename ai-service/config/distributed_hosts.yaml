@@ -71,6 +71,8 @@ auto_sync:
     runpod-*: 100
     nebius-*: 100
     vultr-*: 50
+    lambda-*: 100  # Dec 2025: GH200 nodes have good network
+    hetzner-*: 30  # Dec 2025: CPU-only nodes, lower priority for sync
 
 elo_sync:
   coordinator: mac-studio
@@ -626,7 +628,6 @@ hosts:
     ssh_port: 29473
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
-    # Dec 28, 2025: Node has /workspace/ai-service but no git repo - needs full clone
     ringrift_path: /workspace/ringrift/ai-service
     venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
     memory_gb: 24
@@ -634,10 +635,11 @@ hosts:
     gpu: RTX 3090 Ti
     gpu_vram_gb: 24
     role: gpu_selfplay
-    # Dec 28, 2025: Needs git clone - has tarball but no repo
-    status: needs_setup
+    # Dec 28, 2025: Fixed - git repo cloned, valuable sq8_4p selfplay running 13+ days
+    status: ready
     runpod_id: dqc6nvrwig8ajq
-    p2p_enabled: false
+    p2p_enabled: true
+    note: Has 5.1GB runpod_square8_3p.db + active sq8_4p Gumbel selfplay
 
   # Dec 28, 2025: Added missing RunPod selfplay A100 pods
   runpod-selfplay-a100:
@@ -752,12 +754,12 @@ hosts:
     p2p_enabled: true
     note: H100 80GB for training
 
-  # Nebius H100 #2 - Internal IP only, requires ProxyJump through nebius-backbone-1
-  # Provisioned Dec 26, 2025
-  # SSH Config needed: Host nebius-h100-2
-  #                      ProxyJump nebius-backbone-1
+  # Nebius H100 #2 - Internal IP only, Tailscale requires re-auth
+  # Dec 28, 2025: Tailscale IP 100.106.19.6 exists but requires browser auth
+  # To restore: visit https://login.tailscale.com/a/l1503db5b0136d7 and re-auth
   nebius-h100-2:
     ssh_host: 10.0.0.8
+    tailscale_ip: 100.106.19.6
     ssh_port: 22
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
@@ -768,11 +770,12 @@ hosts:
     gpu: H100 SXM
     gpu_vram_gb: 80
     role: gpu_training_primary
-    status: offline  # Dec 28: Changed from retired to offline - completely skip in all operations
+    # Dec 28, 2025: Retired - internal IP, ProxyJump fails, Tailscale needs re-auth
+    status: retired
     nebius_id: computeinstance-e00xsba9efvkpvk8wy
     region: eu-north1
     p2p_enabled: false
-    note: H100 80GB - RETIRED Dec 27 2025 (internal IP only, ProxyJump fails)
+    note: H100 80GB - needs Tailscale re-auth to restore
 
   # Nebius H100 #3 - 500GB storage, H100 80GB
   # Provisioned Dec 26, 2025 to replace deleted nodes

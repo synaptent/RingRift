@@ -342,7 +342,8 @@ class TrainingDataManifest:
 
             except subprocess.TimeoutExpired:
                 logger.warning(f"Timeout scanning OWC directory: {owc_dir}")
-            except Exception as e:
+            except (OSError, subprocess.SubprocessError, PermissionError) as e:
+                # SSH/rsync connection failures or permission issues
                 logger.warning(f"Error scanning OWC directory {owc_dir}: {e}")
 
         logger.info(f"Found {count} OWC training files")
@@ -405,7 +406,8 @@ class TrainingDataManifest:
 
         except subprocess.TimeoutExpired:
             logger.warning("Timeout scanning S3 bucket")
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, PermissionError) as e:
+            # AWS CLI execution failures or permission issues
             logger.warning(f"Error scanning S3: {e}")
 
         logger.info(f"Found {count} S3 training files")
@@ -450,7 +452,8 @@ class TrainingDataManifest:
             with open(MANIFEST_CACHE_PATH, "w") as f:
                 json.dump(data, f, indent=2)
             logger.debug(f"Saved manifest cache to {MANIFEST_CACHE_PATH}")
-        except Exception as e:
+        except (OSError, IOError, PermissionError, TypeError) as e:
+            # File write failures or JSON serialization issues
             logger.warning(f"Failed to save manifest cache: {e}")
 
     async def load_cache(self) -> bool:
@@ -475,7 +478,8 @@ class TrainingDataManifest:
 
             logger.debug(f"Loaded manifest cache from {MANIFEST_CACHE_PATH}")
             return True
-        except Exception as e:
+        except (OSError, IOError, json.JSONDecodeError, KeyError, ValueError) as e:
+            # File read failures, malformed JSON, or missing required fields
             logger.warning(f"Failed to load manifest cache: {e}")
             return False
 
@@ -539,6 +543,7 @@ def get_training_data_manifest_sync() -> TrainingDataManifest:
                     _manifest_instance.entries[config_key] = [
                         TrainingDataEntry.from_dict(e) for e in entries_data
                     ]
-        except Exception:
+        except (OSError, IOError, json.JSONDecodeError, KeyError, ValueError):
+            # Cache load failures - proceed with empty manifest
             pass
     return _manifest_instance

@@ -1395,7 +1395,7 @@ def _start_unified_feedback_orchestrator() -> bool:
 
 
 def _validate_event_wiring() -> dict[str, Any]:
-    """Validate event flow to detect orphaned or misconfigured events.
+    """Validate event flow and critical event subscriptions.
 
     Phase 21.2 (December 2025): Critical startup validation.
     This validates the event routing system is healthy and logs any issues
@@ -1403,20 +1403,24 @@ def _validate_event_wiring() -> dict[str, Any]:
     - Events not being routed through the system
     - Missing event buses (data, stage, cross-process)
     - High duplicate event rate (potential loops)
+    - Critical events without subscribers (December 28, 2025 enhancement)
 
     Returns:
         Dict with validation results from event_router.validate_event_flow()
+        and validate_event_wiring()
     """
     results: dict[str, Any] = {
         "healthy": False,
         "issues": [],
         "recommendations": [],
         "validated": False,
+        "critical_wiring_valid": False,
     }
 
     try:
-        from app.coordination.event_router import validate_event_flow
+        from app.coordination.event_router import validate_event_flow, validate_event_wiring
 
+        # Phase 1: Validate general event flow health
         validation = validate_event_flow()
         results.update(validation)
 
@@ -1443,6 +1447,34 @@ def _validate_event_wiring() -> dict[str, Any]:
             logger.warning(
                 f"[Bootstrap] Event flow validation: {len(issues)} issues detected"
             )
+
+        # Phase 2 (December 28, 2025): Validate critical event subscriptions
+        # This checks that essential pipeline events have subscribers
+        try:
+            wiring_result = validate_event_wiring(
+                raise_on_error=False,  # Don't raise - we want to log and continue
+                log_warnings=True,
+            )
+            results["critical_wiring_valid"] = wiring_result.get("valid", False)
+            results["missing_critical_events"] = wiring_result.get("missing_critical", [])
+            results["missing_optional_events"] = wiring_result.get("missing_optional", [])
+
+            if wiring_result.get("valid", False):
+                logger.info(
+                    f"[Bootstrap] Critical event wiring validated: "
+                    f"{len(wiring_result.get('all_subscribed', []))} event types subscribed"
+                )
+            else:
+                missing = wiring_result.get("missing_critical", [])
+                logger.error(
+                    f"[Bootstrap] CRITICAL: Missing event subscribers for: {missing}. "
+                    f"Training pipeline may not function correctly!"
+                )
+                results["issues"].append(
+                    f"Critical events without subscribers: {missing}"
+                )
+        except (AttributeError, TypeError) as e:
+            logger.warning(f"[Bootstrap] validate_event_wiring check failed: {e}")
 
     except ImportError as e:
         logger.debug(f"[Bootstrap] validate_event_flow not available: {e}")

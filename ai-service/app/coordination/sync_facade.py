@@ -319,7 +319,22 @@ class SyncFacade:
         backend: SyncBackend,
         request: SyncRequest,
     ) -> SyncResponse:
-        """Execute sync using selected backend."""
+        """Execute sync using the specified backend.
+
+        Routes the sync request to the appropriate backend implementation.
+        Handles deprecated backends by logging warnings and redirecting
+        to their replacements.
+
+        Args:
+            backend: The SyncBackend to use for this operation.
+            request: The sync request with data type, targets, and options.
+
+        Returns:
+            SyncResponse with success status, backend used, and details.
+
+        Raises:
+            ValueError: If an unknown backend is specified.
+        """
         if backend == SyncBackend.AUTO_SYNC:
             return await self._sync_via_auto_sync(request)
         elif backend == SyncBackend.CLUSTER_SYNC:
@@ -662,7 +677,16 @@ class SyncFacade:
             logger.debug(f"[SyncFacade] Failed to emit sync event: {e}")
 
     def get_stats(self) -> dict[str, Any]:
-        """Get sync statistics."""
+        """Get sync statistics for monitoring and debugging.
+
+        Returns:
+            Dictionary containing:
+            - total_syncs: Number of sync operations attempted
+            - by_backend: Dict mapping backend name to operation count
+            - total_bytes: Total bytes transferred across all syncs
+            - total_errors: Number of failed sync operations
+            - backends_loaded: Dict mapping backend name to load status
+        """
         return {
             **self._stats,
             "backends_loaded": {
@@ -720,7 +744,14 @@ class SyncFacade:
 
     @classmethod
     def get_instance(cls) -> SyncFacade:
-        """Get singleton instance."""
+        """Get singleton instance of SyncFacade.
+
+        Use this method instead of direct instantiation to ensure
+        a single SyncFacade is shared across the application.
+
+        Returns:
+            SyncFacade: The singleton instance.
+        """
         if not hasattr(cls, "_instance"):
             cls._instance = cls()
         return cls._instance
@@ -734,7 +765,18 @@ _facade_singleton: SyncFacade | None = None
 
 
 def get_sync_facade() -> SyncFacade:
-    """Get sync facade singleton."""
+    """Get the global SyncFacade singleton.
+
+    Preferred module-level accessor for sync operations.
+    Thread-safe initialization on first call.
+
+    Returns:
+        SyncFacade: The global singleton instance.
+
+    Example:
+        facade = get_sync_facade()
+        response = await facade.sync("games")
+    """
     global _facade_singleton
     if _facade_singleton is None:
         _facade_singleton = SyncFacade()
@@ -742,7 +784,15 @@ def get_sync_facade() -> SyncFacade:
 
 
 def reset_sync_facade() -> None:
-    """Reset sync facade singleton (for testing)."""
+    """Reset the sync facade singleton.
+
+    Primarily for testing - clears the cached singleton instance,
+    allowing a fresh facade to be created on next access.
+
+    Note:
+        This does NOT stop any running sync operations.
+        Call this only when you need a clean slate (e.g., between tests).
+    """
     global _facade_singleton
     _facade_singleton = None
 

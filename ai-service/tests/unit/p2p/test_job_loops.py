@@ -402,7 +402,7 @@ class TestIdleDetectionLoop:
 
         config = IdleDetectionConfig(
             gpu_idle_threshold_percent=10.0,
-            idle_duration_threshold_seconds=0.0,  # Immediate detection for testing
+            idle_duration_threshold_seconds=0.01,  # Near-immediate detection for testing
             min_nodes_to_keep=1,
         )
         loop = IdleDetectionLoop(
@@ -412,6 +412,11 @@ class TestIdleDetectionLoop:
             config=config,
         )
 
+        # First run registers idle state
+        await loop._run_once()
+        # Wait to exceed idle threshold
+        await asyncio.sleep(0.02)
+        # Second run triggers callback
         await loop._run_once()
 
         # node-1 should be detected as idle and callback invoked
@@ -470,7 +475,7 @@ class TestIdleDetectionLoop:
 
         config = IdleDetectionConfig(
             gpu_idle_threshold_percent=10.0,
-            idle_duration_threshold_seconds=0.0,
+            idle_duration_threshold_seconds=0.01,
             min_nodes_to_keep=2,  # Keep at least 2 nodes
         )
         loop = IdleDetectionLoop(
@@ -529,7 +534,7 @@ class TestIdleDetectionLoop:
 
         config = IdleDetectionConfig(
             gpu_idle_threshold_percent=10.0,
-            idle_duration_threshold_seconds=0.0,
+            idle_duration_threshold_seconds=0.01,
             min_nodes_to_keep=0,
         )
         loop = IdleDetectionLoop(
@@ -539,9 +544,12 @@ class TestIdleDetectionLoop:
             config=config,
         )
 
-        # Should not raise
+        # First run registers idle state, second run triggers callback
+        await loop._run_once()
+        await asyncio.sleep(0.02)
         await loop._run_once()
 
+        # Should not raise and callback should be called
         on_idle.assert_called_once()
 
     @pytest.mark.asyncio
@@ -558,7 +566,7 @@ class TestIdleDetectionLoop:
 
         config = IdleDetectionConfig(
             gpu_idle_threshold_percent=10.0,
-            idle_duration_threshold_seconds=0.0,
+            idle_duration_threshold_seconds=0.01,
             min_nodes_to_keep=0,
         )
         loop = IdleDetectionLoop(
@@ -568,6 +576,9 @@ class TestIdleDetectionLoop:
             config=config,
         )
 
+        # First run registers idle state, second run triggers callback
+        await loop._run_once()
+        await asyncio.sleep(0.02)
         await loop._run_once()
 
         # Should detect idle node even with object-style info
@@ -584,7 +595,7 @@ class TestIdleDetectionLoop:
 
         config = IdleDetectionConfig(
             gpu_idle_threshold_percent=10.0,
-            idle_duration_threshold_seconds=0.0,
+            idle_duration_threshold_seconds=0.01,
             min_nodes_to_keep=0,
         )
         loop = IdleDetectionLoop(
@@ -594,9 +605,12 @@ class TestIdleDetectionLoop:
             config=config,
         )
 
+        # First run registers idle state
         await loop._run_once()
-
         get_node_metrics.assert_called_once()
+        await asyncio.sleep(0.02)
+        # Second run triggers callback
+        await loop._run_once()
         assert on_idle.call_count == 1
 
     def test_get_idle_nodes(self) -> None:

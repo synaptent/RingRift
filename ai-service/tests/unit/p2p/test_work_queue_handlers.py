@@ -5,6 +5,7 @@ December 2025.
 """
 
 import json
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -40,12 +41,14 @@ class MockWorkItem:
         priority: int = 50,
         config: dict | None = None,
         assigned_to: str = "",
+        claimed_by: str = "",
     ):
         self.work_id = work_id
         self.work_type = MagicMock(value=work_type)
         self.priority = priority
         self.config = config or {"board_type": "hex8", "num_players": 2}
         self.assigned_to = assigned_to
+        self.claimed_by = claimed_by
         self.timeout_seconds = 3600.0
 
     def to_dict(self):
@@ -63,6 +66,7 @@ class MockWorkQueue:
 
     def __init__(self):
         self.items = {}
+        self.lock = threading.RLock()  # Reentrant lock for thread-safe access
         self._add_called = []
         self._claim_result = None
         self._complete_result = True

@@ -6,49 +6,81 @@ This document explains how daemon startup ordering and dependencies work in the 
 
 ## Overview
 
-The daemon manager starts 66+ daemon types with specific dependencies. Incorrect startup order can cause race conditions where daemons try to use resources that aren't ready.
+The daemon manager starts 70+ daemon types with specific dependencies. Incorrect startup order can cause race conditions where daemons try to use resources that aren't ready.
+
+There are two layers of dependency management:
+
+1. **`master_loop.py`**: Explicit startup order for production
+2. **`daemon_registry.py`**: Declarative `depends_on` specifications
+
+Both must be consistent for correct behavior.
 
 ## Key Concepts
 
-### Startup Order
+### Startup Order (master_loop.py)
 
-Daemons are started in the order defined in `DAEMON_STARTUP_ORDER` (daemon_types.py):
+The `master_loop.py` defines the actual startup sequence used in production:
 
 ```
-Position | Daemon Type             | Dependencies
----------|-------------------------|-------------
-1        | EVENT_ROUTER            | (None - first)
-2        | DAEMON_WATCHDOG         | EVENT_ROUTER
-3        | DATA_PIPELINE           | EVENT_ROUTER
-4        | FEEDBACK_LOOP           | EVENT_ROUTER, DATA_PIPELINE
-5        | AUTO_SYNC               | EVENT_ROUTER
-6        | QUEUE_POPULATOR         | EVENT_ROUTER
-7        | WORK_QUEUE_MONITOR      | QUEUE_POPULATOR
-8        | COORDINATOR_HEALTH      | EVENT_ROUTER
-9        | IDLE_RESOURCE           | EVENT_ROUTER
-10       | TRAINING_TRIGGER        | DATA_PIPELINE, EVENT_ROUTER
+Position | Daemon Type             | Dependencies              | Why This Position?
+---------|-------------------------|---------------------------|--------------------
+1        | EVENT_ROUTER            | (None - first)            | Event bus for all others
+2        | NODE_HEALTH_MONITOR     | EVENT_ROUTER              | Health tracking needed early
+3        | CLUSTER_MONITOR         | EVENT_ROUTER              | Cluster state awareness
+4        | SYSTEM_HEALTH_MONITOR   | NODE_HEALTH_MONITOR       | Aggregates node health
+5        | HEALTH_SERVER           | EVENT_ROUTER              | HTTP endpoints for monitoring
+6        | FEEDBACK_LOOP           | EVENT_ROUTER              | Must receive TRAINING_COMPLETED events
+7        | DATA_PIPELINE           | EVENT_ROUTER              | Must receive DATA_SYNC_COMPLETED events
+8        | AUTO_SYNC               | DATA_PIPELINE, FEEDBACK_LOOP | Sync events need subscribers
+9        | CLUSTER_DATA_SYNC       | EVENT_ROUTER              | Cluster-wide sync
+10       | ELO_SYNC                | EVENT_ROUTER              | Elo rating sync
 ...
 ```
 
-### Dependency Resolution
+**Critical Ordering Rule**: Event _subscribers_ (DATA_PIPELINE, FEEDBACK_LOOP) must start
+before event _emitters_ (AUTO_SYNC) to avoid lost events.
 
-Dependencies are defined in `DAEMON_DEPENDENCIES` dict:
+### Registry-Based Dependencies (daemon_registry.py)
+
+The canonical source of dependencies is `DAEMON_REGISTRY` in `daemon_registry.py`:
 
 ```python
-DAEMON_DEPENDENCIES = {
-    DaemonType.DAEMON_WATCHDOG: {DaemonType.EVENT_ROUTER},
-    DaemonType.DATA_PIPELINE: {DaemonType.EVENT_ROUTER},
-    DaemonType.FEEDBACK_LOOP: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
-    DaemonType.AUTO_SYNC: {DaemonType.EVENT_ROUTER},
-    # ... more
+from app.coordination.daemon_registry import DAEMON_REGISTRY, DaemonSpec
+
+# Example entries
+DAEMON_REGISTRY = {
+    DaemonType.AUTO_SYNC: DaemonSpec(
+        runner_name="create_auto_sync",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE, DaemonType.FEEDBACK_LOOP),
+        category="sync",
+    ),
+    DaemonType.TRAINING_TRIGGER: DaemonSpec(
+        runner_name="create_training_trigger",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.AUTO_EXPORT),
+        category="pipeline",
+    ),
+    # ... 70+ entries
 }
 ```
 
-If a dependency is not running when a daemon starts:
+**Key fields in DaemonSpec:**
 
-1. The daemon startup is skipped
-2. A warning is logged
-3. The daemon is marked for retry by DAEMON_WATCHDOG
+| Field                   | Type                     | Description                         |
+| ----------------------- | ------------------------ | ----------------------------------- |
+| `runner_name`           | `str`                    | Function name in daemon_runners.py  |
+| `depends_on`            | `tuple[DaemonType, ...]` | Daemons that must start first       |
+| `category`              | `str`                    | Grouping: sync, event, health, etc. |
+| `auto_restart`          | `bool`                   | Restart on failure (default: True)  |
+| `health_check_interval` | `float \| None`          | Custom health check interval        |
+| `deprecated`            | `bool`                   | Marked for removal                  |
+
+### Runtime Dependency Enforcement
+
+When a daemon starts, DaemonManager checks dependencies:
+
+1. All daemons in `depends_on` must be RUNNING
+2. If any dependency is not running, startup is deferred
+3. DAEMON_WATCHDOG retries deferred daemons periodically
 
 ### Readiness Protocol
 
@@ -161,24 +193,57 @@ The `ready_timeout` (default 30s) prevents infinite waits.
 
 ## Daemon Categories
 
-| Category   | Daemons                       | Start Position |
-| ---------- | ----------------------------- | -------------- |
-| Core       | EVENT_ROUTER, DAEMON_WATCHDOG | 1-2            |
-| Pipeline   | DATA_PIPELINE, FEEDBACK_LOOP  | 3-4            |
-| Sync       | AUTO_SYNC, QUEUE_POPULATOR    | 5-6            |
-| Monitoring | CLUSTER_MONITOR, NODE_HEALTH  | 11-15          |
-| Training   | TRAINING_TRIGGER, EVALUATION  | 16-18          |
-| Resources  | IDLE_RESOURCE, NODE_RECOVERY  | 9, 15          |
+Categories from `daemon_registry.py` (use `get_daemons_by_category(category)`):
+
+| Category     | Daemons                                             | Description                  |
+| ------------ | --------------------------------------------------- | ---------------------------- |
+| event        | EVENT_ROUTER, CROSS_PROCESS_POLLER, DLQ_RETRY       | Event bus infrastructure     |
+| health       | NODE_HEALTH_MONITOR, CLUSTER_MONITOR, HEALTH_SERVER | Monitoring and health checks |
+| sync         | AUTO_SYNC, ELO_SYNC, S3_NODE_SYNC, SYNC_PUSH        | Data synchronization         |
+| pipeline     | DATA_PIPELINE, TRAINING_TRIGGER, AUTO_EXPORT        | Training pipeline stages     |
+| evaluation   | EVALUATION, AUTO_PROMOTION, GAUNTLET_FEEDBACK       | Model evaluation & promotion |
+| distribution | MODEL_DISTRIBUTION, NPZ_DISTRIBUTION, DATA_SERVER   | Model/data distribution      |
+| feedback     | FEEDBACK_LOOP, CURRICULUM_INTEGRATION               | Training feedback signals    |
+| queue        | QUEUE_POPULATOR, JOB_SCHEDULER                      | Work queue management        |
+| resource     | IDLE_RESOURCE, NODE_RECOVERY, UTILIZATION_OPTIMIZER | Resource management          |
+| recovery     | DISK_SPACE_MANAGER, MAINTENANCE, ORPHAN_DETECTION   | Cleanup and recovery         |
+| provider     | MULTI_PROVIDER                                      | Cloud provider coordination  |
+
+```python
+# Query daemons by category
+from app.coordination.daemon_registry import get_daemons_by_category, get_categories
+
+sync_daemons = get_daemons_by_category("sync")
+all_categories = get_categories()  # Returns sorted list
+```
+
+## Validation Commands
+
+```bash
+# Validate registry consistency (at startup)
+python -c "from app.coordination.daemon_registry import validate_registry_or_raise; validate_registry_or_raise()"
+
+# Check for deprecated daemons
+python -c "from app.coordination.daemon_registry import get_deprecated_daemons; print('\n'.join(f'{d[0].name}: {d[1]}' for d in get_deprecated_daemons()))"
+
+# Validate startup order consistency
+python -c "from app.coordination.daemon_types import validate_startup_order_or_raise; validate_startup_order_or_raise()"
+
+# Check registry health
+python -c "from app.coordination.daemon_registry import check_registry_health; r = check_registry_health(); print(f'Healthy: {r.healthy}, {r.message}')"
+```
 
 ## Related Files
 
-- `app/coordination/daemon_types.py` - Enum, startup order, dependencies
-- `app/coordination/daemon_manager.py` - Lifecycle management
-- `app/coordination/daemon_runners.py` - 66 runner functions
+- `app/coordination/daemon_types.py` - DaemonType enum, DaemonState, DaemonInfo
+- `app/coordination/daemon_manager.py` - Lifecycle management (~2,000 LOC)
+- `app/coordination/daemon_runners.py` - 70 runner functions (~1,100 LOC)
 - `app/coordination/daemon_registry.py` - Declarative daemon specs
 - `app/coordination/daemon_lifecycle.py` - Lifecycle operations
+- `scripts/master_loop.py` - Production startup order
 
 ## References
 
 - [DAEMON_REGISTRY.md](../DAEMON_REGISTRY.md) - Full daemon reference
 - [DAEMON_FAILURE_RECOVERY.md](../runbooks/DAEMON_FAILURE_RECOVERY.md) - Recovery procedures
+- [DAEMON_MANAGER_OPERATIONS.md](../runbooks/DAEMON_MANAGER_OPERATIONS.md) - Operational commands

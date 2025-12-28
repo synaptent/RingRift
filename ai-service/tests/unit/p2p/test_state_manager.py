@@ -296,6 +296,9 @@ class TestStateManagerLoadState:
         manager = StateManager(db_path)
         manager.init_database()
 
+        # Use future timestamp to avoid stale lease invalidation
+        future_expires = time.time() + 3600.0  # 1 hour in the future
+
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.executemany(
@@ -303,7 +306,7 @@ class TestStateManagerLoadState:
             [
                 ("leader_id", "leader-node"),
                 ("leader_lease_id", "lease-123"),
-                ("leader_lease_expires", "1000.0"),
+                ("leader_lease_expires", str(future_expires)),
                 ("role", "leader"),
                 ("voter_node_ids", '["node-1", "node-2", "node-3"]'),
             ],
@@ -315,7 +318,7 @@ class TestStateManagerLoadState:
 
         assert state.leader_state.leader_id == "leader-node"
         assert state.leader_state.leader_lease_id == "lease-123"
-        assert state.leader_state.leader_lease_expires == 1000.0
+        assert state.leader_state.leader_lease_expires == pytest.approx(future_expires, abs=1.0)
         assert state.leader_state.role == "leader"
         assert state.leader_state.voter_node_ids == ["node-1", "node-2", "node-3"]
 

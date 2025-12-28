@@ -540,6 +540,7 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Node watching/recovery daemons
     DaemonType.TRAINING_NODE_WATCHER: {DaemonType.EVENT_ROUTER},
+    DaemonType.TRAINING_DATA_SYNC: {DaemonType.EVENT_ROUTER},  # Pre-training data sync
     DaemonType.NODE_RECOVERY: {DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR},
 
     # Replication daemons

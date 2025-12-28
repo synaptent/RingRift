@@ -14,6 +14,7 @@ The gossip protocol enables:
 - Reduces load on leader
 
 Phase 3 extraction - Dec 26, 2025
+Phase 4 consolidation - Dec 28, 2025: Now inherits from P2PMixinBase
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ import asyncio
 import contextlib
 import gzip
 import json
-import logging
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -34,15 +34,20 @@ except ImportError:
     ClientTimeout = None  # type: ignore
 
 from .constants import DEFAULT_PORT, GOSSIP_MAX_PEER_ENDPOINTS
+from .p2p_mixin_base import P2PMixinBase
 
 if TYPE_CHECKING:
     from .models import NodeInfo, NodeRole
 
-logger = logging.getLogger(__name__)
 
-
-class GossipProtocolMixin:
+class GossipProtocolMixin(P2PMixinBase):
     """Mixin providing core gossip protocol functionality.
+
+    Inherits from P2PMixinBase (Phase 4 consolidation - Dec 28, 2025) to use:
+    - _log_info/_log_debug/_log_warning/_log_error for consistent logging
+    - _safe_emit_event for event emission
+    - _ensure_multiple_state_attrs for state initialization
+    - _get_timestamp/_is_expired for timing utilities
 
     Requires the implementing class to have:
     - node_id: str - This node's ID
@@ -53,9 +58,6 @@ class GossipProtocolMixin:
     - self_info: NodeInfo - This node's info
     - verbose: bool - Enable verbose logging
     - _cluster_epoch: int - Cluster epoch for split-brain resolution
-    - _gossip_peer_states: dict - Peer state storage
-    - _gossip_peer_manifests: dict - Peer manifest storage
-    - _gossip_learned_endpoints: dict - Gossip-learned peer endpoints
 
     And methods:
     - _update_self_info() - Update self node info
@@ -80,6 +82,9 @@ class GossipProtocolMixin:
     - _check_tournament_consensus()
     """
 
+    # MIXIN_TYPE for P2PMixinBase logging prefix (Phase 4 consolidation)
+    MIXIN_TYPE = "GOSSIP"
+
     # Type hints for IDE support
     node_id: str
     peers: dict[str, Any]
@@ -102,22 +107,38 @@ class GossipProtocolMixin:
     GOSSIP_ENDPOINT_TTL = 1800  # 30 min TTL for learned endpoints
 
     def _init_gossip_protocol(self) -> None:
-        """Initialize gossip protocol state.
+        """Initialize gossip protocol state and metrics.
 
         Call this in __init__ to set up gossip storage.
+        Uses P2PMixinBase._ensure_multiple_state_attrs() for cleaner initialization.
+
+        Phase 4 consolidation: Now includes GossipMetricsMixin state (previously separate).
         """
-        if not hasattr(self, "_gossip_peer_states"):
-            self._gossip_peer_states = {}
-        if not hasattr(self, "_gossip_peer_manifests"):
-            self._gossip_peer_manifests = {}
-        if not hasattr(self, "_gossip_learned_endpoints"):
-            self._gossip_learned_endpoints = {}
-        if not hasattr(self, "_last_gossip_time"):
-            self._last_gossip_time = 0.0
-        if not hasattr(self, "_last_anti_entropy_repair"):
-            self._last_anti_entropy_repair = 0.0
-        if not hasattr(self, "_last_gossip_cleanup"):
-            self._last_gossip_cleanup = 0.0
+        # Phase 4 consolidation: Use base class helper instead of manual hasattr checks
+        self._ensure_multiple_state_attrs({
+            # Gossip protocol state
+            "_gossip_peer_states": {},
+            "_gossip_peer_manifests": {},
+            "_gossip_learned_endpoints": {},
+            "_last_gossip_time": 0.0,
+            "_last_anti_entropy_repair": 0.0,
+            "_last_gossip_cleanup": 0.0,
+            # Gossip metrics state (merged from GossipMetricsMixin)
+            "_gossip_metrics": {
+                "message_sent": 0,
+                "message_received": 0,
+                "state_updates": 0,
+                "propagation_delay_ms": [],
+                "anti_entropy_repairs": 0,
+                "stale_states_detected": 0,
+                "last_reset": time.time(),
+            },
+            "_gossip_compression_stats": {
+                "total_original_bytes": 0,
+                "total_compressed_bytes": 0,
+                "messages_compressed": 0,
+            },
+        })
 
     def _cleanup_gossip_state(self) -> None:
         """Dec 28, 2025: Clean up stale gossip state to prevent memory growth.
@@ -189,8 +210,9 @@ class GossipProtocolMixin:
         # Log if significant cleanup occurred
         total_cleaned = cleaned_states + cleaned_manifests + cleaned_endpoints
         if total_cleaned > 10:
-            logger.info(
-                f"[GOSSIP] Cleanup: removed {cleaned_states} stale states, "
+            # Phase 4: Use base class logging helper
+            self._log_info(
+                f"Cleanup: removed {cleaned_states} stale states, "
                 f"{cleaned_manifests} manifests, {cleaned_endpoints} endpoints"
             )
 
@@ -334,9 +356,8 @@ class GossipProtocolMixin:
             compressed_bytes = gzip.compress(json_bytes, compresslevel=6)
             compressed_size = len(compressed_bytes)
 
-            # Track compression metrics
-            if hasattr(self, "_record_gossip_compression"):
-                self._record_gossip_compression(original_size, compressed_size)
+            # Track compression metrics (method now in this class)
+            self._record_gossip_compression(original_size, compressed_size)
 
             start_time = time.time()
 
@@ -376,11 +397,10 @@ class GossipProtocolMixin:
                         response_data = await self._read_gossip_response(resp)
                         self._process_gossip_response(response_data)
 
-                        # Record metrics
+                        # Record metrics (methods now in this class)
                         latency_ms = (time.time() - start_time) * 1000
-                        if hasattr(self, "_record_gossip_metrics"):
-                            self._record_gossip_metrics("sent", peer.node_id)
-                            self._record_gossip_metrics("latency", peer.node_id, latency_ms)
+                        self._record_gossip_metrics("sent", peer.node_id)
+                        self._record_gossip_metrics("latency", peer.node_id, latency_ms)
                         break
 
             except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, AttributeError):
@@ -566,14 +586,15 @@ class GossipProtocolMixin:
             if node_id in self.peers and self.peers[node_id].is_alive():
                 return
 
-            logger.info(f"Attempting connection to gossip-learned peer: {node_id} at {host}:{port}")
+            # Phase 4: Use base class logging helper
+            self._log_info(f"Attempting connection to gossip-learned peer: {node_id} at {host}:{port}")
 
             # Try to send heartbeat
             info = await self._send_heartbeat_to_peer(host, port)
             if info:
                 with self.peers_lock:
                     self.peers[info.node_id] = info
-                logger.info(f"Successfully connected to gossip-learned peer: {info.node_id}")
+                self._log_info(f"Successfully connected to gossip-learned peer: {info.node_id}")
 
                 # Save to cache for future restarts
                 self._save_peer_to_cache(
@@ -582,7 +603,7 @@ class GossipProtocolMixin:
                 )
         except Exception as e:
             if self.verbose:
-                logger.debug(f"Failed to connect to gossip-learned peer {node_id}: {e}")
+                self._log_debug(f"Failed to connect to gossip-learned peer {node_id}: {e}")
 
     def _handle_incoming_cluster_epoch(self, incoming_epoch: Any, response: dict) -> None:
         """Phase 29: Handle incoming cluster epoch for split-brain resolution."""
@@ -593,7 +614,8 @@ class GossipProtocolMixin:
 
         if epoch > self._cluster_epoch:
             # Accept higher epoch - this cluster partition is more authoritative
-            logger.info(f"Adopting higher cluster epoch: {epoch} (was {self._cluster_epoch})")
+            # Phase 4: Use base class logging helper
+            self._log_info(f"Adopting higher cluster epoch: {epoch} (was {self._cluster_epoch})")
             self._cluster_epoch = epoch
             self._save_cluster_epoch()
 
@@ -608,7 +630,7 @@ class GossipProtocolMixin:
                     NodeRole = None
 
                 if NodeRole and self.role == NodeRole.LEADER:
-                    logger.info(f"Stepping down: higher epoch cluster has leader {incoming_leader}")
+                    self._log_info(f"Stepping down: higher epoch cluster has leader {incoming_leader}")
                     self.role = NodeRole.FOLLOWER
                 self.leader_id = incoming_leader
 
@@ -725,17 +747,14 @@ class GossipProtocolMixin:
                     if resp.status == 200:
                         response_data = await resp.json()
                         latency = (time.time() - start_time) * 1000
-
-                        if hasattr(self, "_record_gossip_metrics"):
-                            self._record_gossip_metrics("latency", peer.node_id, latency)
+                        self._record_gossip_metrics("latency", peer.node_id, latency)
 
                         # Process peer's full state
                         updates = self._process_anti_entropy_response(response_data, now)
 
                         if updates > 0:
-                            if hasattr(self, "_record_gossip_metrics"):
-                                self._record_gossip_metrics("anti_entropy")
-                            logger.debug(f"[GOSSIP] Anti-entropy repair: {updates} state updates from {peer.node_id}")
+                            self._record_gossip_metrics("anti_entropy")
+                            self._log_debug(f"Anti-entropy repair: {updates} state updates from {peer.node_id}")
 
                         return
 
@@ -754,8 +773,7 @@ class GossipProtocolMixin:
             if state.get("version", 0) > existing.get("version", 0):
                 self._gossip_peer_states[node_id] = state
                 updates += 1
-                if hasattr(self, "_record_gossip_metrics"):
-                    self._record_gossip_metrics("update", node_id)
+                self._record_gossip_metrics("update", node_id)
 
         # Check for stale states we have that peer doesn't know
         our_nodes = set(self._gossip_peer_states.keys())
@@ -767,8 +785,7 @@ class GossipProtocolMixin:
             # If state is older than 10 minutes and peer doesn't know it,
             # the node might be offline - mark as stale
             if stale_state.get("timestamp", 0) < now - 600:
-                if hasattr(self, "_record_gossip_metrics"):
-                    self._record_gossip_metrics("stale", stale_node)
+                self._record_gossip_metrics("stale", stale_node)
 
         return updates
 
@@ -785,3 +802,194 @@ class GossipProtocolMixin:
         Public API for accessing endpoints discovered via peer-of-peer gossip.
         """
         return dict(self._gossip_learned_endpoints)
+
+    # =========================================================================
+    # Gossip Metrics (Phase 4: Merged from GossipMetricsMixin - Dec 28, 2025)
+    # =========================================================================
+
+    def _record_gossip_metrics(
+        self,
+        event: str,
+        peer_id: str | None = None,
+        latency_ms: float = 0,
+    ) -> None:
+        """Record gossip protocol metrics for monitoring.
+
+        GOSSIP METRICS: Track propagation efficiency and protocol health.
+        - message_sent: Gossip messages sent
+        - message_received: Gossip messages received
+        - state_updates: Number of state updates from gossip
+        - propagation_delay_ms: Average latency for gossip messages
+        - anti_entropy_repairs: Full state reconciliations triggered
+
+        Args:
+            event: Event type (sent, received, update, anti_entropy, stale, latency)
+            peer_id: Optional peer ID for context
+            latency_ms: Latency in milliseconds (for latency events)
+        """
+        # Ensure metrics state exists
+        self._ensure_state_attr("_gossip_metrics", {
+            "message_sent": 0,
+            "message_received": 0,
+            "state_updates": 0,
+            "propagation_delay_ms": [],
+            "anti_entropy_repairs": 0,
+            "stale_states_detected": 0,
+            "last_reset": time.time(),
+        })
+        metrics = self._gossip_metrics
+
+        if event == "sent":
+            metrics["message_sent"] += 1
+        elif event == "received":
+            metrics["message_received"] += 1
+        elif event == "update":
+            metrics["state_updates"] += 1
+        elif event == "anti_entropy":
+            metrics["anti_entropy_repairs"] += 1
+        elif event == "stale":
+            metrics["stale_states_detected"] += 1
+        elif event == "latency":
+            # Keep last 100 latency measurements
+            metrics["propagation_delay_ms"].append(latency_ms)
+            if len(metrics["propagation_delay_ms"]) > 100:
+                metrics["propagation_delay_ms"] = metrics["propagation_delay_ms"][-100:]
+
+        # Reset metrics every hour
+        if time.time() - metrics.get("last_reset", 0) > 3600:
+            self._reset_gossip_metrics_hourly()
+
+    def _reset_gossip_metrics_hourly(self) -> dict[str, Any]:
+        """Reset gossip metrics and return old values.
+
+        Called automatically after 1 hour. Returns old metrics for logging.
+        """
+        self._ensure_state_attr("_gossip_metrics", {})
+        old_metrics = self._gossip_metrics.copy()
+
+        self._gossip_metrics = {
+            "message_sent": 0,
+            "message_received": 0,
+            "state_updates": 0,
+            "propagation_delay_ms": [],
+            "anti_entropy_repairs": 0,
+            "stale_states_detected": 0,
+            "last_reset": time.time(),
+        }
+
+        # Log metrics before reset using base class helper
+        delays = old_metrics.get("propagation_delay_ms", [])
+        avg_latency = sum(delays) / max(1, len(delays)) if delays else 0
+
+        self._log_debug(
+            f"Hourly: sent={old_metrics.get('message_sent', 0)} "
+            f"recv={old_metrics.get('message_received', 0)} "
+            f"updates={old_metrics.get('state_updates', 0)} "
+            f"repairs={old_metrics.get('anti_entropy_repairs', 0)} "
+            f"stale={old_metrics.get('stale_states_detected', 0)} "
+            f"avg_latency={avg_latency:.1f}ms"
+        )
+
+        return old_metrics
+
+    def _record_gossip_compression(
+        self,
+        original_size: int,
+        compressed_size: int,
+    ) -> None:
+        """Record gossip compression metrics.
+
+        COMPRESSION METRICS: Track how effective compression is for gossip messages.
+        Typical JSON gossip payloads compress 60-80% with gzip level 6.
+
+        Args:
+            original_size: Original message size in bytes
+            compressed_size: Compressed message size in bytes
+        """
+        self._ensure_state_attr("_gossip_compression_stats", {
+            "total_original_bytes": 0,
+            "total_compressed_bytes": 0,
+            "messages_compressed": 0,
+        })
+        stats = self._gossip_compression_stats
+        stats["total_original_bytes"] += original_size
+        stats["total_compressed_bytes"] += compressed_size
+        stats["messages_compressed"] += 1
+
+    def _get_gossip_metrics_summary(self) -> dict[str, Any]:
+        """Get summary of gossip metrics for /status endpoint.
+
+        Returns:
+            Dict with message counts, latency, and compression stats
+        """
+        self._ensure_state_attr("_gossip_metrics", {})
+        self._ensure_state_attr("_gossip_compression_stats", {})
+        metrics = self._gossip_metrics
+        delays = metrics.get("propagation_delay_ms", [])
+
+        # Include compression stats
+        compression = self._gossip_compression_stats
+        original = compression.get("total_original_bytes", 0)
+        compressed = compression.get("total_compressed_bytes", 0)
+        compression_ratio = 1.0 - (compressed / original) if original > 0 else 0
+
+        return {
+            "message_sent": metrics.get("message_sent", 0),
+            "message_received": metrics.get("message_received", 0),
+            "state_updates": metrics.get("state_updates", 0),
+            "anti_entropy_repairs": metrics.get("anti_entropy_repairs", 0),
+            "stale_states_detected": metrics.get("stale_states_detected", 0),
+            "avg_latency_ms": sum(delays) / max(1, len(delays)) if delays else 0,
+            "compression_ratio": round(compression_ratio, 3),
+            "bytes_saved_kb": round((original - compressed) / 1024, 2),
+            "messages_compressed": compression.get("messages_compressed", 0),
+        }
+
+    def _get_gossip_health_status(self) -> dict[str, Any]:
+        """Get gossip protocol health status.
+
+        Returns health indicators for monitoring:
+        - is_healthy: True if gossip is functioning well
+        - warnings: List of any warning conditions
+        """
+        summary = self._get_gossip_metrics_summary()
+        warnings = []
+
+        # Check for high latency
+        avg_latency = summary.get("avg_latency_ms", 0)
+        if avg_latency > 1000:
+            warnings.append(f"High gossip latency: {avg_latency:.0f}ms")
+
+        # Check for low message rate (stale cluster)
+        sent = summary.get("message_sent", 0)
+        received = summary.get("message_received", 0)
+        if sent + received < 10:
+            warnings.append("Low gossip activity")
+
+        # Check for high stale rate
+        stale = summary.get("stale_states_detected", 0)
+        updates = summary.get("state_updates", 0)
+        if updates > 0 and stale / updates > 0.5:
+            warnings.append(f"High stale rate: {stale}/{updates}")
+
+        return {
+            "is_healthy": len(warnings) == 0,
+            "warnings": warnings,
+            "metrics": summary,
+        }
+
+
+# Standalone utility function (from GossipMetricsMixin)
+def calculate_compression_ratio(original: int, compressed: int) -> float:
+    """Calculate compression ratio.
+
+    Args:
+        original: Original size in bytes
+        compressed: Compressed size in bytes
+
+    Returns:
+        Ratio of bytes saved (0.0 to 1.0)
+    """
+    if original <= 0:
+        return 0.0
+    return 1.0 - (compressed / original)

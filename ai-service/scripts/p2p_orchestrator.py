@@ -1335,7 +1335,7 @@ from scripts.p2p.handlers import (
 from scripts.p2p.network_utils import NetworkUtilsMixin
 from scripts.p2p.peer_manager import PeerManagerMixin
 from scripts.p2p.leader_election import LeaderElectionMixin
-from scripts.p2p.gossip_metrics import GossipMetricsMixin
+# GossipMetricsMixin merged into GossipProtocolMixin (Dec 28, 2025)
 
 # Phase 5: SWIM + Raft integration mixins (Dec 26, 2025)
 from scripts.p2p.membership_mixin import MembershipMixin
@@ -2048,7 +2048,7 @@ class P2POrchestrator(
     NetworkUtilsMixin,
     PeerManagerMixin,
     LeaderElectionMixin,
-    GossipMetricsMixin,
+    # GossipMetricsMixin merged into GossipProtocolMixin (Dec 28, 2025)
     # Phase 5: SWIM + Raft integration (Dec 26, 2025)
     MembershipMixin,      # SWIM gossip-based membership
     ConsensusMixin,       # PySyncObj Raft consensus
@@ -23087,10 +23087,9 @@ print(json.dumps({{
                     self.role = NodeRole.FOLLOWER
                 self.leader_id = incoming_leader
 
-    # _record_gossip_metrics: Provided by GossipMetricsMixin
-    # _record_gossip_compression: Provided by GossipMetricsMixin
-    # _get_gossip_metrics_summary: Provided by GossipMetricsMixin
-    # _get_gossip_health_status: Provided by GossipMetricsMixin (NEW: health monitoring)
+    # Gossip metrics methods (provided by GossipProtocolMixin after Dec 28, 2025 merge):
+    # _record_gossip_metrics, _record_gossip_compression, _reset_gossip_metrics_hourly
+    # _get_gossip_metrics_summary, _get_gossip_health_status
 
     async def _gossip_anti_entropy_repair(self):
         """DECENTRALIZED: Periodic full state reconciliation with random peer.
@@ -28498,6 +28497,16 @@ def main():
             sync_to_disk_interval=args.sync_to_disk_interval,
         )
         logger.info(f"P2P orchestrator initialized successfully: {args.node_id}")
+
+        # December 28, 2025: Validate event emitters at startup
+        # This provides early warning if event system is not properly configured
+        if _check_event_emitters():
+            logger.info("[P2P] Event emitters available - P2P events will be published")
+        else:
+            logger.warning(
+                "[P2P] Event emitters NOT available - P2P events will be silent. "
+                "Ensure app.coordination.event_emitters is importable for full integration."
+            )
     except Exception as e:  # noqa: BLE001
         logger.exception(f"Failed to initialize P2P orchestrator: {e}")
         sys.exit(1)
