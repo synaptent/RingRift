@@ -509,7 +509,7 @@ hosts:
     ssh_host: 140.82.15.69
     ssh_port: 22
     ssh_user: root
-    ssh_key: ~/.ssh/id_ed25519
+    ssh_key: ~/.ssh/id_cluster
     ringrift_path: /root/ringrift/ai-service
     venv_activate: source /root/ringrift/ai-service/venv/bin/activate
     memory_gb: 30

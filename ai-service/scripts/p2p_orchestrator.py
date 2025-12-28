@@ -11258,10 +11258,13 @@ print(json.dumps(result))
 
         GPU nodes push selfplay data to coordinator before disk fills.
         This endpoint:
-        1. Receives file content (inline for small files, or notification for large)
-        2. Verifies checksum
-        3. Stores file locally
-        4. Returns receipt confirming storage
+        1. Checks coordinator disk space - rejects if >90% full
+        2. Falls back to OWC external drive if local disk >80%
+        3. Falls back to S3 if OWC unavailable
+        4. Receives file content (inline for small files, or notification for large)
+        5. Verifies checksum
+        6. Stores file locally/OWC/S3
+        7. Returns receipt confirming storage
 
         Request body:
         {
@@ -11278,12 +11281,14 @@ print(json.dumps(result))
             "status": "received",
             "checksum_verified": true,
             "stored_at": "/path/to/file",
+            "storage_tier": "local|owc|s3",
             "node_id": "coordinator-node"
         }
         """
         try:
             import base64
             import hashlib
+            import shutil
             from pathlib import Path
 
             data = await request.json()
@@ -11300,6 +11305,73 @@ print(json.dumps(result))
                     status=400
                 )
 
+            # =================================================================
+            # Phase 3b: Check disk space and determine storage tier
+            # =================================================================
+
+            # Storage tier configuration
+            CRITICAL_DISK_THRESHOLD = 90.0  # Reject pushes above this
+            OWC_FALLBACK_THRESHOLD = 80.0   # Use OWC above this
+            OWC_MOUNT_PATHS = [
+                Path("/Volumes/RingRift-Data"),
+                Path("/Volumes/OWC-1"),
+                Path("/mnt/owc"),
+            ]
+            S3_BUCKET = os.environ.get("RINGRIFT_S3_BUCKET", "")
+            S3_PREFIX = os.environ.get("RINGRIFT_S3_PREFIX", "sync-archive")
+
+            # Check local disk usage
+            try:
+                local_data_dir = Path("data")
+                if local_data_dir.exists():
+                    usage = shutil.disk_usage(local_data_dir)
+                    local_disk_usage = (usage.used / usage.total) * 100
+                else:
+                    local_disk_usage = 0.0
+            except Exception as e:
+                logger.warning(f"Could not check local disk: {e}")
+                local_disk_usage = 0.0
+
+            # Determine storage tier
+            storage_tier = "local"
+            owc_path: Path | None = None
+
+            if local_disk_usage >= CRITICAL_DISK_THRESHOLD:
+                # Disk critically full - try OWC, then S3, then reject
+                for mount_path in OWC_MOUNT_PATHS:
+                    if mount_path.exists():
+                        try:
+                            owc_usage = shutil.disk_usage(mount_path)
+                            if (owc_usage.used / owc_usage.total) * 100 < 90:
+                                owc_path = mount_path
+                                storage_tier = "owc"
+                                break
+                        except Exception:
+                            continue
+
+                if storage_tier == "local" and S3_BUCKET:
+                    storage_tier = "s3"
+                elif storage_tier == "local":
+                    # No fallback available - reject push
+                    return web.json_response({
+                        "error": "Coordinator disk full (>90%), no fallback available",
+                        "disk_usage_percent": local_disk_usage,
+                        "suggestion": "Wait for cleanup or increase storage",
+                    }, status=503)
+
+            elif local_disk_usage >= OWC_FALLBACK_THRESHOLD:
+                # Disk getting full - prefer OWC if available
+                for mount_path in OWC_MOUNT_PATHS:
+                    if mount_path.exists():
+                        try:
+                            owc_usage = shutil.disk_usage(mount_path)
+                            if (owc_usage.used / owc_usage.total) * 100 < 80:
+                                owc_path = mount_path
+                                storage_tier = "owc"
+                                break
+                        except Exception:
+                            continue
+
             # Determine destination path
             # Use relative path structure under data/
             if file_path.startswith("/"):
@@ -11314,12 +11386,22 @@ print(json.dumps(result))
             else:
                 rel_path = file_path
 
-            # Resolve to local path
-            local_data_dir = Path("data")
-            if rel_path.startswith("data/"):
-                local_path = Path(rel_path)
+            # Resolve to actual storage path based on tier
+            if storage_tier == "owc" and owc_path:
+                if rel_path.startswith("data/"):
+                    local_path = owc_path / rel_path
+                else:
+                    local_path = owc_path / "data" / rel_path
+            elif storage_tier == "s3":
+                # For S3, we'll upload after decoding
+                local_path = Path(f"/tmp/s3_upload/{rel_path}")
             else:
-                local_path = local_data_dir / rel_path
+                # Local storage
+                local_data_dir = Path("data")
+                if rel_path.startswith("data/"):
+                    local_path = Path(rel_path)
+                else:
+                    local_path = local_data_dir / rel_path
 
             # Ensure parent directory exists
             local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -11347,12 +11429,45 @@ print(json.dumps(result))
 
                 checksum_verified = True
 
-                # Write file
-                local_path.write_bytes(content)
-                logger.info(
-                    f"Received pushed file from {source_node}: {local_path} "
-                    f"({file_size} bytes, checksum verified)"
-                )
+                # Write file to appropriate storage tier
+                stored_path = str(local_path)  # Default
+
+                if storage_tier == "s3":
+                    # Upload to S3
+                    try:
+                        import boto3
+                        s3_client = boto3.client('s3')
+                        s3_key = f"{S3_PREFIX}/{rel_path}"
+                        s3_client.put_object(
+                            Bucket=S3_BUCKET,
+                            Key=s3_key,
+                            Body=content,
+                            Metadata={
+                                "source_node": source_node,
+                                "checksum": expected_checksum,
+                            }
+                        )
+                        stored_path = f"s3://{S3_BUCKET}/{s3_key}"
+                        logger.info(
+                            f"Uploaded pushed file to S3 from {source_node}: {stored_path} "
+                            f"({file_size} bytes, checksum verified)"
+                        )
+                    except ImportError:
+                        return web.json_response({
+                            "error": "S3 storage configured but boto3 not available",
+                        }, status=503)
+                    except Exception as e:
+                        return web.json_response({
+                            "error": f"S3 upload failed: {e}",
+                        }, status=500)
+                else:
+                    # Write to local/OWC storage
+                    local_path.write_bytes(content)
+                    stored_path = str(local_path)
+                    logger.info(
+                        f"Received pushed file from {source_node}: {local_path} "
+                        f"({file_size} bytes, checksum verified, tier={storage_tier})"
+                    )
 
             elif pull_required:
                 # Large file - we'll need to pull it via rsync
