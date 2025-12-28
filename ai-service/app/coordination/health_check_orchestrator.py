@@ -167,9 +167,10 @@ class HealthCheckOrchestrator:
     """
 
     # Check intervals (seconds)
+    # Dec 2025: Reduced SSH/Provider from 300s to 120s for faster failure detection
     P2P_CHECK_INTERVAL = 60
-    SSH_CHECK_INTERVAL = 300
-    PROVIDER_CHECK_INTERVAL = 300
+    SSH_CHECK_INTERVAL = 120
+    PROVIDER_CHECK_INTERVAL = 120
     UTILIZATION_CHECK_INTERVAL = 60
 
     def __init__(

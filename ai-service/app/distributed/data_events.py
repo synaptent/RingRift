@@ -795,6 +795,7 @@ CROSS_PROCESS_EVENT_TYPES = {
     DataEventType.DAEMON_STARTED,
     DataEventType.DAEMON_STOPPED,
     DataEventType.DAEMON_STATUS_CHANGED,  # Watchdog alerts for daemon health
+    DataEventType.DAEMON_PERMANENTLY_FAILED,  # Dec 2025: Exceeded hourly restart limit
     # Trigger events - distributed optimization
     DataEventType.CMAES_TRIGGERED,
     DataEventType.NAS_TRIGGERED,
@@ -1592,6 +1593,36 @@ async def emit_daemon_stopped(
             "daemon_name": daemon_name,
             "hostname": hostname,
             "reason": reason,
+        },
+        source=source,
+    ))
+
+
+async def emit_daemon_permanently_failed(
+    daemon_name: str,
+    hostname: str,
+    restart_count: int,
+    source: str = "",
+) -> None:
+    """Emit a DAEMON_PERMANENTLY_FAILED event.
+
+    December 2025: Emitted when a daemon has exceeded its hourly restart limit
+    and is marked as permanently failed. This requires manual intervention to
+    clear the failure state and allow the daemon to restart.
+
+    Args:
+        daemon_name: Name of the daemon
+        hostname: Host running the daemon
+        restart_count: Number of restarts in the last hour
+        source: Component reporting the failure
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.DAEMON_PERMANENTLY_FAILED,
+        payload={
+            "daemon_name": daemon_name,
+            "hostname": hostname,
+            "restart_count": restart_count,
+            "requires_intervention": True,
         },
         source=source,
     ))

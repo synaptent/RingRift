@@ -421,6 +421,34 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
         except Exception as e:
             logger.debug(f"Failed to emit cleanup event: {e}")
 
+    def _checkpoint_databases(self) -> None:
+        """Checkpoint WAL for all SQLite databases.
+
+        P1.2 Dec 2025: SQLite WAL files grow unbounded until checkpoint.
+        This runs TRUNCATE checkpoint to reclaim space in WAL files.
+        """
+        try:
+            from app.coordination.wal_sync_utils import checkpoint_database
+
+            games_dir = self._root_path / self.config.games_dir
+            if not games_dir.exists():
+                return
+
+            checkpointed = 0
+            for db_file in games_dir.glob("**/*.db"):
+                if db_file.name.startswith("."):
+                    continue  # Skip hidden files
+                if checkpoint_database(db_file, truncate=True):
+                    checkpointed += 1
+
+            if checkpointed > 0:
+                logger.debug(f"[{self._get_daemon_name()}] Checkpointed {checkpointed} databases")
+
+        except ImportError:
+            logger.debug("wal_sync_utils not available for WAL checkpoint")
+        except Exception as e:
+            logger.debug(f"WAL checkpoint cycle error: {e}")
+
     def _cleanup_old_logs(self) -> int:
         """Remove old log files."""
         bytes_freed = 0

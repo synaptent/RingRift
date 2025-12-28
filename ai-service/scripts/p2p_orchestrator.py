@@ -13875,6 +13875,28 @@ print(json.dumps(result))
             lines.append("# TYPE ringrift_training_jobs_running gauge")
             lines.append(f"ringrift_training_jobs_running {training_jobs}")
 
+            # Games per hour metric - aggregate from all peers
+            lines.append("# HELP ringrift_selfplay_games_per_hour Estimated games generated per hour")
+            lines.append("# TYPE ringrift_selfplay_games_per_hour gauge")
+
+            # Calculate games/hour from peer data
+            total_cluster_selfplay_jobs = 0
+            with self.peers_lock:
+                for peer in self.peers.values():
+                    if peer.is_alive():
+                        jobs = getattr(peer, 'selfplay_jobs', 0) or 0
+                        total_cluster_selfplay_jobs += jobs
+
+            # Estimate games/hour based on running jobs (rough heuristic: ~30 games/hour per job)
+            # This is a rough estimate; actual rate depends on board size and GPU speed
+            estimated_games_per_hour = total_cluster_selfplay_jobs * 30
+            lines.append(f"ringrift_selfplay_games_per_hour {estimated_games_per_hour}")
+
+            # Also report total cluster selfplay jobs
+            lines.append("# HELP ringrift_cluster_selfplay_jobs_total Total selfplay jobs across cluster")
+            lines.append("# TYPE ringrift_cluster_selfplay_jobs_total gauge")
+            lines.append(f"ringrift_cluster_selfplay_jobs_total {total_cluster_selfplay_jobs}")
+
             # Resource utilization - include node labels for all nodes
             lines.append("# HELP ringrift_cpu_percent CPU utilization percentage per node")
             lines.append("# TYPE ringrift_cpu_percent gauge")

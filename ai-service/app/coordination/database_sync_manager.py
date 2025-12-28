@@ -50,6 +50,10 @@ from app.coordination.sync_base import (
     SyncManagerBase,
     try_transports,
 )
+from app.coordination.wal_sync_utils import (
+    checkpoint_database,
+    validate_synced_database,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -885,6 +885,15 @@ class BatchRsync:
             return result
 
         try:
+            # Dec 2025: Checkpoint WAL for database files before sync
+            # This ensures all transactions are in the main .db file
+            if include_patterns and any("*.db" in p or p.endswith(".db") for p in include_patterns):
+                # Find and checkpoint all .db files in source directory
+                source_path = Path(source_dir)
+                if source_path.is_dir():
+                    for db_file in source_path.glob("*.db"):
+                        checkpoint_database(str(db_file))
+
             # Build rsync command
             cmd = [
                 self.rsync_path,
@@ -897,8 +906,17 @@ class BatchRsync:
                 cmd.append("--delete")
 
             # Add include patterns first
+            # Dec 2025: Auto-expand *.db to include WAL files
             if include_patterns:
+                expanded_patterns = []
                 for pattern in include_patterns:
+                    expanded_patterns.append(pattern)
+                    # If pattern includes .db files, also include their WAL companions
+                    if pattern == "*.db" or pattern.endswith(".db"):
+                        base = pattern[:-3] if pattern.endswith(".db") else pattern[:-2]
+                        expanded_patterns.append(f"{base}db-wal")
+                        expanded_patterns.append(f"{base}db-shm")
+                for pattern in expanded_patterns:
                     cmd.append(f"--include={pattern}")
                 # Exclude everything else
                 cmd.append("--exclude=*")

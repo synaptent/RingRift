@@ -367,16 +367,24 @@ class DaemonManager:
 
         December 2025: Notifies external systems when a daemon has exceeded
         its restart limit and requires manual intervention.
+
+        Uses fire_and_forget since the emitter is async but this is called from sync context.
         """
         try:
             from app.distributed.data_events import emit_daemon_permanently_failed
 
             import socket
-            emit_daemon_permanently_failed(
-                daemon_name=daemon_type.value,
-                hostname=socket.gethostname(),
-                restart_count=len(self._restart_timestamps.get(daemon_type.value, [])),
-                source="DaemonManager",
+            hostname = socket.gethostname()
+            restart_count = len(self._restart_timestamps.get(daemon_type.value, []))
+
+            fire_and_forget(
+                emit_daemon_permanently_failed(
+                    daemon_name=daemon_type.value,
+                    hostname=hostname,
+                    restart_count=restart_count,
+                    source="DaemonManager",
+                ),
+                name=f"emit_permanently_failed_{daemon_type.value}",
             )
             logger.info(f"Emitted DAEMON_PERMANENTLY_FAILED for {daemon_type.value}")
         except ImportError:

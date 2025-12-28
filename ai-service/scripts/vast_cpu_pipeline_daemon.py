@@ -353,6 +353,79 @@ class PipelineDaemon:
         self.stats["total_validated"] += valid + invalid
         logger.info(f"Validation complete: valid={valid}, invalid={invalid}")
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health check result for daemon protocol.
+
+        Returns:
+            HealthCheckResult with status and metrics
+        """
+        try:
+            from app.coordination.contracts import HealthCheckResult
+            from app.coordination.protocols import CoordinatorStatus
+        except ImportError:
+            # Fallback for standalone execution without full app context
+            from dataclasses import dataclass
+            from enum import Enum
+
+            class CoordinatorStatus(Enum):
+                RUNNING = "running"
+                STOPPED = "stopped"
+                DEGRADED = "degraded"
+                ERROR = "error"
+
+            @dataclass
+            class HealthCheckResult:
+                healthy: bool
+                status: CoordinatorStatus
+                message: str
+                details: dict
+
+        try:
+            details = {
+                "running": self.running,
+                "cycles_completed": self.stats.get("cycles", 0),
+                "total_exported": self.stats.get("total_exported", 0),
+                "total_validated": self.stats.get("total_validated", 0),
+                "last_sync": self.stats.get("last_sync"),
+                "role": self.args.role,
+                "ramdisk_enabled": self.ramdisk.enabled if hasattr(self, "ramdisk") else False,
+            }
+
+            # Check if running
+            if not self.running:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.STOPPED,
+                    message="VastCpuPipelineDaemon is not running",
+                    details=details,
+                )
+
+            # Check if making progress (cycles should increase)
+            cycles = self.stats.get("cycles", 0)
+            if cycles == 0:
+                # Just started, give it grace period
+                return HealthCheckResult(
+                    healthy=True,
+                    status=CoordinatorStatus.RUNNING,
+                    message="VastCpuPipelineDaemon starting up",
+                    details=details,
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="VastCpuPipelineDaemon healthy",
+                details=details,
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check failed: {e}",
+                details={"error": str(e)},
+            )
+
 
 def main():
     parser = argparse.ArgumentParser(description="Vast.ai CPU Pipeline Daemon")

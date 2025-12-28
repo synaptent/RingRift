@@ -1429,20 +1429,27 @@ class AutoSyncDaemon:
             logger.error(f"[AutoSyncDaemon] Failed to get sync targets: {e}")
             return []
 
-    async def _rsync_to_target(self, db_path: str, target_node: str) -> bool:
+    async def _rsync_to_target(
+        self,
+        db_path: str,
+        target_node: str,
+        verify_checksum: bool = True,
+    ) -> bool:
         """Rsync a database to a target node.
 
         December 2025: Consolidated from ephemeral_sync.py
         December 2025: Added sync mutex to prevent concurrent syncs to same target
         December 2025: Added circuit breaker for fault tolerance
         December 2025: Added write lock check to prevent syncing incomplete data
+        December 2025: Added checksum verification after sync
 
         Args:
             db_path: Local database path
             target_node: Target node ID
+            verify_checksum: If True, verify checksum after sync (default: True)
 
         Returns:
-            True if successful
+            True if successful (and checksum verified if enabled)
         """
         # Check write lock - don't sync if database is being written to
         if not is_database_safe_to_sync(db_path):
@@ -1456,8 +1463,8 @@ class AutoSyncDaemon:
         # resulting in missing transactions and data corruption
         try:
             from app.coordination.sync_integrity import prepare_database_for_transfer
-            success, msg = prepare_database_for_transfer(Path(db_path))
-            if not success:
+            prep_success, msg = prepare_database_for_transfer(Path(db_path))
+            if not prep_success:
                 logger.warning(
                     f"[AutoSyncDaemon] Failed to prepare {db_path} for transfer: {msg}"
                 )
@@ -1485,6 +1492,8 @@ class AutoSyncDaemon:
             return False
 
         success = False
+        remote_path = None
+        ssh_info = None
         try:
             from app.coordination.sync_bandwidth import rsync_with_bandwidth_limit
             from app.coordination.sync_router import get_sync_router
@@ -1493,7 +1502,20 @@ class AutoSyncDaemon:
             cap = router.get_node_capability(target_node)
 
             if not cap:
+                release_sync_lock(lock_key)
                 return False
+
+            # Get SSH info for checksum verification
+            from app.config.cluster_config import get_cluster_nodes
+            nodes = get_cluster_nodes()
+            node = nodes.get(target_node)
+            if node:
+                ssh_info = {
+                    "host": node.best_ip,
+                    "user": node.ssh_user or "ubuntu",
+                    "key": node.ssh_key or "~/.ssh/id_cluster",
+                }
+                remote_path = f"{node.get_storage_path('games')}/{db_name}"
 
             # Use centralized timeout (Dec 2025)
             from app.config.thresholds import RSYNC_TIMEOUT
@@ -1504,26 +1526,80 @@ class AutoSyncDaemon:
             )
 
             success = result.success
-            return success
 
         except ImportError:
             success = await self._direct_rsync(db_path, target_node)
-            return success
+            # Get SSH info for checksum verification
+            try:
+                from app.config.cluster_config import get_cluster_nodes
+                nodes = get_cluster_nodes()
+                node = nodes.get(target_node)
+                if node:
+                    ssh_info = {
+                        "host": node.best_ip,
+                        "user": node.ssh_user or "ubuntu",
+                        "key": node.ssh_key or "~/.ssh/id_cluster",
+                    }
+                    remote_path = f"{node.get_storage_path('games')}/{db_name}"
+            except (ImportError, KeyError, AttributeError):
+                pass
         except (RuntimeError, OSError, asyncio.TimeoutError) as e:
             logger.debug(f"[AutoSyncDaemon] Rsync error: {e}")
             success = False
             # Emit sync failure event (Dec 2025)
             await self._emit_sync_failure(target_node, db_path, str(e))
-            return False
-        finally:
-            # Always release the lock
             release_sync_lock(lock_key)
-            # Record success/failure with circuit breaker (December 2025)
-            if self._circuit_breaker:
-                if success:
-                    self._circuit_breaker.record_success(target_node)
+            return False
+
+        # Always release the lock
+        release_sync_lock(lock_key)
+
+        # December 2025: Checksum verification after sync
+        if success and verify_checksum and ssh_info and remote_path:
+            try:
+                from app.coordination.sync_integrity import verify_and_retry_sync
+
+                async def retry_rsync():
+                    return await self._direct_rsync(db_path, target_node)
+
+                checksum_ok, error = await verify_and_retry_sync(
+                    source_path=db_path,
+                    dest_path=remote_path,
+                    ssh_host=ssh_info["host"],
+                    ssh_user=ssh_info["user"],
+                    ssh_key=ssh_info["key"],
+                    sync_func=retry_rsync,
+                    max_retries=1,
+                )
+
+                if not checksum_ok:
+                    logger.error(
+                        f"[AutoSyncDaemon] Checksum verification failed for {db_path} -> "
+                        f"{target_node}: {error}"
+                    )
+                    success = False
+                    self._stats.databases_verification_failed += 1
                 else:
-                    self._circuit_breaker.record_failure(target_node)
+                    self._stats.databases_verified += 1
+                    logger.debug(
+                        f"[AutoSyncDaemon] Checksum verified: {db_path} -> {target_node}"
+                    )
+
+            except ImportError:
+                logger.debug("[AutoSyncDaemon] sync_integrity not available, skipping verification")
+            except Exception as e:
+                logger.warning(f"[AutoSyncDaemon] Checksum verification error: {e}")
+                # Don't fail the sync if verification fails - just log it
+                self._stats.databases_verification_failed += 1
+
+        # Record success/failure with circuit breaker (December 2025)
+        if self._circuit_breaker:
+            if success:
+                self._circuit_breaker.record_success(target_node)
+            else:
+                self._circuit_breaker.record_failure(target_node)
+
+        return success
 
     async def _direct_rsync(self, db_path: str, target_node: str) -> bool:
         """Direct rsync without bandwidth management.
@@ -3124,8 +3200,20 @@ class AutoSyncDaemon:
         remote_path: str,
         db_name: str,
         local_dir: Path,
+        verify_checksum: bool = True,
     ) -> Path | None:
         """Pull a single database file from a remote node.
+
+        December 2025: Added checksum verification after pull.
+
+        Args:
+            ssh_host: Remote host IP/hostname
+            ssh_user: SSH username
+            ssh_key: Path to SSH private key
+            remote_path: Remote directory path
+            db_name: Database filename
+            local_dir: Local directory to save to
+            verify_checksum: If True, verify checksum after pull (default: True)
 
         Returns:
             Local path to the pulled file, or None if failed.
@@ -3151,6 +3239,75 @@ class AutoSyncDaemon:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
 
             if proc.returncode == 0 and local_path.exists():
+                # December 2025: Checksum verification after pull
+                if verify_checksum:
+                    try:
+                        from app.coordination.sync_integrity import verify_sync_checksum
+
+                        remote_file_path = f"{remote_path}/{db_name}"
+                        checksum_ok, error = await verify_sync_checksum(
+                            source_path=str(local_path),
+                            dest_path=remote_file_path,
+                            ssh_host=ssh_host,
+                            ssh_user=ssh_user,
+                            ssh_key=ssh_key,
+                        )
+
+                        # Note: For pulls, the "source" is remote and "dest" is local
+                        # So we swap the comparison
+                        if not checksum_ok:
+                            logger.error(
+                                f"[AutoSyncDaemon] Checksum mismatch after pull for {db_name} "
+                                f"from {ssh_host}: {error}"
+                            )
+                            # Delete corrupted file and retry once
+                            local_path.unlink(missing_ok=True)
+
+                            # Retry the pull
+                            proc = await asyncio.create_subprocess_exec(
+                                *cmd,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                            )
+                            _, _ = await asyncio.wait_for(proc.communicate(), timeout=120.0)
+
+                            if proc.returncode == 0 and local_path.exists():
+                                # Verify again
+                                checksum_ok2, error2 = await verify_sync_checksum(
+                                    source_path=str(local_path),
+                                    dest_path=remote_file_path,
+                                    ssh_host=ssh_host,
+                                    ssh_user=ssh_user,
+                                    ssh_key=ssh_key,
+                                )
+                                if not checksum_ok2:
+                                    logger.error(
+                                        f"[AutoSyncDaemon] Checksum still mismatched after "
+                                        f"retry for {db_name}: {error2}"
+                                    )
+                                    local_path.unlink(missing_ok=True)
+                                    self._stats.databases_verification_failed += 1
+                                    return None
+                                else:
+                                    self._stats.databases_verified += 1
+                                    logger.info(
+                                        f"[AutoSyncDaemon] Pull verified after retry: {db_name}"
+                                    )
+                            else:
+                                self._stats.databases_verification_failed += 1
+                                return None
+                        else:
+                            self._stats.databases_verified += 1
+                            logger.debug(
+                                f"[AutoSyncDaemon] Pull checksum verified: {db_name}"
+                            )
+
+                    except ImportError:
+                        logger.debug("[AutoSyncDaemon] sync_integrity not available, skipping verification")
+                    except Exception as e:
+                        logger.warning(f"[AutoSyncDaemon] Checksum verification error: {e}")
+                        # Don't fail the pull if verification fails - just log it
+
                 return local_path
             else:
                 if stderr:

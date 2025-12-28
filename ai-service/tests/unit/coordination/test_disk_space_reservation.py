@@ -167,10 +167,14 @@ class TestDiskSpaceReservation:
     def test_existing_reservations_reduce_available_space(self, temp_dir, reservation_dir):
         """Test that existing reservations reduce available space."""
         # Mock disk_usage to return 100GB free
+        # Need to patch in the module where it's used, not where it's defined
         mock_usage = mock.Mock()
         mock_usage.free = 100 * 1024 * 1024 * 1024  # 100GB
 
-        with mock.patch("shutil.disk_usage", return_value=mock_usage):
+        with mock.patch(
+            "app.coordination.disk_space_reservation.shutil.disk_usage",
+            return_value=mock_usage
+        ):
             # Create first reservation (50GB + 10% margin = 55GB)
             res1 = DiskSpaceReservation(
                 target_dir=temp_dir,

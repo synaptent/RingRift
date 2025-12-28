@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
-from app.coordination.protocols import HealthCheckResult
+from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -842,18 +842,53 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         }
 
     def health_check(self) -> HealthCheckResult:
-        """Return health check result."""
-        is_healthy = self._running and self._subscribed
+        """Return health check result for DaemonManager integration.
+
+        December 2025: Updated to use CoordinatorStatus enum.
+        """
+        details = {
+            "running": self._running,
+            "subscribed": self._subscribed,
+            "pending_count": len(self._pending_configs),
+            "recent_consolidations": len(self._stats_history),
+            "files_consolidated": sum(s.games_merged for s in self._stats_history),
+            "last_consolidation": self._last_consolidation,
+        }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="DataConsolidationDaemon is not running",
+                details=details,
+            )
+
+        if not self._subscribed:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="DataConsolidationDaemon not subscribed to events",
+                details=details,
+            )
+
+        # Check error rate in recent consolidations
+        recent = self._stats_history[-20:] if self._stats_history else []
+        if recent:
+            error_count = sum(1 for s in recent if not s.success)
+            error_rate = error_count / len(recent)
+            if error_rate > 0.5:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"DataConsolidationDaemon has high error rate: {error_rate:.1%}",
+                    details=details,
+                )
 
         return HealthCheckResult(
-            healthy=is_healthy,
-            status="running" if is_healthy else "degraded",
-            details={
-                "running": self._running,
-                "subscribed": self._subscribed,
-                "pending_count": len(self._pending_configs),
-                "recent_consolidations": len(self._stats_history),
-            },
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"DataConsolidationDaemon healthy ({len(self._stats_history)} consolidations)",
+            details=details,
         )
 
 

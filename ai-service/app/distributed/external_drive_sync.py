@@ -211,6 +211,67 @@ class ExternalDriveSyncDaemon:
         result.success = len(result.errors) == 0
         return result
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health check result for daemon protocol.
+
+        Returns:
+            HealthCheckResult with status and metrics
+        """
+        from app.coordination.contracts import HealthCheckResult
+        from app.coordination.protocols import CoordinatorStatus
+
+        try:
+            # Collect metrics
+            files_synced = sum(
+                r.get("files_synced", 0) for r in self._sync_history[-10:]
+            )
+            sync_errors = sum(
+                len(r.get("errors", [])) for r in self._sync_history[-10:]
+            )
+
+            details = {
+                "running": self._running,
+                "last_sync_time": self._last_sync_time,
+                "files_synced_recent": files_synced,
+                "sync_errors_recent": sync_errors,
+                "mount_points_configured": len(self.config.mount_points),
+            }
+
+            # Check if running
+            if not self._running:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.STOPPED,
+                    message="ExternalDriveSyncDaemon is not running",
+                    details=details,
+                )
+
+            # Check error rate
+            total_ops = files_synced + sync_errors
+            error_rate = sync_errors / max(total_ops, 1)
+            if error_rate > 0.5:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.DEGRADED,
+                    message=f"ExternalDriveSyncDaemon has high error rate: {error_rate:.1%}",
+                    details=details,
+                )
+
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="ExternalDriveSyncDaemon healthy",
+                details=details,
+            )
+
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check failed: {e}",
+                details={"error": str(e)},
+            )
+
     async def _emit_backup_event(self, results: list[SyncResult]) -> None:
         """Emit DATA_BACKUP_COMPLETED event."""
         try:
