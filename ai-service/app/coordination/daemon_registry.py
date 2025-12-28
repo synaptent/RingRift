@@ -457,6 +457,15 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
         category="pipeline",
     ),
+    # =========================================================================
+    # Data Integrity (December 2025)
+    # =========================================================================
+    DaemonType.INTEGRITY_CHECK: DaemonSpec(
+        runner_name="create_integrity_check",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="recovery",
+        health_check_interval=3600.0,  # 1 hour - matches scan interval
+    ),
 }
 
 

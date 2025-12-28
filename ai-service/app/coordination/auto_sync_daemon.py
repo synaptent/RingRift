@@ -451,6 +451,11 @@ class AutoSyncDaemon:
         if self._is_ephemeral and self.config.ephemeral_wal_enabled:
             self._init_ephemeral_wal()
 
+        # December 2025: Retry queue for failed write-through pushes
+        self._pending_writes_file = Path("data/ephemeral_pending_writes.jsonl")
+        self._pending_writes_task: asyncio.Task | None = None
+        self._init_pending_writes_file()
+
         # Phase 9: Event subscription for DATA_STALE triggers
         self._subscribed = False
         self._urgent_sync_pending: dict[str, float] = {}  # config_key -> request_time

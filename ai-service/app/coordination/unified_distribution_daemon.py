@@ -1198,31 +1198,25 @@ class UnifiedDistributionDaemon:
         December 2025: Harvested from deprecated model_distribution_daemon.py.
         After distributing canonical models, create corresponding symlinks on
         each target node so selfplay nodes can find models by config key.
+
+        December 28, 2025: Uses remote path discovery for each node.
         """
         if not model_paths or not target_nodes:
             return
 
-        # Build symlink commands for canonical models
-        symlink_cmds: list[str] = []
+        # Collect symlink info (path-independent)
+        symlink_info: list[tuple[str, str]] = []  # (canonical_name, symlink_name)
         for path in model_paths:
             if not path.stem.startswith("canonical_"):
                 continue
             config_key = path.stem[len("canonical_"):]
             canonical_name = path.name
             symlink_name = f"ringrift_best_{config_key}.pth"
-            # Create relative symlink in models directory
-            # rm -f to avoid "file exists" errors, -sf for force symlink
-            symlink_cmds.append(
-                f"cd ~/ringrift/ai-service/models && "
-                f"rm -f {symlink_name} && "
-                f"ln -sf {canonical_name} {symlink_name}"
-            )
+            symlink_info.append((canonical_name, symlink_name))
 
-        if not symlink_cmds:
+        if not symlink_info:
             return
 
-        # Execute on all target nodes concurrently
-        combined_cmd = " && ".join(symlink_cmds)
         created_count = 0
         failed_nodes: list[str] = []
 
@@ -1231,10 +1225,25 @@ class UnifiedDistributionDaemon:
 
             async def create_on_node(host: str) -> bool:
                 try:
+                    # December 28, 2025: Discover remote path for this node
+                    remote_path = await self._discover_remote_path(host)
+
+                    # Build symlink commands with discovered path
+                    symlink_cmds = []
+                    for canonical_name, symlink_name in symlink_info:
+                        # Create relative symlink in models directory
+                        # rm -f to avoid "file exists" errors, -sf for force symlink
+                        symlink_cmds.append(
+                            f"cd {remote_path}/models && "
+                            f"rm -f {symlink_name} && "
+                            f"ln -sf {canonical_name} {symlink_name}"
+                        )
+
+                    combined_cmd = " && ".join(symlink_cmds)
                     client = get_ssh_client(host)
                     result = await client.run_async(combined_cmd, timeout=30)
                     return result.success
-                except Exception as e:
+                except (OSError, asyncio.TimeoutError, RuntimeError) as e:
                     logger.debug(f"Failed to create symlinks on {host}: {e}")
                     return False
 

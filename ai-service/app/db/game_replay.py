@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     import numpy as np
 
 from app.rules.history_contract import validate_canonical_move
+from app.utils.disk_utils import ensure_disk_space
 
 logger = logging.getLogger(__name__)
 
@@ -2597,7 +2598,13 @@ class GameReplayDB:
                 JSON format: {"move_key": probability, ...}
             search_stats: Rich search statistics for auxiliary training (v11)
                 JSON format: {q_values, visit_counts, uncertainty, root_value, ...}
+
+        Raises:
+            DiskSpaceError: If insufficient disk space to safely write.
         """
+        # Pre-check disk space to prevent data loss on full disk
+        ensure_disk_space(self._db_path, operation="store move")
+
         # Enforce canonical (phase, move_type) contract at write time for all
         # new recordings. We thread the *actual* phase-at-move-time through
         # from the engine/recorder when available so that territory moves can

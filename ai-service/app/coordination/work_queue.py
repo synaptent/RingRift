@@ -1260,6 +1260,44 @@ class WorkQueue:
             )
 
     # =========================================================================
+    # Lifecycle Management (December 2025)
+    # =========================================================================
+
+    def close(self) -> None:
+        """Close the work queue and release resources.
+
+        Performs graceful shutdown:
+        1. Saves current stats to database
+        2. Logs queue status at shutdown
+        3. Clears in-memory items cache
+
+        Note: SQLite connections are per-operation, so no connections
+        need explicit closing. WAL mode ensures durability.
+        """
+        with self.lock:
+            # Persist final stats
+            try:
+                self._save_stats()
+            except Exception as e:
+                logger.warning(f"Failed to save final stats on close: {e}")
+
+            # Log shutdown status
+            pending = sum(1 for item in self.items.values() if item.status == WorkStatus.PENDING)
+            running = sum(
+                1 for item in self.items.values()
+                if item.status in (WorkStatus.CLAIMED, WorkStatus.RUNNING)
+            )
+            logger.info(
+                f"WorkQueue closing: {pending} pending, {running} running, "
+                f"{self.stats.get('total_completed', 0)} completed lifetime"
+            )
+
+            # Clear in-memory cache (DB retains data for restart)
+            self.items.clear()
+
+        logger.info("WorkQueue closed")
+
+    # =========================================================================
     # Event System Integration (December 2025)
     # =========================================================================
 
@@ -1323,14 +1361,30 @@ class WorkQueue:
 
 # Singleton instance (created on demand by leader)
 _work_queue: WorkQueue | None = None
+_work_queue_lock = threading.Lock()
 
 
 def get_work_queue() -> WorkQueue:
     """Get the singleton WorkQueue instance."""
     global _work_queue
-    if _work_queue is None:
-        _work_queue = WorkQueue()
-    return _work_queue
+    with _work_queue_lock:
+        if _work_queue is None:
+            _work_queue = WorkQueue()
+        return _work_queue
+
+
+def reset_work_queue() -> None:
+    """Reset the singleton WorkQueue instance.
+
+    Call this during graceful shutdown to clean up resources.
+    After reset, the next call to get_work_queue() creates a fresh instance.
+    """
+    global _work_queue
+    with _work_queue_lock:
+        if _work_queue is not None:
+            _work_queue.close()
+            _work_queue = None
+            logger.info("Work queue singleton reset")
 
 
 # =============================================================================
@@ -1348,4 +1402,5 @@ __all__ = [
     "WorkType",
     # Functions
     "get_work_queue",
+    "reset_work_queue",
 ]

@@ -638,23 +638,18 @@ class StateManager:
         peer_count = 0
         job_count = 0
 
-        # Check database connectivity
-        # December 27, 2025: Fixed connection leak - moved close to finally block
-        conn = None
+        # Check database connectivity using context manager for guaranteed cleanup
         try:
-            conn = self._db_connect()
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM peers")
-            peer_count = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM jobs WHERE status = 'running'")
-            job_count = cursor.fetchone()[0]
-        except Exception as e:
+            with self._db_connection(read_only=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM peers")
+                peer_count = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM jobs WHERE status = 'running'")
+                job_count = cursor.fetchone()[0]
+        except sqlite3.Error as e:
             status = "unhealthy"
             errors_count = 1
             last_error = f"Database connection failed: {e}"
-        finally:
-            if conn:
-                conn.close()
 
         # Check if database file exists
         if not self.db_path.exists():

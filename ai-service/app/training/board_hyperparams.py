@@ -104,34 +104,42 @@ BOARD_HYPERPARAMS: dict[str, BoardHyperparams] = {
     ),
 
     # Square 19x19 - large state space
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square19_2p": BoardHyperparams(
         learning_rate=0.0003,
-        batch_size=128,
+        batch_size=64,
         epochs=100,
         hidden_dim=512,
-        num_hidden_layers=4,
-        weight_decay=0.0002,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         label_smoothing=0.06,
         warmup_epochs=10,
         gradient_clip=0.5,  # Tighter clipping for stability
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square19_3p": BoardHyperparams(
-        learning_rate=0.00025,
-        batch_size=96,
-        epochs=120,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
         hidden_dim=512,
-        num_hidden_layers=4,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         policy_weight=1.3,
         label_smoothing=0.08,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square19_4p": BoardHyperparams(
-        learning_rate=0.0002,
+        learning_rate=0.0003,
         batch_size=64,
-        epochs=150,
+        epochs=100,
         hidden_dim=512,
-        num_hidden_layers=4,
+        num_hidden_layers=6,
+        weight_decay=0.0001,
         policy_weight=1.5,
         label_smoothing=0.10,
+        early_stopping_patience=30,
     ),
 
     # Hexagonal (full) - D6 symmetry
