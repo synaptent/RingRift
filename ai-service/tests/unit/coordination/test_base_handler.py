@@ -92,6 +92,9 @@ class TestBaseEventHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         handler = TestHandler("TestHandler")
         assert handler.handler_name == "TestHandler"
         assert handler.is_subscribed is False
@@ -107,6 +110,9 @@ class TestBaseEventHandler:
                 return True
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         handler = TestHandler("TestHandler")
@@ -127,6 +133,9 @@ class TestBaseEventHandler:
                 return True
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         handler = TestHandler("TestHandler")
@@ -151,6 +160,9 @@ class TestBaseEventHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         handler = TestHandler("TestHandler")
         result = handler.subscribe()
 
@@ -170,6 +182,9 @@ class TestBaseEventHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         handler = TestHandler("TestHandler")
         handler._subscribed = True
 
@@ -186,6 +201,9 @@ class TestBaseEventHandler:
                 return True
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         handler = TestHandler("TestHandler")
@@ -208,6 +226,9 @@ class TestBaseEventHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         class MockEvent:
             payload = {"key": "value"}
 
@@ -226,6 +247,9 @@ class TestBaseEventHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         handler = TestHandler("TestHandler")
         payload = handler._get_payload({"key": "value"})
         assert payload == {"key": "value"}
@@ -239,6 +263,9 @@ class TestBaseEventHandler:
                 return True
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         handler = TestHandler("TestHandler")
@@ -256,6 +283,9 @@ class TestBaseEventHandler:
                 return True
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         handler = TestHandler("TestHandler")
@@ -291,6 +321,9 @@ class TestBaseSingletonHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         TestSingleton._instance = None  # Reset
 
         instance1 = TestSingleton.get_instance()
@@ -314,6 +347,9 @@ class TestBaseSingletonHandler:
                 return True
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         TestSingleton._instance = None
@@ -343,6 +379,9 @@ class TestBaseSingletonHandler:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         TestSingleton._instance = None
 
         instance = TestSingleton.get_instance()
@@ -364,6 +403,9 @@ class TestMultiEventHandler:
             def _do_subscribe(self) -> bool:
                 return True
 
+            async def _run_cycle(self) -> None:
+                pass
+
         handler = TestMulti("TestMulti")
         assert handler._event_handlers == {}
 
@@ -384,6 +426,9 @@ class TestMultiEventHandler:
 
             def _do_subscribe(self) -> bool:
                 return True
+
+            async def _run_cycle(self) -> None:
+                pass
 
             async def _on_type_a(self, event):
                 handled_events.append(("A", event))
@@ -425,6 +470,9 @@ class TestHelperFunctions:
             async def _handle_event(self, event: Any) -> None:
                 pass
 
+            async def _run_cycle(self) -> None:
+                pass
+
         handler = TestHandler("TestHandler")
         result = safe_subscribe(handler)
 
@@ -439,6 +487,9 @@ class TestHelperFunctions:
                 raise RuntimeError("Test error")
 
             async def _handle_event(self, event: Any) -> None:
+                pass
+
+            async def _run_cycle(self) -> None:
                 pass
 
         handler = TestHandler("TestHandler")

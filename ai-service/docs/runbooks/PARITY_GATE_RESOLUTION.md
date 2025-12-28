@@ -1,7 +1,7 @@
 # Parity Gate Resolution Guide
 
-**Last Updated:** 2025-12-27
-**Status:** Critical - All 12 Canonical DBs Affected
+**Last Updated:** 2025-12-28
+**Status:** Resolved - Permanent solution implemented
 
 ---
 
@@ -9,7 +9,122 @@
 
 The parity gate validates that Python-generated games replay identically in TypeScript. This is essential because **TypeScript is the source of truth** for game rules.
 
-**Current Status:** All 12 canonical databases are stuck in `pending_gate` status because cluster nodes lack `npx` (Node.js runtime).
+**Current Status:** ✅ **RESOLVED** - A permanent solution using pre-computed TypeScript reference hashes is now available. Cluster nodes can validate parity without Node.js.
+
+---
+
+## Permanent Solution (December 2025)
+
+### How It Works
+
+The permanent solution stores TypeScript state hashes in the database, enabling cluster nodes to validate parity without running TypeScript:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ COORDINATOR (has Node.js)                                       │
+│                                                                 │
+│  1. Run TypeScript parity validation                            │
+│  2. Store TS state hashes in ts_parity_hashes table             │
+│  3. Sync databases to cluster nodes                             │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ CLUSTER NODES (no Node.js needed)                               │
+│                                                                 │
+│  4. Receive synced database with ts_parity_hashes table         │
+│  5. Validate Python replay against stored TS hashes             │
+│  6. Full parity verification without TypeScript runtime         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Quick Start
+
+**On Coordinator (with Node.js):**
+
+```bash
+cd ~/Development/RingRift/ai-service
+
+# Populate TS hashes for all canonical databases
+python scripts/run_python_parity_gate.py --all --populate-ts-hashes
+
+# Or for specific database
+python scripts/run_python_parity_gate.py --db data/games/canonical_hex8_2p.db --populate-ts-hashes
+```
+
+**Sync databases to cluster:**
+
+```bash
+# Sync to training nodes (includes ts_parity_hashes table)
+rsync -avz data/games/canonical_*.db ubuntu@nebius-backbone-1:~/ringrift/ai-service/data/games/
+```
+
+**On Cluster Nodes (no Node.js):**
+
+```bash
+cd ~/ringrift/ai-service
+
+# Validate against stored TS hashes
+python scripts/run_python_parity_gate.py --all --use-ts-hashes
+
+# Check TS hash status for all databases
+python scripts/run_python_parity_gate.py --all --check-ts-hash-status
+```
+
+### Database Schema
+
+The solution adds a `ts_parity_hashes` table to store TypeScript reference hashes:
+
+```sql
+CREATE TABLE ts_parity_hashes (
+    game_id TEXT NOT NULL,
+    move_number INTEGER NOT NULL,  -- 0 = initial state, 1+ = after move N
+    ts_state_hash TEXT NOT NULL,
+    ts_current_player INTEGER,
+    ts_current_phase TEXT,
+    ts_game_status TEXT,
+    validated_at TEXT NOT NULL,
+    PRIMARY KEY (game_id, move_number),
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+);
+```
+
+### Key Files
+
+| File                                | Purpose                        |
+| ----------------------------------- | ------------------------------ |
+| `app/db/parity_validator.py`        | Core validation infrastructure |
+| `scripts/run_python_parity_gate.py` | CLI for all parity gate modes  |
+
+### CLI Reference
+
+```bash
+# COORDINATOR MODE: Populate TS hashes (requires Node.js)
+python scripts/run_python_parity_gate.py --all --populate-ts-hashes
+
+# CLUSTER MODE: Validate against stored TS hashes (no Node.js)
+python scripts/run_python_parity_gate.py --all --use-ts-hashes
+
+# STATUS CHECK: See which databases have TS hashes
+python scripts/run_python_parity_gate.py --all --check-ts-hash-status
+
+# LEGACY MODE: Python-only replay (checks Python consistency, not TS parity)
+python scripts/run_python_parity_gate.py --all
+```
+
+### Workflow for New Data
+
+1. **Generate selfplay on cluster** → games stored in database
+2. **Sync database to coordinator** → coordinator has Node.js
+3. **Populate TS hashes** → `--populate-ts-hashes`
+4. **Sync enriched database back to cluster** → includes ts_parity_hashes table
+5. **Cluster validates** → `--use-ts-hashes` without Node.js
+
+---
+
+## Legacy Information
+
+The sections below document the original problem and alternative approaches. The permanent solution above supersedes these.
 
 ---
 

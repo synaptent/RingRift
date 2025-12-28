@@ -109,6 +109,13 @@ from app.coordination.disk_space_reservation import (
 )
 from app.core.async_context import fire_and_forget, safe_create_task
 
+# December 2025: Import mixins for modular organization
+# Each mixin provides a focused set of methods for the AutoSyncDaemon
+from app.coordination.sync_event_mixin import SyncEventMixin
+from app.coordination.sync_push_mixin import SyncPushMixin
+from app.coordination.sync_pull_mixin import SyncPullMixin
+from app.coordination.sync_ephemeral_mixin import SyncEphemeralMixin
+
 # Circuit breaker for fault-tolerant sync operations (December 2025)
 try:
     from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
@@ -146,7 +153,12 @@ except ImportError:
     get_elo_lookup_from_service = None
 
 
-class AutoSyncDaemon:
+class AutoSyncDaemon(
+    SyncEventMixin,
+    SyncPushMixin,
+    SyncPullMixin,
+    SyncEphemeralMixin,
+):
     """Daemon that orchestrates automated P2P data synchronization.
 
     December 2025 Consolidation: Unified daemon supporting multiple strategies:
@@ -154,6 +166,7 @@ class AutoSyncDaemon:
     - EPHEMERAL: Aggressive 5s sync for Vast.ai/spot instances (from ephemeral_sync.py)
     - BROADCAST: Leader-only push to all nodes (from cluster_data_sync.py)
     - AUTO: Auto-detect based on node type
+    - PULL: Coordinator-initiated pull from worker nodes (from sync_pull_mixin.py)
 
     Key features:
     - Gossip-based replication for eventual consistency
@@ -162,6 +175,12 @@ class AutoSyncDaemon:
     - ClusterManifest for central tracking and disk management
     - Write-through mode for ephemeral hosts (zero data loss)
     - WAL (write-ahead log) for durability
+
+    Mixin organization (December 2025):
+    - SyncEventMixin: Event subscription and _on_* handlers
+    - SyncPushMixin: Push/broadcast sync operations
+    - SyncPullMixin: PULL strategy operations for coordinator recovery
+    - SyncEphemeralMixin: Ephemeral host/WAL handling
     """
 
     def __init__(self, config: AutoSyncConfig | None = None):

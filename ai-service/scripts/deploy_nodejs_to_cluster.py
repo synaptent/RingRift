@@ -56,41 +56,34 @@ class DeployResult:
 
 # Node.js installation commands for different platforms
 # Using NodeSource setup script for consistent LTS installation
+# NOTE: No inline comments allowed - they break when commands are joined with &&
 INSTALL_COMMANDS = {
-    # Ubuntu/Debian - use NodeSource repository for LTS
-    "debian": """
-        # Install Node.js LTS (v20.x)
-        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && \
-        sudo apt-get install -y nodejs && \
-        # Install ts-node globally for parity gates
-        sudo npm install -g ts-node typescript && \
-        echo "Node.js installation complete"
-    """,
-    # RHEL/CentOS/Fedora
-    "rhel": """
-        # Install Node.js LTS (v20.x)
-        curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash - && \
-        sudo yum install -y nodejs && \
-        sudo npm install -g ts-node typescript && \
-        echo "Node.js installation complete"
-    """,
-    # Alpine (some containers)
-    "alpine": """
-        apk add --no-cache nodejs npm && \
-        npm install -g ts-node typescript && \
-        echo "Node.js installation complete"
-    """,
-    # Generic fallback using nvm (Node Version Manager)
-    "nvm": """
-        # Install nvm and Node.js LTS
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
-        export NVM_DIR="$HOME/.nvm" && \
-        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && \
-        nvm install --lts && \
-        nvm use --lts && \
-        npm install -g ts-node typescript && \
-        echo "Node.js installation complete"
-    """,
+    "debian": """curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && \
+sudo apt-get install -y nodejs && \
+sudo npm install -g ts-node typescript && \
+echo "Node.js installation complete" """,
+    "debian_root": """curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+apt-get install -y nodejs && \
+npm install -g ts-node typescript && \
+echo "Node.js installation complete" """,
+    "rhel": """curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash - && \
+sudo yum install -y nodejs && \
+sudo npm install -g ts-node typescript && \
+echo "Node.js installation complete" """,
+    "rhel_root": """curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - && \
+yum install -y nodejs && \
+npm install -g ts-node typescript && \
+echo "Node.js installation complete" """,
+    "alpine": """apk add --no-cache nodejs npm && \
+npm install -g ts-node typescript && \
+echo "Node.js installation complete" """,
+    "nvm": """curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
+export NVM_DIR="$HOME/.nvm" && \
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && \
+nvm install --lts && \
+nvm use --lts && \
+npm install -g ts-node typescript && \
+echo "Node.js installation complete" """,
 }
 
 
@@ -175,19 +168,22 @@ async def detect_os_type(node: ClusterNode) -> str:
     """Detect OS type for appropriate installation commands.
 
     Returns:
-        One of: "debian", "rhel", "alpine", "nvm"
+        One of: "debian", "debian_root", "rhel", "rhel_root", "alpine", "nvm"
     """
+    # Check for sudo availability (container vs VM)
+    has_sudo, _ = await run_ssh_command(node, "which sudo", timeout=10)
+
     # Check for Debian/Ubuntu
     success, _ = await run_ssh_command(node, "which apt-get", timeout=10)
     if success:
-        return "debian"
+        return "debian" if has_sudo else "debian_root"
 
     # Check for RHEL/CentOS/Fedora
     success, _ = await run_ssh_command(node, "which yum", timeout=10)
     if success:
-        return "rhel"
+        return "rhel" if has_sudo else "rhel_root"
 
-    # Check for Alpine
+    # Check for Alpine (typically doesn't use sudo)
     success, _ = await run_ssh_command(node, "which apk", timeout=10)
     if success:
         return "alpine"
@@ -251,8 +247,8 @@ async def deploy_to_node(
     logger.info(f"[{node_name}] Detected OS type: {os_type}")
 
     install_cmd = INSTALL_COMMANDS.get(os_type, INSTALL_COMMANDS["nvm"])
-    # Clean up the command
-    install_cmd = install_cmd.strip().replace("\n", " && ").replace("    ", "")
+    # Clean up the command - just normalize whitespace since commands are already properly formatted
+    install_cmd = " ".join(install_cmd.split())
 
     if dry_run:
         logger.info(f"[{node_name}] Would run: {install_cmd[:100]}...")
