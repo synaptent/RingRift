@@ -1628,6 +1628,78 @@ def check_model_availability(
 
 
 # =============================================================================
+# Remote Path Discovery Helpers (December 28, 2025)
+# =============================================================================
+
+
+def get_remote_path_patterns() -> list[str]:
+    """Get the list of known remote path patterns.
+
+    Returns:
+        List of path patterns that are probed when discovering remote paths.
+        Patterns are tried in order, with provider-specific paths first.
+
+    Example:
+        patterns = get_remote_path_patterns()
+        # ['/workspace/ringrift/ai-service', '~/ringrift/ai-service', ...]
+    """
+    return REMOTE_PATH_PATTERNS.copy()
+
+
+def get_cached_remote_path(host: str) -> str | None:
+    """Get the cached remote path for a host, if any.
+
+    Args:
+        host: Remote host IP or hostname
+
+    Returns:
+        Cached path string, or None if not cached.
+
+    Example:
+        path = get_cached_remote_path("runpod-h100")
+        if path:
+            print(f"Using cached path: {path}")
+    """
+    with _remote_path_cache_lock:
+        return _remote_path_cache.get(host)
+
+
+def clear_remote_path_cache(host: str | None = None) -> None:
+    """Clear cached remote path(s).
+
+    Args:
+        host: Specific host to clear, or None to clear all.
+
+    Example:
+        # Clear cache for specific host after reconfiguration
+        clear_remote_path_cache("runpod-h100")
+
+        # Clear all cache entries
+        clear_remote_path_cache()
+    """
+    with _remote_path_cache_lock:
+        if host:
+            _remote_path_cache.pop(host, None)
+        else:
+            _remote_path_cache.clear()
+
+
+def get_all_cached_remote_paths() -> dict[str, str]:
+    """Get all cached remote paths.
+
+    Returns:
+        Dict mapping host to cached remote path.
+
+    Example:
+        cache = get_all_cached_remote_paths()
+        for host, path in cache.items():
+            print(f"{host}: {path}")
+    """
+    with _remote_path_cache_lock:
+        return _remote_path_cache.copy()
+
+
+# =============================================================================
 # Standalone Entry Point
 # =============================================================================
 

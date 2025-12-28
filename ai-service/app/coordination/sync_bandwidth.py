@@ -498,6 +498,11 @@ class BandwidthCoordinatedRsync:
             cmd.extend(self.default_options)
             cmd.append(f"--bwlimit={allocation.bwlimit_kbps}")
 
+            # P0.1 Dec 2025: Add --partial for resume on network glitches
+            # Without this, network interruptions cause full file retransfer
+            cmd.append("--partial")
+            cmd.append("--partial-dir=.rsync-partial")
+
             # P11-HIGH-3: Add checksum verification for data integrity
             use_checksum = verify_checksum if verify_checksum is not None else self.verify_checksum
             if use_checksum:

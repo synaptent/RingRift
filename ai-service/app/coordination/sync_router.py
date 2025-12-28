@@ -107,8 +107,9 @@ class SyncRouter:
     - Replication tracking
     """
 
-    # P2.3 Dec 2025: Capacity refresh interval (5 minutes)
-    CAPACITY_REFRESH_INTERVAL = 300.0
+    # P0.6 Dec 2025: Capacity refresh interval (30 seconds)
+    # Previous 5-minute interval allowed disk to fill during active training
+    CAPACITY_REFRESH_INTERVAL = 30.0
 
     # Dec 2025: Sync timestamp state file
     _SYNC_STATE_FILE = Path("data/sync/.node_sync_timestamps.json")

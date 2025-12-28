@@ -1211,6 +1211,36 @@ async def create_data_consolidation() -> None:
 
 
 # =============================================================================
+# Data Integrity (December 2025)
+# =============================================================================
+
+
+async def create_integrity_check() -> None:
+    """Create and run integrity check daemon (December 2025).
+
+    Periodically scans game databases for integrity issues, specifically:
+    - Games without move data (orphan games)
+    - Quarantines invalid games for review
+    - Cleans up old quarantined games
+
+    Part of Phase 6: Move Data Integrity Enforcement.
+    """
+    try:
+        from app.coordination.integrity_check_daemon import (
+            IntegrityCheckConfig,
+            IntegrityCheckDaemon,
+        )
+
+        config = IntegrityCheckConfig.from_env()
+        daemon = IntegrityCheckDaemon(config=config)
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"IntegrityCheckDaemon not available: {e}")
+        raise
+
+
+# =============================================================================
 # Runner Registry
 # =============================================================================
 
@@ -1290,6 +1320,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.P2P_AUTO_DEPLOY.name: create_p2p_auto_deploy,
         DaemonType.METRICS_ANALYSIS.name: create_metrics_analysis,
         DaemonType.DATA_CONSOLIDATION.name: create_data_consolidation,
+        DaemonType.INTEGRITY_CHECK.name: create_integrity_check,
     }
 
 

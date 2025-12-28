@@ -699,6 +699,200 @@ class AutoSyncDaemon:
         except OSError as e:
             logger.debug(f"[AutoSyncDaemon] Failed to clear WAL: {e}")
 
+    # =========================================================================
+    # December 2025: Retry queue for failed write-through pushes
+    # =========================================================================
+
+    def _init_pending_writes_file(self) -> None:
+        """Initialize the pending writes retry queue file.
+
+        December 2025: Added to prevent data loss from write-through timeouts.
+        """
+        try:
+            self._pending_writes_file.parent.mkdir(parents=True, exist_ok=True)
+            if not self._pending_writes_file.exists():
+                self._pending_writes_file.touch()
+            logger.debug(
+                f"[AutoSyncDaemon] Pending writes file initialized: {self._pending_writes_file}"
+            )
+        except OSError as e:
+            logger.error(f"[AutoSyncDaemon] Failed to initialize pending writes file: {e}")
+
+    def _persist_failed_write(self, game_entry: dict[str, Any]) -> None:
+        """Persist a failed write to the retry queue file.
+
+        December 2025: Called when all retry attempts fail for write-through.
+
+        Args:
+            game_entry: The game entry that failed to sync
+        """
+        try:
+            entry = {
+                **game_entry,
+                "failed_at": time.time(),
+                "retry_count": 0,
+            }
+            with open(self._pending_writes_file, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+            logger.info(
+                f"[AutoSyncDaemon] Persisted failed write for game {game_entry.get('game_id')} "
+                "to retry queue"
+            )
+        except OSError as e:
+            logger.error(f"[AutoSyncDaemon] Failed to persist write to retry queue: {e}")
+
+    async def _push_with_retry(
+        self,
+        game_entry: dict[str, Any],
+        max_attempts: int = 3,
+        base_delay: float = 2.0,
+    ) -> bool:
+        """Push a game with exponential backoff retry.
+
+        December 2025: Added to prevent data loss from transient network failures.
+
+        Args:
+            game_entry: The game entry to push
+            max_attempts: Maximum retry attempts (default: 3)
+            base_delay: Base delay in seconds (delays: 2s, 4s, 8s)
+
+        Returns:
+            True if push succeeded, False if all retries failed
+        """
+        db_path = game_entry.get("db_path")
+        if not db_path:
+            logger.warning("[AutoSyncDaemon] No db_path in game entry, cannot push")
+            return False
+
+        targets = await self._get_ephemeral_sync_targets()
+        if not targets:
+            logger.warning("[AutoSyncDaemon] No sync targets available for retry")
+            return False
+
+        for attempt in range(max_attempts):
+            delay = base_delay * (2 ** attempt)  # 2s, 4s, 8s
+
+            for target in targets[:3]:  # Try up to 3 targets per attempt
+                try:
+                    success = await asyncio.wait_for(
+                        self._rsync_to_target(db_path, target),
+                        timeout=self.config.ephemeral_write_through_timeout,
+                    )
+                    if success:
+                        logger.debug(
+                            f"[AutoSyncDaemon] Retry push succeeded on attempt {attempt + 1}"
+                        )
+                        return True
+                except asyncio.TimeoutError:
+                    logger.debug(
+                        f"[AutoSyncDaemon] Retry push timeout to {target} "
+                        f"(attempt {attempt + 1}/{max_attempts})"
+                    )
+                except (RuntimeError, OSError) as e:
+                    logger.debug(
+                        f"[AutoSyncDaemon] Retry push failed to {target}: {e} "
+                        f"(attempt {attempt + 1}/{max_attempts})"
+                    )
+
+            # Wait before next retry attempt (except on last attempt)
+            if attempt < max_attempts - 1:
+                logger.debug(
+                    f"[AutoSyncDaemon] Waiting {delay}s before retry attempt {attempt + 2}"
+                )
+                await asyncio.sleep(delay)
+
+        # All retries failed
+        logger.warning(
+            f"[AutoSyncDaemon] All {max_attempts} retry attempts failed for "
+            f"game {game_entry.get('game_id')}"
+        )
+        return False
+
+    async def _process_pending_writes(self) -> None:
+        """Background task to periodically retry failed writes.
+
+        December 2025: Runs every 60 seconds to retry persisted failed writes.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(60)  # Check every minute
+
+                if not self._pending_writes_file.exists():
+                    continue
+
+                # Read pending writes
+                pending_writes: list[dict[str, Any]] = []
+                remaining_writes: list[dict[str, Any]] = []
+
+                try:
+                    with open(self._pending_writes_file) as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                entry = json.loads(line)
+                                pending_writes.append(entry)
+                            except json.JSONDecodeError:
+                                continue
+                except OSError as e:
+                    logger.debug(f"[AutoSyncDaemon] Failed to read pending writes: {e}")
+                    continue
+
+                if not pending_writes:
+                    continue
+
+                logger.info(
+                    f"[AutoSyncDaemon] Processing {len(pending_writes)} pending writes"
+                )
+
+                for entry in pending_writes:
+                    # Check if entry is too old (>24 hours)
+                    failed_at = entry.get("failed_at", 0)
+                    if time.time() - failed_at > 86400:  # 24 hours
+                        logger.warning(
+                            f"[AutoSyncDaemon] Abandoning stale pending write "
+                            f"(age > 24h): {entry.get('game_id')}"
+                        )
+                        continue
+
+                    # Try to push
+                    success = await self._push_with_retry(entry, max_attempts=2)
+                    if not success:
+                        # Increment retry count and keep in queue
+                        entry["retry_count"] = entry.get("retry_count", 0) + 1
+                        if entry["retry_count"] < 5:  # Max 5 retry cycles
+                            remaining_writes.append(entry)
+                        else:
+                            logger.error(
+                                f"[AutoSyncDaemon] Permanently failed to sync game "
+                                f"{entry.get('game_id')} after 5 retry cycles"
+                            )
+                            # Emit event for alerting
+                            fire_and_forget(
+                                self._emit_sync_failed(
+                                    f"Permanent failure for game {entry.get('game_id')}"
+                                ),
+                                on_error=lambda exc: logger.debug(
+                                    f"Failed to emit sync failed: {exc}"
+                                ),
+                            )
+
+                # Rewrite the file with remaining writes
+                try:
+                    with open(self._pending_writes_file, "w") as f:
+                        for entry in remaining_writes:
+                            f.write(json.dumps(entry) + "\n")
+                except OSError as e:
+                    logger.error(
+                        f"[AutoSyncDaemon] Failed to update pending writes file: {e}"
+                    )
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"[AutoSyncDaemon] Error in pending writes processor: {e}")
+
     def _init_cluster_manifest(self) -> None:
         """Initialize the ClusterManifest for tracking."""
         try:

@@ -1294,8 +1294,12 @@ class GameReplayDB:
 
         Raises:
             InvalidGameError: If moves list is too short (< MIN_MOVES_REQUIRED)
+            DiskSpaceError: If insufficient disk space to safely write.
         """
         from app.errors import InvalidGameError
+
+        # Pre-check disk space to prevent data loss on full disk
+        ensure_disk_space(self._db_path, operation="store game")
 
         # CRITICAL SAFEGUARD: Prevent storing games without move data
         # This is the primary cause of useless databases in the training pipeline
@@ -2671,7 +2675,14 @@ class GameReplayDB:
         state: GameState,
         state_hash: str | None = None,
     ) -> None:
-        """Store a state snapshot (within existing transaction)."""
+        """Store a state snapshot (within existing transaction).
+
+        Raises:
+            DiskSpaceError: If insufficient disk space to safely write.
+        """
+        # Pre-check disk space to prevent data loss on full disk
+        ensure_disk_space(self._db_path, operation="store snapshot")
+
         json_str = _serialize_state(state)
         # Ensure state_hash is populated so that all snapshots (not just
         # all-snapshots mode) can participate in cross-engine validation.

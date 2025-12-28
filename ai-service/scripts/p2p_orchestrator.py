@@ -28541,6 +28541,13 @@ def main():
                 # Dec 2025: Narrowed from bare Exception; best effort cleanup
                 logger.debug(f"Notifier close failed (best effort): {e}")
 
+            # December 2025: Close work queue to persist final stats
+            try:
+                from app.coordination.work_queue import reset_work_queue
+                reset_work_queue()
+            except (ImportError, RuntimeError, sqlite3.Error) as e:
+                logger.debug(f"Work queue cleanup failed (best effort): {e}")
+
             # December 2025: Release singleton lock on shutdown
             _release_singleton_lock()
 
