@@ -469,11 +469,10 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
 
     def health_check(self) -> HealthCheckResult:
         """Return daemon health status."""
-        is_healthy = self._running and not self._stopped
+        is_healthy = self._running
 
         details = {
             "running": self._running,
-            "stopped": self._stopped,
             "total_orphans_found": self._total_orphans_found,
             "total_orphans_cleaned": self._total_orphans_cleaned,
             "data_dir": self.config.data_dir,

@@ -192,7 +192,7 @@ class TestIntegrityCheckDaemon:
         """Test that daemon initializes with config."""
         daemon = IntegrityCheckDaemon(config=daemon_config)
 
-        assert daemon._config == daemon_config
+        assert daemon.config == daemon_config
         assert daemon._last_result is None
         assert daemon._total_orphans_found == 0
         assert daemon._total_orphans_cleaned == 0

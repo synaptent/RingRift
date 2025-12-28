@@ -536,9 +536,26 @@ def rsync_push(
                 for pattern in exclude:
                     cmd.extend(["--exclude", pattern])
 
-            # Ensure trailing slash for directory sync
+            # Dec 2025: Handle database files with WAL
             source = str(local_path)
-            if local_path.is_dir() and not source.endswith("/"):
+            is_db_file = local_path.is_file() and source.endswith(".db")
+
+            if is_db_file:
+                # Checkpoint WAL before sync to ensure data integrity
+                checkpoint_database(source)
+
+                # Use include patterns to sync .db and WAL files together
+                db_name = local_path.name
+                parent_dir = str(local_path.parent) + "/"
+                cmd.extend([
+                    f"--include={db_name}",
+                    f"--include={db_name}-wal",
+                    f"--include={db_name}-shm",
+                    "--exclude=*",
+                ])
+                source = parent_dir
+            elif local_path.is_dir() and not source.endswith("/"):
+                # Ensure trailing slash for directory sync
                 source += "/"
 
             cmd.extend([source, f"{config.ssh_user}@{host}:{remote_path}"])
@@ -630,6 +647,9 @@ def rsync_pull(
     # Ensure parent directory exists
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Dec 2025: Handle database files with WAL
+    is_db_file = remote_path.endswith(".db")
+
     for attempt in range(config.max_retries):
         attempts = attempt + 1
         try:
@@ -650,7 +670,19 @@ def rsync_pull(
                 for pattern in exclude:
                     cmd.extend(["--exclude", pattern])
 
-            cmd.extend([f"{config.ssh_user}@{host}:{remote_path}", str(local_path)])
+            # Dec 2025: For database files, include WAL files
+            if is_db_file:
+                db_name = Path(remote_path).name
+                remote_dir = str(Path(remote_path).parent) + "/"
+                cmd.extend([
+                    f"--include={db_name}",
+                    f"--include={db_name}-wal",
+                    f"--include={db_name}-shm",
+                    "--exclude=*",
+                ])
+                cmd.extend([f"{config.ssh_user}@{host}:{remote_dir}", str(local_path.parent) + "/"])
+            else:
+                cmd.extend([f"{config.ssh_user}@{host}:{remote_path}", str(local_path)])
 
             result = subprocess.run(
                 cmd,

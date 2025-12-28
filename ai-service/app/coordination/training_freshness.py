@@ -115,14 +115,20 @@ class FreshnessResult:
 
 @dataclass
 class DataSourceInfo:
-    """Information about a data source."""
+    """Information about a data source.
+
+    P1.6 Dec 2025: Added content_age_hours for actual data age (vs file mtime).
+    File mtime can be misleading when files are copied/synced between nodes.
+    """
     path: Path
-    age_hours: float
+    age_hours: float  # File modification time age
     size_bytes: int
     game_count: int = 0
     is_stale: bool = False
     board_type: str | None = None
     num_players: int | None = None
+    # P1.6 Dec 2025: Content-based age (newest game time or NPZ metadata)
+    content_age_hours: float | None = None  # None if unknown
 
 
 class TrainingFreshnessChecker:
