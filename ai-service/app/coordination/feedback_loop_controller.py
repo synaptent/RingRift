@@ -931,6 +931,12 @@ class FeedbackLoopController:
         try:
             payload = event.payload if hasattr(event, "payload") else {}
 
+            # Dec 2025: Source tracking loop guard - skip events we emitted
+            source = payload.get("source", "")
+            if source in ("feedback_loop_controller", "FeedbackLoopController"):
+                logger.debug("[FeedbackLoopController] Skipping self-emitted QUALITY_DEGRADED event")
+                return
+
             config_key = payload.get("config_key", "")
             quality_score = payload.get("quality_score", 0.5)
             threshold = payload.get("threshold", MEDIUM_QUALITY_THRESHOLD)

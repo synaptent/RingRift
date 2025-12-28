@@ -1511,6 +1511,7 @@ from scripts.p2p.models import (
     TrainingJob,
     TrainingThresholds,
 )
+from scripts.p2p.p2p_mixin_base import SubscriptionRetryConfig
 from scripts.p2p.network import (
     AsyncLockWrapper,
     get_client_session,
@@ -2563,7 +2564,8 @@ class P2POrchestrator(
         )
         # December 2025: Subscribe to health events (HOST_OFFLINE, NODE_RECOVERED)
         # to track unhealthy nodes for filtering during selection
-        self.node_selector.subscribe_to_events()
+        # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
+        self.node_selector.subscribe_to_events_with_retry()
 
         # Phase 2A Refactoring: SyncPlanner for data synchronization
         # NOTE: request_peer_manifest is wired AFTER SyncPlanner creation
@@ -2581,7 +2583,8 @@ class P2POrchestrator(
         )
         # December 2025: Subscribe to cluster events (LEADER_ELECTED, NODE_RECOVERED)
         # to invalidate cached manifests and trigger re-collection
-        self.sync_planner.subscribe_to_events()
+        # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
+        self.sync_planner.subscribe_to_events_with_retry()
 
         # Phase 2B Refactoring: SelfplayScheduler for priority-based selfplay allocation
         # All callbacks wired for full delegation (Dec 2025)
@@ -2607,7 +2610,8 @@ class P2POrchestrator(
             verbose=self.verbose,
         )
         # Subscribe to feedback loop events (December 2025)
-        self.selfplay_scheduler.subscribe_to_events()
+        # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
+        self.selfplay_scheduler.subscribe_to_events_with_retry()
 
         # Phase 2B Refactoring: JobManager for job spawning and lifecycle
         self.job_manager = JobManager(
@@ -2621,7 +2625,8 @@ class P2POrchestrator(
             distributed_tournament_state=self.distributed_tournament_state,
         )
         # December 2025: Subscribe to job-relevant events (HOST_OFFLINE, HOST_ONLINE)
-        self.job_manager.subscribe_to_events()
+        # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
+        self.job_manager.subscribe_to_events_with_retry()
 
         # Phase 2B Refactoring: TrainingCoordinator for training dispatch and completion
         self.training_coordinator = TrainingCoordinator(
@@ -2642,7 +2647,8 @@ class P2POrchestrator(
         )
         # December 2025: Subscribe to training-relevant events
         # (SELFPLAY_COMPLETE, DATA_SYNC_COMPLETED, EVALUATION_COMPLETED, REGRESSION_DETECTED)
-        self.training_coordinator.subscribe_to_events()
+        # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
+        self.training_coordinator.subscribe_to_events_with_retry()
 
         # December 2025: Wire feedback loops for self-improvement
         # This connects curriculum adjustments to Elo changes, evaluation results, etc.

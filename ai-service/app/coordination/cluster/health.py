@@ -28,8 +28,6 @@ Usage:
 
 from __future__ import annotations
 
-import warnings
-
 # Re-export from unified_health_manager
 from app.coordination.unified_health_manager import (
     UnifiedHealthManager,
@@ -73,18 +71,16 @@ from app.coordination.health_facade import (
     SystemHealthScore,
 )
 
-# Re-export from node_health_monitor (DEPRECATED - use health_facade instead)
-# December 2025: node_health_monitor is deprecated in favor of health_check_orchestrator,
-# but these re-exports are kept for callers that depend on the NodeHealthMonitor API.
-# Removal scheduled: Q2 2026
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    from app.coordination.node_health_monitor import (
-        NodeHealthMonitor,
-        get_node_health_monitor,
-        NodeStatus,
-        NodeHealth,
-    )
+# Re-export aliases from canonical modules (December 2025)
+# These are backward-compatible aliases - prefer the health_facade imports above
+from app.coordination.health_check_orchestrator import (
+    HealthCheckOrchestrator as NodeHealthMonitor,
+    get_health_orchestrator as get_node_health_monitor,
+)
+from app.coordination.node_status import (
+    NodeHealthState as NodeStatus,
+    NodeMonitoringStatus as NodeHealth,
+)
 
 __all__ = [
     # From unified_health_manager

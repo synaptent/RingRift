@@ -39,7 +39,9 @@ import contextlib
 import importlib
 import logging
 import sqlite3
+import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -576,6 +578,41 @@ class P2PMixinBase:
         return (self._get_timestamp() - timestamp) > ttl_seconds
 
 
+# =========================================================================
+# Event Subscription Retry Configuration (December 28, 2025)
+# =========================================================================
+
+
+@dataclass
+class SubscriptionRetryConfig:
+    """Configuration for event subscription retry behavior.
+
+    Used by EventSubscriptionMixin.subscribe_to_events_with_retry() to control
+    retry attempts when event subscriptions fail at startup.
+
+    Attributes:
+        max_attempts: Maximum number of subscription attempts (default: 3)
+        initial_delay_seconds: Initial delay before first retry (default: 1.0)
+        max_delay_seconds: Maximum delay cap (default: 8.0)
+        backoff_multiplier: Delay multiplier per attempt (default: 2.0)
+
+    Example delays with defaults:
+        - Attempt 1: immediate
+        - Attempt 2: 1.0s delay
+        - Attempt 3: 2.0s delay
+        Total worst-case startup delay: 3.0s
+
+    Usage:
+        config = SubscriptionRetryConfig(max_attempts=5, initial_delay_seconds=0.5)
+        manager.subscribe_to_events_with_retry(config)
+    """
+
+    max_attempts: int = 3
+    initial_delay_seconds: float = 1.0
+    max_delay_seconds: float = 8.0
+    backoff_multiplier: float = 2.0
+
+
 class EventSubscriptionMixin:
     """Mixin providing standardized event subscription for P2P managers.
 
@@ -736,6 +773,71 @@ class EventSubscriptionMixin:
             "subscribed": self._subscribed,
             "subscription_count": len(self._get_event_subscriptions()),
         }
+
+    def subscribe_to_events_with_retry(
+        self,
+        config: SubscriptionRetryConfig | None = None,
+    ) -> bool:
+        """Subscribe to events with exponential backoff retry.
+
+        Wraps subscribe_to_events() with retry logic to handle transient failures
+        during startup (e.g., event router not yet initialized, import race conditions).
+
+        Args:
+            config: Retry configuration. Uses SubscriptionRetryConfig defaults if None.
+
+        Returns:
+            True if subscriptions succeeded, False if all retries exhausted.
+
+        Example:
+            # Use default retry config (3 attempts, 1s/2s/4s delays)
+            if not manager.subscribe_to_events_with_retry():
+                logger.error("Failed to subscribe to events")
+
+            # Custom config for critical managers
+            config = SubscriptionRetryConfig(max_attempts=5, initial_delay_seconds=0.5)
+            manager.subscribe_to_events_with_retry(config)
+
+        Note:
+            This method is synchronous and uses time.sleep() for delays.
+            It's designed to be called during __init__ which is sync context.
+        """
+        config = config or SubscriptionRetryConfig()
+        prefix = getattr(self, "_subscription_log_prefix", "EventSubscriptionMixin")
+
+        for attempt in range(config.max_attempts):
+            # Reset subscription state for retry
+            self._init_subscription_state()
+            self._subscribed = False
+
+            # Attempt subscription
+            self.subscribe_to_events()
+
+            if self._subscribed:
+                if attempt > 0:
+                    logger.info(
+                        f"[{prefix}] Event subscription succeeded on attempt {attempt + 1}"
+                    )
+                return True
+
+            # Don't sleep after final failed attempt
+            if attempt < config.max_attempts - 1:
+                # Calculate delay with exponential backoff
+                delay = min(
+                    config.initial_delay_seconds * (config.backoff_multiplier ** attempt),
+                    config.max_delay_seconds,
+                )
+                logger.warning(
+                    f"[{prefix}] Event subscription failed, "
+                    f"retrying in {delay:.1f}s (attempt {attempt + 1}/{config.max_attempts})"
+                )
+                time.sleep(delay)
+
+        logger.error(
+            f"[{prefix}] CRITICAL: Event subscription failed "
+            f"after {config.max_attempts} attempts"
+        )
+        return False
 
     # =========================================================================
     # Event Handler Helpers (December 28, 2025)
