@@ -904,24 +904,26 @@ DATA_SAMPLING_QUALITY_WEIGHT = 0.4
 
 PROMOTION_THRESHOLDS_BY_CONFIG: dict[str, dict[str, float]] = {
     # Hex8 (61 cells) - smaller, easier
-    "hex8_2p": {"vs_random": 0.85, "vs_heuristic": 0.60},
-    "hex8_3p": {"vs_random": 0.55, "vs_heuristic": 0.45},
-    "hex8_4p": {"vs_random": 0.50, "vs_heuristic": 0.40},
+    # Dec 28, 2025: Raised vs_heuristic thresholds to stop promoting weak models
+    # Old threshold 0.60 promoted ~1350 Elo models; need 0.85 for ~1800+ Elo
+    "hex8_2p": {"vs_random": 0.90, "vs_heuristic": 0.85},
+    "hex8_3p": {"vs_random": 0.65, "vs_heuristic": 0.55},
+    "hex8_4p": {"vs_random": 0.60, "vs_heuristic": 0.50},
 
     # Square8 (64 cells) - small, moderate difficulty
-    "square8_2p": {"vs_random": 0.85, "vs_heuristic": 0.60},
-    "square8_3p": {"vs_random": 0.55, "vs_heuristic": 0.45},
-    "square8_4p": {"vs_random": 0.50, "vs_heuristic": 0.40},
+    "square8_2p": {"vs_random": 0.90, "vs_heuristic": 0.85},
+    "square8_3p": {"vs_random": 0.65, "vs_heuristic": 0.55},
+    "square8_4p": {"vs_random": 0.60, "vs_heuristic": 0.50},
 
     # Square19 (361 cells) - large, harder
-    "square19_2p": {"vs_random": 0.80, "vs_heuristic": 0.50},
-    "square19_3p": {"vs_random": 0.50, "vs_heuristic": 0.35},
-    "square19_4p": {"vs_random": 0.45, "vs_heuristic": 0.30},
+    "square19_2p": {"vs_random": 0.85, "vs_heuristic": 0.70},
+    "square19_3p": {"vs_random": 0.60, "vs_heuristic": 0.45},
+    "square19_4p": {"vs_random": 0.55, "vs_heuristic": 0.40},
 
     # Hexagonal (469 cells) - largest, hardest
-    "hexagonal_2p": {"vs_random": 0.75, "vs_heuristic": 0.45},
-    "hexagonal_3p": {"vs_random": 0.45, "vs_heuristic": 0.30},
-    "hexagonal_4p": {"vs_random": 0.40, "vs_heuristic": 0.25},
+    "hexagonal_2p": {"vs_random": 0.85, "vs_heuristic": 0.65},
+    "hexagonal_3p": {"vs_random": 0.55, "vs_heuristic": 0.40},
+    "hexagonal_4p": {"vs_random": 0.50, "vs_heuristic": 0.35},
 }
 
 
@@ -938,12 +940,13 @@ def get_promotion_thresholds(config_key: str) -> dict[str, float]:
         return PROMOTION_THRESHOLDS_BY_CONFIG[config_key]
 
     # Parse config to get player count for fallback
+    # Dec 28, 2025: Raised fallback thresholds to match explicit config values
     if "_4p" in config_key:
-        return {"vs_random": 0.50, "vs_heuristic": 0.40}
+        return {"vs_random": 0.60, "vs_heuristic": 0.50}
     elif "_3p" in config_key:
-        return {"vs_random": 0.55, "vs_heuristic": 0.45}
+        return {"vs_random": 0.65, "vs_heuristic": 0.55}
     else:
-        return {"vs_random": 0.85, "vs_heuristic": 0.60}
+        return {"vs_random": 0.90, "vs_heuristic": 0.85}
 
 
 # =============================================================================

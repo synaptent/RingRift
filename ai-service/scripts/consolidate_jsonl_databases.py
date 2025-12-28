@@ -677,6 +677,8 @@ def main():
         if r.games_added > 0 or r.total_games_after > 0:
             print(f"  {r.config}: {r.total_games_before} -> {r.total_games_after} (+{r.games_added})")
     print(f"\nTotal games added: {total_added}")
+    if total_skipped_no_moves > 0:
+        print(f"WARNING: Skipped {total_skipped_no_moves} games without move data")
     if args.dry_run:
         print("\n(DRY RUN - no changes were made)")
 
