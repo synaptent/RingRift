@@ -107,6 +107,30 @@ class StateManager:
         conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
         return conn
 
+    @contextlib.contextmanager
+    def _db_connection(self, *, read_only: bool = False):
+        """Context manager for database connections with guaranteed cleanup.
+
+        Args:
+            read_only: If True, uses READ_TIMEOUT instead of WRITE_TIMEOUT.
+
+        Yields:
+            sqlite3.Connection with proper settings configured.
+
+        Example:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM peers")
+        """
+        timeout = SQLiteDefaults.READ_TIMEOUT if read_only else SQLiteDefaults.WRITE_TIMEOUT
+        conn = sqlite3.connect(str(self.db_path), timeout=timeout)
+        try:
+            busy_timeout_ms = int(timeout * 1000)
+            conn.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+            yield conn
+        finally:
+            conn.close()
+
     def init_database(self) -> None:
         """Initialize SQLite database schema for state persistence.
 
@@ -120,15 +144,12 @@ class StateManager:
         - peer_cache: Persistent peer storage with reputation
         - config: Cluster epoch and other persistent settings
         """
-        conn = sqlite3.connect(str(self.db_path), timeout=SQLiteDefaults.WRITE_TIMEOUT)
-        cursor = conn.cursor()
+        with self._db_connection() as conn:
+            cursor = conn.cursor()
 
-        try:
             # Enable WAL mode for concurrent readers/writers
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA synchronous=NORMAL")
-            busy_timeout_ms = int(SQLiteDefaults.WRITE_TIMEOUT * 1000)
-            cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
 
             # Peers table
             cursor.execute("""
@@ -251,8 +272,6 @@ class StateManager:
             """)
 
             conn.commit()
-        finally:
-            conn.close()
 
     def load_state(self, node_id: str) -> PersistedState:
         """Load persisted state from database.

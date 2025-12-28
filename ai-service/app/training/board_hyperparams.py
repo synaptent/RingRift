@@ -135,35 +135,43 @@ BOARD_HYPERPARAMS: dict[str, BoardHyperparams] = {
     ),
 
     # Hexagonal (full) - D6 symmetry
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hexagonal_2p": BoardHyperparams(
-        learning_rate=0.0004,
-        batch_size=192,
-        epochs=75,
-        hidden_dim=384,
-        num_hidden_layers=3,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
+        hidden_dim=512,
+        num_hidden_layers=6,
         augmentation_factor=6,  # D6 symmetry
-        label_smoothing=0.04,
-        weight_decay=0.00015,
+        label_smoothing=0.05,
+        weight_decay=0.0001,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hexagonal_3p": BoardHyperparams(
         learning_rate=0.0003,
-        batch_size=128,
+        batch_size=64,
         epochs=100,
-        hidden_dim=448,
-        num_hidden_layers=4,
+        hidden_dim=512,
+        num_hidden_layers=6,
         augmentation_factor=6,
         policy_weight=1.2,
         label_smoothing=0.06,
+        weight_decay=0.0001,
+        early_stopping_patience=30,
     ),
+    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hexagonal_4p": BoardHyperparams(
-        learning_rate=0.00025,
-        batch_size=96,
-        epochs=120,
+        learning_rate=0.0003,
+        batch_size=64,
+        epochs=100,
         hidden_dim=512,
-        num_hidden_layers=4,
+        num_hidden_layers=6,
         augmentation_factor=6,
         policy_weight=1.4,
         label_smoothing=0.08,
+        weight_decay=0.0001,
+        early_stopping_patience=30,
     ),
 
     # Hex8 (small hex) - balanced for good generalization

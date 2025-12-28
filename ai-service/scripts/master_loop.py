@@ -117,7 +117,9 @@ TRAINING_CHECK_INTERVAL = 60  # Check training readiness every minute (fallback 
 ALLOCATION_CHECK_INTERVAL = 120  # Rebalance allocations every 2 minutes (fallback for events)
 
 # Thresholds
-MIN_GAMES_FOR_EXPORT = 1000  # Minimum new games before triggering export
+# Dec 28, 2025: Lowered from 1000 to 100 to unblock training pipeline
+# High threshold was causing 10x mismatch with TRAINING_TRIGGER_GAMES=100
+MIN_GAMES_FOR_EXPORT = 100  # Minimum new games before triggering export
 MAX_DATA_STALENESS_HOURS = 4.0  # Trigger sync if data older than this
 
 # State persistence path (Gap 3 fix: Dec 2025)
