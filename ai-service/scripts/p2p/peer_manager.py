@@ -315,6 +315,26 @@ class PeerManagerMixin(P2PMixinBase):
         )
         return result if result is not None else 0
 
+    def peer_health_check(self) -> dict[str, Any]:
+        """Return health status for peer management subsystem.
+
+        Returns:
+            dict with is_healthy, cached_peers, active_peers details
+        """
+        cached_count = self._get_cached_peer_count()
+        active_count = len(getattr(self, "peers", {}))
+        nat_blocked = len(getattr(self, "_nat_blocked_peers", set()))
+        bootstrap_count = len(getattr(self, "bootstrap_seeds", []))
+        # Unhealthy if no active peers and no cached peers
+        is_healthy = (active_count > 0) or (cached_count > 0)
+        return {
+            "is_healthy": is_healthy,
+            "cached_peers": cached_count,
+            "active_peers": active_count,
+            "bootstrap_seeds": bootstrap_count,
+            "nat_blocked_count": nat_blocked,
+        }
+
 
 # Convenience function to get singleton (if P2POrchestrator uses this)
 _peer_manager: PeerManagerMixin | None = None

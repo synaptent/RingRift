@@ -355,6 +355,30 @@ class LeaderElectionMixin(P2PMixinBase):
                 f"SPLIT-BRAIN RESOLUTION: This node ({self.node_id}) is the canonical leader"
             )
 
+    def election_health_check(self) -> dict[str, Any]:
+        """Return health status for leader election subsystem.
+
+        Returns:
+            dict with is_healthy, role, leader_id, quorum status
+        """
+        import time
+
+        has_quorum = self._has_voter_quorum()
+        voter_count = len(self.voter_node_ids) if self.voter_node_ids else 0
+        alive_voters = self._count_alive_voters()
+        lease_remaining = max(0, self.leader_lease_expires - time.time())
+        # Unhealthy if no quorum and we should have voters
+        is_healthy = has_quorum or voter_count == 0
+        return {
+            "is_healthy": is_healthy,
+            "role": str(self.role) if self.role else "unknown",
+            "leader_id": self.leader_id,
+            "has_quorum": has_quorum,
+            "voter_count": voter_count,
+            "alive_voters": alive_voters,
+            "lease_remaining_seconds": lease_remaining,
+        }
+
 
 # Convenience functions for external use
 def check_quorum(

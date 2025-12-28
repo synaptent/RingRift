@@ -678,6 +678,25 @@ class ConsensusMixin(P2PMixinBase):
         except Exception as e:
             logger.debug(f"Failed to emit Raft leader event: {e}")
 
+    def consensus_health_check(self) -> dict[str, Any]:
+        """Return health status for Raft consensus subsystem.
+
+        Returns:
+            dict with is_healthy, raft_enabled, raft_initialized details
+        """
+        raft_init = getattr(self, "_raft_initialized", False)
+        raft_error = getattr(self, "_raft_init_error", None)
+        # Healthy if Raft is disabled or initialized successfully
+        is_healthy = (not RAFT_ENABLED) or raft_init
+        return {
+            "is_healthy": is_healthy,
+            "raft_enabled": RAFT_ENABLED,
+            "raft_available": PYSYNCOBJ_AVAILABLE,
+            "raft_initialized": raft_init,
+            "raft_init_error": raft_error,
+            "consensus_mode": CONSENSUS_MODE,
+        }
+
 
 # Export public API
 __all__ = [

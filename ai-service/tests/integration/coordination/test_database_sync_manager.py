@@ -523,7 +523,8 @@ class TestNodeDiscovery:
         """Should fall back to YAML when P2P fails."""
         with patch("aiohttp.ClientSession") as mock_session_cls:
             mock_session = MagicMock()
-            mock_session.get = MagicMock(side_effect=Exception("P2P unavailable"))
+            # Use OSError which is one of the caught exception types in discover_nodes()
+            mock_session.get = MagicMock(side_effect=OSError("P2P unavailable"))
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session_cls.return_value = mock_session

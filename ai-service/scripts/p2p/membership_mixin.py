@@ -309,3 +309,22 @@ class MembershipMixin(P2PMixinBase):
             "membership_mode": MEMBERSHIP_MODE,
             "swim": swim_summary,
         }
+
+    def membership_health_check(self) -> dict[str, Any]:
+        """Return health status for membership subsystem.
+
+        Returns:
+            dict with is_healthy based on membership mode and status
+        """
+        summary = self.get_swim_membership_summary()
+        # Healthy if SWIM not enabled, or if it's enabled and started successfully
+        if SWIM_ENABLED:
+            is_healthy = summary.get("swim_started", False)
+        else:
+            # HTTP mode - healthy if we have peers
+            peer_count = len(getattr(self, "peers", {}))
+            is_healthy = peer_count > 0 or not getattr(self, "bootstrap_seeds", [])
+        return {
+            "is_healthy": is_healthy,
+            **summary,
+        }

@@ -149,7 +149,12 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'MODEL_PROMOTED'):
                 router.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
 
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED")
+            # December 2025: Subscribe to TIER_PROMOTION to adjust curriculum when
+            # difficulty tier changes (e.g., advancing from D4 to D5)
+            if hasattr(DataEventType, 'TIER_PROMOTION'):
+                router.subscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
+
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION")
             return True
 
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
@@ -186,6 +191,9 @@ class MomentumToCurriculumBridge:
                 # December 2025 Phase 2: Unsubscribe from MODEL_PROMOTED
                 if hasattr(DataEventType, 'MODEL_PROMOTED'):
                     router.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+                # December 2025: Unsubscribe from TIER_PROMOTION
+                if hasattr(DataEventType, 'TIER_PROMOTION'):
+                    router.unsubscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -389,6 +397,63 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error handling model promotion: {e}")
+
+    def _on_tier_promotion(self, event) -> None:
+        """Handle TIER_PROMOTION event - adjust curriculum for difficulty tier changes.
+
+        December 2025: When a model advances to a new difficulty tier, curriculum
+        weights should be adjusted to:
+        - Increase exploration for the newly promoted tier
+        - Reduce focus on mastered lower tiers
+        - Maintain training diversity across all tiers
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            config_key = payload.get("config", payload.get("config_key", ""))
+            old_tier = payload.get("old_tier", "")
+            new_tier = payload.get("new_tier", "")
+            elo = payload.get("elo", 0.0)
+            win_rate = payload.get("win_rate", 0.0)
+
+            if not config_key or not new_tier:
+                return
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] TIER_PROMOTION: {config_key} "
+                f"{old_tier} -> {new_tier}, elo={elo:.0f}, win_rate={win_rate:.1%}"
+            )
+
+            # Trigger full curriculum weight sync after tier promotion
+            # The new tier represents higher skill level and needs rebalanced training
+            self._sync_weights()
+
+            # Emit curriculum advanced event for downstream consumers
+            try:
+                from app.coordination.event_emitters import emit_curriculum_advanced
+                import asyncio
+
+                async def _emit():
+                    await emit_curriculum_advanced(
+                        config_key=config_key,
+                        old_tier=old_tier,
+                        new_tier=new_tier,
+                        trigger="tier_promotion",
+                        source="curriculum_integration",
+                    )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_emit())
+                except RuntimeError:
+                    # No running loop - skip async emission
+                    pass
+
+            except ImportError:
+                pass
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling tier promotion: {e}")
 
     def _sync_weights_for_momentum(
         self,

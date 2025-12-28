@@ -11288,7 +11288,8 @@ print(json.dumps(result))
                                 owc_path = mount_path
                                 storage_tier = "owc"
                                 break
-                        except Exception:
+                        except (OSError, PermissionError) as e:
+                            logger.warning(f"Cannot check OWC mount {mount_path}: {e}")
                             continue
 
                 if storage_tier == "local" and S3_BUCKET:

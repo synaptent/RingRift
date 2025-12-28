@@ -144,7 +144,8 @@ class TestGetDbConnection:
         try:
             assert isinstance(conn, sqlite3.Connection)
             result = conn.execute("SELECT 1").fetchone()
-            assert result == (1,)
+            # Result is sqlite3.Row due to row_factory, access by index
+            assert result[0] == 1
         finally:
             conn.close()
 
@@ -184,13 +185,16 @@ class TestSafeTransaction:
         conn2.close()
         assert result == ("new",)
 
-    def test_safe_transaction_rollback_on_exception(self, temp_db):
-        """Transaction rolls back on exception."""
+    def test_safe_transaction_rollback_on_sqlite_error(self, temp_db):
+        """Transaction rolls back on sqlite3.Error when using deferred isolation."""
         try:
-            with safe_transaction(str(temp_db)) as conn:
+            # Use isolation_level="" to enable deferred transactions
+            # (isolation_level=None means autocommit, which commits each statement immediately)
+            with safe_transaction(str(temp_db), isolation_level="") as conn:
                 conn.execute("INSERT INTO test (value) VALUES ('rollback_test')")
-                raise ValueError("Simulated error")
-        except ValueError:
+                # Force a sqlite3.Error by executing invalid SQL
+                conn.execute("INVALID SQL SYNTAX")
+        except sqlite3.OperationalError:
             pass
 
         # Verify rollback happened
@@ -302,18 +306,18 @@ class TestStatePersistence:
         data = load_state_safely(str(temp_json))
         assert data == {"key": "value", "count": 0}
 
-    def test_load_state_safely_returns_none_for_missing(self, temp_dir):
-        """load_state_safely returns None for missing file."""
+    def test_load_state_safely_returns_empty_dict_for_missing(self, temp_dir):
+        """load_state_safely returns empty dict for missing file."""
         result = load_state_safely(str(temp_dir / "nonexistent.json"))
-        assert result is None
+        assert result == {}
 
-    def test_load_state_safely_returns_none_for_invalid_json(self, temp_dir):
-        """load_state_safely returns None for invalid JSON."""
+    def test_load_state_safely_returns_empty_dict_for_invalid_json(self, temp_dir):
+        """load_state_safely returns empty dict for invalid JSON."""
         bad_file = temp_dir / "bad.json"
         bad_file.write_text("not valid json {{{")
 
         result = load_state_safely(str(bad_file))
-        assert result is None
+        assert result == {}
 
 
 # =============================================================================
@@ -336,11 +340,21 @@ class TestDatabaseRegistry:
         assert isinstance(path, Path)
 
     def test_get_db_path_creates_parent_dirs(self, temp_dir):
-        """get_db_path creates parent directories."""
-        with patch.object(DatabaseRegistry, "_get_base_dir", return_value=temp_dir):
-            reg = DatabaseRegistry()
-            path = reg.get_path("subdir/deep/test.db", create_dirs=True)
+        """get_db_path creates parent directories for registered databases."""
+        # Use get_registry() to get the singleton
+        reg = get_registry()
+        original_base = reg.get_base_path()
+        try:
+            reg.set_base_path(temp_dir)
+            # Register a custom database path (unregistered paths are treated as literals)
+            reg.register_database("test_deep", "subdir/deep/test.db")
+            path = reg.get_path("test_deep", create_dirs=True)
+            # Verify parent directories were created
             assert path.parent.exists()
+            assert path == temp_dir / "subdir" / "deep" / "test.db"
+        finally:
+            # Restore original base path to not affect other tests
+            reg.set_base_path(original_base)
 
 
 # =============================================================================

@@ -267,6 +267,25 @@ class MetricsManager:
         with self._metrics_buffer_lock:
             return len(self._metrics_buffer)
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for the metrics manager.
+
+        Returns:
+            dict with is_healthy, pending_count, last_flush details
+        """
+        pending = self.get_pending_count()
+        time_since_flush = time.time() - self._metrics_last_flush
+        # Unhealthy if buffer hasn't flushed in 5x normal interval
+        is_healthy = time_since_flush < (self._metrics_flush_interval * 5)
+        return {
+            "is_healthy": is_healthy,
+            "pending_count": pending,
+            "last_flush": self._metrics_last_flush,
+            "time_since_flush": time_since_flush,
+            "max_buffer": self._metrics_max_buffer,
+            "db_path": str(self.db_path),
+        }
+
 
 class MetricsManagerMixin:
     """Mixin class for adding metrics functionality to P2POrchestrator.
@@ -316,3 +335,7 @@ class MetricsManagerMixin:
     def get_metrics_summary(self, hours: float = 24) -> dict[str, Any]:
         """Get metrics summary (delegates to MetricsManager)."""
         return self._metrics_manager.get_summary(hours)
+
+    def metrics_health_check(self) -> dict[str, Any]:
+        """Return health status for metrics subsystem (delegates to MetricsManager)."""
+        return self._metrics_manager.health_check()

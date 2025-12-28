@@ -1154,9 +1154,10 @@ class TestReverseSyncPullStrategy:
                         daemon._data_dir = temp_dir
 
                         # Mock env.is_coordinator to return False
+                        # Dec 28, 2025: env is now imported locally from app.config.env
                         mock_env = MagicMock()
                         mock_env.is_coordinator = False
-                        with patch("app.coordination.auto_sync_daemon.env", mock_env):
+                        with patch("app.config.env.env", mock_env):
                             result = await daemon._pull_from_cluster_nodes()
                             assert result == 0  # Should skip
         reset_auto_sync_daemon()
@@ -1165,11 +1166,13 @@ class TestReverseSyncPullStrategy:
     async def test_pull_from_cluster_nodes_no_sources(self, pull_daemon):
         """Test PULL when no sync sources available."""
         # Mock coordinator check to return True
+        # Dec 28, 2025: env is now imported locally from app.config.env
         mock_env = MagicMock()
         mock_env.is_coordinator = True
-        with patch("app.coordination.auto_sync_daemon.env", mock_env):
+        with patch("app.config.env.env", mock_env):
+            # Dec 28, 2025: get_sync_router is imported locally from sync_router
             with patch(
-                "app.coordination.auto_sync_daemon.get_sync_router"
+                "app.coordination.sync_router.get_sync_router"
             ) as mock_get_router:
                 mock_router = MagicMock()
                 mock_router.get_sync_sources.return_value = []
@@ -1189,11 +1192,13 @@ class TestReverseSyncPullStrategy:
         mock_source.node_id = "worker-1"
 
         # Mock coordinator check to return True
+        # Dec 28, 2025: env is now imported locally from app.config.env
         mock_env = MagicMock()
         mock_env.is_coordinator = True
-        with patch("app.coordination.auto_sync_daemon.env", mock_env):
+        with patch("app.config.env.env", mock_env):
+            # Dec 28, 2025: get_sync_router is imported locally from sync_router
             with patch(
-                "app.coordination.auto_sync_daemon.get_sync_router"
+                "app.coordination.sync_router.get_sync_router"
             ) as mock_get_router:
                 mock_router = MagicMock()
                 mock_router.get_sync_sources.return_value = [mock_source]
