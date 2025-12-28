@@ -406,13 +406,23 @@ class GameWriter:
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Context manager exit - cleanup on exit.
 
-        If an exception occurred and the game wasn't finalized, we log it.
+        If an exception occurred and the game wasn't finalized, we clean up
+        the placeholder game to prevent orphan records in the database.
         Returns False to propagate any exceptions.
         """
         if exc_type is not None and not self._finalized:
-            # Exception occurred - game will be left in incomplete state
-            # This is acceptable as incomplete games are filtered during export
-            pass
+            # Exception occurred - clean up the placeholder game
+            # This prevents orphan game records that have no move data
+            try:
+                self._db._delete_game(self._game_id)
+                logger.warning(
+                    f"Cleaned up incomplete game {self._game_id} after exception: {exc_val}"
+                )
+            except Exception as cleanup_error:
+                logger.error(
+                    f"Failed to clean up incomplete game {self._game_id}: {cleanup_error}"
+                )
+            self._finalized = True
         return False  # Don't suppress exceptions
 
     def add_move(
@@ -555,36 +565,36 @@ class GameWriter:
         self,
         final_state: GameState,
         metadata: dict | None = None,
-        *,
-        allow_empty: bool = False,
     ) -> None:
         """Finalize and close the game record.
 
         Args:
             final_state: The final game state
             metadata: Optional metadata dict
-            allow_empty: If False (default), raises error if no moves recorded.
-                         Set to True only for testing/debugging purposes.
 
         Raises:
-            RuntimeError: If already finalized or if no moves recorded (unless allow_empty=True)
+            RuntimeError: If already finalized
+            InvalidGameError: If no moves were recorded (games without moves are useless for training)
         """
+        from app.errors import InvalidGameError
+
         if self._finalized:
             raise RuntimeError("GameWriter already finalized")
 
-        # SAFEGUARD: Prevent creating games without move data
+        # CRITICAL SAFEGUARD: Prevent creating games without move data
         # This is the primary cause of useless databases in the training pipeline
-        if self._move_count == 0 and not allow_empty:
-            import logging
-            logger = logging.getLogger(__name__)
+        # We do NOT allow any bypass - games without moves must never be stored
+        if self._move_count == 0:
             logger.error(
                 f"Attempted to finalize game {self._game_id} with 0 moves. "
                 f"This would create an orphan game record. Aborting instead."
             )
             self.abort()
-            raise RuntimeError(
-                f"Cannot finalize game {self._game_id} with 0 moves. "
-                f"Use allow_empty=True to override (not recommended for production)."
+            raise InvalidGameError(
+                f"Cannot finalize game with 0 moves. "
+                f"Games without move data are useless for training and must not be stored.",
+                game_id=self._game_id,
+                move_count=0,
             )
 
         metadata = metadata or {}
@@ -1251,6 +1261,10 @@ class GameReplayDB:
     # Write Operations
     # =========================================================================
 
+    # Minimum moves required for a valid game
+    # This is enforced at the database level and cannot be bypassed
+    MIN_MOVES_REQUIRED = 1
+
     def store_game(
         self,
         game_id: str,
@@ -1262,8 +1276,6 @@ class GameReplayDB:
         store_history_entries: bool = True,
         compress_states: bool = False,
         snapshot_interval: int = 20,
-        *,
-        min_moves: int = 1,
     ) -> None:
         """Store a complete game with all associated data.
 
@@ -1278,17 +1290,22 @@ class GameReplayDB:
                                    full before/after state snapshots for each move
             compress_states: If True, gzip compress state JSON in history entries
             snapshot_interval: Store snapshots every N moves for NNUE training (default 20)
-            min_moves: Minimum moves required (default 1). Raises if len(moves) < min_moves.
 
         Raises:
-            ValueError: If moves list is too short (< min_moves)
+            InvalidGameError: If moves list is too short (< MIN_MOVES_REQUIRED)
         """
-        # SAFEGUARD: Prevent storing games without move data
+        from app.errors import InvalidGameError
+
+        # CRITICAL SAFEGUARD: Prevent storing games without move data
         # This is the primary cause of useless databases in the training pipeline
-        if len(moves) < min_moves:
-            raise ValueError(
-                f"Cannot store game {game_id}: only {len(moves)} moves provided, "
-                f"minimum is {min_moves}. Games without moves are useless for training."
+        # We do NOT allow any bypass - games without moves must never be stored
+        if len(moves) < self.MIN_MOVES_REQUIRED:
+            raise InvalidGameError(
+                f"Cannot store game: only {len(moves)} moves provided, "
+                f"minimum is {self.MIN_MOVES_REQUIRED}. "
+                f"Games without move data are useless for training and must not be stored.",
+                game_id=game_id,
+                move_count=len(moves),
             )
 
         # Import here to avoid circular imports
