@@ -1,6 +1,6 @@
 # Master Runbook Index - RingRift AI Service
 
-Centralized navigation for all 21 AI service operational runbooks.
+Centralized navigation for all 23 AI service operational runbooks.
 
 **Created**: December 28, 2025
 **Last Updated**: December 28, 2025
@@ -33,13 +33,15 @@ Is the cluster responding?
     │   └── Event system issues → COORDINATION_EVENT_SYSTEM.md
     │
     ├── Is training/parity failing?
+    │   ├── Training loop stalled → TRAINING_LOOP_STALLED.md
     │   ├── Parity gate stuck → PARITY_GATE_RESOLUTION.md
     │   ├── Parity mismatch → PARITY_MISMATCH_DEBUG.md
     │   └── Hexagonal-specific → HEXAGONAL_PARITY_BUG.md
     │
     ├── Are GPUs stuck?
     │   ├── GPU OOM errors → GPU_OOM_DEBUG.md
-    │   └── GPU processes stuck → CLUSTER_GPU_STUCK.md
+    │   ├── GPU processes stuck → CLUSTER_GPU_STUCK.md
+    │   └── Disk space issues → DISK_SPACE_MANAGEMENT.md
     │
     ├── Is cluster health low?
     │   ├── Health < 50% → CLUSTER_HEALTH_CRITICAL.md
@@ -90,16 +92,18 @@ Is the cluster responding?
 
 | Runbook                                                | Severity | When to Use                    |
 | ------------------------------------------------------ | -------- | ------------------------------ |
+| [TRAINING_LOOP_STALLED.md](TRAINING_LOOP_STALLED.md)   | High     | Training jobs not progressing  |
 | [PARITY_GATE_RESOLUTION.md](PARITY_GATE_RESOLUTION.md) | High     | Parity gate blocking training  |
 | [PARITY_MISMATCH_DEBUG.md](PARITY_MISMATCH_DEBUG.md)   | Critical | TS/Python game replay mismatch |
 | [HEXAGONAL_PARITY_BUG.md](HEXAGONAL_PARITY_BUG.md)     | Critical | Hexagonal board parity issues  |
 
 ### GPU & Resources
 
-| Runbook                                      | Severity | When to Use              |
-| -------------------------------------------- | -------- | ------------------------ |
-| [GPU_OOM_DEBUG.md](GPU_OOM_DEBUG.md)         | High     | GPU out of memory errors |
-| [CLUSTER_GPU_STUCK.md](CLUSTER_GPU_STUCK.md) | High     | GPU processes hanging    |
+| Runbook                                              | Severity | When to Use               |
+| ---------------------------------------------------- | -------- | ------------------------- |
+| [GPU_OOM_DEBUG.md](GPU_OOM_DEBUG.md)                 | High     | GPU out of memory errors  |
+| [CLUSTER_GPU_STUCK.md](CLUSTER_GPU_STUCK.md)         | High     | GPU processes hanging     |
+| [DISK_SPACE_MANAGEMENT.md](DISK_SPACE_MANAGEMENT.md) | High     | Disk full, cleanup needed |
 
 ### General Operations
 

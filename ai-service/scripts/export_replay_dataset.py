@@ -1691,6 +1691,12 @@ def main(argv: list[str] | None = None) -> int:
             feature_version=args.feature_version,
             policy_encoding="board_aware" if args.board_aware_encoding else "legacy_max_n",
             force=args.force_export,
+            # Quality filter params - critical for cache key uniqueness (Dec 28, 2025)
+            min_quality=args.min_quality,
+            require_completed=args.require_completed,
+            encoder_version=args.encoder_version,
+            include_heuristics=args.include_heuristics,
+            full_heuristics=args.full_heuristics,
         ):
             cache_info = cache.get_cache_info(
                 args.output,
@@ -1699,6 +1705,12 @@ def main(argv: list[str] | None = None) -> int:
                 history_length=args.history_length,
                 feature_version=args.feature_version,
                 policy_encoding="board_aware" if args.board_aware_encoding else "legacy_max_n",
+                # Quality filter params - critical for cache key uniqueness (Dec 28, 2025)
+                min_quality=args.min_quality,
+                require_completed=args.require_completed,
+                encoder_version=args.encoder_version,
+                include_heuristics=args.include_heuristics,
+                full_heuristics=args.full_heuristics,
             )
             samples = cache_info.get("samples_exported", "?") if cache_info else "?"
             print("[CACHE HIT] Skipping export - source DBs unchanged since last export")
@@ -1755,6 +1767,12 @@ def main(argv: list[str] | None = None) -> int:
             policy_encoding="board_aware" if args.board_aware_encoding else "legacy_max_n",
             samples_exported=samples_exported,
             games_exported=games_exported,
+            # Quality filter params - critical for cache key uniqueness (Dec 28, 2025)
+            min_quality=args.min_quality,
+            require_completed=args.require_completed,
+            encoder_version=args.encoder_version,
+            include_heuristics=args.include_heuristics,
+            full_heuristics=args.full_heuristics,
         )
         print(f"[CACHE] Recorded export: {samples_exported} samples")
 

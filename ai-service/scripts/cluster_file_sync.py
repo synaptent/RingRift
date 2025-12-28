@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Robust cluster file synchronization with multiple transport methods.
 
+.. note:: December 2025 - SSH Migration
+    This script uses direct subprocess.run for SSH operations (lines 206, 310, 546).
+    Consider migrating to the canonical SSH client for better error handling:
+        from app.core.ssh import get_ssh_client, SSHClient
+    See app/core/ssh.py for migration guide.
+
 This script provides reliable file transfer to Vast.ai cluster nodes using
 multiple fallback approaches to handle connection instability:
 

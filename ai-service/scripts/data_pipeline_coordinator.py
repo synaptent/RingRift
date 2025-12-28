@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Data Pipeline Coordinator - Automated data collection and training orchestration.
 
+.. note:: December 2025 - SSH Migration
+    This script uses direct subprocess.run for SSH operations (lines 165, 175, 182, 190, 226).
+    Consider migrating to the canonical SSH client for better error handling:
+        from app.core.ssh import get_ssh_client, SSHClient
+    See app/core/ssh.py for migration guide.
+
 This coordinator manages the complete data pipeline:
 1. Monitors Gumbel data generation across cluster nodes
 2. Collects completed data files to local storage

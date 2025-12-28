@@ -683,13 +683,14 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             logger.error(f"[ClusterWatchdog] Failed to activate {node.node_id}: {e}")
             return False
 
-    async def health_check(self) -> HealthCheckResult:
+    def health_check(self) -> HealthCheckResult:
         """Check if the daemon is healthy.
 
         Returns HealthCheckResult for protocol compliance.
         Used by DaemonManager for crash detection and auto-restart.
 
         Dec 2025: Fixed to return HealthCheckResult instead of bool.
+        Dec 2025: Converted from async to sync for DaemonManager compatibility.
         """
         is_healthy = True
         message = "Cluster watchdog daemon running"

@@ -2223,3 +2223,83 @@ Applied to `work_queue.py` and `cross_process_events.py` (Dec 27-28):
 | TrainingTriggerDaemon health_check  | ✅ Implemented  | Returns HealthCheckResult             |
 | Checkpoint format                   | ✅ Standardized | Uses \_versioning_metadata.config     |
 | Deprecated module archival          | ✅ Complete     | system_health_monitor.py is re-export |
+
+### S3 Backup Infrastructure (Dec 28, 2025)
+
+New coordinator-based S3 backup for cluster data redundancy:
+
+**Script**: `scripts/coordinator_s3_backup.py`
+
+```bash
+# Run once
+python scripts/coordinator_s3_backup.py
+
+# Run in daemon mode (hourly)
+python scripts/coordinator_s3_backup.py --daemon
+
+# Dry run
+python scripts/coordinator_s3_backup.py --dry-run
+```
+
+**Architecture**:
+
+```
+Cluster Nodes ---(rsync)---> Coordinator (OWC Drive)
+Coordinator ----(aws s3)---> S3 Bucket (ringrift-models-20251214)
+```
+
+**S3 Structure**:
+
+- `consolidated/models/` - Canonical model checkpoints
+- `consolidated/databases/` - Game databases (canonical\_\*.db)
+- `consolidated/training/` - NPZ training files
+- `consolidated/manifest.json` - Backup metadata
+
+**Key Files**:
+
+- `scripts/coordinator_s3_backup.py` - Main backup script
+- `app/coordination/s3_node_sync_daemon.py` - Node-level S3 sync daemon
+
+### Data Sync to OWC Drive (Dec 28, 2025)
+
+For syncing data from termination candidates to the coordinator's OWC drive:
+
+```bash
+# From mac-studio (where OWC is mounted):
+rsync -avz --progress -e "ssh -i ~/.ssh/id_cluster" \
+    root@<node-ip>:/root/ringrift/ai-service/data/games/ \
+    /Volumes/RingRift-Data/cluster_games/<node-name>/
+```
+
+**OWC Drive Path**: `/Volumes/RingRift-Data` (7.3TB, mounted on mac-studio)
+
+**Backup Directory Structure**:
+
+- `/Volumes/RingRift-Data/cluster_games/<node-name>/` - Per-node game backups
+- `/Volumes/RingRift-Data/canonical_models/` - Model checkpoints
+- `/Volumes/RingRift-Data/canonical_data/` - Training NPZ files
+- `/Volumes/RingRift-Data/selfplay_repository/` - Raw selfplay data
+
+### Cluster Node Termination Workflow (Dec 28, 2025)
+
+Before terminating cloud instances:
+
+1. **Verify data synced to OWC**:
+
+   ```bash
+   ssh armand@100.107.168.125 \
+       "du -sh /Volumes/RingRift-Data/cluster_games/<node-name>/"
+   ```
+
+2. **Verify S3 backup exists**:
+
+   ```bash
+   aws s3 ls s3://ringrift-models-20251214/consolidated/ --recursive
+   ```
+
+3. **Terminate instance** only after both verifications pass
+
+**Node Termination Candidates** (identified Dec 28, 2025 for cost optimization):
+
+- Low VRAM (<16GB) Vast.ai nodes with no unique data
+- Redundant nodes when GH200 capacity is available

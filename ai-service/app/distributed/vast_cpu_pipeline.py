@@ -553,6 +553,42 @@ class VastCpuPipelineDaemon:
         except Exception as e:
             logger.debug(f"Failed to emit job completed event: {e}")
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the VastCpuPipelineDaemon.
+
+        Returns:
+            HealthCheckResult with daemon health status
+
+        Dec 2025: Added for DaemonManager integration.
+        """
+        try:
+            from app.coordination.protocols import HealthCheckResult
+        except ImportError:
+            # Return dict for backward compatibility
+            return {
+                "healthy": self._running,
+                "message": "VastCpuPipelineDaemon running" if self._running else "VastCpuPipelineDaemon stopped",
+                "details": {"active_jobs": len(self._active_jobs)},
+            }
+
+        details = {
+            "running": self._running,
+            "active_jobs": len(self._active_jobs),
+            "job_history_count": len(self._job_history),
+            "max_concurrent_jobs": self.config.max_concurrent_jobs,
+            "poll_interval_seconds": self.config.poll_interval_seconds,
+        }
+
+        # Add active job details
+        if self._active_jobs:
+            details["active_job_ids"] = list(self._active_jobs.keys())
+
+        return HealthCheckResult(
+            healthy=self._running,
+            message="VastCpuPipelineDaemon running" if self._running else "VastCpuPipelineDaemon stopped",
+            details=details,
+        )
+
 
 async def run() -> None:
     """Run the daemon (entry point for DaemonManager)."""

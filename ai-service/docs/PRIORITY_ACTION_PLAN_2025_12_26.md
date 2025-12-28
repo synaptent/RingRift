@@ -1,5 +1,9 @@
 # RingRift AI Training System - Priority Action Plan
 
+> **⚠️ HISTORICAL DOCUMENT**: This action plan was created on December 26, 2025.
+> Many P0/P1 items have been addressed in subsequent work (Dec 27-28, 2025).
+> See `DEPRECATION_TIMELINE.md` and `CLAUDE.md` for current status.
+
 **Date**: December 26, 2025
 **Assessment Summary**: Comprehensive review of feedback loops, cluster utilization, data flow, and code quality.
 

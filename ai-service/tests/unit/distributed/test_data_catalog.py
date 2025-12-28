@@ -816,14 +816,20 @@ class TestGetNPZStats:
         """Test NPZ stats with files."""
         import numpy as np
 
-        training_dir = tmp_path / "training"
+        # Use completely separate paths to avoid overlap
+        data_dir = tmp_path / "data"
+        games_dir = tmp_path / "separate_games"
+        data_dir.mkdir()
+        games_dir.mkdir()
+
+        training_dir = data_dir / "training"
         training_dir.mkdir()
 
         np.savez(training_dir / "hex8_2p.npz", policy=np.zeros(100))
         np.savez(training_dir / "hex8_4p.npz", policy=np.zeros(200))
 
-        with patch("app.distributed.data_catalog.DATA_DIR", tmp_path):
-            with patch("app.distributed.data_catalog.GAMES_DIR", tmp_path / "games"):
+        with patch("app.distributed.data_catalog.DATA_DIR", data_dir):
+            with patch("app.distributed.data_catalog.GAMES_DIR", games_dir):
                 stats = catalog.get_npz_stats()
 
         assert stats["total_files"] == 2

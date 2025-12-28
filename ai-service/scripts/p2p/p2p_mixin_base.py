@@ -200,6 +200,80 @@ class P2PMixinBase:
             if conn:
                 conn.close()
 
+    def _ensure_table(
+        self,
+        table_name: str,
+        schema_sql: str,
+        index_sql: str | None = None,
+        timeout: float = 5.0,
+    ) -> bool:
+        """Ensure a table exists, creating it if necessary.
+
+        Consolidates the duplicate CREATE TABLE IF NOT EXISTS pattern found
+        across metrics_manager.py, state_manager.py, and other modules.
+
+        Args:
+            table_name: Name of the table (for logging)
+            schema_sql: Full CREATE TABLE IF NOT EXISTS statement
+            index_sql: Optional CREATE INDEX IF NOT EXISTS statement
+            timeout: SQLite connection timeout in seconds
+
+        Returns:
+            True if table was created or already exists, False on error
+
+        Example:
+            created = self._ensure_table(
+                "metrics_history",
+                '''
+                CREATE TABLE IF NOT EXISTS metrics_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    metric_type TEXT NOT NULL,
+                    value REAL NOT NULL
+                )
+                ''',
+                index_sql="CREATE INDEX IF NOT EXISTS idx_metrics_time ON metrics_history(timestamp DESC)",
+            )
+        """
+        with self._db_connection(timeout=timeout) as conn:
+            if conn is None:
+                return False
+            try:
+                cursor = conn.cursor()
+                cursor.execute(schema_sql)
+                if index_sql:
+                    cursor.execute(index_sql)
+                conn.commit()
+                return True
+            except sqlite3.OperationalError as e:
+                # Table already exists or schema issue
+                verbose = getattr(self, "verbose", False)
+                if verbose:
+                    logger.debug(f"[{self.MIXIN_TYPE}] Table {table_name} setup: {e}")
+                return "already exists" in str(e).lower() or True
+            except sqlite3.Error as e:
+                logger.warning(f"[{self.MIXIN_TYPE}] Failed to create table {table_name}: {e}")
+                return False
+
+    def _table_exists(self, table_name: str, timeout: float = 5.0) -> bool:
+        """Check if a table exists in the database.
+
+        Args:
+            table_name: Name of the table to check
+            timeout: SQLite connection timeout
+
+        Returns:
+            True if table exists, False otherwise
+        """
+        result = self._execute_db_query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+            fetch=True,
+            commit=False,
+            timeout=timeout,
+        )
+        return bool(result)
+
     # =========================================================================
     # State Initialization Helpers
     # =========================================================================

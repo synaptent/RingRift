@@ -3,6 +3,12 @@
 Comprehensive cluster node benchmarking.
 
 Tests network speed, disk I/O, GPU performance, and latency across all providers.
+
+.. note:: December 2025 - SSH Migration
+    This script uses direct subprocess.run for SSH operations (line 147).
+    Consider migrating to the canonical SSH client for better error handling:
+        from app.core.ssh import get_ssh_client, SSHClient
+    See app/core/ssh.py for migration guide.
 """
 
 import subprocess

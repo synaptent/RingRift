@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Spawn long-running selfplay on all GPU nodes for 10+ hour data generation.
 
+.. note:: December 2025 - SSH Migration
+    This script uses direct subprocess.run for SSH operations (line 108).
+    Consider migrating to the canonical SSH client for better error handling:
+        from app.core.ssh import get_ssh_client, SSHClient
+    See app/core/ssh.py for migration guide.
+
 Prioritizes data-starved configurations for maximum training data generation.
 
 Usage:

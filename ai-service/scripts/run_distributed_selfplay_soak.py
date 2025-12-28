@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 """Distributed self-play soak runner for RingRift.
 
+.. note:: December 2025 - SSH Migration
+    This script uses direct subprocess.run for SSH operations (lines 438, 458, 571, 913).
+    Consider migrating to the canonical SSH client for better error handling:
+        from app.core.ssh import get_ssh_client, SSHClient
+    See app/core/ssh.py for migration guide.
+
 Runs mixed-AI self-play across multiple machines (local + remote SSH hosts)
 for all board types and player counts. Records games to SQLite databases
 for subsequent parity validation.

@@ -1206,6 +1206,47 @@ class PromotionController:
                 logger.error(f"Rollback failed: {e}")
         return False
 
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the PromotionController.
+
+        Returns:
+            HealthCheckResult with controller health status
+
+        Dec 2025: Added for DaemonManager integration.
+        """
+        try:
+            from app.coordination.protocols import HealthCheckResult
+        except ImportError:
+            # Return dict for backward compatibility
+            return {
+                "healthy": True,
+                "message": "PromotionController operational",
+                "details": {"event_subscribed": self._event_subscribed},
+            }
+
+        details = {
+            "event_subscribed": self._event_subscribed,
+            "pending_checks": len(self._pending_promotion_checks),
+            "elo_service_available": self._elo_service is not None,
+            "model_registry_available": self._model_registry is not None,
+            "lifecycle_manager_available": self._lifecycle_manager is not None,
+            "signal_computer_available": self._signal_computer is not None,
+        }
+
+        # Check if event subscription failed (should be subscribed)
+        if HAS_EVENT_BUS and not self._event_subscribed:
+            return HealthCheckResult(
+                healthy=False,
+                message="Event subscription failed",
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            message="PromotionController operational",
+            details=details,
+        )
+
 
 class GraduatedResponseAction(str, Enum):
     """Graduated response actions for rollback scenarios."""

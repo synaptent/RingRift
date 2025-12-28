@@ -1987,16 +1987,14 @@ class FeedbackLoopController:
                     from app.coordination.data_events import DataEventType, get_event_bus
 
                     bus = get_event_bus()
-                    _safe_create_task(
-                        bus.emit(
-                            event_type=DataEventType.CURRICULUM_REBALANCED,
-                            payload={
-                                "config_key": config_key,
-                                "weight": new_weight,
-                                "reason": f"selfplay_quality_{quality_score:.2f}",
-                            },
-                        ),
-                        f"emit_curriculum_from_selfplay({config_key})",
+                    # bus.emit() is synchronous - no task wrapper needed (Dec 28, 2025 fix)
+                    bus.emit(
+                        event_type=DataEventType.CURRICULUM_REBALANCED,
+                        payload={
+                            "config_key": config_key,
+                            "weight": new_weight,
+                            "reason": f"selfplay_quality_{quality_score:.2f}",
+                        },
                     )
                 except (ImportError, AttributeError):
                     pass  # Event system not available

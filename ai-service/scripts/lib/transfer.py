@@ -1,5 +1,11 @@
 """File transfer utilities for scripts.
 
+.. note:: December 2025 - SSH Migration
+    This module uses direct subprocess.run for SSH operations (line 1382).
+    Consider migrating to the canonical SSH client for better error handling:
+        from app.core.ssh import get_ssh_client, SSHClient
+    See app/core/ssh.py for migration guide.
+
 Provides robust file transfer operations:
 - SCP with retries and timeouts
 - Rsync with resume support
