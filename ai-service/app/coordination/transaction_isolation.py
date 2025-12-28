@@ -22,6 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
+from app.coordination.database_sync_manager import atomic_copy
 from app.coordination.singleton_mixin import SingletonMixin
 from app.utils.checksum_utils import compute_file_checksum
 
