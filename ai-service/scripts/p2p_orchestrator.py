@@ -27399,18 +27399,19 @@ print(json.dumps({{
             elif job_type == JobType.GUMBEL_SELFPLAY:
                 # High-quality Gumbel MCTS selfplay with NN policy for self-improvement training
                 # Uses generate_gumbel_selfplay.py with proper MCTS simulation budget
-                # AlphaZero used 800 sims - we match this for maximum move quality
+                # Budget tiers: THROUGHPUT(64), STANDARD(800), QUALITY(800), ULTIMATE(1600), MASTER(3200)
 
-                # Games and simulation budget based on board type
-                # 800 sims = AlphaZero standard for high-quality training data
-                num_games = 20  # Reduced for 800-sim budget
-                simulation_budget = 800  # AlphaZero standard
+                # Use passed budget if specified, otherwise default to STANDARD (800)
+                # This allows callers to request faster THROUGHPUT (64) for bootstrap phases
+                effective_budget = simulation_budget if simulation_budget is not None else 800
+
+                # Games based on board type and budget
+                # Lower budget = can run more games in same time
+                num_games = 20 if effective_budget >= 800 else 100  # More games for lower budget
                 if board_type == "square19":
-                    num_games = 10  # Fewer games for large board
-                    simulation_budget = 800
+                    num_games = 10 if effective_budget >= 800 else 50  # Large board
                 elif board_type in ("hex", "hexagonal", "hex8"):
-                    num_games = 20
-                    simulation_budget = 800
+                    num_games = 20 if effective_budget >= 800 else 100
 
                 output_dir = Path(
                     self.ringrift_path,
@@ -27439,7 +27440,7 @@ print(json.dumps({{
                     "--board", board_arg,
                     "--num-players", str(num_players),
                     "--num-games", str(num_games),
-                    "--simulation-budget", str(simulation_budget),
+                    "--simulation-budget", str(effective_budget),
                     "--output-dir", str(output_dir),
                     "--db", str(output_dir / "games.db"),
                     "--seed", str(int(time.time() * 1000) % 2**31),

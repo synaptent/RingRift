@@ -255,14 +255,25 @@ class TrainingFreshnessChecker:
                 # Get game count
                 game_count = self._get_db_game_count(db_path)
 
+                # P1.6 Dec 2025: Get content-based age from newest game timestamp
+                content_age_hours = None
+                if self.config.validate_content_age:
+                    newest_game_time = self._get_db_newest_game_time(db_path)
+                    if newest_game_time:
+                        content_age_hours = (now - newest_game_time) / 3600
+
+                # Use content age for staleness check if available and enabled
+                effective_age = content_age_hours if content_age_hours is not None else age_hours
+
                 sources.append(DataSourceInfo(
                     path=db_path,
                     age_hours=age_hours,
                     size_bytes=stat.st_size,
                     game_count=game_count,
-                    is_stale=age_hours > self.config.max_age_hours,
+                    is_stale=effective_age > self.config.max_age_hours,
                     board_type=board_type,
                     num_players=num_players,
+                    content_age_hours=content_age_hours,
                 ))
 
         return sources
