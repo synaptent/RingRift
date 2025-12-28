@@ -21,6 +21,7 @@ from app.coordination.daemon_manager import (
     DaemonManagerConfig,
     DaemonState,
     DaemonType,
+    RESTART_STATE_FILE,
     get_daemon_manager,
     reset_daemon_manager,
 )
@@ -964,6 +965,8 @@ class TestAutoRestart:
 
     def setup_method(self):
         """Reset singleton before each test."""
+        # Clear persisted restart counts file to ensure clean state
+        RESTART_STATE_FILE.unlink(missing_ok=True)
         DaemonManager.reset_instance()
         reset_daemon_manager()
 
