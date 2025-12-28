@@ -1,6 +1,7 @@
 """Event subscription and handler mixin for AutoSyncDaemon.
 
 December 2025: Extracted from auto_sync_daemon.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from SyncMixinBase for common functionality.
 
 This mixin provides:
 - Event subscription infrastructure (_subscribe_to_events)
@@ -17,6 +18,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from app.core.async_context import fire_and_forget
+from app.coordination.sync_mixin_base import SyncMixinBase
 
 if TYPE_CHECKING:
     from app.coordination.sync_strategies import AutoSyncConfig, SyncStats
@@ -33,35 +35,25 @@ except ImportError:
     resilient_handler = None
 
 
-class SyncEventMixin:
+class SyncEventMixin(SyncMixinBase):
     """Mixin providing event subscription and handler methods for AutoSyncDaemon.
 
-    Expected attributes from main class:
-    - config: AutoSyncConfig
-    - node_id: str
+    Inherits from SyncMixinBase for common error handling and logging utilities.
+
+    Additional expected attributes from main class:
     - _subscribed: bool
     - _urgent_sync_pending: dict[str, float]
-    - _events_processed: int
-    - _errors_count: int
-    - _last_error: str
     - _cluster_manifest: ClusterManifest | None
-    - _running: bool
 
     Expected methods from main class:
     - _sync_all() -> None
     - _sync_to_peer(node_id: str) -> bool
     """
 
-    # Type hints for attributes expected from main class
-    config: AutoSyncConfig
-    node_id: str
+    # Additional type hints specific to this mixin
     _subscribed: bool
     _urgent_sync_pending: dict[str, float]
-    _events_processed: int
-    _errors_count: int
-    _last_error: str
     _cluster_manifest: ClusterManifest | None
-    _running: bool
 
     def _wrap_handler(self, handler):
         """Wrap handler with resilient_handler for fault tolerance (December 2025).
@@ -527,11 +519,5 @@ class SyncEventMixin:
         except (RuntimeError, OSError, ConnectionError) as e:
             logger.error(f"[AutoSyncDaemon] Urgent sync failed for {config_key}: {e}")
 
-    # Abstract methods that must be implemented by the main class
-    async def _sync_all(self) -> None:
-        """Sync all data - must be implemented by main class."""
-        raise NotImplementedError("_sync_all must be implemented by main class")
-
-    async def _sync_to_peer(self, node_id: str) -> bool:
-        """Sync to a specific peer - must be implemented by main class."""
-        raise NotImplementedError("_sync_to_peer must be implemented by main class")
+    # Note: _sync_all() and _sync_to_peer() are expected from main class
+    # _emit_sync_failure() and _emit_sync_stalled() are inherited from SyncMixinBase

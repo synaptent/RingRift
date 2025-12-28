@@ -144,8 +144,14 @@ class CrossProcessEventQueue:
     - Thread-safe with connection pooling
     """
 
-    def __init__(self, db_path: Path | None = None, retention_hours: int = DEFAULT_RETENTION_HOURS):
-        self.db_path = db_path or DEFAULT_EVENT_DB
+    def __init__(self, db_path: Path | str | None = None, retention_hours: int = DEFAULT_RETENTION_HOURS):
+        # December 2025: Always convert to Path for consistency
+        if db_path is None:
+            self.db_path = DEFAULT_EVENT_DB
+        elif isinstance(db_path, str):
+            self.db_path = Path(db_path)
+        else:
+            self.db_path = db_path
         self.retention_hours = retention_hours
         self._local = threading.local()
         # December 2025: Lazy initialization for readonly filesystem support
@@ -585,6 +591,66 @@ class CrossProcessEventQueue:
             "active_subscribers": active_subscribers,
             "retention_hours": self.retention_hours,
         }
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the cross-process event queue.
+
+        December 2025: Added for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult with queue health status
+        """
+        try:
+            from app.coordination.contracts import HealthCheckResult
+        except ImportError:
+            # Fallback if contracts not available
+            from dataclasses import dataclass, field
+            from typing import Any
+            import time as time_module
+
+            @dataclass
+            class HealthCheckResult:
+                healthy: bool
+                message: str = ""
+                timestamp: float = field(default_factory=time_module.time)
+                details: dict[str, Any] = field(default_factory=dict)
+
+        try:
+            # Try to get connection and run a simple query
+            conn = self._get_connection()
+            cursor = conn.execute("SELECT COUNT(*) FROM events")
+            total_events = cursor.fetchone()[0]
+
+            # Get active subscriber count
+            subscriber_cutoff = time.time() - SUBSCRIBER_TIMEOUT_SECONDS
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM subscribers WHERE last_poll_at > ?",
+                (subscriber_cutoff,)
+            )
+            active_subscribers = cursor.fetchone()[0]
+
+            return HealthCheckResult(
+                healthy=True,
+                message="Cross-process event queue operational",
+                details={
+                    "total_events": total_events,
+                    "active_subscribers": active_subscribers,
+                    "db_path": str(self.db_path),
+                    "retention_hours": self.retention_hours,
+                },
+            )
+        except sqlite3.Error as e:
+            return HealthCheckResult(
+                healthy=False,
+                message=f"Database error: {e}",
+                details={"db_path": str(self.db_path)},
+            )
+        except Exception as e:
+            return HealthCheckResult(
+                healthy=False,
+                message=f"Health check failed: {e}",
+                details={"error_type": type(e).__name__},
+            )
 
     def close(self) -> None:
         """Close the database connection."""

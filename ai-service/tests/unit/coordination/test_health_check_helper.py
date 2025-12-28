@@ -373,6 +373,221 @@ class TestBuildDetails:
         assert details["dict_val"] == {"nested": "dict"}
 
 
+class TestCheckHandlerFailures:
+    """Tests for HealthCheckHelper.check_handler_failures()."""
+
+    def test_no_handlers_is_healthy(self):
+        """No handlers should be healthy."""
+        is_healthy, message = HealthCheckHelper.check_handler_failures(
+            failed_handlers=0, total_handlers=0
+        )
+        assert is_healthy is True
+        assert "No handlers registered" in message
+
+    def test_no_failures_is_healthy(self):
+        """No failures should be healthy."""
+        is_healthy, message = HealthCheckHelper.check_handler_failures(
+            failed_handlers=0, total_handlers=10
+        )
+        assert is_healthy is True
+        assert "0.0%" in message or "0%" in message
+
+    def test_low_failure_rate_is_healthy(self):
+        """Low failure rate should be healthy."""
+        is_healthy, message = HealthCheckHelper.check_handler_failures(
+            failed_handlers=1, total_handlers=10, threshold=0.2
+        )
+        assert is_healthy is True
+        assert "10%" in message
+
+    def test_high_failure_rate_is_unhealthy(self):
+        """High failure rate should be unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_handler_failures(
+            failed_handlers=5, total_handlers=10, threshold=0.2
+        )
+        assert is_healthy is False
+        assert "too high" in message.lower()
+
+    def test_threshold_boundary(self):
+        """At threshold should be unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_handler_failures(
+            failed_handlers=2, total_handlers=10, threshold=0.2
+        )
+        assert is_healthy is False
+
+
+class TestCheckSubscriptionHealth:
+    """Tests for HealthCheckHelper.check_subscription_health()."""
+
+    def test_not_subscribed_is_unhealthy(self):
+        """Not subscribed should be unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_subscription_health(
+            subscribed=False
+        )
+        assert is_healthy is False
+        assert "not registered" in message
+
+    def test_subscribed_with_no_min_is_healthy(self):
+        """Subscribed with no minimum requirement is healthy."""
+        is_healthy, message = HealthCheckHelper.check_subscription_health(
+            subscribed=True, events_received=0, min_events=0
+        )
+        assert is_healthy is True
+        assert "Subscribed" in message
+
+    def test_subscribed_below_min_is_unhealthy(self):
+        """Subscribed but below minimum events is unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_subscription_health(
+            subscribed=True, events_received=5, min_events=10
+        )
+        assert is_healthy is False
+        assert "Too few events" in message
+
+    def test_subscribed_above_min_is_healthy(self):
+        """Subscribed with enough events is healthy."""
+        is_healthy, message = HealthCheckHelper.check_subscription_health(
+            subscribed=True, events_received=15, min_events=10
+        )
+        assert is_healthy is True
+
+
+class TestCheckDataStaleness:
+    """Tests for HealthCheckHelper.check_data_staleness()."""
+
+    def test_no_sync_recorded_is_healthy(self):
+        """No sync recorded yet is healthy."""
+        is_healthy, message = HealthCheckHelper.check_data_staleness(last_sync=0)
+        assert is_healthy is True
+        assert "No sync recorded" in message
+
+    def test_recent_sync_is_healthy(self):
+        """Recent sync is healthy."""
+        last_sync = time.time() - 300  # 5 minutes ago
+        is_healthy, message = HealthCheckHelper.check_data_staleness(
+            last_sync=last_sync, max_age_seconds=3600
+        )
+        assert is_healthy is True
+        assert "fresh" in message.lower()
+
+    def test_stale_sync_is_unhealthy(self):
+        """Stale sync is unhealthy."""
+        last_sync = time.time() - 7200  # 2 hours ago
+        is_healthy, message = HealthCheckHelper.check_data_staleness(
+            last_sync=last_sync, max_age_seconds=3600
+        )
+        assert is_healthy is False
+        assert "stale" in message.lower()
+
+
+class TestCheckPendingItems:
+    """Tests for HealthCheckHelper.check_pending_items()."""
+
+    def test_no_pending_is_healthy(self):
+        """No pending items is healthy."""
+        is_healthy, message = HealthCheckHelper.check_pending_items(
+            pending_count=0, max_pending=100
+        )
+        assert is_healthy is True
+        assert "0%" in message or "0/" in message
+
+    def test_some_pending_is_healthy(self):
+        """Some pending items within limit is healthy."""
+        is_healthy, message = HealthCheckHelper.check_pending_items(
+            pending_count=50, max_pending=100
+        )
+        assert is_healthy is True
+        assert "50%" in message
+
+    def test_too_many_pending_is_unhealthy(self):
+        """Too many pending items is unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_pending_items(
+            pending_count=150, max_pending=100
+        )
+        assert is_healthy is False
+        assert "Too many" in message
+
+    def test_no_limit_is_always_healthy(self):
+        """No limit (0) is always healthy."""
+        is_healthy, message = HealthCheckHelper.check_pending_items(
+            pending_count=10000, max_pending=0
+        )
+        assert is_healthy is True
+        assert "no limit" in message
+
+
+class TestCheckDependencyHealth:
+    """Tests for HealthCheckHelper.check_dependency_health()."""
+
+    def test_no_dependencies_is_healthy(self):
+        """No dependencies is healthy."""
+        is_healthy, message = HealthCheckHelper.check_dependency_health(
+            dependencies={}
+        )
+        assert is_healthy is True
+        assert "No dependencies" in message
+
+    def test_all_healthy_is_healthy(self):
+        """All healthy dependencies is healthy."""
+        is_healthy, message = HealthCheckHelper.check_dependency_health(
+            dependencies={"db": True, "cache": True, "api": True}
+        )
+        assert is_healthy is True
+        assert "3 dependencies healthy" in message
+
+    def test_some_unhealthy_is_unhealthy(self):
+        """Some unhealthy dependencies is unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_dependency_health(
+            dependencies={"db": True, "cache": False, "api": True}
+        )
+        assert is_healthy is False
+        assert "cache" in message
+        assert "2/3" in message
+
+    def test_all_unhealthy(self):
+        """All unhealthy dependencies is unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_dependency_health(
+            dependencies={"db": False, "cache": False}
+        )
+        assert is_healthy is False
+        assert "db" in message
+        assert "cache" in message
+
+
+class TestCheckMemoryUsage:
+    """Tests for HealthCheckHelper.check_memory_usage()."""
+
+    def test_low_memory_is_healthy(self):
+        """Low memory usage is healthy."""
+        is_healthy, message = HealthCheckHelper.check_memory_usage(
+            current_mb=256, threshold_mb=1024
+        )
+        assert is_healthy is True
+        assert "25%" in message
+
+    def test_high_memory_is_unhealthy(self):
+        """High memory usage is unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_memory_usage(
+            current_mb=1500, threshold_mb=1024
+        )
+        assert is_healthy is False
+        assert "too high" in message.lower()
+
+    def test_at_threshold_is_unhealthy(self):
+        """At threshold is unhealthy."""
+        is_healthy, message = HealthCheckHelper.check_memory_usage(
+            current_mb=1024, threshold_mb=1024
+        )
+        assert is_healthy is False
+
+    def test_no_limit_is_always_healthy(self):
+        """No limit (0) is always healthy."""
+        is_healthy, message = HealthCheckHelper.check_memory_usage(
+            current_mb=10000, threshold_mb=0
+        )
+        assert is_healthy is True
+        assert "no limit" in message
+
+
 class TestIntegration:
     """Integration tests for typical health check patterns."""
 
@@ -417,3 +632,41 @@ class TestIntegration:
         assert "60" in msg
         assert "100" in msg
         assert "too high" in msg.lower() or "failed" in msg.lower()
+
+    def test_full_health_check_with_new_methods(self):
+        """Test combining new helper methods in a health check."""
+        # Check handler failures
+        is_healthy, _ = HealthCheckHelper.check_handler_failures(
+            failed_handlers=1, total_handlers=10, threshold=0.2
+        )
+        assert is_healthy is True
+
+        # Check subscriptions
+        is_healthy, _ = HealthCheckHelper.check_subscription_health(
+            subscribed=True, events_received=50, min_events=10
+        )
+        assert is_healthy is True
+
+        # Check data staleness
+        is_healthy, _ = HealthCheckHelper.check_data_staleness(
+            last_sync=time.time() - 300, max_age_seconds=3600
+        )
+        assert is_healthy is True
+
+        # Check pending items
+        is_healthy, _ = HealthCheckHelper.check_pending_items(
+            pending_count=25, max_pending=100
+        )
+        assert is_healthy is True
+
+        # Check dependencies
+        is_healthy, _ = HealthCheckHelper.check_dependency_health(
+            dependencies={"db": True, "cache": True}
+        )
+        assert is_healthy is True
+
+        # Check memory
+        is_healthy, _ = HealthCheckHelper.check_memory_usage(
+            current_mb=512, threshold_mb=1024
+        )
+        assert is_healthy is True

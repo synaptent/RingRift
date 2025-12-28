@@ -738,6 +738,7 @@ hosts:
   # New Nebius H100 provisioned Dec 26, 2025 (80GB VRAM!)
   nebius-h100-1:
     ssh_host: 89.169.111.139
+    tailscale_ip: 100.106.19.6
     ssh_port: 22
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
@@ -754,12 +755,10 @@ hosts:
     p2p_enabled: true
     note: H100 80GB for training
 
-  # Nebius H100 #2 - Internal IP only, Tailscale requires re-auth
-  # Dec 28, 2025: Tailscale IP 100.106.19.6 exists but requires browser auth
-  # To restore: visit https://login.tailscale.com/a/l1503db5b0136d7 and re-auth
+  # Nebius H100 #2 - Internal IP only, no public or Tailscale access
+  # Dec 28, 2025: This node has no Tailscale registration and ProxyJump fails
   nebius-h100-2:
     ssh_host: 10.0.0.8
-    tailscale_ip: 100.106.19.6
     ssh_port: 22
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
@@ -770,12 +769,12 @@ hosts:
     gpu: H100 SXM
     gpu_vram_gb: 80
     role: gpu_training_primary
-    # Dec 28, 2025: Retired - internal IP, ProxyJump fails, Tailscale needs re-auth
+    # Dec 28, 2025: Retired - internal IP only, no route to host
     status: retired
     nebius_id: computeinstance-e00xsba9efvkpvk8wy
     region: eu-north1
     p2p_enabled: false
-    note: H100 80GB - needs Tailscale re-auth to restore
+    note: H100 80GB - RETIRED (internal IP, no Tailscale, ProxyJump fails)
 
   # Nebius H100 #3 - 500GB storage, H100 80GB
   # Provisioned Dec 26, 2025 to replace deleted nodes

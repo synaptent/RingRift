@@ -116,9 +116,10 @@ from .consensus_mixin import ConsensusMixin
 from .handlers.swim import SwimHandlersMixin
 from .handlers.raft import RaftHandlersMixin
 
-# Re-export gossip protocol (Dec 26, 2025 - Phase 3)
-from .gossip_metrics import GossipMetricsMixin
+# Re-export gossip protocol (Dec 28, 2025 - GossipMetricsMixin merged into GossipProtocolMixin)
 from .gossip_protocol import GossipProtocolMixin
+# Backward-compat alias: GossipMetricsMixin is now part of GossipProtocolMixin
+GossipMetricsMixin = GossipProtocolMixin  # Deprecated: use GossipProtocolMixin directly
 
 # Re-export client utilities
 from .client import (

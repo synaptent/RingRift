@@ -114,6 +114,10 @@ class MockWorkQueue:
     def get_history(self, limit=50, status_filter=None):
         return self._history[:limit]
 
+    def get_backpressure_status(self):
+        """Return backpressure status for testing."""
+        return {"active": False, "reason": None, "threshold": 100}
+
 
 class MockQueuePopulator:
     """Mock queue populator for testing."""

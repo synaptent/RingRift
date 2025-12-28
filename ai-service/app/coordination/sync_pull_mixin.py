@@ -1,6 +1,7 @@
 """PULL strategy operations mixin for AutoSyncDaemon.
 
 December 2025: Extracted from auto_sync_daemon.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from SyncMixinBase for common functionality.
 
 This mixin provides:
 - Pull-based sync from cluster nodes to coordinator
@@ -20,6 +21,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.sync_mixin_base import SyncMixinBase
+
 if TYPE_CHECKING:
     from app.coordination.sync_strategies import SyncStats
     from app.distributed.circuit_breaker import CircuitBreaker
@@ -27,22 +30,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SyncPullMixin:
+class SyncPullMixin(SyncMixinBase):
     """Mixin providing PULL strategy operations for AutoSyncDaemon.
+
+    Inherits from SyncMixinBase for common error handling and logging utilities.
 
     The PULL strategy is used for coordinator recovery - pulling data FROM
     cluster nodes TO the coordinator, which is the reverse of normal sync.
-
-    Expected attributes from main class:
-    - node_id: str
-    - _stats: SyncStats
-    - _circuit_breaker: CircuitBreaker | None
     """
 
-    # Type hints for attributes expected from main class
-    node_id: str
-    _stats: SyncStats
-    _circuit_breaker: CircuitBreaker | None
+    # Note: All common attributes (node_id, _stats, _circuit_breaker) are
+    # inherited from SyncMixinBase
 
     async def _pull_from_cluster_nodes(self) -> int:
         """Pull data FROM cluster nodes TO coordinator (reverse sync).
@@ -574,7 +572,5 @@ class SyncPullMixin:
         except ImportError:
             pass  # Events not available
 
-    # Abstract method that must be implemented by the main class
-    def _validate_database_completeness(self, db_path: Path) -> tuple[bool, str]:
-        """Validate database completeness - must be implemented by main class."""
-        raise NotImplementedError("_validate_database_completeness must be implemented by main class")
+    # Note: _validate_database_completeness() is expected from main class
+    # _emit_sync_failure() and _emit_sync_stalled() are inherited from SyncMixinBase

@@ -1,6 +1,7 @@
 """Ephemeral host and WAL handling mixin for AutoSyncDaemon.
 
 December 2025: Extracted from auto_sync_daemon.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from SyncMixinBase for common functionality.
 
 This mixin provides:
 - Write-ahead log (WAL) initialization and management
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.core.async_context import fire_and_forget
+from app.coordination.sync_mixin_base import SyncMixinBase
 
 if TYPE_CHECKING:
     from app.coordination.sync_strategies import AutoSyncConfig, SyncStats
@@ -53,8 +55,10 @@ except ImportError:
         return [f"--include={db_name}", f"--include={db_name}-wal", f"--include={db_name}-shm"]
 
 
-class SyncEphemeralMixin:
+class SyncEphemeralMixin(SyncMixinBase):
     """Mixin providing ephemeral host and WAL handling for AutoSyncDaemon.
+
+    Inherits from SyncMixinBase for common error handling and logging utilities.
 
     Ephemeral hosts (Vast.ai, spot instances) need aggressive sync to prevent
     data loss on termination. This mixin provides:
@@ -62,32 +66,20 @@ class SyncEphemeralMixin:
     - Write-through push for immediate replication
     - Pending game tracking with retry queue
 
-    Expected attributes from main class:
-    - config: AutoSyncConfig
-    - node_id: str
-    - _stats: SyncStats
+    Additional expected attributes from main class:
     - _is_ephemeral: bool
     - _pending_games: list[dict[str, Any]]
     - _push_lock: asyncio.Lock
     - _wal_initialized: bool
     - _pending_writes_file: Path
-    - _running: bool
-    - _events_processed: int
-    - _circuit_breaker: CircuitBreaker | None
     """
 
-    # Type hints for attributes expected from main class
-    config: AutoSyncConfig
-    node_id: str
-    _stats: SyncStats
+    # Additional type hints specific to this mixin
     _is_ephemeral: bool
     _pending_games: list[dict[str, Any]]
     _push_lock: asyncio.Lock
     _wal_initialized: bool
     _pending_writes_file: Path
-    _running: bool
-    _events_processed: int
-    _circuit_breaker: CircuitBreaker | None
 
     def _init_ephemeral_wal(self) -> None:
         """Initialize write-ahead log for ephemeral mode durability.
@@ -892,21 +884,5 @@ class SyncEphemeralMixin:
         except (RuntimeError, AttributeError, ImportError) as e:
             logger.debug(f"[AutoSyncDaemon] Could not emit GAME_SYNCED event: {e}")
 
-    # Abstract methods that must be implemented by the main class
-    async def _emit_sync_failed(self, error: str) -> None:
-        """Emit sync failed event - must be implemented by main class."""
-        raise NotImplementedError("_emit_sync_failed must be implemented by main class")
-
-    async def _emit_sync_stalled(
-        self,
-        target_node: str,
-        timeout_seconds: float,
-        data_type: str = "game",
-        retry_count: int = 0,
-    ) -> None:
-        """Emit sync stalled event - must be implemented by main class."""
-        raise NotImplementedError("_emit_sync_stalled must be implemented by main class")
-
-    async def _emit_sync_failure(self, target_node: str, db_path: str, error: str) -> None:
-        """Emit sync failure event - must be implemented by main class."""
-        raise NotImplementedError("_emit_sync_failure must be implemented by main class")
+    # Note: _emit_sync_failed() is expected from main class
+    # _emit_sync_failure() and _emit_sync_stalled() are inherited from SyncMixinBase

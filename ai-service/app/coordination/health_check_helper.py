@@ -206,6 +206,163 @@ class HealthCheckHelper:
         return True, f"Disconnected {disconnect_time:.0f}s (within tolerance)"
 
     @staticmethod
+    def check_handler_failures(
+        failed_handlers: int,
+        total_handlers: int,
+        threshold: float = 0.2,
+    ) -> tuple[bool, str]:
+        """Check if event handler failure rate is acceptable.
+
+        Args:
+            failed_handlers: Number of handlers that failed
+            total_handlers: Total number of handlers registered
+            threshold: Maximum acceptable failure rate (0.0-1.0)
+
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        if total_handlers == 0:
+            return True, "No handlers registered"
+
+        failure_rate = failed_handlers / total_handlers
+        if failure_rate >= threshold:
+            return (
+                False,
+                f"Handler failure rate too high: {failure_rate:.1%} >= {threshold:.0%} "
+                f"({failed_handlers}/{total_handlers} handlers failed)",
+            )
+        return True, f"Handler failure rate: {failure_rate:.1%} ({failed_handlers}/{total_handlers})"
+
+    @staticmethod
+    def check_subscription_health(
+        subscribed: bool,
+        events_received: int = 0,
+        min_events: int = 0,
+    ) -> tuple[bool, str]:
+        """Check if event subscriptions are active and receiving.
+
+        Args:
+            subscribed: Whether subscriptions are registered
+            events_received: Number of events received
+            min_events: Minimum events expected (0 means no check)
+
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        if not subscribed:
+            return False, "Event subscriptions not registered"
+
+        if min_events > 0 and events_received < min_events:
+            return (
+                False,
+                f"Too few events received: {events_received} < {min_events} expected",
+            )
+        return True, f"Subscribed, {events_received} events received"
+
+    @staticmethod
+    def check_data_staleness(
+        last_sync: float,
+        max_age_seconds: float = 3600.0,
+    ) -> tuple[bool, str]:
+        """Check if data is within acceptable age.
+
+        Args:
+            last_sync: Unix timestamp of last sync/update
+            max_age_seconds: Maximum acceptable age in seconds
+
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        if last_sync <= 0:
+            return True, "No sync recorded yet"
+
+        age = time.time() - last_sync
+        if age > max_age_seconds:
+            age_mins = age / 60
+            max_mins = max_age_seconds / 60
+            return (
+                False,
+                f"Data stale: last sync {age_mins:.0f}min ago (max: {max_mins:.0f}min)",
+            )
+        return True, f"Data fresh: synced {age:.0f}s ago"
+
+    @staticmethod
+    def check_pending_items(
+        pending_count: int,
+        max_pending: int = 100,
+    ) -> tuple[bool, str]:
+        """Check if pending work queue is manageable.
+
+        Args:
+            pending_count: Number of pending items
+            max_pending: Maximum acceptable pending items (0 means no limit)
+
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        if max_pending <= 0:
+            return True, f"Pending items: {pending_count} (no limit)"
+
+        if pending_count >= max_pending:
+            return (
+                False,
+                f"Too many pending items: {pending_count} >= {max_pending}",
+            )
+        fill_percent = (pending_count / max_pending) * 100
+        return True, f"Pending items: {pending_count}/{max_pending} ({fill_percent:.0f}%)"
+
+    @staticmethod
+    def check_dependency_health(
+        dependencies: dict[str, bool],
+    ) -> tuple[bool, str]:
+        """Aggregate health from multiple dependencies.
+
+        Args:
+            dependencies: Dict of dependency_name -> is_healthy
+
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        if not dependencies:
+            return True, "No dependencies"
+
+        unhealthy = [name for name, healthy in dependencies.items() if not healthy]
+        total = len(dependencies)
+        healthy_count = total - len(unhealthy)
+
+        if unhealthy:
+            return (
+                False,
+                f"Unhealthy dependencies ({healthy_count}/{total}): {', '.join(unhealthy)}",
+            )
+        return True, f"All {total} dependencies healthy"
+
+    @staticmethod
+    def check_memory_usage(
+        current_mb: float,
+        threshold_mb: float = 1024.0,
+    ) -> tuple[bool, str]:
+        """Check memory usage against threshold.
+
+        Args:
+            current_mb: Current memory usage in MB
+            threshold_mb: Maximum acceptable memory in MB
+
+        Returns:
+            Tuple of (is_healthy, message)
+        """
+        if threshold_mb <= 0:
+            return True, f"Memory usage: {current_mb:.0f}MB (no limit)"
+
+        if current_mb >= threshold_mb:
+            return (
+                False,
+                f"Memory usage too high: {current_mb:.0f}MB >= {threshold_mb:.0f}MB",
+            )
+        usage_percent = (current_mb / threshold_mb) * 100
+        return True, f"Memory usage: {current_mb:.0f}/{threshold_mb:.0f}MB ({usage_percent:.0f}%)"
+
+    @staticmethod
     def build_details(
         **metrics: Any,
     ) -> dict[str, Any]:

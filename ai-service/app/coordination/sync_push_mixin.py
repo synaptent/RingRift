@@ -1,6 +1,7 @@
 """Push/broadcast sync operations mixin for AutoSyncDaemon.
 
 December 2025: Extracted from auto_sync_daemon.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from SyncMixinBase for common functionality.
 
 This mixin provides:
 - Local database discovery
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.core.async_context import fire_and_forget
+from app.coordination.sync_mixin_base import SyncMixinBase
 
 if TYPE_CHECKING:
     from app.coordination.sync_strategies import AutoSyncConfig, SyncStats
@@ -29,24 +31,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SyncPushMixin:
+class SyncPushMixin(SyncMixinBase):
     """Mixin providing push/broadcast sync operations for AutoSyncDaemon.
 
-    Expected attributes from main class:
-    - config: AutoSyncConfig
-    - node_id: str
-    - _stats: SyncStats
+    Inherits from SyncMixinBase for common error handling and logging utilities.
+
+    Additional expected attributes from main class:
     - _is_broadcast: bool
 
-    Expected methods from main class:
-    - _emit_sync_failure(target_node: str, db_path: str, error: str) -> None
-    - _emit_sync_stalled(target_node: str, timeout_seconds: float, ...) -> None
+    Event emission methods inherited from SyncMixinBase:
+    - _emit_sync_failure(target_node, db_path, error)
+    - _emit_sync_stalled(target_node, timeout_seconds, ...)
     """
 
-    # Type hints for attributes expected from main class
-    config: AutoSyncConfig
-    node_id: str
-    _stats: SyncStats
+    # Additional type hints specific to this mixin
     _is_broadcast: bool
 
     def discover_local_databases(self) -> list[Path]:
@@ -622,17 +620,4 @@ class SyncPushMixin:
 
         return 0
 
-    # Abstract methods that must be implemented by the main class
-    async def _emit_sync_failure(self, target_node: str, db_path: str, error: str) -> None:
-        """Emit sync failure event - must be implemented by main class."""
-        raise NotImplementedError("_emit_sync_failure must be implemented by main class")
-
-    async def _emit_sync_stalled(
-        self,
-        target_node: str,
-        timeout_seconds: float,
-        data_type: str = "game",
-        retry_count: int = 0,
-    ) -> None:
-        """Emit sync stalled event - must be implemented by main class."""
-        raise NotImplementedError("_emit_sync_stalled must be implemented by main class")
+    # Note: _emit_sync_failure() and _emit_sync_stalled() are inherited from SyncMixinBase

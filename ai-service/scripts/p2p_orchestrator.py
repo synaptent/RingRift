@@ -69,30 +69,10 @@ def get_work_queue():
     return _work_queue
 
 # Automation managers (lazy imports to avoid circular deps)
-_auto_scaler = None
 _health_manager = None  # December 2025: Consolidated from recovery_manager
 _predictive_alerts = None
 # Dec 2025: Removed unused _tier_calibrator global (never used)
-
-def get_auto_scaler():
-    """Get the auto-scaler singleton (lazy load).
-
-    December 2025 (Phase 7.1.3): Uses MonitoringAwareAutoScaler with event subscription
-    for reactive scaling based on cluster health and resource events.
-    """
-    global _auto_scaler
-    if _auto_scaler is None:
-        try:
-            from app.coordination.auto_scaler import create_auto_scaler
-            _auto_scaler = create_auto_scaler(subscribe_events=True)
-            logger.info("[P2P] AutoScaler initialized with event subscriptions")
-        except ImportError:
-            logger.debug("[P2P] auto_scaler module not available")
-            _auto_scaler = None
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[P2P] Failed to initialize auto_scaler: {e}")
-            _auto_scaler = None
-    return _auto_scaler
+# Dec 28, 2025: Removed unused get_auto_scaler() - never called
 
 def get_health_manager():
     """Get the health manager singleton (lazy load).
@@ -1335,7 +1315,7 @@ from scripts.p2p.handlers import (
 from scripts.p2p.network_utils import NetworkUtilsMixin
 from scripts.p2p.peer_manager import PeerManagerMixin
 from scripts.p2p.leader_election import LeaderElectionMixin
-# GossipMetricsMixin merged into GossipProtocolMixin (Dec 28, 2025)
+from scripts.p2p.gossip_protocol import GossipProtocolMixin  # Contains merged GossipMetricsMixin (Dec 28, 2025)
 
 # Phase 5: SWIM + Raft integration mixins (Dec 26, 2025)
 from scripts.p2p.membership_mixin import MembershipMixin
@@ -2048,7 +2028,7 @@ class P2POrchestrator(
     NetworkUtilsMixin,
     PeerManagerMixin,
     LeaderElectionMixin,
-    # GossipMetricsMixin merged into GossipProtocolMixin (Dec 28, 2025)
+    GossipProtocolMixin,  # Provides gossip protocol + metrics (merged Dec 28, 2025)
     # Phase 5: SWIM + Raft integration (Dec 26, 2025)
     MembershipMixin,      # SWIM gossip-based membership
     ConsensusMixin,       # PySyncObj Raft consensus

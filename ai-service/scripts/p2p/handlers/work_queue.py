@@ -170,7 +170,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     error_code="BACKPRESSURE",
                     details=wq.get_backpressure_status() if wq else {},
                 )
-            raise
+            # For other RuntimeErrors, fall through to generic error handler
+            logger.error(f"Error adding work: {e}")
+            return self.error_response(str(e), status=500)
         except Exception as e:
             logger.error(f"Error adding work: {e}")
             return self.error_response(str(e), status=500)
