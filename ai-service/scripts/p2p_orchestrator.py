@@ -2028,9 +2028,8 @@ class WebhookNotifier:
         except Exception as e:  # noqa: BLE001
             logger.error(f"[Webhook] Alert send error: {e}")
 
-    async def close(self):
-        if self._session and not self._session.closed:
-            await self._session.close()
+    # Dec 28, 2025: Removed duplicate close() method (was lines 2031-2033)
+    # The proper close() is defined at line 1898 with docstring and session=None cleanup
 
 
 class P2POrchestrator(
@@ -11312,7 +11311,8 @@ print(json.dumps(result))
                                 owc_path = mount_path
                                 storage_tier = "owc"
                                 break
-                        except Exception:
+                        except (OSError, PermissionError) as e:
+                            logger.warning(f"Cannot check OWC mount {mount_path}: {e}")
                             continue
 
             # Determine destination path

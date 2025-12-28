@@ -102,10 +102,10 @@ p2p_voters:
   - hetzner-cpu1      # Hetzner CPU - stable, bare metal, direct IP
   - hetzner-cpu2      # Hetzner CPU - stable, bare metal, direct IP (backup)
   - vultr-a100-20gb   # Vultr A100 - stable, VM, direct IP
-  # Dec 28, 2025: Added Lambda GH200 nodes for increased redundancy
-  # GH200s are training-only bare metal with direct IPs - ideal voters
-  - lambda-gh200-1    # Lambda GH200 - stable, bare metal, direct IP
-  - lambda-gh200-2    # Lambda GH200 - stable, bare metal, direct IP
+  # Dec 28, 2025: REMOVED Lambda GH200 nodes from voters
+  # Lambda Labs blocks inbound connections (nat_blocked: true), cannot be reliable voters
+  # Voters must have direct IP connectivity for leader election reliability
+  # With 5 voters, quorum = 3 (majority)
 
 hosts:
   # ============================================================

@@ -2829,7 +2829,8 @@ class AutoSyncDaemon:
                     self._circuit_breaker.record_failure(source.node_id)
 
         # Update stats
-        self._stats.sync_cycles += 1
+        # Dec 28, 2025: Fixed sync_cycles -> syncs_completed (correct field name)
+        self._stats.syncs_completed += 1
         self._stats.games_synced += total_pulled
 
         # Emit sync completion event

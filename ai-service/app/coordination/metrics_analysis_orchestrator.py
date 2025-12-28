@@ -378,8 +378,14 @@ class MetricsAnalysisOrchestrator:
             # Subscribe to cache events for window reset (December 2025)
             router.subscribe(DataEventType.CACHE_INVALIDATED.value, self._on_cache_invalidated)
 
+            # December 2025: Subscribe to batch scheduling events for pipeline tracking
+            if hasattr(DataEventType, 'BATCH_SCHEDULED'):
+                router.subscribe(DataEventType.BATCH_SCHEDULED.value, self._on_batch_scheduled)
+            if hasattr(DataEventType, 'BATCH_DISPATCHED'):
+                router.subscribe(DataEventType.BATCH_DISPATCHED.value, self._on_batch_dispatched)
+
             self._subscribed = True
-            logger.info("[MetricsAnalysisOrchestrator] Subscribed to metrics + evaluation events")
+            logger.info("[MetricsAnalysisOrchestrator] Subscribed to metrics + evaluation + batch events")
             return True
 
         except ImportError:
@@ -604,6 +610,68 @@ class MetricsAnalysisOrchestrator:
         # Reset specific metrics
         for metric in metrics_to_reset:
             self.reset_window(metric)
+
+    async def _on_batch_scheduled(self, event) -> None:
+        """Handle BATCH_SCHEDULED event - track when selfplay batches are scheduled.
+
+        December 2025: Wires orphaned BATCH_SCHEDULED event for pipeline tracking.
+        Previously this event was emitted but never subscribed to.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            batch_id = payload.get("batch_id", "")
+            batch_type = payload.get("batch_type", "selfplay")
+            config_key = payload.get("config_key", "")
+            job_count = payload.get("job_count", 0)
+            target_nodes = payload.get("target_nodes", [])
+
+            # Record batch scheduling metrics
+            self.record_metric("batch_scheduled_count", 1)
+            if config_key:
+                self.record_metric(f"batch_scheduled_{config_key}", job_count)
+
+            logger.debug(
+                f"[MetricsAnalysisOrchestrator] BATCH_SCHEDULED: {batch_id} "
+                f"type={batch_type} config={config_key} jobs={job_count} "
+                f"nodes={len(target_nodes)}"
+            )
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MetricsAnalysisOrchestrator] Error handling batch_scheduled: {e}")
+
+    async def _on_batch_dispatched(self, event) -> None:
+        """Handle BATCH_DISPATCHED event - track when selfplay batches are sent to nodes.
+
+        December 2025: Wires orphaned BATCH_DISPATCHED event for pipeline tracking.
+        Previously this event was emitted but never subscribed to.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else {}
+
+            batch_id = payload.get("batch_id", "")
+            batch_type = payload.get("batch_type", "selfplay")
+            config_key = payload.get("config_key", "")
+            job_count = payload.get("job_count", 0)
+            dispatch_time_ms = payload.get("dispatch_time_ms", 0)
+            success_count = payload.get("success_count", job_count)
+            failure_count = payload.get("failure_count", 0)
+
+            # Record dispatch metrics
+            self.record_metric("batch_dispatched_count", 1)
+            self.record_metric("batch_dispatch_latency_ms", dispatch_time_ms)
+            if config_key:
+                self.record_metric(f"batch_dispatched_{config_key}", success_count)
+            if failure_count > 0:
+                self.record_metric("batch_dispatch_failures", failure_count)
+
+            logger.debug(
+                f"[MetricsAnalysisOrchestrator] BATCH_DISPATCHED: {batch_id} "
+                f"type={batch_type} config={config_key} "
+                f"success={success_count} failed={failure_count} "
+                f"latency={dispatch_time_ms}ms"
+            )
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MetricsAnalysisOrchestrator] Error handling batch_dispatched: {e}")
 
     def reset_window(self, metric_name: str) -> bool:
         """Reset the sliding window for a specific metric.

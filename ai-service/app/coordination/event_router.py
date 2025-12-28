@@ -1699,6 +1699,73 @@ def get_coordinator_stats() -> CoordinatorStats:
 # Use these functions to emit events from anywhere in the codebase.
 # =============================================================================
 
+
+def safe_emit_event(
+    event_type: str,
+    payload: dict[str, Any] | None = None,
+    source: str = "unknown",
+    log_on_failure: bool = True,
+) -> bool:
+    """Safely emit an event without raising exceptions.
+
+    Wraps event emission in try-catch to prevent event failures from crashing
+    the caller. Works in both sync and async contexts.
+
+    This helper eliminates the repetitive try/except boilerplate:
+        try:
+            emit_something(...)
+        except Exception as e:
+            logger.debug(f"Event failed: {e}")
+
+    Instead use:
+        safe_emit_event("MY_EVENT", {"key": "value"}, source="my_component")
+
+    Args:
+        event_type: Event type string (e.g., "TRAINING_COMPLETED")
+        payload: Event payload dict (default: empty dict)
+        source: Source identifier for logging
+        log_on_failure: Whether to log failures (default: True)
+
+    Returns:
+        True if event was emitted successfully, False otherwise
+
+    December 2025: Added to reduce 960+ LOC of boilerplate across codebase.
+    """
+    if payload is None:
+        payload = {}
+
+    try:
+        # Try to get running event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        async def _emit():
+            await publish(event_type=event_type, payload=payload, source=source)
+
+        if loop is not None:
+            # Async context - fire and forget
+            from app.core.async_context import fire_and_forget
+
+            fire_and_forget(_emit(), name=f"safe_emit_{event_type}")
+        else:
+            # Sync context - create new loop
+            asyncio.run(_emit())
+
+        return True
+
+    except (ImportError, RuntimeError, OSError, AttributeError) as e:
+        if log_on_failure:
+            logger.debug(f"[{source}] Event {event_type} emission failed: {e}")
+        return False
+    except Exception as e:
+        # Catch-all for unexpected errors to ensure caller never crashes
+        if log_on_failure:
+            logger.debug(f"[{source}] Event {event_type} emission error: {e}")
+        return False
+
+
 async def emit_training_started(
     config_key: str,
     node_name: str = "",

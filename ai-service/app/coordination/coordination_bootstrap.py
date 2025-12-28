@@ -937,7 +937,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         if watcher:
             logger.debug("[Bootstrap] Wired LOW_QUALITY_DATA_WARNING -> RollbackManager")
         else:
-            logger.debug("[Bootstrap] Quality rollback watcher not subscribed")
+            logger.warning("[Bootstrap] Quality rollback watcher not subscribed - rollback on low quality data disabled")
 
     except (AttributeError, TypeError, RuntimeError) as e:
         results["quality_to_rollback"] = False
@@ -961,6 +961,8 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["regression_to_rollback"] = handler is not None
         if handler:
             logger.debug("[Bootstrap] Wired REGRESSION_DETECTED -> RollbackManager (full auto-rollback enabled)")
+        else:
+            logger.warning("[Bootstrap] Regression rollback handler not subscribed - auto-rollback on regression disabled")
 
     except (AttributeError, TypeError, RuntimeError) as e:
         results["regression_to_rollback"] = False

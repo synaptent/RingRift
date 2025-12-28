@@ -649,6 +649,72 @@ class GPUGumbelMCTS:
         self.device = torch.device(config.device)
         self.tree: TensorGumbelTree | None = None
 
+    @staticmethod
+    def _find_phase_valid_move(
+        game_state: "GameState",
+        moves: list["Move"],
+    ) -> "Move | None":
+        """Find the first move that is valid for the current game phase.
+
+        This is a defensive fallback when the GPU tree's best move doesn't
+        match the expected phase. Rather than assuming moves[0] is valid,
+        we search for a move that actually matches the phase contract.
+
+        Args:
+            game_state: Current game state (for phase check)
+            moves: List of candidate moves
+
+        Returns:
+            First phase-valid move, or None if no valid move found
+        """
+        from ..models import GamePhase, MoveType
+
+        phase = game_state.current_phase
+
+        # Define allowed move types per phase (mirrors _assert_phase_move_invariant)
+        phase_allowed: dict[GamePhase, set[MoveType]] = {
+            GamePhase.RING_PLACEMENT: {
+                MoveType.PLACE_RING, MoveType.SKIP_PLACEMENT, MoveType.NO_PLACEMENT_ACTION
+            },
+            GamePhase.MOVEMENT: {
+                MoveType.MOVE_STACK, MoveType.MOVE_RING, MoveType.OVERTAKING_CAPTURE,
+                MoveType.CONTINUE_CAPTURE_SEGMENT, MoveType.NO_MOVEMENT_ACTION,
+                MoveType.RECOVERY_SLIDE, MoveType.SKIP_RECOVERY
+            },
+            GamePhase.CAPTURE: {
+                MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                MoveType.SKIP_CAPTURE
+            },
+            GamePhase.CHAIN_CAPTURE: {
+                MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT
+            },
+            GamePhase.LINE_PROCESSING: {
+                MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION,
+                MoveType.CHOOSE_LINE_REWARD, MoveType.NO_LINE_ACTION,
+                MoveType.ELIMINATE_RINGS_FROM_STACK
+            },
+            GamePhase.TERRITORY_PROCESSING: {
+                MoveType.CHOOSE_TERRITORY_OPTION, MoveType.PROCESS_TERRITORY_REGION,
+                MoveType.ELIMINATE_RINGS_FROM_STACK, MoveType.SKIP_TERRITORY_PROCESSING,
+                MoveType.NO_TERRITORY_ACTION
+            },
+            GamePhase.FORCED_ELIMINATION: {
+                MoveType.FORCED_ELIMINATION
+            },
+        }
+
+        allowed = phase_allowed.get(phase, set())
+        if not allowed:
+            # Unknown phase - return first move as fallback
+            return moves[0] if moves else None
+
+        for move in moves:
+            if move.type in allowed:
+                return move
+
+        # No phase-valid move found
+        return None
+
     def search(
         self,
         game_state: "GameState",
@@ -785,10 +851,22 @@ class GPUGumbelMCTS:
                     f"in phase={phase.value}. top_k had types: "
                     f"{[m.type.value for m in top_k_moves[:5]]}. "
                     f"valid_moves had types: {[m.type.value for m in valid_moves[:5]]}. "
-                    f"Falling back to first valid_move."
+                    f"Searching for phase-valid fallback move."
                 )
-                # Fall back to first valid move (which should be phase-valid)
-                best_move = valid_moves[0]
+                # Find a phase-valid move from valid_moves (don't assume [0] is valid)
+                fallback = self._find_phase_valid_move(game_state, valid_moves)
+                if fallback is not None:
+                    best_move = fallback
+                    logger.info(
+                        f"GPU tree: found phase-valid fallback move type={fallback.type.value}"
+                    )
+                else:
+                    # No phase-valid move found - this is a critical error
+                    logger.critical(
+                        f"GPU tree: NO phase-valid move found in valid_moves! "
+                        f"Phase={phase.value}, move types={[m.type.value for m in valid_moves[:10]]}. "
+                        f"Using best_move anyway (will likely fail validation)."
+                    )
 
             # Build policy distribution
             # The policy tensor is indexed by tree action indices (from top_k_indices),
@@ -915,14 +993,32 @@ class GPUGumbelMCTS:
                 )
                 best_move = valid_moves[0]
 
-            # Phase/move validation (RR-GPU-TREE-002: was missing from search_with_stats)
+            # Phase/move validation (RR-GPU-TREE-002: comprehensive validation)
             # This ensures the returned move is valid for the current game phase
             from ..models import GamePhase, MoveType
             phase = game_state.current_phase
             move_type = best_move.type
 
+            # Comprehensive phase validation (matches _assert_phase_move_invariant and search())
             phase_move_valid = True
-            if phase == GamePhase.LINE_PROCESSING:
+            if phase == GamePhase.RING_PLACEMENT:
+                allowed = {MoveType.PLACE_RING, MoveType.SKIP_PLACEMENT,
+                          MoveType.NO_PLACEMENT_ACTION}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.MOVEMENT:
+                allowed = {MoveType.MOVE_STACK, MoveType.MOVE_RING,
+                          MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                          MoveType.NO_MOVEMENT_ACTION, MoveType.RECOVERY_SLIDE,
+                          MoveType.SKIP_RECOVERY}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.CAPTURE:
+                allowed = {MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                          MoveType.SKIP_CAPTURE}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.CHAIN_CAPTURE:
+                allowed = {MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT}
+                phase_move_valid = move_type in allowed
+            elif phase == GamePhase.LINE_PROCESSING:
                 allowed = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_OPTION,
                           MoveType.CHOOSE_LINE_REWARD, MoveType.NO_LINE_ACTION,
                           MoveType.ELIMINATE_RINGS_FROM_STACK}
@@ -941,9 +1037,22 @@ class GPUGumbelMCTS:
                     f"move_type={move_type.value} in phase={phase.value}. "
                     f"top_k had types: {[m.type.value for m in top_k_moves[:5]]}. "
                     f"valid_moves had types: {[m.type.value for m in valid_moves[:5]]}. "
-                    f"Falling back to first valid_move."
+                    f"Searching for phase-valid fallback move."
                 )
-                best_move = valid_moves[0]
+                # Find a phase-valid move from valid_moves (don't assume [0] is valid)
+                fallback = self._find_phase_valid_move(game_state, valid_moves)
+                if fallback is not None:
+                    best_move = fallback
+                    logger.info(
+                        f"GPU tree: found phase-valid fallback move type={fallback.type.value}"
+                    )
+                else:
+                    # No phase-valid move found - this is a critical error
+                    logger.critical(
+                        f"GPU tree: NO phase-valid move found in valid_moves! "
+                        f"Phase={phase.value}, move types={[m.type.value for m in valid_moves[:10]]}. "
+                        f"Using best_move anyway (will likely fail validation)."
+                    )
 
             # Build policy distribution
             policy = self.tree.get_policy_distribution(tree_idx=0)
