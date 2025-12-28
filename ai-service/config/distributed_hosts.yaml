@@ -308,7 +308,8 @@ hosts:
     gpu: 8x RTX 4090
     gpu_vram_gb: 192
     role: gpu_selfplay_primary
-    status: ready
+    # Dec 28, 2025: Host went offline
+    status: offline
     vast_instance_id: '29129529'
     p2p_enabled: true
     is_ephemeral: true
