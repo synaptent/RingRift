@@ -254,16 +254,17 @@ class TestBootstrapCoordination:
 
     def test_idempotent_call(self):
         """Test that bootstrap_coordination is idempotent."""
+        import app.coordination.coordination_bootstrap as bootstrap_module
         from app.coordination.coordination_bootstrap import (
             reset_bootstrap_state,
             bootstrap_coordination,
-            _state,
         )
 
         reset_bootstrap_state()
 
-        # Manually set initialized to simulate previous call
-        _state.initialized = True
+        # CRITICAL: Must access _state from module AFTER reset, not from import
+        # reset_bootstrap_state() creates a new BootstrapState object
+        bootstrap_module._state.initialized = True
 
         # Second call should return existing status without re-init
         result = bootstrap_coordination()

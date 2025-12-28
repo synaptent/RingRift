@@ -23,14 +23,14 @@ Usage:
     # With known peers (for cloud nodes without broadcast):
     python scripts/p2p_orchestrator.py --node-id vast-3090 --peers <peer-ip>:8770,<peer-ip>:8770
 """
+from __future__ import annotations
 
-# Load .env.local BEFORE any imports (for SWIM/Raft feature flags)
-# These must be loaded before app.p2p.constants imports
-import os as _os
-from pathlib import Path as _Path
-
-def _load_env_local() -> None:
+# Load .env.local BEFORE app.p2p.constants imports (for SWIM/Raft feature flags)
+# This must happen before any app.* imports that read environment variables
+def _load_env_local():
     """Load .env.local from script directory or ai-service root."""
+    import os as _os
+    from pathlib import Path as _Path
     for base in [_Path(__file__).parent.parent, _Path.cwd()]:
         env_file = base / ".env.local"
         if env_file.exists():
@@ -49,8 +49,6 @@ def _load_env_local() -> None:
                 pass
 
 _load_env_local()
-
-from __future__ import annotations
 
 import argparse
 import asyncio
