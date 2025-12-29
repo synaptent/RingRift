@@ -633,6 +633,13 @@ class TransactionIsolation(SingletonMixin):
         )
 
         class TransactionContext:
+            """Context manager for isolated database sync transactions.
+
+            Tracks operations within a transaction, provides commit/rollback
+            semantics, and integrates with the parent TransactionIsolation
+            for cross-host database synchronization.
+            """
+
             def __init__(ctx_self, isolation: TransactionIsolation, txn_id: int):
                 ctx_self.isolation = isolation
                 ctx_self.transaction_id = txn_id

@@ -231,6 +231,9 @@ print(f'Pending: {dlq.get_pending_count()}')
 print(f'By type: {dlq.get_error_summary()}')
 "
 
+# Or use the dashboard
+python scripts/dlq_dashboard.py --pending --limit 10
+
 # Check slow handlers
 grep "HANDLER_TIMEOUT" logs/coordination.log | tail -10
 ```

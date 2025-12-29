@@ -5,6 +5,13 @@ from app.rules.interfaces import Mutator
 
 
 class MovementMutator(Mutator):
+    """Mutator that applies movement moves to game state.
+
+    Delegates to GameEngine._apply_move_stack for the actual board mutation.
+    Timeline bookkeeping (last_move_at, move_history) is handled by the
+    orchestrating rules engine, not this mutator.
+    """
+
     def apply(self, state: GameState, move: Move) -> None:
         # Delegate to GameEngine's static method
         from app.game_engine import GameEngine

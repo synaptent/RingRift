@@ -100,7 +100,7 @@ The priority score calculation also includes:
 
 - **Curriculum weight** (Phase 2C.3): Boosts configs needing more training data
 - **Improvement boost** (Phase 5): From `ImprovementOptimizer` for promotion streaks
-- **Exploration boost**: Dynamic exploration factor from feedback signals
+- **Exploration boost**: Dynamic exploration factor from feedback signals (quality-driven via `EXPLORATION_ADJUSTED`)
 - **Data deficit factor**: Boosts configs with low game counts (especially large boards)
 - **Priority overrides**: From `unified_loop.yaml` for critical data-starved configs
 
@@ -116,6 +116,10 @@ The feedback loop also emits events for monitoring:
 2. **SELFPLAY_TARGET_UPDATED**
    - Emitted by `SelfplayScheduler` when priorities change
    - Used by downstream systems (e.g., `IdleResourceDaemon`)
+
+3. **EXPLORATION_ADJUSTED**
+   - Emitted by `FeedbackLoopController` when quality score trends change
+   - Subscribed by: `SelfplayScheduler` (adjusts exploration parameters)
 
 ## Code References
 

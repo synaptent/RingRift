@@ -74,7 +74,10 @@ from app.training.train_metrics import (
 
 from app.ai.neural_losses import (
     build_rank_targets,
+    detect_masked_policy_output,
+    masked_log_softmax,
     masked_policy_kl,
+    uses_spatial_policy_head,
     validate_hex_policy_indices,
 )
 from app.ai.neural_net import (

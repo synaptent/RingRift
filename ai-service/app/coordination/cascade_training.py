@@ -272,7 +272,7 @@ class CascadeTrainingOrchestrator(HandlerBase):
 
             return True
 
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError, TypeError, asyncio.CancelledError) as e:
             logger.error(f"[CascadeTraining] Transfer failed: {e}")
             await self._emit_event(
                 "CASCADE_TRANSFER_FAILED",
@@ -467,7 +467,7 @@ class CascadeTrainingOrchestrator(HandlerBase):
 
             router = get_router()
             await router.publish(event_type, payload)
-        except Exception as e:
+        except (ImportError, AttributeError, RuntimeError) as e:
             logger.debug(f"[CascadeTraining] Event emission failed: {e}")
 
     async def _run_cycle(self) -> None:
@@ -531,7 +531,8 @@ class CascadeTrainingOrchestrator(HandlerBase):
             discovery = GameDiscovery(self.config.data_dir)
             databases = discovery.find_databases_for_config(board_type, num_players)
             return sum(db.game_count for db in databases)
-        except Exception:
+        except (ImportError, FileNotFoundError, OSError) as e:
+            logger.debug(f"[CascadeTraining] Game count lookup failed: {e}")
             return 0
 
     async def _request_training(self, board_type: str, num_players: int) -> None:

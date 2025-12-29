@@ -4,6 +4,13 @@ from app.rules.interfaces import Mutator
 
 
 class CaptureMutator(Mutator):
+    """Mutator that applies capture move semantics to game state.
+
+    Delegates to the canonical capture_chain module for capture logic,
+    mirroring the TypeScript CaptureAggregate.applyCapture pattern.
+    Updates the GameState in-place with board, player, and field changes.
+    """
+
     def apply(self, state: GameState, move: Move) -> None:
         """
         Delegate capture semantics to the canonical helper layer.

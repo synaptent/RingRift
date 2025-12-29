@@ -4,6 +4,13 @@ from app.rules.placement import apply_place_ring_py
 
 
 class PlacementMutator(Mutator):
+    """Mutator that applies PLACE_RING moves to game state.
+
+    Delegates to the canonical placement module for ring placement logic,
+    mirroring the TypeScript PlacementAggregate pattern. Updates the GameState
+    in-place via field-by-field copy from the canonical engine result.
+    """
+
     def apply(self, state: GameState, move: Move) -> None:
         """Apply a PLACE_RING move to ``state`` in-place.
 

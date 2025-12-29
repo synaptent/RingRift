@@ -470,6 +470,14 @@ Maximum total concurrent training jobs.
 
 Training job timeout in hours.
 
+### `RINGRIFT_TRAINING_RETRY_SLEEP`
+
+| Property | Default | Description |
+| -------- | ------- | ----------- |
+| Type     | `float` | `2.0`       |
+
+Pause between training retry attempts in seconds.
+
 ### `RINGRIFT_TRAINING_MIN_INTERVAL`
 
 | Property | Default  | Description |
@@ -485,6 +493,32 @@ Minimum seconds between training runs for same config.
 | Type     | `number` | `7200`      |
 
 Training lock timeout in seconds (2 hours).
+
+### Data Export (DB Lock Retries)
+
+### `RINGRIFT_DB_LOCK_MAX_RETRIES`
+
+| Property | Default  | Description |
+| -------- | -------- | ----------- |
+| Type     | `number` | `5`         |
+
+Max retries for locked database reads during export.
+
+### `RINGRIFT_DB_LOCK_INITIAL_WAIT`
+
+| Property | Default | Description |
+| -------- | ------- | ----------- |
+| Type     | `float` | `0.5`       |
+
+Initial wait between DB lock retries in seconds.
+
+### `RINGRIFT_DB_LOCK_MAX_WAIT`
+
+| Property | Default | Description |
+| -------- | ------- | ----------- |
+| Type     | `float` | `30.0`      |
+
+Maximum cumulative wait for DB lock retries in seconds.
 
 ---
 

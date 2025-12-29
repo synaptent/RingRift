@@ -296,6 +296,43 @@ class JobManager(EventSubscriptionMixin):
         return False
 
     # =========================================================================
+    # Subprocess Environment Setup (December 2025)
+    # =========================================================================
+
+    def _get_subprocess_env(self, include_shadow_skip: bool = True) -> dict[str, str]:
+        """Create standard environment for subprocess spawning.
+
+        This helper ensures consistent environment setup across all subprocess calls,
+        including:
+        - PYTHONPATH pointing to ai-service
+        - RINGRIFT_SKIP_SHADOW_CONTRACTS to skip validation overhead
+        - RINGRIFT_ALLOW_PENDING_GATE to bypass parity gate on cluster nodes
+
+        December 29, 2025: Added to fix parity gate blocking on cluster nodes.
+        Cluster nodes lack Node.js runtime, so TypeScript parity gates fail with
+        "pending_gate" status. This environment variable allows selfplay to proceed
+        without TS validation on these nodes.
+
+        Args:
+            include_shadow_skip: Whether to include RINGRIFT_SKIP_SHADOW_CONTRACTS
+                                (default: True for selfplay, may want False for validation)
+
+        Returns:
+            Environment dict with standard RingRift settings.
+        """
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+
+        if include_shadow_skip:
+            env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+
+        # December 29, 2025: Allow pending parity gate status on cluster nodes
+        # This enables selfplay on nodes without Node.js (Vast.ai, RunPod, Nebius)
+        env["RINGRIFT_ALLOW_PENDING_GATE"] = "1"
+
+        return env
+
+    # =========================================================================
     # Pre-flight Node Validation (December 2025)
     # =========================================================================
 
@@ -1247,9 +1284,8 @@ class JobManager(EventSubscriptionMixin):
                 "--seed", str(int(time.time() * 1000) % 2**31),
             ]
 
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
-        env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+        # December 29, 2025: Use helper for consistent env setup (includes RINGRIFT_ALLOW_PENDING_GATE)
+        env = self._get_subprocess_env()
 
         # December 28, 2025: Initialize proc before try block for proper cleanup in except handlers
         proc: asyncio.subprocess.Process | None = None
@@ -1787,9 +1823,8 @@ class JobManager(EventSubscriptionMixin):
             "--log-jsonl", output_file,
         ]
 
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
-        env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+        # December 29, 2025: Use helper for consistent env setup (includes RINGRIFT_ALLOW_PENDING_GATE)
+        env = self._get_subprocess_env()
 
         # December 28, 2025: Initialize proc before try block for proper cleanup
         proc: asyncio.subprocess.Process | None = None
@@ -1905,8 +1940,9 @@ class JobManager(EventSubscriptionMixin):
             str(state.num_players),
         ]
 
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+        # December 29, 2025: Use helper for consistent env setup (includes RINGRIFT_ALLOW_PENDING_GATE)
+        # Note: Export doesn't skip shadow contracts (include_shadow_skip=False)
+        env = self._get_subprocess_env(include_shadow_skip=False)
 
         # December 28, 2025: Initialize proc before try block for proper cleanup
         export_job_id = f"{job_id}_export"  # Unique ID for process tracking
@@ -2059,8 +2095,9 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
 """
 
         cmd = [sys.executable, "-c", training_script]
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+        # December 29, 2025: Use helper for consistent env setup (includes RINGRIFT_ALLOW_PENDING_GATE)
+        # Note: Training doesn't skip shadow contracts (include_shadow_skip=False)
+        env = self._get_subprocess_env(include_shadow_skip=False)
 
         # December 28, 2025: Initialize proc before try block for proper cleanup
         training_job_id = f"{job_id}_training"  # Unique ID for process tracking

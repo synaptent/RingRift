@@ -5,6 +5,13 @@ from app.rules.interfaces import Mutator
 
 
 class TurnMutator(Mutator):
+    """Mutator that handles turn and phase transitions.
+
+    Delegates to GameEngine._update_phase for phase state machine updates.
+    Handles turn rotation, phase changes (ring_placement, movement, etc.),
+    and game-over detection.
+    """
+
     def apply(self, state: GameState, move: Move) -> None:
         # Phase updates are handled in GameEngine._update_phase called by
         # apply_move. But if we want to explicitly handle turn changes here:

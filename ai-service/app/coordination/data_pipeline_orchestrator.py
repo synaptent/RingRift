@@ -1691,7 +1691,11 @@ class DataPipelineOrchestrator(
     # =========================================================================
 
     def _on_new_games_available(self, event) -> None:
-        """Handle NEW_GAMES_AVAILABLE event - trigger export if threshold met."""
+        """Handle NEW_GAMES_AVAILABLE event - trigger export if threshold met.
+
+        December 29, 2025: Added SelfplayScheduler integration to set training
+        targets and check if more games are needed before triggering export.
+        """
         try:
             payload = event.payload if hasattr(event, "payload") else event
             config_key = payload.get("config_key", payload.get("config", ""))
@@ -1702,10 +1706,81 @@ class DataPipelineOrchestrator(
                 f"[DataPipelineOrchestrator] New games available: "
                 f"config={config_key}, count={game_count}, source={source}"
             )
+
+            # December 29, 2025: Wire to SelfplayScheduler for game count normalization
+            # Set training sample targets and check if more games are needed
+            if config_key:
+                self._update_selfplay_scheduler_targets(config_key)
+
             self._record_event_processed()
 
         except (AttributeError, KeyError, TypeError) as e:
             self._record_error(f"_on_new_games_available: {e}")
+
+    def _update_selfplay_scheduler_targets(self, config_key: str) -> None:
+        """Update SelfplayScheduler with training sample targets.
+
+        December 29, 2025: Closes the pipeline → scheduler feedback loop.
+        - Sets target samples based on board size
+        - Checks if more games are needed
+        - Emits SELFPLAY_TARGET_UPDATED if games needed
+
+        This ensures the scheduler knows how many more games to generate
+        for each configuration before training can proceed.
+        """
+        try:
+            from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+
+            scheduler = get_selfplay_scheduler()
+
+            # Calculate target samples based on board type
+            # Default: 50K samples minimum, scale with board size
+            target_samples = 50000
+            if config_key.startswith("square19") or config_key.startswith("hexagonal"):
+                target_samples = 100000  # Large boards need more data
+            elif config_key.startswith("square8") or config_key.startswith("hex8"):
+                target_samples = 50000  # Standard boards
+
+            scheduler.set_target_training_samples(config_key, target_samples)
+
+            # Check if we have enough games
+            games_needed = scheduler.get_games_needed(config_key)
+            if games_needed > 0:
+                logger.info(
+                    f"[DataPipelineOrchestrator] {config_key} needs {games_needed} more games"
+                )
+                # Emit event to request more selfplay
+                self._emit_selfplay_target_updated(config_key, games_needed)
+
+        except ImportError:
+            # SelfplayScheduler not available - expected in minimal environments
+            logger.debug("[DataPipelineOrchestrator] SelfplayScheduler not available")
+        except (AttributeError, RuntimeError, TypeError) as e:
+            # Non-critical - log and continue
+            logger.debug(f"[DataPipelineOrchestrator] Failed to update scheduler: {e}")
+
+    def _emit_selfplay_target_updated(self, config_key: str, games_needed: int) -> None:
+        """Emit SELFPLAY_TARGET_UPDATED event to request more games.
+
+        December 29, 2025: Part of pipeline → scheduler wiring.
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                router.publish_sync(
+                    "SELFPLAY_TARGET_UPDATED",
+                    {
+                        "config_key": config_key,
+                        "games_needed": games_needed,
+                        "source": "data_pipeline_orchestrator",
+                        "timestamp": time.time(),
+                    },
+                    source="data_pipeline_orchestrator",
+                )
+        except (AttributeError, ImportError, RuntimeError) as e:
+            logger.debug(f"[DataPipelineOrchestrator] Failed to emit target update: {e}")
 
     def _on_regression_detected(self, event) -> None:
         """Handle REGRESSION_DETECTED event - trigger curriculum rebalance.

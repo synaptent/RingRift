@@ -449,22 +449,31 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 
 ##### Training scheduler and limits
 
-| Variable                            | Description                             | Default |
-| ----------------------------------- | --------------------------------------- | ------- |
-| `RINGRIFT_MAX_TRAINING_SAME_CONFIG` | Max concurrent training per config      | `1`     |
-| `RINGRIFT_MAX_TRAINING_TOTAL`       | Max concurrent training total           | `3`     |
-| `RINGRIFT_TRAINING_TIMEOUT_HOURS`   | Training timeout (hours)                | `24.0`  |
-| `RINGRIFT_TRAINING_MIN_INTERVAL`    | Min interval between training (seconds) | `1200`  |
-| `RINGRIFT_MIN_MEMORY_GB`            | Min memory for scheduler (GB)           | `64`    |
-| `RINGRIFT_MAX_QUEUE_SIZE`           | Scheduler max queue size                | `1000`  |
-| `RINGRIFT_MAX_SELFPLAY_CLUSTER`     | Max selfplay tasks cluster-wide         | `500`   |
-| `RINGRIFT_HEALTH_CACHE_TTL`         | Scheduler health cache TTL (seconds)    | `30`    |
+| Variable                            | Description                              | Default |
+| ----------------------------------- | ---------------------------------------- | ------- |
+| `RINGRIFT_MAX_TRAINING_SAME_CONFIG` | Max concurrent training per config       | `1`     |
+| `RINGRIFT_MAX_TRAINING_TOTAL`       | Max concurrent training total            | `3`     |
+| `RINGRIFT_TRAINING_TIMEOUT_HOURS`   | Training timeout (hours)                 | `24.0`  |
+| `RINGRIFT_TRAINING_MIN_INTERVAL`    | Min interval between training (seconds)  | `1200`  |
+| `RINGRIFT_TRAINING_RETRY_SLEEP`     | Pause between training retries (seconds) | `2.0`   |
+| `RINGRIFT_MIN_MEMORY_GB`            | Min memory for scheduler (GB)            | `64`    |
+| `RINGRIFT_MAX_QUEUE_SIZE`           | Scheduler max queue size                 | `1000`  |
+| `RINGRIFT_MAX_SELFPLAY_CLUSTER`     | Max selfplay tasks cluster-wide          | `500`   |
+| `RINGRIFT_HEALTH_CACHE_TTL`         | Scheduler health cache TTL (seconds)     | `30`    |
 
 ##### Training data encoding
 
 | Variable                       | Description                | Default |
 | ------------------------------ | -------------------------- | ------- |
 | `RINGRIFT_ENCODING_CHUNK_SIZE` | ParallelEncoder chunk size | `64`    |
+
+##### Data export retries
+
+| Variable                        | Description                              | Default |
+| ------------------------------- | ---------------------------------------- | ------- |
+| `RINGRIFT_DB_LOCK_MAX_RETRIES`  | Max retries for locked databases         | `5`     |
+| `RINGRIFT_DB_LOCK_INITIAL_WAIT` | Initial wait between lock retries (s)    | `0.5`   |
+| `RINGRIFT_DB_LOCK_MAX_WAIT`     | Maximum cumulative wait for DB locks (s) | `30.0`  |
 
 ##### Ephemeral data guard and circuit breaker
 

@@ -5,6 +5,12 @@ from app.rules.interfaces import Validator
 
 
 class CaptureValidator(Validator):
+    """Validator for capture moves during movement and chain capture phases.
+
+    Validates phase/turn constraints, must-move restrictions, position validity,
+    and delegates geometric capture validation to the canonical capture_chain module.
+    """
+
     def validate(self, state: GameState, move: Move) -> bool:
         # 1. Phase Check
         # Captures can happen in MOVEMENT (initial), CAPTURE (chain),

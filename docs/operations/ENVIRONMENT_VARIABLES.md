@@ -513,6 +513,17 @@ Explicit override for gauntlet/evaluation on this node. When unset, defaults are
 Explicit override for export jobs on this node. When unset, defaults are resolved from
 `distributed_hosts.yaml` (coordinator nodes default to disabled).
 
+### `RINGRIFT_TRAINING_RETRY_SLEEP`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `2.0`    |
+| Required | No       |
+
+Pause between training retry attempts (seconds). Used when training loops retry
+after recoverable failures.
+
 ### `RINGRIFT_MIN_SYNC_INTERVAL`
 
 | Property | Value    |
@@ -1887,6 +1898,36 @@ Notes:
 
 Chunk size used by the Python `ParallelEncoder` when batching games for
 parallel encoding (`ai-service/app/training/parallel_encoding.py`).
+
+### `RINGRIFT_DB_LOCK_MAX_RETRIES`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `5`      |
+| Required | No       |
+
+Maximum retries for locked replay databases during NPZ export.
+
+### `RINGRIFT_DB_LOCK_INITIAL_WAIT`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `0.5`    |
+| Required | No       |
+
+Initial wait between DB lock retries (seconds) during export.
+
+### `RINGRIFT_DB_LOCK_MAX_WAIT`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `30.0`   |
+| Required | No       |
+
+Maximum cumulative wait for DB lock retries (seconds) during export.
 
 ### `RINGRIFT_P2P_NODE_CIRCUIT_FAILURE_THRESHOLD`
 

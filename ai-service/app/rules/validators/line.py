@@ -21,6 +21,12 @@ def _position_to_marker_key(pos: Position) -> str:
 
 
 class LineValidator(Validator):
+    """Validator for line processing moves during the LINE_PROCESSING phase.
+
+    Validates PROCESS_LINE, CHOOSE_LINE_REWARD, and CHOOSE_LINE_OPTION moves,
+    ensuring the selected line matches pending lines in the game state.
+    """
+
     def validate(self, state: GameState, move: Move) -> bool:
         # 1. Phase Check
         if state.current_phase != GamePhase.LINE_PROCESSING:

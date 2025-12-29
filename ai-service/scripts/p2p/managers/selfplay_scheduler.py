@@ -35,6 +35,12 @@ try:
         EXPLORATION_BOOST_DEFAULT_DURATION,
         PLATEAU_CLEAR_WIN_RATE,
         PLATEAU_PENALTY_DEFAULT_DURATION,
+        PROMOTION_PENALTY_DURATION_CRITICAL,
+        PROMOTION_PENALTY_DURATION_MULTIPLE,
+        PROMOTION_PENALTY_DURATION_SINGLE,
+        PROMOTION_PENALTY_FACTOR_CRITICAL,
+        PROMOTION_PENALTY_FACTOR_MULTIPLE,
+        PROMOTION_PENALTY_FACTOR_SINGLE,
         TRAINING_BOOST_DURATION,
     )
 except ImportError:
@@ -48,6 +54,13 @@ except ImportError:
     PLATEAU_CLEAR_WIN_RATE = 0.50
     PLATEAU_PENALTY_DEFAULT_DURATION = 1800  # 30 minutes
     TRAINING_BOOST_DURATION = 1800  # 30 minutes
+    # Promotion penalty constants - match app/p2p/constants.py
+    PROMOTION_PENALTY_DURATION_CRITICAL = 7200  # 2 hours
+    PROMOTION_PENALTY_DURATION_MULTIPLE = 3600  # 1 hour
+    PROMOTION_PENALTY_DURATION_SINGLE = 1800  # 30 min
+    PROMOTION_PENALTY_FACTOR_CRITICAL = 0.3
+    PROMOTION_PENALTY_FACTOR_MULTIPLE = 0.5
+    PROMOTION_PENALTY_FACTOR_SINGLE = 0.7
 
 
 @dataclass
@@ -567,7 +580,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         payload = self._extract_event_payload(event)
         config_key = payload.get("config_key", "")
         boost_factor = payload.get("boost_factor", 1.3)
-        duration = payload.get("duration_seconds", 900)
+        duration = payload.get("duration_seconds", EXPLORATION_BOOST_DEFAULT_DURATION)
         reason = payload.get("reason", "training_anomaly")
 
         if not config_key:
@@ -745,7 +758,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
         # Dec 2025 Phase 4D: Clear plateau penalty on successful evaluation
         # If win rate is acceptable, the config is making progress
-        if win_rate >= 0.50 and config_key in self._plateaued_configs:
+        if win_rate >= PLATEAU_CLEAR_WIN_RATE and config_key in self._plateaued_configs:
             del self._plateaued_configs[config_key]
             self._log_info(
                 f"Plateau cleared for {config_key} (win_rate={win_rate:.1%}), "
@@ -807,7 +820,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         """
         payload = self._extract_event_payload(event)
         config_key = payload.get("config_key", "") or payload.get("config", "")
-        duration_seconds = payload.get("duration_seconds", 1800)  # 30 min default
+        duration_seconds = payload.get("duration_seconds", PLATEAU_PENALTY_DEFAULT_DURATION)
         reason = payload.get("reason", "elo_stagnation")
 
         if not config_key:
@@ -1629,7 +1642,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 return True
             # 5090/4090 with 24-32GB might not need it unless very high CPU count
             if any(g in gpu_name for g in ["5090", "4090", "3090"]):
-                return cpu_count >= 128
+                return cpu_count >= CPU_ONLY_JOB_MIN_CPUS
 
         # CPU-only nodes always benefit from full CPU utilization
         return True
@@ -1705,7 +1718,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         # Boost selfplay rate for this config temporarily (just trained = needs more data)
         try:
             # Increase rate multiplier for 30 minutes after training
-            boost_duration = 1800  # 30 minutes
+            boost_duration = TRAINING_BOOST_DURATION
             expiry = time.time() + boost_duration
             # Dec 2025: _training_complete_boosts initialized in __init__
             self._training_complete_boosts[config_key] = expiry
@@ -1893,16 +1906,16 @@ class SelfplayScheduler(EventSubscriptionMixin):
         # More failures = longer penalty period
         if failure_count >= 3:
             # After 3 failures, significantly reduce priority for 2 hours
-            penalty_duration = 7200
-            penalty_factor = 0.3
+            penalty_duration = PROMOTION_PENALTY_DURATION_CRITICAL
+            penalty_factor = PROMOTION_PENALTY_FACTOR_CRITICAL
         elif failure_count >= 2:
             # After 2 failures, reduce priority for 1 hour
-            penalty_duration = 3600
-            penalty_factor = 0.5
+            penalty_duration = PROMOTION_PENALTY_DURATION_MULTIPLE
+            penalty_factor = PROMOTION_PENALTY_FACTOR_MULTIPLE
         else:
             # First failure, reduce priority for 30 minutes
-            penalty_duration = 1800
-            penalty_factor = 0.7
+            penalty_duration = PROMOTION_PENALTY_DURATION_SINGLE
+            penalty_factor = PROMOTION_PENALTY_FACTOR_SINGLE
 
         # Store penalty in exploration boosts (negative boost = reduced priority)
         if not hasattr(self, "_promotion_penalties"):

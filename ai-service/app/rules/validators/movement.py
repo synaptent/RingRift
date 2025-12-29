@@ -5,6 +5,12 @@ from app.rules.interfaces import Validator
 
 
 class MovementValidator(Validator):
+    """Validator for stack movement during the movement phase.
+
+    Validates phase/turn constraints, must-move restrictions, position validity,
+    stack ownership, and ensures the target position is reachable via valid paths.
+    """
+
     def validate(self, state: GameState, move: Move) -> bool:
         # 1. Phase Check
         if state.current_phase != GamePhase.MOVEMENT:

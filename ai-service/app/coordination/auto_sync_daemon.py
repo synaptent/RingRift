@@ -627,7 +627,7 @@ class AutoSyncDaemon(
         """
         import signal
 
-        def handle_termination(sig, frame):
+        def handle_termination(sig: int, frame: Any) -> None:
             logger.warning(f"[AutoSyncDaemon] Received termination signal {sig}")
             try:
                 asyncio.get_running_loop()

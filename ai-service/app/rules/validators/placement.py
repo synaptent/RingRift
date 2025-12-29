@@ -9,6 +9,12 @@ from app.rules.placement import (
 
 
 class PlacementValidator(Validator):
+    """Validator for PLACE_RING and SKIP_PLACEMENT moves during ring placement phase.
+
+    Handles phase/turn checks locally; delegates board geometry, ring caps, and
+    no-dead-placement validation to the canonical placement module helpers.
+    """
+
     def validate(self, state: GameState, move: Move) -> bool:
         """Validate PLACE_RING and SKIP_PLACEMENT moves.
 

@@ -87,7 +87,7 @@ class SlackWorkQueueNotifier:
             )
             urllib.request.urlopen(req, timeout=10)
             return True
-        except Exception as e:
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
             logger.warning(f"Failed to send Slack notification: {e}")
             return False
 

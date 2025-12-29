@@ -348,6 +348,138 @@ def masked_policy_kl(
     return per_sample_loss.mean()
 
 
+def masked_log_softmax(
+    logits: torch.Tensor,
+    valid_mask: torch.Tensor,
+    fill_value: float = -float("inf"),
+) -> torch.Tensor:
+    """Compute log_softmax only over valid positions for spatial policy heads.
+
+    Spatial policy heads (V3/V4 architectures) scatter logits into a flat policy
+    vector, initializing invalid positions to large negative values (-1e4 or -1e9).
+    Standard log_softmax applied to these vectors causes numerical instability:
+    the softmax denominator is dominated by masked entries, attenuating valid
+    action log-probabilities.
+
+    This function computes softmax normalization only over valid action positions,
+    avoiding the instability.
+
+    Parameters
+    ----------
+    logits : torch.Tensor
+        Raw policy logits of shape (batch, policy_size).
+    valid_mask : torch.Tensor
+        Boolean mask of shape (batch, policy_size) or (policy_size,).
+        True indicates valid action positions.
+    fill_value : float
+        Value to fill for invalid positions in output. Default -inf produces
+        probability 0 when exp() is applied.
+
+    Returns
+    -------
+    torch.Tensor
+        Log probabilities of shape (batch, policy_size).
+        Invalid positions are filled with fill_value.
+
+    Notes
+    -----
+    The standard log_softmax formula is:
+        log_softmax(x)_i = x_i - log(sum_j exp(x_j))
+
+    Masked version:
+        log_softmax(x)_i = x_i - log(sum_{j in valid} exp(x_j))  for i in valid
+                         = fill_value                             otherwise
+
+    Example
+    -------
+    >>> logits = torch.tensor([[1.0, 2.0, -1e4, -1e4]])
+    >>> valid_mask = torch.tensor([[True, True, False, False]])
+    >>> log_probs = masked_log_softmax(logits, valid_mask)
+    >>> torch.exp(log_probs[0, :2]).sum()  # Should be ~1.0
+    tensor(1.0000)
+    """
+    # Expand mask to batch dimension if needed
+    if valid_mask.ndim == 1:
+        valid_mask = valid_mask.unsqueeze(0).expand(logits.size(0), -1)
+
+    # Ensure mask is boolean
+    valid_mask = valid_mask.bool()
+
+    # Create output tensor filled with fill_value
+    output = torch.full_like(logits, fill_value)
+
+    # Set invalid positions to -inf before softmax so they don't contribute to denominator
+    masked_logits = logits.masked_fill(~valid_mask, -float("inf"))
+
+    # Compute log_softmax - now only valid positions contribute to denominator
+    # The -inf positions contribute 0 to sum(exp(x)), so they're excluded
+    log_probs = torch.log_softmax(masked_logits, dim=1)
+
+    # Copy valid positions to output (invalid remain at fill_value)
+    output = torch.where(valid_mask, log_probs, output)
+
+    return output
+
+
+def uses_spatial_policy_head(model) -> bool:
+    """Check if a model uses spatial policy heads with masking.
+
+    Spatial policy models (V3/V4) initialize invalid positions to large
+    negative values via _scatter_policy_logits(). These require masked
+    log_softmax to avoid numerical instability during training.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The neural network model to check.
+
+    Returns
+    -------
+    bool
+        True if the model uses spatial policy heads requiring masking.
+    """
+    model_name = model.__class__.__name__
+
+    # Models with spatial policy heads
+    spatial_models = {
+        "RingRiftCNN_v3",
+        "RingRiftCNN_v3_Lite",
+        "RingRiftCNN_v4",
+        "HexNeuralNet_v3",
+        "HexNeuralNet_v3_Lite",
+        "HexNeuralNet_v4",
+    }
+
+    # Explicit flat policy variants (V3 backbone with flat heads)
+    flat_variants = {
+        "RingRiftCNN_v3_Flat",
+        "HexNeuralNet_v3_Flat",
+    }
+
+    return model_name in spatial_models and model_name not in flat_variants
+
+
+def detect_masked_policy_output(policy_pred: torch.Tensor, threshold: float = -1e3) -> bool:
+    """Detect if policy prediction contains masked positions from spatial policy heads.
+
+    This function checks if the policy logits contain large negative values
+    characteristic of spatial policy head masking (-1e4 or -1e9).
+
+    Parameters
+    ----------
+    policy_pred : torch.Tensor
+        Policy logits of shape (batch, policy_size).
+    threshold : float
+        Values below this threshold are considered masked. Default -1e3.
+
+    Returns
+    -------
+    bool
+        True if masked positions are detected.
+    """
+    return bool((policy_pred.min() < threshold).item())
+
+
 def build_rank_targets(
     values_mp: torch.Tensor,
     num_players: int | torch.Tensor,
