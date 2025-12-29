@@ -135,7 +135,7 @@ def get_local_p2p_url() -> str:
     )
 
 
-def get_data_server_url(host: str, port: int | None = None, path: str = "") -> str:
+def get_data_server_url(host: str, port: Optional[int] = None, path: str = "") -> str:
     """Build data server URL for file transfers.
 
     Args:
@@ -150,7 +150,7 @@ def get_data_server_url(host: str, port: int | None = None, path: str = "") -> s
     return f"http://{host}:{port}{path}"
 
 
-def get_health_check_url(host: str, port: int | None = None) -> str:
+def get_health_check_url(host: str, port: Optional[int] = None) -> str:
     """Build health check URL for a node.
 
     Args:
