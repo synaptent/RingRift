@@ -1470,7 +1470,8 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 )
 
             # Calculate Elo updates
-            elo_updates = self._calculate_elo_updates(models, results)
+            # Dec 28, 2025: Fixed undefined 'models' -> 'agent_ids'
+            elo_updates = self._calculate_elo_updates(agent_ids, results)
             state.elo_updates = elo_updates
 
             # Update state
@@ -1487,7 +1488,7 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 "TASK_COMPLETED",
                 job_id,
                 "tournament",
-                models=models,
+                models=agent_ids,  # Dec 28, 2025: Fixed undefined 'models' -> 'agent_ids'
                 total_matches=state.total_matches,
                 elo_updates=elo_updates,
             )
@@ -1608,7 +1609,8 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
             worker_id = getattr(worker, "node_id", str(worker))
             worker_assignments[worker_id].append(match)
 
-        # Dispatch to each worker
+        # Dispatch individual matches to workers via /tournament/match endpoint
+        # Dec 28, 2025: Fixed to use correct endpoint (was /run-tournament-matches)
         async with get_client_session(timeout) as session:
             dispatch_tasks = []
 
@@ -1624,18 +1626,21 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                 if not worker_ip:
                     continue
 
-                url = f"http://{worker_ip}:{worker_port}/run-tournament-matches"
-                payload = {
-                    "job_id": f"{job_id}_{worker_id}",
-                    "parent_job_id": job_id,
-                    "matches": worker_matches,
-                    "board_type": board_type,
-                    "num_players": num_players,
-                }
+                # Send each match individually to /tournament/match endpoint
+                for match in worker_matches:
+                    # Enrich match with board info for the worker
+                    match["board_type"] = board_type
+                    match["num_players"] = num_players
 
-                dispatch_tasks.append(
-                    self._send_tournament_request(session, url, payload, worker_id, timeout)
-                )
+                    url = f"http://{worker_ip}:{worker_port}/tournament/match"
+                    payload = {
+                        "job_id": job_id,
+                        "match": match,
+                    }
+
+                    dispatch_tasks.append(
+                        self._send_tournament_request(session, url, payload, worker_id, timeout)
+                    )
 
             # Wait for all workers to complete
             worker_results = await asyncio.gather(*dispatch_tasks, return_exceptions=True)
