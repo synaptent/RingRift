@@ -40,32 +40,32 @@ A single SQLite database with the following tables:
 
 Primary game metadata, one row per game.
 
-| Column                   | Type             | Description                                                                                                      |
-| ------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `game_id`                | TEXT PRIMARY KEY | Unique game identifier (UUID)                                                                                    |
-| `board_type`             | TEXT NOT NULL    | 'square8', 'square19', 'hex8', 'hexagonal'                                                                       |
-| `num_players`            | INTEGER NOT NULL | 2, 3, or 4                                                                                                       |
-| `rng_seed`               | INTEGER          | Seed used for any stochastic elements                                                                            |
-| `created_at`             | TIMESTAMP        | When the game was created                                                                                        |
-| `completed_at`           | TIMESTAMP        | When the game ended                                                                                              |
-| `game_status`            | TEXT NOT NULL    | GameStatus enum (`waiting`, `active`, `paused`, `abandoned`, `completed`, `finished`)                            |
-| `winner`                 | INTEGER          | Player number of winner (NULL for draws)                                                                         |
-| `termination_reason`     | TEXT             | 'ring_elimination', 'territory_control', 'last_player_standing', 'timeout', 'resignation', 'draw', 'abandonment' |
-| `total_moves`            | INTEGER NOT NULL | Number of moves in the game                                                                                      |
-| `total_turns`            | INTEGER NOT NULL | Number of full turn cycles                                                                                       |
-| `duration_ms`            | INTEGER          | Total game duration in milliseconds                                                                              |
-| `source`                 | TEXT             | 'self_play', 'online_game', 'tournament', 'soak_test', 'manual_import', …                                        |
-| `schema_version`         | INTEGER NOT NULL | Schema version for forward compatibility (current: 15)                                                           |
-| `time_control_type`      | TEXT             | Time control mode ('none', 'blitz', 'rapid', 'classical', etc.)                                                  |
-| `initial_time_ms`        | INTEGER          | Initial clock time per player in milliseconds                                                                    |
-| `time_increment_ms`      | INTEGER          | Increment added after each move in milliseconds                                                                  |
-| `metadata_json`          | TEXT             | JSON-encoded recording metadata (engine versions, tags, etc.)                                                    |
-| `quality_score`          | REAL             | Training quality score (higher is better)                                                                        |
-| `quality_category`       | TEXT             | Quality tier label                                                                                               |
-| `engine_mode`            | TEXT             | AI/engine mode label (fast filtering)                                                                            |
-| `parity_status`          | TEXT             | 'passed', 'failed', 'error', 'pending', 'skipped'                                                                |
-| `parity_checked_at`      | TEXT             | Timestamp of last parity check                                                                                   |
-| `parity_divergence_move` | INTEGER          | Move index where parity first diverged                                                                           |
+| Column                   | Type             | Description                                                                                                                                                                                                      |
+| ------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `game_id`                | TEXT PRIMARY KEY | Unique game identifier (UUID)                                                                                                                                                                                    |
+| `board_type`             | TEXT NOT NULL    | 'square8', 'square19', 'hex8', 'hexagonal'                                                                                                                                                                       |
+| `num_players`            | INTEGER NOT NULL | 2, 3, or 4                                                                                                                                                                                                       |
+| `rng_seed`               | INTEGER          | Seed used for any stochastic elements                                                                                                                                                                            |
+| `created_at`             | TIMESTAMP        | When the game was created                                                                                                                                                                                        |
+| `completed_at`           | TIMESTAMP        | When the game ended                                                                                                                                                                                              |
+| `game_status`            | TEXT NOT NULL    | GameStatus enum (`waiting`, `active`, `paused`, `abandoned`, `completed`, `finished`)                                                                                                                            |
+| `winner`                 | INTEGER          | Player number of winner (NULL for draws)                                                                                                                                                                         |
+| `termination_reason`     | TEXT             | 'ring_elimination', 'territory_control', 'last_player_standing', 'timeout', 'resignation', 'draw', 'abandonment'                                                                                                 |
+| `total_moves`            | INTEGER NOT NULL | Number of moves in the game                                                                                                                                                                                      |
+| `total_turns`            | INTEGER NOT NULL | Number of full turn cycles                                                                                                                                                                                       |
+| `duration_ms`            | INTEGER          | Total game duration in milliseconds                                                                                                                                                                              |
+| `source`                 | TEXT             | Canonical: 'self_play', 'soak_test', 'cmaes', 'gauntlet', 'tournament', 'training', 'manual' (legacy imports may include 'online_game', 'manual_import', 'selfplay_soak', 'python-strict', 'cmaes_optimization') |
+| `schema_version`         | INTEGER NOT NULL | Schema version for forward compatibility (current: 15)                                                                                                                                                           |
+| `time_control_type`      | TEXT             | Time control mode ('none', 'blitz', 'rapid', 'classical', etc.)                                                                                                                                                  |
+| `initial_time_ms`        | INTEGER          | Initial clock time per player in milliseconds                                                                                                                                                                    |
+| `time_increment_ms`      | INTEGER          | Increment added after each move in milliseconds                                                                                                                                                                  |
+| `metadata_json`          | TEXT             | JSON-encoded recording metadata (engine versions, tags, etc.)                                                                                                                                                    |
+| `quality_score`          | REAL             | Training quality score (higher is better)                                                                                                                                                                        |
+| `quality_category`       | TEXT             | Quality tier label                                                                                                                                                                                               |
+| `engine_mode`            | TEXT             | AI/engine mode label (fast filtering)                                                                                                                                                                            |
+| `parity_status`          | TEXT             | 'passed', 'failed', 'error', 'pending', 'skipped'                                                                                                                                                                |
+| `parity_checked_at`      | TEXT             | Timestamp of last parity check                                                                                                                                                                                   |
+| `parity_divergence_move` | INTEGER          | Move index where parity first diverged                                                                                                                                                                           |
 
 Note: in-progress recordings may temporarily store `game_status = 'active'` as a placeholder
 until `finalize()` persists the terminal status.
@@ -638,14 +638,14 @@ For training and deeper parity analysis we additionally want:
 We do not pin exact numbers here because they can vary by experiment, but a
 useful **golden baseline** is:
 
-| Board     | Profile        | Recommended finished games (2p) | Typical source                    |
-| --------- | -------------- | ------------------------------- | --------------------------------- |
-| square8   | self-play soak | ≥ 100                           | `selfplay_soak` / `python-strict` |
-| square19  | self-play soak | ≥ 50                            | `selfplay_soak`                   |
-| hexagonal | self-play soak | ≥ 40 (when NN/MPS is stable)    | `selfplay_soak`                   |
-| square8   | CMA-ES eval    | ≥ 100                           | `cmaes` / `cmaes_optimization`    |
-| square19  | CMA-ES eval    | ≥ 60                            | `cmaes` / `cmaes_optimization`    |
-| hexagonal | CMA-ES eval    | ≥ 40 (optional)                 | `cmaes` / `cmaes_optimization`    |
+| Board     | Profile        | Recommended finished games (2p) | Typical source                                         |
+| --------- | -------------- | ------------------------------- | ------------------------------------------------------ |
+| square8   | self-play soak | ≥ 100                           | `soak_test` (legacy: `selfplay_soak`, `python-strict`) |
+| square19  | self-play soak | ≥ 50                            | `soak_test` (legacy: `selfplay_soak`)                  |
+| hexagonal | self-play soak | ≥ 40 (when NN/MPS is stable)    | `soak_test` (legacy: `selfplay_soak`)                  |
+| square8   | CMA-ES eval    | ≥ 100                           | `cmaes` (legacy: `cmaes_optimization`)                 |
+| square19  | CMA-ES eval    | ≥ 60                            | `cmaes` (legacy: `cmaes_optimization`)                 |
+| hexagonal | CMA-ES eval    | ≥ 40 (optional)                 | `cmaes` (legacy: `cmaes_optimization`)                 |
 
 Small helper scripts exist for “quick but representative” coverage:
 
@@ -681,7 +681,7 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=. \
 The resulting `db_health.current.json` summarises, per DB:
 
 - `total_games`, `board_type_counts`, `num_players_counts`
-- `source_counts` (e.g. `random_selfplay`, `selfplay_soak`, `cmaes`)
+- `source_counts` (e.g. `self_play`, `soak_test`, `cmaes`; legacy sources may appear)
 - `structure_counts` (`good`, `internal_inconsistent`, etc.)
 - `termination_reason_counts`
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -329,7 +330,8 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
             conn.close()
 
             return row[0] if row else None
-        except Exception:
+        except (sqlite3.Error, OSError):
+            # Database access or file system errors
             return None
 
     # =========================================================================

@@ -57,6 +57,7 @@ from app.distributed.cluster_config_manager import (
     ClusterConfigManager,
     NodeSyncPolicy as ConfigNodeSyncPolicy,
 )
+from app.distributed.data_location_registry import DataLocationRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +460,13 @@ class ClusterManifest:
         # Initialize database
         self._init_db()
 
+        # Initialize data location registry (delegated component)
+        self._registry = DataLocationRegistry(
+            db_path=self.db_path,
+            connection_factory=self._connection,
+            node_id=self.node_id,
+        )
+
         logger.info(f"ClusterManifest initialized: node={self.node_id}, db={db_path}")
 
     # -------------------------------------------------------------------------
@@ -741,7 +749,7 @@ class ClusterManifest:
         conn.commit()
 
     # =========================================================================
-    # Game Location Registry
+    # Game Location Registry (delegated to DataLocationRegistry)
     # =========================================================================
 
     def register_game(
@@ -753,30 +761,10 @@ class ClusterManifest:
         num_players: int | None = None,
         engine_mode: str | None = None,
     ) -> None:
-        """Register a game location in the manifest.
-
-        Args:
-            game_id: Unique game identifier
-            node_id: Node where the game exists
-            db_path: Path to database containing the game
-            board_type: Board configuration (e.g., "hex8", "square8")
-            num_players: Number of players
-            engine_mode: Engine mode used (e.g., "gumbel-mcts")
-        """
-        now = time.time()
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO game_locations
-                (game_id, node_id, db_path, board_type, num_players,
-                 engine_mode, registered_at, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?,
-                    COALESCE((SELECT registered_at FROM game_locations
-                              WHERE game_id = ? AND node_id = ?), ?),
-                    ?)
-            """, (game_id, node_id, db_path, board_type, num_players,
-                  engine_mode, game_id, node_id, now, now))
-            conn.commit()
+        """Register a game location in the manifest."""
+        return self._registry.register_game(
+            game_id, node_id, db_path, board_type, num_players, engine_mode
+        )
 
     def register_games_batch(
         self,
@@ -785,40 +773,10 @@ class ClusterManifest:
         num_players: int | None = None,
         engine_mode: str | None = None,
     ) -> int:
-        """Register multiple game locations efficiently.
-
-        Args:
-            games: List of (game_id, node_id, db_path) tuples
-            board_type: Board configuration
-            num_players: Number of players
-            engine_mode: Engine mode
-
-        Returns:
-            Number of games registered
-        """
-        if not games:
-            return 0
-
-        now = time.time()
-        registered = 0
-
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            for game_id, node_id, db_path in games:
-                try:
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO game_locations
-                        (game_id, node_id, db_path, board_type, num_players,
-                         engine_mode, registered_at, last_seen)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (game_id, node_id, db_path, board_type, num_players,
-                          engine_mode, now, now))
-                    registered += 1
-                except sqlite3.Error as e:
-                    logger.warning(f"Failed to register game {game_id}: {e}")
-            conn.commit()
-
-        return registered
+        """Register multiple game locations efficiently."""
+        return self._registry.register_games_batch(
+            games, board_type, num_players, engine_mode
+        )
 
     def mark_games_consolidated(
         self,
@@ -827,53 +785,10 @@ class ClusterManifest:
         board_type: str | None = None,
         num_players: int | None = None,
     ) -> int:
-        """Mark games as consolidated into a canonical database.
-
-        December 2025: Part of training pipeline fix. Updates game records
-        to indicate they've been merged into canonical databases.
-
-        Args:
-            game_ids: List of game IDs that were consolidated
-            canonical_db: Path to canonical database they were merged into
-            board_type: Optional board type filter
-            num_players: Optional player count filter
-
-        Returns:
-            Number of games marked as consolidated
-        """
-        if not game_ids:
-            return 0
-
-        now = time.time()
-        marked = 0
-
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            for game_id in game_ids:
-                try:
-                    # Build query with optional filters
-                    query = """
-                        UPDATE game_locations
-                        SET is_consolidated = 1, consolidated_at = ?, canonical_db = ?
-                        WHERE game_id = ?
-                    """
-                    params: list[Any] = [now, canonical_db, game_id]
-
-                    if board_type:
-                        query += " AND board_type = ?"
-                        params.append(board_type)
-                    if num_players:
-                        query += " AND num_players = ?"
-                        params.append(num_players)
-
-                    cursor.execute(query, params)
-                    marked += cursor.rowcount
-                except sqlite3.Error as e:
-                    logger.warning(f"Failed to mark game {game_id} as consolidated: {e}")
-            conn.commit()
-
-        logger.info(f"Marked {marked} games as consolidated into {canonical_db}")
-        return marked
+        """Mark games as consolidated into a canonical database."""
+        return self._registry.mark_games_consolidated(
+            game_ids, canonical_db, board_type, num_players
+        )
 
     def get_unconsolidated_games(
         self,
@@ -881,103 +796,16 @@ class ClusterManifest:
         num_players: int,
         limit: int = 10000,
     ) -> list[GameLocation]:
-        """Get games that haven't been consolidated yet.
-
-        December 2025: Part of training pipeline fix. Returns games that need
-        to be merged into canonical databases.
-
-        Args:
-            board_type: Board configuration
-            num_players: Number of players
-            limit: Maximum number of games to return
-
-        Returns:
-            List of unconsolidated GameLocation objects
-        """
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT game_id, node_id, db_path, board_type, num_players,
-                       engine_mode, registered_at, last_seen,
-                       is_consolidated, consolidated_at, canonical_db
-                FROM game_locations
-                WHERE board_type = ? AND num_players = ?
-                  AND (is_consolidated = 0 OR is_consolidated IS NULL)
-                ORDER BY registered_at DESC
-                LIMIT ?
-            """, (board_type, num_players, limit))
-
-            locations = []
-            for row in cursor.fetchall():
-                locations.append(GameLocation(
-                    game_id=row[0],
-                    node_id=row[1],
-                    db_path=row[2],
-                    board_type=row[3],
-                    num_players=row[4],
-                    engine_mode=row[5],
-                    registered_at=row[6],
-                    last_seen=row[7],
-                    is_consolidated=bool(row[8]) if row[8] is not None else False,
-                    consolidated_at=row[9] or 0.0,
-                    canonical_db=row[10],
-                ))
-
-            return locations
+        """Get games that haven't been consolidated yet."""
+        return self._registry.get_unconsolidated_games(board_type, num_players, limit)
 
     def find_game(self, game_id: str) -> list[GameLocation]:
-        """Find all locations where a game exists.
-
-        Args:
-            game_id: Game identifier
-
-        Returns:
-            List of GameLocation objects
-        """
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT game_id, node_id, db_path, board_type, num_players,
-                       engine_mode, registered_at, last_seen,
-                       is_consolidated, consolidated_at, canonical_db
-                FROM game_locations
-                WHERE game_id = ?
-            """, (game_id,))
-
-            locations = []
-            for row in cursor.fetchall():
-                locations.append(GameLocation(
-                    game_id=row[0],
-                    node_id=row[1],
-                    db_path=row[2],
-                    board_type=row[3],
-                    num_players=row[4],
-                    engine_mode=row[5],
-                    registered_at=row[6],
-                    last_seen=row[7],
-                    is_consolidated=bool(row[8]) if row[8] is not None else False,
-                    consolidated_at=row[9] or 0.0,
-                    canonical_db=row[10],
-                ))
-
-            return locations
+        """Find all locations where a game exists."""
+        return self._registry.find_game(game_id)
 
     def get_game_replication_count(self, game_id: str) -> int:
-        """Get number of nodes where a game is replicated.
-
-        Args:
-            game_id: Game identifier
-
-        Returns:
-            Number of nodes with the game
-        """
-        with self._connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COUNT(DISTINCT node_id) FROM game_locations WHERE game_id = ?",
-                (game_id,)
-            )
-            return cursor.fetchone()[0]
+        """Get number of nodes where a game is replicated."""
+        return self._registry.get_game_replication_count(game_id)
 
     def get_under_replicated_games(
         self,
@@ -986,45 +814,17 @@ class ClusterManifest:
         num_players: int | None = None,
         limit: int = 1000,
     ) -> list[tuple[str, int]]:
-        """Find games that exist on fewer than min_copies nodes.
+        """Find games that exist on fewer than min_copies nodes."""
+        return self._registry.get_under_replicated_games(
+            min_copies, board_type, num_players, limit
+        )
 
-        Args:
-            min_copies: Minimum required copies
-            board_type: Optional filter
-            num_players: Optional filter
-            limit: Maximum results
-
-        Returns:
-            List of (game_id, current_copies) tuples
-        """
-        with self._connection() as conn:
-            cursor = conn.cursor()
-
-            query = """
-                SELECT game_id, COUNT(DISTINCT node_id) as copies
-                FROM game_locations
-            """
-            params: list[Any] = []
-
-            where_clauses = []
-            if board_type:
-                where_clauses.append("board_type = ?")
-                params.append(board_type)
-            if num_players:
-                where_clauses.append("num_players = ?")
-                params.append(num_players)
-
-            if where_clauses:
-                query += " WHERE " + " AND ".join(where_clauses)
-
-            query += " GROUP BY game_id HAVING copies < ? LIMIT ?"
-            params.extend([min_copies, limit])
-
-            cursor.execute(query, params)
-            return [(row[0], row[1]) for row in cursor.fetchall()]
+    def get_game_locations(self) -> dict[str, Any]:
+        """Get game locations grouped by game_id."""
+        return self._registry.get_game_locations()
 
     # =========================================================================
-    # Model Location Registry
+    # Model Location Registry (delegated to DataLocationRegistry)
     # =========================================================================
 
     def register_model(
