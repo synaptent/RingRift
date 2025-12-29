@@ -688,7 +688,12 @@ def _emit_stage_event_sync(
                 return True
             return False
 
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # December 29, 2025: Narrowed from bare except Exception
+        # - AttributeError: Bus not available or method doesn't exist
+        # - TypeError: Wrong argument types
+        # - ValueError: Invalid event type
+        # - RuntimeError: Event loop issues
         logger.debug(f"Failed to emit {event} sync: {e}")
         return False
 

@@ -268,7 +268,10 @@ class HealthCheckOrchestrator:
             logger.info("[HealthCheckOrchestrator] Subscribed to P2P node death events")
         except ImportError as e:
             logger.debug(f"[HealthCheckOrchestrator] Event router not available: {e}")
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
+            # December 29, 2025: Narrowed from bare except Exception
+            # - AttributeError: Router not initialized or subscribe method missing
+            # - TypeError: Wrong argument types for subscribe
             logger.warning(f"[HealthCheckOrchestrator] Failed to subscribe to events: {e}")
 
     async def _on_node_dead(self, event) -> None:
@@ -338,7 +341,12 @@ class HealthCheckOrchestrator:
         while self._running:
             try:
                 await self.run_full_health_check()
-            except Exception as e:
+            except asyncio.CancelledError:
+                # December 29, 2025: Let cancellation propagate for graceful shutdown
+                raise
+            except (OSError, RuntimeError, ValueError, TypeError, AttributeError) as e:
+                # December 29, 2025: Narrowed from bare except Exception
+                # Keep loop running on recoverable errors, but let programming errors propagate
                 logger.error(f"[HealthCheckOrchestrator] Check cycle error: {e}")
 
             await asyncio.sleep(self.check_interval)
@@ -509,7 +517,12 @@ class HealthCheckOrchestrator:
                     cpu_utilization=details.cpu_percent,
                     available_slots=util.get("available_slots", 1),
                 )
-            except Exception as e:
+            except (OSError, asyncio.TimeoutError, AttributeError, TypeError, ValueError) as e:
+                # December 29, 2025: Narrowed from bare except Exception
+                # - OSError: Network errors during utilization check
+                # - asyncio.TimeoutError: Timeout waiting for utilization data
+                # - AttributeError: Result is not a dict or missing attributes
+                # - TypeError/ValueError: Invalid utilization data format
                 logger.debug(f"[HealthCheckOrchestrator] Utilization check failed for {node_id}: {e}")
 
         # Reset or increment failure counter

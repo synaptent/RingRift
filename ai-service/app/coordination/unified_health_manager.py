@@ -557,6 +557,12 @@ class UnifiedHealthManager(CoordinatorBase):
             router.subscribe(DataEventType.DLQ_EVENTS_REPLAYED, self._on_dlq_events_replayed)
             router.subscribe(DataEventType.DLQ_EVENTS_PURGED, self._on_dlq_events_purged)
 
+            # Budget/Capacity events (December 29, 2025 - wires orphaned budget/capacity events)
+            router.subscribe(DataEventType.CAPACITY_LOW, self._on_capacity_low)
+            router.subscribe(DataEventType.CAPACITY_RESTORED, self._on_capacity_restored)
+            router.subscribe(DataEventType.BUDGET_EXCEEDED, self._on_budget_exceeded)
+            router.subscribe(DataEventType.BUDGET_ALERT, self._on_budget_alert)
+
             self._subscribed = True
             logger.info("[UnifiedHealthManager] Subscribed to health events via event router")
             return True
@@ -1734,6 +1740,178 @@ class UnifiedHealthManager(CoordinatorBase):
             "stale_events": getattr(self, "_dlq_stale_events_count", 0),
             "replayed": getattr(self, "_dlq_replayed_count", 0),
             "purged": getattr(self, "_dlq_purged_count", 0),
+        }
+
+    # =========================================================================
+    # Budget/Capacity Event Handlers (December 29, 2025)
+    # =========================================================================
+
+    async def _on_capacity_low(self, event) -> None:
+        """Handle CAPACITY_LOW event - track when cluster GPU capacity drops.
+
+        Monitors when GPU capacity falls below threshold, indicating potential
+        issues with cluster health or unexpected node terminations.
+
+        December 29, 2025: Added to close the capacity feedback loop and provide
+        visibility into cluster capacity issues.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        current_gpus = payload.get("current_gpus", 0)
+        threshold = payload.get("threshold", 0)
+        needed_gpus = payload.get("needed_gpus", 0)
+
+        logger.warning(
+            f"[UnifiedHealthManager] Cluster capacity low: {current_gpus} GPUs "
+            f"(threshold: {threshold}, need: {needed_gpus})"
+        )
+
+        # Record as warning for visibility
+        error = ErrorRecord(
+            error_id=f"capacity_low_{int(time.time() * 1000)}",
+            timestamp=time.time(),
+            component="cluster_capacity",
+            error_type="capacity_low",
+            message=f"Cluster capacity low: {current_gpus}/{threshold} GPUs",
+            node_id="",
+            severity=ErrorSeverity.WARNING,
+            context={
+                "current_gpus": current_gpus,
+                "threshold": threshold,
+                "needed_gpus": needed_gpus,
+            },
+        )
+        self._record_error(error)
+
+        # Track capacity state
+        self._capacity_low = True
+        self._capacity_low_since = time.time()
+
+    async def _on_capacity_restored(self, event) -> None:
+        """Handle CAPACITY_RESTORED event - track when capacity recovers.
+
+        Monitors when GPU capacity returns above threshold after being low.
+
+        December 29, 2025: Added to track capacity recovery events.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        current_gpus = payload.get("current_gpus", 0)
+        threshold = payload.get("threshold", 0)
+
+        # Calculate how long capacity was low
+        low_since = getattr(self, "_capacity_low_since", 0)
+        duration = time.time() - low_since if low_since else 0
+
+        logger.info(
+            f"[UnifiedHealthManager] Cluster capacity restored: {current_gpus} GPUs "
+            f"(threshold: {threshold}, was low for {duration:.0f}s)"
+        )
+
+        # Record component success
+        self._on_component_success("cluster_capacity")
+
+        # Clear capacity state
+        self._capacity_low = False
+        self._capacity_low_since = 0
+
+    async def _on_budget_exceeded(self, event) -> None:
+        """Handle BUDGET_EXCEEDED event - track when spending exceeds budget.
+
+        Monitors when hourly or daily cloud spending exceeds configured limits,
+        requiring potential scaling down or alerting.
+
+        December 29, 2025: Added to close the budget feedback loop and provide
+        visibility into cost management issues.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        period = payload.get("period", "unknown")  # hourly, daily
+        spent = payload.get("spent", 0)
+        limit = payload.get("limit", 0)
+        overage_pct = ((spent / limit) - 1) * 100 if limit > 0 else 0
+
+        logger.error(
+            f"[UnifiedHealthManager] Budget exceeded: ${spent:.2f} spent "
+            f"(limit: ${limit:.2f}, {period}, {overage_pct:.1f}% over)"
+        )
+
+        # Record as error - this is a critical cost issue
+        error = ErrorRecord(
+            error_id=f"budget_exceeded_{int(time.time() * 1000)}",
+            timestamp=time.time(),
+            component="budget",
+            error_type="budget_exceeded",
+            message=f"Budget exceeded: ${spent:.2f}/${limit:.2f} ({period})",
+            node_id="",
+            severity=ErrorSeverity.ERROR,
+            context={
+                "period": period,
+                "spent": spent,
+                "limit": limit,
+                "overage_pct": overage_pct,
+            },
+        )
+        self._record_error(error)
+
+        # Trip budget circuit breaker
+        self._on_component_failure("budget")
+
+        # Track budget state
+        self._budget_exceeded = True
+        self._budget_exceeded_at = time.time()
+
+    async def _on_budget_alert(self, event) -> None:
+        """Handle BUDGET_ALERT event - track approaching budget threshold.
+
+        Monitors when spending approaches budget limits (e.g., 80% of limit),
+        providing early warning before exceeding.
+
+        December 29, 2025: Added to provide early warning on budget issues.
+        """
+        payload = event.payload if hasattr(event, "payload") else event
+
+        period = payload.get("period", "unknown")
+        spent = payload.get("spent", 0)
+        limit = payload.get("limit", 0)
+        threshold_pct = payload.get("threshold_pct", 80)
+        current_pct = (spent / limit) * 100 if limit > 0 else 0
+
+        logger.warning(
+            f"[UnifiedHealthManager] Budget alert: ${spent:.2f} spent "
+            f"(limit: ${limit:.2f}, {period}, {current_pct:.1f}% of limit)"
+        )
+
+        # Record as warning
+        error = ErrorRecord(
+            error_id=f"budget_alert_{int(time.time() * 1000)}",
+            timestamp=time.time(),
+            component="budget",
+            error_type="budget_alert",
+            message=f"Budget alert: ${spent:.2f}/${limit:.2f} ({period}, {current_pct:.1f}%)",
+            node_id="",
+            severity=ErrorSeverity.WARNING,
+            context={
+                "period": period,
+                "spent": spent,
+                "limit": limit,
+                "threshold_pct": threshold_pct,
+                "current_pct": current_pct,
+            },
+        )
+        self._record_error(error)
+
+    def get_budget_capacity_metrics(self) -> dict[str, Any]:
+        """Get budget and capacity metrics (December 29, 2025).
+
+        Returns:
+            Dict with capacity_low, budget_exceeded, and related timestamps
+        """
+        return {
+            "capacity_low": getattr(self, "_capacity_low", False),
+            "capacity_low_since": getattr(self, "_capacity_low_since", 0),
+            "budget_exceeded": getattr(self, "_budget_exceeded", False),
+            "budget_exceeded_at": getattr(self, "_budget_exceeded_at", 0),
         }
 
     # =========================================================================
