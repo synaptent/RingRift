@@ -870,6 +870,175 @@ class HexNeuralNet_v3_Lite(nn.Module):
         return v_out, policy_logits
 
 
+class HexNeuralNet_v3_Flat(nn.Module):
+    """
+    V3 backbone with flat policy heads for training compatibility.
+
+    This architecture combines the SE backbone improvements from V3 with the
+    flat policy head design from V2, avoiding the spatial policy head issues
+    that cause loss explosion during training.
+
+    Why this class exists:
+    V3's spatial policy heads mask invalid hex cells to -1e9, but when these
+    values are scattered into the flat policy vector and log_softmax is applied,
+    the ~90,000 masked entries dominate the softmax denominator, causing:
+    - Valid actions to get log-prob ≈ -25
+    - KL loss = 800 valid actions × 25 = 20,000+ loss per sample
+
+    Solution:
+    V3_Flat uses the same backbone as V3 but outputs policy through a standard
+    FC layer like V2. This produces unbounded logits that work correctly with
+    the standard cross-entropy loss where invalid actions are masked in the
+    target distribution, not the model output.
+
+    Key characteristics:
+    - SE backbone from V3 (12 blocks, 192 filters, 64 input channels)
+    - Flat policy head from V2 (global avg pool → FC → policy_size)
+    - Compatible with standard training pipeline
+    - No spatial action structure preserved (tradeoff for trainability)
+
+    When to use:
+    - Training new V3-like models
+    - Any situation where V3 shows extreme loss values
+
+    When NOT to use:
+    - If you have a working V3 spatial training pipeline
+    - If spatial action locality is critical for your use case
+
+    Architecture Version:
+        v3.1.0 - V3 backbone with flat policy heads for training compatibility.
+    """
+
+    ARCHITECTURE_VERSION = "v3.1.0-flat"
+
+    def __init__(
+        self,
+        in_channels: int = 64,  # 16 base × 4 frames for V3 encoder
+        global_features: int = 20,
+        num_res_blocks: int = 12,
+        num_filters: int = 192,
+        board_size: int = HEX_BOARD_SIZE,
+        policy_size: int = P_HEX,
+        policy_intermediate: int = 384,  # V2-style policy intermediate
+        value_intermediate: int = 128,
+        num_players: int = 4,
+        se_reduction: int = 16,
+        hex_radius: int = 12,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.global_features = global_features
+        self.num_res_blocks = num_res_blocks
+        self.num_filters = num_filters
+        self.board_size = board_size
+        self.policy_size = policy_size
+        self.num_players = num_players
+
+        # Pre-compute hex validity mask
+        self.register_buffer("hex_mask", create_hex_mask(hex_radius, board_size))
+
+        # Shared backbone with SE blocks (same as V3)
+        self.conv1 = nn.Conv2d(in_channels, num_filters, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+        self.res_blocks = nn.ModuleList(
+            [SEResidualBlock(num_filters, reduction=se_reduction) for _ in range(num_res_blocks)]
+        )
+
+        # Multi-player value head with masked pooling (same as V3)
+        self.value_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
+        self.value_bn = nn.BatchNorm2d(1)
+        self.value_fc1 = nn.Linear(1 + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
+        self.tanh = nn.Tanh()
+        self.dropout = nn.Dropout(0.3)
+
+        # FLAT Policy head (V2-style, avoids spatial masking issues)
+        self.policy_conv = nn.Conv2d(num_filters, num_filters, kernel_size=1)
+        self.policy_bn = nn.BatchNorm2d(num_filters)
+        self.policy_fc1 = nn.Linear(num_filters + global_features, policy_intermediate)
+        self.policy_fc2 = nn.Linear(policy_intermediate, policy_size)
+
+    def _masked_global_avg_pool(
+        self,
+        x: torch.Tensor,
+        hex_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Perform masked global average pooling over [H, W] for hex grid."""
+        mask = hex_mask if hex_mask is not None else self.hex_mask
+        if mask is None:
+            return x.mean(dim=(2, 3))
+        mask = mask.to(dtype=x.dtype, device=x.device)
+        masked = x * mask
+        num = masked.sum(dim=(2, 3))
+        denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
+        return num / denom
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        globals: torch.Tensor,
+        hex_mask: torch.Tensor | None = None,
+        return_features: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass with flat policy head (V2-style).
+
+        Args:
+            x: Input features [B, in_channels, H, W]
+            globals: Global features [B, global_features]
+            hex_mask: Optional validity mask [1, H, W]
+            return_features: If True, also return backbone features
+
+        Returns:
+            value: [B, num_players] per-player win probability
+            policy: [B, policy_size] flat policy logits (NO -1e9 masking)
+            features (optional): [B, feat_dim] pooled backbone features
+        """
+        # Input validation
+        if x.shape[1] != self.in_channels:
+            raise RuntimeError(
+                f"Input channel mismatch in {self.__class__.__name__}.forward():\n"
+                f"  Input has {x.shape[1]} channels\n"
+                f"  Model expects {self.in_channels} channels"
+            )
+
+        # Apply hex mask to input
+        mask = hex_mask if hex_mask is not None else self.hex_mask
+        if mask is not None:
+            x = x * mask.to(dtype=x.dtype, device=x.device)
+
+        # Backbone with SE blocks
+        out = self.relu(self.bn1(self.conv1(x)))
+        for block in self.res_blocks:
+            out = block(out)
+
+        # === Value Head (same as V3) ===
+        v = self.value_conv(out)
+        v = self.relu(self.value_bn(v))
+        v_pooled = self._masked_global_avg_pool(v, hex_mask)
+        v_cat = torch.cat([v_pooled, globals], dim=1)
+        v_hidden = self.relu(self.value_fc1(v_cat))
+        v_hidden = self.dropout(v_hidden)
+        v_out = self.tanh(self.value_fc2(v_hidden))
+
+        # === FLAT Policy Head (V2-style) ===
+        # This avoids the spatial masking → scatter → log_softmax issue
+        p = self.policy_conv(out)
+        p = self.relu(self.policy_bn(p))
+        p_pooled = self._masked_global_avg_pool(p, hex_mask)
+        p_cat = torch.cat([p_pooled, globals], dim=1)
+        p_hidden = self.relu(self.policy_fc1(p_cat))
+        p_hidden = self.dropout(p_hidden)
+        policy_logits = self.policy_fc2(p_hidden)
+
+        if return_features:
+            out_pooled = self._masked_global_avg_pool(out, hex_mask)
+            return v_out, policy_logits, out_pooled
+
+        return v_out, policy_logits
+
+
 class HexNeuralNet_v4(nn.Module):
     """
     V4 architecture with NAS-optimized attention for hexagonal boards.

@@ -811,6 +811,42 @@ class TaskHeartbeatMonitor:
 
         return timed_out
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status of the heartbeat monitor.
+
+        Returns:
+            HealthCheckResult with monitor health status
+        """
+        from app.coordination.protocols import HealthCheckResult
+
+        is_healthy = self._running and self._thread is not None and self._thread.is_alive()
+
+        details = {
+            "running": self._running,
+            "thread_alive": self._thread is not None and self._thread.is_alive(),
+            "timeout_seconds": self.timeout_seconds,
+            "check_interval": self.check_interval,
+        }
+
+        if is_healthy:
+            return HealthCheckResult(
+                status="healthy",
+                message="TaskHeartbeatMonitor running",
+                details=details,
+            )
+        elif not self._running:
+            return HealthCheckResult(
+                status="stopped",
+                message="TaskHeartbeatMonitor stopped",
+                details=details,
+            )
+        else:
+            return HealthCheckResult(
+                status="degraded",
+                message="TaskHeartbeatMonitor thread not alive",
+                details=details,
+            )
+
 
 # ============================================
 # Task Coordinator

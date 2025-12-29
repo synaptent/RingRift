@@ -82,6 +82,7 @@ from app.ai.neural_net import (
     MAX_PLAYERS,
     HexNeuralNet_v2,
     HexNeuralNet_v3,
+    HexNeuralNet_v3_Flat,  # V3 with flat policy heads (training compatible, Dec 2025)
     HexNeuralNet_v4,
     HexNeuralNet_v5_Heavy,
     RingRiftCNN_v2,
@@ -1934,11 +1935,11 @@ def train_model(
     hex_num_players = num_players
     # Compute hex_radius from board_type: HEX8 has radius 4, HEXAGONAL has radius 12
     hex_radius = 4 if config.board_type == BoardType.HEX8 else 12
-    # HexNeuralNet_v3, v4, v5 use spatial policy heads that assume board-aware (P_HEX)
-    # indices. Enforce board-aware encoding for v3/v4/v5 via dataset metadata checks.
+    # HexNeuralNet_v3, v4, v5 use 64 input channels (16 base × 4 frames)
+    # v3-spatial uses original spatial policy heads, v3 uses flat policy heads (default)
     use_hex_v5 = bool(use_hex_model and model_version in ('v5', 'v5-gnn', 'v5-heavy'))
     use_hex_v4 = bool(use_hex_model and model_version == 'v4')
-    use_hex_v3 = bool(use_hex_model and model_version == 'v3')
+    use_hex_v3 = bool(use_hex_model and model_version in ('v3', 'v3-spatial'))
 
     # December 2025: Detect heuristic feature count from NPZ for v5_heavy/v6 models
     # This enables automatic switching between fast (21) and full (49) modes
@@ -2116,7 +2117,10 @@ def train_model(
             elif use_hex_v4:
                 hex_model_name = "HexNeuralNet_v4"
             elif use_hex_v3:
-                hex_model_name = "HexNeuralNet_v3"
+                if model_version == 'v3-spatial':
+                    hex_model_name = "HexNeuralNet_v3 (spatial policy - DEPRECATED)"
+                else:
+                    hex_model_name = "HexNeuralNet_v3_Flat"
             else:
                 hex_model_name = "HexNeuralNet_v2"
             logger.info(
@@ -2279,18 +2283,41 @@ def train_model(
             num_players=hex_num_players,
         )
     elif use_hex_v3:
-        # HexNeuralNet_v3 for hexagonal boards with spatial policy heads
-        # V3 uses 16 base channels * (history_length + 1) frames = 64 channels
-        model = HexNeuralNet_v3(
-            in_channels=hex_in_channels,
-            global_features=20,  # V3 encoder provides 20 global features
-            num_res_blocks=effective_blocks,
-            num_filters=effective_filters,
-            board_size=board_size,
-            hex_radius=hex_radius,
-            policy_size=policy_size,
-            num_players=hex_num_players,
-        )
+        # HexNeuralNet_v3_Flat for hexagonal boards (flat policy heads, Dec 2025)
+        # V3_Flat uses flat policy heads like V2 to avoid the spatial masking issue
+        # where -1e9 masked values caused 11M+ loss explosion with log_softmax.
+        # Use --model-version v3-spatial for original spatial policy heads.
+        if model_version == 'v3-spatial':
+            # Original V3 with spatial policy heads (DEPRECATED for training)
+            import warnings
+            warnings.warn(
+                "HexNeuralNet_v3 with spatial policy heads may cause loss explosion. "
+                "Use --model-version v3 for flat policy heads instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            model = HexNeuralNet_v3(
+                in_channels=hex_in_channels,
+                global_features=20,
+                num_res_blocks=effective_blocks,
+                num_filters=effective_filters,
+                board_size=board_size,
+                hex_radius=hex_radius,
+                policy_size=policy_size,
+                num_players=hex_num_players,
+            )
+        else:
+            # V3_Flat: V3 backbone with flat policy heads (training compatible)
+            model = HexNeuralNet_v3_Flat(
+                in_channels=hex_in_channels,
+                global_features=20,  # V3 encoder provides 20 global features
+                num_res_blocks=effective_blocks,
+                num_filters=effective_filters,
+                board_size=board_size,
+                hex_radius=hex_radius,
+                policy_size=policy_size,
+                num_players=hex_num_players,
+            )
     elif use_hex_model:
         # HexNeuralNet_v2 for hexagonal boards with multi-player support
         # V2 uses 10 base channels * (history_length + 1) frames = 40 channels

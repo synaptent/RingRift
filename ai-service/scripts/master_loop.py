@@ -436,6 +436,61 @@ class MasterLoopController:
         if time.time() - self._last_state_save >= STATE_SAVE_INTERVAL_SECONDS:
             self._save_persisted_state()
 
+    # =========================================================================
+    # Configuration Helpers (December 2025)
+    # =========================================================================
+
+    def _has_aws_credentials(self) -> bool:
+        """Check if AWS credentials are available via any method.
+
+        Uses boto3's credential chain to check for credentials from:
+        1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+        2. AWS credentials file (~/.aws/credentials)
+        3. AWS config file (~/.aws/config)
+        4. IAM role (if running on AWS EC2/ECS/Lambda)
+
+        December 2025: Better long-term solution than checking env vars only.
+        This enables S3 daemons to start when credentials are in ~/.aws/credentials.
+
+        Returns:
+            True if valid credentials found, False otherwise.
+        """
+        # Method 1: Check environment variable (fast path)
+        if os.getenv("AWS_ACCESS_KEY_ID"):
+            logger.debug("[MasterLoop] AWS credentials found via environment variable")
+            return True
+
+        # Method 2: Check ~/.aws/credentials file directly (no boto3 import needed)
+        credentials_file = Path.home() / ".aws" / "credentials"
+        if credentials_file.exists():
+            try:
+                import configparser
+                config = configparser.ConfigParser()
+                config.read(credentials_file)
+                # Check for default profile or any profile with access key
+                for section in config.sections():
+                    if config.get(section, "aws_access_key_id", fallback=None):
+                        logger.debug(f"[MasterLoop] AWS credentials found in {credentials_file} [{section}]")
+                        return True
+            except Exception as e:
+                logger.debug(f"[MasterLoop] Failed to parse AWS credentials file: {e}")
+
+        # Method 3: Use boto3 credential chain (most comprehensive but requires import)
+        try:
+            import boto3
+            session = boto3.Session()
+            credentials = session.get_credentials()
+            if credentials and credentials.access_key:
+                logger.debug("[MasterLoop] AWS credentials found via boto3 session")
+                return True
+        except ImportError:
+            logger.debug("[MasterLoop] boto3 not installed, skipping credential chain check")
+        except Exception as e:
+            logger.debug(f"[MasterLoop] boto3 credential check failed: {e}")
+
+        logger.info("[MasterLoop] No AWS credentials found - S3 daemons will be disabled")
+        return False
+
     def _update_heartbeat(self, status: str = "running") -> None:
         """Update heartbeat for health monitoring (Dec 2025).
 

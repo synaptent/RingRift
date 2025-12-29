@@ -121,6 +121,7 @@ from app.ai.neural_net.hex_architectures import (
     HexNeuralNet_v2,
     HexNeuralNet_v2_Lite,
     HexNeuralNet_v3,
+    HexNeuralNet_v3_Flat,  # V3 with flat policy (training compatible, Dec 2025)
     HexNeuralNet_v3_Lite,
     HexNeuralNet_v4,
 )
@@ -234,6 +235,7 @@ __all__ = [
     "HexNeuralNet_v2",
     "HexNeuralNet_v2_Lite",
     "HexNeuralNet_v3",
+    "HexNeuralNet_v3_Flat",
     "HexNeuralNet_v3_Lite",
     "HexNeuralNet_v4",
     "HexNeuralNet_v5_Heavy",

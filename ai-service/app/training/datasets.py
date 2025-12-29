@@ -1122,6 +1122,68 @@ class WeightedRingRiftDataset(RingRiftDataset):
 
                 weights[i] = weight
 
+        elif self.weighting == 'precomputed':
+            # Use pre-computed sample weights from NPZ file (December 2025)
+            # These weights combine source quality + freshness scoring during export
+            # Export with: python scripts/export_replay_dataset.py --quality-weighted
+            precomputed = None
+            if self.data is not None and 'sample_weights' in self.data:
+                precomputed = self.data['sample_weights']
+
+            if precomputed is not None:
+                for i, orig_idx in enumerate(self.valid_indices):
+                    weights[i] = float(precomputed[orig_idx])
+                logger.info(
+                    "Using pre-computed sample weights (source quality + freshness)"
+                )
+            else:
+                logger.warning(
+                    "precomputed weighting requested but sample_weights not in dataset. "
+                    "Re-export with --quality-weighted flag. Using uniform weights."
+                )
+
+        elif self.weighting == 'precomputed_combined':
+            # Combine pre-computed weights with late_game and phase emphasis
+            # December 2025: Best of both worlds - export-time quality + runtime heuristics
+            late_game_available = (
+                move_numbers is not None and total_game_moves is not None
+            )
+            phase_available = phases is not None
+            precomputed = None
+            if self.data is not None and 'sample_weights' in self.data:
+                precomputed = self.data['sample_weights']
+
+            for i, orig_idx in enumerate(self.valid_indices):
+                weight = 1.0
+
+                # Pre-computed weight (source quality + freshness)
+                if precomputed is not None:
+                    weight *= float(precomputed[orig_idx])
+
+                # Late game factor (0.5 to 1.0)
+                if late_game_available:
+                    move_num = move_numbers[orig_idx]
+                    total = max(total_game_moves[orig_idx], 1)
+                    progress = move_num / total
+                    weight *= (0.5 + 0.5 * progress)
+
+                # Phase factor
+                if phase_available:
+                    phase = str(phases[orig_idx])
+                    weight *= self.PHASE_WEIGHTS.get(phase, 1.0)
+
+                weights[i] = weight
+
+            if precomputed is not None:
+                logger.info(
+                    "Using pre-computed weights combined with late_game + phase emphasis"
+                )
+            else:
+                logger.warning(
+                    "precomputed_combined weighting requested but sample_weights not in dataset. "
+                    "Only using late_game + phase emphasis."
+                )
+
         else:
             logger.warning(
                 f"Unknown weighting strategy '{self.weighting}'. Using uniform."

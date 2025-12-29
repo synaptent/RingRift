@@ -137,6 +137,27 @@ class TrainingActivityDaemon(BaseDaemon[TrainingActivityConfig]):
         # This enables priority sync to training nodes (reduces data staleness)
         self._update_sync_router_training_nodes(training_detected)
 
+    def _update_sync_router_training_nodes(self, training_detected: set[str]) -> None:
+        """Update SyncRouter with training-active nodes for priority sync.
+
+        December 29, 2025: Added to enable +50 priority boost for nodes
+        actively running training jobs.
+
+        Args:
+            training_detected: Set of node IDs currently running training
+        """
+        try:
+            from app.coordination.sync_router import get_sync_router
+
+            router = get_sync_router()
+            router.update_training_active_nodes(training_detected)
+        except ImportError:
+            # SyncRouter not available - expected in minimal environments
+            logger.debug(f"[{self._get_daemon_name()}] SyncRouter not available for training node update")
+        except Exception as e:
+            # Non-critical - log and continue
+            logger.debug(f"[{self._get_daemon_name()}] Failed to update sync router: {e}")
+
     async def _check_p2p_training(self) -> set[str]:
         """Check P2P status for training activity."""
         training_detected: set[str] = set()
