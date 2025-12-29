@@ -837,10 +837,13 @@ def parse_selfplay_args(
     parser = create_argument_parser(description)
     parsed = parser.parse_args(args)
 
+    # Extract board_type before config construction (needed for _get_batch_size)
+    board_type = parsed.board
+
     # Map parsed args to config
     config = SelfplayConfig(
         # Core game settings
-        board_type=parsed.board,
+        board_type=board_type,
         num_players=parsed.num_players,
         num_games=parsed.num_games,
         # Engine settings
