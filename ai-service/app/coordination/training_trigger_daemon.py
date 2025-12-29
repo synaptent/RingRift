@@ -537,6 +537,146 @@ class TrainingTriggerDaemon(HandlerBase):
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling evaluation: {e}")
 
+    async def _on_data_stale(self, event: Any) -> None:
+        """Handle DATA_STALE events - mark config as needing fresh data (Dec 2025 Phase 2A).
+
+        When training data becomes stale (age exceeds threshold), this handler:
+        1. Updates local state to track that fresh data is needed
+        2. Triggers priority sync if training was pending for this config
+
+        This closes the data freshness feedback loop: TrainingFreshness emits
+        DATA_STALE, TrainingTriggerDaemon receives it and triggers sync.
+
+        Args:
+            event: Event with payload containing config_key, board_type, num_players, data_age_hours
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key") or payload.get("config")
+            if not config_key:
+                return
+
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
+            data_age_hours = payload.get("data_age_hours", 0.0)
+
+            state = self._get_or_create_state(config_key, board_type, num_players)
+
+            logger.info(
+                f"[TrainingTriggerDaemon] DATA_STALE received for {config_key}: "
+                f"data_age={data_age_hours:.1f}h"
+            )
+
+            # If training was pending (not in progress, has data), trigger priority sync
+            if not state.training_in_progress and state.npz_sample_count > 0:
+                logger.info(
+                    f"[TrainingTriggerDaemon] Triggering priority sync for {config_key} "
+                    f"(stale data, training pending)"
+                )
+                await self._trigger_priority_sync(config_key, state.board_type, state.num_players)
+
+        except Exception as e:
+            logger.error(f"[TrainingTriggerDaemon] Error handling DATA_STALE: {e}")
+
+    async def _on_data_sync_completed(self, event: Any) -> None:
+        """Handle DATA_SYNC_COMPLETED events - retry training after fresh data arrives (Dec 2025 Phase 2A).
+
+        When data sync completes, this handler:
+        1. Updates local state with fresh data timestamp
+        2. Checks if any training was blocked waiting for fresh data
+        3. Retries _maybe_trigger_training() for affected configs
+
+        This completes the data freshness loop: AutoSyncDaemon emits
+        DATA_SYNC_COMPLETED, TrainingTriggerDaemon receives it and retries training.
+
+        Args:
+            event: Event with payload containing config_key, board_type, num_players, etc.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key") or payload.get("config")
+            sync_type = payload.get("sync_type", "")
+
+            # Also handle generic syncs that may have refreshed multiple configs
+            if not config_key and sync_type in ("broadcast", "full", "cluster"):
+                # Full sync - retry all configs that might need fresh data
+                for key in list(self._training_states.keys()):
+                    await self._maybe_trigger_training(key)
+                return
+
+            if not config_key:
+                return
+
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
+            files_synced = payload.get("files_synced", 0)
+
+            state = self._get_or_create_state(config_key, board_type, num_players)
+
+            # Update data freshness timestamp
+            state.last_npz_update = time.time()
+
+            logger.info(
+                f"[TrainingTriggerDaemon] DATA_SYNC_COMPLETED for {config_key}: "
+                f"{files_synced} files synced, retrying training check"
+            )
+
+            # Retry training now that we have fresh data
+            triggered = await self._maybe_trigger_training(config_key)
+            if triggered:
+                logger.info(
+                    f"[TrainingTriggerDaemon] Training triggered for {config_key} "
+                    f"after data sync"
+                )
+
+        except Exception as e:
+            logger.error(f"[TrainingTriggerDaemon] Error handling DATA_SYNC_COMPLETED: {e}")
+
+    async def _trigger_priority_sync(
+        self, config_key: str, board_type: str, num_players: int
+    ) -> bool:
+        """Trigger priority data sync for a configuration (Dec 2025 Phase 2A).
+
+        Uses SyncFacade to request immediate sync of training data for the
+        specified configuration.
+
+        Args:
+            config_key: Configuration identifier (e.g., "hex8_2p")
+            board_type: Board type
+            num_players: Number of players
+
+        Returns:
+            True if sync was triggered successfully
+        """
+        try:
+            from app.coordination.sync_facade import get_sync_facade
+
+            facade = get_sync_facade()
+            response = await facade.trigger_priority_sync(
+                reason="training_data_stale",
+                config_key=config_key,
+                data_type="training",
+            )
+
+            if response.get("success"):
+                logger.info(
+                    f"[TrainingTriggerDaemon] Priority sync triggered for {config_key}"
+                )
+                return True
+            else:
+                logger.warning(
+                    f"[TrainingTriggerDaemon] Priority sync failed for {config_key}: "
+                    f"{response.get('error', 'unknown')}"
+                )
+                return False
+
+        except ImportError:
+            logger.debug("[TrainingTriggerDaemon] SyncFacade not available for priority sync")
+            return False
+        except Exception as e:
+            logger.warning(f"[TrainingTriggerDaemon] Error triggering priority sync: {e}")
+            return False
+
     async def _trigger_selfplay_boost(self, config_key: str, multiplier: float = 1.5) -> None:
         """Trigger additional selfplay for struggling configurations."""
         try:

@@ -426,6 +426,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
         """Return event subscriptions for EventSubscriptionMixin.
 
         Dec 28, 2025: Migrated to use EventSubscriptionMixin pattern.
+        Dec 29, 2025 (Phase 2B): Added pipeline coordination events:
+        - NPZ_EXPORT_COMPLETE: Temporarily boost priority for freshly exported config
+        - TRAINING_STARTED: Mark config as in-training, reduce selfplay allocation
+        - EVALUATION_COMPLETED: Update curriculum weights based on gauntlet results
 
         Returns:
             Dict mapping event names to handler methods
@@ -435,6 +439,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
             "EXPLORATION_BOOST": self._on_exploration_boost,
             "TRAINING_COMPLETED": self._on_training_completed,
             "ELO_VELOCITY_CHANGED": self._on_elo_velocity_changed,
+            # December 2025 - Phase 2B: Pipeline coordination events
+            "NPZ_EXPORT_COMPLETE": self._on_npz_export_complete,
+            "TRAINING_STARTED": self._on_training_started,
+            "EVALUATION_COMPLETED": self._on_evaluation_completed,
         }
 
     async def _on_selfplay_rate_changed(self, event) -> None:
@@ -563,6 +571,140 @@ class SelfplayScheduler(EventSubscriptionMixin):
             # P0.2 Dec 2025: Emit rate change event for significant changes
             self._emit_selfplay_rate_changed(
                 config_key, old_rate, new_rate, f"elo_velocity_{trend}"
+            )
+
+    # =========================================================================
+    # Phase 2B Event Handlers (December 2025)
+    # =========================================================================
+
+    async def _on_npz_export_complete(self, event) -> None:
+        """Handle NPZ_EXPORT_COMPLETE events - boost priority for freshly exported config.
+
+        Dec 2025 Phase 2B: When NPZ export completes, temporarily boost the config's
+        priority to generate more training data quickly while the exported data
+        is being used for training.
+
+        This ensures selfplay doesn't pile on extra games for a config that's about
+        to enter training, but still keeps generating some data for the next cycle.
+
+        Args:
+            event: Event with payload containing config_key, samples, output_path
+        """
+        payload = self._extract_event_payload(event)
+        config_key = payload.get("config_key", "") or payload.get("config", "")
+        samples = payload.get("samples", 0)
+
+        if not config_key:
+            return
+
+        # Temporarily reduce selfplay rate while training is consuming this export
+        # This prevents wasting compute on a config that's actively training
+        old_rate = self._rate_multipliers.get(config_key, 1.0)
+
+        # Reduce to 70% of normal rate during training phase
+        new_rate = max(0.5, old_rate * 0.7)
+        self._rate_multipliers[config_key] = new_rate
+
+        self._log_info(
+            f"NPZ export complete for {config_key}: {samples} samples, "
+            f"reducing selfplay rate {old_rate:.2f} -> {new_rate:.2f}"
+        )
+
+        # Track that this config is in "export->training" transition
+        self._configs_in_training_pipeline.add(config_key)
+
+    async def _on_training_started(self, event) -> None:
+        """Handle TRAINING_STARTED events - mark config as in-training.
+
+        Dec 2025 Phase 2B: When training starts for a config, mark it as
+        "in training pipeline" and reduce selfplay allocation slightly.
+        This prioritizes sync and evaluation over generating excess selfplay data.
+
+        Args:
+            event: Event with payload containing config_key, epochs, batch_size
+        """
+        payload = self._extract_event_payload(event)
+        config_key = payload.get("config_key", "") or payload.get("config", "")
+
+        if not config_key:
+            return
+
+        # Mark config as in training
+        self._configs_in_training_pipeline.add(config_key)
+
+        # Reduce selfplay rate while training is active
+        old_rate = self._rate_multipliers.get(config_key, 1.0)
+        new_rate = max(0.4, old_rate * 0.6)  # 60% of current rate
+        self._rate_multipliers[config_key] = new_rate
+
+        self._log_info(
+            f"Training started for {config_key}, "
+            f"reducing selfplay rate {old_rate:.2f} -> {new_rate:.2f}"
+        )
+
+    async def _on_evaluation_completed(self, event) -> None:
+        """Handle EVALUATION_COMPLETED events - update curriculum weights.
+
+        Dec 2025 Phase 2B: When gauntlet evaluation completes, update curriculum
+        weights based on performance results. This enables real-time curriculum
+        adjustments based on model strength.
+
+        Curriculum weight updates:
+        - High win rate (>75%): Reduce weight, model is strong
+        - Low win rate (<50%): Increase weight, model needs more training data
+        - Mid-range: Maintain current weight
+
+        Args:
+            event: Event with payload containing config_key, win_rate, elo
+        """
+        payload = self._extract_event_payload(event)
+        config_key = payload.get("config_key", "") or payload.get("config", "")
+        win_rate = payload.get("win_rate", 0.5)
+        elo = payload.get("elo", 1500.0)
+
+        if not config_key:
+            return
+
+        # Remove from training pipeline (evaluation is final step)
+        self._configs_in_training_pipeline.discard(config_key)
+
+        # Restore normal selfplay rate after training cycle completes
+        old_rate = self._rate_multipliers.get(config_key, 1.0)
+        if old_rate < 0.8:
+            # Restore to normal rate
+            self._rate_multipliers[config_key] = 1.0
+            self._log_info(
+                f"Evaluation complete for {config_key}, "
+                f"restoring selfplay rate {old_rate:.2f} -> 1.00"
+            )
+
+        # Update curriculum weight based on performance
+        current_weight = self._curriculum_weights.get(config_key, 1.0)
+
+        if win_rate > 0.75:
+            # Strong model - reduce curriculum weight
+            new_weight = max(0.3, current_weight * 0.8)
+            reason = "strong_model"
+        elif win_rate < 0.50:
+            # Struggling model - increase curriculum weight
+            new_weight = min(2.5, current_weight * 1.3)
+            reason = "struggling_model"
+        else:
+            # Mid-range - slight adjustment toward 1.0
+            if current_weight > 1.0:
+                new_weight = max(1.0, current_weight * 0.95)
+            elif current_weight < 1.0:
+                new_weight = min(1.0, current_weight * 1.05)
+            else:
+                new_weight = 1.0
+            reason = "stable_model"
+
+        if abs(new_weight - current_weight) > 0.05:
+            self._curriculum_weights[config_key] = new_weight
+            self._log_info(
+                f"Curriculum weight updated for {config_key} "
+                f"(win_rate={win_rate:.1%}, elo={elo:.0f}): "
+                f"{current_weight:.2f} -> {new_weight:.2f} ({reason})"
             )
 
     def _emit_selfplay_target_updated(

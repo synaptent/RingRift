@@ -53,6 +53,11 @@ class AutoPromotionConfig:
     dry_run: bool = False
     # Dec 27, 2025: Minimum Elo improvement over previous model required for promotion
     min_elo_improvement: float = 25.0  # Dec 28: Lowered from 75 to accelerate iteration
+    # December 2025: Quality gate settings to prevent bad model promotion
+    quality_gate_enabled: bool = True
+    min_training_games: int = 1000  # Minimum games in training data
+    min_quality_score: float = 0.6  # Minimum data quality score
+    require_parity_validation: bool = True  # Require TS parity validation passed
 
 
 @dataclass
@@ -342,6 +347,193 @@ class AutoPromotionDaemon:
                 f"beats_best={candidate.beats_current_best})"
             )
 
+    async def _check_quality_gate(
+        self,
+        candidate: PromotionCandidate,
+    ) -> tuple[bool, str]:
+        """Check if candidate passes quality gate before promotion.
+
+        December 2025: Prevents promotion of models trained on corrupted or
+        insufficient data by verifying:
+        1. Parity validation is complete (TS/Python match)
+        2. Sufficient training game count (1000+)
+        3. Data quality score is acceptable (>0.6)
+
+        Args:
+            candidate: PromotionCandidate to check
+
+        Returns:
+            Tuple of (passed, reason) where reason explains the gate result
+        """
+        if not self.config.quality_gate_enabled:
+            return True, "quality_gate_disabled"
+
+        config_key = candidate.config_key
+
+        # Parse board_type and num_players from config_key (e.g., "hex8_2p")
+        parts = config_key.rsplit("_", 1)
+        if len(parts) != 2:
+            logger.warning(f"[AutoPromotion] Cannot parse config_key: {config_key}")
+            return True, "config_key_unparseable"
+
+        board_type = parts[0]
+        try:
+            num_players = int(parts[1].rstrip("p"))
+        except ValueError:
+            return True, "num_players_unparseable"
+
+        # Check parity validation status
+        if self.config.require_parity_validation:
+            parity_passed, parity_reason = await self._check_parity_status(
+                board_type, num_players
+            )
+            if not parity_passed:
+                return False, f"parity_failed: {parity_reason}"
+
+        # Check training data quality
+        quality_passed, quality_reason = await self._check_data_quality(
+            board_type, num_players
+        )
+        if not quality_passed:
+            return False, f"quality_failed: {quality_reason}"
+
+        return True, "quality_gate_passed"
+
+    async def _check_parity_status(
+        self,
+        board_type: str,
+        num_players: int,
+    ) -> tuple[bool, str]:
+        """Check if parity validation has passed for this config.
+
+        Args:
+            board_type: Board type (e.g., "hex8")
+            num_players: Number of players (2, 3, or 4)
+
+        Returns:
+            Tuple of (passed, reason)
+        """
+        try:
+            from pathlib import Path
+
+            from app.db.game_replay import GameReplayDB
+
+            # Find canonical database
+            db_path = Path(f"data/games/canonical_{board_type}_{num_players}p.db")
+            if not db_path.exists():
+                return False, f"database_not_found: {db_path}"
+
+            # Check parity_gate status in database
+            db = GameReplayDB(str(db_path))
+            conn = db._connection
+
+            # Count games by parity status
+            cursor = conn.execute(
+                """
+                SELECT parity_gate, COUNT(*) as count
+                FROM games
+                WHERE game_status = 'completed'
+                GROUP BY parity_gate
+                """
+            )
+            status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+
+            total_games = sum(status_counts.values())
+            passed_games = status_counts.get("passed", 0)
+            pending_games = status_counts.get("pending_gate", 0)
+            failed_games = status_counts.get("failed", 0)
+
+            # Require majority of games to have passed parity
+            if total_games == 0:
+                return False, "no_completed_games"
+
+            pass_rate = passed_games / total_games if total_games > 0 else 0
+
+            if pass_rate < 0.5:
+                return False, (
+                    f"low_parity_pass_rate: {pass_rate:.1%} "
+                    f"(passed={passed_games}, pending={pending_games}, failed={failed_games})"
+                )
+
+            # If too many pending, validation hasn't run
+            if pending_games > passed_games:
+                return False, (
+                    f"parity_validation_incomplete: pending={pending_games}, passed={passed_games}"
+                )
+
+            return True, f"parity_ok: {pass_rate:.1%} passed"
+
+        except Exception as e:
+            logger.warning(f"[AutoPromotion] Parity check error: {e}")
+            # Don't block on parity check errors
+            return True, f"parity_check_error: {e}"
+
+    async def _check_data_quality(
+        self,
+        board_type: str,
+        num_players: int,
+    ) -> tuple[bool, str]:
+        """Check if training data quality is sufficient.
+
+        Args:
+            board_type: Board type (e.g., "hex8")
+            num_players: Number of players (2, 3, or 4)
+
+        Returns:
+            Tuple of (passed, reason)
+        """
+        try:
+            from pathlib import Path
+
+            from app.db.game_replay import GameReplayDB
+
+            # Find canonical database
+            db_path = Path(f"data/games/canonical_{board_type}_{num_players}p.db")
+            if not db_path.exists():
+                return False, f"database_not_found: {db_path}"
+
+            # Check game count
+            db = GameReplayDB(str(db_path))
+            conn = db._connection
+
+            cursor = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM games
+                WHERE game_status = 'completed'
+                """
+            )
+            game_count = cursor.fetchone()[0]
+
+            if game_count < self.config.min_training_games:
+                return False, (
+                    f"insufficient_games: {game_count} < {self.config.min_training_games}"
+                )
+
+            # Try to get quality score if available
+            try:
+                from app.training.data_quality import (
+                    DatabaseQualityChecker,
+                    get_database_quality_score,
+                )
+
+                quality_score = get_database_quality_score(str(db_path))
+                if quality_score < self.config.min_quality_score:
+                    return False, (
+                        f"low_quality_score: {quality_score:.2f} < {self.config.min_quality_score}"
+                    )
+
+            except (ImportError, AttributeError):
+                # Quality score not available, skip this check
+                logger.debug("[AutoPromotion] Quality score check not available")
+
+            return True, f"quality_ok: {game_count} games"
+
+        except Exception as e:
+            logger.warning(f"[AutoPromotion] Quality check error: {e}")
+            # Don't block on quality check errors
+            return True, f"quality_check_error: {e}"
+
     async def _promote_model(self, candidate: PromotionCandidate) -> None:
         """Promote a model that passed evaluation.
 
@@ -350,6 +542,15 @@ class AutoPromotionDaemon:
         """
         config_key = candidate.config_key
         model_path = candidate.model_path
+
+        # December 2025: Check quality gate before promotion
+        quality_passed, quality_reason = await self._check_quality_gate(candidate)
+        if not quality_passed:
+            logger.warning(
+                f"[AutoPromotion] {config_key} blocked by quality gate: {quality_reason}"
+            )
+            await self._emit_promotion_failed(candidate, error=f"quality_gate: {quality_reason}")
+            return
 
         if self.config.dry_run:
             logger.info(
