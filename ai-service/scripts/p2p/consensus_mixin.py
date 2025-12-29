@@ -577,6 +577,187 @@ class ConsensusMixin(P2PMixinBase):
             logger.error(f"SQLite claim_work failed: {e}")
             return None
 
+    def start_work_distributed(self, work_id: str) -> bool:
+        """Mark claimed work as started using appropriate consensus.
+
+        Routes to Raft or SQLite based on CONSENSUS_MODE.
+        For Raft: claim already implies start, so this is a no-op.
+        For SQLite: transitions from CLAIMED to RUNNING.
+
+        Args:
+            work_id: ID of the work item to start
+
+        Returns:
+            True if start succeeded, False otherwise
+        """
+        if self._should_use_raft() and getattr(self, "_raft_work_queue", None) is not None:
+            # Raft: claim implies start, no additional action needed
+            # The work is already in "claimed" status which means running
+            logger.debug(f"[Raft] Work {work_id} already started via claim")
+            return True
+        else:
+            return self._start_work_sqlite(work_id)
+
+    def _start_work_sqlite(self, work_id: str) -> bool:
+        """Mark work as started using SQLite work queue.
+
+        Args:
+            work_id: ID of the work item to start
+
+        Returns:
+            True if start succeeded, False otherwise
+        """
+        wq = get_work_queue()
+        if wq is None:
+            logger.warning("Work queue not available")
+            return False
+
+        try:
+            return wq.start_work(work_id)
+        except Exception as e:
+            logger.error(f"SQLite start_work failed: {e}")
+            return False
+
+    def fail_work_distributed(
+        self,
+        work_id: str,
+        error: str = "",
+    ) -> bool:
+        """Mark work as failed using appropriate consensus.
+
+        Routes to Raft or SQLite based on CONSENSUS_MODE.
+
+        Args:
+            work_id: ID of the work item that failed
+            error: Error message describing the failure
+
+        Returns:
+            True if fail succeeded, False otherwise
+        """
+        if self._should_use_raft() and getattr(self, "_raft_work_queue", None) is not None:
+            return self._fail_work_raft(work_id, error)
+        else:
+            return self._fail_work_sqlite(work_id, error)
+
+    def _fail_work_raft(self, work_id: str, error: str) -> bool:
+        """Mark work as failed using Raft-replicated work queue.
+
+        Args:
+            work_id: ID of the work item that failed
+            error: Error message describing the failure
+
+        Returns:
+            True if fail succeeded, False otherwise
+        """
+        raft_wq = getattr(self, "_raft_work_queue", None)
+        if raft_wq is None:
+            logger.warning("Raft work queue not initialized, falling back to SQLite")
+            return self._fail_work_sqlite(work_id, error)
+
+        try:
+            success = raft_wq.fail_work(work_id, error)
+            if success:
+                logger.info(f"[Raft] Work {work_id} marked as failed: {error}")
+            return success
+        except Exception as e:
+            logger.error(f"Raft fail_work failed: {e}, falling back to SQLite")
+            return self._fail_work_sqlite(work_id, error)
+
+    def _fail_work_sqlite(self, work_id: str, error: str) -> bool:
+        """Mark work as failed using SQLite work queue.
+
+        Args:
+            work_id: ID of the work item that failed
+            error: Error message describing the failure
+
+        Returns:
+            True if fail succeeded, False otherwise
+        """
+        wq = get_work_queue()
+        if wq is None:
+            logger.warning("Work queue not available")
+            return False
+
+        try:
+            return wq.fail_work(work_id, error)
+        except Exception as e:
+            logger.error(f"SQLite fail_work failed: {e}")
+            return False
+
+    def complete_work_distributed(
+        self,
+        work_id: str,
+        result: dict[str, Any] | None = None,
+    ) -> bool:
+        """Mark work as completed using appropriate consensus.
+
+        Routes to Raft or SQLite based on CONSENSUS_MODE.
+
+        Args:
+            work_id: ID of the work item that completed
+            result: Optional result data
+
+        Returns:
+            True if completion succeeded, False otherwise
+        """
+        if self._should_use_raft() and getattr(self, "_raft_work_queue", None) is not None:
+            return self._complete_work_raft(work_id, result)
+        else:
+            return self._complete_work_sqlite(work_id, result)
+
+    def _complete_work_raft(
+        self,
+        work_id: str,
+        result: dict[str, Any] | None = None,
+    ) -> bool:
+        """Mark work as completed using Raft-replicated work queue.
+
+        Args:
+            work_id: ID of the work item that completed
+            result: Optional result data
+
+        Returns:
+            True if completion succeeded, False otherwise
+        """
+        raft_wq = getattr(self, "_raft_work_queue", None)
+        if raft_wq is None:
+            logger.warning("Raft work queue not initialized, falling back to SQLite")
+            return self._complete_work_sqlite(work_id, result)
+
+        try:
+            success = raft_wq.complete_work(work_id, result)
+            if success:
+                logger.info(f"[Raft] Work {work_id} marked as completed")
+            return success
+        except Exception as e:
+            logger.error(f"Raft complete_work failed: {e}, falling back to SQLite")
+            return self._complete_work_sqlite(work_id, result)
+
+    def _complete_work_sqlite(
+        self,
+        work_id: str,
+        result: dict[str, Any] | None = None,
+    ) -> bool:
+        """Mark work as completed using SQLite work queue.
+
+        Args:
+            work_id: ID of the work item that completed
+            result: Optional result data
+
+        Returns:
+            True if completion succeeded, False otherwise
+        """
+        wq = get_work_queue()
+        if wq is None:
+            logger.warning("Work queue not available")
+            return False
+
+        try:
+            return wq.complete_work(work_id, result)
+        except Exception as e:
+            logger.error(f"SQLite complete_work failed: {e}")
+            return False
+
     def is_raft_leader(self) -> bool:
         """Check if this node is the Raft leader.
 

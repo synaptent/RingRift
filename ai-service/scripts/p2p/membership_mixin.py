@@ -40,30 +40,41 @@ _, SwimConfig, SwimMembershipManager, SWIM_ADAPTER_AVAILABLE = safe_import(
 if not SWIM_ADAPTER_AVAILABLE:
     logger.debug("swim_adapter not available - SWIM features disabled")
 
-# Load constants with fallbacks using base class helper
-# Dec 29, 2025: Tuned for high-latency networks:
-# - Increased failure timeout (5s → 10s) for P99 RTT of 2.6s
-# - Increased suspicion timeout (3s → 6s) to reduce false positives
-# - Increased indirect probes (3 → 7) to improve success rate from 7.4% to ~40%
-_CONSTANTS = P2PMixinBase._load_config_constants({
-    "SWIM_ENABLED": False,
-    "SWIM_BIND_PORT": 7947,
-    "SWIM_FAILURE_TIMEOUT": 10.0,  # Was 5.0, doubled for high-latency paths
-    "SWIM_SUSPICION_TIMEOUT": 6.0,  # Was 3.0, doubled to reduce false positives
-    "SWIM_PING_INTERVAL": 1.0,
-    "SWIM_INDIRECT_PING_COUNT": 7,  # Was 3, increased per SWIM paper recommendation
-    "MEMBERSHIP_MODE": "http",
-    "PEER_TIMEOUT": 90,
-})
-
-SWIM_ENABLED = _CONSTANTS["SWIM_ENABLED"]
-SWIM_BIND_PORT = _CONSTANTS["SWIM_BIND_PORT"]
-SWIM_FAILURE_TIMEOUT = _CONSTANTS["SWIM_FAILURE_TIMEOUT"]
-SWIM_SUSPICION_TIMEOUT = _CONSTANTS["SWIM_SUSPICION_TIMEOUT"]
-SWIM_PING_INTERVAL = _CONSTANTS["SWIM_PING_INTERVAL"]
-SWIM_INDIRECT_PING_COUNT = _CONSTANTS["SWIM_INDIRECT_PING_COUNT"]
-MEMBERSHIP_MODE = _CONSTANTS["MEMBERSHIP_MODE"]
-PEER_TIMEOUT = _CONSTANTS["PEER_TIMEOUT"]
+# December 29, 2025: Import from canonical constants for consistency
+# Canonical constants handle auto-detection of swim-p2p availability and hybrid mode
+try:
+    from app.p2p.constants import (
+        SWIM_ENABLED,
+        SWIM_BIND_PORT,
+        SWIM_FAILURE_TIMEOUT,
+        SWIM_SUSPICION_TIMEOUT,
+        SWIM_PING_INTERVAL,
+        SWIM_INDIRECT_PING_COUNT,
+        MEMBERSHIP_MODE,
+        PEER_TIMEOUT,
+    )
+    logger.debug(f"Loaded SWIM constants from canonical source: SWIM_ENABLED={SWIM_ENABLED}, MEMBERSHIP_MODE={MEMBERSHIP_MODE}")
+except ImportError:
+    # Fallback to local defaults if canonical constants not available
+    logger.debug("Canonical constants not available, using local defaults")
+    _CONSTANTS = P2PMixinBase._load_config_constants({
+        "SWIM_ENABLED": False,
+        "SWIM_BIND_PORT": 7947,
+        "SWIM_FAILURE_TIMEOUT": 10.0,
+        "SWIM_SUSPICION_TIMEOUT": 6.0,
+        "SWIM_PING_INTERVAL": 1.0,
+        "SWIM_INDIRECT_PING_COUNT": 7,
+        "MEMBERSHIP_MODE": "hybrid",  # Changed from "http" to "hybrid"
+        "PEER_TIMEOUT": 90,
+    })
+    SWIM_ENABLED = _CONSTANTS["SWIM_ENABLED"]
+    SWIM_BIND_PORT = _CONSTANTS["SWIM_BIND_PORT"]
+    SWIM_FAILURE_TIMEOUT = _CONSTANTS["SWIM_FAILURE_TIMEOUT"]
+    SWIM_SUSPICION_TIMEOUT = _CONSTANTS["SWIM_SUSPICION_TIMEOUT"]
+    SWIM_PING_INTERVAL = _CONSTANTS["SWIM_PING_INTERVAL"]
+    SWIM_INDIRECT_PING_COUNT = _CONSTANTS["SWIM_INDIRECT_PING_COUNT"]
+    MEMBERSHIP_MODE = _CONSTANTS["MEMBERSHIP_MODE"]
+    PEER_TIMEOUT = _CONSTANTS["PEER_TIMEOUT"]
 
 
 class MembershipMixin(P2PMixinBase):
@@ -321,13 +332,23 @@ class MembershipMixin(P2PMixinBase):
             dict with is_healthy based on membership mode and status
         """
         summary = self.get_swim_membership_summary()
-        # Healthy if SWIM not enabled, or if it's enabled and started successfully
-        if SWIM_ENABLED:
+        peer_count = len(getattr(self, "peers", {}))
+        has_peers = peer_count > 0
+        no_bootstrap = not getattr(self, "bootstrap_seeds", [])
+
+        # Determine health based on mode
+        if SWIM_ENABLED and MEMBERSHIP_MODE == "swim":
+            # Pure SWIM mode - SWIM must be started
             is_healthy = summary.get("swim_started", False)
+        elif SWIM_ENABLED and MEMBERSHIP_MODE == "hybrid":
+            # Hybrid mode - healthy if SWIM is started OR we have HTTP peers (fallback)
+            swim_ok = summary.get("swim_started", False)
+            http_ok = has_peers or no_bootstrap
+            is_healthy = swim_ok or http_ok
         else:
             # HTTP mode - healthy if we have peers
-            peer_count = len(getattr(self, "peers", {}))
-            is_healthy = peer_count > 0 or not getattr(self, "bootstrap_seeds", [])
+            is_healthy = has_peers or no_bootstrap
+
         return {
             "is_healthy": is_healthy,
             **summary,

@@ -400,6 +400,9 @@ class P2PMixinBase:
         Thread-safe peer counting using peers_lock.
         Counts self as alive if present in node_ids.
 
+        Uses SWIM-based failure detection when available (MembershipMixin),
+        falling back to HTTP heartbeat-based checks otherwise.
+
         Args:
             node_ids: List of node IDs to check
 
@@ -427,13 +430,28 @@ class P2PMixinBase:
         else:
             peers = dict(peers)
 
+        # Check if SWIM-based hybrid check is available (from MembershipMixin)
+        # SWIM provides 5s failure detection vs 60-90s for HTTP heartbeats
+        hybrid_check = getattr(self, "is_peer_alive_hybrid", None)
+        use_hybrid = callable(hybrid_check)
+
         for nid in node_ids:
             # Count self as alive
             if nid == node_id:
                 alive += 1
                 continue
 
-            # Check if peer is alive
+            # Use SWIM-based check if available
+            if use_hybrid:
+                try:
+                    if hybrid_check(nid):
+                        alive += 1
+                    continue
+                except Exception:
+                    # Fall through to HTTP check on error
+                    pass
+
+            # HTTP heartbeat fallback
             peer = peers.get(nid)
             if peer and hasattr(peer, "is_alive") and peer.is_alive():
                 alive += 1
@@ -444,6 +462,9 @@ class P2PMixinBase:
         """Get list of node IDs that are currently alive.
 
         Thread-safe version that returns the actual IDs, not just count.
+
+        Uses SWIM-based failure detection when available (MembershipMixin),
+        falling back to HTTP heartbeat-based checks otherwise.
 
         Args:
             node_ids: List of node IDs to check
@@ -467,13 +488,28 @@ class P2PMixinBase:
         else:
             peers = dict(peers)
 
+        # Check if SWIM-based hybrid check is available (from MembershipMixin)
+        # SWIM provides 5s failure detection vs 60-90s for HTTP heartbeats
+        hybrid_check = getattr(self, "is_peer_alive_hybrid", None)
+        use_hybrid = callable(hybrid_check)
+
         for nid in node_ids:
             # Self is alive
             if nid == node_id:
                 alive.append(nid)
                 continue
 
-            # Check if peer is alive
+            # Use SWIM-based check if available
+            if use_hybrid:
+                try:
+                    if hybrid_check(nid):
+                        alive.append(nid)
+                    continue
+                except Exception:
+                    # Fall through to HTTP check on error
+                    pass
+
+            # HTTP heartbeat fallback
             peer = peers.get(nid)
             if peer and hasattr(peer, "is_alive") and peer.is_alive():
                 alive.append(nid)

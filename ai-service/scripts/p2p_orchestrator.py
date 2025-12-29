@@ -4496,6 +4496,9 @@ class P2POrchestrator(
     async def _acquire_voter_lease_quorum(self, lease_id: str, duration: int) -> float | None:
         """Acquire/renew an exclusive leader lease from a quorum of voters.
 
+        December 29, 2025: Added retry with exponential backoff when initial
+        quorum acquisition fails. This handles transient network issues.
+
         Returns the effective lease expiry timestamp if a quorum granted the
         lease; otherwise returns None.
         """
@@ -4508,78 +4511,99 @@ class P2POrchestrator(
             # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
             quorum = min(VOTER_MIN_QUORUM, len(voter_ids))
 
-        now = time.time()
         duration = max(10, min(int(duration), int(LEADER_LEASE_DURATION * 2)))
 
-        acks = 0
-        lease_ttls: list[float] = []
+        # December 29, 2025: Retry with exponential backoff
+        max_retries = 3
+        retry_delays = [0, 2, 5]  # Immediate, then 2s, then 5s
 
-        # Self-grant (as a voter).
-        if self.node_id in voter_ids:
-            self.voter_grant_leader_id = self.node_id
-            self.voter_grant_lease_id = lease_id
-            self.voter_grant_expires = now + float(duration)
-            lease_ttls.append(float(duration))
-            acks += 1
+        for attempt in range(max_retries):
+            if attempt > 0:
+                await asyncio.sleep(retry_delays[attempt])
+                logger.info(f"Voter lease acquisition retry {attempt + 1}/{max_retries}")
 
-        with self.peers_lock:
-            peers_by_id = dict(self.peers)
+            now = time.time()
+            acks = 0
+            lease_ttls: list[float] = []
 
-        # STABILITY FIX: Use 15s timeout for voter lease operations (was 5s).
-        # Cross-geographic Tailscale connections can have latency spikes.
-        timeout = ClientTimeout(total=15)
-        async with get_client_session(timeout) as session:
-            for voter_id in voter_ids:
-                if acks >= quorum:
-                    break
-                if voter_id == self.node_id:
-                    continue
-                voter = peers_by_id.get(voter_id)
-                if not voter or not voter.is_alive():
-                    continue
+            # Self-grant (as a voter).
+            if self.node_id in voter_ids:
+                self.voter_grant_leader_id = self.node_id
+                self.voter_grant_lease_id = lease_id
+                self.voter_grant_expires = now + float(duration)
+                lease_ttls.append(float(duration))
+                acks += 1
 
-                payload = {
-                    "leader_id": self.node_id,
-                    "lease_id": lease_id,
-                    "lease_duration": duration,
-                    # Phase 15.1.1: Include epoch for split-brain protection
-                    "lease_epoch": self._lease_epoch + 1,  # Proposed new epoch
-                }
+            with self.peers_lock:
+                peers_by_id = dict(self.peers)
 
-                # Use Tailscale-exclusive URLs for voter communication to avoid NAT issues
-                for url in self._tailscale_urls_for_voter(voter, "/election/lease"):
-                    try:
-                        async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
-                            if resp.status != 200:
-                                continue
-                            data = await resp.json()
-                            if not data.get("granted"):
-                                break
-                            ttl_raw = data.get("lease_ttl_seconds")
-                            if ttl_raw is None:
-                                ttl_raw = data.get("ttl_seconds")
-                            ttl_val: float | None = None
-                            if ttl_raw is not None:
-                                try:
-                                    ttl_val = float(ttl_raw)
-                                except (ValueError):
-                                    ttl_val = None
-                            if ttl_val is not None and ttl_val > 0:
-                                lease_ttls.append(ttl_val)
-                            else:
-                                lease_ttls.append(float(duration))
-                            acks += 1
-                            break
-                    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, AttributeError, OSError):
+            # STABILITY FIX: Use 15s timeout for voter lease operations (was 5s).
+            # Cross-geographic Tailscale connections can have latency spikes.
+            timeout = ClientTimeout(total=15)
+            async with get_client_session(timeout) as session:
+                for voter_id in voter_ids:
+                    if acks >= quorum:
+                        break
+                    if voter_id == self.node_id:
+                        continue
+                    voter = peers_by_id.get(voter_id)
+                    if not voter or not voter.is_alive():
                         continue
 
-        if acks < quorum:
-            return None
-        # Use a relative TTL (computed by each voter on its own clock) to avoid
-        # leader lease flapping under clock skew. Convert back to a local expiry.
-        effective_ttl = min(lease_ttls) if lease_ttls else float(duration)
-        effective_ttl = max(10.0, min(float(duration), float(effective_ttl)))
-        return now + float(effective_ttl)
+                    payload = {
+                        "leader_id": self.node_id,
+                        "lease_id": lease_id,
+                        "lease_duration": duration,
+                        # Phase 15.1.1: Include epoch for split-brain protection
+                        "lease_epoch": self._lease_epoch + 1,  # Proposed new epoch
+                    }
+
+                    # Use Tailscale-exclusive URLs for voter communication to avoid NAT issues
+                    for url in self._tailscale_urls_for_voter(voter, "/election/lease"):
+                        try:
+                            async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                                if resp.status != 200:
+                                    continue
+                                data = await resp.json()
+                                if not data.get("granted"):
+                                    break
+                                ttl_raw = data.get("lease_ttl_seconds")
+                                if ttl_raw is None:
+                                    ttl_raw = data.get("ttl_seconds")
+                                ttl_val: float | None = None
+                                if ttl_raw is not None:
+                                    try:
+                                        ttl_val = float(ttl_raw)
+                                    except (ValueError):
+                                        ttl_val = None
+                                if ttl_val is not None and ttl_val > 0:
+                                    lease_ttls.append(ttl_val)
+                                else:
+                                    lease_ttls.append(float(duration))
+                                acks += 1
+                                break
+                        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, AttributeError, OSError):
+                            continue
+
+            if acks >= quorum:
+                # Use a relative TTL (computed by each voter on its own clock) to avoid
+                # leader lease flapping under clock skew. Convert back to a local expiry.
+                effective_ttl = min(lease_ttls) if lease_ttls else float(duration)
+                effective_ttl = max(10.0, min(float(duration), float(effective_ttl)))
+                if attempt > 0:
+                    logger.info(f"Voter lease acquired on retry {attempt + 1}")
+                return now + float(effective_ttl)
+
+            # Log retry info
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Voter lease quorum not reached: {acks}/{quorum} acks, "
+                    f"retrying in {retry_delays[attempt + 1]}s..."
+                )
+
+        # All retries exhausted
+        logger.error(f"Failed to acquire voter lease quorum after {max_retries} attempts")
+        return None
 
     # =========================================================================
     # Phase 15.1.1: Fence Token Helpers (December 29, 2025)
@@ -18584,18 +18608,27 @@ print(json.dumps({{
                     else:
                         asyncio.create_task(self._start_election())
 
-        # If we're leaderless, periodically retry elections
+        # If we're leaderless, periodically retry elections with adaptive backoff
+        # December 29, 2025: Improved backoff to start faster then slow down
         if not self.leader_id and not self.election_in_progress:
             now = time.time()
-            backoff_seconds = max(LEADER_LEASE_RENEW_INTERVAL, ELECTION_TIMEOUT * 3)
+            retry_count = int(getattr(self, "_election_retry_count", 0) or 0)
+            # Adaptive backoff: 15s, 30s, 60s, 90s (capped)
+            backoff_intervals = [15, 30, 60, 90]
+            backoff_seconds = backoff_intervals[min(retry_count, len(backoff_intervals) - 1)]
             last_attempt = float(getattr(self, "last_election_attempt", 0.0) or 0.0)
             if now - last_attempt >= backoff_seconds:
                 self.last_election_attempt = now
+                self._election_retry_count = retry_count + 1
                 # CRITICAL: Check quorum before starting election to prevent quorum bypass
                 if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-                    logger.warning("Skipping periodic election retry: no voter quorum available")
+                    logger.warning(f"Skipping periodic election retry {retry_count + 1}: no voter quorum available")
                 else:
+                    logger.info(f"Triggering election retry {retry_count + 1} after {backoff_seconds}s leaderless")
                     asyncio.create_task(self._start_election())
+        elif self.leader_id:
+            # Reset retry count when we have a leader
+            self._election_retry_count = 0
 
     def _check_dead_peers(self):
         """Check for peers that have stopped responding."""
@@ -18734,19 +18767,27 @@ print(json.dumps({{
                     else:
                         asyncio.create_task(self._start_election())
 
-        # If we're leaderless, periodically retry elections so the cluster can
-        # recover without requiring manual restarts.
+        # If we're leaderless, periodically retry elections with adaptive backoff
+        # December 29, 2025: Same adaptive backoff as async version
         if not self.leader_id and not self.election_in_progress:
             now = time.time()
-            backoff_seconds = max(LEADER_LEASE_RENEW_INTERVAL, ELECTION_TIMEOUT * 3)
+            retry_count = int(getattr(self, "_election_retry_count", 0) or 0)
+            # Adaptive backoff: 15s, 30s, 60s, 90s (capped)
+            backoff_intervals = [15, 30, 60, 90]
+            backoff_seconds = backoff_intervals[min(retry_count, len(backoff_intervals) - 1)]
             last_attempt = float(getattr(self, "last_election_attempt", 0.0) or 0.0)
             if now - last_attempt >= backoff_seconds:
                 self.last_election_attempt = now
+                self._election_retry_count = retry_count + 1
                 # CRITICAL: Check quorum before starting election to prevent quorum bypass
                 if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-                    logger.warning("Skipping periodic election retry (sync): no voter quorum available")
+                    logger.warning(f"Skipping periodic election retry {retry_count + 1} (sync): no voter quorum available")
                 else:
+                    logger.info(f"Triggering election retry {retry_count + 1} after {backoff_seconds}s leaderless (sync)")
                     asyncio.create_task(self._start_election())
+        elif self.leader_id:
+            # Reset retry count when we have a leader
+            self._election_retry_count = 0
 
     async def _start_election(self):
         """Start leader election using Bully algorithm."""
@@ -18757,8 +18798,12 @@ print(json.dumps({{
             return
         # Optional quorum gating: only configured voters may lead, and only when
         # a majority of voters are currently visible.
-        if getattr(self, "voter_node_ids", []):
-            if self.node_id not in self.voter_node_ids:
+        voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+        if voter_node_ids:
+            if self.node_id not in voter_node_ids:
+                # December 29, 2025: Non-voters can request elections from voters
+                # instead of just returning silently
+                await self._request_election_from_voters("non_voter_detected_leaderless")
                 return
             if not self._has_voter_quorum():
                 return
@@ -18917,6 +18962,64 @@ print(json.dumps({{
 
         # Start P2P auto-deployer when becoming leader
         await self._start_p2p_auto_deployer()
+
+    async def _request_election_from_voters(self, reason: str = "non_voter_request") -> bool:
+        """December 29, 2025: Non-voters can request that voters start an election.
+
+        Instead of silently returning when a non-voter tries to start an election,
+        this method sends requests to known voters to have them start one.
+
+        Args:
+            reason: Why the election is being requested
+
+        Returns:
+            True if at least one voter accepted the request
+        """
+        voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
+        if not voter_node_ids:
+            return False
+
+        logger.info(f"Non-voter {self.node_id} requesting election from voters: {reason}")
+
+        # Rate limit election requests to avoid spamming
+        now = time.time()
+        last_request = getattr(self, "_last_election_request", 0.0)
+        if now - last_request < 30:  # At most once per 30 seconds
+            logger.debug("Skipping election request: rate limited")
+            return False
+        self._last_election_request = now
+
+        accepted = False
+        async with aiohttp.ClientSession() as session:
+            for voter_id in voter_node_ids[:3]:  # Limit to 3 voters
+                with self.peers_lock:
+                    voter = self.peers.get(voter_id)
+                if not voter or not voter.is_alive():
+                    continue
+
+                try:
+                    url = self._url_for_peer(voter, "/election/request")
+                    async with session.post(
+                        url,
+                        json={"requester_id": self.node_id, "reason": reason},
+                        headers=self._auth_headers(),
+                        timeout=aiohttp.ClientTimeout(total=5.0),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("accepted"):
+                                logger.info(
+                                    f"Voter {voter_id} accepted election request: {data.get('action')}"
+                                )
+                                accepted = True
+                                break  # One voter accepting is enough
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    logger.debug(f"Failed to request election from {voter_id}: {e}")
+                    continue
+
+        if not accepted:
+            logger.warning(f"No voters accepted election request from {self.node_id}")
+        return accepted
 
     async def _check_emergency_coordinator_fallback(self):
         """DECENTRALIZED: When voter quorum is unreachable for >5 min, any GPU node can coordinate.
@@ -22451,27 +22554,35 @@ print(json.dumps({{
             node_id = node_info["node_id"]
             allowed = node_info["allowed"]
 
-            # Try to claim work for this node
-            work_item = wq.claim_work(node_id, allowed)
+            # Try to claim work for this node using Raft or SQLite based on consensus mode
+            # claim_work_distributed() returns a dict with work_id, work_type, config, etc.
+            work_item = self.claim_work_distributed(node_id, allowed)
             if work_item is None:
                 continue
 
+            # Get work_type - may be string or WorkType enum
+            work_type_str = work_item.get("work_type", "unknown")
+            if hasattr(work_type_str, "value"):
+                work_type_str = work_type_str.value
+            work_id = work_item.get("work_id", "unknown")
+
             print(
                 f"[P2P] Work queue rebalance: {node_id} idle at {node_info['gpu_percent']:.0f}% GPU, "
-                f"assigning {work_item.work_type.value} work ({work_item.work_id})"
+                f"assigning {work_type_str} work ({work_id})"
             )
 
             # Dispatch work to the node
             success = await self._dispatch_queued_work(node_info["peer"], work_item)
             if success:
-                wq.start_work(work_item.work_id)
+                # Mark work as started using distributed method for Raft consistency
+                self.start_work_distributed(work_id)
                 dispatched += 1
                 # Reset idle timer since we assigned work
                 idle_key = f"_wq_idle_since_{node_id}"
                 setattr(self, idle_key, 0)
             else:
                 # Failed to dispatch, reset work status for retry
-                wq.fail_work(work_item.work_id, "dispatch_failed")
+                self.fail_work_distributed(work_id, "dispatch_failed")
 
         if dispatched > 0:
             self._last_work_queue_rebalance = now
@@ -22479,18 +22590,38 @@ print(json.dumps({{
 
         return dispatched
 
-    async def _dispatch_queued_work(self, peer: NodeInfo, work_item) -> bool:
+    async def _dispatch_queued_work(self, peer: NodeInfo, work_item: dict) -> bool:
         """Dispatch a work queue item to a specific node.
 
         Routes different work types to appropriate endpoints.
+
+        Args:
+            peer: Target node info
+            work_item: Work item dict with work_id, work_type, config, etc.
+                       (from claim_work_distributed)
         """
         from app.coordination.work_queue import WorkType
 
         try:
             timeout = ClientTimeout(total=30)
             async with get_client_session(timeout) as session:
-                work_type = work_item.work_type
-                config = work_item.config
+                # Handle both dict and object formats for backward compatibility
+                if isinstance(work_item, dict):
+                    work_type = work_item.get("work_type")
+                    config = work_item.get("config", {})
+                    work_id = work_item.get("work_id")
+                else:
+                    work_type = work_item.work_type
+                    config = work_item.config
+                    work_id = work_item.work_id
+
+                # Convert string work_type to enum if needed
+                if isinstance(work_type, str):
+                    try:
+                        work_type = WorkType(work_type)
+                    except ValueError:
+                        logger.warning(f"Unknown work type string: {work_type}")
+                        return False
 
                 if work_type == WorkType.TRAINING:
                     # Route to training endpoint
@@ -22499,7 +22630,7 @@ print(json.dumps({{
                         "job_type": "training",
                         "board_type": config.get("board_type", "square8"),
                         "num_players": config.get("num_players", 2),
-                        "work_id": work_item.work_id,
+                        "work_id": work_id,
                     }
                 elif work_type == WorkType.GPU_CMAES:
                     # Route to CMA-ES endpoint
@@ -22507,7 +22638,7 @@ print(json.dumps({{
                     payload = {
                         "board_type": config.get("board_type", "square8"),
                         "num_players": config.get("num_players", 2),
-                        "work_id": work_item.work_id,
+                        "work_id": work_id,
                     }
                 elif work_type == WorkType.TOURNAMENT:
                     # Route to tournament endpoint
@@ -22515,7 +22646,7 @@ print(json.dumps({{
                     payload = {
                         "board_type": config.get("board_type", "square8"),
                         "num_players": config.get("num_players", 2),
-                        "work_id": work_item.work_id,
+                        "work_id": work_id,
                     }
                 elif work_type == WorkType.SELFPLAY:
                     # Route to selfplay endpoint
@@ -22524,7 +22655,7 @@ print(json.dumps({{
                         "board_type": config.get("board_type", "square8"),
                         "num_players": config.get("num_players", 2),
                         "num_games": config.get("num_games", 500),
-                        "work_id": work_item.work_id,
+                        "work_id": work_id,
                     }
                 else:
                     logger.warning(f"Unknown work type: {work_type}")
@@ -24761,6 +24892,8 @@ print(json.dumps({{
             app.router.add_get('/election/grant', self.handle_voter_grant_status)
             app.router.add_post('/election/reset', self.handle_election_reset)
             app.router.add_post('/election/force_leader', self.handle_election_force_leader)
+            # December 29, 2025: Allow non-voters to request elections via voters
+            app.router.add_post('/election/request', self.handle_election_request)
 
             # Serf integration routes (battle-tested SWIM gossip)
             app.router.add_post('/serf/event', self.handle_serf_event)
@@ -25132,14 +25265,67 @@ print(json.dumps({{
         with contextlib.suppress(Exception):
             await self._bootstrap_from_known_peers()
 
-        # If no leader known, start election after short delay
-        await asyncio.sleep(5)
+        # December 29, 2025: Extended startup election with retry mechanism
+        # If no leader known, start election after allowing time for peer discovery.
+        # Previously used 5s which was too short for cluster discovery.
+        await asyncio.sleep(15)  # Increased from 5s to allow peer discovery
         if not self.leader_id and not self._maybe_adopt_leader_from_peers():
             # CRITICAL: Check quorum before starting election to prevent quorum bypass
             if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-                logger.warning("Skipping startup election: no voter quorum available")
+                logger.warning("Skipping startup election: no voter quorum available (will retry)")
             else:
                 await self._start_election()
+
+        # December 29, 2025: Add background task to retry election if still no leader
+        # This handles cases where initial election fails or quorum wasn't available
+        async def _delayed_election_retry():
+            """Retry election periodically if no leader after startup."""
+            retry_intervals = [30, 60, 120, 300]  # Exponential backoff: 30s, 1m, 2m, 5m
+            retry_count = 0
+
+            while self.running and retry_count < len(retry_intervals):
+                wait_time = retry_intervals[retry_count]
+                await asyncio.sleep(wait_time)
+
+                if not self.running:
+                    break
+
+                if self.leader_id:
+                    # Leader found, no need to retry
+                    logger.info(f"Leader established ({self.leader_id}), stopping election retry task")
+                    break
+
+                # Still no leader, try to adopt from peers or start election
+                if self._maybe_adopt_leader_from_peers():
+                    logger.info(f"Adopted leader from peers: {self.leader_id}")
+                    break
+
+                # Check quorum and start election if possible
+                if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                    retry_count += 1
+                    voters_alive = self._count_alive_peers(self.voter_node_ids) if hasattr(self, '_count_alive_peers') else 0
+                    logger.warning(
+                        f"No voter quorum for election retry {retry_count}/{len(retry_intervals)} "
+                        f"(alive={voters_alive}, need={getattr(self, 'voter_quorum_size', 3)})"
+                    )
+                    continue
+
+                if not getattr(self, "election_in_progress", False):
+                    logger.info(f"No leader after {wait_time}s, triggering election retry {retry_count + 1}")
+                    await self._start_election()
+                    retry_count += 1
+                else:
+                    logger.debug("Election already in progress, skipping retry")
+
+            if not self.leader_id and self.running:
+                logger.warning("Exhausted election retries, operating in leaderless mode")
+
+        tasks.append(
+            self._create_safe_task(
+                _delayed_election_retry(),
+                "delayed_election_retry"
+            )
+        )
 
         # Run forever
         # December 2025: Added return_exceptions=True to prevent task exceptions from crashing orchestrator
