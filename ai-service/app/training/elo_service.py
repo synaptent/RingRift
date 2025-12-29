@@ -1478,6 +1478,34 @@ def get_elo_service(db_path: Path | None = None) -> EloService:
         return _elo_service_instance
 
 
+def reset_elo_service() -> None:
+    """Reset the singleton EloService instance (for testing).
+
+    Dec 29, 2025: Added to fix test class leak issue in tournament tests.
+    Ensures test isolation by clearing the cached service instance.
+    Thread-local connections will be garbage collected.
+
+    Usage in tests:
+        @pytest.fixture(autouse=True)
+        def cleanup_elo():
+            yield
+            reset_elo_service()
+    """
+    global _elo_service_instance
+    with _elo_service_lock:
+        if _elo_service_instance is not None:
+            # Try to close thread-local connection if accessible
+            try:
+                if hasattr(_elo_service_instance, '_local'):
+                    local = _elo_service_instance._local
+                    if hasattr(local, 'connection') and local.connection is not None:
+                        local.connection.close()
+                        local.connection = None
+            except Exception:
+                pass  # Ignore close errors, connection will be GC'd
+            _elo_service_instance = None
+
+
 # =============================================================================
 # Backwards Compatibility Layer
 # =============================================================================
