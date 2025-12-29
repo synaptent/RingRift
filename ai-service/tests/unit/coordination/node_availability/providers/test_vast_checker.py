@@ -78,7 +78,7 @@ class TestVastCheckerInit:
         """Test provider name."""
         checker = VastChecker(api_key="test")
 
-        assert checker.provider == "vast"
+        assert checker.provider_name == "vast"
 
 
 class TestVastCheckerStateMappings:

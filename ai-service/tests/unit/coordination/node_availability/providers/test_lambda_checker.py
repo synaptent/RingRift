@@ -78,7 +78,7 @@ class TestLambdaCheckerInit:
         """Test provider name."""
         checker = LambdaChecker(api_key="test")
 
-        assert checker.provider == "lambda"
+        assert checker.provider_name == "lambda"
 
 
 class TestLambdaCheckerStateMappings:
@@ -121,10 +121,10 @@ class TestLambdaCheckerApiAvailability:
         """Test API available when request succeeds."""
         checker = LambdaChecker(api_key="test-key")
 
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_session.get.return_value.__aenter__.return_value = mock_response
+        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response)))
 
         with patch.object(checker, "_get_session", return_value=mock_session):
             result = await checker.check_api_availability()
@@ -136,10 +136,10 @@ class TestLambdaCheckerApiAvailability:
         """Test API not available when request fails."""
         checker = LambdaChecker(api_key="test-key")
 
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_response = AsyncMock()
         mock_response.status = 401
-        mock_session.get.return_value.__aenter__.return_value = mock_response
+        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response)))
 
         with patch.object(checker, "_get_session", return_value=mock_session):
             result = await checker.check_api_availability()

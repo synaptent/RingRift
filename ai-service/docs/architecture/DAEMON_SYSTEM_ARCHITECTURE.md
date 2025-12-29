@@ -43,15 +43,16 @@ MasterLoopController
 | `AUTO_SYNC`          | `auto_sync_daemon.py`            | Push-from-generator + gossip replication |
 | `MODEL_DISTRIBUTION` | `unified_distribution_daemon.py` | Model/NPZ sync after promotion           |
 
-**Deprecated Sync Daemons (Q2 2026 removal):**
+**Deprecated Sync Daemons (legacy daemon types, Q2 2026 removal):**
 
-| Daemon              | File                   | Replacement                            |
-| ------------------- | ---------------------- | -------------------------------------- |
-| `EPHEMERAL_SYNC`    | `ephemeral_sync.py`    | `AutoSyncDaemon(strategy="ephemeral")` |
-| `CLUSTER_DATA_SYNC` | `cluster_data_sync.py` | `AutoSyncDaemon(strategy="broadcast")` |
+| Daemon              | File                  | Replacement                                     |
+| ------------------- | --------------------- | ----------------------------------------------- |
+| `EPHEMERAL_SYNC`    | `auto_sync_daemon.py` | `AutoSyncDaemon(strategy="ephemeral")` (legacy) |
+| `CLUSTER_DATA_SYNC` | `auto_sync_daemon.py` | `AutoSyncDaemon(strategy="broadcast")` (legacy) |
 
-Note: `model_distribution_daemon.py` and `npz_distribution_daemon.py` have been consolidated
-into `unified_distribution_daemon.py` (December 2025).
+Note: `ephemeral_sync.py` and `cluster_data_sync.py` were removed during consolidation; their
+behavior now lives in `auto_sync_daemon.py`. `model_distribution_daemon.py` and
+`npz_distribution_daemon.py` have been consolidated into `unified_distribution_daemon.py`.
 
 ### Training Daemons
 
@@ -181,7 +182,7 @@ daemons:
   auto_sync:
     enabled: true
     interval: 60
-  ephemeral_sync:
+  ephemeral_sync: # AutoSyncDaemon(strategy="ephemeral")
     enabled: true
     interval: 5
   training_trigger:

@@ -118,7 +118,7 @@ class TestRunPodCheckerInit:
         """Test provider name."""
         checker = RunPodChecker(api_key="test")
 
-        assert checker.provider == "runpod"
+        assert checker.provider_name == "runpod"
 
 
 class TestRunPodCheckerStateMappings:

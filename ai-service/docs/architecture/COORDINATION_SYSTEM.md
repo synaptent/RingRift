@@ -729,14 +729,14 @@ All 8 critical AI training events fully wired:
 
 ### Quick Reference - New Components (Dec 2025)
 
-| Component                | File                              | Purpose                                |
-| ------------------------ | --------------------------------- | -------------------------------------- |
-| Unified Event Router     | `event_router.py`                 | Single event entry point               |
-| Auto-Promotion Daemon    | `auto_promotion_daemon.py`        | Automatic model promotion              |
-| Ephemeral Sync           | `ephemeral_sync.py`               | 5-second sync for Vast.ai              |
-| Feedback Loop Controller | `feedback_loop_controller.py`     | Training feedback signals              |
-| Gauntlet Feedback        | `gauntlet_feedback_controller.py` | Eval→training bridge                   |
-| Job Scheduler            | `job_scheduler.py`                | Fair allocation, starvation prevention |
+| Component                | File                              | Purpose                                        |
+| ------------------------ | --------------------------------- | ---------------------------------------------- |
+| Unified Event Router     | `event_router.py`                 | Single event entry point                       |
+| Auto-Promotion Daemon    | `auto_promotion_daemon.py`        | Automatic model promotion                      |
+| Ephemeral Sync           | `auto_sync_daemon.py`             | 5-second sync for Vast.ai (strategy=ephemeral) |
+| Feedback Loop Controller | `feedback_loop_controller.py`     | Training feedback signals                      |
+| Gauntlet Feedback        | `gauntlet_feedback_controller.py` | Eval→training bridge                           |
+| Job Scheduler            | `job_scheduler.py`                | Fair allocation, starvation prevention         |
 
 ### Remaining Consolidation Work
 
