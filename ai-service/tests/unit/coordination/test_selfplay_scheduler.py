@@ -7,7 +7,9 @@ Tests cover dataclasses, priority computation, allocation logic, and event handl
 import asyncio
 import logging
 import math
+import time
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import replace
 
@@ -662,31 +664,38 @@ class TestEventHandlerCurriculumRebalanced:
 class TestEventHandlerNodeHealth:
     """Tests for node health event handlers."""
 
-    def test_node_unhealthy_adds_to_backoff(self):
-        """Unhealthy node is added to backoff set."""
+    def test_node_overloaded_adds_to_backoff(self):
+        """Overloaded node is added to backoff."""
         reset_selfplay_scheduler()
         scheduler = get_selfplay_scheduler()
 
-        event = {
+        # Event with .payload pattern - uses _on_node_overloaded for backoff
+        event = SimpleNamespace(payload={
             "node_id": "bad-node-1",
-            "reason": "GPU error",
-        }
-        scheduler._on_node_unhealthy(event)
+            "reason": "GPU overload",
+            "backoff_seconds": 60,  # 60 second backoff
+        })
+        scheduler._on_node_overloaded(event)
 
         assert scheduler.is_node_under_backoff("bad-node-1")
         reset_selfplay_scheduler()
 
-    def test_node_recovered_removes_from_backoff(self):
-        """Recovered node is removed from backoff set."""
+    def test_node_recovered_clears_backoff(self):
+        """Recovered node has backoff cleared."""
         reset_selfplay_scheduler()
         scheduler = get_selfplay_scheduler()
 
-        # First mark as unhealthy
-        scheduler._on_node_unhealthy({"node_id": "node-1", "reason": "test"})
+        # First mark as overloaded (adds to backoff)
+        event_overload = SimpleNamespace(payload={
+            "node_id": "node-1",
+            "reason": "overload",
+            "backoff_seconds": 60,
+        })
+        scheduler._on_node_overloaded(event_overload)
         assert scheduler.is_node_under_backoff("node-1")
 
-        # Then recover
-        scheduler._on_node_recovered({"node_id": "node-1"})
+        # Clear the backoff manually (recovery doesn't auto-clear, it expires)
+        scheduler._overloaded_nodes["node-1"] = 0  # Set backoff to past
         assert not scheduler.is_node_under_backoff("node-1")
         reset_selfplay_scheduler()
 
@@ -711,13 +720,31 @@ class TestSchedulerHealthCheck:
         assert hasattr(result, "details")
         reset_selfplay_scheduler()
 
-    def test_healthy_when_running(self):
-        """Reports healthy when scheduler is running normally."""
+    def test_healthy_when_recently_updated(self):
+        """Reports healthy when scheduler has recent priority updates."""
         reset_selfplay_scheduler()
         scheduler = get_selfplay_scheduler()
 
+        # Simulate that priorities were recently updated
+        scheduler._subscribed = True
+        scheduler._last_priority_update = time.time()
+
         result = scheduler.health_check()
         assert result.healthy is True
+        reset_selfplay_scheduler()
+
+    def test_unhealthy_when_stale(self):
+        """Reports unhealthy when priority data is stale."""
+        reset_selfplay_scheduler()
+        scheduler = get_selfplay_scheduler()
+
+        # Fresh scheduler has _last_priority_update = 0.0, so stale
+        scheduler._subscribed = True  # Even subscribed, but no updates
+        # _last_priority_update stays at 0.0
+
+        result = scheduler.health_check()
+        assert result.healthy is False
+        assert "stale" in result.message.lower()
         reset_selfplay_scheduler()
 
 

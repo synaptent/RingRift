@@ -839,7 +839,8 @@ class DistributedNNGauntlet:
         if new_count > 0:
             logger.info(f"[Gauntlet] Discovered {new_count} new models for {config_key}")
 
-        p2p_url = p2p_url or os.environ.get("RINGRIFT_P2P_URL", "http://localhost:8770")
+        from app.config.ports import get_local_p2p_url
+        p2p_url = p2p_url or os.environ.get("RINGRIFT_P2P_URL") or get_local_p2p_url()
 
         run_id = str(uuid.uuid4())[:8]
         self._current_run = GauntletResult(

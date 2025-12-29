@@ -361,8 +361,9 @@ class CircuitBreaker:
             ConnectionError,
         ):
             return False
-        except Exception:
-            # Catch-all for unexpected errors
+        except Exception as e:
+            # Catch-all for unexpected errors - log for visibility
+            logger.debug(f"Unexpected error in health probe for {target}: {type(e).__name__}: {e}")
             return False
 
     def _get_escalation_tier(self, circuit: _CircuitData) -> int:

@@ -158,7 +158,8 @@ class EnvConfig:
     @property
     def p2p_url(self) -> str:
         """P2P service URL."""
-        return get_str("RINGRIFT_P2P_URL", "http://localhost:8770")
+        from app.config.ports import get_local_p2p_url
+        return get_str("RINGRIFT_P2P_URL", "") or get_local_p2p_url()
 
     @property
     def cluster_auth_token(self) -> str:

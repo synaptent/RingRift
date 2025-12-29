@@ -495,8 +495,8 @@ class HotDataBuffer:
             while len(self._buffer) > self.max_size:
                 self._buffer.popitem(last=False)
 
-        # Emit events outside lock
-        if should_emit_new_games:
+        # Emit events outside lock (only if event system available)
+        if HAS_EVENT_SYSTEM and should_emit_new_games:
             self._try_emit_event(DataEventType.NEW_GAMES_AVAILABLE, {
                 "buffer_name": self.buffer_name,
                 "new_games": self.batch_notification_size,
@@ -504,7 +504,7 @@ class HotDataBuffer:
                 "source": "hot_buffer",
             })
 
-        if should_emit_threshold:
+        if HAS_EVENT_SYSTEM and should_emit_threshold:
             self._try_emit_event(DataEventType.TRAINING_THRESHOLD_REACHED, {
                 "buffer_name": self.buffer_name,
                 "game_count": len(self._buffer),
@@ -769,17 +769,18 @@ class HotDataBuffer:
 
         self.mark_flushed(flushed_ids)
 
-        # Emit flush completed event with validation stats
+        # Emit flush completed event with validation stats (only if event system available)
         duration = time.time() - start_time
-        self._try_emit_event(DataEventType.DATA_SYNC_COMPLETED, {
-            "buffer_name": self.buffer_name,
-            "games_flushed": written,
-            "games_skipped": skipped,
-            "target_path": str(path),
-            "duration_seconds": duration,
-            "source": "hot_buffer",
-            "validation_stats": self._validation_stats.copy(),
-        })
+        if HAS_EVENT_SYSTEM:
+            self._try_emit_event(DataEventType.DATA_SYNC_COMPLETED, {
+                "buffer_name": self.buffer_name,
+                "games_flushed": written,
+                "games_skipped": skipped,
+                "target_path": str(path),
+                "duration_seconds": duration,
+                "source": "hot_buffer",
+                "validation_stats": self._validation_stats.copy(),
+            })
         if skipped > 0:
             logger.info(f"Flushed {written} games, skipped {skipped} invalid from '{self.buffer_name}' to {path}")
         else:
@@ -829,17 +830,18 @@ class HotDataBuffer:
 
         self.mark_flushed(flushed_ids)
 
-        # Emit flush completed event asynchronously with validation stats
+        # Emit flush completed event asynchronously with validation stats (only if event system available)
         duration = time.time() - start_time
-        await self.emit_event_async(DataEventType.DATA_SYNC_COMPLETED, {
-            "buffer_name": self.buffer_name,
-            "games_flushed": written,
-            "games_skipped": skipped,
-            "target_path": str(path),
-            "duration_seconds": duration,
-            "source": "hot_buffer",
-            "validation_stats": self._validation_stats.copy(),
-        })
+        if HAS_EVENT_SYSTEM:
+            await self.emit_event_async(DataEventType.DATA_SYNC_COMPLETED, {
+                "buffer_name": self.buffer_name,
+                "games_flushed": written,
+                "games_skipped": skipped,
+                "target_path": str(path),
+                "duration_seconds": duration,
+                "source": "hot_buffer",
+                "validation_stats": self._validation_stats.copy(),
+            })
         if skipped > 0:
             logger.info(f"Flushed {written} games, skipped {skipped} invalid from '{self.buffer_name}' to {path}")
         else:
@@ -1068,19 +1070,22 @@ class HotDataBuffer:
             weights = (N * probs[indices]) ** (-importance_beta)
             weights = weights / weights.max()  # Normalize to max=1
 
-            # Gather samples
-            states = []
+            # Gather samples (sample cache has 4 values: board_features, global_features, policy, value)
+            board_features = []
+            global_features = []
             policies = []
             values = []
 
             for idx in indices:
-                s, p, v = self._sample_cache[idx]
-                states.append(s)
+                bf, gf, p, v = self._sample_cache[idx]
+                board_features.append(bf)
+                global_features.append(gf)
                 policies.append(p)
                 values.append(v)
 
             return (
-                np.array(states, dtype=np.float32),
+                np.array(board_features, dtype=np.float32),
+                np.array(global_features, dtype=np.float32),
                 np.array(policies, dtype=np.float32),
                 np.array(values, dtype=np.float32),
                 weights.astype(np.float32),

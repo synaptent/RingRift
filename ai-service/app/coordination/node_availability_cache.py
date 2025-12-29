@@ -382,6 +382,51 @@ class NodeAvailabilityCache:
             except Exception as e:
                 logger.error(f"[NodeAvailabilityCache] Callback error: {e}")
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult with healthy status, message, and details
+        """
+        try:
+            from app.coordination.protocols import HealthCheckResult
+        except ImportError:
+            # Fallback if protocols not available
+            from dataclasses import dataclass
+
+            @dataclass
+            class HealthCheckResult:
+                healthy: bool
+                message: str
+                details: dict
+
+        summary = self.get_status_summary()
+        total = summary["total_nodes"]
+        available = summary["available"]
+        unavailable = summary["unavailable"]
+
+        # Healthy if more than 50% of known nodes are available
+        healthy = total == 0 or (available / total) >= 0.5
+
+        if total == 0:
+            message = "No nodes tracked yet"
+        elif unavailable == 0:
+            message = f"All {total} nodes available"
+        else:
+            message = f"{available}/{total} nodes available"
+
+        return HealthCheckResult(
+            healthy=healthy,
+            message=message,
+            details={
+                "total_nodes": total,
+                "available": available,
+                "unavailable": unavailable,
+                "by_reason": summary["by_reason"],
+                "event_subscribed": summary["event_subscribed"],
+            },
+        )
+
 
 # Module-level singleton accessor
 def get_availability_cache() -> NodeAvailabilityCache:
