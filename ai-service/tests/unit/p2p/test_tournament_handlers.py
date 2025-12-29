@@ -322,9 +322,9 @@ class TestHandleTournamentStartLeader:
     @pytest.mark.asyncio
     async def test_includes_worker_list(self, handler):
         """Response includes list of workers."""
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             with patch(
-                "scripts.p2p.handlers.tournament.DistributedTournamentState",
+                "scripts.p2p.models.DistributedTournamentState",
                 MockDistributedTournamentState,
             ):
                 request = MockRequest(
@@ -353,9 +353,9 @@ class TestHandleTournamentStartLeader:
             peers=peers,
         )
 
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             with patch(
-                "scripts.p2p.handlers.tournament.DistributedTournamentState",
+                "scripts.p2p.models.DistributedTournamentState",
                 MockDistributedTournamentState,
             ):
                 request = MockRequest(
@@ -390,7 +390,7 @@ class TestHandleTournamentStartNonLeader:
     @pytest.mark.asyncio
     async def test_non_leader_creates_proposal(self, handler):
         """Non-leader creates proposal instead of starting directly."""
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             request = MockRequest(
                 json_data={
                     "board_type": "hex8",
@@ -411,7 +411,7 @@ class TestHandleTournamentStartNonLeader:
     @pytest.mark.asyncio
     async def test_proposal_includes_agents(self, handler):
         """Proposal response includes agent list."""
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             request = MockRequest(
                 json_data={
                     "agent_ids": ["model1", "model2", "model3"],
@@ -426,7 +426,7 @@ class TestHandleTournamentStartNonLeader:
     @pytest.mark.asyncio
     async def test_non_leader_too_few_agents_returns_400(self, handler):
         """Non-leader with too few agents returns 400."""
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             request = MockRequest(
                 json_data={
                     "agent_ids": ["only_one"],
@@ -440,7 +440,7 @@ class TestHandleTournamentStartNonLeader:
     @pytest.mark.asyncio
     async def test_proposal_calls_method(self, handler):
         """Proposal creation calls _propose_tournament."""
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             request = MockRequest(
                 json_data={
                     "board_type": "hexagonal",
@@ -772,9 +772,9 @@ class TestTournamentEdgeCases:
             peers=peers,
         )
 
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             with patch(
-                "scripts.p2p.handlers.tournament.DistributedTournamentState",
+                "scripts.p2p.models.DistributedTournamentState",
                 MockDistributedTournamentState,
             ):
                 # 10 agents = 45 pairings
@@ -801,9 +801,9 @@ class TestTournamentEdgeCases:
             peers=peers,
         )
 
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             with patch(
-                "scripts.p2p.handlers.tournament.DistributedTournamentState",
+                "scripts.p2p.models.DistributedTournamentState",
                 MockDistributedTournamentState,
             ):
                 # Start first tournament
@@ -835,9 +835,9 @@ class TestTournamentEdgeCases:
             peers=peers,
         )
 
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             with patch(
-                "scripts.p2p.handlers.tournament.DistributedTournamentState",
+                "scripts.p2p.models.DistributedTournamentState",
                 MockDistributedTournamentState,
             ):
                 request = MockRequest(
@@ -861,9 +861,9 @@ class TestTournamentEdgeCases:
             peers=peers,
         )
 
-        with patch("scripts.p2p.handlers.tournament.NodeRole", MockNodeRole):
+        with patch("scripts.p2p.types.NodeRole", MockNodeRole):
             with patch(
-                "scripts.p2p.handlers.tournament.DistributedTournamentState",
+                "scripts.p2p.models.DistributedTournamentState",
                 MockDistributedTournamentState,
             ):
                 request = MockRequest(

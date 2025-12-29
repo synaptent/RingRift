@@ -1164,10 +1164,11 @@ class UnifiedHealthManager(CoordinatorBase):
                 recovery_id=self._generate_recovery_id(),
                 error_id=f"shutdown_{node_id}",
                 component=f"coordinator:{coordinator_name}",
+                node_id=node_id,
                 strategy="heartbeat_recovery",
                 started_at=timestamp,
                 completed_at=timestamp,
-                successful=True,
+                success=True,
             )
             self._record_recovery(recovery)
 

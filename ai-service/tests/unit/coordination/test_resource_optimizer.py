@@ -1739,14 +1739,11 @@ class TestHealthCheck:
     """Tests for ResourceOptimizer.health_check() method."""
 
     @pytest.fixture
-    def optimizer(self, temp_path, reset_optimizer):
+    def optimizer(self, temp_db_path):
         """Provide ResourceOptimizer instance for health check tests."""
-        from app.coordination.resource_optimizer import (
-            ResourceOptimizer,
-            _get_targets,
-        )
+        from app.coordination.resource_optimizer import ResourceOptimizer
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "health-test-node"
                 mock_env.orchestrator_id = "test-orchestrator"
@@ -1809,7 +1806,7 @@ class TestHealthCheck:
 class TestGetMaxSelfplayForNodeById:
     """Tests for get_max_selfplay_for_node_by_id function."""
 
-    def test_node_in_database(self, reset_optimizer, temp_path):
+    def test_node_in_database(self, temp_db_path):
         """Should return hardware-aware limit for known node."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
@@ -1817,7 +1814,7 @@ class TestGetMaxSelfplayForNodeById:
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -1840,36 +1837,67 @@ class TestGetMaxSelfplayForNodeById:
                 assert result >= 4
                 assert result <= 32
 
-    def test_node_not_in_database_h100_pattern(self):
+    def test_node_not_in_database_h100_pattern(self, temp_db_path):
         """Should use hostname pattern for unknown H100 nodes."""
-        from app.coordination.resource_optimizer import get_max_selfplay_for_node_by_id
+        from app.coordination.resource_optimizer import (
+            ResourceOptimizer,
+            get_max_selfplay_for_node_by_id,
+        )
 
-        # The function should fall back to pattern matching
-        result = get_max_selfplay_for_node_by_id("runpod-h100-1")
+        # Ensure clean state - the function queries ResourceOptimizer singleton
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
+            with patch("app.coordination.resource_optimizer.env") as mock_env:
+                mock_env.node_id = "test-node"
+                mock_env.orchestrator_id = "test"
+                ResourceOptimizer._instance = None
+                ResourceOptimizer()  # Initialize singleton
 
-        assert result == 12  # HIGH_END tier
+                # The function should fall back to pattern matching
+                result = get_max_selfplay_for_node_by_id("runpod-h100-1")
 
-    def test_node_not_in_database_4090_pattern(self):
+                assert result == 12  # HIGH_END tier
+
+    def test_node_not_in_database_4090_pattern(self, temp_db_path):
         """Should use hostname pattern for unknown 4090 nodes."""
-        from app.coordination.resource_optimizer import get_max_selfplay_for_node_by_id
+        from app.coordination.resource_optimizer import (
+            ResourceOptimizer,
+            get_max_selfplay_for_node_by_id,
+        )
 
-        result = get_max_selfplay_for_node_by_id("vast-4090-node")
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
+            with patch("app.coordination.resource_optimizer.env") as mock_env:
+                mock_env.node_id = "test-node"
+                mock_env.orchestrator_id = "test"
+                ResourceOptimizer._instance = None
+                ResourceOptimizer()  # Initialize singleton
 
-        assert result == 8  # MID_TIER
+                result = get_max_selfplay_for_node_by_id("vast-4090-node")
 
-    def test_node_not_in_database_unknown(self):
+                assert result == 8  # MID_TIER
+
+    def test_node_not_in_database_unknown(self, temp_db_path):
         """Should use conservative default for unknown nodes."""
-        from app.coordination.resource_optimizer import get_max_selfplay_for_node_by_id
+        from app.coordination.resource_optimizer import (
+            ResourceOptimizer,
+            get_max_selfplay_for_node_by_id,
+        )
 
-        result = get_max_selfplay_for_node_by_id("unknown-mystery-node")
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
+            with patch("app.coordination.resource_optimizer.env") as mock_env:
+                mock_env.node_id = "test-node"
+                mock_env.orchestrator_id = "test"
+                ResourceOptimizer._instance = None
+                ResourceOptimizer()  # Initialize singleton
 
-        assert result == 6  # Conservative default
+                result = get_max_selfplay_for_node_by_id("unknown-mystery-node")
+
+                assert result == 6  # Conservative default
 
 
 class TestGetNodeHardwareInfo:
     """Tests for get_node_hardware_info function."""
 
-    def test_node_found(self, reset_optimizer, temp_path):
+    def test_node_found(self, temp_db_path):
         """Should return hardware info dict for known node."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
@@ -1877,7 +1905,7 @@ class TestGetNodeHardwareInfo:
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -1904,14 +1932,14 @@ class TestGetNodeHardwareInfo:
                 assert result["memory_gb"] == 256.0
                 assert result["has_gpu"] is True
 
-    def test_node_not_found(self, reset_optimizer, temp_path):
+    def test_node_not_found(self, temp_db_path):
         """Should return None for unknown node."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_node_hardware_info,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -1926,11 +1954,11 @@ class TestGetNodeHardwareInfo:
 class TestGetConfigWeightDetails:
     """Tests for get_config_weight_details method."""
 
-    def test_returns_detailed_list(self, reset_optimizer, temp_path):
+    def test_returns_detailed_list(self, temp_db_path):
         """Should return list of detailed config weight info."""
         from app.coordination.resource_optimizer import ResourceOptimizer
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -1954,11 +1982,11 @@ class TestGetConfigWeightDetails:
                     assert "weight" in d
                     assert "game_count" in d
 
-    def test_empty_on_no_weights(self, reset_optimizer, temp_path):
+    def test_empty_on_no_weights(self, temp_db_path):
         """Should return empty list when no weights configured."""
         from app.coordination.resource_optimizer import ResourceOptimizer
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -1974,14 +2002,14 @@ class TestGetConfigWeightDetails:
 class TestGetRecommendation:
     """Tests for _get_recommendation internal method."""
 
-    def test_recommendation_no_nodes(self, reset_optimizer, temp_path):
+    def test_recommendation_no_nodes(self, temp_db_path):
         """Should recommend checking connectivity when no nodes."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             ClusterState,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -1995,7 +2023,7 @@ class TestGetRecommendation:
 
                 assert "no active nodes" in rec.lower() or "connectivity" in rec.lower()
 
-    def test_recommendation_scale_up(self, reset_optimizer, temp_path):
+    def test_recommendation_scale_up(self, temp_db_path):
         """Should recommend scaling up when underutilized."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
@@ -2003,7 +2031,7 @@ class TestGetRecommendation:
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -2020,7 +2048,7 @@ class TestGetRecommendation:
 
                 assert "scale up" in rec.lower() or "increase" in rec.lower()
 
-    def test_recommendation_scale_down(self, reset_optimizer, temp_path):
+    def test_recommendation_scale_down(self, temp_db_path):
         """Should recommend scaling down when overutilized."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
@@ -2028,7 +2056,7 @@ class TestGetRecommendation:
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -2045,7 +2073,7 @@ class TestGetRecommendation:
 
                 assert "scale down" in rec.lower() or "reduce" in rec.lower()
 
-    def test_recommendation_optimal(self, reset_optimizer, temp_path):
+    def test_recommendation_optimal(self, temp_db_path):
         """Should indicate optimal when in target range."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
@@ -2053,7 +2081,7 @@ class TestGetRecommendation:
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -2074,14 +2102,14 @@ class TestGetRecommendation:
 class TestUtilizationHistoryEdgeCases:
     """Edge case tests for utilization history."""
 
-    def test_history_with_resolution(self, reset_optimizer, temp_path):
+    def test_history_with_resolution(self, temp_db_path):
         """Should aggregate history by resolution."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
@@ -2107,14 +2135,14 @@ class TestUtilizationHistoryEdgeCases:
 
                 assert isinstance(history, list)
 
-    def test_cluster_average_history(self, reset_optimizer, temp_path):
+    def test_cluster_average_history(self, temp_db_path):
         """Should compute cluster-wide average when node_id is None."""
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             NodeResources,
         )
 
-        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_path):
+        with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"

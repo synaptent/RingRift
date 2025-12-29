@@ -15,6 +15,7 @@ from app.coordination.coordinator_health_monitor_daemon import (
     CoordinatorInfo,
     CoordinatorState,
     get_coordinator_health_monitor_sync,
+    reset_coordinator_health_monitor,
     HEARTBEAT_STALE_THRESHOLD_SECONDS,
     INIT_FAILURE_MAX_RETRIES,
 )
@@ -131,7 +132,7 @@ class TestCoordinatorHealthMonitorDaemon:
         status = daemon.get_status()
 
         assert "running" in status
-        assert "subscribed" in status
+        assert "event_subscribed" in status  # MonitorBase uses event_subscribed
         assert "total_coordinators" in status
         assert "cluster_healthy" in status
         assert "total_events" in status
@@ -141,11 +142,13 @@ class TestCoordinatorHealthMonitorDaemon:
         daemon = CoordinatorHealthMonitorDaemon()
         result = daemon.health_check()
 
-        # Should indicate unhealthy
-        if hasattr(result, 'healthy'):
-            assert result.healthy is False
-        elif isinstance(result, dict):
-            assert result.get('healthy') is False
+        # MonitorBase returns healthy=True for STOPPED state (stopped is valid, not an error)
+        # The status field indicates it's not running
+        from app.coordination.contracts import CoordinatorStatus
+        assert hasattr(result, 'healthy')
+        assert result.healthy is True
+        assert result.status == CoordinatorStatus.STOPPED
+        assert "stopped" in result.message.lower()
 
     @pytest.mark.asyncio
     async def test_on_coordinator_healthy(self):

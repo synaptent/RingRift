@@ -4807,6 +4807,21 @@ class P2POrchestrator(
                 self.last_lease_renewal = 0.0
 
             logger.info(f"Loaded state: {len(self.peers)} peers, {len(self.local_jobs)} jobs")
+
+            # December 2025 P2P Hardening: Validate loaded state on startup
+            # This detects stale jobs, stale peers, and expired leases
+            is_valid, issues = self.state_manager.validate_loaded_state(state)
+            if not is_valid:
+                logger.warning(f"[P2P] Startup state validation found {len(issues)} issues:")
+                for issue in issues:
+                    logger.warning(f"  - {issue}")
+                # Clean up stale entries
+                stale_jobs_cleared = self.state_manager.clear_stale_jobs_by_age(max_age_hours=24.0)
+                stale_peers_cleared = self.state_manager.clear_stale_peers(max_stale_seconds=300.0)
+                if stale_jobs_cleared or stale_peers_cleared:
+                    logger.info(f"[P2P] Cleared {stale_jobs_cleared} stale jobs, {stale_peers_cleared} stale peers")
+            else:
+                logger.info("[P2P] Startup state validation passed")
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load state: {e}")
 
