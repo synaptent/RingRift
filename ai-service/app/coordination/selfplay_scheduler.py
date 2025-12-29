@@ -457,6 +457,9 @@ class SelfplayScheduler:
         # Get game counts (Dec 2025)
         game_count_data = await self._get_game_counts()
 
+        # Get current Elos for adaptive budget (Dec 29, 2025)
+        elo_current_data = await self._get_current_elos()
+
         # Update each config
         for config_key, priority in self._config_priorities.items():
             # Update staleness
@@ -489,6 +492,19 @@ class SelfplayScheduler:
                 priority.game_count = game_count_data[config_key]
             # Mark large boards for higher data deficit weight
             priority.is_large_board = config_key.startswith("square19") or config_key.startswith("hexagonal")
+
+            # Update search budget based on Elo tier (Dec 29, 2025)
+            # Higher Elo models benefit from deeper Gumbel MCTS search
+            if config_key in elo_current_data:
+                current_elo = elo_current_data[config_key]
+                new_budget = self._get_adaptive_budget_for_elo(current_elo)
+                old_budget = priority.search_budget
+                if new_budget != old_budget:
+                    priority.search_budget = new_budget
+                    logger.info(
+                        f"[SelfplayScheduler] Adaptive budget for {config_key}: "
+                        f"{old_budget}→{new_budget} (Elo={current_elo:.0f})"
+                    )
 
             # Compute priority score
             priority.priority_score = self._compute_priority_score(priority)
@@ -663,6 +679,52 @@ class SelfplayScheduler:
             logger.warning(f"[SelfplayScheduler] Error getting ELO velocities (using defaults): {e}")
 
         return result
+
+    async def _get_current_elos(self) -> dict[str, float]:
+        """Get current Elo ratings per config.
+
+        Dec 29, 2025: Added for adaptive Gumbel budget scaling.
+
+        Returns:
+            Dict mapping config_key to current Elo rating
+        """
+        result = {}
+
+        try:
+            # Try using QueuePopulator's ConfigTarget if available
+            from app.coordination.unified_queue_populator import get_queue_populator
+
+            populator = get_queue_populator()
+            if populator:
+                for config_key, target in populator._targets.items():
+                    result[config_key] = target.current_best_elo
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"[SelfplayScheduler] Error getting current Elos (using defaults): {e}")
+
+        return result
+
+    def _get_adaptive_budget_for_elo(self, elo: float) -> int:
+        """Get Gumbel MCTS budget based on current Elo tier.
+
+        Dec 29, 2025: Higher Elo models benefit from deeper search.
+        Scale budget with Elo tier to maximize training data quality.
+
+        Args:
+            elo: Current Elo rating for the config
+
+        Returns:
+            Gumbel budget for selfplay (one of the tier constants)
+        """
+        if elo >= 2000:
+            return GUMBEL_BUDGET_MASTER  # 3200 - master tier
+        elif elo >= 1800:
+            return GUMBEL_BUDGET_ULTIMATE  # 1600 - ultimate tier
+        elif elo >= 1500:
+            return GUMBEL_BUDGET_QUALITY  # 800 - quality tier
+        else:
+            return GUMBEL_BUDGET_STANDARD  # 800 - standard tier
 
     async def _get_feedback_signals(self) -> dict[str, dict[str, Any]]:
         """Get feedback loop signals per config.
