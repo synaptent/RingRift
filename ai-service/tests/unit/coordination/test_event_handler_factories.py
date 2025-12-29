@@ -115,7 +115,7 @@ class TestCreateRemappingHandler:
     @pytest.mark.asyncio
     async def test_remaps_event_type(self):
         """Test that event is re-emitted with new type."""
-        with patch("app.coordination.event_handler_factories.get_router") as mock_get_router:
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
             mock_router = MagicMock()
             mock_router.publish_async = AsyncMock()
             mock_get_router.return_value = mock_router
@@ -131,7 +131,7 @@ class TestCreateRemappingHandler:
     @pytest.mark.asyncio
     async def test_key_mapping(self):
         """Test that keys are remapped."""
-        with patch("app.coordination.event_handler_factories.get_router") as mock_get_router:
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
             mock_router = MagicMock()
             mock_router.publish_async = AsyncMock()
             mock_get_router.return_value = mock_router
@@ -148,7 +148,7 @@ class TestCreateRemappingHandler:
     @pytest.mark.asyncio
     async def test_transform_function(self):
         """Test custom transform function."""
-        with patch("app.coordination.event_handler_factories.get_router") as mock_get_router:
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
             mock_router = MagicMock()
             mock_router.publish_async = AsyncMock()
             mock_get_router.return_value = mock_router

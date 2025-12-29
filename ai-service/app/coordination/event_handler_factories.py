@@ -322,18 +322,24 @@ def create_aggregating_handler(
     lock = asyncio.Lock()
     pending_flush: Optional[asyncio.Task] = None
 
-    async def flush() -> None:
+    async def _do_flush_unlocked() -> None:
+        """Flush without lock - caller must hold lock."""
         nonlocal events, first_event_time, pending_flush
+        if events:
+            batch = events.copy()
+            events = []
+            first_event_time = None
+            pending_flush = None
+            try:
+                await batch_handler(batch)
+            except Exception as e:
+                logger.error(f"Aggregating handler batch error: {e}", exc_info=True)
+
+    async def delayed_flush() -> None:
+        """Called from background task - needs to acquire lock."""
+        await asyncio.sleep(max_wait_seconds)
         async with lock:
-            if events:
-                batch = events.copy()
-                events = []
-                first_event_time = None
-                pending_flush = None
-                try:
-                    await batch_handler(batch)
-                except Exception as e:
-                    logger.error(f"Aggregating handler batch error: {e}", exc_info=True)
+            await _do_flush_unlocked()
 
     async def handler(event: dict[str, Any]) -> None:
         nonlocal events, first_event_time, pending_flush
@@ -350,11 +356,8 @@ def create_aggregating_handler(
             if len(events) >= max_count:
                 if pending_flush:
                     pending_flush.cancel()
-                await flush()
-
-    async def delayed_flush() -> None:
-        await asyncio.sleep(max_wait_seconds)
-        await flush()
+                # Already holding lock, call unlocked version
+                await _do_flush_unlocked()
 
     return handler
 
