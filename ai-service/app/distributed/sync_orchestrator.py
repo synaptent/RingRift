@@ -177,7 +177,7 @@ class SyncOrchestrator:
 
         # Component instances (lazy loaded)
         self._data_sync_coordinator = None
-        self._sync_scheduler = None
+        # Note: _sync_scheduler removed Dec 2025 - was loaded but never used
         self._elo_sync_manager = None
         self._registry_sync_manager = None
         self._quality_sync_watcher = None
@@ -207,15 +207,8 @@ class SyncOrchestrator:
                 logger.warning(f"[SyncOrchestrator] Could not load data_sync_coordinator: {e}")
                 self.state.errors.append(f"data_sync_coordinator: {e}")
 
-        # Load sync scheduler
-        try:
-            from app.coordination.cluster.sync import get_sync_scheduler
-
-            self._sync_scheduler = get_sync_scheduler()
-            components_loaded.append("sync_scheduler")
-        except ImportError as e:
-            logger.warning(f"[SyncOrchestrator] Could not load sync_scheduler: {e}")
-            self.state.errors.append(f"sync_scheduler: {e}")
+        # Note: sync_scheduler loading removed Dec 2025 - was never used
+        # Sync operations now go through SyncFacade or AutoSyncDaemon
 
         # Load Elo sync manager
         if self.config.enable_elo_sync:

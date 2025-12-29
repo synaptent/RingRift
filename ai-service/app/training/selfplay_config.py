@@ -73,6 +73,102 @@ ENGINE_MODE_ALIASES: dict[str, str] = {
 }
 
 
+# =============================================================================
+# GPU Requirement Metadata (December 2025)
+# =============================================================================
+#
+# Defines which engine modes require GPU (CUDA/MPS) vs. CPU-compatible modes.
+# Used by job dispatch to match engine modes to appropriate nodes.
+# =============================================================================
+
+# GPU-required modes (require neural network inference)
+# These MUST run on nodes with CUDA or MPS GPU available
+GPU_REQUIRED_ENGINE_MODES: frozenset[EngineMode] = frozenset({
+    EngineMode.GUMBEL_MCTS,  # Gumbel MCTS with neural network
+    EngineMode.MCTS,  # Monte Carlo Tree Search with NN evaluation
+    EngineMode.NNUE_GUIDED,  # NNUE-guided search
+    EngineMode.POLICY_ONLY,  # Pure policy network
+    EngineMode.NN_MINIMAX,  # Neural network minimax
+    EngineMode.NN_DESCENT,  # Neural network descent
+    EngineMode.GNN,  # Graph neural network
+    EngineMode.HYBRID,  # CNN-GNN hybrid
+    EngineMode.GMO,  # Gradient Move Optimization (deprecated, but still GPU)
+    EngineMode.EBMO,  # Energy-Based Move Optimization (deprecated, but still GPU)
+    EngineMode.IG_GMO,  # Information-Gain GMO (deprecated, but still GPU)
+    EngineMode.CAGE,  # Constraint-Aware Graph Energy (deprecated, but still GPU)
+})
+
+# CPU-compatible modes (no neural network required)
+# These can run on any node, including CPU-only nodes
+CPU_COMPATIBLE_ENGINE_MODES: frozenset[EngineMode] = frozenset({
+    EngineMode.HEURISTIC,  # Pure heuristic evaluation
+    EngineMode.RANDOM,  # Random move selection
+    EngineMode.DESCENT_ONLY,  # Gradient descent without NN
+    EngineMode.MAXN,  # Max-N algorithm
+    EngineMode.BRS,  # Best Reply Search
+})
+
+# Mixed modes - can use GPU if available, but fall back to CPU
+# Note: MIXED and DIVERSE can work with CPU-only opponents
+MIXED_ENGINE_MODES: frozenset[EngineMode] = frozenset({
+    EngineMode.MIXED,  # Mixed opponent pool
+    EngineMode.DIVERSE,  # Diverse engine mix
+})
+
+
+def engine_mode_requires_gpu(mode: EngineMode | str) -> bool:
+    """Check if an engine mode requires GPU (CUDA or MPS).
+
+    This is the authoritative function for determining if an engine mode
+    needs GPU capability. Used by job dispatch to match modes to nodes.
+
+    Args:
+        mode: Engine mode as EngineMode enum or string
+
+    Returns:
+        True if the mode requires GPU, False if CPU-compatible
+
+    Example:
+        >>> engine_mode_requires_gpu(EngineMode.GUMBEL_MCTS)
+        True
+        >>> engine_mode_requires_gpu("heuristic-only")
+        False
+        >>> engine_mode_requires_gpu("mixed")
+        False  # Mixed can fall back to CPU opponents
+    """
+    if isinstance(mode, str):
+        # Normalize and convert to enum
+        normalized = normalize_engine_mode(mode)
+        try:
+            mode = EngineMode(normalized)
+        except ValueError:
+            # Unknown mode, assume GPU required for safety
+            return True
+
+    return mode in GPU_REQUIRED_ENGINE_MODES
+
+
+def engine_mode_is_cpu_compatible(mode: EngineMode | str) -> bool:
+    """Check if an engine mode can run on CPU-only nodes.
+
+    Inverse of engine_mode_requires_gpu, but also handles mixed modes.
+
+    Args:
+        mode: Engine mode as EngineMode enum or string
+
+    Returns:
+        True if the mode can run on CPU-only nodes
+    """
+    if isinstance(mode, str):
+        normalized = normalize_engine_mode(mode)
+        try:
+            mode = EngineMode(normalized)
+        except ValueError:
+            return False
+
+    return mode in CPU_COMPATIBLE_ENGINE_MODES or mode in MIXED_ENGINE_MODES
+
+
 def normalize_engine_mode(raw_mode: str) -> str:
     """Normalize engine mode aliases to canonical EngineMode values."""
     normalized = raw_mode.strip().lower()

@@ -16161,37 +16161,8 @@ print(json.dumps(result))
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
-    async def handle_data_quality_table(self, request: web.Request) -> web.Response:
-        """GET /data/quality/table - Data quality in table format for Grafana Infinity."""
-        try:
-            quality = await self._get_data_quality_cached()
-            table_data = []
-            for config, metrics in quality.get("configs", {}).items():
-                status = "OK"
-                for issue in quality.get("issues", []):
-                    if issue["config"] == config and issue["severity"] == "warning":
-                        status = "WARNING"
-                        break
-                table_data.append({
-                    "Config": config,
-                    "Games": metrics["total_games"],
-                    "AvgLength": metrics["avg_length"],
-                    "ShortRate": metrics["short_game_rate"],
-                    "StalemateRate": metrics["stalemate_rate"],
-                    "OpeningDiv": metrics["opening_diversity"],
-                    "Status": status,
-                })
-            return web.json_response(table_data)
-        except Exception as e:  # noqa: BLE001
-            return web.json_response([{"error": str(e)}])
-
-    async def handle_data_quality_issues(self, request: web.Request) -> web.Response:
-        """GET /data/quality/issues - Data quality issues in table format."""
-        try:
-            quality = await self._get_data_quality_cached()
-            return web.json_response(quality.get("issues", []))
-        except Exception as e:  # noqa: BLE001
-            return web.json_response([{"error": str(e)}])
+    # handle_data_quality_table() moved to TableHandlersMixin (Dec 28, 2025 - Phase 8)
+    # handle_data_quality_issues() moved to TableHandlersMixin (Dec 28, 2025 - Phase 8)
 
     async def handle_training_efficiency(self, request: web.Request) -> web.Response:
         """GET /training/efficiency - Training efficiency and cost metrics."""
@@ -16201,23 +16172,7 @@ print(json.dumps(result))
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
-    async def handle_training_efficiency_table(self, request: web.Request) -> web.Response:
-        """GET /training/efficiency/table - Efficiency in table format for Grafana Infinity."""
-        try:
-            efficiency = await self._get_training_efficiency_cached()
-            table_data = []
-            for config, metrics in efficiency.get("configs", {}).items():
-                table_data.append({
-                    "Config": config,
-                    "GPUHours": metrics["gpu_hours"],
-                    "EloGain": metrics["elo_gain"],
-                    "EloPerHour": metrics["elo_per_gpu_hour"],
-                    "CostUSD": metrics["estimated_cost_usd"],
-                    "CostPerElo": metrics["cost_per_elo_point"],
-                })
-            return web.json_response(table_data)
-        except Exception as e:  # noqa: BLE001
-            return web.json_response([{"error": str(e)}])
+    # handle_training_efficiency_table() moved to TableHandlersMixin (Dec 28, 2025 - Phase 8)
 
     async def handle_rollback_status(self, request: web.Request) -> web.Response:
         """GET /rollback/status - Model rollback status and recommendations."""
@@ -16227,20 +16182,7 @@ print(json.dumps(result))
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
-    async def handle_rollback_candidates(self, request: web.Request) -> web.Response:
-        """GET /rollback/candidates - Rollback candidates in table format."""
-        try:
-            status = await self._check_rollback_conditions()
-            table_data = []
-            for candidate in status.get("candidates", []):
-                table_data.append({
-                    "Config": candidate["config"],
-                    "Reasons": ", ".join(candidate["reasons"]),
-                    "Recommended": "YES" if candidate["rollback_recommended"] else "NO",
-                })
-            return web.json_response(table_data)
-        except Exception as e:  # noqa: BLE001
-            return web.json_response([{"error": str(e)}])
+    # handle_rollback_candidates() moved to TableHandlersMixin (Dec 28, 2025 - Phase 8)
 
     async def handle_rollback_execute(self, request: web.Request) -> web.Response:
         """POST /rollback/execute - Execute a model rollback.
@@ -16296,26 +16238,7 @@ print(json.dumps(result))
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)})
 
-    async def handle_autoscale_recommendations(self, request: web.Request) -> web.Response:
-        """GET /autoscale/recommendations - Autoscaling recommendations table."""
-        try:
-            metrics = await self._get_autoscaling_metrics()
-            table_data = []
-            for rec in metrics.get("recommendations", []):
-                table_data.append({
-                    "Action": rec["action"].upper(),
-                    "Reason": rec["reason"],
-                    "SuggestedWorkers": rec["suggested_workers"],
-                })
-            if not table_data:
-                table_data.append({
-                    "Action": "NONE",
-                    "Reason": "Current scaling is optimal",
-                    "SuggestedWorkers": metrics.get("current_state", {}).get("total_nodes", 1),
-                })
-            return web.json_response(table_data)
-        except Exception as e:  # noqa: BLE001
-            return web.json_response([{"error": str(e)}])
+    # handle_autoscale_recommendations() moved to TableHandlersMixin (Dec 28, 2025 - Phase 8)
 
     async def handle_resource_optimizer(self, request: web.Request) -> web.Response:
         """GET /resource/optimizer - Resource optimizer state and recommendations.
@@ -16914,58 +16837,7 @@ print(json.dumps(result))
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
-    async def handle_abtest_table(self, request: web.Request) -> web.Response:
-        """GET /abtest/table - A/B tests in table format for Grafana Infinity.
-
-        Query params:
-            status: Filter by status (optional)
-        """
-        try:
-            status_filter = request.query.get("status")
-
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
-
-            if status_filter:
-                cursor.execute(
-                    "SELECT test_id, name, board_type, num_players, model_a, model_b, status, winner, created_at "
-                    "FROM ab_tests WHERE status = ? ORDER BY created_at DESC LIMIT 100",
-                    (status_filter,)
-                )
-            else:
-                cursor.execute(
-                    "SELECT test_id, name, board_type, num_players, model_a, model_b, status, winner, created_at "
-                    "FROM ab_tests ORDER BY created_at DESC LIMIT 100"
-                )
-
-            rows = cursor.fetchall()
-            conn.close()
-
-            table_data = []
-            for row in rows:
-                test_id = row[0]
-                stats = self._calculate_ab_test_stats(test_id)
-                from datetime import datetime
-                created = datetime.fromtimestamp(row[8]).strftime("%Y-%m-%d %H:%M") if row[8] else ""
-
-                table_data.append({
-                    "Test ID": test_id[:8],
-                    "Name": row[1],
-                    "Config": f"{row[2]}_{row[3]}p",
-                    "Model A": row[4].split("/")[-1] if "/" in row[4] else row[4],
-                    "Model B": row[5].split("/")[-1] if "/" in row[5] else row[5],
-                    "Games": stats.get("games_played", 0),
-                    "A Win%": f"{stats.get('model_a_winrate', 0):.1%}",
-                    "B Win%": f"{stats.get('model_b_winrate', 0):.1%}",
-                    "Confidence": f"{stats.get('confidence', 0):.1%}",
-                    "Status": row[6],
-                    "Winner": row[7] or "-",
-                    "Created": created,
-                })
-
-            return web.json_response(table_data)
-        except Exception as e:  # noqa: BLE001
-            return web.json_response([{"error": str(e)}])
+    # handle_abtest_table() moved to TableHandlersMixin (Dec 28, 2025 - Phase 8)
 
     async def handle_abtest_run(self, request: web.Request) -> web.Response:
         """POST /abtest/run - Start running games for an A/B test using the cluster.

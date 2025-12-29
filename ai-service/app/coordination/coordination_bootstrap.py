@@ -899,9 +899,9 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # 3. Wire SELFPLAY_COMPLETE to SyncCoordinator (for auto-trigger sync)
     try:
         from app.coordination.event_router import DataEventType, get_event_bus
-        from app.coordination.cluster.sync import get_sync_scheduler
+        from app.coordination.sync_facade import get_sync_facade, SyncRequest
 
-        sync_coord = get_sync_scheduler()
+        sync_facade = get_sync_facade()
         bus = get_event_bus()
 
         async def on_selfplay_complete_for_sync(event):
@@ -947,20 +947,17 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
                 logger.debug(f"[Bootstrap] Skipping sync - only {games_count} games")
                 return
 
-            # Quality OK - proceed with sync
-            if hasattr(sync_coord, "trigger_sync_on_selfplay_complete"):
-                await sync_coord.trigger_sync_on_selfplay_complete(event)
-            elif hasattr(sync_coord, "schedule_sync"):
-                # Schedule a sync for the board type that finished selfplay
-                board_type = payload.get("board_type")
-                num_players = payload.get("num_players")
-                if board_type and num_players:
-                    await sync_coord.schedule_sync(
-                        category="games",
-                        board_type=board_type,
-                        num_players=num_players,
-                        priority="normal",
-                    )
+            # Quality OK - proceed with sync via SyncFacade (Dec 2025 migration)
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
+            if board_type and num_players:
+                request = SyncRequest(
+                    data_type="games",
+                    board_type=board_type,
+                    num_players=num_players,
+                    priority="normal",
+                )
+                await sync_facade.sync(request)
 
         bus.subscribe(DataEventType.SELFPLAY_COMPLETE, on_selfplay_complete_for_sync)
         results["selfplay_to_sync"] = True
@@ -1897,9 +1894,7 @@ def shutdown_coordination() -> dict[str, Any]:
             elif name == "task_coordinator":
                 from app.coordination.task_lifecycle_coordinator import get_task_lifecycle_coordinator
                 coordinator = get_task_lifecycle_coordinator()
-            elif name == "sync_coordinator":
-                from app.coordination.cluster.sync import get_sync_scheduler
-                coordinator = get_sync_scheduler()
+            # sync_coordinator removed Dec 2025 - migrated to SyncFacade which is stateless
             elif name == "training_coordinator":
                 from app.coordination.training_coordinator import get_training_coordinator
                 coordinator = get_training_coordinator()
