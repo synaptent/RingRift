@@ -545,34 +545,32 @@ class MasterLoopController:
             Tuple of (success, list of error messages)
         """
         import aiohttp
-        from app.config.distributed_hosts import load_hosts_config
+        from app.config.cluster_config import load_cluster_config, get_p2p_port
 
         errors = []
-        config = load_hosts_config()
+        config = load_cluster_config()
 
         # Get voter nodes from config
-        voters = config.get("p2p_cluster", {}).get("voters", [])
+        voters = config.p2p_voters
         if not voters:
             # No voters configured, skip check
             logger.warning("[MasterLoop] No P2P voters configured, skipping P2P health check")
             return True, []
 
-        p2p_port = config.get("p2p_cluster", {}).get("port", 8770)
+        p2p_port = get_p2p_port()
         reachable = 0
         total = len(voters)
 
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5.0)) as session:
             for voter in voters:
                 # Find host info for this voter
-                host_info = next(
-                    (h for h in config.get("hosts", []) if h.get("name") == voter),
-                    None,
-                )
+                host_info = config.hosts_raw.get(voter)
                 if not host_info:
                     errors.append(f"Voter {voter} not found in hosts config")
                     continue
 
-                host = host_info.get("host")
+                # Get host address - prefer tailscale_ip, fall back to host
+                host = host_info.get("tailscale_ip") or host_info.get("host")
                 if not host:
                     errors.append(f"Voter {voter} has no host address")
                     continue
@@ -679,9 +677,9 @@ class MasterLoopController:
             warnings.append("Cluster config: distributed_hosts.yaml not found (single-node mode)")
         else:
             try:
-                from app.config.distributed_hosts import load_hosts_config
-                config = load_hosts_config()
-                hosts = config.get("hosts", [])
+                from app.config.cluster_config import load_cluster_config
+                config = load_cluster_config()
+                hosts = config.hosts_raw
                 logger.debug(f"[MasterLoop] Cluster config validated: {len(hosts)} hosts configured")
             except Exception as e:
                 warnings.append(f"Cluster config: Parse error - {e}")

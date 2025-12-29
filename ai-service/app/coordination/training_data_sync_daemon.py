@@ -569,9 +569,13 @@ class TrainingDataSyncDaemon:
         except (ImportError, AttributeError) as e:
             logger.debug(f"Event bus not available, skipping subscriptions: {e}")
 
-    async def _on_npz_export(self, event: dict) -> None:
+    async def _on_npz_export(self, event) -> None:
         """Handle NPZ export completion - refresh manifest."""
-        config_key = event.get("config_key")
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
+        config_key = payload.get("config_key")
         if config_key:
             logger.info(f"NPZ export completed for {config_key}, refreshing manifest")
             try:
@@ -583,9 +587,13 @@ class TrainingDataSyncDaemon:
             except (OSError, IOError) as e:
                 logger.warning(f"Failed to refresh manifest: {e}")
 
-    async def _on_training_started(self, event: dict) -> None:
+    async def _on_training_started(self, event) -> None:
         """Handle training start - ensure data is fresh."""
-        config_key = event.get("config_key")
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
+        config_key = payload.get("config_key")
         if config_key:
             logger.info(f"Training started for {config_key}, ensuring data freshness")
             result = await sync_best_fresh_data(config_key)

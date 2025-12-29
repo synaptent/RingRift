@@ -82,10 +82,10 @@ class PipelineTriggerMixin:
 
             if result.success:
                 self._record_circuit_success("data_sync")
-                logger.info(f"[DataPipelineOrchestrator] Sync triggered successfully: {result.message}")
+                logger.info(f"[DataPipelineOrchestrator] Sync triggered successfully: {result.output_path or 'completed'}")
             else:
                 self._record_circuit_failure("data_sync", result.error or "Prerequisite check failed")
-                logger.warning(f"[DataPipelineOrchestrator] Sync trigger failed: {result.message}")
+                logger.warning(f"[DataPipelineOrchestrator] Sync trigger failed: {result.error or 'Unknown error'}")
         except Exception as e:
             logger.error(
                 f"[DataPipelineOrchestrator] Auto-trigger sync failed for "
@@ -117,10 +117,10 @@ class PipelineTriggerMixin:
                     self._iteration_records[iteration].metadata = {
                         "npz_path": result.output_path
                     }
-                logger.info(f"[DataPipelineOrchestrator] Export triggered successfully: {result.message}")
+                logger.info(f"[DataPipelineOrchestrator] Export triggered successfully: {result.output_path or 'completed'}")
             else:
                 self._record_circuit_failure("npz_export", result.error or "Prerequisite check failed")
-                logger.warning(f"[DataPipelineOrchestrator] Export trigger failed: {result.message}")
+                logger.warning(f"[DataPipelineOrchestrator] Export trigger failed: {result.error or 'Unknown error'}")
         except Exception as e:
             logger.error(
                 f"[DataPipelineOrchestrator] Auto-trigger export failed for "
@@ -150,10 +150,10 @@ class PipelineTriggerMixin:
                 # Store model path for evaluation stage
                 if iteration in self._iteration_records:
                     self._iteration_records[iteration].model_id = result.metadata.get("model_id")
-                logger.info(f"[DataPipelineOrchestrator] Training triggered successfully: {result.message}")
+                logger.info(f"[DataPipelineOrchestrator] Training triggered successfully: {result.output_path or 'completed'}")
             else:
                 self._record_circuit_failure("training", result.error or "Prerequisite check failed")
-                logger.warning(f"[DataPipelineOrchestrator] Training trigger failed: {result.message}")
+                logger.warning(f"[DataPipelineOrchestrator] Training trigger failed: {result.error or 'Unknown error'}")
         except Exception as e:
             logger.error(
                 f"[DataPipelineOrchestrator] Auto-trigger training failed for "

@@ -1211,6 +1211,9 @@ async def emit_game_quality_score(
     **metadata,
 ) -> bool:
     """Emit per-game quality score event via DataEventBus."""
+    # Defensive check: DataEventType may be None during import failures
+    if not HAS_DATA_EVENTS or DataEventType is None:
+        return False
     return await _emit_data_event(
         DataEventType.QUALITY_SCORE_UPDATED,
         {

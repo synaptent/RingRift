@@ -114,6 +114,8 @@ class ConfigTrainingState:
     # Training intensity (set by master_loop or FeedbackLoopController)
     training_intensity: str = "normal"  # hot_path, accelerated, normal, reduced, paused
     consecutive_failures: int = 0
+    # December 29, 2025: Track model path for event emission
+    _pending_model_path: str = ""  # Path where current training will save model
 
 
 class TrainingTriggerDaemon(HandlerBase):
@@ -825,6 +827,14 @@ class TrainingTriggerDaemon(HandlerBase):
                 base_dir = Path(__file__).resolve().parent.parent.parent
                 npz_path = state.npz_path or f"data/training/{config_key}.npz"
 
+                # December 29, 2025: Generate predictable model path for event emission
+                # This allows EvaluationDaemon to find the model after training
+                import socket
+                timestamp = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S")
+                hostname = socket.gethostname()[:20]
+                model_filename = f"{config_key}_{hostname}_{timestamp}.pth"
+                model_path = str(base_dir / "models" / model_filename)
+
                 cmd = [
                     sys.executable,
                     "-m", "app.training.train",
@@ -834,6 +844,7 @@ class TrainingTriggerDaemon(HandlerBase):
                     "--model-version", self.config.model_version,
                     "--epochs", str(epochs),
                     "--batch-size", str(batch_size),
+                    "--save-path", model_path,  # December 29, 2025: Explicit save path
                     # December 2025: Allow stale data to unblock training when
                     # selfplay rate is slower than freshness threshold.
                     # The freshness check was blocking ALL training because game
@@ -841,6 +852,10 @@ class TrainingTriggerDaemon(HandlerBase):
                     "--allow-stale-data",
                     "--max-data-age-hours", "168",  # 1 week threshold
                 ]
+
+                # Store model_path in state for event emission
+                state.npz_path = npz_path  # Keep npz_path
+                state._pending_model_path = model_path  # Track expected model path
 
                 # Compute adjusted learning rate (base 1e-3 * multiplier)
                 # The training CLI uses --learning-rate for explicit LR setting
@@ -976,6 +991,19 @@ class TrainingTriggerDaemon(HandlerBase):
 
             state = self._training_states.get(config_key)
 
+            # December 29, 2025: Include model_path in event for EvaluationDaemon
+            model_path = ""
+            if state and hasattr(state, "_pending_model_path"):
+                model_path = state._pending_model_path
+                # Verify model exists before including path
+                if model_path and success:
+                    from pathlib import Path
+                    if not Path(model_path).exists():
+                        logger.warning(
+                            f"[TrainingTriggerDaemon] Model not found at {model_path}, "
+                            "EvaluationDaemon may fail"
+                        )
+
             bus = get_stage_event_bus()
             await bus.emit(
                 StageCompletionResult(
@@ -987,12 +1015,15 @@ class TrainingTriggerDaemon(HandlerBase):
                         "board_type": state.board_type if state else "",
                         "num_players": state.num_players if state else 0,
                         "samples_trained": state.npz_sample_count if state else 0,
+                        # December 29, 2025: Critical for evaluation pipeline
+                        "model_path": model_path,
+                        "checkpoint_path": model_path,  # Alias for compatibility
                     },
                 )
             )
-            logger.debug(
+            logger.info(
                 f"[TrainingTriggerDaemon] Emitted TRAINING_{'COMPLETE' if success else 'FAILED'} "
-                f"for {config_key}"
+                f"for {config_key} (model_path={model_path})"
             )
 
         except Exception as e:

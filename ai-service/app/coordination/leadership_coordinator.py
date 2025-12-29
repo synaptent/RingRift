@@ -239,9 +239,13 @@ class LeadershipCoordinator:
 
     async def _on_leader_elected(self, event) -> None:
         """Handle LEADER_ELECTED event."""
-        payload = event.payload
+        # Dec 29, 2025: Robust payload extraction (handles RouterEvent, dict, etc.)
+        payload = event.payload if hasattr(event, "payload") else event
+        if not isinstance(payload, dict):
+            payload = {}
         domain = payload.get("domain", "cluster")
-        node_id = payload.get("node_id", "")
+        # Dec 29, 2025: Handle both "node_id" and "leader_id" keys (emit uses "leader_id")
+        node_id = payload.get("node_id") or payload.get("leader_id", "")
         term = payload.get("term", self._current_term + 1)
 
         old_leader = None
@@ -286,9 +290,13 @@ class LeadershipCoordinator:
 
     async def _on_leader_lost(self, event) -> None:
         """Handle LEADER_LOST event."""
-        payload = event.payload
+        # Dec 29, 2025: Robust payload extraction (handles RouterEvent, dict, etc.)
+        payload = event.payload if hasattr(event, "payload") else event
+        if not isinstance(payload, dict):
+            payload = {}
         domain = payload.get("domain", "cluster")
-        node_id = payload.get("node_id", "")
+        # Dec 29, 2025: Handle both "node_id" and "old_leader_id" keys (emit uses "old_leader_id")
+        node_id = payload.get("node_id") or payload.get("old_leader_id", "")
 
         if domain in self._leadership and self._leadership[domain].leader_node_id == node_id:
             old_leader = self._leadership[domain].leader_node_id
@@ -315,9 +323,13 @@ class LeadershipCoordinator:
 
     async def _on_leader_stepdown(self, event) -> None:
         """Handle LEADER_STEPDOWN event."""
-        payload = event.payload
+        # Dec 29, 2025: Robust payload extraction (handles RouterEvent, dict, etc.)
+        payload = event.payload if hasattr(event, "payload") else event
+        if not isinstance(payload, dict):
+            payload = {}
         domain = payload.get("domain", "cluster")
-        node_id = payload.get("node_id", "")
+        # Dec 29, 2025: Handle multiple key variations for node ID
+        node_id = payload.get("node_id") or payload.get("leader_id", "")
 
         if domain in self._leadership and self._leadership[domain].leader_node_id == node_id:
             old_leader = self._leadership[domain].leader_node_id
@@ -344,8 +356,12 @@ class LeadershipCoordinator:
 
     async def _on_host_online(self, event) -> None:
         """Handle HOST_ONLINE event."""
-        payload = event.payload
-        node_id = payload.get("node_id", "")
+        # Dec 29, 2025: Robust payload extraction (handles RouterEvent, dict, etc.)
+        payload = event.payload if hasattr(event, "payload") else event
+        if not isinstance(payload, dict):
+            payload = {}
+        # Dec 29, 2025: Handle both "node_id" and "host" keys (emit uses "host")
+        node_id = payload.get("node_id") or payload.get("host", "")
         hostname = payload.get("hostname", "")
 
         if node_id not in self._nodes:
@@ -363,8 +379,12 @@ class LeadershipCoordinator:
 
     async def _on_host_offline(self, event) -> None:
         """Handle HOST_OFFLINE event."""
-        payload = event.payload
-        node_id = payload.get("node_id", "")
+        # Dec 29, 2025: Robust payload extraction (handles RouterEvent, dict, etc.)
+        payload = event.payload if hasattr(event, "payload") else event
+        if not isinstance(payload, dict):
+            payload = {}
+        # Dec 29, 2025: Handle both "node_id" and "host" keys (emit uses "host")
+        node_id = payload.get("node_id") or payload.get("host", "")
 
         if node_id in self._nodes:
             self._nodes[node_id].role = NodeRole.OFFLINE

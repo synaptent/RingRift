@@ -271,13 +271,16 @@ class HealthCheckOrchestrator:
         except Exception as e:
             logger.warning(f"[HealthCheckOrchestrator] Failed to subscribe to events: {e}")
 
-    async def _on_node_dead(self, event: dict) -> None:
+    async def _on_node_dead(self, event) -> None:
         """Handle P2P_NODE_DEAD or HOST_OFFLINE - immediate node status update.
 
         This provides ~10x faster failure detection compared to waiting for the
         next health check cycle (120s default -> ~10s P2P heartbeat timeout).
         """
-        payload = event.get("payload", event)
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
         node_id = payload.get("node_id")
         if not node_id:
             return
@@ -306,9 +309,12 @@ class HealthCheckOrchestrator:
                 f"[HealthCheckOrchestrator] Unknown node {node_id} marked OFFLINE via P2P event"
             )
 
-    async def _on_nodes_dead(self, event: dict) -> None:
+    async def _on_nodes_dead(self, event) -> None:
         """Handle batch P2P_NODES_DEAD event."""
-        payload = event.get("payload", event)
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
         for node_id in payload.get("node_ids", []):
             await self._on_node_dead({"payload": {"node_id": node_id, "reason": "batch P2P dead"}})
 

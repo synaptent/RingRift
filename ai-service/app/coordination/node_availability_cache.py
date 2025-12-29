@@ -164,9 +164,13 @@ class NodeAvailabilityCache:
         except Exception as e:
             logger.warning(f"[NodeAvailabilityCache] Failed to subscribe to events: {e}")
 
-    async def _on_node_dead_event(self, event: dict) -> None:
+    async def _on_node_dead_event(self, event) -> None:
         """Handle P2P_NODE_DEAD event."""
-        payload = event.get("payload", event)
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        # Event can be either a dict or a RouterEvent object
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
         node_id = payload.get("node_id")
         if node_id:
             self.mark_unavailable(
@@ -176,9 +180,12 @@ class NodeAvailabilityCache:
                 error_message=payload.get("reason"),
             )
 
-    async def _on_host_offline_event(self, event: dict) -> None:
+    async def _on_host_offline_event(self, event) -> None:
         """Handle HOST_OFFLINE event."""
-        payload = event.get("payload", event)
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
         node_id = payload.get("node_id") or payload.get("host")
         if node_id:
             self.mark_unavailable(
@@ -188,9 +195,12 @@ class NodeAvailabilityCache:
                 error_message=payload.get("reason"),
             )
 
-    async def _on_node_recovered_event(self, event: dict) -> None:
+    async def _on_node_recovered_event(self, event) -> None:
         """Handle NODE_RECOVERED event."""
-        payload = event.get("payload", event)
+        # December 29, 2025: Fix 'RouterEvent' object has no attribute 'get' bug
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
         node_id = payload.get("node_id")
         if node_id:
             self.mark_available(node_id, source="event")

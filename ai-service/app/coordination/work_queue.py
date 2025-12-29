@@ -294,6 +294,37 @@ class WorkQueue:
             self._ensure_db()
         return self._items
 
+    def get_queue_stats(self) -> dict[str, Any]:
+        """Get queue statistics for health monitoring.
+
+        Dec 29, 2025: Added for master_loop.py health validation.
+
+        Returns:
+            Dictionary with queue health statistics.
+        """
+        items = self.items  # Triggers lazy init if needed
+        pending = sum(1 for item in items.values() if item.status == WorkStatus.PENDING)
+        claimed = sum(1 for item in items.values() if item.status == WorkStatus.CLAIMED)
+        running = sum(1 for item in items.values() if item.status == WorkStatus.RUNNING)
+        completed = sum(1 for item in items.values() if item.status == WorkStatus.COMPLETED)
+        failed = sum(1 for item in items.values() if item.status == WorkStatus.FAILED)
+
+        return {
+            "total_items": len(items),
+            "pending": pending,
+            "claimed": claimed,
+            "running": running,
+            "completed": completed,
+            "failed": failed,
+            "total_added": self.stats.get("total_added", 0),
+            "total_completed": self.stats.get("total_completed", 0),
+            "total_failed": self.stats.get("total_failed", 0),
+            "total_timeout": self.stats.get("total_timeout", 0),
+            "backpressure_active": self._backpressure_active,
+            "db_initialized": self._db_initialized,
+            "readonly_mode": self._readonly_mode,
+        }
+
     def _init_db(self) -> None:
         """Initialize SQLite database for work queue persistence.
 
