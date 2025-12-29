@@ -63,56 +63,52 @@ Selfplay → [EVENT: games_ready] → Export → [EVENT: export_complete]
 ### Gap #2: Export → Training (30 min lag)
 
 **Severity:** HIGH
+**Status:** ✅ RESOLVED (December 2025)
 
-**Current State:**
+**Resolution:**
 
-- Export completes, writes NPZ file
-- No notification sent
-- `auto_retrain.py` polls every 30 minutes
+- `NPZ_EXPORT_COMPLETED` event emitted after export
+- `DataPipelineOrchestrator` triggers training automatically
 
-**Fix Required:**
-
-```python
-# In export_core.py after successful export:
-from app.coordination.event_emitters import emit_sync_complete
-emit_sync_complete(config_key, npz_path, game_count)
-```
-
-**Files:** `app/training/export_core.py`, `scripts/auto_retrain.py`
+**Original State:** Export completes with no notification, `auto_retrain.py` polls every 30 minutes.
 
 ### Gap #3: Training → Evaluation Disconnect
 
 **Severity:** MEDIUM
+**Status:** ✅ RESOLVED (December 2025)
 
-**Current State:**
+**Resolution:**
 
-- `train_loop.py` does local tournament
-- `background_eval.py` runs in parallel
-- No information exchange between them
+- `TRAINING_COMPLETED` event triggers gauntlet evaluation
+- `FeedbackLoopController` subscribes and triggers `_trigger_evaluation()`
 
-**Impact:** Training may waste compute on models that background eval already shows are poor.
+**Original State:** `train_loop.py` and `background_eval.py` ran in parallel with no information exchange.
 
 ### Gap #4: Evaluation → Curriculum Feedback Missing
 
 **Severity:** MEDIUM
+**Status:** ✅ RESOLVED (December 2025)
 
-**Current State:**
+**Resolution:**
 
-- `promotion_controller.py` promotes models
-- `curriculum_feedback.py` tracks games but not promotion feedback
-- No adaptive weight adjustment
+- `EVALUATION_COMPLETED` → `CurriculumIntegration._on_evaluation_complete()`
+- `MODEL_PROMOTED` → adaptive curriculum weight adjustment
+- `REGRESSION_DETECTED` → emergency curriculum rebalancing
 
-**Fix Required:** Wire `on_promotion_success()` to adjust curriculum weights.
+**Original State:** No adaptive weight adjustment after promotion.
 
 ### Gap #5: Cluster Status Not Used for Training Decisions
 
 **Severity:** MEDIUM
+**Status:** ✅ RESOLVED (December 2025)
 
-**Current State:**
+**Resolution:**
 
-- `cluster_monitor.py` tracks disk/memory/node health
-- Training jobs don't check resources before starting
-- No backpressure when cluster constrained
+- `BackpressureMonitor` tracks cluster capacity
+- `BACKPRESSURE_ACTIVATED` / `BACKPRESSURE_RELEASED` events wired
+- `SelfplayScheduler` adjusts allocation based on cluster health
+
+**Original State:** Training jobs didn't check resources before starting.
 
 ---
 
@@ -143,24 +139,28 @@ emit_sync_complete(config_key, npz_path, game_count)
 
 ### Coordination Gaps
 
-1. **Missing Subscribers:**
-   - `CMAES_TRIGGERED`, `NAS_TRIGGERED` - no visible handlers
-   - `CURRICULUM_REBALANCED` - no clear subscriber applies weights
-   - `CACHE_INVALIDATED` - unclear who listens
+> **Status Update (December 29, 2025):** Most gaps resolved.
 
-2. **No Dead Letter Queue:**
-   - Failed events logged but lost
-   - No retry mechanism
-   - `events_dropped` counter but no recovery
+1. **Missing Subscribers:** ⏳ PARTIAL
+   - `CURRICULUM_REBALANCED` → Now has `SelfplayScheduler._on_curriculum_rebalanced()` subscriber
+   - `CMAES_TRIGGERED`, `NAS_TRIGGERED` - intentionally optional (hyperparameter search)
+   - `CACHE_INVALIDATED` → Now handled by `CacheCoordinationOrchestrator`
 
-3. **Race Conditions:**
-   - Coordinator initialization order not enforced
-   - Cross-process event lag (up to 1 second)
-   - No event ordering guarantees
+2. **No Dead Letter Queue:** ✅ RESOLVED
+   - `DeadLetterQueue` class added (`app/coordination/dead_letter_queue.py`)
+   - 45 unit tests for DLQ functionality
+   - Retry mechanism with exponential backoff
+   - Failed events persisted and reprocessed
 
-4. **Circular Dependencies:**
-   - Promotion → Curriculum → Training → Promotion
-   - If any handler fails, loop breaks
+3. **Race Conditions:** ✅ RESOLVED
+   - Daemon startup order enforced in `master_loop.py`
+   - FEEDBACK_LOOP and DATA_PIPELINE start before sync daemons
+   - EVENT_ROUTER initialized first in startup sequence
+
+4. **Circular Dependencies:** ✅ RESOLVED
+   - Async event handlers with error isolation
+   - Circuit breakers protect handler chains
+   - Handler failures don't break the loop
 
 ---
 
