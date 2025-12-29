@@ -382,8 +382,8 @@ class TestGetEnhancementDefaults:
         defaults = get_enhancement_defaults()
         assert isinstance(defaults, dict)
 
-    def test_contains_all_categories(self) -> None:
-        """Test that defaults contain all enhancement categories."""
+    def test_contains_all_enabled_flags(self) -> None:
+        """Test that defaults contain enabled flags for all categories."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             from app.training.integrated_enhancements import (
@@ -392,18 +392,19 @@ class TestGetEnhancementDefaults:
 
         defaults = get_enhancement_defaults()
 
-        assert "auxiliary_tasks" in defaults
-        assert "gradient_surgery" in defaults
-        assert "batch_scheduling" in defaults
-        assert "background_eval" in defaults
-        assert "elo_weighting" in defaults
-        assert "curriculum" in defaults
-        assert "augmentation" in defaults
-        assert "reanalysis" in defaults
-        assert "distillation" in defaults
+        # Returns flat dict with keys like "auxiliary_tasks_enabled"
+        assert "auxiliary_tasks_enabled" in defaults
+        assert "gradient_surgery_enabled" in defaults
+        assert "batch_scheduling_enabled" in defaults
+        assert "background_eval_enabled" in defaults
+        assert "elo_weighting_enabled" in defaults
+        assert "curriculum_enabled" in defaults
+        assert "augmentation_enabled" in defaults
+        assert "reanalysis_enabled" in defaults
+        assert "distillation_enabled" in defaults
 
-    def test_defaults_have_enabled_flag(self) -> None:
-        """Test that each category has enabled flag."""
+    def test_defaults_enabled_flags_are_boolean(self) -> None:
+        """Test that enabled flags are boolean values."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             from app.training.integrated_enhancements import (
@@ -412,9 +413,10 @@ class TestGetEnhancementDefaults:
 
         defaults = get_enhancement_defaults()
 
-        for category, values in defaults.items():
-            assert "enabled" in values, f"Category {category} missing 'enabled' flag"
-            assert isinstance(values["enabled"], bool)
+        # All _enabled keys should be boolean
+        for key, value in defaults.items():
+            if key.endswith("_enabled"):
+                assert isinstance(value, bool), f"{key} should be boolean, got {type(value)}"
 
 
 class TestReanalysisStats:
