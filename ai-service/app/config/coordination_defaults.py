@@ -188,6 +188,48 @@ class TrainingDefaults:
 
 
 # =============================================================================
+# Data Freshness Defaults (December 2025)
+# =============================================================================
+
+def _env_bool(key: str, default: bool) -> bool:
+    """Get boolean from environment or use default."""
+    val = os.environ.get(key, "")
+    if not val:
+        return default
+    return val.lower() in ("true", "1", "yes")
+
+
+@dataclass(frozen=True)
+class DataFreshnessDefaults:
+    """Default values for training data freshness checks.
+
+    December 2025: Single source of truth for data freshness thresholds.
+    Previously scattered across training_trigger_daemon.py and master_loop.py.
+
+    Used by:
+        - app/coordination/training_trigger_daemon.py
+        - scripts/master_loop.py
+        - app/coordination/training_freshness.py
+    """
+    # Maximum acceptable age of training data (hours)
+    # Data older than this is considered stale and may trigger sync
+    MAX_DATA_AGE_HOURS: float = _env_float("RINGRIFT_MAX_DATA_AGE_HOURS", 4.0)
+
+    # Warning threshold (hours) - emit DATA_STALE warning above this
+    FRESHNESS_WARNING_HOURS: float = _env_float("RINGRIFT_FRESHNESS_WARNING_HOURS", 2.0)
+
+    # Strict mode: fail immediately if data is stale (no sync attempt)
+    # Useful for high-quality training where only fresh data should be used
+    STRICT_FRESHNESS: bool = _env_bool("RINGRIFT_STRICT_DATA_FRESHNESS", False)
+
+    # If True, trigger sync instead of rejecting when data is stale
+    ENFORCE_FRESHNESS_WITH_SYNC: bool = _env_bool("RINGRIFT_FRESHNESS_ENFORCE_SYNC", True)
+
+    # Timeout for freshness-triggered sync (seconds)
+    FRESHNESS_SYNC_TIMEOUT: float = _env_float("RINGRIFT_FRESHNESS_SYNC_TIMEOUT", 300.0)
+
+
+# =============================================================================
 # Task Scheduling Defaults
 # =============================================================================
 
