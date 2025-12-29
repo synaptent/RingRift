@@ -51,7 +51,6 @@ def sample_initial_state() -> GameState:
     return create_initial_state(
         board_type=BoardType.HEX8,
         num_players=2,
-        rng_seed=42,
     )
 
 

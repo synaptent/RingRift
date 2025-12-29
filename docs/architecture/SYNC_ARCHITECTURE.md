@@ -373,43 +373,38 @@ if not report.is_valid:
 
 ```yaml
 sync_routing:
-  auto_sync_interval_seconds: 60
-  gossip_interval_seconds: 30
-  max_concurrent_syncs: 4
-  bandwidth_limit_mbps: 50
-
-  exclude_from_sync:
-    - mac-studio
-    - dev-machines
-
-  nfs_sharing_groups:
-    - [gh200-a, gh200-b, gh200-c] # Lambda NFS group
-
-  ephemeral_hosts:
-    - vast-*
-    - runpod-spot-*
+  max_disk_usage_percent: 70
+  target_disk_usage_percent: 60
+  min_free_disk_percent: 15
+  replication_target: 3
+  excluded_hosts: []
+  priority_hosts:
+    - nebius-h100-1
 
   allowed_external_storage:
     - host: backup.example.com
       path: /backups/ringrift
       schedule: '0 */6 * * *' # Every 6 hours
 
-hosts:
-  nebius-h100-1:
-    sync_priority: high
-    bandwidth_limit_mbps: 100
-    role: training
+auto_sync:
+  enabled: true
+  interval_seconds: 60
+  gossip_interval_seconds: 15
+  max_concurrent_syncs: 12
+  bandwidth_limit_mbps: 100
+  host_bandwidth_overrides:
+    nebius-*: 100
 ```
 
 ### Environment Variables
 
-| Variable                       | Default | Description                  |
-| ------------------------------ | ------- | ---------------------------- |
-| `RINGRIFT_SYNC_INTERVAL`       | 60      | Main sync interval (seconds) |
-| `RINGRIFT_GOSSIP_INTERVAL`     | 30      | Gossip interval (seconds)    |
-| `RINGRIFT_SYNC_MAX_CONCURRENT` | 4       | Max concurrent syncs         |
-| `RINGRIFT_SYNC_BANDWIDTH_MBPS` | 50      | Default bandwidth limit      |
-| `RINGRIFT_SYNC_MAX_DISK_USAGE` | 70      | Max disk usage %             |
+| Variable                            | Default | Description                    |
+| ----------------------------------- | ------- | ------------------------------ |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | 120     | Games sync interval (seconds)  |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | 30      | Fast sync interval (seconds)   |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | 2.0     | Minimum auto-sync interval     |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | 6       | Max concurrent auto-sync tasks |
+| `RINGRIFT_SYNC_TIMEOUT`             | 300     | Sync timeout (seconds)         |
 
 ## Files Reference
 
