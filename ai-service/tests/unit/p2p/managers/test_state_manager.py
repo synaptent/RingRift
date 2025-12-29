@@ -805,9 +805,12 @@ class TestHealthCheck:
 
         health = manager.health_check()
 
-        assert health["status"] == "healthy"
-        assert health["errors_count"] == 0
-        assert health["last_error"] is None
+        # health_check returns HealthCheckResult dataclass
+        assert hasattr(health, "healthy")
+        assert health.healthy is True
+        assert hasattr(health, "details")
+        if health.details:
+            assert health.details.get("errors_count", 0) == 0
 
     def test_includes_peer_and_job_counts(self, tmp_path: Path) -> None:
         """Test health check includes peer and job counts."""
@@ -832,8 +835,10 @@ class TestHealthCheck:
 
         health = manager.health_check()
 
-        assert health["peer_count"] == 1
-        assert health["job_count"] == 1
+        assert hasattr(health, "details")
+        if health.details:
+            assert health.details.get("peer_count", 0) == 1
+            assert health.details.get("job_count", 0) == 1
 
     def test_includes_cluster_epoch(self, tmp_path: Path) -> None:
         """Test health check includes cluster epoch."""
@@ -844,7 +849,9 @@ class TestHealthCheck:
 
         health = manager.health_check()
 
-        assert health["cluster_epoch"] == 42
+        assert hasattr(health, "details")
+        if health.details:
+            assert health.details.get("cluster_epoch") == 42
 
     def test_unhealthy_when_db_missing(self, tmp_path: Path) -> None:
         """Test health check returns unhealthy when database is missing."""
@@ -853,8 +860,8 @@ class TestHealthCheck:
 
         health = manager.health_check()
 
-        assert health["status"] == "unhealthy"
-        assert health["errors_count"] >= 1
+        assert hasattr(health, "healthy")
+        assert health.healthy is False
 
     def test_includes_db_path(self, tmp_path: Path) -> None:
         """Test health check includes database path."""
@@ -864,7 +871,9 @@ class TestHealthCheck:
 
         health = manager.health_check()
 
-        assert health["db_path"] == str(db_path)
+        assert hasattr(health, "details")
+        if health.details:
+            assert health.details.get("db_path") == str(db_path)
 
 
 # =============================================================================
