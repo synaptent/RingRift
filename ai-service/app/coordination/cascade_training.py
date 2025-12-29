@@ -184,7 +184,124 @@ class CascadeTrainingOrchestrator(HandlerBase):
             "EVALUATION_COMPLETED": self._on_evaluation_completed,
             "MODEL_PROMOTED": self._on_model_promoted,
             "ELO_UPDATED": self._on_elo_updated,
+            "CASCADE_TRANSFER_TRIGGERED": self._on_cascade_transfer_triggered,
         }
+
+    async def _on_cascade_transfer_triggered(self, event: dict) -> None:
+        """Handle cascade transfer trigger - actually run the transfer.
+
+        December 29, 2025: Added to execute the transfer_2p_to_np script
+        when cascade advancement is triggered.
+        """
+        board_type = event.get("board_type")
+        source_players = event.get("source_players")
+        target_players = event.get("target_players")
+        source_model = event.get("source_model")
+
+        if not all([board_type, source_players, target_players, source_model]):
+            logger.warning(f"[CascadeTraining] Invalid transfer event: {event}")
+            return
+
+        await self._execute_transfer(
+            board_type=board_type,
+            source_model=source_model,
+            source_players=source_players,
+            target_players=target_players,
+        )
+
+    async def _execute_transfer(
+        self,
+        board_type: str,
+        source_model: str,
+        source_players: int,
+        target_players: int,
+    ) -> bool:
+        """Execute the weight transfer from source to target player count.
+
+        December 29, 2025: Implements the actual transfer by calling
+        scripts/transfer_2p_to_4p.py or directly using the transfer function.
+
+        Args:
+            board_type: Board type (hex8, square8, etc.)
+            source_model: Path to source model
+            source_players: Source player count (2 or 3)
+            target_players: Target player count (3 or 4)
+
+        Returns:
+            True if transfer succeeded
+        """
+        config_key = f"{board_type}_{target_players}p"
+        output_path = Path(self.config.models_dir) / f"transfer_{board_type}_{target_players}p_init.pth"
+
+        logger.info(
+            f"[CascadeTraining] Executing transfer: {source_model} → {output_path} "
+            f"({source_players}p → {target_players}p)"
+        )
+
+        try:
+            # Run transfer in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                self._run_transfer_sync,
+                source_model,
+                str(output_path),
+                board_type,
+                target_players,
+            )
+
+            # Verify output exists
+            if not output_path.exists():
+                logger.error(f"[CascadeTraining] Transfer failed: output not found at {output_path}")
+                return False
+
+            logger.info(f"[CascadeTraining] Transfer complete: {output_path}")
+
+            # Emit event to trigger training with transferred weights
+            await self._emit_event(
+                "TRAINING_REQUESTED",
+                {
+                    "config_key": config_key,
+                    "board_type": board_type,
+                    "num_players": target_players,
+                    "init_weights": str(output_path),
+                    "cascade_stage": True,
+                    "transfer_from": source_model,
+                },
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[CascadeTraining] Transfer failed: {e}")
+            await self._emit_event(
+                "CASCADE_TRANSFER_FAILED",
+                {
+                    "config_key": config_key,
+                    "board_type": board_type,
+                    "source_players": source_players,
+                    "target_players": target_players,
+                    "error": str(e),
+                },
+            )
+            return False
+
+    def _run_transfer_sync(
+        self,
+        source_path: str,
+        output_path: str,
+        board_type: str,
+        target_players: int,
+    ) -> None:
+        """Run the transfer synchronously (for executor)."""
+        from scripts.transfer_2p_to_4p import transfer_2p_to_np
+
+        transfer_2p_to_np(
+            source_path=source_path,
+            output_path=output_path,
+            board_type=board_type,
+            target_players=target_players,
+        )
 
     async def _on_training_completed(self, event: dict) -> None:
         """Handle training completion event."""

@@ -1503,6 +1503,29 @@ async def create_availability_capacity_planner() -> None:
         raise
 
 
+async def create_cascade_training() -> None:
+    """Create and run CascadeTrainingOrchestrator daemon.
+
+    December 29, 2025: Multiplayer bootstrapping via cascade training.
+    Orchestrates the 2p → 3p → 4p training cascade:
+    - Monitors model quality/Elo for each board type
+    - Triggers weight transfer when quality threshold met
+    - Boosts selfplay priority for configs blocking cascade
+
+    Subscribes to: TRAINING_COMPLETED, EVALUATION_COMPLETED, MODEL_PROMOTED, ELO_UPDATED
+    Emits: CASCADE_TRANSFER_TRIGGERED, TRAINING_REQUESTED
+    """
+    try:
+        from app.coordination.cascade_training import get_cascade_orchestrator
+
+        daemon = get_cascade_orchestrator()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"CascadeTrainingOrchestrator not available: {e}")
+        raise
+
+
 async def create_availability_provisioner() -> None:
     """Create and run availability Provisioner daemon.
 
@@ -1615,6 +1638,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.AVAILABILITY_RECOVERY_ENGINE.name: create_availability_recovery_engine,
         DaemonType.AVAILABILITY_CAPACITY_PLANNER.name: create_availability_capacity_planner,
         DaemonType.AVAILABILITY_PROVISIONER.name: create_availability_provisioner,
+        # Cascade training (December 29, 2025)
+        DaemonType.CASCADE_TRAINING.name: create_cascade_training,
     }
 
 
