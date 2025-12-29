@@ -77,7 +77,7 @@ def daemon_config():
 # =============================================================================
 
 
-class MockDaemonConfig:
+class TestDaemonConfigClass:
     """Tests for DaemonConfig dataclass."""
 
     def test_default_values(self):
