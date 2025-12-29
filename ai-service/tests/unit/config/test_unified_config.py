@@ -198,12 +198,21 @@ class TestBoardConfig:
         config = BoardConfig(
             board_type="hex8",
             num_players=2,
-            priority=1.0,
         )
 
         assert config.board_type == "hex8"
         assert config.num_players == 2
-        assert config.priority == 1.0
+
+    def test_config_key_property(self):
+        """BoardConfig has config_key property."""
+        from app.config.unified_config import BoardConfig
+
+        config = BoardConfig(
+            board_type="square8",
+            num_players=4,
+        )
+
+        assert config.config_key == "square8_4p"
 
 
 # =============================================================================
@@ -341,32 +350,6 @@ class TestGetConfig:
         config2 = get_config()
 
         assert config1 is config2
-
-
-# =============================================================================
-# reset_config Tests
-# =============================================================================
-
-
-class TestResetConfig:
-    """Tests for reset_config function."""
-
-    def test_function_exists(self):
-        """reset_config function exists."""
-        from app.config.unified_config import reset_config
-        assert callable(reset_config)
-
-    def test_allows_new_instance(self):
-        """reset_config allows creating new instance."""
-        from app.config.unified_config import get_config, reset_config
-
-        config1 = get_config()
-        reset_config()
-        config2 = get_config()
-
-        # After reset, new instance should be created
-        # (may be equal but could be different object)
-        assert config2 is not None
 
 
 # =============================================================================

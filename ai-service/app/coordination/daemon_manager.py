@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import concurrent.futures
 import json
 import logging
 import os
@@ -51,7 +50,6 @@ from pathlib import Path
 from typing import Any
 
 from app.config.coordination_defaults import DaemonHealthDefaults
-from app.config.ports import DATA_SERVER_PORT
 from app.core.async_context import fire_and_forget, safe_create_task
 
 # Singleton mixin for thread-safe singleton pattern (Dec 2025)
@@ -60,7 +58,6 @@ from app.coordination.singleton_mixin import SingletonMixin
 # Daemon types extracted to dedicated module (Dec 2025)
 from app.coordination.daemon_types import (
     CRITICAL_DAEMONS,
-    DAEMON_STARTUP_ORDER,
     DaemonInfo,
     DaemonManagerConfig,
     DaemonState,

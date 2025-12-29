@@ -29,8 +29,8 @@ from ..ai.gmo_ai import (
     GMOValueNetWithUncertainty,
     MoveEncoder,
     StateEncoder,
-    nll_loss_with_uncertainty,
 )
+from ..ai.gmo_shared import nll_loss_with_uncertainty
 from ..game_engine import GameEngine
 from ..models import AIConfig, BoardType, GameState, Move
 from .data_augmentation import DataAugmentor

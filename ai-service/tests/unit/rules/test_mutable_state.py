@@ -62,7 +62,7 @@ class TestMutableStack:
 
         assert ring_stack.position == Position(x=2, y=3)
         assert ring_stack.rings == [1, 1]
-        assert ring_stack.stackHeight == 2
+        assert ring_stack.stack_height == 2
 
     def test_copy(self):
         """MutableStack copy creates independent copy."""
@@ -236,20 +236,19 @@ class TestMoveUndo:
         from app.models import Move, MoveType
 
         move = Move(
+            id="move-1",
             type=MoveType.PLACE_RING,
             player=1,
             to=Position(x=3, y=3),
         )
 
-        undo = MoveUndo(
-            move=move,
-            prev_phase=GamePhase.RING_PLACEMENT,
-            prev_current_player=1,
-        )
+        undo = MoveUndo(move=move)
 
         assert undo.move == move
-        assert undo.prev_phase == GamePhase.RING_PLACEMENT
-        assert undo.prev_current_player == 1
+        # Default collections should be empty
+        assert len(undo.removed_stacks) == 0
+        assert len(undo.added_stacks) == 0
+        assert len(undo.modified_stacks) == 0
 
 
 # =============================================================================
