@@ -56,6 +56,7 @@ import os
 import signal
 import sqlite3
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -85,6 +86,8 @@ from app.config.thresholds import (
     check_training_data_quality,
     get_promotion_thresholds,
     get_gpu_weight,
+    # Dec 29, 2025: Player-count aware export threshold
+    get_min_games_for_export,
 )
 from app.config.unified_config import get_config
 
@@ -190,11 +193,31 @@ class ConfigState:
         return (time.time() - self.last_export_time) / 3600
 
     @property
+    def num_players(self) -> int:
+        """Extract player count from config_key (e.g., 'hex8_2p' -> 2)."""
+        # config_key format: {board_type}_{n}p (e.g., hex8_2p, square8_4p)
+        try:
+            suffix = self.config_key.split("_")[-1]  # "2p", "3p", "4p"
+            return int(suffix.rstrip("p"))
+        except (ValueError, IndexError):
+            return 2  # Default to 2-player
+
+    @property
+    def min_games_threshold(self) -> int:
+        """Get minimum games for export based on player count.
+
+        Dec 29, 2025: Added as part of Phase 2 training improvements.
+        Higher player counts require more games for statistical significance.
+        """
+        return get_min_games_for_export(self.num_players)
+
+    @property
     def needs_training(self) -> bool:
         """Check if config needs training."""
         # Has enough games and data is fresh enough
+        # Dec 29, 2025: Use player-count aware threshold
         return (
-            self.games_since_last_export >= MIN_GAMES_FOR_EXPORT
+            self.games_since_last_export >= self.min_games_threshold
             and self.last_quality_score >= 0.5
         )
 
@@ -259,6 +282,7 @@ class MasterLoopController:
         self._db_path = STATE_DB_PATH
         self._last_state_save = 0.0
         self._loop_iteration = 0  # Heartbeat tracking (Dec 2025)
+        self._state_lock = threading.Lock()  # Race condition fix (Dec 2025)
         self._init_state_db()
 
     # =========================================================================
@@ -344,55 +368,68 @@ class MasterLoopController:
             logger.warning(f"[MasterLoop] Failed to init state DB: {e}")
 
     def _load_persisted_state(self) -> None:
-        """Load exploration_boost and other state from database on startup."""
-        try:
-            conn = sqlite3.connect(self._db_path)
-            rows = conn.execute("""
-                SELECT config_key, exploration_boost, training_intensity, last_quality_score
-                FROM config_state
-            """).fetchall()
-            conn.close()
+        """Load exploration_boost and other state from database on startup.
 
-            restored_count = 0
-            for config_key, boost, intensity, quality_score in rows:
-                if config_key in self._states:
-                    self._states[config_key].exploration_boost = boost
-                    self._states[config_key].training_intensity = intensity
-                    self._states[config_key].last_quality_score = quality_score
-                    restored_count += 1
+        Uses threading lock to prevent race conditions during concurrent access.
+        Dec 2025: Added locking to fix state corruption issue.
+        """
+        with self._state_lock:
+            try:
+                conn = sqlite3.connect(self._db_path)
+                rows = conn.execute("""
+                    SELECT config_key, exploration_boost, training_intensity, last_quality_score
+                    FROM config_state
+                """).fetchall()
+                conn.close()
 
-            if restored_count > 0:
-                logger.info(f"[MasterLoop] Restored persisted state for {restored_count} configs")
+                restored_count = 0
+                for config_key, boost, intensity, quality_score in rows:
+                    if config_key in self._states:
+                        self._states[config_key].exploration_boost = boost
+                        self._states[config_key].training_intensity = intensity
+                        self._states[config_key].last_quality_score = quality_score
+                        restored_count += 1
 
-        except Exception as e:
-            logger.warning(f"[MasterLoop] Failed to load persisted state: {e}")
+                if restored_count > 0:
+                    logger.info(f"[MasterLoop] Restored persisted state for {restored_count} configs")
+
+            except Exception as e:
+                logger.warning(f"[MasterLoop] Failed to load persisted state: {e}")
 
     def _save_persisted_state(self) -> None:
-        """Save exploration_boost and other state to database."""
-        try:
-            conn = sqlite3.connect(self._db_path)
-            now = time.time()
+        """Save exploration_boost and other state to database.
 
-            for config_key, state in self._states.items():
-                conn.execute("""
-                    INSERT OR REPLACE INTO config_state
-                    (config_key, exploration_boost, training_intensity, last_quality_score, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    config_key,
-                    state.exploration_boost,
-                    state.training_intensity,
-                    state.last_quality_score,
-                    now,
-                ))
+        Uses threading lock and SQLite transaction to prevent race conditions.
+        Dec 2025: Added locking to fix state corruption issue.
+        """
+        with self._state_lock:
+            try:
+                conn = sqlite3.connect(self._db_path)
+                now = time.time()
 
-            conn.commit()
-            conn.close()
-            self._last_state_save = now
-            logger.debug(f"[MasterLoop] Persisted state for {len(self._states)} configs")
+                # Use BEGIN IMMEDIATE for SQLite-level write lock
+                conn.execute("BEGIN IMMEDIATE")
 
-        except Exception as e:
-            logger.warning(f"[MasterLoop] Failed to save persisted state: {e}")
+                for config_key, state in self._states.items():
+                    conn.execute("""
+                        INSERT OR REPLACE INTO config_state
+                        (config_key, exploration_boost, training_intensity, last_quality_score, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (
+                        config_key,
+                        state.exploration_boost,
+                        state.training_intensity,
+                        state.last_quality_score,
+                        now,
+                    ))
+
+                conn.commit()
+                conn.close()
+                self._last_state_save = now
+                logger.debug(f"[MasterLoop] Persisted state for {len(self._states)} configs")
+
+            except Exception as e:
+                logger.warning(f"[MasterLoop] Failed to save persisted state: {e}")
 
     def _maybe_save_state(self) -> None:
         """Save state if enough time has passed since last save."""
@@ -1503,9 +1540,10 @@ class MasterLoopController:
         """Check if a config is ready for training."""
         state = self._states[config_key]
 
-        # Check minimum games
-        if state.games_since_last_export < MIN_GAMES_FOR_EXPORT:
-            return False, f"Insufficient games: {state.games_since_last_export} < {MIN_GAMES_FOR_EXPORT}"
+        # Check minimum games - Dec 29, 2025: Use player-count aware threshold
+        min_games = state.min_games_threshold
+        if state.games_since_last_export < min_games:
+            return False, f"Insufficient games: {state.games_since_last_export} < {min_games}"
 
         # Check quality score
         if state.last_quality_score < 0.5:

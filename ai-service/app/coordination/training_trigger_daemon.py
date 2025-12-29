@@ -154,6 +154,134 @@ class TrainingTriggerDaemon(HandlerBase):
         self._coordinator_skip = False
         # Dec 29, 2025: Deduplication tracking for training triggers
         self._recent_triggers: dict[str, float] = {}  # config_key -> last_trigger_time
+        # December 29, 2025: State persistence (Phase 3)
+        self._state_db_path = Path(self._daemon_config.state_db_path)
+        self._last_state_save: float = 0.0
+        self._init_state_db()
+        # December 29, 2025 (Phase 4): Evaluation backpressure tracking
+        # When EvaluationDaemon queue fills up, we pause training to let evaluations catch up
+        self._evaluation_backpressure: bool = False
+        self._backpressure_stats = {
+            "pauses_due_to_backpressure": 0,
+            "resumes_after_backpressure": 0,
+            "last_backpressure_time": 0.0,
+        }
+
+    def _init_state_db(self) -> None:
+        """Initialize the SQLite state database (Phase 3 - December 2025).
+
+        Creates the state table if it doesn't exist. This persists training
+        state across daemon restarts, preventing loss of training momentum.
+        """
+        try:
+            self._state_db_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self._state_db_path) as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS config_state (
+                        config_key TEXT PRIMARY KEY,
+                        board_type TEXT NOT NULL,
+                        num_players INTEGER NOT NULL,
+                        last_training_time REAL DEFAULT 0.0,
+                        training_in_progress INTEGER DEFAULT 0,
+                        last_npz_update REAL DEFAULT 0.0,
+                        npz_sample_count INTEGER DEFAULT 0,
+                        npz_path TEXT DEFAULT '',
+                        last_elo REAL DEFAULT 1500.0,
+                        elo_trend REAL DEFAULT 0.0,
+                        training_intensity TEXT DEFAULT 'normal',
+                        consecutive_failures INTEGER DEFAULT 0,
+                        updated_at REAL DEFAULT 0.0
+                    )
+                """)
+                conn.commit()
+            logger.debug(f"[TrainingTriggerDaemon] State DB initialized: {self._state_db_path}")
+        except (sqlite3.Error, OSError) as e:
+            logger.warning(f"[TrainingTriggerDaemon] Failed to init state DB: {e}")
+
+    def _load_state(self) -> None:
+        """Load persisted training state from SQLite (Phase 3 - December 2025).
+
+        Called at daemon startup to restore training momentum after restarts.
+        """
+        if not self._state_db_path.exists():
+            logger.debug("[TrainingTriggerDaemon] No persisted state to load")
+            return
+
+        try:
+            with sqlite3.connect(self._state_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT * FROM config_state")
+                for row in cursor.fetchall():
+                    config_key = row["config_key"]
+                    # Don't overwrite state if already exists (e.g., from event handling)
+                    if config_key not in self._training_states:
+                        state = ConfigTrainingState(
+                            config_key=config_key,
+                            board_type=row["board_type"],
+                            num_players=row["num_players"],
+                            last_training_time=row["last_training_time"],
+                            training_in_progress=False,  # Reset on restart
+                            last_npz_update=row["last_npz_update"],
+                            npz_sample_count=row["npz_sample_count"],
+                            npz_path=row["npz_path"],
+                            last_elo=row["last_elo"],
+                            elo_trend=row["elo_trend"],
+                            training_intensity=row["training_intensity"],
+                            consecutive_failures=row["consecutive_failures"],
+                        )
+                        self._training_states[config_key] = state
+                logger.info(
+                    f"[TrainingTriggerDaemon] Loaded {len(self._training_states)} "
+                    f"config states from persisted storage"
+                )
+        except (sqlite3.Error, KeyError) as e:
+            logger.warning(f"[TrainingTriggerDaemon] Failed to load state: {e}")
+
+    def _save_state(self) -> None:
+        """Save current training state to SQLite (Phase 3 - December 2025).
+
+        Called periodically and on significant state changes.
+        """
+        if not self._training_states:
+            return
+
+        now = time.time()
+        try:
+            with sqlite3.connect(self._state_db_path) as conn:
+                for config_key, state in self._training_states.items():
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO config_state (
+                            config_key, board_type, num_players,
+                            last_training_time, training_in_progress,
+                            last_npz_update, npz_sample_count, npz_path,
+                            last_elo, elo_trend, training_intensity,
+                            consecutive_failures, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            config_key,
+                            state.board_type,
+                            state.num_players,
+                            state.last_training_time,
+                            1 if state.training_in_progress else 0,
+                            state.last_npz_update,
+                            state.npz_sample_count,
+                            state.npz_path,
+                            state.last_elo,
+                            state.elo_trend,
+                            state.training_intensity,
+                            state.consecutive_failures,
+                            now,
+                        ),
+                    )
+                conn.commit()
+            self._last_state_save = now
+            logger.debug(
+                f"[TrainingTriggerDaemon] Saved {len(self._training_states)} config states"
+            )
+        except sqlite3.Error as e:
+            logger.warning(f"[TrainingTriggerDaemon] Failed to save state: {e}")
 
     @property
     def config(self) -> TrainingTriggerConfig:
@@ -183,6 +311,32 @@ class TrainingTriggerDaemon(HandlerBase):
         self._recent_triggers[config_key] = now
         return False
 
+    async def start(self) -> None:
+        """Start the daemon and load persisted state (Phase 3 - December 2025).
+
+        Overrides HandlerBase.start() to restore training state from SQLite
+        before beginning operations. This prevents loss of training momentum
+        when the daemon restarts.
+        """
+        # Load persisted state before starting
+        self._load_state()
+
+        # Call parent start() which will run _run_cycle() periodically
+        await super().start()
+
+    async def stop(self) -> None:
+        """Stop the daemon and save state (Phase 3 - December 2025).
+
+        Overrides HandlerBase.stop() to persist training state to SQLite
+        before shutdown. This ensures no state loss on graceful shutdown.
+        """
+        # Save state before stopping
+        self._save_state()
+        logger.info("[TrainingTriggerDaemon] Saved state on shutdown")
+
+        # Call parent stop()
+        await super().stop()
+
     def _get_event_subscriptions(self) -> dict[str, Callable]:
         """Return event subscriptions for HandlerBase.
 
@@ -208,6 +362,9 @@ class TrainingTriggerDaemon(HandlerBase):
             # December 2025 - Phase 2A: Data freshness events
             "data_stale": self._on_data_stale,
             "data_sync_completed": self._on_data_sync_completed,
+            # December 29, 2025 (Phase 4): Evaluation backpressure events
+            "EVALUATION_BACKPRESSURE": self._on_evaluation_backpressure,
+            "EVALUATION_BACKPRESSURE_RELEASED": self._on_evaluation_backpressure_released,
         }
 
     async def _on_start(self) -> None:
@@ -1253,6 +1410,11 @@ class TrainingTriggerDaemon(HandlerBase):
 
         # Scan for training opportunities
         await self._scan_for_training_opportunities()
+
+        # December 29, 2025 (Phase 3): Periodically save state
+        now = time.time()
+        if now - self._last_state_save >= self.config.state_save_interval_seconds:
+            self._save_state()
 
     async def _scan_for_training_opportunities(self) -> None:
         """Scan for configs that may need training."""

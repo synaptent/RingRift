@@ -1079,6 +1079,262 @@ class PromotionFailedToCurriculumWatcher:
 
 
 # =============================================================================
+# 2.5.1. PROMOTION_COMPLETED → Curriculum Advancement/Regression (December 29, 2025)
+# =============================================================================
+
+
+class PromotionCompletedToCurriculumWatcher:
+    """Advances or regresses curriculum based on unified PROMOTION_COMPLETED events.
+
+    This watcher subscribes to the unified PROMOTION_COMPLETED event emitted by
+    AutoPromotionDaemon after both successful and failed promotion attempts.
+    Based on the event payload:
+    - On success: Resets failure tracking, optionally advances curriculum
+    - On consecutive failures (≥3): Reduces curriculum weight (regression)
+
+    Event payload fields used:
+    - config_key: str - The board_numPlayers config identifier
+    - success: bool - Whether the promotion succeeded
+    - elo_change: float - Change in Elo from previous evaluation
+    - consecutive_failures: int - Number of consecutive failed promotions
+
+    December 29, 2025: Part of Phase 4 training loop improvements.
+    """
+
+    # Weight reduction per consecutive failure after threshold
+    WEIGHT_REDUCTION_PER_REGRESSION = 0.15  # 15% reduction
+    CONSECUTIVE_FAILURE_THRESHOLD = 3  # Start regression after 3 failures
+
+    # Weight boost on successful promotion
+    WEIGHT_BOOST_ON_SUCCESS = 0.10  # 10% boost on success
+
+    def __init__(self):
+        self._subscribed = False
+        self._success_streak: dict[str, int] = {}  # config -> consecutive successes
+
+    def subscribe(self) -> bool:
+        """Subscribe to PROMOTION_COMPLETED events."""
+        if self._subscribed:
+            return True
+
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router is None:
+                logger.debug("[PromotionCompletedToCurriculumWatcher] Event router not available")
+                return False
+
+            # Subscribe to PROMOTION_COMPLETED (string type, as emitted by auto_promotion_daemon)
+            router.subscribe("PROMOTION_COMPLETED", self._on_promotion_completed)
+            self._subscribed = True
+            logger.info("[PromotionCompletedToCurriculumWatcher] Subscribed to PROMOTION_COMPLETED")
+            return True
+
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            logger.warning(f"[PromotionCompletedToCurriculumWatcher] Failed to subscribe: {e}")
+            return False
+
+    def unsubscribe(self) -> None:
+        """Unsubscribe from events."""
+        if not self._subscribed:
+            return
+
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                router.unsubscribe("PROMOTION_COMPLETED", self._on_promotion_completed)
+            self._subscribed = False
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            pass
+
+    def _on_promotion_completed(self, event) -> None:
+        """Handle PROMOTION_COMPLETED event - advance or regress curriculum.
+
+        December 29, 2025: Unified handler for promotion outcomes.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+
+            config_key = payload.get("config_key", "")
+            success = payload.get("success", False)
+            elo_change = payload.get("elo_change", 0.0)
+            consecutive_failures = payload.get("consecutive_failures", 0)
+            consecutive_passes = payload.get("consecutive_passes", 0)
+
+            if not config_key:
+                return
+
+            if success:
+                self._on_promotion_success(config_key, elo_change, consecutive_passes)
+            else:
+                self._on_promotion_failure(config_key, elo_change, consecutive_failures)
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[PromotionCompletedToCurriculumWatcher] Error handling promotion: {e}")
+
+    def _on_promotion_success(
+        self,
+        config_key: str,
+        elo_change: float,
+        consecutive_passes: int,
+    ) -> None:
+        """Handle successful promotion - advance curriculum."""
+        # Track success streak
+        self._success_streak[config_key] = consecutive_passes
+
+        logger.info(
+            f"[PromotionCompletedToCurriculumWatcher] Promotion succeeded for {config_key}: "
+            f"elo_change={elo_change:+.1f}, consecutive_passes={consecutive_passes}"
+        )
+
+        # Optionally boost curriculum weight on success (reward momentum)
+        if elo_change > 20:  # Significant improvement
+            self._boost_curriculum_weight(config_key, elo_change)
+
+        # Reset failure counts in the failure watcher
+        self._reset_failure_watcher(config_key)
+
+    def _on_promotion_failure(
+        self,
+        config_key: str,
+        elo_change: float,
+        consecutive_failures: int,
+    ) -> None:
+        """Handle failed promotion - regress curriculum if threshold exceeded."""
+        # Clear success streak
+        if config_key in self._success_streak:
+            del self._success_streak[config_key]
+
+        logger.warning(
+            f"[PromotionCompletedToCurriculumWatcher] Promotion failed for {config_key}: "
+            f"elo_change={elo_change:+.1f}, consecutive_failures={consecutive_failures}"
+        )
+
+        # Only regress curriculum after threshold consecutive failures
+        if consecutive_failures >= self.CONSECUTIVE_FAILURE_THRESHOLD:
+            self._regress_curriculum_weight(config_key, consecutive_failures)
+
+    def _boost_curriculum_weight(self, config_key: str, elo_change: float) -> None:
+        """Boost curriculum weight on significant promotion success."""
+        try:
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+            current_weight = feedback._current_weights.get(config_key, 1.0)
+
+            # Boost proportional to Elo gain, capped at 20%
+            boost_factor = min(0.20, self.WEIGHT_BOOST_ON_SUCCESS + (elo_change / 500))
+            new_weight = min(feedback.weight_max, current_weight * (1 + boost_factor))
+
+            if new_weight > current_weight:
+                feedback._current_weights[config_key] = new_weight
+
+                logger.info(
+                    f"[PromotionCompletedToCurriculumWatcher] Boosted curriculum weight for {config_key}: "
+                    f"{current_weight:.2f} → {new_weight:.2f} (elo_change={elo_change:+.1f})"
+                )
+
+                # Emit CURRICULUM_REBALANCED event
+                self._emit_rebalance_event(config_key, new_weight, "promotion_success", elo_change)
+
+        except ImportError as e:
+            logger.debug(f"[PromotionCompletedToCurriculumWatcher] curriculum_feedback import error: {e}")
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            logger.warning(f"[PromotionCompletedToCurriculumWatcher] Error boosting weight: {e}")
+
+    def _regress_curriculum_weight(self, config_key: str, consecutive_failures: int) -> None:
+        """Reduce curriculum weight after consecutive failures (regression)."""
+        try:
+            from app.training.curriculum_feedback import get_curriculum_feedback
+
+            feedback = get_curriculum_feedback()
+            current_weight = feedback._current_weights.get(config_key, 1.0)
+
+            # Reduce weight: 15% per failure beyond threshold, capped at 50% total reduction
+            failures_over_threshold = consecutive_failures - self.CONSECUTIVE_FAILURE_THRESHOLD + 1
+            reduction = min(0.50, failures_over_threshold * self.WEIGHT_REDUCTION_PER_REGRESSION)
+            new_weight = max(feedback.weight_min, current_weight * (1 - reduction))
+
+            if new_weight < current_weight:
+                feedback._current_weights[config_key] = new_weight
+
+                logger.info(
+                    f"[PromotionCompletedToCurriculumWatcher] Reduced curriculum weight for {config_key}: "
+                    f"{current_weight:.2f} → {new_weight:.2f} (consecutive_failures={consecutive_failures})"
+                )
+
+                # Emit CURRICULUM_REBALANCED event
+                self._emit_rebalance_event(
+                    config_key, new_weight, "promotion_regression", consecutive_failures
+                )
+
+        except ImportError as e:
+            logger.debug(f"[PromotionCompletedToCurriculumWatcher] curriculum_feedback import error: {e}")
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            logger.warning(f"[PromotionCompletedToCurriculumWatcher] Error regressing weight: {e}")
+
+    def _reset_failure_watcher(self, config_key: str) -> None:
+        """Reset failure count in PromotionFailedToCurriculumWatcher on success."""
+        try:
+            watcher = _watcher_instances.get("promotion_failed_curriculum")
+            if watcher and isinstance(watcher, PromotionFailedToCurriculumWatcher):
+                watcher.reset_failure_count(config_key)
+        except (KeyError, TypeError, AttributeError):
+            pass  # Watcher not available, skip reset
+
+    def _emit_rebalance_event(
+        self,
+        config_key: str,
+        new_weight: float,
+        trigger: str,
+        value: float,
+    ) -> None:
+        """Emit CURRICULUM_REBALANCED event for downstream systems."""
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish_sync(
+                "CURRICULUM_REBALANCED",
+                {
+                    "trigger": trigger,
+                    "changed_configs": [config_key],
+                    "new_weights": {config_key: new_weight},
+                    "value": value,
+                    "timestamp": time.time(),
+                },
+                source="promotion_completed_curriculum_watcher",
+            )
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            logger.debug(f"Failed to emit rebalance event: {e}")
+
+    def get_success_streaks(self) -> dict[str, int]:
+        """Get current success streaks."""
+        return dict(self._success_streak)
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check watcher health for DaemonManager integration."""
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        if not self._subscribed:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="PromotionCompletedToCurriculumWatcher not subscribed",
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Tracking {len(self._success_streak)} configs with success streaks",
+            details={"success_streaks": dict(self._success_streak)},
+        )
+
+
+# =============================================================================
 # 2.4.1. REGRESSION_CRITICAL → Curriculum Weight Boost (December 27, 2025)
 # =============================================================================
 
@@ -1706,6 +1962,7 @@ def wire_all_feedback_loops(
     enable_momentum_bridge: bool = True,
     enable_pfsp_weakness: bool = True,
     enable_promotion_failed: bool = True,
+    enable_promotion_completed: bool = True,
     enable_quality_penalty: bool = True,
     enable_regression_critical: bool = True,
     enable_quality_temperature: bool = True,
@@ -1720,6 +1977,7 @@ def wire_all_feedback_loops(
         enable_momentum_bridge: Enable FeedbackAccelerator → CurriculumFeedback
         enable_pfsp_weakness: Enable PFSP weak opponent → CurriculumFeedback
         enable_promotion_failed: Enable PROMOTION_FAILED → CurriculumFeedback
+        enable_promotion_completed: Enable PROMOTION_COMPLETED → CurriculumFeedback (Dec 29, 2025)
         enable_quality_penalty: Enable QUALITY_PENALTY_APPLIED → CurriculumFeedback
         enable_regression_critical: Enable REGRESSION_CRITICAL → CurriculumFeedback
         enable_quality_temperature: Enable Quality → Temperature
@@ -1780,6 +2038,21 @@ def wire_all_feedback_loops(
                 # RuntimeError: watcher subscribe failed
                 status["promotion_failed_curriculum_error"] = str(e)
                 logger.warning(f"Failed to start promotion failed curriculum watcher: {e}")
+
+        # 2.5.1. Promotion Completed → Curriculum Advancement/Regression (December 29, 2025)
+        if enable_promotion_completed:
+            try:
+                watcher = PromotionCompletedToCurriculumWatcher()
+                watcher.subscribe()
+                _watcher_instances["promotion_completed_curriculum"] = watcher
+                status["watchers"].append("promotion_completed_curriculum")
+            except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+                # ImportError: event modules not available
+                # AttributeError: watcher method missing
+                # TypeError: invalid configuration
+                # RuntimeError: watcher subscribe failed
+                status["promotion_completed_curriculum_error"] = str(e)
+                logger.warning(f"Failed to start promotion completed curriculum watcher: {e}")
 
         # 2.6. Quality Penalty → Curriculum Weight watcher (December 2025)
         if enable_quality_penalty:
@@ -1975,6 +2248,20 @@ def reset_promotion_failure_count(config_key: str) -> None:
         watcher.reset_failure_count(config_key)
 
 
+def get_promotion_success_streaks() -> dict[str, int]:
+    """Get current promotion success streaks.
+
+    December 29, 2025: Added for Phase 4 training loop improvements.
+
+    Returns:
+        Dict mapping config_key to consecutive success count
+    """
+    watcher = _watcher_instances.get("promotion_completed_curriculum")
+    if watcher and isinstance(watcher, PromotionCompletedToCurriculumWatcher):
+        return watcher.get_success_streaks()
+    return {}
+
+
 def get_regression_critical_counts() -> dict[str, int]:
     """Get current regression critical counts.
 
@@ -2003,6 +2290,7 @@ __all__ = [
     "MomentumToCurriculumBridge",
     "PFSPWeaknessWatcher",
     "PromotionFailedToCurriculumWatcher",
+    "PromotionCompletedToCurriculumWatcher",
     "QualityPenaltyToCurriculumWatcher",
     "RegressionCriticalToCurriculumWatcher",
     "QualityToTemperatureWatcher",
@@ -2014,6 +2302,7 @@ __all__ = [
     "reset_quality_penalty",
     "get_promotion_failure_counts",
     "reset_promotion_failure_count",
+    "get_promotion_success_streaks",
     "get_regression_critical_counts",
     "reset_regression_critical_count",
 ]

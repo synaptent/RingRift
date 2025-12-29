@@ -581,9 +581,9 @@ class AutoPromotionDaemon:
 
             if success:
                 candidate.last_promotion_time = time.time()
-                candidate.consecutive_passes = 0
-                candidate.evaluation_results.clear()
-                candidate.evaluation_games.clear()
+                # Dec 29, 2025: Reset failures and update Elo tracking on success
+                candidate.consecutive_failures = 0
+                candidate.previous_elo = candidate.estimated_elo  # Update baseline
 
                 self._promotion_history.append({
                     "config_key": config_key,
@@ -597,11 +597,28 @@ class AutoPromotionDaemon:
 
                 # Emit MODEL_PROMOTED event
                 await self._emit_promotion_event(candidate)
+
+                # Dec 29, 2025: Emit unified PROMOTION_COMPLETED for curriculum
+                await self._emit_promotion_completed(candidate, success=True)
+
+                # Clear results after successful emission
+                candidate.consecutive_passes = 0
+                candidate.evaluation_results.clear()
+                candidate.evaluation_games.clear()
             else:
-                logger.warning(f"[AutoPromotion] Promotion failed for {config_key}")
+                # Dec 29, 2025: Track consecutive failures for curriculum regression
+                candidate.consecutive_failures += 1
+
+                logger.warning(
+                    f"[AutoPromotion] Promotion failed for {config_key} "
+                    f"(consecutive_failures={candidate.consecutive_failures})"
+                )
 
                 # Emit PROMOTION_FAILED event to trigger curriculum weight increase
                 await self._emit_promotion_failed(candidate, error="Promotion validation failed")
+
+                # Dec 29, 2025: Emit unified PROMOTION_COMPLETED for curriculum
+                await self._emit_promotion_completed(candidate, success=False)
 
         except ImportError:
             # Fallback: just emit the event
@@ -610,11 +627,20 @@ class AutoPromotionDaemon:
                 "emitting event only"
             )
             await self._emit_promotion_event(candidate)
+            await self._emit_promotion_completed(candidate, success=True)
         except Exception as e:  # noqa: BLE001
-            logger.error(f"[AutoPromotion] Promotion error for {config_key}: {e}")
+            # Dec 29, 2025: Track failures on exception too
+            candidate.consecutive_failures += 1
+            logger.error(
+                f"[AutoPromotion] Promotion error for {config_key}: {e} "
+                f"(consecutive_failures={candidate.consecutive_failures})"
+            )
 
             # Emit PROMOTION_FAILED event on exception
             await self._emit_promotion_failed(candidate, error=str(e))
+
+            # Dec 29, 2025: Emit unified PROMOTION_COMPLETED for curriculum
+            await self._emit_promotion_completed(candidate, success=False)
 
     async def _emit_promotion_event(self, candidate: PromotionCandidate) -> None:
         """Emit MODEL_PROMOTED event and CURRICULUM_ADVANCED if applicable.
