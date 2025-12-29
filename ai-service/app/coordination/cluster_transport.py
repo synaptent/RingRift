@@ -101,6 +101,12 @@ except ImportError:
     HAS_BANDWIDTH_CONFIG = False
     get_node_bandwidth_kbs = None
 
+# Import centralized port configuration (December 2025)
+try:
+    from app.config.ports import P2P_DEFAULT_PORT
+except ImportError:
+    P2P_DEFAULT_PORT = 8770  # Fallback for testing/standalone use
+
 
 # =============================================================================
 # Error Classes - Import from canonical location (December 28, 2025)
@@ -138,8 +144,14 @@ class TransportError(_CanonicalTransportError):
 
 
 @dataclass
-class TransportConfig:
-    """Configuration for cluster transport operations."""
+class TimeoutConfig:
+    """Configuration for cluster transport timeouts and circuit breaker.
+
+    December 29, 2025: Renamed from TransportConfig to TimeoutConfig for clarity.
+    This config focuses on connection timeouts and circuit breaker settings.
+    For file transfer settings, use transport_manager.TransportConfig.
+    For sync protocol settings, use storage_provider.SyncProtocolConfig.
+    """
 
     connect_timeout: int = DEFAULT_CONNECT_TIMEOUT
     operation_timeout: int = DEFAULT_OPERATION_TIMEOUT
@@ -150,7 +162,7 @@ class TransportConfig:
     retry_backoff: float = 1.5
 
     @classmethod
-    def for_large_transfers(cls) -> "TransportConfig":
+    def for_large_transfers(cls) -> "TimeoutConfig":
         """Config optimized for large file transfers (>100MB)."""
         return cls(
             connect_timeout=60,
@@ -159,7 +171,7 @@ class TransportConfig:
         )
 
     @classmethod
-    def for_quick_requests(cls) -> "TransportConfig":
+    def for_quick_requests(cls) -> "TimeoutConfig":
         """Config optimized for quick API requests."""
         return cls(
             connect_timeout=10,
@@ -169,16 +181,20 @@ class TransportConfig:
         )
 
 
+# Backward-compatible alias (deprecated, will be removed Q2 2026)
+TransportConfig = TimeoutConfig
+
+
 @dataclass
 class NodeConfig:
     """Configuration for a cluster node."""
     hostname: str
     tailscale_ip: str | None = None
     ssh_port: int = 22
-    http_port: int = 8770  # P2P port for HTTP file sync
+    http_port: int = P2P_DEFAULT_PORT  # P2P port for HTTP file sync
     http_scheme: str = "http"
     base_path: str = "ai-service"
-    p2p_port: int = 8770  # Explicit P2P port for file download endpoints
+    p2p_port: int = P2P_DEFAULT_PORT  # Explicit P2P port for file download endpoints
 
     @property
     def http_base_url(self) -> str:
@@ -924,7 +940,8 @@ __all__ = [
     "ClusterTransport",
     # Data classes
     "NodeConfig",
-    "TransportConfig",
+    "TimeoutConfig",  # Canonical name (Dec 2025)
+    "TransportConfig",  # Deprecated alias for backward compat
     "TransportResult",
     # Error classes
     "TransportError",

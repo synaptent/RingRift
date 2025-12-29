@@ -480,8 +480,15 @@ def clear_provider_cache() -> None:
 # =============================================================================
 
 @dataclass
-class TransportConfig:
-    """Configuration for data sync transports."""
+class SyncProtocolConfig:
+    """Configuration for data sync transport protocol settings.
+
+    December 29, 2025: Renamed from TransportConfig to SyncProtocolConfig for clarity.
+    This config focuses on which sync protocols to enable and their settings.
+    For connection timeouts, use cluster_transport.TimeoutConfig.
+    For file transfer settings, use transport_manager.TransportConfig.
+    """
+
     # aria2 settings
     enable_aria2: bool = True
     aria2_connections_per_server: int = 16
@@ -538,21 +545,27 @@ class TransportConfig:
         return self.fallback_chain
 
 
-def get_optimal_transport_config(provider: StorageProvider | None = None) -> TransportConfig:
-    """Get optimal transport configuration for the current provider.
+# Backward-compatible alias (deprecated, will be removed Q2 2026)
+TransportConfig = SyncProtocolConfig
+
+
+def get_optimal_sync_protocol_config(provider: StorageProvider | None = None) -> SyncProtocolConfig:
+    """Get optimal sync protocol configuration for the current provider.
+
+    December 29, 2025: Renamed from get_optimal_transport_config.
 
     Args:
         provider: Storage provider (auto-detects if None)
 
     Returns:
-        TransportConfig optimized for the provider
+        SyncProtocolConfig optimized for the provider
     """
     if provider is None:
         provider = get_storage_provider()
 
     caps = provider.capabilities
 
-    config = TransportConfig()
+    config = SyncProtocolConfig()
 
     if caps.has_shared_storage:
         # NFS nodes: prefer direct access, disable most sync
@@ -574,6 +587,10 @@ def get_optimal_transport_config(provider: StorageProvider | None = None) -> Tra
         logger.debug("Using balanced transport config")
 
     return config
+
+
+# Backward-compatible alias (deprecated, will be removed Q2 2026)
+get_optimal_transport_config = get_optimal_sync_protocol_config
 
 
 # =============================================================================

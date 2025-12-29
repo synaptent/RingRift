@@ -545,13 +545,19 @@ class SelfplayRunner(ABC):
             logger.debug(f"[SelfplayRunner] Could not emit DATABASE_CREATED: {e}")
 
     def _close_database(self) -> None:
-        """Close database connection."""
+        """Close database connection properly.
+
+        GameReplayDB.close() handles WAL checkpointing and cleanup.
+        Failing to call close() causes file descriptor leaks that crash
+        nodes after ~500 games with 'too many open files' errors.
+        """
         if self._db is not None:
             try:
-                # GameReplayDB doesn't have explicit close, but we clear the reference
-                self._db = None
+                self._db.close()
             except (OSError, sqlite3.Error) as e:
                 logger.warning(f"Error closing database: {e}")
+            finally:
+                self._db = None
 
     def _subscribe_to_quality_events(self) -> None:
         """Subscribe to quality events for throttling (Phase 3 Feedback Loop).

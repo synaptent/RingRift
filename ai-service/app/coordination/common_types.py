@@ -17,15 +17,25 @@ Usage:
         SyncResult,
         TransportState,
         TransportError,
+        # Config classes
+        TimeoutConfig,       # Circuit breaker timeouts
+        TransportConfig,     # File transfer settings
+        SyncProtocolConfig,  # Sync protocol enablement
     )
 
-Note on TransportConfig:
-    There are multiple TransportConfig classes for different purposes:
-    - cluster_transport.TransportConfig: SSH/HTTP circuit breaker config
-    - transport_manager.TransportConfig: File transfer routing config
-    - storage_provider.TransportConfig: Multi-protocol sync config
+Config Classes (December 29, 2025 - Consolidated with unique names):
 
-    Import from the specific module that matches your use case.
+    - TimeoutConfig (cluster_transport.py):
+      Connection and circuit breaker timeouts.
+      Use for: connect_timeout, operation_timeout, failure_threshold.
+
+    - TransportConfig (transport_manager.py):
+      File transfer settings including bandwidth, SSH keys, retries.
+      Use for: rsync_bandwidth_limit, ssh_key_path, max_retries.
+
+    - SyncProtocolConfig (storage_provider.py):
+      Which sync protocols to enable and their specific settings.
+      Use for: enable_aria2, enable_gossip, enable_bittorrent, fallback_chain.
 """
 
 from __future__ import annotations
@@ -49,6 +59,11 @@ from app.coordination.transport_base import (
     TransportState,
 )
 
+# Re-export config classes with distinct names (December 29, 2025)
+from app.coordination.cluster_transport import TimeoutConfig
+from app.coordination.transport_manager import TransportConfig
+from app.distributed.storage_provider import SyncProtocolConfig
+
 __all__ = [
     # From contracts.py
     "CoordinatorStatus",
@@ -60,6 +75,10 @@ __all__ = [
     "TransportState",
     "TransportResult",
     "TransportError",
+    # Config classes (December 29, 2025 consolidation)
+    "TimeoutConfig",  # Circuit breaker timeouts (cluster_transport)
+    "TransportConfig",  # File transfer settings (transport_manager)
+    "SyncProtocolConfig",  # Sync protocol enablement (storage_provider)
 ]
 
 

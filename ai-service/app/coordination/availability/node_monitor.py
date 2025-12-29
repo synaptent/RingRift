@@ -21,6 +21,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.config.ports import P2P_DEFAULT_PORT
 
 if TYPE_CHECKING:
     from app.config.cluster_config import ClusterNode

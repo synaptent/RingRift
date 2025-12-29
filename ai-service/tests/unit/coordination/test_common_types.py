@@ -32,28 +32,36 @@ from app.coordination.common_types import (
 
 
 class TestSyncPriority:
-    """Tests for SyncPriority enum."""
+    """Tests for SyncPriority enum.
+
+    Note: Values are from sync_constants.py (the canonical source).
+    """
 
     def test_priority_values(self):
         """Test priority numeric values."""
-        assert SyncPriority.LOW.value == 1
-        assert SyncPriority.NORMAL.value == 5
-        assert SyncPriority.HIGH.value == 10
-        assert SyncPriority.URGENT.value == 20
-        assert SyncPriority.CRITICAL.value == 50
+        assert SyncPriority.BACKGROUND.value == 10
+        assert SyncPriority.LOW.value == 25
+        assert SyncPriority.NORMAL.value == 50
+        assert SyncPriority.HIGH.value == 75
+        assert SyncPriority.CRITICAL.value == 100
 
     def test_priority_ordering(self):
         """Test priorities can be compared via value."""
+        assert SyncPriority.BACKGROUND.value < SyncPriority.LOW.value
         assert SyncPriority.LOW.value < SyncPriority.NORMAL.value
         assert SyncPriority.NORMAL.value < SyncPriority.HIGH.value
-        assert SyncPriority.HIGH.value < SyncPriority.URGENT.value
-        assert SyncPriority.URGENT.value < SyncPriority.CRITICAL.value
+        assert SyncPriority.HIGH.value < SyncPriority.CRITICAL.value
 
     def test_all_priorities_exist(self):
         """Test all expected priority levels exist."""
-        expected = {"LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"}
+        expected = {"BACKGROUND", "LOW", "NORMAL", "HIGH", "CRITICAL"}
         actual = {p.name for p in SyncPriority}
         assert actual == expected
+
+    def test_comparison_operators(self):
+        """Test that SyncPriority supports < and > operators."""
+        assert SyncPriority.LOW < SyncPriority.NORMAL
+        assert SyncPriority.HIGH > SyncPriority.NORMAL
 
 
 # =============================================================================
@@ -62,71 +70,94 @@ class TestSyncPriority:
 
 
 class TestSyncResult:
-    """Tests for SyncResult dataclass."""
+    """Tests for SyncResult dataclass.
+
+    Note: Fields are from sync_constants.py (the canonical source).
+    """
 
     def test_default_values(self):
         """Test default initialization."""
-        result = SyncResult(success=True)
+        result = SyncResult(success=True, source="src", dest="dst", host="node")
         assert result.success is True
+        assert result.source == "src"
+        assert result.dest == "dst"
+        assert result.host == "node"
         assert result.files_synced == 0
         assert result.bytes_transferred == 0
         assert result.duration_seconds == 0.0
-        assert result.errors == []
-        assert result.source == ""
-        assert result.destination == ""
+        assert result.error is None
 
     def test_full_initialization(self):
-        """Test initialization with all fields."""
+        """Test initialization with common fields."""
         result = SyncResult(
             success=True,
+            source="node-a",
+            dest="node-b",
+            host="node-a",
             files_synced=10,
             bytes_transferred=1024,
             duration_seconds=5.5,
-            errors=["warn1"],
-            source="node-a",
-            destination="node-b",
         )
         assert result.files_synced == 10
         assert result.bytes_transferred == 1024
         assert result.duration_seconds == 5.5
         assert result.source == "node-a"
-        assert result.destination == "node-b"
+        assert result.dest == "node-b"
 
     def test_to_dict(self):
         """Test dictionary serialization."""
         result = SyncResult(
             success=True,
+            source="src",
+            dest="dst",
+            host="host",
             files_synced=5,
             bytes_transferred=500,
             duration_seconds=2.0,
-            errors=["e1", "e2"],
-            source="src",
-            destination="dst",
         )
         d = result.to_dict()
         assert d["success"] is True
         assert d["files_synced"] == 5
         assert d["bytes_transferred"] == 500
         assert d["duration_seconds"] == 2.0
-        assert d["errors"] == ["e1", "e2"]
         assert d["source"] == "src"
-        assert d["destination"] == "dst"
-
-    def test_has_errors_false(self):
-        """Test has_errors property when no errors."""
-        result = SyncResult(success=True)
-        assert result.has_errors is False
-
-    def test_has_errors_true(self):
-        """Test has_errors property when errors exist."""
-        result = SyncResult(success=False, errors=["failed"])
-        assert result.has_errors is True
+        assert d["dest"] == "dst"
 
     def test_failed_result(self):
         """Test failed sync result."""
-        result = SyncResult(success=False, errors=["Connection timeout"])
+        result = SyncResult(
+            success=False,
+            source="a",
+            dest="b",
+            host="a",
+            error="Connection timeout"
+        )
         assert result.success is False
-        assert result.has_errors is True
+        assert result.error == "Connection timeout"
+
+    def test_factory_methods(self):
+        """Test SyncResult factory methods."""
+        # Test success factory
+        success = SyncResult.success_result(
+            source="a",
+            dest="b",
+            host="a",
+            bytes_transferred=100,
+            files_synced=1,
+            duration_seconds=1.0,
+        )
+        assert success.success is True
+        assert success.bytes_transferred == 100
+
+        # Test failure factory
+        failure = SyncResult.failure_result(
+            source="a",
+            dest="b",
+            host="a",
+            error="Failed",
+        )
+        assert failure.success is False
+        assert failure.error == "Failed"
 
 
 # =============================================================================
