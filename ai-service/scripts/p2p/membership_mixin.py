@@ -394,3 +394,113 @@ class MembershipMixin(P2PMixinBase):
         mode = status.get("membership_mode", "unknown")
         message = f"Membership ({mode})" if is_healthy else f"Membership unhealthy ({mode})"
         return self._build_health_response(is_healthy, message, status)
+
+    async def _check_and_recover_swim(self) -> bool:
+        """Check SWIM health and attempt recovery if unhealthy.
+
+        December 29, 2025: Added for auto-recovery of SWIM membership.
+        Should be called periodically (e.g., every 60 seconds) from main loop.
+
+        Returns:
+            True if SWIM is healthy (or recovered), False otherwise
+        """
+        if self._swim_manager is None:
+            # SWIM not configured, nothing to recover
+            return True
+
+        # Get health status from SWIM manager
+        if hasattr(self._swim_manager, "get_health_status"):
+            health = self._swim_manager.get_health_status()
+        else:
+            # Fallback for older versions
+            health = {"healthy": self._swim_started}
+
+        if health.get("healthy", False):
+            return True
+
+        # SWIM unhealthy, attempt recovery
+        reason = health.get("reason", "unknown")
+        self._log_warning(f"SWIM membership unhealthy ({reason}), attempting recovery")
+
+        # Track recovery attempts to avoid infinite loops
+        if not hasattr(self, "_swim_recovery_attempts"):
+            self._swim_recovery_attempts = 0
+            self._swim_last_recovery_time = 0.0
+
+        # Rate limit recovery attempts (max 1 per 5 minutes)
+        import time
+        now = time.time()
+        if now - self._swim_last_recovery_time < 300:
+            self._log_debug("SWIM recovery rate-limited, skipping")
+            return False
+
+        self._swim_recovery_attempts += 1
+        self._swim_last_recovery_time = now
+
+        # Attempt restart
+        if hasattr(self._swim_manager, "restart"):
+            try:
+                success = await self._swim_manager.restart()
+                if success:
+                    self._swim_started = True
+                    self._swim_recovery_attempts = 0  # Reset on success
+                    self._log_info("SWIM membership recovered successfully")
+                    self._safe_emit_event(
+                        "SWIM_RECOVERED",
+                        {
+                            "node_id": self.node_id,
+                            "timestamp": now,
+                            "recovery_attempts": self._swim_recovery_attempts,
+                        },
+                    )
+                    return True
+                else:
+                    self._log_error(
+                        f"SWIM recovery failed (attempt {self._swim_recovery_attempts})"
+                    )
+                    return False
+            except Exception as e:
+                self._log_error(f"SWIM recovery exception: {e}")
+                return False
+        else:
+            # Fallback: stop and start
+            await self._stop_swim_membership()
+            success = await self._start_swim_membership()
+            if success:
+                self._log_info("SWIM membership recovered via stop/start")
+                return True
+            return False
+
+    def get_swim_health(self) -> dict[str, Any]:
+        """Get detailed SWIM health information.
+
+        December 29, 2025: Added for observability.
+
+        Returns:
+            Dict with SWIM health status and metrics
+        """
+        if self._swim_manager is None:
+            return {
+                "swim_configured": False,
+                "swim_enabled": SWIM_ENABLED,
+                "swim_available": SWIM_ADAPTER_AVAILABLE,
+                "membership_mode": MEMBERSHIP_MODE,
+            }
+
+        # Get health from manager if available
+        if hasattr(self._swim_manager, "get_health_status"):
+            health = self._swim_manager.get_health_status()
+        else:
+            health = self.get_swim_membership_summary()
+
+        # Add mixin-level info
+        health["swim_configured"] = True
+        health["swim_started_mixin"] = self._swim_started
+        health["membership_mode"] = MEMBERSHIP_MODE
+
+        # Add recovery stats if tracked
+        if hasattr(self, "_swim_recovery_attempts"):
+            health["recovery_attempts"] = self._swim_recovery_attempts
+            health["last_recovery_time"] = self._swim_last_recovery_time
+
+        return health

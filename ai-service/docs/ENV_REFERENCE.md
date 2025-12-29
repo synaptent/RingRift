@@ -185,12 +185,13 @@ Use `{PROVIDER}_IDLE_*` prefix (e.g., `VAST_IDLE_ENABLED`, `RUNPOD_IDLE_THRESHOL
 
 ## Sync & Bandwidth
 
-| Variable                       | Type | Default | Description                   |
-| ------------------------------ | ---- | ------- | ----------------------------- |
-| `RINGRIFT_SYNC_INTERVAL`       | int  | `300`   | Sync interval (seconds)       |
-| `RINGRIFT_SYNC_TIMEOUT`        | int  | `600`   | Sync timeout (seconds)        |
-| `RINGRIFT_BANDWIDTH_LIMIT_MBS` | int  | `100`   | Global bandwidth limit (MB/s) |
-| `RINGRIFT_SYNC_ENABLED`        | bool | `true`  | Enable automatic sync         |
+| Variable                       | Type  | Default | Description                     |
+| ------------------------------ | ----- | ------- | ------------------------------- |
+| `RINGRIFT_SYNC_INTERVAL`       | int   | `300`   | Sync interval (seconds)         |
+| `RINGRIFT_SYNC_TIMEOUT`        | int   | `600`   | Sync timeout (seconds)          |
+| `RINGRIFT_MIN_SYNC_INTERVAL`   | float | `2.0`   | Minimum sync interval (seconds) |
+| `RINGRIFT_BANDWIDTH_LIMIT_MBS` | int   | `100`   | Global bandwidth limit (MB/s)   |
+| `RINGRIFT_SYNC_ENABLED`        | bool  | `true`  | Enable automatic sync           |
 
 ---
 

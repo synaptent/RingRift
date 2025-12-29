@@ -1,6 +1,6 @@
 # RingRift Training Features Reference
 
-> **Last Updated**: 2025-12-24 (Transfer learning with `--init-weights` for 2p→4p model initialization)
+> **Last Updated**: 2025-12-29 (Adaptive early stopping helpers + sync docs)
 > **Status**: Active
 
 This document provides a comprehensive reference for all training features, parameters, and techniques available in the RingRift AI training pipeline.
@@ -31,22 +31,43 @@ This document provides a comprehensive reference for all training features, para
 
 ## Training Configuration
 
-### TrainConfig Parameters (`scripts/unified_loop/config.py`)
+### TrainConfig Parameters (`app/training/config.py` and `app/config/thresholds.py`)
 
-| Parameter                   | Type  | Default        | Description                                   |
-| --------------------------- | ----- | -------------- | --------------------------------------------- |
-| `learning_rate`             | float | 1e-3           | Initial learning rate                         |
-| `batch_size`                | int   | 256            | Training batch size (optimized for GPU)       |
-| `epochs`                    | int   | 50             | Number of training epochs                     |
-| `policy_weight`             | float | 1.0            | Weight of policy loss in total loss           |
-| `value_weight`              | float | 1.0            | Weight of value loss in total loss            |
-| `policy_label_smoothing`    | float | 0.05           | Label smoothing factor (0.05-0.1 recommended) |
-| `warmup_epochs`             | int   | 5              | Epochs for learning rate warmup               |
-| `early_stopping_patience`   | int   | 10             | Epochs without improvement before stopping    |
-| `lr_scheduler`              | str   | "cosine"       | Learning rate scheduler type                  |
-| `lr_min`                    | float | 1e-6           | Minimum learning rate for cosine annealing    |
-| `sampling_weights`          | str   | "victory_type" | Sample balancing strategy                     |
-| `use_optimized_hyperparams` | bool  | true           | Load board-specific hyperparameters           |
+| Parameter                   | Type  | Default                                     | Description                                   |
+| --------------------------- | ----- | ------------------------------------------- | --------------------------------------------- |
+| `learning_rate`             | float | 1e-3                                        | Initial learning rate                         |
+| `batch_size`                | int   | 256                                         | Training batch size (optimized for GPU)       |
+| `epochs`                    | int   | 50                                          | Number of training epochs                     |
+| `policy_weight`             | float | 1.0                                         | Weight of policy loss in total loss           |
+| `value_weight`              | float | 1.0                                         | Weight of value loss in total loss            |
+| `policy_label_smoothing`    | float | 0.05                                        | Label smoothing factor (0.05-0.1 recommended) |
+| `warmup_epochs`             | int   | 5                                           | Epochs for learning rate warmup               |
+| `early_stopping_patience`   | int   | 25 (TrainConfig) / 20 (thresholds fallback) | Epochs without improvement before stopping    |
+| `lr_scheduler`              | str   | "cosine"                                    | Learning rate scheduler type                  |
+| `lr_min`                    | float | 1e-6                                        | Minimum learning rate for cosine annealing    |
+| `sampling_weights`          | str   | "victory_type"                              | Sample balancing strategy                     |
+| `use_optimized_hyperparams` | bool  | true                                        | Load board-specific hyperparameters           |
+
+### Adaptive Early Stopping (Dec 2025)
+
+The thresholds module provides a helper to derive board- and strength-aware
+patience values when orchestration needs dynamic tuning:
+
+- `EARLY_STOPPING_PATIENCE_BY_BOARD` in `app/config/thresholds.py`
+- `get_adaptive_patience(board, players, elo)` in `app/config/thresholds.py`
+
+Base board values used by the helper:
+
+| Board Type  | Base Patience |
+| ----------- | ------------- |
+| `hex8`      | 5             |
+| `square8`   | 5             |
+| `square19`  | 10            |
+| `hexagonal` | 12            |
+
+The helper adds +2 epochs per additional player and increases patience for
+low-Elo configurations. It is a utility function; training flows must opt in
+by setting `early_stopping_patience` explicitly.
 
 ### Environment Variables
 
