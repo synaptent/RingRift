@@ -48,6 +48,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -326,7 +327,8 @@ def get_discovery_status() -> dict[str, Any]:
         try:
             catalog = get_data_catalog()
             status["catalog_stats"] = catalog.get_stats().__dict__
-        except Exception as e:
+        except (AttributeError, TypeError, RuntimeError, OSError) as e:
+            # Catalog errors: missing module, bad state, I/O issues
             status["catalog_error"] = str(e)
 
     if HAS_MANIFEST:
@@ -336,7 +338,8 @@ def get_discovery_status() -> dict[str, Any]:
                 manifest = DataManifest(manifest_path)
                 status["priority_queue_stats"] = manifest.get_priority_queue_stats()
                 status["quality_distribution"] = manifest.get_quality_distribution()
-        except Exception as e:
+        except (sqlite3.Error, OSError, ValueError, AttributeError) as e:
+            # Manifest errors: DB access, file I/O, data parsing, missing attrs
             status["manifest_error"] = str(e)
 
     return status

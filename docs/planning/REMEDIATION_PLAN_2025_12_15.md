@@ -477,7 +477,7 @@ See [`docs/ux/FRONTEND_UX_PROGRESS.md`](../ux/FRONTEND_UX_PROGRESS.md) for detai
 
 - [ ] `BoardView.tsx` test coverage ≥70%
 - [ ] All 6+ PlayerChoice variants have ChoiceDialog render tests
-- [ ] GameHUD renders correctly for all 8 phases (snapshot tests)
+- [ ] GameHUD renders correctly for all 7 canonical phases (snapshot tests)
 - [ ] VictoryModal renders all 3 victory conditions with explanations
 - [ ] No new regressions introduced (CI green)
 

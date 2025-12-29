@@ -9,6 +9,16 @@ This document specifies the algebraic notation system for RingRift games, coveri
 - Move encoding format for game records
 - Turn action vs turn vs move taxonomy
 
+> **Scope:** This notation is used by `ai-service/app/notation` for human-readable
+> exports. It serializes a subset of canonical `MoveType` values; skip/no-op,
+> recovery, resign, and timeout moves are not currently encoded. Legacy aliases
+> (for example `move_ring`, `build_stack`, `choose_line_reward`,
+> `process_territory_region`, `chain_capture`) remain parseable for replay
+> compatibility.
+>
+> **Source of truth:** The live mapping is defined in
+> `ai-service/app/notation/algebraic.py` and `app/models/core.py`.
+
 ## 1. Coordinate Systems
 
 ### 1.1 Square Boards (8×8 and 19×19)
@@ -74,9 +84,9 @@ def algebraic_to_position_square(notation: str) -> Position:
 **Internal Representation**: Cube coordinates `(x, y, z)` where:
 
 - Constraint: `x + y + z = 0` (always)
-- Board radius: 11 (center at origin)
-- Valid positions: `|x| ≤ 11`, `|y| ≤ 11`, `|z| ≤ 11`
-- Total spaces: 469
+- Board radius: 12 for `hexagonal` (size 25) and 4 for `hex8` (size 9)
+- Valid positions: `|x|`, `|y|`, `|z| ≤ radius` (with `x + y + z = 0`)
+- Total spaces: 469 (radius 12) or 61 (radius 4)
 
 **Algebraic Notation Options**:
 
@@ -128,6 +138,7 @@ as an optional human-readable format for common positions.
 | ------------ | --------------- | ---------------- | -------------------- |
 | Square 8×8   | `(x, y)` 0-7    | `a1` to `h8`     | `d4` = (3, 3)        |
 | Square 19×19 | `(x, y)` 0-18   | `a1` to `s19`    | `k10` = (10, 9)      |
+| Hex8         | `(x, y, z)`     | `x.y`            | `1.-1` = (1, -1, 0)  |
 | Hexagonal    | `(x, y, z)`     | `x.y`            | `3.-2` = (3, -2, -1) |
 
 ---
@@ -159,43 +170,58 @@ chain captures, line processing, or territory claims.
 | Action Type      | Code | Description                                         |
 | ---------------- | ---- | --------------------------------------------------- |
 | `place_ring`     | `P`  | Place a ring from hand onto an empty space          |
-| `skip_placement` | `SP` | Skip placement (pass)                               |
+| `skip_placement` | `SP` | Skip optional placement to proceed to movement      |
 | `swap_sides`     | `SW` | Invoke pie rule (swap colors after first placement) |
+
+Note: Canonical `no_placement_action` moves are recorded in replays but are
+not serialized in this notation.
 
 #### Phase: MOVEMENT
 
-| Action Type  | Code | Description                                       |
-| ------------ | ---- | ------------------------------------------------- |
-| `move_stack` | `M`  | Move entire stack to adjacent space               |
-| `move_ring`  | `MR` | Move single ring from stack (if stack height > 1) |
+| Action Type          | Code | Description                                       |
+| -------------------- | ---- | ------------------------------------------------- |
+| `move_stack`         | `M`  | Move entire stack to adjacent space               |
+| `move_ring` (legacy) | `MR` | Move single ring from stack (legacy, replay-only) |
+
+Note: Canonical `no_movement_action`, `recovery_slide`, `skip_recovery`, and
+`skip_capture` moves are not serialized in this notation.
 
 #### Phase: CAPTURE (Chain)
 
-| Action Type          | Code | Description                                        |
-| -------------------- | ---- | -------------------------------------------------- |
-| `overtaking_capture` | `C`  | Initial capture: jump over opponent to land beyond |
-| `continue_capture`   | `CC` | Continue chain capture from landing position       |
-| `end_capture_chain`  | `EC` | Explicitly end capture chain (when optional)       |
+| Action Type                | Code | Description                                        |
+| -------------------------- | ---- | -------------------------------------------------- |
+| `overtaking_capture`       | `C`  | Initial capture: jump over opponent to land beyond |
+| `continue_capture_segment` | `CC` | Continue chain capture from landing position       |
+
+Note: Chain termination is implicit when no further `continue_capture_segment`
+moves are legal. `EC` is accepted as a legacy parse alias for `CC` but is not
+emitted by canonical tooling.
 
 #### Phase: LINE_PROCESSING
 
-| Action Type          | Code | Description                                |
-| -------------------- | ---- | ------------------------------------------ |
-| `process_line`       | `L`  | Select which line to process (if multiple) |
-| `choose_line_reward` | `LR` | Choose reward option for formed line       |
+| Action Type                   | Code | Description                                |
+| ----------------------------- | ---- | ------------------------------------------ |
+| `process_line`                | `L`  | Select which line to process (if multiple) |
+| `choose_line_option`          | `LR` | Choose reward option for formed line       |
+| `choose_line_reward` (legacy) | `LR` | Legacy alias for `choose_line_option`      |
 
 #### Phase: TERRITORY_PROCESSING
 
-| Action Type         | Code | Description                             |
-| ------------------- | ---- | --------------------------------------- |
-| `process_territory` | `T`  | Process a disconnected territory region |
+| Action Type                         | Code | Description                                 |
+| ----------------------------------- | ---- | ------------------------------------------- |
+| `choose_territory_option`           | `T`  | Choose which disconnected region to resolve |
+| `process_territory_region` (legacy) | `T`  | Legacy alias for `choose_territory_option`  |
 
 #### Phase: ELIMINATION
 
-| Action Type       | Code | Description                                     |
-| ----------------- | ---- | ----------------------------------------------- |
-| `eliminate_rings` | `E`  | Forced elimination when stack exceeds cap       |
-| `build_stack`     | `B`  | Move rings within controlled territory (legacy) |
+| Action Type                  | Code | Description                                      |
+| ---------------------------- | ---- | ------------------------------------------------ |
+| `eliminate_rings_from_stack` | `E`  | Eliminate rings from stack at a target position  |
+| `forced_elimination`         | `E`  | Forced elimination when no actions are available |
+| `build_stack` (legacy)       | `B`  | Move rings within controlled territory (legacy)  |
+
+Note: Canonical `no_line_action`, `skip_territory_processing`, `no_territory_action`,
+`resign`, and `timeout` moves are not serialized in this notation.
 
 ### 2.3 Turn Structure Examples
 
@@ -219,8 +245,7 @@ Turn 15 (P1): M d4-e5    # Move stack, triggers line
 ```
 Turn 20 (P2): C a1-c1 xb1      # Capture over b1
              CC c1-e1 xd1      # Continue over d1
-             CC e1-g1 xf1      # Continue over f1
-             EC                 # End chain (no more captures)
+             CC e1-g1 xf1      # Continue over f1 (chain ends when no CC remains)
 ```
 
 ---
@@ -231,8 +256,8 @@ Turn 20 (P2): C a1-c1 xb1      # Capture over b1
 
 ```ebnf
 turn_action   = action_code, [position], ["-", position], [metadata] ;
-action_code   = "P" | "SP" | "SW" | "M" | "MR" | "C" | "CC" | "EC"
-              | "L" | "LR" | "T" | "E" | "B" ;
+action_code   = "P" | "SP" | "SW" | "M" | "MR" | "C" | "CC"
+              | "L" | "LR" | "T" | "E" | "B" | "EC" ;
 position      = square_pos | hex_pos ;
 square_pos    = column, row ;
 column        = "a".."s" ;
@@ -245,6 +270,11 @@ marker_placed  = "@", position ;
 line_ref       = "#L", digit ;
 option_ref     = "#", digit ;
 ```
+
+Notes:
+
+- `MR`, `B`, and `EC` are legacy-only codes.
+- `EC` is parsed as `CC` (chain termination is implicit).
 
 ### 3.2 Action Notation Examples
 
@@ -262,7 +292,7 @@ SW            # Swap sides (pie rule)
 ```
 M d4-e5       # Move stack from d4 to e5
 M 0.0-1.0     # Move stack on hex board
-MR d4-e5      # Move single ring from d4 to e5 (partial stack)
+MR d4-e5      # Move single ring from d4 to e5 (legacy)
 ```
 
 #### Capture Phase
@@ -270,7 +300,6 @@ MR d4-e5      # Move single ring from d4 to e5 (partial stack)
 ```
 C a1-c1 xb1   # Capture: jump from a1 over b1 to c1
 CC c1-e1 xd1  # Chain capture continuation
-EC            # End capture chain
 ```
 
 #### Line Processing Phase
@@ -443,12 +472,29 @@ def move_to_algebraic(move: Move, board_type: BoardType) -> str:
     """Convert Move to algebraic notation."""
     ...
 
-def algebraic_to_move(notation: str, state: GameState) -> Move:
+def algebraic_to_move(
+    notation: str,
+    state: GameState,
+    player: int,
+    move_number: int,
+) -> Move:
     """Parse algebraic notation to Move in context of game state."""
     ...
 
-def game_to_pgn(moves: List[Move], metadata: dict) -> str:
+def moves_to_notation_list(moves: list[Move], board_type: BoardType) -> list[str]:
+    """Convert a list of moves to algebraic notation strings."""
+    ...
+
+def game_to_pgn(
+    moves: list[Move],
+    metadata: dict[str, str | int | None],
+    board_type: BoardType,
+) -> str:
     """Generate PGN-style game record."""
+    ...
+
+def parse_pgn(pgn_text: str) -> tuple[dict[str, str], list[str]]:
+    """Parse a PGN-formatted record into metadata and notation list."""
     ...
 ```
 
@@ -458,21 +504,27 @@ def game_to_pgn(moves: List[Move], metadata: dict) -> str:
 
 ### 6.1 Move Type Mapping
 
-| Notation Code | MoveType Enum                | Internal Identifier          |
-| ------------- | ---------------------------- | ---------------------------- |
-| `P`           | `place_ring`                 | `PLACE_RING`                 |
-| `SP`          | `skip_placement`             | `SKIP_PLACEMENT`             |
-| `SW`          | `swap_sides`                 | `SWAP_SIDES`                 |
-| `M`           | `move_stack`                 | `MOVE_STACK`                 |
-| `MR`          | `move_ring`                  | `MOVE_RING`                  |
-| `C`           | `overtaking_capture`         | `OVERTAKING_CAPTURE`         |
-| `CC`          | `continue_capture_segment`   | `CONTINUE_CAPTURE_SEGMENT`   |
-| `EC`          | `end_capture_chain`          | `END_CAPTURE_CHAIN`          |
-| `L`           | `process_line`               | `PROCESS_LINE`               |
-| `LR`          | `choose_line_reward`         | `CHOOSE_LINE_REWARD`         |
-| `T`           | `process_territory_region`   | `PROCESS_TERRITORY_REGION`   |
-| `E`           | `eliminate_rings_from_stack` | `ELIMINATE_RINGS_FROM_STACK` |
-| `B`           | `build_stack`                | `BUILD_STACK`                |
+| Notation Code | MoveType Enum                | Internal Identifier          | Notes                             |
+| ------------- | ---------------------------- | ---------------------------- | --------------------------------- |
+| `P`           | `place_ring`                 | `PLACE_RING`                 | canonical                         |
+| `SP`          | `skip_placement`             | `SKIP_PLACEMENT`             | canonical                         |
+| `SW`          | `swap_sides`                 | `SWAP_SIDES`                 | canonical                         |
+| `M`           | `move_stack`                 | `MOVE_STACK`                 | canonical                         |
+| `MR`          | `move_ring`                  | `MOVE_RING`                  | legacy alias                      |
+| `B`           | `build_stack`                | `BUILD_STACK`                | legacy alias                      |
+| `C`           | `overtaking_capture`         | `OVERTAKING_CAPTURE`         | canonical                         |
+| `C`           | `chain_capture`              | `CHAIN_CAPTURE`              | legacy alias (output only)        |
+| `CC`          | `continue_capture_segment`   | `CONTINUE_CAPTURE_SEGMENT`   | canonical                         |
+| `EC`          | `continue_capture_segment`   | `CONTINUE_CAPTURE_SEGMENT`   | legacy parse alias                |
+| `L`           | `process_line`               | `PROCESS_LINE`               | canonical                         |
+| `L`           | `line_formation`             | `LINE_FORMATION`             | legacy alias                      |
+| `LR`          | `choose_line_option`         | `CHOOSE_LINE_OPTION`         | canonical                         |
+| `LR`          | `choose_line_reward`         | `CHOOSE_LINE_REWARD`         | legacy alias                      |
+| `T`           | `choose_territory_option`    | `CHOOSE_TERRITORY_OPTION`    | canonical                         |
+| `T`           | `process_territory_region`   | `PROCESS_TERRITORY_REGION`   | legacy alias                      |
+| `T`           | `territory_claim`            | `TERRITORY_CLAIM`            | legacy alias                      |
+| `E`           | `eliminate_rings_from_stack` | `ELIMINATE_RINGS_FROM_STACK` | canonical                         |
+| `E`           | `forced_elimination`         | `FORCED_ELIMINATION`         | canonical; same code as eliminate |
 
 ### 6.2 Canonical Move Structure
 

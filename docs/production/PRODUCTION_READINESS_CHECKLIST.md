@@ -54,7 +54,7 @@ This checklist documents all requirements for launching RingRift v1.0 to product
 | All board types supported (square8, square19, hex8, hexagonal) | ✅     | Geometry contracts in `TOPOLOGY_MODES.md`                             |
 | Victory conditions implemented and tested                      | ✅     | Ring elimination, territory control, LPS                              |
 | Game end explanation working                                   | ✅     | `gameEndExplanation.ts`, builder tests                                |
-| Phase state machine (8 phases + terminal)                      | ✅     | `fsm/TurnStateMachine.ts`, `fsm/FSMAdapter.ts`, `turnOrchestrator.ts` |
+| Phase state machine (7 phases + terminal)                      | ✅     | `fsm/TurnStateMachine.ts`, `fsm/FSMAdapter.ts`, `turnOrchestrator.ts` |
 | Forced elimination as explicit choice                          | ✅     | `applyForcedEliminationForPlayer` with `targetPosition`               |
 | Chain capture enforcement                                      | ✅     | Contract vectors, parity suites                                       |
 

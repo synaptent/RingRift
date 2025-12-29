@@ -337,7 +337,8 @@ class BackgroundEvaluator:
                         eval_result = self._run_evaluation(step)
                         self._process_result(eval_result)
                         self._record_success()
-                    except Exception as e:
+                    except (RuntimeError, ValueError, OSError, AttributeError, TimeoutError) as e:
+                        # Eval errors: CUDA/model, bad inputs, I/O, missing attrs, timeout
                         self._record_failure(e)
 
             async def on_training_complete(result):
@@ -359,7 +360,8 @@ class BackgroundEvaluator:
                         eval_result = self._run_evaluation(step)
                         self._process_result(eval_result)
                         self._record_success()
-                    except Exception as e:
+                    except (RuntimeError, ValueError, OSError, AttributeError, TimeoutError) as e:
+                        # Eval errors: CUDA/model, bad inputs, I/O, missing attrs, timeout
                         self._record_failure(e)
 
             # Subscribe to relevant events

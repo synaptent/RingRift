@@ -1413,7 +1413,8 @@ class TrainingCoordinator:
             conn = self._get_connection()
             conn.execute("SELECT 1")
             db_healthy = True
-        except Exception as e:
+        except (sqlite3.Error, OSError, AttributeError) as e:
+            # Database errors: connection failures, disk I/O, missing connection
             db_healthy = False
             return HealthCheckResult.unhealthy(
                 f"Database connection failed: {e}",
