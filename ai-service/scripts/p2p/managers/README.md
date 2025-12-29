@@ -202,7 +202,7 @@ sync_mtime_tolerance_seconds = 60   # Clock skew tolerance
 **Engine Mode Routing**:
 
 ```python
-# Search modes -> run_hybrid_selfplay.py
+# Search modes -> generate_gumbel_selfplay.py
 SEARCH_ENGINE_MODES = {"maxn", "brs", "mcts", "gumbel-mcts", "policy-only", "nn-descent", "nn-minimax"}
 
 # Simple modes -> run_gpu_selfplay.py (GPU-optimized)

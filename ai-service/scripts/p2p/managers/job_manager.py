@@ -138,7 +138,7 @@ class JobManager(EventSubscriptionMixin):
         job_count = job_mgr.get_job_count_for_node("node1")
     """
 
-    # Engine modes that require search (need run_hybrid_selfplay.py)
+    # Engine modes that require search (use generate_gumbel_selfplay.py)
     SEARCH_ENGINE_MODES = {
         "maxn", "brs", "mcts", "gumbel-mcts",
         "policy-only", "nn-descent", "nn-minimax"
@@ -692,7 +692,7 @@ class JobManager(EventSubscriptionMixin):
         """Run selfplay job with appropriate script based on engine mode.
 
         For simple modes (random, heuristic, nnue-guided): use run_gpu_selfplay.py (GPU-optimized)
-        For search modes (maxn, brs, mcts, gumbel-mcts): use run_hybrid_selfplay.py (supports search)
+        For search modes (maxn, brs, mcts, gumbel-mcts): use generate_gumbel_selfplay.py (supports search)
 
         Args:
             job_id: Unique job identifier
@@ -731,23 +731,22 @@ class JobManager(EventSubscriptionMixin):
                 effective_mode = "heuristic-only"
 
         if effective_mode in self.SEARCH_ENGINE_MODES:
-            # Use run_hybrid_selfplay.py for search-based modes
-            script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_hybrid_selfplay.py")
+            # December 29, 2025: Use generate_gumbel_selfplay.py for search-based modes
+            # (run_hybrid_selfplay.py was archived, generate_gumbel_selfplay.py is the active replacement)
+            script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "generate_gumbel_selfplay.py")
             if not os.path.exists(script_path):
-                logger.warning(f"Hybrid selfplay script not found: {script_path}")
+                logger.warning(f"Gumbel selfplay script not found: {script_path}")
                 return
 
             cmd = [
                 sys.executable,
                 script_path,
-                "--board-type", board_norm,
+                "--board", board_norm,  # generate_gumbel_selfplay uses --board not --board-type
                 "--num-players", str(num_players),
                 "--num-games", str(num_games),
-                "--output-dir", str(output_dir),
-                "--record-db", str(output_dir / "games.db"),
-                "--lean-db",
-                "--engine-mode", effective_mode,
+                "--db", str(output_dir / "games.db"),  # uses --db not --record-db
                 "--seed", str(int(time.time() * 1000) % 2**31),
+                "--simulation-budget", "150",  # Standard Gumbel budget
             ]
         else:
             # Use run_gpu_selfplay.py for GPU-optimized modes
