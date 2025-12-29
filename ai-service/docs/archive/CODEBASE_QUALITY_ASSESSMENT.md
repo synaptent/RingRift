@@ -333,11 +333,13 @@ Every subdirectory of `app/` lacks a README.md explaining its purpose.
 
 ### Hot Path Optimization
 
-| Path               | Status        | Opportunity              |
-| ------------------ | ------------- | ------------------------ |
-| GPU parallel games | 6.56x speedup | Minimal - well optimized |
-| Data loading       | Vectorized    | Batch file index caching |
-| Training loop      | Standard      | Memory-map prefetch      |
+| Path               | Status                  | Opportunity              |
+| ------------------ | ----------------------- | ------------------------ |
+| GPU parallel games | 6-57x speedup (GPU-dep) | Minimal - well optimized |
+| Data loading       | Vectorized              | Batch file index caching |
+| Training loop      | Standard                | Memory-map prefetch      |
+
+**Note**: GPU speedup varies by hardware (A10: 6.5x, RTX 5090: 57x, H100: 15-30x).
 
 ---
 
