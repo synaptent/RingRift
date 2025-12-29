@@ -92,6 +92,31 @@ TIER_VALIDATION_GAMES_PER_BOARD = 100
 # At 100 games: ~10% confidence interval on win rate
 GAUNTLET_GAMES_PER_OPPONENT = 50
 
+# Dec 29, 2025: Multiplayer gauntlet games (higher due to variance)
+# 3p/4p games have higher variance (33%/25% random baseline vs 50%)
+# requiring more games for statistical significance
+GAUNTLET_GAMES_PER_OPPONENT_3P = 75   # 3-player: 50% more games
+GAUNTLET_GAMES_PER_OPPONENT_4P = 100  # 4-player: 100% more games
+
+
+def get_gauntlet_games_per_opponent(num_players: int = 2) -> int:
+    """Get recommended gauntlet games per opponent based on player count.
+
+    Higher player counts have higher variance (33% vs 50% vs 25% random baseline),
+    requiring more games for statistical significance.
+
+    Args:
+        num_players: Number of players (2, 3, or 4)
+
+    Returns:
+        Recommended number of gauntlet games per opponent
+    """
+    if num_players >= 4:
+        return GAUNTLET_GAMES_PER_OPPONENT_4P
+    if num_players == 3:
+        return GAUNTLET_GAMES_PER_OPPONENT_3P
+    return GAUNTLET_GAMES_PER_OPPONENT
+
 # Cooldown between promotion attempts (seconds)
 PROMOTION_COOLDOWN_SECONDS = 900  # 15 minutes
 

@@ -2087,6 +2087,66 @@ def train_model(
             f"{effective_filters} filters"
         )
 
+    # Value head dimension validation helper (December 2025)
+    # Prevents training with wrong output dimensions for multiplayer models
+    def _validate_model_value_head(model: nn.Module, expected_players: int, context: str = "") -> None:
+        """Validate model value head matches expected player count.
+
+        This prevents training with mismatched value head dimensions, which was
+        a root cause of cluster model failures (hex8_4p, square19_3p regressions).
+
+        Args:
+            model: Neural network model to validate
+            expected_players: Expected number of players (2, 3, or 4)
+            context: Description of when validation is happening (for error messages)
+
+        Raises:
+            ValueError: If model value head doesn't match expected player count
+        """
+        ctx = f" ({context})" if context else ""
+
+        # Check model's num_players attribute if present
+        if hasattr(model, 'num_players'):
+            model_players = model.num_players
+            if model_players != expected_players:
+                raise ValueError(
+                    f"Model value head mismatch{ctx}: model.num_players={model_players} "
+                    f"but training expects {expected_players} players. "
+                    f"Use transfer_2p_to_4p.py to resize value head."
+                )
+
+        # Check value_fc2 output dimension (common in v2/v3/v4 architectures)
+        if hasattr(model, 'value_fc2'):
+            out_features = model.value_fc2.out_features
+            if out_features != expected_players:
+                raise ValueError(
+                    f"value_fc2 output mismatch{ctx}: out_features={out_features} "
+                    f"but training expects {expected_players} players. "
+                    f"Use transfer_2p_to_4p.py to resize value head."
+                )
+
+        # Check value_head output dimension (used in some architectures)
+        if hasattr(model, 'value_head'):
+            # value_head might be a Sequential or Linear
+            value_head = model.value_head
+            if hasattr(value_head, 'out_features'):
+                out_features = value_head.out_features
+                if out_features != expected_players:
+                    raise ValueError(
+                        f"value_head output mismatch{ctx}: out_features={out_features} "
+                        f"but training expects {expected_players} players."
+                    )
+            elif isinstance(value_head, nn.Sequential):
+                # Check last layer of Sequential
+                last_layer = list(value_head.modules())[-1]
+                if hasattr(last_layer, 'out_features'):
+                    out_features = last_layer.out_features
+                    if out_features != expected_players:
+                        raise ValueError(
+                            f"value_head output mismatch{ctx}: last layer out_features={out_features} "
+                            f"but training expects {expected_players} players."
+                        )
+
     # Initialize model based on board type and multi-player mode
     # GNN/Hybrid models use model_factory for unified creation
     if model_type in ("gnn", "hybrid"):
@@ -2304,6 +2364,10 @@ def train_model(
         model.feature_version = config_feature_version
     model.to(device)
 
+    # Validate value head dimension after model creation (December 2025)
+    # This catches mismatches early before any training starts
+    _validate_model_value_head(model, num_players, "after model creation")
+
     # Initialize enhancements manager with model reference
     if enhancements_manager is not None:
         enhancements_manager.model = model
@@ -2354,6 +2418,8 @@ def train_model(
                         logger.info(f"  Missing keys (will be randomly initialized): {len(load_result['missing_keys'])}")
                     if load_result.get('unexpected_keys'):
                         logger.info(f"  Unexpected keys (ignored): {len(load_result['unexpected_keys'])}")
+                # Validate value head after loading init weights (catches 2p->4p transfer issues)
+                _validate_model_value_head(model, num_players, "after loading init_weights")
             except (OSError, RuntimeError, ValueError, KeyError) as e:
                 # OSError: file I/O errors reading checkpoint
                 # RuntimeError: PyTorch loading errors, incompatible models
@@ -2377,6 +2443,8 @@ def train_model(
                 model.load_state_dict(checkpoint)
             if not distributed or is_main_process():
                 logger.info(f"Loaded existing model weights from {save_path}")
+            # Validate value head after loading checkpoint (catches resumed training with wrong config)
+            _validate_model_value_head(model, num_players, "after loading checkpoint")
         except (OSError, RuntimeError, ValueError, KeyError) as e:
             # OSError: file I/O errors reading checkpoint
             # RuntimeError: PyTorch loading errors, incompatible models

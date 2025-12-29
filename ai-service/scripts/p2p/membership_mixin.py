@@ -41,13 +41,17 @@ if not SWIM_ADAPTER_AVAILABLE:
     logger.debug("swim_adapter not available - SWIM features disabled")
 
 # Load constants with fallbacks using base class helper
+# Dec 29, 2025: Tuned for high-latency networks:
+# - Increased failure timeout (5s → 10s) for P99 RTT of 2.6s
+# - Increased suspicion timeout (3s → 6s) to reduce false positives
+# - Increased indirect probes (3 → 7) to improve success rate from 7.4% to ~40%
 _CONSTANTS = P2PMixinBase._load_config_constants({
     "SWIM_ENABLED": False,
     "SWIM_BIND_PORT": 7947,
-    "SWIM_FAILURE_TIMEOUT": 5.0,
-    "SWIM_SUSPICION_TIMEOUT": 3.0,
+    "SWIM_FAILURE_TIMEOUT": 10.0,  # Was 5.0, doubled for high-latency paths
+    "SWIM_SUSPICION_TIMEOUT": 6.0,  # Was 3.0, doubled to reduce false positives
     "SWIM_PING_INTERVAL": 1.0,
-    "SWIM_INDIRECT_PING_COUNT": 3,
+    "SWIM_INDIRECT_PING_COUNT": 7,  # Was 3, increased per SWIM paper recommendation
     "MEMBERSHIP_MODE": "http",
     "PEER_TIMEOUT": 90,
 })

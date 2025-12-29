@@ -100,10 +100,19 @@ class QueuePopulatorConfig:
     enabled: bool = True
 
     # Minimum queue depth to maintain
-    min_queue_depth: int = 50
+    # December 29, 2025: Increased from 50 to 200 for steadier queue state
+    min_queue_depth: int = 200
 
     # Maximum pending items before stopping generation
     max_pending_items: int = 50
+
+    # Target queue depth to aim for (queue will fill to this level)
+    # December 29, 2025: Added to reduce queue variance from 2,170% to <50%
+    target_queue_depth: int = 300
+
+    # Maximum items to add per populate cycle (prevents burst releases)
+    # December 29, 2025: Added to prevent queue variance spikes
+    max_batch_per_cycle: int = 100
 
     # Check/scan interval (reduced from 60s for faster job allocation)
     # December 29, 2025: Reduced from 15s to 10s for faster response to events
@@ -569,10 +578,23 @@ class UnifiedQueuePopulator:
         return pending + running
 
     def calculate_items_needed(self) -> int:
-        """Calculate how many items to add to reach minimum depth."""
+        """Calculate how many items to add to reach target depth.
+
+        December 29, 2025: Now targets target_queue_depth instead of min_queue_depth,
+        and caps at max_batch_per_cycle to prevent burst releases that cause
+        queue variance spikes (was 2,170% variance, target <50%).
+        """
         current = self.get_current_queue_depth()
-        needed = max(0, self.config.min_queue_depth - current)
-        return needed
+        # Use target_queue_depth for filling, but only add if below min_queue_depth
+        if current >= self.config.min_queue_depth:
+            # Already above minimum, gradually fill to target
+            needed = max(0, self.config.target_queue_depth - current)
+        else:
+            # Below minimum, fill more aggressively to min_queue_depth
+            needed = max(0, self.config.target_queue_depth - current)
+
+        # Cap at max_batch_per_cycle to prevent burst releases
+        return min(needed, self.config.max_batch_per_cycle)
 
     # =========================================================================
     # Backpressure and Priority
@@ -993,6 +1015,8 @@ class UnifiedQueuePopulator:
         return {
             "enabled": self.config.enabled,
             "min_queue_depth": self.config.min_queue_depth,
+            "target_queue_depth": self.config.target_queue_depth,
+            "max_batch_per_cycle": self.config.max_batch_per_cycle,
             "current_queue_depth": self.get_current_queue_depth(),
             "target_elo": self.config.target_elo,
             "total_configs": len(self._targets),
@@ -1587,9 +1611,11 @@ def load_populator_config_from_yaml(yaml_config: dict[str, Any]) -> QueuePopulat
 
     return QueuePopulatorConfig(
         enabled=populator.get("enabled", True),
-        min_queue_depth=populator.get("min_queue_depth", 50),
+        min_queue_depth=populator.get("min_queue_depth", 200),
         max_pending_items=populator.get("max_pending_items", 50),
-        check_interval_seconds=populator.get("check_interval_seconds", 15),
+        target_queue_depth=populator.get("target_queue_depth", 300),
+        max_batch_per_cycle=populator.get("max_batch_per_cycle", 100),
+        check_interval_seconds=populator.get("check_interval_seconds", 10),
         target_elo=populator.get("target_elo", 2000.0),
         selfplay_ratio=populator.get("selfplay_ratio", 0.60),
         training_ratio=populator.get("training_ratio", 0.30),

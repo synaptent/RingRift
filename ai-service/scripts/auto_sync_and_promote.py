@@ -12,6 +12,20 @@ import sys
 import time
 from pathlib import Path
 
+# Import dynamic gauntlet games threshold (December 2025)
+# Higher player counts need more games for statistical significance
+try:
+    from app.config.thresholds import get_gauntlet_games_per_opponent
+except ImportError:
+    # Fallback if running outside proper Python path
+    def get_gauntlet_games_per_opponent(num_players: int = 2) -> int:
+        """Fallback: 50 for 2p, 75 for 3p, 100 for 4p."""
+        if num_players >= 4:
+            return 100
+        if num_players == 3:
+            return 75
+        return 50
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -68,19 +82,41 @@ def get_config_from_model(model_path: str) -> tuple:
     - hex8_2p_cluster.pth
     - square8_3p_trained_cluster.pth
     - hexagonal_4p_gh200_trained.pth
+    - canonical_hex8_2p.pth
+    - ringrift_best_square8_4p.pth
+
+    Returns (board_type, num_players) or (None, None) if not parseable.
     """
     import re
     name = Path(model_path).stem
 
-    # Match board_type and num_players using regex
+    # Primary pattern: board_type followed by _Np (player count)
     # Board types: hex8, square8, square19, hexagonal
     # Player counts: 2p, 3p, 4p
     match = re.search(r'(hex8|square8|square19|hexagonal)_(\d+)p', name)
     if match:
         board_type = match.group(1)
-        num_players = int(match.group(2))
-        return board_type, num_players
+        try:
+            num_players = int(match.group(2))
+            if num_players in (2, 3, 4):
+                return board_type, num_players
+        except (ValueError, TypeError):
+            pass
 
+    # Fallback: try extracting from canonical/ringrift_best naming
+    # e.g., canonical_hex8_2p, ringrift_best_square8_4p
+    match = re.search(r'(?:canonical|ringrift_best)_(hex8|square8|square19|hexagonal)_(\d+)p', name)
+    if match:
+        board_type = match.group(1)
+        try:
+            num_players = int(match.group(2))
+            if num_players in (2, 3, 4):
+                return board_type, num_players
+        except (ValueError, TypeError):
+            pass
+
+    # Log for debugging but don't crash
+    logger.debug(f"Could not parse config from filename: {name}")
     return None, None
 
 
@@ -95,8 +131,12 @@ def promote_model(model_path: Path):
     canonical_path = MODELS_DIR / f"canonical_{config_key}.pth"
     
     logger.info(f"Evaluating {model_path} for promotion...")
-    
-    # Run quick gauntlet (10 games vs random, 10 vs heuristic)
+
+    # December 2025: Use dynamic gauntlet games based on player count
+    # 3p/4p have higher variance, requiring more games for statistical significance
+    gauntlet_games = get_gauntlet_games_per_opponent(num_players)
+    logger.info(f"  Running gauntlet with {gauntlet_games} games/opponent ({num_players}p config)")
+
     try:
         result = subprocess.run(
             [
@@ -105,7 +145,7 @@ def promote_model(model_path: Path):
                 "--model", str(model_path),
                 "--board-type", board_type,
                 "--num-players", str(num_players),
-                "--games", "10",
+                "--games", str(gauntlet_games),
             ],
             capture_output=True,
             text=True,
@@ -142,14 +182,19 @@ async def main():
             # Check for new models to evaluate
             for model_file in MODELS_DIR.glob("*_cluster.pth"):
                 if model_file.name not in promoted_models:
-                    # Check if model is complete (file not being written)
-                    size1 = model_file.stat().st_size
-                    await asyncio.sleep(2)
-                    size2 = model_file.stat().st_size
-                    
-                    if size1 == size2 and size1 > 1000000:  # >1MB and stable
-                        if promote_model(model_file):
-                            promoted_models.add(model_file.name)
+                    try:
+                        # Check if model is complete (file not being written)
+                        size1 = model_file.stat().st_size
+                        await asyncio.sleep(2)
+                        size2 = model_file.stat().st_size
+
+                        if size1 == size2 and size1 > 1000000:  # >1MB and stable
+                            if promote_model(model_file):
+                                promoted_models.add(model_file.name)
+                    except FileNotFoundError:
+                        logger.debug(f"Model file removed during processing: {model_file}")
+                    except OSError as e:
+                        logger.warning(f"Error processing {model_file}: {e}")
             
             logger.info(f"Sleeping {SYNC_INTERVAL}s until next sync...")
             await asyncio.sleep(SYNC_INTERVAL)

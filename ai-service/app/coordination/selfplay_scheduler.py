@@ -128,6 +128,15 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
     3: 1.0,  # LOW: no boost (normal priority)
 }
 
+# December 2025: Player count allocation multipliers
+# 3p/4p games take ~2x longer but were getting equal allocation, leading to
+# undertraining for multiplayer configs (hex8_4p Elo 594, square19_3p Elo 409)
+PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
+    2: 1.0,  # Baseline - 2p games are fastest
+    3: 1.5,  # 50% more allocation for 3p (games take ~1.5x longer)
+    4: 1.5,  # 50% more allocation for 4p (games take ~2x longer, but diminishing returns)
+}
+
 # Staleness thresholds (hours)
 FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
 STALE_DATA_THRESHOLD = 4.0  # Data > 4hr old is stale
@@ -573,6 +582,12 @@ class SelfplayScheduler:
         # 0=CRITICAL (3x), 1=HIGH (2x), 2=MEDIUM (1.25x), 3=LOW (1x)
         override_multiplier = PRIORITY_OVERRIDE_MULTIPLIERS.get(priority.priority_override, 1.0)
         score *= override_multiplier
+
+        # December 2025: Apply player count allocation multiplier
+        # 3p/4p games take longer per game, so boost their priority to ensure
+        # equal data collection across player counts
+        player_multiplier = PLAYER_COUNT_ALLOCATION_MULTIPLIER.get(priority.player_count, 1.0)
+        score *= player_multiplier
 
         return score
 

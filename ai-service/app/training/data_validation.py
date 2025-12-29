@@ -572,3 +572,178 @@ def record_deduplication_metrics(dedup: GameDeduplicator) -> None:
 
     stats = dedup.stats()
     DUPLICATE_RATE.set(stats['duplicate_rate'])
+
+
+# =============================================================================
+# Lightweight NPZ Header Validation (Dec 2025)
+# =============================================================================
+
+
+@dataclass
+class NPZHeaderValidation:
+    """Result of validating NPZ file header without loading data."""
+
+    valid: bool
+    file_path: str
+    file_size_bytes: int = 0
+    error: str | None = None
+    array_info: dict[str, dict] = field(default_factory=dict)
+
+    def summary(self) -> str:
+        """Human-readable summary."""
+        if self.valid:
+            arrays_summary = ", ".join(
+                f"{name}={info.get('shape', '?')}"
+                for name, info in self.array_info.items()
+            )
+            return f"✓ Valid NPZ ({self.file_size_bytes:,} bytes): {arrays_summary}"
+        return f"✗ Invalid NPZ: {self.error}"
+
+
+def validate_npz_header(
+    path: str | Path,
+    max_array_size_bytes: int = 10_000_000_000,  # 10GB default limit
+    required_arrays: list[str] | None = None,
+) -> NPZHeaderValidation:
+    """Validate NPZ file header without loading full array data.
+
+    This is a lightweight check to catch obviously corrupted NPZ files
+    BEFORE attempting to load them, preventing memory errors.
+
+    Checks:
+    1. File exists and is not empty
+    2. File is a valid ZIP archive (NPZ format)
+    3. Array metadata is readable
+    4. Array sizes are reasonable (not corrupted headers claiming TB of data)
+    5. Required arrays are present (if specified)
+
+    Args:
+        path: Path to NPZ file
+        max_array_size_bytes: Maximum allowed size per array (default 10GB)
+        required_arrays: List of array names that must be present
+
+    Returns:
+        NPZHeaderValidation with validation result
+
+    Usage:
+        result = validate_npz_header("data/training.npz")
+        if not result.valid:
+            logger.error(f"NPZ validation failed: {result.error}")
+            return
+
+        # Safe to load now
+        data = np.load("data/training.npz")
+    """
+    import zipfile
+
+    path = Path(path)
+    result = NPZHeaderValidation(valid=False, file_path=str(path))
+
+    # Check file exists
+    if not path.exists():
+        result.error = f"File does not exist: {path}"
+        return result
+
+    # Check not empty
+    try:
+        result.file_size_bytes = path.stat().st_size
+    except OSError as e:
+        result.error = f"Cannot stat file: {e}"
+        return result
+
+    if result.file_size_bytes == 0:
+        result.error = "File is empty"
+        return result
+
+    # Check it's a valid ZIP file
+    try:
+        if not zipfile.is_zipfile(path):
+            result.error = "Not a valid ZIP file (NPZ files are ZIP archives)"
+            return result
+    except OSError as e:
+        result.error = f"Cannot read file: {e}"
+        return result
+
+    # Open ZIP and check contents
+    try:
+        with zipfile.ZipFile(path, 'r') as zf:
+            # Check ZIP is not corrupted
+            bad_file = zf.testzip()
+            if bad_file is not None:
+                result.error = f"ZIP archive is corrupted: {bad_file}"
+                return result
+
+            # Get info on each array
+            for name in zf.namelist():
+                array_name = name.replace('.npy', '')
+                info = zf.getinfo(name)
+
+                # Check for unreasonably large claimed sizes
+                if info.file_size > max_array_size_bytes:
+                    result.error = (
+                        f"Array '{array_name}' claims {info.file_size:,} bytes "
+                        f"(exceeds {max_array_size_bytes:,} byte limit)"
+                    )
+                    return result
+
+                # Try to read numpy array header (first few bytes)
+                try:
+                    with zf.open(name) as f:
+                        # Read first 128 bytes to get numpy header
+                        header_bytes = f.read(128)
+                        if len(header_bytes) < 10:
+                            result.error = f"Array '{array_name}' has invalid header"
+                            return result
+
+                        # Check numpy magic number
+                        if header_bytes[:6] != b'\x93NUMPY':
+                            result.error = f"Array '{array_name}' is not a valid numpy array"
+                            return result
+
+                        # Parse header (simplified - just check version is valid)
+                        version = (header_bytes[6], header_bytes[7])
+                        if version[0] not in (1, 2, 3):
+                            result.error = f"Array '{array_name}' has unknown numpy version {version}"
+                            return result
+
+                        result.array_info[array_name] = {
+                            "compressed_size": info.compress_size,
+                            "uncompressed_size": info.file_size,
+                            "numpy_version": f"{version[0]}.{version[1]}",
+                        }
+                except Exception as e:
+                    result.error = f"Cannot read array '{array_name}': {e}"
+                    return result
+
+    except zipfile.BadZipFile as e:
+        result.error = f"Corrupted ZIP file: {e}"
+        return result
+    except Exception as e:
+        result.error = f"Error reading NPZ: {e}"
+        return result
+
+    # Check required arrays
+    if required_arrays:
+        missing = set(required_arrays) - set(result.array_info.keys())
+        if missing:
+            result.error = f"Missing required arrays: {missing}"
+            return result
+
+    result.valid = True
+    return result
+
+
+def is_npz_valid(path: str | Path, log_errors: bool = True) -> bool:
+    """Quick check if NPZ file is valid.
+
+    Args:
+        path: Path to NPZ file
+        log_errors: Whether to log validation errors
+
+    Returns:
+        True if file passes header validation
+    """
+    result = validate_npz_header(path)
+    if not result.valid and log_errors:
+        logger.warning(f"NPZ validation failed for {path}: {result.error}")
+    return result.valid

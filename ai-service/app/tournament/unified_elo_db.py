@@ -1431,6 +1431,58 @@ class EloDatabase:
 
         return results
 
+    def check_phantom_models(self) -> dict[str, Any]:
+        """Check for phantom models - entries in DB where model file doesn't exist.
+
+        Returns dict with:
+        - count: Number of phantom models found
+        - phantoms: List of phantom model info dicts
+        - is_valid: True if no phantoms found
+        """
+        conn = self._get_connection()
+
+        # Get all participants with model paths (exclude baselines)
+        rows = conn.execute("""
+            SELECT p.participant_id, p.model_path, r.rating, r.games_played
+            FROM participants p
+            LEFT JOIN elo_ratings r ON p.participant_id = r.participant_id
+            WHERE p.model_path IS NOT NULL AND p.model_path != ''
+              AND LOWER(p.participant_id) NOT LIKE '%random%'
+              AND LOWER(p.participant_id) NOT LIKE '%heuristic%'
+              AND LOWER(p.participant_id) NOT LIKE 'baseline_%'
+              AND LOWER(p.participant_id) NOT LIKE 'd1%'
+              AND LOWER(p.participant_id) NOT LIKE 'd2%'
+              AND LOWER(p.participant_id) NOT LIKE 'd3%'
+              AND LOWER(p.participant_id) NOT LIKE 'tier%'
+        """).fetchall()
+
+        phantoms = []
+        for row in rows:
+            model_path = row["model_path"]
+            if model_path:
+                path = Path(model_path)
+                # Check various locations
+                exists = (
+                    path.exists()
+                    or (Path("models") / path).exists()
+                    or (Path("models") / path.name).exists()
+                    or (Path("models_essential") / path.name).exists()
+                )
+                if not exists:
+                    phantoms.append({
+                        "participant_id": row["participant_id"],
+                        "model_path": model_path,
+                        "rating": row["rating"],
+                        "games_played": row["games_played"],
+                    })
+
+        return {
+            "count": len(phantoms),
+            "phantoms": phantoms[:50],  # Limit to 50 for readability
+            "total_if_truncated": len(phantoms) if len(phantoms) > 50 else None,
+            "is_valid": len(phantoms) == 0,
+        }
+
 
 # =============================================================================
 # Singleton Access

@@ -260,7 +260,11 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     DaemonType.MODEL_DISTRIBUTION: DaemonSpec(
         runner_name="create_model_distribution",
-        depends_on=(DaemonType.EVENT_ROUTER,),
+        # Dec 2025: Added EVALUATION and AUTO_PROMOTION dependencies to ensure
+        # model distribution only runs after evaluation completes and promotion
+        # is approved. Prevents race conditions where distribution starts before
+        # the model is ready.
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.EVALUATION, DaemonType.AUTO_PROMOTION),
         category="distribution",
     ),
     DaemonType.NPZ_DISTRIBUTION: DaemonSpec(

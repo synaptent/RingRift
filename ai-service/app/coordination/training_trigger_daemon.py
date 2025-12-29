@@ -58,8 +58,8 @@ class TrainingTriggerConfig:
     """Configuration for training trigger decisions."""
 
     enabled: bool = True
-    # Data freshness
-    max_data_age_hours: float = 1.0
+    # Data freshness - December 29, 2025: Relaxed to 24h to unblock training bottleneck
+    max_data_age_hours: float = 24.0
     # December 2025: Use training_freshness to trigger sync when data is stale
     enforce_freshness_with_sync: bool = True  # If True, trigger sync instead of just rejecting
     freshness_sync_timeout_seconds: float = field(
@@ -584,6 +584,32 @@ class TrainingTriggerDaemon(HandlerBase):
         except Exception as e:
             logger.debug(f"[TrainingTriggerDaemon] Could not record to accelerator: {e}")
 
+    def _parse_config_from_filename(self, name: str) -> tuple[str | None, int | None]:
+        """Parse board_type and num_players from filename.
+
+        Handles various naming patterns:
+        - hex8_2p.npz -> (hex8, 2)
+        - square8_3p_fresh.npz -> (square8, 3)
+        - canonical_hexagonal_4p_trained.npz -> (hexagonal, 4)
+
+        Returns:
+            (board_type, num_players) or (None, None) if not parseable.
+        """
+        import re
+
+        # Match board_type followed by _Np pattern anywhere in filename
+        match = re.search(r'(hex8|square8|square19|hexagonal)_(\d+)p', name)
+        if match:
+            board_type = match.group(1)
+            try:
+                num_players = int(match.group(2))
+                if num_players in (2, 3, 4):
+                    return board_type, num_players
+            except (ValueError, TypeError):
+                pass
+
+        return None, None
+
     def _get_or_create_state(
         self, config_key: str, board_type: str | None = None, num_players: int | None = None
     ) -> ConfigTrainingState:
@@ -591,12 +617,18 @@ class TrainingTriggerDaemon(HandlerBase):
         if config_key not in self._training_states:
             # Parse config_key if board_type/num_players not provided
             if not board_type or not num_players:
-                parts = config_key.rsplit("_", 1)
-                board_type = parts[0] if len(parts) == 2 else config_key
-                try:
-                    num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
-                except ValueError:
-                    num_players = 2
+                parsed_board, parsed_players = self._parse_config_from_filename(config_key)
+                if parsed_board and parsed_players:
+                    board_type = parsed_board
+                    num_players = parsed_players
+                else:
+                    # Fallback to legacy parsing
+                    parts = config_key.rsplit("_", 1)
+                    board_type = parts[0] if len(parts) == 2 else config_key
+                    try:
+                        num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
+                    except ValueError:
+                        num_players = 2
 
             self._training_states[config_key] = ConfigTrainingState(
                 config_key=config_key,
@@ -1047,35 +1079,35 @@ class TrainingTriggerDaemon(HandlerBase):
             training_dir = Path(__file__).resolve().parent.parent.parent / "data" / "training"
             if training_dir.exists():
                 for npz_path in training_dir.glob("*.npz"):
-                    # Parse config from filename
-                    name = npz_path.stem
-                    if "_" not in name:
+                    # Parse config from filename using robust regex
+                    board_type, num_players = self._parse_config_from_filename(npz_path.stem)
+                    if board_type is None or num_players is None:
                         continue
 
-                    config_key = name
+                    config_key = f"{board_type}_{num_players}p"
                     if config_key not in self._training_states:
-                        # Create state and check
-                        parts = config_key.rsplit("_", 1)
-                        if len(parts) == 2:
-                            board_type = parts[0]
-                            try:
-                                num_players = int(parts[1].replace("p", ""))
-                            except ValueError:
+                        state = self._get_or_create_state(config_key, board_type, num_players)
+                        state.npz_path = str(npz_path)
+                        state.last_npz_update = npz_path.stat().st_mtime
+
+                        # Get sample count from file (approximate)
+                        # Use header validation first to avoid memory errors on corrupt files
+                        try:
+                            from app.training.data_validation import is_npz_valid
+                            if not is_npz_valid(npz_path):
+                                logger.warning(f"Skipping invalid NPZ: {npz_path}")
                                 continue
+                        except ImportError:
+                            pass
 
-                            state = self._get_or_create_state(config_key, board_type, num_players)
-                            state.npz_path = str(npz_path)
-                            state.last_npz_update = npz_path.stat().st_mtime
+                        try:
+                            from app.utils.numpy_utils import safe_load_npz
+                            with safe_load_npz(npz_path) as data:
+                                state.npz_sample_count = len(data.get("values", []))
+                        except (FileNotFoundError, OSError, ValueError, ImportError):
+                            pass
 
-                            # Get sample count from file (approximate)
-                            try:
-                                from app.utils.numpy_utils import safe_load_npz
-                                with safe_load_npz(npz_path) as data:
-                                    state.npz_sample_count = len(data.get("values", []))
-                            except (FileNotFoundError, OSError, ValueError, ImportError):
-                                pass
-
-                            await self._maybe_trigger_training(config_key)
+                        await self._maybe_trigger_training(config_key)
 
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error scanning for opportunities: {e}")

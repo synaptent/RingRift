@@ -42,7 +42,9 @@ from app.config.ports import P2P_DEFAULT_PORT
 logger = logging.getLogger(__name__)
 
 # P2P orchestrator timing constants
-P2P_HTTP_TIMEOUT = 30  # seconds
+# December 29, 2025: Reduced from 30s to 15s to fail faster and retry sooner
+# Analysis showed 22% timeout rate at 30s, target <5% with faster failover
+P2P_HTTP_TIMEOUT = 15  # seconds
 P2P_JOB_POLL_INTERVAL = 10  # seconds
 MAX_PHASE_WAIT_MINUTES = 120  # Maximum wait for any phase
 

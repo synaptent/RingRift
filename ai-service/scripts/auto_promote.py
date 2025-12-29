@@ -47,6 +47,10 @@ from app.config.thresholds import (
     MIN_WIN_RATE_VS_HEURISTIC,
     get_min_win_rate_vs_random,
     get_min_win_rate_vs_heuristic,
+    should_promote_model,
+    get_promotion_thresholds,
+    get_minimum_thresholds,
+    get_gauntlet_games_per_opponent,  # December 2025: Dynamic games per player count
 )
 from app.utils.name_generator import generate_model_name, name_from_checkpoint_hash
 
@@ -481,6 +485,26 @@ def run_gauntlet_evaluation(
     random_wr = results.opponent_results.get("random", {}).get("win_rate", 0)
     heuristic_wr = results.opponent_results.get("heuristic", {}).get("win_rate", 0)
 
+    # Use two-tier promotion system from thresholds.py
+    # This considers aspirational thresholds AND minimum floor thresholds
+    config_key = f"{board_type}_{num_players}p"
+
+    # Check if this model beats the current best (for relative promotion)
+    # For now, assume False - caller can override if known
+    beats_current_best = False
+
+    # Get promotion decision using sophisticated two-tier system
+    should_promote, promotion_reason = should_promote_model(
+        config_key=config_key,
+        vs_random_rate=random_wr,
+        vs_heuristic_rate=heuristic_wr,
+        beats_current_best=beats_current_best,
+    )
+
+    # Get thresholds for display purposes
+    aspirational = get_promotion_thresholds(config_key)
+    minimum = get_minimum_thresholds(config_key)
+
     return {
         "model_path": str(model_path),
         "board_type": board_type,
@@ -492,10 +516,15 @@ def run_gauntlet_evaluation(
         "win_rate": results.win_rate,
         "win_rate_vs_random": random_wr,
         "win_rate_vs_heuristic": heuristic_wr,
-        "passes_random": random_wr >= MIN_WIN_RATE_VS_RANDOM,
-        "passes_heuristic": heuristic_wr >= MIN_WIN_RATE_VS_HEURISTIC,
-        "passes_gauntlet": results.passes_baseline_gating,
+        # Use two-tier threshold check instead of fixed constants
+        "passes_random": random_wr >= minimum["vs_random"],
+        "passes_heuristic": heuristic_wr >= minimum["vs_heuristic"],
+        "passes_gauntlet": should_promote,  # Use two-tier decision
         "estimated_elo": results.estimated_elo,
+        # Additional context for promotion decision
+        "promotion_reason": promotion_reason,
+        "aspirational_thresholds": aspirational,
+        "minimum_thresholds": minimum,
     }
 
 
@@ -924,24 +953,35 @@ def run_gauntlet_promotion(
     print(f"  Wins: {results['total_wins']}, Losses: {results['total_losses']}, Draws: {results['total_draws']}")
     print(f"  Overall win rate: {results['win_rate']:.1%}")
     print()
-    min_random = get_min_win_rate_vs_random(num_players)
-    min_heuristic = get_min_win_rate_vs_heuristic(num_players)
+
+    # Get threshold information from results (two-tier system)
+    aspirational = results.get('aspirational_thresholds', {})
+    minimum = results.get('minimum_thresholds', {})
+
+    # Display thresholds in two-tier format
+    print("  Promotion Thresholds (Two-Tier System):")
+    print(f"    Aspirational: {aspirational.get('vs_random', 0.85):.0%} random, "
+          f"{aspirational.get('vs_heuristic', 0.60):.0%} heuristic")
+    print(f"    Minimum floor: {minimum.get('vs_random', 0.70):.0%} random, "
+          f"{minimum.get('vs_heuristic', 0.40):.0%} heuristic")
+    print()
+
     print(f"  vs RANDOM: {results['win_rate_vs_random']:.1%} "
-          f"({'✓ PASS' if results['passes_random'] else '✗ FAIL'}, need {min_random:.0%})")
+          f"({'✓ PASS' if results['passes_random'] else '✗ FAIL'})")
     print(f"  vs HEURISTIC: {results['win_rate_vs_heuristic']:.1%} "
-          f"({'✓ PASS' if results['passes_heuristic'] else '✗ FAIL'}, need {min_heuristic:.0%})")
+          f"({'✓ PASS' if results['passes_heuristic'] else '✗ FAIL'})")
     print(f"  Estimated ELO: {results['estimated_elo']:.0f}")
     print()
 
+    # Display promotion decision and reason
+    promotion_reason = results.get('promotion_reason', 'No reason provided')
     if not results['passes_gauntlet']:
         print("✗ GAUNTLET FAILED - Model not promoted")
-        if not results['passes_random']:
-            print(f"  Need {min_random:.0%} vs random, got {results['win_rate_vs_random']:.1%}")
-        if not results['passes_heuristic']:
-            print(f"  Need {min_heuristic:.0%} vs heuristic, got {results['win_rate_vs_heuristic']:.1%}")
+        print(f"  Reason: {promotion_reason}")
         return False
 
     print("✓ GAUNTLET PASSED - Promoting model...")
+    print(f"  Reason: {promotion_reason}")
 
     # Promote model
     success = promote_after_gauntlet(
@@ -1010,8 +1050,8 @@ Examples:
                         help="Board type for gauntlet (required for --gauntlet)")
     parser.add_argument("--num-players", type=int, choices=[2, 3, 4],
                         help="Number of players for gauntlet (required for --gauntlet)")
-    parser.add_argument("--games", type=int, default=20,
-                        help="Games per opponent in gauntlet (default: 20)")
+    parser.add_argument("--games", type=int, default=None,
+                        help="Games per opponent in gauntlet (default: dynamic based on player count)")
     parser.add_argument("--model-type", choices=["cnn", "gnn", "hybrid"],
                         help="Model type (auto-detected if not specified)")
     parser.add_argument("--sync-to-cluster", action="store_true",
@@ -1031,6 +1071,13 @@ Examples:
             parser.error("--gauntlet requires --board-type")
         if not args.num_players:
             parser.error("--gauntlet requires --num-players")
+
+        # December 2025: Compute dynamic games per opponent if not explicitly provided
+        # 3p/4p games have higher variance (33%/25% random baseline vs 50%)
+        # requiring more games for statistical significance
+        if args.games is None:
+            args.games = get_gauntlet_games_per_opponent(args.num_players)
+            print(f"Using dynamic gauntlet games: {args.games} (for {args.num_players}p)")
 
     # Branch between gauntlet mode and ELO mode
     if args.gauntlet:

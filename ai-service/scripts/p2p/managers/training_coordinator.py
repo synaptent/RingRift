@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -142,6 +143,13 @@ class TrainingCoordinator(EventSubscriptionMixin):
         self._subscribed = False
         self._subscription_lock = threading.Lock()
         self._get_training_jobs = get_training_jobs  # Store for health_check
+
+        # Model fetch tracking (December 2025)
+        # Tracks model fetches from training nodes for health reporting
+        self._models_fetched_count = 0
+        self._models_fetch_failed_count = 0
+        self._last_fetch_time: float = 0.0
+        self._last_fetch_error: str = ""
 
     # =========================================================================
     # Event Subscriptions (December 2025 - uses EventSubscriptionMixin)
@@ -660,6 +668,137 @@ class TrainingCoordinator(EventSubscriptionMixin):
         return job
 
     # =========================================================================
+    # Model Fetching from Training Nodes
+    # =========================================================================
+
+    async def _fetch_model_from_training_node(self, job: Any) -> bool:
+        """Fetch trained model from remote training node to coordinator.
+
+        December 2025: Critical fix for model distribution. Training nodes
+        produce models that need to be fetched BEFORE gauntlet evaluation
+        can run, since gauntlet expects the model to be locally available.
+
+        Args:
+            job: TrainingJob with worker_node and output_model_path
+
+        Returns:
+            True if model was successfully fetched, False otherwise.
+        """
+        if not job.worker_node or not job.output_model_path:
+            logger.error(f"Missing worker_node or output_model_path for job {job.job_id}")
+            return False
+
+        try:
+            # Get cluster node info for the training node
+            try:
+                from app.config.cluster_config import get_cluster_nodes
+                nodes = get_cluster_nodes()
+                node = nodes.get(job.worker_node)
+            except ImportError:
+                node = None
+                nodes = {}
+
+            host = None
+            ssh_user = "root"
+            ssh_port = 22
+            ssh_key = os.path.expanduser("~/.ssh/id_cluster")
+            remote_ringrift_path = "~/ringrift/ai-service"
+
+            if node:
+                host = node.best_ip
+                ssh_user = node.ssh_user or "root"
+                ssh_port = node.ssh_port or 22
+                if node.ssh_key:
+                    ssh_key = os.path.expanduser(node.ssh_key)
+                remote_ringrift_path = node.ringrift_path or "~/ringrift/ai-service"
+            else:
+                # Fallback: try to get from P2P peers
+                peers = self.get_peers()
+                peer = peers.get(job.worker_node)
+                if peer:
+                    host = peer.get("ip") or peer.get("host") or peer.get("tailscale_ip")
+                else:
+                    logger.error(f"Unknown training node: {job.worker_node}")
+                    return False
+
+            if not host:
+                logger.error(f"No IP available for {job.worker_node}")
+                return False
+
+            # Determine remote and local paths
+            remote_model_path = job.output_model_path
+            if not remote_model_path.startswith("/"):
+                # Relative path - prepend ringrift_path
+                remote_model_path = f"{remote_ringrift_path}/{remote_model_path}"
+
+            local_model_path = Path(job.output_model_path)
+            if not local_model_path.is_absolute():
+                local_model_path = self.ringrift_path / "ai-service" / job.output_model_path
+
+            # Ensure local directory exists
+            local_model_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Build rsync command
+            ssh_cmd = (
+                f"ssh -p {ssh_port} -i {ssh_key} "
+                f"-o StrictHostKeyChecking=no -o ConnectTimeout=30"
+            )
+
+            cmd = [
+                "rsync", "-az", "--timeout=120",
+                "-e", ssh_cmd,
+                f"{ssh_user}@{host}:{remote_model_path}",
+                str(local_model_path),
+            ]
+
+            logger.info(
+                f"Fetching model from {job.worker_node}: {remote_model_path} -> {local_model_path}"
+            )
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180.0)
+
+            if proc.returncode != 0:
+                stderr_text = stderr.decode() if stderr else "unknown error"
+                logger.error(f"rsync failed for {job.job_id}: {stderr_text}")
+                return False
+
+            # Verify the model exists
+            if not local_model_path.exists():
+                logger.error(f"Model not found after fetch: {local_model_path}")
+                return False
+
+            # Verify file size is reasonable (> 1KB)
+            file_size = local_model_path.stat().st_size
+            if file_size < 1024:
+                logger.error(f"Model too small after fetch: {file_size} bytes")
+                return False
+
+            logger.info(
+                f"Successfully fetched model for {job.job_id}: "
+                f"{file_size / 1024 / 1024:.1f} MB"
+            )
+            # Update tracking stats
+            self._models_fetched_count += 1
+            self._last_fetch_time = time.time()
+            return True
+
+        except asyncio.TimeoutError:
+            self._models_fetch_failed_count += 1
+            self._last_fetch_error = f"Timeout fetching model for {job.job_id}"
+            logger.error(self._last_fetch_error)
+            return False
+        except (OSError, subprocess.SubprocessError) as e:
+            self._models_fetch_failed_count += 1
+            self._last_fetch_error = f"Error fetching model for {job.job_id}: {e}"
+            logger.error(self._last_fetch_error)
+            return False
+
+    # =========================================================================
     # Training Job Completion
     # =========================================================================
 
@@ -691,6 +830,18 @@ class TrainingCoordinator(EventSubscriptionMixin):
                     logger.debug(f"Emitted TRAINING_COMPLETED for {config_key}")
                 except Exception as e:
                     logger.warning(f"Failed to emit TRAINING_COMPLETED: {e}")
+
+            # Dec 2025: Fetch model from training node BEFORE evaluation
+            # This is critical - models are produced on remote training nodes (nebius-h100-*,
+            # lambda-gh200-*, etc.) but gauntlet evaluation requires the model locally.
+            fetched = await self._fetch_model_from_training_node(job)
+            if not fetched:
+                logger.error(
+                    f"Failed to fetch model for job {job.job_id} from {job.worker_node}. "
+                    f"Model path: {job.output_model_path}"
+                )
+                # Don't proceed - model isn't available for evaluation
+                return
 
             # Run immediate gauntlet evaluation
             passed = await self._run_post_training_gauntlet(job)
@@ -1199,6 +1350,20 @@ class TrainingCoordinator(EventSubscriptionMixin):
                 status = CoordinatorStatus.DEGRADED
                 last_error = "Not subscribed to events"
 
+        # Check model fetch health (December 2025)
+        total_fetches = self._models_fetched_count + self._models_fetch_failed_count
+        if total_fetches > 0:
+            fetch_failure_rate = self._models_fetch_failed_count / total_fetches
+            if fetch_failure_rate > 0.5:
+                if is_healthy:
+                    is_healthy = False
+                    status = CoordinatorStatus.ERROR
+                last_error = f"High model fetch failure rate: {fetch_failure_rate:.0%}"
+            elif self._models_fetch_failed_count > 3:
+                if is_healthy:
+                    status = CoordinatorStatus.DEGRADED
+                last_error = f"Multiple model fetch failures: {self._models_fetch_failed_count}"
+
         return HealthCheckResult(
             healthy=is_healthy,
             status=status if isinstance(status, str) else status,
@@ -1211,5 +1376,10 @@ class TrainingCoordinator(EventSubscriptionMixin):
                 "total_jobs": total_jobs,
                 "trigger_cache_size": cache_size,
                 "subscribed": self._subscribed,
+                # Model fetch tracking (December 2025)
+                "models_fetched": self._models_fetched_count,
+                "models_fetch_failed": self._models_fetch_failed_count,
+                "last_fetch_time": self._last_fetch_time,
+                "last_fetch_error": self._last_fetch_error or None,
             },
         )

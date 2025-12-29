@@ -2146,6 +2146,52 @@ class P2POrchestrator(
             else:
                 logger.debug("ModelSyncLoop: skipped (model sync not available)")
 
+            # ModelFetchLoop - fetch trained models FROM training nodes TO coordinator
+            # December 2025: Critical fix for model distribution gap
+            # Training nodes (nebius-h100-*, lambda-gh200-*) produce models that need
+            # to be fetched to the coordinator for evaluation/promotion/distribution.
+            try:
+                from scripts.p2p.loops.data_loops import ModelFetchLoop
+
+                # Track which jobs have had models fetched
+                _fetched_model_jobs: set[str] = set()
+
+                def _get_completed_training_jobs() -> list:
+                    """Get completed training jobs that need model fetch."""
+                    with self.training_jobs_lock:
+                        return [
+                            job for job in self.training_jobs.values()
+                            if getattr(job, "status", "") == "completed"
+                        ]
+
+                async def _fetch_model_for_job(job) -> bool:
+                    """Fetch model from training node."""
+                    try:
+                        return await self.training_coordinator._fetch_model_from_training_node(job)
+                    except (AttributeError, TypeError) as e:
+                        logger.debug(f"ModelFetchLoop: fetch error: {e}")
+                        return False
+
+                def _mark_model_fetched(job_id: str) -> None:
+                    """Mark a job's model as fetched."""
+                    _fetched_model_jobs.add(job_id)
+
+                def _is_model_fetched(job_id: str) -> bool:
+                    """Check if model was already fetched."""
+                    return job_id in _fetched_model_jobs
+
+                model_fetch = ModelFetchLoop(
+                    is_leader=self._is_leader,
+                    get_completed_training_jobs=_get_completed_training_jobs,
+                    fetch_model=_fetch_model_for_job,
+                    mark_model_fetched=_mark_model_fetched,
+                    is_model_fetched=_is_model_fetched,
+                )
+                manager.register(model_fetch)
+                logger.info("ModelFetchLoop: registered for training node model fetching")
+            except (ImportError, TypeError, ValueError, AttributeError) as e:
+                logger.debug(f"ModelFetchLoop: skipped ({e})")
+
             # ValidationLoop - automatic model validation scheduling
             # December 27, 2025: Migrated from inline _validation_loop
             def _get_model_registry():

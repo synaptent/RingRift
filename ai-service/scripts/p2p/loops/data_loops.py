@@ -611,11 +611,173 @@ class DataManagementLoop(BaseLoop):
         return status
 
 
+# =============================================================================
+# Model Fetch Loop (December 2025)
+# =============================================================================
+
+
+@dataclass
+class ModelFetchConfig:
+    """Configuration for model fetch loop.
+
+    December 2025: Fetch models from training nodes to coordinator.
+    This is the reverse of ModelSyncLoop - it pulls models FROM remote
+    training nodes TO the coordinator for evaluation/promotion.
+    """
+
+    check_interval_seconds: float = 60.0  # Check every minute
+    fetch_timeout_seconds: float = 180.0  # 3 minutes per fetch
+    max_fetch_retries: int = 3
+    retry_delay_seconds: float = 30.0
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.fetch_timeout_seconds <= 0:
+            raise ValueError("fetch_timeout_seconds must be > 0")
+
+
+class ModelFetchLoop(BaseLoop):
+    """Background loop that fetches trained models from remote nodes.
+
+    December 2025: Critical fix for model distribution. Training nodes
+    (nebius-h100-*, lambda-gh200-*) produce models that need to be
+    fetched to the coordinator BEFORE gauntlet evaluation can run.
+
+    This loop acts as a safety net - if handle_training_job_completion()
+    fails to fetch for any reason, this loop will retry.
+    """
+
+    def __init__(
+        self,
+        is_leader: Callable[[], bool],
+        get_completed_training_jobs: Callable[[], list[Any]],
+        fetch_model: Callable[[Any], Coroutine[Any, Any, bool]],
+        mark_model_fetched: Callable[[str], None],
+        is_model_fetched: Callable[[str], bool],
+        config: ModelFetchConfig | None = None,
+    ):
+        """Initialize model fetch loop.
+
+        Args:
+            is_leader: Callback returning True if this node is leader
+            get_completed_training_jobs: Callback returning completed training jobs
+            fetch_model: Async callback to fetch model (takes job, returns success)
+            mark_model_fetched: Callback to mark a job's model as fetched
+            is_model_fetched: Callback to check if job's model is already fetched
+            config: Loop configuration
+        """
+        self.config = config or ModelFetchConfig()
+        super().__init__(
+            name="model_fetch",
+            interval=self.config.check_interval_seconds,
+        )
+        self._is_leader = is_leader
+        self._get_completed_training_jobs = get_completed_training_jobs
+        self._fetch_model = fetch_model
+        self._mark_model_fetched = mark_model_fetched
+        self._is_model_fetched = is_model_fetched
+        self._fetch_stats = {
+            "models_fetched": 0,
+            "fetch_failures": 0,
+            "retry_count": 0,
+        }
+        # Track retry counts per job
+        self._job_retries: dict[str, int] = {}
+
+    async def _run_once(self) -> None:
+        """Check for completed training jobs and fetch unfetched models."""
+        # Only run on coordinator (leader)
+        if not self._is_leader():
+            return
+
+        try:
+            completed_jobs = self._get_completed_training_jobs()
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.debug(f"[{self.name}] Failed to get completed jobs: {e}")
+            return
+
+        if not completed_jobs:
+            return
+
+        for job in completed_jobs:
+            job_id = getattr(job, "job_id", None)
+            if not job_id:
+                continue
+
+            # Skip if already fetched
+            if self._is_model_fetched(job_id):
+                continue
+
+            # Check retry limit
+            retries = self._job_retries.get(job_id, 0)
+            if retries >= self.config.max_fetch_retries:
+                logger.debug(
+                    f"[{self.name}] Max retries ({retries}) reached for {job_id}"
+                )
+                continue
+
+            # Skip if no output model path
+            if not getattr(job, "output_model_path", None):
+                continue
+
+            # Skip if no worker node
+            if not getattr(job, "worker_node", None):
+                continue
+
+            logger.info(
+                f"[{self.name}] Fetching model for {job_id} from {job.worker_node} "
+                f"(attempt {retries + 1}/{self.config.max_fetch_retries})"
+            )
+
+            try:
+                success = await asyncio.wait_for(
+                    self._fetch_model(job),
+                    timeout=self.config.fetch_timeout_seconds,
+                )
+
+                if success:
+                    self._mark_model_fetched(job_id)
+                    self._fetch_stats["models_fetched"] += 1
+                    # Clear retry count on success
+                    self._job_retries.pop(job_id, None)
+                    logger.info(f"[{self.name}] Successfully fetched model for {job_id}")
+                else:
+                    self._job_retries[job_id] = retries + 1
+                    self._fetch_stats["fetch_failures"] += 1
+                    self._fetch_stats["retry_count"] += 1
+
+            except asyncio.TimeoutError:
+                self._job_retries[job_id] = retries + 1
+                self._fetch_stats["fetch_failures"] += 1
+                logger.warning(f"[{self.name}] Timeout fetching model for {job_id}")
+
+            except (OSError, RuntimeError) as e:
+                self._job_retries[job_id] = retries + 1
+                self._fetch_stats["fetch_failures"] += 1
+                logger.debug(f"[{self.name}] Failed to fetch model for {job_id}: {e}")
+
+            # Small delay between fetches to avoid overwhelming network
+            await asyncio.sleep(5.0)
+
+    def get_status(self) -> dict[str, Any]:
+        """Get extended loop status with fetch statistics."""
+        status = super().get_status()
+        status["model_fetch_stats"] = {
+            **self._fetch_stats,
+            "pending_retries": len(self._job_retries),
+        }
+        return status
+
+
 __all__ = [
     "DataAggregationConfig",
     "DataAggregationLoop",
     "DataManagementConfig",
     "DataManagementLoop",
+    "ModelFetchConfig",
+    "ModelFetchLoop",
     "ModelSyncConfig",
     "ModelSyncLoop",
 ]

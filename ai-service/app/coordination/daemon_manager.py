@@ -451,6 +451,28 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             if ts > current_time - 3600
         ]
 
+        # Check for crash loop early warning (3+ restarts in 5 minutes)
+        # December 2025: Emit warning before permanent failure to enable proactive intervention
+        CRASH_LOOP_WINDOW_SECONDS = 300  # 5 minutes
+        CRASH_LOOP_THRESHOLD = 3  # restarts in window
+        recent_timestamps = [
+            ts for ts in self._restart_timestamps[daemon_name]
+            if ts > current_time - CRASH_LOOP_WINDOW_SECONDS
+        ]
+        recent_restarts = len(recent_timestamps)
+
+        # Emit crash loop warning if threshold exceeded (but not yet permanent failure)
+        if recent_restarts >= CRASH_LOOP_THRESHOLD:
+            logger.warning(
+                f"[DaemonManager] {daemon_name} is crash looping "
+                f"({recent_restarts} restarts in {CRASH_LOOP_WINDOW_SECONDS // 60}min)"
+            )
+            self._emit_crash_loop_warning(
+                daemon_type,
+                recent_restarts,
+                CRASH_LOOP_WINDOW_SECONDS // 60,
+            )
+
         # Check if hourly limit exceeded
         hourly_restarts = len(self._restart_timestamps[daemon_name])
         if hourly_restarts > MAX_RESTARTS_PER_HOUR:
@@ -512,6 +534,58 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             logger.debug("emit_daemon_permanently_failed not available")
         except Exception as e:
             logger.debug(f"Failed to emit DAEMON_PERMANENTLY_FAILED: {e}")
+
+    def _emit_crash_loop_warning(
+        self,
+        daemon_type: DaemonType,
+        restart_count: int,
+        window_minutes: int,
+    ) -> None:
+        """Emit DAEMON_CRASH_LOOP_DETECTED event as early warning.
+
+        December 2025: Emits an early warning when a daemon is crash looping
+        (3+ restarts in 5 minutes) before it reaches permanent failure status.
+        This enables proactive intervention and investigation.
+
+        Uses fire_and_forget since the emitter is async but this is called from sync context.
+        If no event loop is running, the event is logged but not emitted.
+        """
+        try:
+            from app.distributed.data_events import emit_daemon_crash_loop_detected
+
+            import socket
+            hostname = socket.gethostname()
+
+            # Check if we have an event loop running
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                # No event loop - can't emit async event
+                logger.info(
+                    f"DAEMON_CRASH_LOOP_DETECTED: {daemon_type.value} "
+                    f"({restart_count} restarts in {window_minutes}min, no event loop)"
+                )
+                return
+
+            fire_and_forget(
+                emit_daemon_crash_loop_detected(
+                    daemon_name=daemon_type.value,
+                    hostname=hostname,
+                    restart_count=restart_count,
+                    window_minutes=window_minutes,
+                    max_restarts=MAX_RESTARTS_PER_HOUR,
+                    source="DaemonManager",
+                ),
+                name=f"emit_crash_loop_{daemon_type.value}",
+            )
+            logger.info(
+                f"Emitted DAEMON_CRASH_LOOP_DETECTED for {daemon_type.value} "
+                f"({restart_count} restarts in {window_minutes}min)"
+            )
+        except ImportError:
+            logger.debug("emit_daemon_crash_loop_detected not available")
+        except Exception as e:
+            logger.debug(f"Failed to emit DAEMON_CRASH_LOOP_DETECTED: {e}")
 
     def is_permanently_failed(self, daemon_type: DaemonType) -> bool:
         """Check if a daemon is permanently failed.

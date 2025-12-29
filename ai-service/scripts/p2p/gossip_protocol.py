@@ -404,8 +404,11 @@ class GossipProtocolMixin(P2PMixinBase):
         self._update_self_info()
         local_state = self._build_local_gossip_state(now)
 
-        # Select K random peers to gossip with (fanout = 3)
-        GOSSIP_FANOUT = 3
+        # Select K random peers to gossip with
+        # Dec 29, 2025: Increased fanout (3 → 5) for faster state propagation
+        # and improved partition recovery. With 30+ peers, 5-peer fanout gives
+        # O(log30/log5) ≈ 2.1 rounds for full propagation vs ~3.1 with fanout=3.
+        GOSSIP_FANOUT = 5
 
         # Dec 2025: Copy peer IDs under lock to avoid stale references.
         # Previously, we copied NodeInfo objects which could become stale
@@ -875,16 +878,20 @@ class GossipProtocolMixin(P2PMixinBase):
         Solution: Periodically do full state exchange with a random peer to
         ensure eventual consistency. This catches any missed updates.
 
-        Frequency: Every 5 minutes with a random healthy peer
+        Frequency: Every 2 minutes with a random healthy peer
         """
         if aiohttp is None:
             return
 
         now = time.time()
 
-        # Rate limit: anti-entropy every 5 minutes
+        # Rate limit: anti-entropy every 2 minutes (was 5 min)
+        # Dec 29, 2025: Reduced interval (300s → 120s) for faster partition recovery.
+        # This catches missed updates more quickly, especially for the local-mac node
+        # which has intermittent visibility due to stricter home network NAT.
+        ANTI_ENTROPY_INTERVAL = 120
         last_repair = getattr(self, "_last_anti_entropy_repair", 0)
-        if now - last_repair < 300:
+        if now - last_repair < ANTI_ENTROPY_INTERVAL:
             return
         self._last_anti_entropy_repair = now
 

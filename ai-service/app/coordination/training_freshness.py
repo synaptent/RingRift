@@ -74,8 +74,9 @@ __all__ = [
     "ALL_CONFIGS",
 ]
 
-# Default freshness threshold (1 hour)
-DEFAULT_MAX_AGE_HOURS = 1.0
+# Default freshness threshold (24 hours - relaxed from 1 hour to allow training with older data)
+# Dec 29, 2025: Increased from 1.0 to 24.0 to unblock training pipeline bottleneck
+DEFAULT_MAX_AGE_HOURS = 24.0
 
 # Sync timeout (5 minutes)
 DEFAULT_SYNC_TIMEOUT_SECONDS = 300

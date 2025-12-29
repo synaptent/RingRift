@@ -348,6 +348,25 @@ def _encode_single_game(
         # Set winner on final_state from game_data if available
         # (GameEngine.apply_move doesn't auto-detect game end and set winner)
         winner_from_db = game_data.get("winner")
+
+        # December 2025 fix: Validate winner field for multiplayer games
+        # Invalid winner values (outside 1..num_players range) caused corrupted training data
+        # for hex8_4p and square19_3p models, contributing to Elo regression (594/409 from 1500)
+        if winner_from_db is not None and num_players > 2:
+            try:
+                winner_int = int(winner_from_db)
+                if winner_int < 1 or winner_int > num_players:
+                    logger.warning(
+                        f"Game {game_id}: Invalid winner {winner_int} for {num_players}p "
+                        f"(must be 1-{num_players}), skipping"
+                    )
+                    return GameEncodingResult(game_id=game_id, samples=[])
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"Game {game_id}: Non-numeric winner '{winner_from_db}' for {num_players}p, skipping"
+                )
+                return GameEncodingResult(game_id=game_id, samples=[])
+
         if final_state is not None and winner_from_db is not None:
             # Create a copy with winner set (pydantic frozen model)
             final_state = final_state.model_copy(update={"winner": winner_from_db})

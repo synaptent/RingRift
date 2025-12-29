@@ -1415,6 +1415,221 @@ def scan_all_databases() -> None:
         sys.exit(1)
 
 
+# =============================================================================
+# Multiplayer Training Data Validation (December 2025)
+# =============================================================================
+
+
+@dataclass
+class MultiplayerValidationResult:
+    """Result of multiplayer training data validation."""
+
+    valid: bool
+    num_samples: int
+    expected_players: int
+    values_mp_shape: tuple[int, ...] | None
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def __str__(self) -> str:
+        status = "PASS" if self.valid else "FAIL"
+        lines = [
+            f"Multiplayer Validation: {status}",
+            f"  Samples: {self.num_samples:,}",
+            f"  Expected players: {self.expected_players}",
+        ]
+        if self.values_mp_shape:
+            lines.append(f"  values_mp shape: {self.values_mp_shape}")
+        if self.errors:
+            lines.append("  Errors:")
+            for err in self.errors:
+                lines.append(f"    - {err}")
+        if self.warnings:
+            lines.append("  Warnings:")
+            for warn in self.warnings:
+                lines.append(f"    - {warn}")
+        return "\n".join(lines)
+
+
+def validate_multiplayer_training_data(
+    npz_path: str | Path,
+    expected_players: int,
+    min_samples: int = 1000,
+) -> MultiplayerValidationResult:
+    """Validate training data for multiplayer model training.
+
+    This function performs critical validations to prevent training failures
+    caused by data corruption issues that led to hex8_4p and square19_3p
+    Elo regressions (594 and 409 from baseline 1500).
+
+    Checks:
+    1. values_mp array dimension matches expected player count
+    2. Minimum sample count for statistical significance
+    3. values_mp values are in valid range [-1, 1]
+    4. num_players array matches expected player count
+
+    Args:
+        npz_path: Path to NPZ training file
+        expected_players: Expected number of players (2, 3, or 4)
+        min_samples: Minimum required samples (default 1000)
+
+    Returns:
+        MultiplayerValidationResult with validation status and details
+
+    Raises:
+        ValueError: If npz_path doesn't exist
+
+    Example:
+        result = validate_multiplayer_training_data(
+            "data/training/hex8_4p.npz",
+            expected_players=4,
+            min_samples=5000,
+        )
+        if not result.valid:
+            raise ValueError(f"Training data validation failed: {result}")
+    """
+    npz_path = Path(npz_path)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not npz_path.exists():
+        return MultiplayerValidationResult(
+            valid=False,
+            num_samples=0,
+            expected_players=expected_players,
+            values_mp_shape=None,
+            errors=[f"NPZ file not found: {npz_path}"],
+        )
+
+    try:
+        data = safe_load_npz(npz_path)
+    except Exception as e:
+        return MultiplayerValidationResult(
+            valid=False,
+            num_samples=0,
+            expected_players=expected_players,
+            values_mp_shape=None,
+            errors=[f"Failed to load NPZ: {e}"],
+        )
+
+    # Check for required multiplayer arrays
+    if "values_mp" not in data:
+        return MultiplayerValidationResult(
+            valid=False,
+            num_samples=len(data.get("features", [])),
+            expected_players=expected_players,
+            values_mp_shape=None,
+            errors=[
+                "Missing 'values_mp' array - required for multiplayer training. "
+                "Regenerate data with export_replay_dataset.py --multi-player-values"
+            ],
+        )
+
+    values_mp = data["values_mp"]
+    num_samples = len(values_mp)
+    values_mp_shape = values_mp.shape
+
+    # Check 1: Sample count
+    if num_samples < min_samples:
+        errors.append(
+            f"Insufficient samples: {num_samples:,} < {min_samples:,} minimum. "
+            f"Need more games for statistically significant training."
+        )
+
+    # Check 2: values_mp dimension matches expected players
+    if len(values_mp_shape) != 2:
+        errors.append(
+            f"values_mp should be 2D (samples, players), got {len(values_mp_shape)}D"
+        )
+    else:
+        max_players_dim = values_mp_shape[1]
+        if max_players_dim < expected_players:
+            errors.append(
+                f"values_mp dimension {max_players_dim} < expected {expected_players} players. "
+                f"Data was generated for fewer players than training config."
+            )
+
+    # Check 3: num_players array consistency
+    if "num_players" in data:
+        num_players_arr = data["num_players"]
+
+        # All samples should have same player count
+        unique_players = np.unique(num_players_arr)
+        if len(unique_players) > 1:
+            warnings.append(
+                f"Mixed player counts in data: {unique_players.tolist()}. "
+                f"Training may be suboptimal with inconsistent data."
+            )
+
+        # Check most common matches expected
+        if len(unique_players) == 1 and unique_players[0] != expected_players:
+            errors.append(
+                f"Data generated for {unique_players[0]}p but training expects {expected_players}p. "
+                f"Use correct training data or regenerate with --num-players {expected_players}."
+            )
+
+        # Check for invalid player counts
+        invalid_mask = (num_players_arr < 2) | (num_players_arr > 4)
+        if np.any(invalid_mask):
+            invalid_count = np.sum(invalid_mask)
+            errors.append(
+                f"{invalid_count:,} samples have invalid player count (not in 2-4 range)"
+            )
+    else:
+        warnings.append(
+            "No 'num_players' array - cannot verify per-sample player count consistency"
+        )
+
+    # Check 4: values_mp value range (should be in [-1, 1])
+    if len(values_mp_shape) == 2:
+        # Only check active player columns (first expected_players columns)
+        active_values = values_mp[:, :expected_players]
+
+        value_min = float(np.min(active_values))
+        value_max = float(np.max(active_values))
+
+        if value_min < -1.0 or value_max > 1.0:
+            errors.append(
+                f"values_mp out of range: [{value_min:.4f}, {value_max:.4f}] "
+                f"(expected [-1, 1])"
+            )
+
+        # Check for all-zero values (common corruption sign)
+        zero_rows = np.all(active_values == 0, axis=1)
+        zero_count = int(np.sum(zero_rows))
+        if zero_count > 0:
+            zero_pct = zero_count / num_samples * 100
+            if zero_pct > 10:
+                errors.append(
+                    f"{zero_count:,} samples ({zero_pct:.1f}%) have all-zero values "
+                    f"(likely missing winner data)"
+                )
+            elif zero_pct > 1:
+                warnings.append(
+                    f"{zero_count:,} samples ({zero_pct:.1f}%) have all-zero values"
+                )
+
+    # Check 5: Feature/value array length consistency
+    if "features" in data:
+        features_len = len(data["features"])
+        if features_len != num_samples:
+            errors.append(
+                f"Sample count mismatch: features={features_len:,}, "
+                f"values_mp={num_samples:,}"
+            )
+
+    valid = len(errors) == 0
+
+    return MultiplayerValidationResult(
+        valid=valid,
+        num_samples=num_samples,
+        expected_players=expected_players,
+        values_mp_shape=values_mp_shape,
+        errors=errors,
+        warnings=warnings,
+    )
+
+
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(

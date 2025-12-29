@@ -245,6 +245,7 @@ class DataEventType(Enum):
     DAEMON_STOPPED = "daemon_stopped"
     DAEMON_STATUS_CHANGED = "daemon_status_changed"  # Watchdog alerts (stuck, crashed, restarted)
     DAEMON_PERMANENTLY_FAILED = "daemon_permanently_failed"  # Dec 2025: Exceeded hourly restart limit
+    DAEMON_CRASH_LOOP_DETECTED = "daemon_crash_loop_detected"  # Dec 2025: Early warning before permanent failure
     HOST_ONLINE = "host_online"
     HOST_OFFLINE = "host_offline"
     ERROR = "error"
@@ -944,6 +945,7 @@ CROSS_PROCESS_EVENT_TYPES = {
     DataEventType.DAEMON_STOPPED,
     DataEventType.DAEMON_STATUS_CHANGED,  # Watchdog alerts for daemon health
     DataEventType.DAEMON_PERMANENTLY_FAILED,  # Dec 2025: Exceeded hourly restart limit
+    DataEventType.DAEMON_CRASH_LOOP_DETECTED,  # Dec 2025: Early warning for crash loops
     # Trigger events - distributed optimization
     DataEventType.CMAES_TRIGGERED,
     DataEventType.NAS_TRIGGERED,
@@ -1771,6 +1773,48 @@ async def emit_daemon_permanently_failed(
             "hostname": hostname,
             "restart_count": restart_count,
             "requires_intervention": True,
+        },
+        source=source,
+    ))
+
+
+async def emit_daemon_crash_loop_detected(
+    daemon_name: str,
+    hostname: str,
+    restart_count: int,
+    window_minutes: int,
+    max_restarts: int,
+    source: str = "",
+) -> None:
+    """Emit a DAEMON_CRASH_LOOP_DETECTED event (early warning before permanent failure).
+
+    December 2025: Emitted when a daemon has restarted multiple times within a short
+    window, indicating a crash loop. This is an early warning before the daemon
+    reaches the permanent failure threshold (MAX_RESTARTS_PER_HOUR).
+
+    This event enables:
+    - Dashboard alerts for crash loops
+    - Proactive investigation before permanent failure
+    - Notification to operators
+
+    Args:
+        daemon_name: Name of the daemon
+        hostname: Host running the daemon
+        restart_count: Number of restarts in the window
+        window_minutes: Time window in minutes
+        max_restarts: Max restarts before permanent failure
+        source: Component reporting the event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.DAEMON_CRASH_LOOP_DETECTED,
+        payload={
+            "daemon_name": daemon_name,
+            "hostname": hostname,
+            "restart_count": restart_count,
+            "window_minutes": window_minutes,
+            "max_restarts": max_restarts,
+            "severity": "warning",
+            "message": f"{daemon_name} is crash looping ({restart_count} restarts in {window_minutes}min)",
         },
         source=source,
     ))

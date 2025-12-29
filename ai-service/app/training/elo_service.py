@@ -480,15 +480,68 @@ class EloService:
                 json.dumps(metadata) if metadata else None
             ))
 
+    def _validate_model_path(self, model_path: str | None) -> bool:
+        """Validate that a model file exists.
+
+        Args:
+            model_path: Path to model file (absolute or relative)
+
+        Returns:
+            True if file exists or path is None, False otherwise
+        """
+        if not model_path:
+            return True  # None is valid for baselines
+
+        path = Path(model_path)
+
+        # Check absolute path
+        if path.is_absolute():
+            return path.exists()
+
+        # Check relative to common model directories
+        model_dirs = [
+            Path("models"),
+            Path("models_essential"),
+            Path("."),
+        ]
+        for model_dir in model_dirs:
+            candidate = model_dir / path
+            if candidate.exists():
+                return True
+            # Try just the filename
+            candidate = model_dir / path.name
+            if candidate.exists():
+                return True
+
+        return path.exists()
+
     def register_model(
         self,
         model_id: str,
         board_type: str,
         num_players: int,
         model_path: str | None = None,
-        parent_model_id: str | None = None
+        parent_model_id: str | None = None,
+        validate_file: bool = True
     ) -> None:
-        """Register a trained model and initialize its Elo rating."""
+        """Register a trained model and initialize its Elo rating.
+
+        Args:
+            model_id: Unique identifier for the model
+            board_type: Board type (e.g., 'square8', 'hex8')
+            num_players: Number of players (2, 3, or 4)
+            model_path: Optional path to model file
+            parent_model_id: Optional ID of parent model (for lineage tracking)
+            validate_file: If True, verify model file exists before registering
+        """
+        # Validate model file exists (prevent phantom entries)
+        if validate_file and model_path and not self._validate_model_path(model_path):
+            logger.warning(
+                f"Model file not found, skipping registration: {model_path} "
+                f"(model_id={model_id}). Use validate_file=False to override."
+            )
+            return
+
         # Register as participant
         self.register_participant(
             participant_id=model_id,
