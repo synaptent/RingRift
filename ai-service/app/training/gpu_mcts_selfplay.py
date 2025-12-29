@@ -109,7 +109,12 @@ class GPUMCTSSelfplayRunner:
             config: Selfplay configuration
         """
         self.config = config
-        self.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+        # Construct device string from gpu_device int (config.device may be None)
+        if torch.cuda.is_available():
+            device_str = config.device if config.device else f"cuda:{config.gpu_device}"
+            self.device = torch.device(device_str)
+        else:
+            self.device = torch.device("cpu")
 
         # Lazy-initialized components
         self._mcts: Any = None

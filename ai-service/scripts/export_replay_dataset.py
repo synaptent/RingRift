@@ -1694,7 +1694,8 @@ def main(argv: list[str] | None = None) -> int:
             include_heuristics=args.include_heuristics,
             full_heuristics=args.full_heuristics,
         )
-        return 0 if result else 1
+        # December 2025 fix: result=0 means success, don't treat as falsy
+        return result if result is not None else 1
 
     # Single-threaded mode (legacy, for debugging or when parallelism causes issues)
     print("[SINGLE-THREADED] Using sequential encoding (use --workers N for parallel mode)")
