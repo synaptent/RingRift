@@ -260,7 +260,10 @@ class BaseDaemon(ABC, Generic[ConfigT]):
                     self._cycles_completed += 1
                 except asyncio.CancelledError:
                     raise  # Re-raise to exit loop
-                except Exception as e:
+                except (KeyboardInterrupt, SystemExit):
+                    raise  # Re-raise system signals
+                except Exception as e:  # noqa: BLE001 - daemon must stay running
+                    # Catches operational errors; programming errors would crash before here
                     self._errors_count += 1
                     self._last_error = str(e)
                     self._coordinator_status = CoordinatorStatus.ERROR

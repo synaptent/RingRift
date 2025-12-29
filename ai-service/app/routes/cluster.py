@@ -107,8 +107,9 @@ def _get_p2p_status() -> dict[str, Any] | None:
     try:
         import urllib.request
         import json
+        from app.config.ports import get_p2p_status_url
 
-        url = "http://localhost:8770/status"
+        url = get_p2p_status_url()
         with urllib.request.urlopen(url, timeout=2) as response:
             return json.loads(response.read().decode())
     except (OSError, ValueError, json.JSONDecodeError, TimeoutError):

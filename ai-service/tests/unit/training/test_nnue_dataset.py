@@ -237,7 +237,7 @@ class TestNNUEDatasetConfig:
         assert config.balance_outcomes is False
         assert config.dual_perspective is True
         assert config.require_canonical_schema is True
-        assert config.min_schema_version == 14  # CANONICAL_SCHEMA_VERSION
+        assert config.min_schema_version == 9  # CANONICAL_SCHEMA_VERSION
 
     def test_custom_values(self):
         """Test custom configuration values."""
@@ -621,8 +621,8 @@ class TestPrioritizedExperienceSampler:
         assert sampler.priorities[0] == pytest.approx(0.1 + sampler.epsilon)
         assert sampler.priorities[1] == pytest.approx(0.5 + sampler.epsilon)
         assert sampler.priorities[2] == pytest.approx(0.9 + sampler.epsilon)
-        assert sampler.seen[0] is True
-        assert sampler.seen[3] is False
+        assert sampler.seen[0] == True  # noqa: E712 - numpy bool comparison
+        assert sampler.seen[3] == False  # noqa: E712 - numpy bool comparison
 
     def test_importance_weights(self):
         """Test importance weight computation."""

@@ -110,6 +110,11 @@ def safe_load_npz(
     try:
         data = np.load(path, mmap_mode=mmap_mode, allow_pickle=False)
 
+        # Force eager loading of all arrays to detect object arrays that need pickle.
+        # NpzFile loads arrays lazily, so ValueError is raised when accessing, not loading.
+        for key in data.files:
+            _ = data[key]  # This triggers the actual load
+
         # Validate keys if requested
         if expected_keys is not None:
             _validate_npz_keys(data, expected_keys, path)

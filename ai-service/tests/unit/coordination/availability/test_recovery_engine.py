@@ -50,7 +50,7 @@ class TestRecoveryAction:
         assert "P2P" in RecoveryAction.RESTART_P2P.description
         assert "Tailscale" in RecoveryAction.RESTART_TAILSCALE.description
         assert "Reboot" in RecoveryAction.REBOOT_INSTANCE.description
-        assert "Terminate" in RecoveryAction.RECREATE_INSTANCE.description
+        assert "recreate" in RecoveryAction.RECREATE_INSTANCE.description.lower()
 
     def test_escalation_order(self) -> None:
         """Test escalation order is correct (least to most disruptive)."""

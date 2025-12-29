@@ -381,10 +381,11 @@ class CapacityPlanner(BaseDaemon):
             # Get job counts from P2P status
             try:
                 import aiohttp
+                from app.config.ports import get_p2p_status_url
 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
-                        "http://localhost:8770/status",
+                        get_p2p_status_url(),
                         timeout=aiohttp.ClientTimeout(total=5.0),
                     ) as resp:
                         if resp.status == 200:

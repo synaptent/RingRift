@@ -87,6 +87,9 @@ def manager(config):
             mock_cb.state = CircuitState.CLOSED
             mock_cb.record_failure = MagicMock()
             mock_cb.record_success = MagicMock()
+            # Make get_state() return the .state attribute dynamically
+            # This allows tests to set cb.state and have get_state() return it
+            mock_cb.get_state = MagicMock(side_effect=lambda c: mock_cb.state)
             manager._circuit_breakers[component] = mock_cb
         return manager._circuit_breakers[component]
 
@@ -416,6 +419,7 @@ class TestErrorRecording:
                 mock_cb.state = CircuitState.CLOSED
                 mock_cb.record_failure = MagicMock()
                 mock_cb.record_success = MagicMock()
+                mock_cb.get_state = MagicMock(side_effect=lambda c: mock_cb.state)
                 local_manager._circuit_breakers[component] = mock_cb
             return local_manager._circuit_breakers[component]
 
@@ -944,6 +948,7 @@ class TestGlobalFunctions:
         mock_cb = MagicMock()
         mock_cb.state = CircuitState.OPEN
         mock_cb.record_failure = MagicMock()
+        mock_cb.get_state = MagicMock(side_effect=lambda c: mock_cb.state)
         manager._circuit_breakers["training"] = mock_cb
 
         assert is_component_healthy("training") is False
@@ -1431,6 +1436,7 @@ class TestSystemHealthScoring:
         # Open a critical circuit
         mock_cb = MagicMock()
         mock_cb.state = CircuitState.OPEN
+        mock_cb.get_state = MagicMock(side_effect=lambda c: mock_cb.state)
         manager._circuit_breakers["training"] = mock_cb
 
         cfg = SystemHealthConfig(critical_circuits=["training"])
@@ -1704,6 +1710,7 @@ class TestHealthCheck:
         for i in range(6):
             mock_cb = MagicMock()
             mock_cb.state = CircuitState.OPEN
+            mock_cb.get_state = MagicMock(side_effect=lambda c, cb=mock_cb: cb.state)
             manager._circuit_breakers[f"component_{i}"] = mock_cb
 
         result = manager.health_check()

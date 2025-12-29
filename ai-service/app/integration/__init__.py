@@ -150,9 +150,17 @@ async def create_lifecycle_manager(config=None, start=True):
     return await _create(config, start)
 
 
-async def connect_to_cluster(base_url="http://localhost:8770", auth_token=None):
-    """Connect to P2P cluster and return integration manager."""
+async def connect_to_cluster(base_url=None, auth_token=None):
+    """Connect to P2P cluster and return integration manager.
+
+    Args:
+        base_url: P2P base URL. If None, uses get_local_p2p_url() from ports config.
+        auth_token: Optional authentication token.
+    """
+    from app.config.ports import get_local_p2p_url
     from .p2p_integration import connect_to_cluster as _connect
+    if base_url is None:
+        base_url = get_local_p2p_url()
     return await _connect(base_url, auth_token)
 
 

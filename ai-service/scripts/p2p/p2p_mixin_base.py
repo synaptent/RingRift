@@ -558,7 +558,9 @@ class P2PMixinBase:
 
             return False
 
-        except Exception as e:
+        except (AttributeError, RuntimeError, ImportError, TypeError) as e:
+            # AttributeError - method doesn't exist, RuntimeError - no event loop
+            # ImportError - event router unavailable, TypeError - wrong call signature
             verbose = getattr(self, "verbose", False)
             if verbose:
                 logger.debug(f"[{self.MIXIN_TYPE}] Event emission error: {e}")

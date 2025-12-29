@@ -449,7 +449,9 @@ class UnifiedEventRouter:
         if self._cp_poller:
             try:
                 self._cp_poller.stop()
-            except Exception as e:
+            except (RuntimeError, AttributeError, OSError) as e:
+                # RuntimeError - event loop issues, AttributeError - poller not initialized
+                # OSError - I/O errors during cleanup
                 logger.warning(f"[UnifiedEventRouter] Error stopping poller: {e}")
 
         # Shutdown thread pool (December 2025 - prevent resource leak)

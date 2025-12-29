@@ -92,7 +92,8 @@ def check_database_integrity(
     except FileNotFoundError:
         # sqlite3 CLI not available, fall back to Python with interrupt
         return _check_integrity_with_interrupt(db_path, timeout_seconds)
-    except Exception as e:
+    except OSError as e:
+        # File system errors (permissions, disk full, etc.)
         return False, f"check failed: {e}"
 
 
@@ -110,7 +111,8 @@ def _check_integrity_direct(db_path: Path) -> tuple[bool, str]:
             return False, result[0] if result else "unknown error"
     except sqlite3.DatabaseError as e:
         return False, str(e)
-    except Exception as e:
+    except OSError as e:
+        # File system errors (permissions, disk full, etc.)
         return False, f"check failed: {e}"
 
 
@@ -150,7 +152,8 @@ def _check_integrity_quick(db_path: Path) -> tuple[bool, str]:
 
     except sqlite3.DatabaseError as e:
         return False, f"quick check failed: {e}"
-    except Exception as e:
+    except OSError as e:
+        # File system errors (permissions, disk full, etc.)
         return False, f"quick check error: {e}"
 
 

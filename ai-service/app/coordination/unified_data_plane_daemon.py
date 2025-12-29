@@ -696,11 +696,12 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
         """Broadcast manifest to P2P peers."""
         try:
             import aiohttp
+            from app.config.ports import get_p2p_status_url, P2P_DEFAULT_PORT
 
             # Get peer list from P2P status
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    "http://localhost:8770/status",
+                    get_p2p_status_url(),
                     timeout=aiohttp.ClientTimeout(total=5.0),
                 ) as resp:
                     if resp.status != 200:
@@ -723,7 +724,7 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
 
                 try:
                     async with session.post(
-                        f"http://{ip}:8770/data-plane/manifest",
+                        f"http://{ip}:{P2P_DEFAULT_PORT}/data-plane/manifest",
                         json=manifest,
                         timeout=aiohttp.ClientTimeout(total=10.0),
                     ) as resp:

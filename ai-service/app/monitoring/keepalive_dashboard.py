@@ -41,8 +41,10 @@ from app.utils.datetime_utils import iso_now, time_ago
 
 logger = logging.getLogger(__name__)
 
-# Configuration
-P2P_STATUS_URL = os.environ.get("P2P_STATUS_URL", "http://localhost:8770/status")
+# Configuration - use centralized port config
+from app.config.ports import get_p2p_status_url
+
+P2P_STATUS_URL = os.environ.get("P2P_STATUS_URL") or get_p2p_status_url()
 ESCALATION_STATE_FILE = Path("/tmp/ringrift_escalation_state.json")
 KEEPALIVE_DASHBOARD_PORT = 8771
 

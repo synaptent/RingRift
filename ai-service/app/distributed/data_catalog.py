@@ -49,7 +49,10 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.coordination.protocols import HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -1028,6 +1031,57 @@ class DataCatalog:
             )
 
         return stats
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check health of the data catalog.
+
+        Returns:
+            HealthCheckResult with catalog health status
+        """
+        from app.coordination.protocols import HealthCheckResult
+
+        try:
+            # Discover sources to get fresh stats
+            sources = self.discover_data_sources()
+            stats = self.get_stats()
+
+            # Health criteria
+            has_sources = len(sources) > 0
+            has_games = stats.total_games > 0
+            manifest_ok = self._manifest is not None if HAS_UNIFIED_MANIFEST else True
+
+            is_healthy = has_sources and manifest_ok
+
+            details = {
+                "total_sources": stats.total_sources,
+                "total_games": stats.total_games,
+                "total_size_bytes": stats.total_size_bytes,
+                "sources_by_type": stats.sources_by_type,
+                "manifest_available": self._manifest is not None,
+                "last_discovery": time.strftime(
+                    "%Y-%m-%d %H:%M:%S",
+                    time.localtime(self._last_discovery)
+                ) if self._last_discovery else None,
+            }
+
+            if not has_sources:
+                message = "No data sources discovered"
+            elif not has_games:
+                message = "Data sources found but no games available"
+            else:
+                message = f"Healthy: {stats.total_sources} sources, {stats.total_games:,} games"
+
+            return HealthCheckResult(
+                healthy=is_healthy,
+                message=message,
+                details=details,
+            )
+        except (OSError, sqlite3.Error) as e:
+            return HealthCheckResult(
+                healthy=False,
+                message=f"Health check failed: {e}",
+                details={"error": str(e)},
+            )
 
 
 # Singleton instance
