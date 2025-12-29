@@ -118,7 +118,7 @@ class PrometheusBackend(MetricsBackend):
                     f"Counter for {name}",
                     labelnames=label_names,
                 )
-            except Exception as e:
+            except (ImportError, ValueError, TypeError) as e:
                 logger.debug(f"Failed to create counter {name}: {e}")
                 return None
 
@@ -138,7 +138,7 @@ class PrometheusBackend(MetricsBackend):
                     f"Gauge for {name}",
                     labelnames=label_names,
                 )
-            except Exception as e:
+            except (ImportError, ValueError, TypeError) as e:
                 logger.debug(f"Failed to create gauge {name}: {e}")
                 return None
 
@@ -159,7 +159,7 @@ class PrometheusBackend(MetricsBackend):
                     labelnames=label_names,
                     buckets=self.histogram_buckets,
                 )
-            except Exception as e:
+            except (ImportError, ValueError, TypeError) as e:
                 logger.debug(f"Failed to create histogram {name}: {e}")
                 return None
 
@@ -171,7 +171,7 @@ class PrometheusBackend(MetricsBackend):
         if counter:
             try:
                 counter.labels(**labels).inc(value)
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.debug(f"Failed to increment counter {name}: {e}")
 
     def gauge(self, name: str, value: float, labels: dict[str, str]) -> None:
@@ -180,7 +180,7 @@ class PrometheusBackend(MetricsBackend):
         if gauge:
             try:
                 gauge.labels(**labels).set(value)
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.debug(f"Failed to set gauge {name}: {e}")
 
     def histogram(self, name: str, value: float, labels: dict[str, str]) -> None:
@@ -189,7 +189,7 @@ class PrometheusBackend(MetricsBackend):
         if hist:
             try:
                 hist.labels(**labels).observe(value)
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.debug(f"Failed to observe histogram {name}: {e}")
 
 
@@ -223,7 +223,7 @@ class EventBusBackend(MetricsBackend):
             bus = get_event_bus()
             bus.publish_sync(event)
 
-        except Exception as e:
+        except (ImportError, AttributeError, RuntimeError, TypeError) as e:
             logger.debug(f"Failed to publish metric event: {e}")
 
     def counter(self, name: str, value: float, labels: dict[str, str]) -> None:
@@ -285,7 +285,7 @@ class MetricsPublisher:
                     prefix=self.config.prefix,
                     histogram_buckets=self.config.default_histogram_buckets,
                 ))
-            except Exception as e:
+            except (ImportError, ValueError, TypeError) as e:
                 logger.debug(f"Prometheus backend unavailable: {e}")
 
         if self.config.enable_event_bus:
@@ -320,7 +320,7 @@ class MetricsPublisher:
         for backend in self._backends:
             try:
                 backend.counter(name, value, merged_labels)
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError) as e:
                 logger.debug(f"Backend failed for counter {name}: {e}")
 
     def gauge(
@@ -340,7 +340,7 @@ class MetricsPublisher:
         for backend in self._backends:
             try:
                 backend.gauge(name, value, merged_labels)
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError) as e:
                 logger.debug(f"Backend failed for gauge {name}: {e}")
 
     def histogram(
@@ -360,7 +360,7 @@ class MetricsPublisher:
         for backend in self._backends:
             try:
                 backend.histogram(name, value, merged_labels)
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError) as e:
                 logger.debug(f"Backend failed for histogram {name}: {e}")
 
     def timer(self, name: str, labels: dict[str, str] | None = None) -> MetricTimer:

@@ -72,7 +72,7 @@ def record_parity_mismatch(mismatch_type: str, suite: str) -> None:
     """
     try:
         PARITY_MISMATCHES_TOTAL.labels(mismatch_type=mismatch_type, suite=suite).inc()
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record parity mismatch metric: {e}")
 
 
@@ -86,7 +86,7 @@ def record_parity_case(suite: str, passed: bool) -> None:
     try:
         result = "passed" if passed else "failed"
         PARITY_HEALTHCHECK_CASES_TOTAL.labels(suite=suite, result=result).inc()
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record parity case metric: {e}")
 
 
@@ -99,7 +99,7 @@ def update_parity_pass_rate(suite: str, pass_rate: float) -> None:
     """
     try:
         PARITY_HEALTHCHECK_PASS_RATE.labels(suite=suite).set(pass_rate)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to update parity pass rate metric: {e}")
 
 
@@ -248,7 +248,7 @@ def record_semantic_divergence(
                 num_players=np_str,
             ).observe(float(move_index))
 
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record semantic divergence metric: {e}")
 
 
@@ -277,7 +277,7 @@ def record_anm_divergence(
         # Also record as semantic divergence with anm_state dimension
         record_semantic_divergence(board_type, num_players, "anm_state", move_index)
 
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record ANM divergence metric: {e}")
 
 
@@ -299,7 +299,7 @@ def record_structural_issue(
             num_players=str(num_players),
             issue_type=issue_type,
         ).inc()
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record structural issue metric: {e}")
 
 
@@ -320,7 +320,7 @@ def record_parity_check_duration(
             board_type=board_type,
             num_players=str(num_players),
         ).observe(duration_seconds)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record parity check duration metric: {e}")
 
 
@@ -343,7 +343,7 @@ def record_game_checked(
             num_players=str(num_players),
             result=result,
         ).inc()
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         logger.warning(f"Failed to record game checked metric: {e}")
 
 
@@ -395,7 +395,7 @@ def emit_parity_summary_metrics(summary: dict) -> None:
                 total_checked=summary.get("total_games_checked", total_cases),
             )
 
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning(f"Failed to emit parity summary metrics: {e}")
 
 

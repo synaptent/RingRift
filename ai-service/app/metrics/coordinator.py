@@ -325,7 +325,7 @@ async def collect_all_coordinator_metrics() -> dict[str, Any]:
         update_coordinator_status("UnifiedHealthManager", stats.get("status", "unknown"))
         update_coordinator_uptime("UnifiedHealthManager", stats.get("uptime_seconds", 0))
         update_recovery_stats(stats)
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError, TypeError) as e:
         logger.debug(f"Could not collect UnifiedHealthManager metrics: {e}")
 
     # Try to get BandwidthManager stats
@@ -337,7 +337,7 @@ async def collect_all_coordinator_metrics() -> dict[str, Any]:
         update_coordinator_status("BandwidthManager", stats.get("status", "unknown"))
         update_coordinator_uptime("BandwidthManager", stats.get("uptime_seconds", 0))
         update_bandwidth_stats(stats)
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError, TypeError) as e:
         logger.debug(f"Could not collect BandwidthManager metrics: {e}")
 
     # Try to get SyncFacade stats (unified entry point for cluster sync)
@@ -349,7 +349,7 @@ async def collect_all_coordinator_metrics() -> dict[str, Any]:
         update_coordinator_status("SyncFacade", stats.get("status", "unknown"))
         update_coordinator_uptime("SyncFacade", stats.get("uptime_seconds", 0))
         update_sync_stats(stats)
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError, TypeError) as e:
         logger.debug(f"Could not collect SyncFacade metrics: {e}")
 
     return metrics
@@ -388,7 +388,7 @@ def _collect_sync() -> dict[str, Any]:
         update_coordinator_status("UnifiedHealthManager", stats.get("status", "unknown"))
         update_coordinator_uptime("UnifiedHealthManager", round(uhm.uptime_seconds, 2))
         update_recovery_stats(stats)
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError, TypeError) as e:
         logger.debug(f"Could not collect UnifiedHealthManager metrics (sync): {e}")
 
     try:
@@ -398,7 +398,7 @@ def _collect_sync() -> dict[str, Any]:
         metrics["coordinators"]["BandwidthManager"] = stats
         update_coordinator_status("BandwidthManager", stats.get("status", "unknown"))
         update_bandwidth_stats(stats)
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError, TypeError) as e:
         logger.debug(f"Could not collect BandwidthManager metrics (sync): {e}")
 
     try:
@@ -408,7 +408,7 @@ def _collect_sync() -> dict[str, Any]:
         metrics["coordinators"]["SyncFacade"] = stats
         update_coordinator_status("SyncFacade", stats.get("status", "unknown"))
         update_sync_stats(stats)
-    except Exception as e:
+    except (ImportError, AttributeError, RuntimeError, TypeError) as e:
         logger.debug(f"Could not collect SyncFacade metrics (sync): {e}")
 
     return metrics

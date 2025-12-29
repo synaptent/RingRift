@@ -1556,21 +1556,22 @@ class UnifiedHealthManager(CoordinatorBase):
         """
         payload = event.payload if hasattr(event, "payload") else event
 
-        daemon_type = payload.get("daemon_type", "unknown")
+        # Support both daemon_name (from emitter) and daemon_type (legacy) field names
+        daemon_name = payload.get("daemon_name") or payload.get("daemon_type", "unknown")
         restart_count = payload.get("restart_count", 0)
         error_message = payload.get("error", "")
         hostname = payload.get("hostname", "local")
-        daemon_key = f"{daemon_type}@{hostname}"
+        daemon_key = f"{daemon_name}@{hostname}"
 
         logger.critical(
-            f"[UnifiedHealthManager] DAEMON_PERMANENTLY_FAILED: {daemon_type} "
+            f"[UnifiedHealthManager] DAEMON_PERMANENTLY_FAILED: {daemon_name} "
             f"(restarts: {restart_count}, host: {hostname})"
         )
 
         # Get or create daemon state
         if daemon_key not in self._daemon_states:
             self._daemon_states[daemon_key] = DaemonHealthState(
-                daemon_name=daemon_type,
+                daemon_name=daemon_name,
                 hostname=hostname,
             )
 
@@ -1584,13 +1585,13 @@ class UnifiedHealthManager(CoordinatorBase):
         error = ErrorRecord(
             error_id=f"daemon_perm_fail_{int(time.time() * 1000)}",
             timestamp=time.time(),
-            component=f"daemon:{daemon_type}",
+            component=f"daemon:{daemon_name}",
             error_type="daemon_permanently_failed",
-            message=f"Daemon {daemon_type} exceeded restart limit ({restart_count} restarts)",
+            message=f"Daemon {daemon_name} exceeded restart limit ({restart_count} restarts)",
             node_id=hostname,
             severity=ErrorSeverity.CRITICAL,
             context={
-                "daemon_type": daemon_type,
+                "daemon_name": daemon_name,
                 "restart_count": restart_count,
                 "error": error_message,
                 "hostname": hostname,
@@ -1599,13 +1600,13 @@ class UnifiedHealthManager(CoordinatorBase):
         self._record_error(error)
 
         # Trip circuit breaker multiple times to ensure it's open
-        component_key = f"daemon:{daemon_type}"
+        component_key = f"daemon:{daemon_name}"
         for _ in range(5):  # Multiple failures to ensure breaker trips
             self._on_component_failure(component_key)
 
         # Escalate for human intervention
         await self._escalate_to_human(
-            f"daemon:{daemon_type}",
+            f"daemon:{daemon_name}",
             f"Daemon permanently failed after {restart_count} restarts: {error_message}",
         )
 

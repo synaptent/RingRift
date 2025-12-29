@@ -212,7 +212,7 @@ def start_metrics_server(port: int = 9090) -> bool:
             _server_started = True
             logger.info(f"Prometheus metrics server started on port {port}")
             return True
-        except Exception as e:
+        except (ImportError, OSError, RuntimeError) as e:
             logger.error(f"Failed to start metrics server: {e}")
             return False
 
