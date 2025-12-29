@@ -501,6 +501,12 @@ class ClusterNode:
     gpu: str = ""
     gpu_vram_gb: int = 0  # GPU VRAM in GB (December 2025)
     bandwidth_mbps: int = 0  # Bandwidth limit in MB/s (December 2025)
+    # December 2025: GPU-aware job assignment fields
+    cuda_capable: bool = False  # Explicit flag for CUDA capability
+    selfplay_enabled: bool = True  # Whether selfplay jobs can run on this node
+    training_enabled: bool = False  # Whether training jobs can run on this node
+    preferred_workloads: list[str] | None = None  # Preferred workload types
+    excluded_workloads: list[str] | None = None  # Excluded workload types
     data_server_port: int = 8766
     data_server_url: str | None = None
     is_coordinator: bool = False  # Whether this is the Elo coordinator
@@ -548,6 +554,46 @@ class ClusterNode:
     def is_gpu_node(self) -> bool:
         """Check if node has a GPU."""
         return bool(self.gpu)
+
+    @property
+    def has_cuda_gpu(self) -> bool:
+        """Check if node has a CUDA-capable GPU.
+
+        December 2025: Added for GPU-aware job assignment.
+        Uses explicit cuda_capable flag if set, otherwise infers from GPU presence.
+        """
+        # Explicit flag takes precedence
+        if self.cuda_capable:
+            return True
+        # Infer from GPU presence and VRAM
+        return bool(self.gpu) and self.gpu_vram_gb > 0
+
+    @property
+    def can_run_gpu_selfplay(self) -> bool:
+        """Check if node can run GPU selfplay (neural network modes).
+
+        December 2025: Requires both GPU capability AND selfplay enabled.
+        """
+        return (
+            self.has_cuda_gpu
+            and self.selfplay_enabled
+            and "gpu-selfplay" not in (self.excluded_workloads or [])
+        )
+
+    @property
+    def should_avoid_cpu_selfplay(self) -> bool:
+        """Check if this node should avoid CPU-only selfplay.
+
+        December 2025: High-end GPU nodes should prioritize GPU workloads.
+        Avoid wasting expensive GPU compute on CPU-bound tasks.
+        """
+        # Nodes with >48GB VRAM should avoid CPU selfplay
+        if self.gpu_vram_gb >= 48:
+            return True
+        # Check explicit exclusion
+        if "cpu-selfplay" in (self.excluded_workloads or []):
+            return True
+        return False
 
     @property
     def provider(self) -> str:

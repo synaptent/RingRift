@@ -144,6 +144,20 @@ class JobManager(EventSubscriptionMixin):
         "policy-only", "nn-descent", "nn-minimax"
     }
 
+    # GPU-required engine modes (require CUDA or MPS) - December 2025
+    # These modes use neural network inference and require GPU acceleration
+    GPU_REQUIRED_ENGINE_MODES = {
+        "gumbel-mcts", "mcts", "nnue-guided", "policy-only",
+        "nn-minimax", "nn-descent", "gnn", "hybrid",
+        "gmo", "ebmo", "ig-gmo", "cage",
+    }
+
+    # CPU-compatible engine modes (can run on any node)
+    CPU_COMPATIBLE_ENGINE_MODES = {
+        "heuristic-only", "heuristic", "random", "random-only",
+        "descent-only", "maxn", "brs",
+    }
+
     # Mixin type identifier (required by EventSubscriptionMixin)
     MIXIN_TYPE = "job_manager"
 
@@ -193,6 +207,63 @@ class JobManager(EventSubscriptionMixin):
         self._processes_lock = threading.Lock()
 
     # =========================================================================
+    # GPU Capability Helpers (December 2025)
+    # =========================================================================
+
+    def _engine_mode_requires_gpu(self, engine_mode: str) -> bool:
+        """Check if an engine mode requires GPU acceleration.
+
+        Args:
+            engine_mode: The engine mode string (e.g., "gumbel-mcts", "heuristic-only")
+
+        Returns:
+            True if the engine mode requires GPU (CUDA or MPS), False otherwise.
+
+        December 2025: Added to prevent dispatching GPU-required jobs to CPU-only nodes.
+        """
+        if not engine_mode:
+            return False
+        mode_lower = engine_mode.lower().strip()
+        return mode_lower in self.GPU_REQUIRED_ENGINE_MODES
+
+    def _worker_has_gpu(self, worker: Any) -> bool:
+        """Check if a worker node has GPU capability.
+
+        Args:
+            worker: Worker node info object (NodeInfo or similar)
+
+        Returns:
+            True if the worker has GPU (CUDA-capable), False otherwise.
+
+        December 2025: Added for GPU-aware job dispatch.
+        """
+        # Try has_cuda_gpu() method first (NodeInfo from scripts/p2p/models.py)
+        if hasattr(worker, "has_cuda_gpu"):
+            return worker.has_cuda_gpu()
+
+        # Try is_gpu_node() method (also on NodeInfo)
+        if hasattr(worker, "is_gpu_node"):
+            return worker.is_gpu_node()
+
+        # Try gpu_info attribute directly
+        if hasattr(worker, "gpu_info"):
+            gpu_info = worker.gpu_info
+            if gpu_info is not None:
+                gpu_count = getattr(gpu_info, "gpu_count", 0)
+                return gpu_count > 0
+
+        # Try node_type or capabilities attribute
+        if hasattr(worker, "node_type"):
+            return worker.node_type in ("gpu", "training", "h100", "a100", "gh200")
+
+        if hasattr(worker, "capabilities"):
+            caps = worker.capabilities or {}
+            return caps.get("gpu", False) or caps.get("cuda", False)
+
+        # Fallback: assume no GPU if we can't determine
+        logger.debug(f"Cannot determine GPU capability for worker: {worker}")
+        return False
+
     # Event Subscriptions (December 2025)
     # =========================================================================
 
@@ -486,16 +557,23 @@ class JobManager(EventSubscriptionMixin):
 
         effective_mode = engine_mode or "heuristic-only"
 
-        # GPU availability check for GPU-accelerated modes
-        if effective_mode in self.SEARCH_ENGINE_MODES:
+        # December 2025: GPU availability check using GPU_REQUIRED_ENGINE_MODES
+        # This prevents wasting compute on GPU-required modes when no GPU is available
+        if self._engine_mode_requires_gpu(effective_mode):
             try:
                 import torch
-                if not torch.cuda.is_available():
+                has_cuda = torch.cuda.is_available()
+                has_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+                if not (has_cuda or has_mps):
                     logger.warning(
-                        f"GPU mode {effective_mode} requested but no GPU available, "
-                        f"falling back to heuristic-only for job {job_id}"
+                        f"GPU-required mode '{effective_mode}' requested but no GPU available "
+                        f"(CUDA={has_cuda}, MPS={has_mps}), falling back to heuristic-only for job {job_id}"
                     )
                     effective_mode = "heuristic-only"
+                else:
+                    device_type = "CUDA" if has_cuda else "MPS"
+                    logger.debug(f"GPU available ({device_type}) for mode '{effective_mode}' job {job_id}")
             except ImportError:
                 logger.warning(
                     f"PyTorch not available for GPU check, falling back to heuristic-only for job {job_id}"
@@ -753,6 +831,16 @@ class JobManager(EventSubscriptionMixin):
         # Dec 28, 2025: Use centralized JobDefaults.HEALTH_CHECK_TIMEOUT (30s)
         timeout = ClientTimeout(total=JobDefaults.HEALTH_CHECK_TIMEOUT)
 
+        # December 2025: Determine engine mode and GPU requirements upfront
+        effective_engine_mode = "gumbel-mcts" if model_path else "heuristic-only"
+        gpu_required = self._engine_mode_requires_gpu(effective_engine_mode)
+
+        if gpu_required:
+            logger.info(
+                f"GPU-required engine mode '{effective_engine_mode}' requested, "
+                f"filtering workers with GPU capability"
+            )
+
         async with get_client_session(timeout) as session:
             for i, worker in enumerate(workers):
                 worker_id = getattr(worker, "node_id", str(worker))
@@ -766,6 +854,20 @@ class JobManager(EventSubscriptionMixin):
                     results[worker_id] = {"success": False, "error": "no_ip"}
                     continue
 
+                # December 2025: GPU capability validation before dispatch
+                # Skip CPU-only workers for GPU-required engine modes
+                if gpu_required and not self._worker_has_gpu(worker):
+                    logger.warning(
+                        f"Skipping worker {worker_id} for GPU-required mode "
+                        f"'{effective_engine_mode}': worker lacks GPU capability"
+                    )
+                    results[worker_id] = {
+                        "success": False,
+                        "error": "gpu_required_but_no_gpu",
+                        "skipped": True,
+                    }
+                    continue
+
                 url = f"http://{worker_ip}:{worker_port}/run-selfplay"
                 payload = {
                     "job_id": f"{job_id}_{worker_id}",
@@ -775,7 +877,7 @@ class JobManager(EventSubscriptionMixin):
                     "num_games": games,
                     "model_path": model_path,
                     "output_dir": output_dir,
-                    "engine_mode": "gumbel-mcts" if model_path else "heuristic-only",
+                    "engine_mode": effective_engine_mode,
                 }
 
                 try:

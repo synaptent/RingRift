@@ -236,6 +236,7 @@ class ModelMetadata:
     created_at: str = ""
     checksum: str = ""
     parent_checkpoint: str | None = None
+    memory_tier: str = ""  # v4, v3-high, v5, v6, etc. - identifies architecture tier
 
     # Use a method to get default timestamp to avoid mutable default
     def __post_init__(self) -> None:
@@ -342,6 +343,122 @@ def are_versions_compatible(checkpoint_version: str, expected_version: str) -> b
     if checkpoint_version == expected_version:
         return True
     return COMPATIBLE_VERSIONS.get((checkpoint_version, expected_version), False)
+
+
+# =============================================================================
+# Memory Tier Detection
+# =============================================================================
+
+# Mapping of (model_class, num_filters, num_blocks) -> memory_tier
+# Used to infer tier from model architecture when not explicitly stored
+TIER_SIGNATURES: dict[tuple[str, int, int], str] = {
+    # V4 NAS-optimized architectures
+    ("HexNeuralNet_v4", 128, 13): "v4",
+    ("RingRiftCNN_v4", 128, 13): "v4",
+    # V3-high (large models)
+    ("HexNeuralNet_v3", 192, 12): "v3-high",
+    ("RingRiftCNN_v3", 192, 12): "v3-high",
+    # V3-low (lite models)
+    ("HexNeuralNet_v3_Lite", 96, 6): "v3-low",
+    ("RingRiftCNN_v3_Lite", 96, 6): "v3-low",
+    # V5 variants
+    ("HexNeuralNet_v5_Heavy", 160, 11): "v5",
+    ("RingRiftCNN_v5", 160, 11): "v5",
+    # V6 large models
+    ("HexNeuralNet_v5_Heavy", 256, 18): "v6",
+    ("RingRiftCNN_v6", 256, 18): "v6",
+    # V6-xl extra large
+    ("HexNeuralNet_v5_Heavy", 320, 20): "v6-xl",
+    # GNN models
+    ("GNNPolicyNet", 128, 6): "gnn",
+    # V2 legacy models
+    ("HexNeuralNet_v2", 128, 10): "v2",
+    ("RingRiftCNN_v2", 128, 10): "v2",
+    ("HexNeuralNet_v2_Lite", 64, 6): "v2-lite",
+    ("RingRiftCNN_v2_Lite", 64, 6): "v2-lite",
+}
+
+# Fallback mapping for filter count -> tier (when signature not found)
+TIER_FROM_FILTERS: dict[int, str] = {
+    64: "v2-lite",
+    96: "v3-low",
+    128: "v4",
+    160: "v5",
+    192: "v3-high",
+    256: "v6",
+    320: "v6-xl",
+}
+
+
+def infer_memory_tier_from_model(model: nn.Module) -> str:
+    """Infer memory tier from model architecture.
+
+    Uses a signature lookup based on (model_class, num_filters, num_blocks).
+    Falls back to filter count heuristic if signature not found.
+
+    Args:
+        model: PyTorch model instance
+
+    Returns:
+        Memory tier string (e.g., "v4", "v3-high", "v5") or "unknown"
+    """
+    class_name = model.__class__.__name__
+
+    # Extract num_filters - try various attribute names
+    num_filters = getattr(model, 'num_filters', None)
+    if num_filters is None:
+        # Try getting from first conv layer
+        if hasattr(model, 'conv1') and hasattr(model.conv1, 'out_channels'):
+            num_filters = model.conv1.out_channels
+        elif hasattr(model, 'initial_conv') and hasattr(model.initial_conv, 'out_channels'):
+            num_filters = model.initial_conv.out_channels
+        else:
+            num_filters = 128  # Default
+
+    # Extract num_blocks/num_res_blocks
+    num_blocks = getattr(model, 'num_blocks', None)
+    if num_blocks is None:
+        num_blocks = getattr(model, 'num_res_blocks', None)
+    if num_blocks is None:
+        # Try counting res_blocks
+        if hasattr(model, 'res_blocks') and hasattr(model.res_blocks, '__len__'):
+            num_blocks = len(model.res_blocks)
+        else:
+            num_blocks = 10  # Default
+
+    # Lookup signature
+    signature = (class_name, num_filters, num_blocks)
+    if signature in TIER_SIGNATURES:
+        return TIER_SIGNATURES[signature]
+
+    # Fallback: infer from filter count
+    if num_filters in TIER_FROM_FILTERS:
+        return TIER_FROM_FILTERS[num_filters]
+
+    # Last resort: unknown
+    return "unknown"
+
+
+def infer_memory_tier_from_config(config: dict[str, Any]) -> str:
+    """Infer memory tier from checkpoint config dictionary.
+
+    Used when loading checkpoints that don't have memory_tier stored.
+
+    Args:
+        config: Model config dictionary from checkpoint metadata
+
+    Returns:
+        Memory tier string (e.g., "v4", "v3-high") or "unknown"
+    """
+    num_filters = config.get("num_filters")
+    if num_filters is None:
+        return "unknown"
+
+    # Use filter count heuristic
+    if num_filters in TIER_FROM_FILTERS:
+        return TIER_FROM_FILTERS[num_filters]
+
+    return "unknown"
 
 
 def get_model_version(model: nn.Module) -> str:
@@ -494,6 +611,9 @@ def get_model_config(model: nn.Module) -> dict[str, Any]:
             config["board_type"] = "hex8"
         elif board_size == 25:
             config["board_type"] = "hexagonal"
+
+    # Add memory tier to config for checkpoint compatibility tracking
+    config["memory_tier"] = infer_memory_tier_from_model(model)
 
     return config
 

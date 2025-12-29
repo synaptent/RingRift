@@ -554,6 +554,100 @@ def _validate_training_compatibility(
     logger.info("Training compatibility validation passed")
 
 
+def detect_tier_from_checkpoint(
+    checkpoint_path: str | Path,
+    device: str = "cpu",
+) -> tuple[str, str, int, int] | None:
+    """Detect memory tier and architecture from a checkpoint.
+
+    This function inspects a checkpoint file to extract the memory tier
+    and architecture parameters. Used when resuming training to ensure
+    the model architecture matches the checkpoint.
+
+    Parameters
+    ----------
+    checkpoint_path : str or Path
+        Path to the checkpoint file.
+    device : str
+        Device to load checkpoint onto (default: cpu).
+
+    Returns
+    -------
+    tuple[str, str, int, int] or None
+        (memory_tier, model_version, num_filters, num_res_blocks) if detected,
+        None if checkpoint doesn't exist or can't be analyzed.
+    """
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        return None
+
+    try:
+        checkpoint = safe_load_checkpoint(str(checkpoint_path), map_location=device)
+    except (OSError, RuntimeError, ValueError) as e:
+        logger.warning(f"Could not load checkpoint for tier detection: {e}")
+        return None
+
+    # Extract versioning metadata
+    metadata = checkpoint.get("_versioning_metadata", {})
+    config = metadata.get("config", {})
+
+    # Check if memory_tier is directly stored
+    memory_tier = metadata.get("memory_tier") or config.get("memory_tier", "")
+
+    # Extract architecture parameters
+    num_filters = config.get("num_filters")
+    num_res_blocks = config.get("num_res_blocks")
+
+    # If no direct tier, infer from config
+    if not memory_tier and num_filters is not None:
+        from app.training.model_versioning import infer_memory_tier_from_config
+        memory_tier = infer_memory_tier_from_config(config)
+
+    if not memory_tier:
+        return None
+
+    # Map tier to model_version
+    tier_to_version = {
+        "v4": "v4",
+        "v3-high": "v3",
+        "v3-low": "v3",
+        "v5": "v5",
+        "v5.1": "v5-heavy",
+        "v6": "v5-heavy",
+        "v6-xl": "v5-heavy",
+        "v2": "v2",
+        "v2-lite": "v2",
+        "gnn": "gnn",
+        "hybrid": "hybrid",
+    }
+    model_version = tier_to_version.get(memory_tier, "v2")
+
+    # Ensure we have architecture parameters
+    if num_filters is None or num_res_blocks is None:
+        # Use tier defaults
+        tier_defaults = {
+            "v4": (128, 13),
+            "v3-high": (192, 12),
+            "v3-low": (96, 6),
+            "v5": (160, 11),
+            "v5.1": (160, 11),
+            "v6": (256, 18),
+            "v6-xl": (320, 20),
+            "v2": (96, 6),
+            "v2-lite": (64, 6),
+        }
+        defaults = tier_defaults.get(memory_tier, (96, 6))
+        num_filters = num_filters or defaults[0]
+        num_res_blocks = num_res_blocks or defaults[1]
+
+    logger.info(
+        f"Detected checkpoint architecture: tier={memory_tier}, "
+        f"version={model_version}, filters={num_filters}, blocks={num_res_blocks}"
+    )
+
+    return (memory_tier, model_version, num_filters, num_res_blocks)
+
+
 def train_model(
     config: TrainConfig,
     data_path: str | list[str],

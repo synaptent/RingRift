@@ -19595,7 +19595,7 @@ print(json.dumps({{
             if self.node_id not in self.peers:
                 final_alive_count += 1
                 final_node_count += 1
-            _emit_cluster_health_event_sync(final_alive_count, final_node_count)
+            self._emit_cluster_health_event_sync(final_alive_count, final_node_count)
 
         # Clear stale leader IDs after restarts/partitions
         if self.leader_id and not self._is_leader_lease_valid():
@@ -19739,7 +19739,7 @@ print(json.dumps({{
             if self.node_id not in self.peers:
                 final_alive_count += 1
                 final_node_count += 1
-            _emit_cluster_health_event_sync(final_alive_count, final_node_count)
+            self._emit_cluster_health_event_sync(final_alive_count, final_node_count)
 
         # LEARNED LESSONS - Clear stale leader IDs after restarts/partitions.
         #

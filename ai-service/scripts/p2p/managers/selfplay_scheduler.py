@@ -106,6 +106,21 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
     MIXIN_TYPE = "selfplay_scheduler"
 
+    # GPU-required engine modes (require CUDA or MPS) - December 2025
+    # These modes use neural network inference and require GPU acceleration
+    GPU_REQUIRED_ENGINE_MODES = {
+        "gumbel-mcts", "mcts", "mcts-only", "nnue-guided", "policy-only",
+        "nn-minimax", "nn-descent", "gnn", "hybrid",
+        "gmo", "ebmo", "ig-gmo", "cage",
+    }
+
+    # CPU-compatible engine modes (can run on any node)
+    CPU_COMPATIBLE_ENGINE_MODES = {
+        "heuristic-only", "heuristic", "random", "random-only",
+        "descent-only", "maxn", "brs", "mixed", "diverse",
+        "tournament-varied", "heuristic-vs-mcts",
+    }
+
     def __init__(
         self,
         get_cluster_elo_fn: Callable[[], dict[str, Any]] | None = None,
@@ -229,6 +244,103 @@ class SelfplayScheduler(EventSubscriptionMixin):
             pass
 
         return min(5, boost)  # Cap at +5
+
+    # =========================================================================
+    # GPU Capability Helpers (December 2025)
+    # =========================================================================
+
+    def _engine_mode_requires_gpu(self, engine_mode: str) -> bool:
+        """Check if an engine mode requires GPU acceleration.
+
+        Args:
+            engine_mode: The engine mode string (e.g., "gumbel-mcts", "heuristic-only")
+
+        Returns:
+            True if the engine mode requires GPU (CUDA or MPS), False otherwise.
+
+        December 2025: Added to ensure GPU-required selfplay is only assigned
+        to GPU-capable nodes, preventing wasted compute.
+        """
+        if not engine_mode:
+            return False
+        mode_lower = engine_mode.lower().strip()
+        return mode_lower in self.GPU_REQUIRED_ENGINE_MODES
+
+    def _node_has_gpu(self, node: "NodeInfo") -> bool:
+        """Check if a node has GPU capability.
+
+        Args:
+            node: Node information object
+
+        Returns:
+            True if the node has GPU (CUDA-capable), False otherwise.
+
+        December 2025: Added for GPU-aware config selection.
+        """
+        # Try has_cuda_gpu() method first (NodeInfo from scripts/p2p/models.py)
+        if hasattr(node, "has_cuda_gpu"):
+            return node.has_cuda_gpu()
+
+        # Try is_gpu_node() method
+        if hasattr(node, "is_gpu_node"):
+            return node.is_gpu_node()
+
+        # Try has_gpu attribute
+        if hasattr(node, "has_gpu"):
+            return bool(node.has_gpu)
+
+        # Try gpu_info attribute directly
+        if hasattr(node, "gpu_info"):
+            gpu_info = node.gpu_info
+            if gpu_info is not None:
+                gpu_count = getattr(gpu_info, "gpu_count", 0)
+                return gpu_count > 0
+
+        # Fallback: assume no GPU if we can't determine
+        return False
+
+    def _filter_configs_by_gpu(
+        self,
+        configs: list[dict[str, Any]],
+        node: "NodeInfo",
+    ) -> list[dict[str, Any]]:
+        """Filter configs to only those compatible with node's GPU capability.
+
+        For CPU-only nodes, removes configs that require GPU (e.g., gumbel-mcts).
+        GPU nodes can run all configs.
+
+        Args:
+            configs: List of selfplay config dicts
+            node: Node information object
+
+        Returns:
+            Filtered list of configs compatible with the node.
+
+        December 2025: Core GPU-aware filtering for config selection.
+        """
+        if self._node_has_gpu(node):
+            # GPU nodes can run any config
+            return configs
+
+        # CPU-only nodes: filter out GPU-required configs
+        cpu_compatible = [
+            cfg
+            for cfg in configs
+            if not self._engine_mode_requires_gpu(cfg.get("engine_mode", ""))
+        ]
+
+        if len(cpu_compatible) < len(configs):
+            filtered_count = len(configs) - len(cpu_compatible)
+            node_id = getattr(node, "node_id", "unknown")
+            logger.info(
+                f"Filtered {filtered_count} GPU-required configs for CPU-only node {node_id}"
+            )
+
+        return cpu_compatible
+
+    # =========================================================================
+    # Event Subscriptions (December 2025)
+    # =========================================================================
 
     def _get_event_subscriptions(self) -> dict[str, Any]:
         """Return event subscriptions for EventSubscriptionMixin.
@@ -574,7 +686,17 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 c for c in selfplay_configs if c.get("board_type") == "square8"
             ]
 
+        # December 2025: Filter by GPU capability
+        # CPU-only nodes should only get CPU-compatible engine modes
+        # This prevents wasting compute on GPU-required modes that will fall back to heuristic
+        selfplay_configs = self._filter_configs_by_gpu(selfplay_configs, node)
+
         if not selfplay_configs:
+            node_id = getattr(node, "node_id", "unknown")
+            logger.warning(
+                f"No compatible selfplay configs for node {node_id} "
+                f"(has_gpu={self._node_has_gpu(node)}, memory={node_mem}GB)"
+            )
             return None
 
         # PRIORITY-BASED SCHEDULING: Add ELO-based priority boosts

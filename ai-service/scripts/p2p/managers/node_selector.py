@@ -294,6 +294,198 @@ class NodeSelector:
         return candidates[0] if candidates else None
 
     # =========================================================================
+    # GPU-Aware Selfplay Node Selection (December 2025)
+    # =========================================================================
+
+    # GPU-required engine modes (require CUDA or MPS)
+    # These modes use neural network inference and require GPU acceleration
+    GPU_REQUIRED_ENGINE_MODES = {
+        "gumbel-mcts", "mcts", "nnue-guided", "policy-only",
+        "nn-minimax", "nn-descent", "gnn", "hybrid",
+        "gmo", "ebmo", "ig-gmo", "cage",
+    }
+
+    # CPU-compatible engine modes (can run on any node)
+    CPU_COMPATIBLE_ENGINE_MODES = {
+        "heuristic-only", "heuristic", "random", "random-only",
+        "descent-only", "maxn", "brs",
+    }
+
+    def engine_mode_requires_gpu(self, engine_mode: str) -> bool:
+        """Check if an engine mode requires GPU acceleration.
+
+        Args:
+            engine_mode: The engine mode string (e.g., "gumbel-mcts", "heuristic-only")
+
+        Returns:
+            True if the engine mode requires GPU (CUDA or MPS), False otherwise.
+
+        December 2025: Added to ensure GPU-required selfplay is only dispatched
+        to GPU-capable nodes, preventing wasted compute and silent fallbacks.
+        """
+        if not engine_mode:
+            return False
+        mode_lower = engine_mode.lower().strip()
+        return mode_lower in self.GPU_REQUIRED_ENGINE_MODES
+
+    def get_nodes_for_engine_mode(
+        self,
+        engine_mode: str,
+        exclude_busy: bool = True,
+        include_self: bool = True,
+    ) -> list["NodeInfo"]:
+        """Get nodes capable of running the given engine mode.
+
+        For GPU-required modes (gumbel-mcts, mcts, etc.), returns only GPU-capable nodes.
+        For CPU-compatible modes (heuristic, random, etc.), returns all healthy nodes.
+
+        Args:
+            engine_mode: The engine mode string
+            exclude_busy: If True, exclude nodes with high load
+            include_self: If True, include the current node in results
+
+        Returns:
+            List of NodeInfo objects capable of running the engine mode.
+
+        December 2025: Core method for GPU-aware job dispatch.
+        """
+        all_nodes = self._get_all_nodes(include_self=include_self)
+
+        # Filter to alive, healthy, non-retired nodes
+        healthy_nodes = [
+            node
+            for node in all_nodes
+            if node.is_alive()
+            and node.is_healthy()
+            and not getattr(node, "retired", False)
+            and node.node_id not in self._unhealthy_nodes
+        ]
+
+        # If GPU required, filter to GPU-capable nodes only
+        if self.engine_mode_requires_gpu(engine_mode):
+            capable_nodes = [
+                node
+                for node in healthy_nodes
+                if node.has_gpu and node.gpu_power_score() > 0
+            ]
+            if not capable_nodes:
+                logger.warning(
+                    f"No GPU-capable nodes available for engine mode '{engine_mode}'"
+                )
+        else:
+            # CPU-compatible modes can run on any node
+            capable_nodes = healthy_nodes
+
+        # Optionally filter out busy nodes
+        if exclude_busy:
+            capable_nodes = [
+                node
+                for node in capable_nodes
+                if node.get_load_score() < 0.8  # Less than 80% load
+            ]
+
+        return capable_nodes
+
+    def get_gpu_nodes_for_selfplay(
+        self,
+        count: int | None = None,
+        exclude_busy: bool = True,
+    ) -> list["NodeInfo"]:
+        """Get GPU-capable nodes for GPU selfplay (neural network modes).
+
+        Returns nodes sorted by GPU power score, suitable for running
+        GPU-accelerated selfplay (gumbel-mcts, mcts, etc.).
+
+        Args:
+            count: Maximum number of nodes to return (None = all)
+            exclude_busy: If True, exclude nodes with high load
+
+        Returns:
+            List of GPU-capable NodeInfo objects, sorted by GPU power.
+
+        December 2025: Ensures GPU selfplay is only dispatched to GPU nodes.
+        """
+        all_nodes = self._get_all_nodes(include_self=True)
+
+        # Filter to GPU nodes that are alive, healthy, and not retired
+        gpu_nodes = [
+            node
+            for node in all_nodes
+            if node.has_gpu
+            and node.is_alive()
+            and node.is_healthy()
+            and not getattr(node, "retired", False)
+            and node.gpu_power_score() > 0
+            and node.node_id not in self._unhealthy_nodes
+        ]
+
+        # Optionally filter out busy nodes
+        if exclude_busy:
+            gpu_nodes = [
+                node
+                for node in gpu_nodes
+                if node.get_load_score() < 0.8
+            ]
+
+        # Sort by GPU power score (descending)
+        gpu_nodes.sort(key=lambda n: n.gpu_power_score(), reverse=True)
+
+        if count is not None:
+            return gpu_nodes[:count]
+        return gpu_nodes
+
+    def get_best_node_for_selfplay(
+        self,
+        engine_mode: str,
+        board_type: str | None = None,
+        exclude_node_ids: set[str] | None = None,
+    ) -> "NodeInfo | None":
+        """Get the best node for running selfplay with the given engine mode.
+
+        For GPU-required modes: Returns the best GPU node by power score.
+        For CPU-compatible modes: Returns any healthy node with low load.
+
+        Args:
+            engine_mode: The engine mode (e.g., "gumbel-mcts", "heuristic-only")
+            board_type: Optional board type for size-based filtering (future use)
+            exclude_node_ids: Optional set of node IDs to exclude
+
+        Returns:
+            Best NodeInfo for selfplay, or None if no suitable node.
+
+        December 2025: Entry point for GPU-aware selfplay scheduling.
+        """
+        candidates = self.get_nodes_for_engine_mode(
+            engine_mode, exclude_busy=True, include_self=True
+        )
+
+        if not candidates:
+            return None
+
+        # Apply exclusion filter
+        if exclude_node_ids:
+            candidates = [n for n in candidates if n.node_id not in exclude_node_ids]
+            if not candidates:
+                # If all candidates are excluded, try without busy filter
+                candidates = self.get_nodes_for_engine_mode(
+                    engine_mode, exclude_busy=False, include_self=True
+                )
+                candidates = [n for n in candidates if n.node_id not in exclude_node_ids]
+
+        if not candidates:
+            return None
+
+        # Sort by appropriate power score
+        if self.engine_mode_requires_gpu(engine_mode):
+            # For GPU modes, prefer high GPU power
+            candidates.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
+        else:
+            # For CPU modes, prefer high CPU power (for parallelism)
+            candidates.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
+
+        return candidates[0]
+
+    # =========================================================================
     # Utility Methods
     # =========================================================================
 
