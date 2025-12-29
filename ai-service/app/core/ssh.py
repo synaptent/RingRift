@@ -1128,17 +1128,18 @@ class SSHClient:
                 continue
 
         elapsed_ms = (time.time() - start_time) * 1000
-        self._record_failure()
+        all_failed_error = last_error or "All transports failed"
+        self._record_failure(transport=None, error=all_failed_error)
         # December 2025: Elevated from DEBUG to WARNING for visibility
         logger.warning(
-            f"SSH to {self._config.host} failed: {last_error or 'All transports failed'} "
-            f"(tried {len(transport_order)} transports)"
+            f"SSH to {self._config.host} failed: {all_failed_error} "
+            f"(tried {len(transports)} transports)"
         )
         return SSHResult(
             success=False,
             returncode=-1,
             stdout="",
-            stderr=last_error or "All transports failed",
+            stderr=all_failed_error,
             elapsed_ms=elapsed_ms,
             command=command,
             host=self._config.host,
