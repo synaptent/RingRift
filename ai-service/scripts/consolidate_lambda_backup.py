@@ -75,7 +75,8 @@ def find_databases(backup_root: Path) -> list[Path]:
                 if cursor.fetchone():
                     databases.append(db_path)
                 conn.close()
-            except Exception:
+            except sqlite3.Error:
+                # Skip corrupt/locked databases during discovery
                 pass
 
     return databases
@@ -96,7 +97,7 @@ def get_game_stats(db_path: Path) -> dict[str, Any]:
             stats[key] = row[2]
         conn.close()
         return stats
-    except Exception as e:
+    except sqlite3.Error as e:
         return {"error": str(e)}
 
 
@@ -122,7 +123,8 @@ def detect_schema_format(db_path: Path) -> str:
 
         conn.close()
         return "unknown"
-    except Exception:
+    except sqlite3.Error:
+        # Database corrupt or inaccessible - return unknown format
         return "unknown"
 
 

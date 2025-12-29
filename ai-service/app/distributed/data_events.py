@@ -68,6 +68,8 @@ __all__ = [
     "emit_task_abandoned",
     # Disk space management emitters (December 2025)
     "emit_disk_space_low",
+    # Leader heartbeat monitoring (P0 Dec 2025)
+    "emit_leader_heartbeat_missing",
 ]
 
 # Global singleton instance
@@ -328,6 +330,7 @@ class DataEventType(Enum):
     LEADER_STEPDOWN = "leader_stepdown"
     SPLIT_BRAIN_DETECTED = "split_brain_detected"  # Multiple leaders detected in cluster
     SPLIT_BRAIN_RESOLVED = "split_brain_resolved"  # Split-brain resolved (non-canonical leaders demoted)
+    LEADER_HEARTBEAT_MISSING = "leader_heartbeat_missing"  # P0 Dec 2025: Leader heartbeat delayed (monitoring)
 
     # P2P State persistence events (December 2025)
     STATE_PERSISTED = "state_persisted"  # P2P state saved to database
@@ -2400,6 +2403,37 @@ async def emit_leader_lost(
         payload={
             "old_leader_id": old_leader_id,
             "reason": reason,
+        },
+        source=source,
+    ))
+
+
+async def emit_leader_heartbeat_missing(
+    leader_id: str,
+    last_heartbeat: float,
+    expected_interval: float,
+    delay_seconds: float,
+    source: str = "",
+) -> None:
+    """Emit a LEADER_HEARTBEAT_MISSING event for monitoring.
+
+    This event is emitted when the leader hasn't sent a heartbeat for longer
+    than expected. It's a warning signal before the lease actually expires.
+
+    Args:
+        leader_id: ID of the leader node
+        last_heartbeat: Timestamp of last known heartbeat
+        expected_interval: Expected heartbeat interval in seconds
+        delay_seconds: How many seconds the heartbeat is delayed
+        source: Node emitting the event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.LEADER_HEARTBEAT_MISSING,
+        payload={
+            "leader_id": leader_id,
+            "last_heartbeat": last_heartbeat,
+            "expected_interval": expected_interval,
+            "delay_seconds": delay_seconds,
         },
         source=source,
     ))

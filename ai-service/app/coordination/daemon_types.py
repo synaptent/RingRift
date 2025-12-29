@@ -335,6 +335,11 @@ class DaemonInfo:
     max_restarts: int = 5
     restart_delay: float = 5.0
 
+    # December 2025: Startup grace period before health checks begin
+    # Slow-starting daemons (e.g., loading large state files) won't be
+    # incorrectly marked as unhealthy during initialization
+    startup_grace_period: float = 60.0
+
     # Dependencies
     depends_on: list[DaemonType] = field(default_factory=list)
 
@@ -410,6 +415,10 @@ class DaemonManagerConfig:
     critical_daemon_health_interval: float = field(
         default_factory=lambda: DaemonLoopDefaults.HEALTH_CHECK_TIMEOUT * 3  # 15s (3x health timeout)
     )
+
+    # December 2025: Default startup grace period before health checks begin
+    # Slow-starting daemons won't be incorrectly marked as unhealthy during initialization
+    default_startup_grace_period: float = 60.0  # seconds
 
 
 # P11-HIGH-2: Daemons critical for cluster health that need faster failure detection

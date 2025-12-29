@@ -101,6 +101,14 @@ _restart_state_dir.mkdir(parents=True, exist_ok=True)
 RESTART_STATE_FILE = _restart_state_dir / "daemon_restarts.json"
 RESTART_COUNTS_EXPIRY_SECONDS = 86400  # 24 hours - counts older than this are reset
 MAX_RESTARTS_PER_HOUR = 10  # If exceeded, daemon is permanently failed
+PERMANENT_FAILURE_RECOVERY_SECONDS = 86400  # 24 hours - permanently failed daemons auto-recover
+
+# Cascade restart circuit breaker (Dec 2025)
+# Prevents "thundering herd" effect when many daemons fail simultaneously
+# If too many restarts happen globally (across all daemons), pause all restarts
+CASCADE_RESTART_WINDOW_SECONDS = 300  # 5 minutes - window for counting global restarts
+CASCADE_RESTART_THRESHOLD = 15  # Max total restarts in window before circuit trips
+CASCADE_COOLDOWN_SECONDS = 120  # 2 minutes - cooldown period when circuit is open
 
 
 # Lazy import for daemon lifecycle events to avoid circular imports
@@ -171,9 +179,17 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         # Load persisted restart counts from disk to prevent infinite restart loops
         # after daemon manager restarts. Tracks hourly restart timestamps for
         # detecting permanently failing daemons.
+        # Dec 2025 (updated): _permanently_failed now tracks WHEN daemon was marked failed
+        # to enable auto-recovery after 24 hours.
         self._persisted_restart_counts: dict[str, int] = {}
         self._restart_timestamps: dict[str, list[float]] = {}  # Daemon -> list of restart times
-        self._permanently_failed: set[str] = set()  # Daemons that exceeded hourly limit
+        self._permanently_failed: dict[str, float] = {}  # Daemon -> timestamp when marked failed
+
+        # Dec 2025: Cascade restart circuit breaker state
+        # Tracks global restart activity to prevent thundering herd effect
+        self._cascade_breaker_open: bool = False
+        self._cascade_breaker_opened_at: float = 0.0
+        self._global_restart_timestamps: list[float] = []  # All daemon restarts globally
         self._load_restart_counts()
 
         # Register cleanup
@@ -303,8 +319,28 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 if recent_timestamps:
                     self._restart_timestamps[daemon_name] = recent_timestamps
 
-            # Load permanently failed daemons
-            self._permanently_failed = set(data.get("permanently_failed", []))
+            # Load permanently failed daemons (dict format: daemon_name -> timestamp)
+            # Dec 2025: Auto-recover daemons that have been failed for >24 hours
+            current_time = time.time()
+            raw_failed = data.get("permanently_failed", {})
+
+            # Handle legacy format (list) and new format (dict)
+            if isinstance(raw_failed, list):
+                # Legacy format: no timestamps, convert to dict with current time
+                # (these will expire in 24h from now)
+                raw_failed = {daemon: current_time for daemon in raw_failed}
+
+            # Filter out expired failures (auto-recovery after 24 hours)
+            self._permanently_failed = {}
+            for daemon_name, failed_at in raw_failed.items():
+                age_seconds = current_time - failed_at
+                if age_seconds < PERMANENT_FAILURE_RECOVERY_SECONDS:
+                    self._permanently_failed[daemon_name] = failed_at
+                else:
+                    logger.info(
+                        f"[DaemonManager] {daemon_name} auto-recovered after "
+                        f"{age_seconds / 3600:.1f}h in permanent failure state"
+                    )
 
             logger.info(
                 f"[DaemonManager] Loaded restart counts: "
@@ -348,7 +384,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 "timestamp": time.time(),
                 "counts": counts,
                 "restart_timestamps": self._restart_timestamps,
-                "permanently_failed": list(self._permanently_failed),
+                "permanently_failed": self._permanently_failed,  # Dict[str, float]: daemon -> fail timestamp
             }
 
             with open(RESTART_STATE_FILE, "w") as f:
@@ -381,10 +417,26 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
         # Check if already permanently failed
         if daemon_name in self._permanently_failed:
-            logger.error(
-                f"[DaemonManager] {daemon_name} is permanently failed, not restarting"
-            )
-            return False
+            failed_at = self._permanently_failed[daemon_name]
+            age_seconds = current_time - failed_at
+
+            # Auto-recover after 24 hours
+            if age_seconds >= PERMANENT_FAILURE_RECOVERY_SECONDS:
+                logger.info(
+                    f"[DaemonManager] {daemon_name} auto-recovered after "
+                    f"{age_seconds / 3600:.1f}h in permanent failure state"
+                )
+                del self._permanently_failed[daemon_name]
+                # Clear restart timestamps to give it a fresh start
+                self._restart_timestamps.pop(daemon_name, None)
+                self._save_restart_counts()
+            else:
+                logger.error(
+                    f"[DaemonManager] {daemon_name} is permanently failed "
+                    f"({age_seconds / 3600:.1f}h ago), not restarting. "
+                    f"Will auto-recover in {(PERMANENT_FAILURE_RECOVERY_SECONDS - age_seconds) / 3600:.1f}h"
+                )
+                return False
 
         # Get or create timestamp list for this daemon
         if daemon_name not in self._restart_timestamps:
@@ -404,9 +456,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         if hourly_restarts > MAX_RESTARTS_PER_HOUR:
             logger.error(
                 f"[DaemonManager] {daemon_name} exceeded hourly restart limit "
-                f"({hourly_restarts} > {MAX_RESTARTS_PER_HOUR}), marking permanently failed"
+                f"({hourly_restarts} > {MAX_RESTARTS_PER_HOUR}), marking permanently failed. "
+                f"Will auto-recover in {PERMANENT_FAILURE_RECOVERY_SECONDS / 3600:.0f}h"
             )
-            self._permanently_failed.add(daemon_name)
+            self._permanently_failed[daemon_name] = current_time  # Track WHEN failed for auto-recovery
             self._save_restart_counts()
 
             # Emit DAEMON_PERMANENTLY_FAILED event
@@ -482,7 +535,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         """
         daemon_name = daemon_type.value
         if daemon_name in self._permanently_failed:
-            self._permanently_failed.discard(daemon_name)
+            del self._permanently_failed[daemon_name]  # Fixed: was .discard() which is set method
             self._restart_timestamps.pop(daemon_name, None)
             if daemon_name in self._persisted_restart_counts:
                 del self._persisted_restart_counts[daemon_name]
@@ -495,6 +548,137 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             logger.info(
                 f"[DaemonManager] Cleared permanent failure status for {daemon_name}"
             )
+
+    def _check_cascade_circuit_breaker(self) -> bool:
+        """Check if cascade circuit breaker allows restarts.
+
+        Dec 2025: Implements a global circuit breaker to prevent thundering herd effect.
+        When too many daemons restart in a short window, pause all restarts to allow
+        the system to stabilize.
+
+        Returns:
+            True if restarts are allowed, False if circuit breaker is open
+        """
+        current_time = time.time()
+
+        # If circuit breaker is open, check if cooldown has passed
+        if self._cascade_breaker_open:
+            elapsed = current_time - self._cascade_breaker_opened_at
+            if elapsed >= CASCADE_COOLDOWN_SECONDS:
+                # Cooldown complete - close circuit breaker (half-open -> closed)
+                self._cascade_breaker_open = False
+                logger.info(
+                    f"[DaemonManager] Cascade circuit breaker CLOSED after "
+                    f"{elapsed:.0f}s cooldown - restarts allowed"
+                )
+            else:
+                # Still in cooldown
+                remaining = CASCADE_COOLDOWN_SECONDS - elapsed
+                logger.warning(
+                    f"[DaemonManager] Cascade circuit breaker OPEN - "
+                    f"restarts blocked for {remaining:.0f}s more"
+                )
+                return False
+
+        # Clean up old timestamps outside window
+        cutoff = current_time - CASCADE_RESTART_WINDOW_SECONDS
+        self._global_restart_timestamps = [
+            ts for ts in self._global_restart_timestamps if ts > cutoff
+        ]
+
+        return True
+
+    def _record_global_restart(self, daemon_type: DaemonType) -> None:
+        """Record a restart in the global tracker and check if circuit should trip.
+
+        Dec 2025: Tracks all restarts globally to detect cascade failures.
+        If too many restarts happen in a short window, trips the circuit breaker.
+
+        Args:
+            daemon_type: Type of daemon being restarted
+        """
+        current_time = time.time()
+        self._global_restart_timestamps.append(current_time)
+
+        # Check if we've exceeded threshold
+        recent_restarts = len(self._global_restart_timestamps)
+        if recent_restarts > CASCADE_RESTART_THRESHOLD:
+            if not self._cascade_breaker_open:
+                self._cascade_breaker_open = True
+                self._cascade_breaker_opened_at = current_time
+                logger.error(
+                    f"[DaemonManager] CASCADE CIRCUIT BREAKER TRIPPED! "
+                    f"{recent_restarts} restarts in {CASCADE_RESTART_WINDOW_SECONDS}s "
+                    f"(threshold: {CASCADE_RESTART_THRESHOLD}). "
+                    f"Pausing all restarts for {CASCADE_COOLDOWN_SECONDS}s. "
+                    f"Triggered by: {daemon_type.value}"
+                )
+
+                # Emit event for alerting/monitoring
+                try:
+                    from app.distributed.data_events import DataEventType
+
+                    fire_and_forget(
+                        self._emit_circuit_breaker_event(recent_restarts, daemon_type),
+                        name="emit_cascade_breaker_tripped",
+                    )
+                except (ImportError, RuntimeError):
+                    pass
+
+    async def _emit_circuit_breaker_event(
+        self, restart_count: int, triggered_by: DaemonType
+    ) -> None:
+        """Emit event when cascade circuit breaker trips.
+
+        Args:
+            restart_count: Number of restarts that triggered the breaker
+            triggered_by: Daemon that caused the breaker to trip
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            router.publish(
+                "daemon.cascade_breaker_tripped",
+                {
+                    "restart_count": restart_count,
+                    "threshold": CASCADE_RESTART_THRESHOLD,
+                    "window_seconds": CASCADE_RESTART_WINDOW_SECONDS,
+                    "cooldown_seconds": CASCADE_COOLDOWN_SECONDS,
+                    "triggered_by": triggered_by.value,
+                },
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit circuit breaker event: {e}")
+
+    def get_circuit_breaker_status(self) -> dict[str, Any]:
+        """Get status of the cascade circuit breaker.
+
+        Returns:
+            Dict with breaker state, recent restart count, and timing info
+        """
+        current_time = time.time()
+
+        # Count recent restarts
+        cutoff = current_time - CASCADE_RESTART_WINDOW_SECONDS
+        recent_restarts = [
+            ts for ts in self._global_restart_timestamps if ts > cutoff
+        ]
+
+        result = {
+            "breaker_open": self._cascade_breaker_open,
+            "recent_restart_count": len(recent_restarts),
+            "threshold": CASCADE_RESTART_THRESHOLD,
+            "window_seconds": CASCADE_RESTART_WINDOW_SECONDS,
+        }
+
+        if self._cascade_breaker_open:
+            elapsed = current_time - self._cascade_breaker_opened_at
+            result["cooldown_remaining"] = max(0, CASCADE_COOLDOWN_SECONDS - elapsed)
+        else:
+            result["cooldown_remaining"] = 0
+
+        return result
 
     # =========================================================================
     # Factory Registration
@@ -564,6 +748,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         health_check_interval: float | None = None,
         auto_restart: bool = True,
         max_restarts: int = 5,
+        startup_grace_period: float | None = None,
     ) -> None:
         """Register a factory function for creating a daemon.
 
@@ -576,6 +761,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 daemons, or 60s for others. (P11-HIGH-2 Dec 2025)
             auto_restart: Whether to auto-restart on failure
             max_restarts: Maximum restart attempts
+            startup_grace_period: Seconds before health checks begin after startup.
+                If None, uses default_startup_grace_period from config (60s).
+                December 2025: Prevents premature health check failures.
         """
         # P11-HIGH-2: Use faster health check interval for critical daemons
         if health_check_interval is None:
@@ -587,6 +775,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 )
             else:
                 health_check_interval = 60.0
+
+        # December 2025: Use config default if not specified
+        if startup_grace_period is None:
+            startup_grace_period = self.config.default_startup_grace_period
 
         self._factories[daemon_type] = factory
 
@@ -602,6 +794,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             auto_restart=auto_restart,
             max_restarts=max_restarts,
             restart_count=persisted_count,
+            startup_grace_period=startup_grace_period,
         )
 
         # Log if daemon has non-zero restart count from persistence
@@ -1113,6 +1306,17 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             # Phase 12 (Dec 2025): Emit readiness signal after critical daemons initialized
             # This closes the startup race condition where events were lost before handlers ready
             await self._emit_daemons_ready()
+
+            # December 29, 2025: Start active circuit breaker probing
+            # This allows circuits to recover faster when services become available
+            # instead of waiting for the full recovery timeout
+            try:
+                from app.distributed.circuit_breaker import start_recovery_probing
+                task = start_recovery_probing(interval=30.0)
+                if task:
+                    logger.info("[DaemonManager] Started circuit breaker recovery probing")
+            except (ImportError, RuntimeError) as e:
+                logger.debug(f"[DaemonManager] Circuit breaker probing not started: {e}")
 
         return await self._lifecycle.start_all(
             types=types,
@@ -2008,6 +2212,13 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         """
         # Define callback for DaemonManager-specific pre-shutdown operations
         async def _pre_shutdown_callback():
+            # December 29, 2025: Stop circuit breaker recovery probing
+            try:
+                from app.distributed.circuit_breaker import stop_recovery_probing
+                stop_recovery_probing()
+            except (ImportError, RuntimeError):
+                pass
+
             try:
                 from app.coordination.daemon_watchdog import stop_watchdog
                 await stop_watchdog()
@@ -2088,6 +2299,17 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     continue
 
                 if info.state != DaemonState.RUNNING:
+                    continue
+
+                # December 2025: Skip health checks during startup grace period
+                # Slow-starting daemons (e.g., loading large state files) need time
+                # to initialize before health checks begin
+                uptime = current_time - info.start_time
+                if uptime < info.startup_grace_period:
+                    logger.debug(
+                        f"Skipping health check for {daemon_type.value}: "
+                        f"in startup grace period ({uptime:.0f}s / {info.startup_grace_period:.0f}s)"
+                    )
                     continue
 
                 # Check if task is still alive
@@ -2211,6 +2433,19 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                         )
 
         # Handle restarts outside lock to prevent deadlock (start() also acquires lock)
+        # Dec 2025: Check cascade circuit breaker first - if too many restarts are happening
+        # globally, pause all restarts to let the system stabilize
+        if not daemons_to_restart:
+            return  # Nothing to restart
+
+        if not self._check_cascade_circuit_breaker():
+            # Circuit breaker is open - skip all restarts this cycle
+            logger.warning(
+                f"[DaemonManager] Skipping {len(daemons_to_restart)} daemon restart(s) "
+                f"due to cascade circuit breaker: {[d.value for d in daemons_to_restart]}"
+            )
+            return
+
         # Also cascade restart to dependent daemons when a dependency fails
         all_to_restart: set[DaemonType] = set(daemons_to_restart)
         for daemon_type in daemons_to_restart:
@@ -2224,8 +2459,29 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 all_to_restart.update(dependents)
 
         # Restart in dependency order (dependencies first, then dependents)
+        # Dec 29, 2025: Fix - stop unhealthy daemons before restarting.
+        # Without this, start() returns early for RUNNING daemons without restarting.
         sorted_restarts = self._sort_by_dependencies(list(all_to_restart))
         for daemon_type in sorted_restarts:
+            # Dec 2025: Record global restart for circuit breaker tracking
+            self._record_global_restart(daemon_type)
+
+            # Check if circuit breaker tripped mid-batch (could happen with large cascades)
+            if self._cascade_breaker_open:
+                logger.warning(
+                    f"[DaemonManager] Circuit breaker tripped mid-restart - "
+                    f"stopping restart batch"
+                )
+                break
+
+            # First stop the daemon if it's still running (unhealthy but not crashed)
+            info = self._daemons.get(daemon_type)
+            if info and info.state == DaemonState.RUNNING:
+                logger.info(
+                    f"Stopping unhealthy daemon {daemon_type.value} before restart"
+                )
+                await self.stop(daemon_type)
+            # Now start (or restart) the daemon
             await self.start(daemon_type)
 
     def get_status(self) -> dict[str, Any]:
@@ -2256,6 +2512,8 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 "failed": failed_count,
                 "stopped": len(self._daemons) - running_count - failed_count,
             },
+            # Dec 2025: Include cascade circuit breaker status
+            "circuit_breaker": self.get_circuit_breaker_status(),
         }
 
     def health_check(self) -> "HealthCheckResult":

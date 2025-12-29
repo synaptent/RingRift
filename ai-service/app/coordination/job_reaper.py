@@ -166,8 +166,76 @@ class JobReaperDaemon:
             "data_export": 1800,    # 30 minutes
         }
 
-    def get_timeout_for_job(self, job_type: str) -> float:
-        """Get the timeout for a specific job type."""
+    def get_timeout_for_job(self, job_type: str, job_params: dict[str, Any] | None = None) -> float:
+        """Get the timeout for a specific job type with adaptive scaling.
+
+        December 29, 2025: Added adaptive timeout calculation based on job parameters.
+        This prevents premature kills for large jobs while keeping short timeouts
+        for small jobs.
+
+        Args:
+            job_type: The type of job (selfplay, training, etc.)
+            job_params: Optional job parameters for adaptive scaling:
+                - num_games: Number of games (for selfplay)
+                - num_samples: Number of training samples
+                - board_type: Board configuration (larger boards = more time)
+                - num_players: Player count (more players = more time)
+
+        Returns:
+            Timeout in seconds, scaled by job size.
+        """
+        base_timeout = self.job_timeouts.get(job_type.lower(), DEFAULT_JOB_TIMEOUT)
+
+        if not job_params:
+            return base_timeout
+
+        multiplier = 1.0
+
+        # Scale by number of games (selfplay jobs)
+        num_games = job_params.get("num_games", 0)
+        if num_games > 0:
+            # Base: 100 games = 1x, 500 games = 2x, 1000 games = 3x
+            game_multiplier = 1.0 + (num_games / 500)
+            multiplier *= min(5.0, game_multiplier)  # Cap at 5x
+
+        # Scale by number of samples (training jobs)
+        num_samples = job_params.get("num_samples", 0)
+        if num_samples > 0:
+            # Base: 100K samples = 1x, 500K samples = 2x, 1M samples = 3x
+            sample_multiplier = 1.0 + (num_samples / 500000)
+            multiplier *= min(5.0, sample_multiplier)  # Cap at 5x
+
+        # Scale by board type (larger boards are slower)
+        board_type = job_params.get("board_type", "")
+        if board_type:
+            board_multipliers = {
+                "hex8": 1.0,
+                "square8": 1.0,
+                "square19": 2.5,    # ~6x more cells than square8
+                "hexagonal": 3.0,   # ~7x more cells than hex8
+            }
+            multiplier *= board_multipliers.get(board_type, 1.0)
+
+        # Scale by player count (more players = longer games)
+        num_players = job_params.get("num_players", 2)
+        if num_players > 2:
+            # Each additional player adds ~25% time
+            player_multiplier = 1.0 + (num_players - 2) * 0.25
+            multiplier *= player_multiplier
+
+        # Apply multiplier with reasonable bounds
+        scaled_timeout = base_timeout * multiplier
+        max_timeout = base_timeout * 10  # Never exceed 10x base
+        min_timeout = base_timeout * 0.5  # Never go below 0.5x base
+
+        return max(min_timeout, min(max_timeout, scaled_timeout))
+
+    def get_timeout_for_job_simple(self, job_type: str) -> float:
+        """Get the base timeout for a specific job type (no adaptive scaling).
+
+        December 29, 2025: Kept for backward compatibility with callers that
+        don't have job parameters.
+        """
         return self.job_timeouts.get(job_type.lower(), DEFAULT_JOB_TIMEOUT)
 
     # =========================================================================
@@ -303,7 +371,10 @@ class JobReaperDaemon:
         self._persist_blacklist_entry(self.blacklisted_nodes[node_id])
 
     async def _get_timed_out_jobs(self) -> list[dict[str, Any]]:
-        """Query work queue for jobs that have exceeded their timeout."""
+        """Query work queue for jobs that have exceeded their timeout.
+
+        December 29, 2025: Now uses adaptive timeouts based on job parameters.
+        """
         timed_out = []
 
         try:
@@ -313,12 +384,22 @@ class JobReaperDaemon:
             now = time.time()
             for job in running_jobs:
                 job_type = job.get("work_type", "unknown")
-                timeout = self.get_timeout_for_job(job_type)
+
+                # December 29, 2025: Extract job parameters for adaptive timeout
+                job_params = {
+                    "num_games": job.get("num_games", job.get("games", 0)),
+                    "num_samples": job.get("num_samples", job.get("samples", 0)),
+                    "board_type": job.get("board_type", job.get("config", {}).get("board_type", "")),
+                    "num_players": job.get("num_players", job.get("config", {}).get("num_players", 2)),
+                }
+
+                timeout = self.get_timeout_for_job(job_type, job_params)
                 started_at = job.get("started_at", 0)
 
                 if started_at and (now - started_at) > timeout:
                     job["timeout_duration"] = now - started_at
                     job["expected_timeout"] = timeout
+                    job["adaptive_params"] = job_params  # For debugging
                     timed_out.append(job)
 
         except Exception as e:

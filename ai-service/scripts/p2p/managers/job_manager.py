@@ -26,6 +26,7 @@ from app.config.coordination_defaults import (
     JobDefaults,
     OperationTimeouts,
     SSHDefaults,
+    TaskLifecycleDefaults,
 )
 
 # Import mixin for consolidated event handling (Dec 28, 2025)
@@ -42,6 +43,7 @@ class JobManagerStats:
     """Statistics for job manager monitoring.
 
     December 27, 2025: Added to track job lifecycle events for observability.
+    December 29, 2025: Added reassignment stats for Phase 15.1.9.
     """
 
     jobs_spawned: int = 0
@@ -51,6 +53,10 @@ class JobManagerStats:
     nodes_recovered: int = 0
     hosts_offline: int = 0
     hosts_online: int = 0
+    # Phase 15.1.9: Reassignment tracking
+    jobs_reassigned: int = 0
+    jobs_orphaned: int = 0
+    reassignment_failures: int = 0
 
 # Event emission helper - imported lazily to avoid circular imports
 # Dec 2025: Added thread-safe initialization to prevent race conditions
@@ -163,6 +169,18 @@ class JobManager(EventSubscriptionMixin):
     # Mixin type identifier (required by EventSubscriptionMixin)
     MIXIN_TYPE = "job_manager"
 
+    # Phase 15.1.9: Job heartbeat timeout and reassignment
+    # Jobs without heartbeat for this duration are considered abandoned
+    JOB_HEARTBEAT_TIMEOUT: float = float(os.environ.get(
+        "RINGRIFT_JOB_HEARTBEAT_TIMEOUT",
+        str(TaskLifecycleDefaults.HEARTBEAT_TIMEOUT * 5)  # 5 minutes default (5 * 60s)
+    ))
+
+    # Maximum reassignment attempts before job is considered permanently failed
+    MAX_REASSIGNMENT_ATTEMPTS: int = int(os.environ.get(
+        "RINGRIFT_MAX_JOB_REASSIGNMENT_ATTEMPTS", "3"
+    ))
+
     def __init__(
         self,
         ringrift_path: str,
@@ -210,6 +228,11 @@ class JobManager(EventSubscriptionMixin):
         # Maps job_id -> asyncio.subprocess.Process
         self._active_processes: dict[str, asyncio.subprocess.Process] = {}
         self._processes_lock = threading.Lock()
+
+        # Phase 15.1.9: Job heartbeat tracking for abandoned job detection
+        # Maps job_id -> (last_heartbeat_time, reassignment_count)
+        self._job_heartbeats: dict[str, tuple[float, int]] = {}
+        self._heartbeats_lock = threading.Lock()
 
     # =========================================================================
     # GPU Capability Helpers (December 2025)
@@ -842,6 +865,232 @@ class JobManager(EventSubscriptionMixin):
 
         return killed
 
+    # =========================================================================
+    # Job Heartbeat Tracking (Phase 15.1.9 - December 29, 2025)
+    # =========================================================================
+
+    def update_job_heartbeat(self, job_id: str) -> None:
+        """Update the heartbeat timestamp for a job.
+
+        Should be called periodically by running jobs to signal they're still alive.
+
+        Args:
+            job_id: The job identifier
+        """
+        with self._heartbeats_lock:
+            current = self._job_heartbeats.get(job_id)
+            reassignment_count = current[1] if current else 0
+            self._job_heartbeats[job_id] = (time.time(), reassignment_count)
+
+    def get_job_heartbeats(self) -> dict[str, float]:
+        """Get all job heartbeat timestamps.
+
+        Returns:
+            Dict mapping job_id -> last_heartbeat_timestamp
+        """
+        with self._heartbeats_lock:
+            return {job_id: hb[0] for job_id, hb in self._job_heartbeats.items()}
+
+    def _register_job_heartbeat(self, job_id: str, reassignment_count: int = 0) -> None:
+        """Register a new job for heartbeat tracking.
+
+        Called when a job is spawned to start heartbeat tracking.
+
+        Args:
+            job_id: The job identifier
+            reassignment_count: Number of times this job has been reassigned
+        """
+        with self._heartbeats_lock:
+            self._job_heartbeats[job_id] = (time.time(), reassignment_count)
+
+    def _unregister_job_heartbeat(self, job_id: str) -> None:
+        """Remove a job from heartbeat tracking.
+
+        Called when a job completes or is cancelled.
+
+        Args:
+            job_id: The job identifier
+        """
+        with self._heartbeats_lock:
+            self._job_heartbeats.pop(job_id, None)
+
+    async def check_stale_jobs(self) -> list[tuple[str, str]]:
+        """Check for jobs that have exceeded heartbeat timeout.
+
+        Phase 15.1.9: Detects jobs that haven't sent a heartbeat within
+        JOB_HEARTBEAT_TIMEOUT and marks them for reassignment.
+
+        Returns:
+            List of (job_id, job_type) tuples for stale jobs
+        """
+        stale_jobs: list[tuple[str, str]] = []
+        now = time.time()
+
+        with self._heartbeats_lock:
+            stale_job_ids = [
+                job_id for job_id, (last_hb, _) in self._job_heartbeats.items()
+                if now - last_hb > self.JOB_HEARTBEAT_TIMEOUT
+            ]
+
+        if not stale_job_ids:
+            return stale_jobs
+
+        # Find job info for stale jobs
+        with self.jobs_lock:
+            for job_type, jobs in self.active_jobs.items():
+                for job_id, job in jobs.items():
+                    if job_id in stale_job_ids:
+                        status = job.get("status") if isinstance(job, dict) else getattr(job, "status", "")
+                        if status == "running":
+                            stale_jobs.append((job_id, job_type))
+
+        return stale_jobs
+
+    async def reassign_stale_job(
+        self,
+        job_id: str,
+        job_type: str,
+        preferred_nodes: list[str] | None = None,
+    ) -> bool:
+        """Attempt to reassign a stale job to another node.
+
+        Phase 15.1.9: When a job exceeds heartbeat timeout, this method
+        attempts to reassign it to a different node.
+
+        Args:
+            job_id: The stale job's identifier
+            job_type: Type of job (selfplay, training, etc.)
+            preferred_nodes: Optional list of preferred node IDs for reassignment
+
+        Returns:
+            True if job was successfully queued for reassignment, False otherwise
+        """
+        # Get reassignment count
+        with self._heartbeats_lock:
+            current = self._job_heartbeats.get(job_id)
+            reassignment_count = current[1] if current else 0
+
+        # Check if we've exceeded max reassignment attempts
+        if reassignment_count >= self.MAX_REASSIGNMENT_ATTEMPTS:
+            logger.warning(
+                f"Job {job_id} exceeded max reassignment attempts ({self.MAX_REASSIGNMENT_ATTEMPTS}), "
+                f"marking as permanently failed"
+            )
+            self._handle_permanent_job_failure(job_id, job_type)
+            return False
+
+        # Get original job info
+        job_info: dict[str, Any] | None = None
+        original_node: str | None = None
+        with self.jobs_lock:
+            if job_type in self.active_jobs and job_id in self.active_jobs[job_type]:
+                job = self.active_jobs[job_type][job_id]
+                if isinstance(job, dict):
+                    job_info = job.copy()
+                    original_node = job.get("node_id")
+                    # Mark original as cancelled
+                    job["status"] = "reassigned"
+                else:
+                    job_info = {
+                        "job_id": job_id,
+                        "board_type": getattr(job, "board_type", ""),
+                        "num_players": getattr(job, "num_players", 2),
+                        "num_games": getattr(job, "num_games", 100),
+                    }
+                    original_node = getattr(job, "node_id", None)
+                    job.status = "reassigned"
+
+        if not job_info:
+            logger.warning(f"Cannot reassign job {job_id}: job info not found")
+            return False
+
+        # Emit TASK_ORPHANED event for the original job
+        self._emit_task_event(
+            "TASK_ORPHANED",
+            job_id,
+            job_type,
+            original_node=original_node,
+            reassignment_count=reassignment_count + 1,
+            board_type=job_info.get("board_type", ""),
+        )
+
+        # Increment reassignment count
+        with self._heartbeats_lock:
+            self._job_heartbeats[job_id] = (time.time(), reassignment_count + 1)
+
+        self.stats.jobs_orphaned += 1
+        self.stats.jobs_reassigned += 1
+
+        # Log the reassignment for monitoring
+        logger.info(
+            f"Reassigning orphaned job {job_id} (type={job_type}, "
+            f"original_node={original_node}, attempt={reassignment_count + 1})"
+        )
+
+        # Note: The actual re-dispatch is handled by SelfplayScheduler which
+        # subscribes to TASK_ORPHANED events. We just emit the event here.
+        return True
+
+    def _handle_permanent_job_failure(self, job_id: str, job_type: str) -> None:
+        """Handle a job that has permanently failed after max reassignment attempts.
+
+        Args:
+            job_id: The failed job's identifier
+            job_type: Type of job
+        """
+        # Remove from active jobs
+        with self.jobs_lock:
+            if job_type in self.active_jobs and job_id in self.active_jobs[job_type]:
+                job = self.active_jobs[job_type][job_id]
+                if isinstance(job, dict):
+                    job["status"] = "permanently_failed"
+                else:
+                    job.status = "permanently_failed"
+
+        # Remove from heartbeat tracking
+        self._unregister_job_heartbeat(job_id)
+
+        # Emit permanent failure event
+        self._emit_task_event(
+            "TASK_FAILED",
+            job_id,
+            job_type,
+            error="exceeded_max_reassignment_attempts",
+            permanent=True,
+        )
+
+        self.stats.reassignment_failures += 1
+        logger.error(
+            f"Job {job_id} permanently failed after {self.MAX_REASSIGNMENT_ATTEMPTS} "
+            f"reassignment attempts"
+        )
+
+    async def process_stale_jobs(self) -> int:
+        """Check for and reassign all stale jobs.
+
+        Phase 15.1.9: Convenience method that combines stale job detection
+        and reassignment. Should be called periodically (e.g., every 60s).
+
+        Returns:
+            Number of jobs reassigned
+        """
+        stale_jobs = await self.check_stale_jobs()
+        if not stale_jobs:
+            return 0
+
+        reassigned = 0
+        for job_id, job_type in stale_jobs:
+            try:
+                if await self.reassign_stale_job(job_id, job_type):
+                    reassigned += 1
+            except Exception as e:
+                logger.warning(f"Error reassigning job {job_id}: {e}")
+
+        if reassigned > 0:
+            logger.info(f"Reassigned {reassigned}/{len(stale_jobs)} stale jobs")
+
+        return reassigned
+
     def _emit_task_event(self, event_type: str, job_id: str, job_type: str, **kwargs) -> None:
         """Emit a task lifecycle event if the event system is available.
 
@@ -1024,7 +1273,11 @@ class JobManager(EventSubscriptionMixin):
                     "num_games": num_games,
                     "started_at": time.time(),
                     "pid": proc.pid,
+                    "node_id": self.node_id,  # Phase 15.1.9: Track which node is running the job
                 }
+
+            # Phase 15.1.9: Register for heartbeat tracking
+            self._register_job_heartbeat(job_id)
 
             # Emit TASK_SPAWNED event for pipeline coordination
             self._emit_task_event(
@@ -1042,6 +1295,9 @@ class JobManager(EventSubscriptionMixin):
 
             # December 28, 2025: Unregister process after successful completion
             self._unregister_process(job_id)
+
+            # Phase 15.1.9: Unregister from heartbeat tracking
+            self._unregister_job_heartbeat(job_id)
 
             # Update job status and emit completion event
             duration = time.time() - self.active_jobs.get("selfplay", {}).get(job_id, {}).get("started_at", time.time())

@@ -199,6 +199,7 @@ DATA_TO_CROSS_PROCESS_MAP: Final[dict[str, str]] = {
     "p2p_node_dead": "P2P_NODE_DEAD",  # Dec 2025: Single node dead (vs p2p_nodes_dead for batch)
     "leader_elected": "LEADER_ELECTED",
     "leader_lost": "LEADER_LOST",
+    "leader_heartbeat_missing": "LEADER_HEARTBEAT_MISSING",  # P0 Dec 2025: Monitoring event
     # Work queue events
     "work_queued": "WORK_QUEUED",
     "work_claimed": "WORK_CLAIMED",

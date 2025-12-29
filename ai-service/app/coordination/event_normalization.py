@@ -531,12 +531,255 @@ def _generate_recommendations(
     return recommendations
 
 
+# =============================================================================
+# Canonical Event Types Set (P0 December 2025)
+# =============================================================================
+
+# Build the set of all valid canonical event types.
+# This is used by EventTypeValidator to reject unknown event types.
+# The set is built from:
+# 1. All canonical names in CANONICAL_EVENT_NAMES (the values)
+# 2. DataEventType enum names (uppercase)
+# 3. DataEventType enum values (lowercase)
+
+CANONICAL_EVENT_TYPES: set[str] = set(CANONICAL_EVENT_NAMES.values())
+
+# Lazy-load DataEventType to avoid circular imports
+_data_event_types_loaded: bool = False
+
+
+def _ensure_data_event_types_loaded() -> None:
+    """Lazy-load DataEventType enum values into CANONICAL_EVENT_TYPES."""
+    global _data_event_types_loaded
+    if _data_event_types_loaded:
+        return
+
+    try:
+        from app.distributed.data_events import DataEventType
+
+        for event_type in DataEventType:
+            # Add both the enum name (TRAINING_COMPLETED) and value (training_completed)
+            CANONICAL_EVENT_TYPES.add(event_type.name)
+            CANONICAL_EVENT_TYPES.add(event_type.value)
+        _data_event_types_loaded = True
+    except ImportError:
+        logger.debug("[EventNormalization] DataEventType not available for validation")
+
+
+# =============================================================================
+# Event Type Validator (P0 December 2025)
+# =============================================================================
+
+
+class UnknownEventTypeError(ValueError):
+    """Raised when an unknown event type is published in strict mode.
+
+    P0 December 2025: Events with unknown types cause silent pipeline failures.
+    This error helps catch typos and misconfigurations early.
+    """
+
+    def __init__(self, event_type: str, suggestions: list[str] | None = None):
+        self.event_type = event_type
+        self.suggestions = suggestions or []
+        msg = f"Unknown event type: '{event_type}'"
+        if self.suggestions:
+            msg += f". Did you mean: {', '.join(self.suggestions[:3])}?"
+        super().__init__(msg)
+
+
+class EventTypeValidator:
+    """Validates event types against canonical names.
+
+    P0 December 2025: Event type mismatches (e.g., "SYNC_COMPLETE" vs
+    "DATA_SYNC_COMPLETED") cause events to never be routed, silently breaking
+    the training pipeline.
+
+    This validator:
+    1. Checks if event types are in the canonical set
+    2. Warns or rejects unknown event types
+    3. Suggests similar event names for typos
+    4. Tracks unknown events for auditing
+
+    Usage:
+        validator = EventTypeValidator(strict=False)  # Warn mode (default)
+        is_valid, message = validator.validate("SYNC_COMPLETE")
+        # is_valid=True (normalized), message="Normalized to DATA_SYNC_COMPLETED"
+
+        validator = EventTypeValidator(strict=True)  # Strict mode
+        is_valid, message = validator.validate("UNKNOWN_EVENT")
+        # is_valid=False, message="Unknown event type: 'UNKNOWN_EVENT'"
+
+    Environment Variables:
+        RINGRIFT_EVENT_VALIDATION_STRICT: Set to "true" to reject unknown events
+    """
+
+    # Class-level tracking of unknown events (for auditing)
+    _unknown_events: dict[str, int] = {}
+    _unknown_events_lock: bool = False  # Simple lock for thread safety
+
+    def __init__(self, strict: bool | None = None):
+        """Initialize the validator.
+
+        Args:
+            strict: If True, raise UnknownEventTypeError for unknown events.
+                   If False, log warning and allow. If None, check env var.
+        """
+        import os
+
+        if strict is None:
+            strict = os.environ.get("RINGRIFT_EVENT_VALIDATION_STRICT", "").lower() == "true"
+        self.strict = strict
+
+        # Ensure canonical set is populated
+        _ensure_data_event_types_loaded()
+
+    def validate(self, event_type: str) -> tuple[bool, str]:
+        """Validate an event type.
+
+        Args:
+            event_type: Event type string to validate
+
+        Returns:
+            Tuple of (is_valid, message)
+            - is_valid: True if event type is known or can be normalized
+            - message: Description of validation result
+
+        Raises:
+            UnknownEventTypeError: If strict=True and event type is unknown
+        """
+        # Normalize first
+        normalized = normalize_event_type(event_type)
+
+        # Check if normalized type is canonical
+        if normalized in CANONICAL_EVENT_TYPES:
+            if normalized != event_type:
+                return True, f"Normalized '{event_type}' to '{normalized}'"
+            return True, "Valid canonical event type"
+
+        # Unknown event type
+        self._track_unknown(event_type)
+        suggestions = self._find_similar(event_type)
+
+        if self.strict:
+            raise UnknownEventTypeError(event_type, suggestions)
+
+        # Warn mode
+        msg = f"Unknown event type: '{event_type}'"
+        if suggestions:
+            msg += f". Did you mean: {', '.join(suggestions[:3])}?"
+        logger.warning(f"[EventTypeValidator] {msg}")
+
+        return False, msg
+
+    def is_valid(self, event_type: str) -> bool:
+        """Check if an event type is valid (doesn't raise in strict mode)."""
+        normalized = normalize_event_type(event_type)
+        return normalized in CANONICAL_EVENT_TYPES
+
+    def _track_unknown(self, event_type: str) -> None:
+        """Track unknown event types for auditing."""
+        # Simple thread-safe increment
+        if event_type not in EventTypeValidator._unknown_events:
+            EventTypeValidator._unknown_events[event_type] = 0
+        EventTypeValidator._unknown_events[event_type] += 1
+
+    def _find_similar(self, event_type: str, max_results: int = 5) -> list[str]:
+        """Find similar canonical event types (for suggestions).
+
+        Uses simple substring and prefix matching.
+        """
+        event_upper = event_type.upper()
+        suggestions: list[tuple[int, str]] = []
+
+        for canonical in CANONICAL_EVENT_TYPES:
+            score = 0
+            canonical_upper = canonical.upper()
+
+            # Exact substring match (high score)
+            if event_upper in canonical_upper or canonical_upper in event_upper:
+                score += 50
+
+            # Prefix/suffix match
+            if canonical_upper.startswith(event_upper[:4]) if len(event_upper) >= 4 else False:
+                score += 30
+            if canonical_upper.endswith(event_upper[-4:]) if len(event_upper) >= 4 else False:
+                score += 20
+
+            # Word overlap (split on underscore)
+            event_words = set(event_upper.split("_"))
+            canonical_words = set(canonical_upper.split("_"))
+            overlap = len(event_words & canonical_words)
+            score += overlap * 15
+
+            if score > 0:
+                suggestions.append((score, canonical))
+
+        # Sort by score descending, return top results
+        suggestions.sort(key=lambda x: -x[0])
+        return [s[1] for s in suggestions[:max_results]]
+
+    @classmethod
+    def get_unknown_events(cls) -> dict[str, int]:
+        """Get all unknown events encountered (for auditing)."""
+        return dict(cls._unknown_events)
+
+    @classmethod
+    def reset_unknown_events(cls) -> None:
+        """Reset the unknown events tracker."""
+        cls._unknown_events.clear()
+
+
+# =============================================================================
+# Module-level validator instance
+# =============================================================================
+
+# Default validator (warn mode unless RINGRIFT_EVENT_VALIDATION_STRICT=true)
+_default_validator: EventTypeValidator | None = None
+
+
+def get_event_validator(strict: bool | None = None) -> EventTypeValidator:
+    """Get the default event type validator.
+
+    Args:
+        strict: Override strict mode for this call
+
+    Returns:
+        EventTypeValidator instance
+    """
+    global _default_validator
+    if _default_validator is None:
+        _default_validator = EventTypeValidator(strict=strict)
+    return _default_validator
+
+
+def validate_event_type(event_type: str) -> tuple[bool, str]:
+    """Validate an event type using the default validator.
+
+    This is the main entry point for event validation.
+
+    Args:
+        event_type: Event type to validate
+
+    Returns:
+        Tuple of (is_valid, message)
+
+    Raises:
+        UnknownEventTypeError: If strict mode and event type is unknown
+    """
+    return get_event_validator().validate(event_type)
+
+
 __all__ = [
     "CANONICAL_EVENT_NAMES",
+    "CANONICAL_EVENT_TYPES",
     "EVENT_NAMING_GUIDELINES",
+    "EventTypeValidator",
+    "UnknownEventTypeError",
     "audit_event_usage",
+    "get_event_validator",
     "get_variants",
     "is_canonical",
     "normalize_event_type",
     "validate_event_names",
+    "validate_event_type",
 ]

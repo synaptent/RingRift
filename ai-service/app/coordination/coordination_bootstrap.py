@@ -430,6 +430,14 @@ COORDINATOR_REGISTRY: dict[str, CoordinatorSpec] = {
         pattern=InitPattern.IMPORT,
         func_name="OrphanDetectionDaemon",
     ),
+    "training_activity": CoordinatorSpec(
+        name="training_activity",
+        display_name="TrainingActivityDaemon",
+        module_path="app.coordination.training_activity_daemon",
+        pattern=InitPattern.GET,
+        func_name="get_training_activity_daemon",
+        check_subscribed=False,  # Subscribes in start(), called by DaemonManager
+    ),
     "curriculum_integration": CoordinatorSpec(
         name="curriculum_integration",
         display_name="CurriculumIntegration",
@@ -1552,6 +1560,115 @@ def _validate_event_wiring() -> dict[str, Any]:
     return results
 
 
+def _restore_event_subscriptions() -> dict[str, Any]:
+    """Restore event subscriptions from persistent store and replay stale DLQ events.
+
+    P0 December 2025: Subscriptions are lost on process restart, causing events
+    to be orphaned. This function:
+    1. Restores subscriptions from SQLite store
+    2. Replays DLQ events older than 5 minutes
+    3. Emits alerts for stale DLQ events (>24h old)
+
+    Returns:
+        Dict with restoration results
+    """
+    results: dict[str, Any] = {
+        "subscriptions_restored": 0,
+        "dlq_events_replayed": 0,
+        "stale_alerts_emitted": 0,
+        "errors": [],
+    }
+
+    try:
+        from app.coordination.event_router import get_router
+
+        router = get_router()
+
+        # Restore subscriptions from persistent store
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Create task if we're in async context
+                task = asyncio.create_task(router.restore_subscriptions())
+                # Can't await in sync function, log that it will complete async
+                logger.debug(
+                    "[Bootstrap] Subscription restoration scheduled (async context)"
+                )
+            else:
+                results["subscriptions_restored"] = loop.run_until_complete(
+                    router.restore_subscriptions()
+                )
+        except RuntimeError:
+            # No event loop - create one
+            results["subscriptions_restored"] = asyncio.run(
+                router.restore_subscriptions()
+            )
+
+        # Replay stale DLQ events
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                task = asyncio.create_task(router.replay_stale_dlq_events())
+                logger.debug("[Bootstrap] DLQ replay scheduled (async context)")
+            else:
+                results["dlq_events_replayed"] = loop.run_until_complete(
+                    router.replay_stale_dlq_events()
+                )
+        except RuntimeError:
+            results["dlq_events_replayed"] = asyncio.run(
+                router.replay_stale_dlq_events()
+            )
+
+        # Emit alerts for stale DLQ events
+        try:
+            from app.coordination.subscription_store import get_subscription_store
+
+            store = get_subscription_store()
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                task = asyncio.create_task(store.emit_stale_dlq_alerts())
+            else:
+                results["stale_alerts_emitted"] = loop.run_until_complete(
+                    store.emit_stale_dlq_alerts()
+                )
+        except ImportError:
+            pass  # Subscription store not available
+        except RuntimeError:
+            try:
+                results["stale_alerts_emitted"] = asyncio.run(
+                    store.emit_stale_dlq_alerts()
+                )
+            except Exception:
+                pass
+
+        if results["subscriptions_restored"] > 0:
+            logger.info(
+                f"[Bootstrap] Restored {results['subscriptions_restored']} subscriptions "
+                f"from persistent store"
+            )
+
+        if results["dlq_events_replayed"] > 0:
+            logger.info(
+                f"[Bootstrap] Replayed {results['dlq_events_replayed']} stale DLQ events"
+            )
+
+        if results["stale_alerts_emitted"] > 0:
+            logger.warning(
+                f"[Bootstrap] Emitted {results['stale_alerts_emitted']} alerts "
+                f"for stale DLQ events"
+            )
+
+    except ImportError as e:
+        results["errors"].append(f"Event router not available: {e}")
+        logger.debug(f"[Bootstrap] Subscription restoration not available: {e}")
+    except Exception as e:
+        results["errors"].append(str(e))
+        logger.warning(f"[Bootstrap] Subscription restoration failed: {e}")
+
+    return results
+
+
 # =============================================================================
 # Main Bootstrap Function
 # =============================================================================
@@ -1585,6 +1702,7 @@ def bootstrap_coordination(
     enable_idle_resource: bool = True,
     enable_quality_monitor: bool = True,
     enable_orphan_detection: bool = True,
+    enable_training_activity: bool = True,
     enable_curriculum_integration: bool = True,
     pipeline_auto_trigger: bool = False,
     register_with_registry: bool = True,
@@ -1739,6 +1857,7 @@ def bootstrap_coordination(
         ("idle_resource_daemon", enable_idle_resource),
         ("quality_monitor_daemon", enable_quality_monitor),
         ("orphan_detection_daemon", enable_orphan_detection),
+        ("training_activity", enable_training_activity),
         # --- Layer 8: Top-Level Coordination ---
         ("metrics_orchestrator", enable_metrics),  # Depends on pipeline
         ("optimization_coordinator", enable_optimization),  # Depends on metrics
@@ -1797,6 +1916,9 @@ def bootstrap_coordination(
 
     # Phase 21.2 (December 2025): Validate event flow to detect orphaned events
     _validate_event_wiring()
+
+    # P0 December 2025: Restore subscriptions and replay stale DLQ events
+    _restore_event_subscriptions()
 
     _state.initialized = True
     _state.completed_at = datetime.now()

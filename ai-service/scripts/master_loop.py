@@ -1474,13 +1474,14 @@ class MasterLoopController:
         config_key: str,
         num_games: int,
     ) -> None:
-        """Emit a selfplay job allocation event.
+        """Emit a selfplay job and dispatch it directly to the target node.
 
         December 2025 - Phase 2A.2: Emits events for work queue integration.
+        December 29, 2025: Added direct dispatch via /selfplay/start endpoint.
+        The event-only approach didn't work because IdleResourceDaemon only
+        logs the event and waits for its regular loop to pick it up.
         """
         try:
-            from app.coordination.event_router import emit_event, DataEventType
-
             # Parse config key
             parts = config_key.rsplit("_", 1)
             if len(parts) != 2:
@@ -1488,6 +1489,26 @@ class MasterLoopController:
 
             board_type = parts[0]
             num_players = int(parts[1].replace("p", ""))
+
+            # First, try direct dispatch to the node
+            dispatch_success = await self._dispatch_selfplay_to_node(
+                node_id, board_type, num_players, num_games
+            )
+
+            if dispatch_success:
+                logger.info(
+                    f"[MasterLoop] Dispatched selfplay to {node_id}: "
+                    f"{config_key}, {num_games} games"
+                )
+            else:
+                # Fall back to event emission for other daemons to pick up
+                logger.debug(
+                    f"[MasterLoop] Direct dispatch failed for {node_id}, "
+                    f"emitting event for {config_key}"
+                )
+
+            # Also emit the event for other subscribers (feedback loop, etc.)
+            from app.coordination.event_router import emit_event, DataEventType
 
             await emit_event(
                 DataEventType.SELFPLAY_TARGET_UPDATED,
@@ -1499,10 +1520,65 @@ class MasterLoopController:
                     "target_games": num_games,
                     "priority": "high",
                     "source": "master_loop",
+                    "dispatched": dispatch_success,
                 }
             )
         except Exception as e:
             logger.debug(f"[MasterLoop] Error emitting selfplay job: {e}")
+
+    async def _dispatch_selfplay_to_node(
+        self,
+        node_id: str,
+        board_type: str,
+        num_players: int,
+        num_games: int,
+    ) -> bool:
+        """Dispatch selfplay directly to a node via /selfplay/start endpoint.
+
+        December 29, 2025: Added to fix autonomous selfplay dispatch.
+        Previously relied on event emission which IdleResourceDaemon didn't act on.
+        """
+        try:
+            from app.coordination.p2p_integration import dispatch_selfplay_direct
+            from app.config.cluster_config import get_p2p_port, load_cluster_config
+
+            # Get node host from cluster config
+            config = load_cluster_config()
+            hosts = config.get("hosts", {})
+            host_info = hosts.get(node_id, {})
+
+            # Try tailscale_ip first, then fall back to node_id
+            host = host_info.get("tailscale_ip") or host_info.get("ssh_host") or node_id
+            port = host_info.get("p2p_port") or get_p2p_port()
+
+            # Select engine based on board type
+            if board_type in ("square19", "hexagonal"):
+                import random
+                if num_players >= 3:
+                    engine_mode = random.choice(["heuristic-only", "brs", "maxn"])
+                else:
+                    engine_mode = random.choice(["heuristic-only", "policy-only"])
+            else:
+                engine_mode = "gumbel-mcts"
+
+            result = await dispatch_selfplay_direct(
+                target_node=node_id,
+                host=host,
+                port=port,
+                board_type=board_type,
+                num_players=num_players,
+                num_games=num_games,
+                engine_mode=engine_mode,
+            )
+
+            return result.success
+
+        except ImportError as e:
+            logger.debug(f"[MasterLoop] P2P dispatch not available: {e}")
+            return False
+        except Exception as e:
+            logger.debug(f"[MasterLoop] Dispatch failed for {node_id}: {e}")
+            return False
 
     # =========================================================================
     # Evaluation handling

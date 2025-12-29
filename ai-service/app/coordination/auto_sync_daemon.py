@@ -895,6 +895,76 @@ class AutoSyncDaemon(
 
             await asyncio.sleep(self.config.interval_seconds)
 
+    async def _sync_all(self) -> None:
+        """Execute full sync cycle (Protocol method required by SyncEventMixin).
+
+        December 2025: Added to satisfy AutoSyncDaemonProtocol interface.
+        This is called by event handlers when a full sync is needed.
+        """
+        await self._sync_cycle()
+
+    async def _sync_to_peer(self, node_id: str) -> bool:
+        """Sync all local databases to a specific peer node.
+
+        December 29, 2025: Added to satisfy SyncEventMixin interface.
+        Called by event handlers (e.g., TRAINING_STARTED) to sync data to a specific node.
+
+        Args:
+            node_id: Target node identifier
+
+        Returns:
+            True if sync succeeded, False otherwise
+        """
+        from urllib.request import Request, urlopen
+
+        try:
+            # Get node info from P2P status
+            from app.config.ports import get_p2p_status_url
+            url = get_p2p_status_url()
+            req = Request(url, headers={"Accept": "application/json"})
+
+            with urlopen(req, timeout=10) as resp:
+                status = json.loads(resp.read().decode())
+
+            peers = status.get("peers", {})
+            target_info = peers.get(node_id)
+
+            if not target_info:
+                logger.warning(f"[AutoSyncDaemon] Target node {node_id} not found in P2P status")
+                return False
+
+            # Build target dict for sync_to_target_with_retry
+            target = {
+                "node_id": node_id,
+                "ssh_host": target_info.get("host", node_id),
+                "ssh_user": target_info.get("ssh_user", "root"),
+                "ssh_port": target_info.get("ssh_port", 22),
+                "disk_free_gb": target_info.get("disk_free_gb", 100),
+            }
+
+            # Get local databases
+            databases = self.discover_local_databases()
+            if not databases:
+                logger.debug(f"[AutoSyncDaemon] No databases to sync to {node_id}")
+                return True  # No data to sync is not a failure
+
+            # Sync each database
+            success_count = 0
+            for db in databases:
+                try:
+                    result = await self.sync_to_target_with_retry(db, target)
+                    if result.get("success"):
+                        success_count += 1
+                except (RuntimeError, OSError, ConnectionError) as e:
+                    logger.warning(f"[AutoSyncDaemon] Failed to sync {db.name} to {node_id}: {e}")
+
+            logger.info(f"[AutoSyncDaemon] Synced {success_count}/{len(databases)} databases to {node_id}")
+            return success_count > 0
+
+        except (OSError, ValueError, json.JSONDecodeError, TimeoutError) as e:
+            logger.error(f"[AutoSyncDaemon] Failed to sync to peer {node_id}: {e}")
+            return False
+
     async def _sync_cycle(self) -> int:
         """Execute one sync cycle.
 

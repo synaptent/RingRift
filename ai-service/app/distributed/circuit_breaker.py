@@ -67,6 +67,11 @@ __all__ = [
     "get_training_breaker",
     "set_host_breaker_callback",
     "with_circuit_breaker",
+    # Phase 15.1.4: Health probe utilities
+    "DEFAULT_HEALTH_PROBE_PORTS",
+    "DEFAULT_HEALTH_PROBE_TIMEOUT",
+    "start_recovery_probing",
+    "stop_recovery_probing",
 ]
 
 T = TypeVar("T")
@@ -96,6 +101,32 @@ except ImportError:
     # Dec 28, 2025: Reduced from 600 to 180 to prevent long stalls in training pipelines
     DEFAULT_MAX_BACKOFF = 180.0
     DEFAULT_HALF_OPEN_MAX_CALLS = 1
+
+# Phase 15.1.4: Default health probe ports by target pattern (December 2025)
+# Maps target name patterns to (port, endpoint) tuples for health checks
+DEFAULT_HEALTH_PROBE_PORTS = {
+    "p2p": (8770, "/health"),      # P2P orchestrator
+    "http": (80, "/health"),        # HTTP services
+    "data": (8780, "/health"),      # Data distribution
+    "ssh": None,                    # SSH uses subprocess, no HTTP probe
+    "rsync": None,                  # rsync uses subprocess
+    "aria2": (6800, "/jsonrpc"),    # aria2 RPC
+}
+DEFAULT_HEALTH_PROBE_TIMEOUT = 5.0
+
+# Phase 15.1.8: Escalation tiers for automatic recovery (December 2025)
+# Instead of requiring manual force_reset() after max_consecutive_opens,
+# circuits escalate through increasingly longer recovery periods.
+# Each tier has:
+#   - wait: Minimum seconds before attempting recovery
+#   - probe_interval: Seconds between probe attempts in this tier
+ESCALATION_TIERS = [
+    {"wait": 60, "probe_interval": 10},      # Tier 0: 1 min wait, probe every 10s
+    {"wait": 300, "probe_interval": 30},     # Tier 1: 5 min wait, probe every 30s
+    {"wait": 900, "probe_interval": 60},     # Tier 2: 15 min wait, probe every 1 min
+    {"wait": 3600, "probe_interval": 300},   # Tier 3: 1 hour wait, probe every 5 min
+]
+MAX_ESCALATION_TIER = len(ESCALATION_TIERS) - 1
 
 # ============================================
 # Prometheus Metrics (optional)
@@ -176,6 +207,10 @@ class CircuitStatus:
     opened_at: float | None
     half_open_at: float | None
     consecutive_opens: int = 0  # For exponential backoff tracking
+    # Phase 15.1.8: Escalation tracking
+    escalation_tier: int = 0
+    escalation_entered_at: float | None = None
+    time_until_next_probe: float | None = None
 
     @property
     def time_since_open(self) -> float | None:
@@ -183,6 +218,11 @@ class CircuitStatus:
         if self.opened_at:
             return time.time() - self.opened_at
         return None
+
+    @property
+    def is_escalated(self) -> bool:
+        """True if circuit is in an escalated state (beyond normal backoff)."""
+        return self.escalation_tier > 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -196,6 +236,10 @@ class CircuitStatus:
             "half_open_at": self.half_open_at,
             "time_since_open": self.time_since_open,
             "consecutive_opens": self.consecutive_opens,
+            "escalation_tier": self.escalation_tier,
+            "escalation_entered_at": self.escalation_entered_at,
+            "is_escalated": self.is_escalated,
+            "time_until_next_probe": self.time_until_next_probe,
         }
 
 
@@ -212,6 +256,10 @@ class _CircuitData:
     half_open_calls: int = 0
     # Exponential backoff tracking
     consecutive_opens: int = 0  # How many times circuit opened without full recovery
+    # Phase 15.1.8: Escalation tier tracking
+    escalation_tier: int = 0  # Current escalation tier (0 = normal)
+    escalation_entered_at: float | None = None  # When we entered current tier
+    last_probe_at: float | None = None  # When we last attempted a probe
 
 
 class CircuitBreaker:
@@ -264,6 +312,133 @@ class CircuitBreaker:
 
         self._circuits: dict[str, _CircuitData] = {}
         self._lock = RLock()
+
+    def _default_health_probe(self, target: str) -> bool:
+        """Default HTTP health probe for a target (Phase 15.1.4).
+
+        Attempts an HTTP GET to common health endpoints based on the
+        operation_type and target. Returns True if the probe succeeds.
+
+        This provides automatic recovery probing for circuits without
+        requiring explicit probe configuration.
+
+        Args:
+            target: Target identifier (hostname or hostname:port)
+
+        Returns:
+            True if health check passed, False otherwise.
+        """
+        import socket
+        import urllib.request
+        import urllib.error
+
+        # Determine health endpoint based on operation type
+        probe_config = DEFAULT_HEALTH_PROBE_PORTS.get(self.operation_type)
+        if probe_config is None:
+            # No HTTP probe for this operation type (e.g., SSH, rsync)
+            return False
+
+        port, endpoint = probe_config
+
+        # Extract hostname from target (may include :port suffix)
+        hostname = target.split(":")[0] if ":" in target else target
+
+        # Build health check URL
+        url = f"http://{hostname}:{port}{endpoint}"
+
+        try:
+            # Use short timeout for health probes
+            with urllib.request.urlopen(
+                url,
+                timeout=DEFAULT_HEALTH_PROBE_TIMEOUT
+            ) as response:
+                return response.status == 200
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            socket.timeout,
+            OSError,
+            ConnectionError,
+        ):
+            return False
+        except Exception:
+            # Catch-all for unexpected errors
+            return False
+
+    def _get_escalation_tier(self, circuit: _CircuitData) -> int:
+        """Get the current escalation tier for a circuit (Phase 15.1.8).
+
+        Returns the tier based on consecutive_opens:
+        - 0-4: Normal backoff (tier 0)
+        - 5-9: Tier 1
+        - 10-14: Tier 2
+        - 15+: Tier 3 (max)
+        """
+        if circuit.consecutive_opens < self.max_consecutive_opens:
+            return 0
+        # Each 5 additional opens moves up a tier
+        extra_opens = circuit.consecutive_opens - self.max_consecutive_opens
+        tier = min(1 + extra_opens // 5, MAX_ESCALATION_TIER)
+        return tier
+
+    def _get_tier_config(self, tier: int) -> dict:
+        """Get configuration for a specific escalation tier."""
+        tier = min(tier, MAX_ESCALATION_TIER)
+        return ESCALATION_TIERS[tier] if tier < len(ESCALATION_TIERS) else ESCALATION_TIERS[-1]
+
+    def _should_probe_in_tier(self, circuit: _CircuitData) -> bool:
+        """Check if we should attempt a probe based on tier timing (Phase 15.1.8).
+
+        Returns True if enough time has passed since the last probe
+        according to the current escalation tier's probe_interval.
+        """
+        tier = self._get_escalation_tier(circuit)
+        config = self._get_tier_config(tier)
+
+        # First, check if we've waited long enough since entering this tier
+        if circuit.escalation_entered_at:
+            time_in_tier = time.time() - circuit.escalation_entered_at
+            if time_in_tier < config["wait"]:
+                return False
+
+        # Check probe interval
+        if circuit.last_probe_at is None:
+            return True
+
+        time_since_probe = time.time() - circuit.last_probe_at
+        return time_since_probe >= config["probe_interval"]
+
+    def _get_time_until_next_probe(self, circuit: _CircuitData) -> float | None:
+        """Get seconds until next probe is allowed (Phase 15.1.8)."""
+        tier = self._get_escalation_tier(circuit)
+        config = self._get_tier_config(tier)
+
+        # Check tier wait first
+        if circuit.escalation_entered_at:
+            time_in_tier = time.time() - circuit.escalation_entered_at
+            if time_in_tier < config["wait"]:
+                return config["wait"] - time_in_tier
+
+        # Check probe interval
+        if circuit.last_probe_at is None:
+            return 0.0
+
+        time_since_probe = time.time() - circuit.last_probe_at
+        if time_since_probe >= config["probe_interval"]:
+            return 0.0
+        return config["probe_interval"] - time_since_probe
+
+    def _escalate(self, circuit: _CircuitData) -> None:
+        """Move circuit to escalation mode (Phase 15.1.8).
+
+        Called when consecutive_opens exceeds max_consecutive_opens.
+        Instead of being "permanently open", the circuit enters escalation
+        where it will still attempt recovery with longer intervals.
+        """
+        new_tier = self._get_escalation_tier(circuit)
+        if new_tier != circuit.escalation_tier:
+            circuit.escalation_tier = new_tier
+            circuit.escalation_entered_at = time.time()
 
     def _notify_state_change(self, target: str, old_state: CircuitState, new_state: CircuitState) -> None:
         """Notify callback of a state change."""
@@ -363,6 +538,10 @@ class CircuitBreaker:
                     circuit.half_open_at = None
                     # Reset backoff on successful recovery
                     circuit.consecutive_opens = 0
+                    # Phase 15.1.8: Reset escalation state
+                    circuit.escalation_tier = 0
+                    circuit.escalation_entered_at = None
+                    circuit.last_probe_at = None
             elif circuit.state == CircuitState.CLOSED:
                 # Reset failure count on success
                 circuit.failure_count = 0
@@ -405,6 +584,8 @@ class CircuitBreaker:
                 circuit.opened_at = time.time()
                 circuit.success_count = 0
                 circuit.consecutive_opens += 1  # Increase backoff for next recovery
+                # Phase 15.1.8: Check for escalation
+                self._escalate(circuit)
                 opened_circuit = True
             elif circuit.state == CircuitState.CLOSED:
                 # Check if we should open the circuit
@@ -412,6 +593,8 @@ class CircuitBreaker:
                     circuit.state = CircuitState.OPEN
                     circuit.opened_at = time.time()
                     circuit.consecutive_opens += 1  # Track consecutive opens
+                    # Phase 15.1.8: Check for escalation
+                    self._escalate(circuit)
                     opened_circuit = True
 
             new_state = circuit.state
@@ -442,15 +625,17 @@ class CircuitBreaker:
         """Actively probe target for recovery instead of waiting for timeout.
 
         Uses the configured active_recovery_probe callback to check if the
-        target is healthy. If probe succeeds, transitions to HALF_OPEN or
-        directly to CLOSED.
+        target is healthy. If no callback is configured, uses the default
+        HTTP health probe (Phase 15.1.4).
+
+        Phase 15.1.8: Respects escalation tier timing. In escalated state,
+        probing is throttled according to the tier's probe_interval.
+
+        If probe succeeds, transitions to HALF_OPEN for gradual recovery.
 
         Returns:
             True if recovery probe succeeded, False otherwise.
         """
-        if not self._active_recovery_probe:
-            return False
-
         with self._lock:
             circuit = self._get_or_create_circuit(target)
 
@@ -458,14 +643,21 @@ class CircuitBreaker:
             if circuit.state != CircuitState.OPEN:
                 return circuit.state == CircuitState.CLOSED
 
-            # Check if we've exceeded max consecutive opens
-            if circuit.consecutive_opens >= self.max_consecutive_opens:
-                # Requires manual reset
+            # Phase 15.1.8: Check tier timing (replaces permanent open check)
+            # Instead of blocking forever after max_consecutive_opens,
+            # we use escalation tiers with increasing probe intervals
+            if not self._should_probe_in_tier(circuit):
                 return False
+
+            # Update last probe time
+            circuit.last_probe_at = time.time()
+
+        # Phase 15.1.4: Use custom probe if configured, otherwise use default
+        probe_func = self._active_recovery_probe or self._default_health_probe
 
         # Run probe outside lock
         try:
-            probe_success = self._active_recovery_probe(target)
+            probe_success = probe_func(target)
         except (ConnectionError, TimeoutError, OSError, RuntimeError):
             # Network/system failures during health probe - treat as probe failure
             probe_success = False
@@ -488,7 +680,7 @@ class CircuitBreaker:
         Use this for manual intervention when a circuit is stuck open
         (e.g., after max_consecutive_opens exceeded).
 
-        This resets all counters including consecutive_opens.
+        This resets all counters including consecutive_opens and escalation.
         """
         with self._lock:
             circuit = self._get_or_create_circuit(target)
@@ -501,24 +693,34 @@ class CircuitBreaker:
             circuit.opened_at = None
             circuit.half_open_at = None
             circuit.half_open_calls = 0
+            # Phase 15.1.8: Reset escalation state
+            circuit.escalation_tier = 0
+            circuit.escalation_entered_at = None
+            circuit.last_probe_at = None
 
             self._notify_state_change(target, old_state, CircuitState.CLOSED)
 
     def is_permanently_open(self, target: str) -> bool:
-        """Check if circuit has exceeded max consecutive opens.
+        """Check if circuit is in an escalated state beyond normal backoff.
 
-        When a circuit exceeds max_consecutive_opens, it won't auto-recover
-        and requires force_reset() for manual intervention.
+        Phase 15.1.8: With escalation tiers, circuits are never truly
+        "permanently" open. They will continue attempting recovery with
+        increasing intervals. This method now returns True only if the
+        circuit is at the maximum escalation tier.
+
+        Note: For backward compatibility, this still returns True when
+        consecutive_opens >= max_consecutive_opens AND at max tier.
+        Use force_reset() if you want to immediately reset.
 
         Returns:
-            True if circuit is open and at max consecutive opens.
+            True if circuit is at maximum escalation tier.
         """
         with self._lock:
             circuit = self._get_or_create_circuit(target)
-            return (
-                circuit.state == CircuitState.OPEN
-                and circuit.consecutive_opens >= self.max_consecutive_opens
-            )
+            if circuit.state != CircuitState.OPEN:
+                return False
+            # At max tier - will still try recovery but very slowly
+            return circuit.escalation_tier >= MAX_ESCALATION_TIER
 
     def get_permanently_open_circuits(self) -> list[str]:
         """Get all targets with permanently open circuits.
@@ -544,7 +746,7 @@ class CircuitBreaker:
             return circuit.state
 
     def get_status(self, target: str) -> CircuitStatus:
-        """Get detailed status for a target."""
+        """Get detailed status for a target including escalation info."""
         with self._lock:
             circuit = self._get_or_create_circuit(target)
             self._check_recovery(circuit)
@@ -558,10 +760,14 @@ class CircuitBreaker:
                 opened_at=circuit.opened_at,
                 half_open_at=circuit.half_open_at,
                 consecutive_opens=circuit.consecutive_opens,
+                # Phase 15.1.8: Escalation info
+                escalation_tier=circuit.escalation_tier,
+                escalation_entered_at=circuit.escalation_entered_at,
+                time_until_next_probe=self._get_time_until_next_probe(circuit),
             )
 
     def get_all_states(self) -> dict[str, CircuitStatus]:
-        """Get status for all tracked targets."""
+        """Get status for all tracked targets including escalation info."""
         with self._lock:
             return {
                 target: CircuitStatus(
@@ -574,6 +780,10 @@ class CircuitBreaker:
                     opened_at=circuit.opened_at,
                     half_open_at=circuit.half_open_at,
                     consecutive_opens=circuit.consecutive_opens,
+                    # Phase 15.1.8: Escalation info
+                    escalation_tier=circuit.escalation_tier,
+                    escalation_entered_at=circuit.escalation_entered_at,
+                    time_until_next_probe=self._get_time_until_next_probe(circuit),
                 )
                 for target, circuit in self._circuits.items()
             }
@@ -1092,6 +1302,114 @@ def with_circuit_breaker(
         return sync_wrapper
 
     return decorator
+
+
+# =============================================================================
+# Phase 15.1.4: Periodic Recovery Probing (December 2025)
+# =============================================================================
+
+_recovery_probe_task: asyncio.Task | None = None
+_recovery_probe_interval: float = 30.0  # Probe open circuits every 30 seconds
+
+
+async def _periodic_recovery_probe_loop() -> None:
+    """Background loop that periodically probes open circuits for recovery.
+
+    Phase 15.1.4: This addresses the issue where circuits that opened due to
+    transient failures would never recover because try_active_recovery()
+    was only called explicitly.
+
+    The loop:
+    1. Gets all open/half-open circuits from the registry
+    2. Attempts recovery probes on each
+    3. Logs results for monitoring
+
+    Runs until cancelled via stop_recovery_probing().
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(
+        f"[circuit_breaker] Starting periodic recovery probing "
+        f"(interval={_recovery_probe_interval}s)"
+    )
+
+    while True:
+        try:
+            await asyncio.sleep(_recovery_probe_interval)
+
+            registry = get_circuit_registry()
+            open_circuits = registry.get_all_open_circuits()
+
+            if not open_circuits:
+                continue
+
+            recovered = 0
+            probed = 0
+
+            for op_type, statuses in open_circuits.items():
+                breaker = registry.get_breaker(op_type)
+                for target, status in statuses.items():
+                    probed += 1
+
+                    # Skip permanently open circuits - they need manual reset
+                    if breaker.is_permanently_open(target):
+                        logger.debug(
+                            f"[circuit_breaker] {op_type}/{target}: permanently open, "
+                            f"skipping (needs force_reset)"
+                        )
+                        continue
+
+                    if breaker.try_active_recovery(target):
+                        recovered += 1
+                        logger.info(
+                            f"[circuit_breaker] {op_type}/{target}: "
+                            f"recovered via health probe"
+                        )
+
+            if recovered > 0:
+                logger.info(
+                    f"[circuit_breaker] Recovery probing: {recovered}/{probed} circuits recovered"
+                )
+
+        except asyncio.CancelledError:
+            logger.info("[circuit_breaker] Stopping periodic recovery probing")
+            break
+        except Exception as e:
+            logger.warning(f"[circuit_breaker] Recovery probe error: {e}")
+            # Continue probing despite errors
+
+
+def start_recovery_probing(interval: float = 30.0) -> asyncio.Task | None:
+    """Start the periodic recovery probing background task.
+
+    Args:
+        interval: Seconds between probe attempts (default: 30)
+
+    Returns:
+        The background task, or None if already running or no event loop.
+    """
+    global _recovery_probe_task, _recovery_probe_interval
+    _recovery_probe_interval = interval
+
+    if _recovery_probe_task is not None and not _recovery_probe_task.done():
+        return _recovery_probe_task
+
+    try:
+        loop = asyncio.get_running_loop()
+        _recovery_probe_task = loop.create_task(_periodic_recovery_probe_loop())
+        return _recovery_probe_task
+    except RuntimeError:
+        # No event loop running
+        return None
+
+
+def stop_recovery_probing() -> None:
+    """Stop the periodic recovery probing background task."""
+    global _recovery_probe_task
+    if _recovery_probe_task is not None and not _recovery_probe_task.done():
+        _recovery_probe_task.cancel()
+        _recovery_probe_task = None
 
 
 if __name__ == "__main__":

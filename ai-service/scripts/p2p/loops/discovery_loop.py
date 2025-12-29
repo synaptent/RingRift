@@ -45,6 +45,9 @@ class UdpDiscoveryConfig:
     broadcast_interval_seconds: float = 30.0  # Broadcast every 30 seconds
     listen_timeout_seconds: float = 1.0
     max_message_size: int = 1024
+    # Phase 3.1 Dec 29, 2025: Add max iterations to prevent infinite loop
+    # If recvfrom keeps returning data (e.g., broadcast storms), we break after N messages
+    max_receive_iterations: int = 100
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -56,6 +59,8 @@ class UdpDiscoveryConfig:
             raise ValueError("listen_timeout_seconds must be > 0")
         if self.max_message_size <= 0:
             raise ValueError("max_message_size must be > 0")
+        if self.max_receive_iterations <= 0:
+            raise ValueError("max_receive_iterations must be > 0")
 
 
 class UdpDiscoveryLoop(BaseLoop):
@@ -131,10 +136,14 @@ class UdpDiscoveryLoop(BaseLoop):
                 logger.debug(f"[UdpDiscovery] Broadcast failed: {e}")
 
             # Listen for responses
+            # Phase 3.1 Dec 29, 2025: Add max iterations to prevent infinite loop
+            # if recvfrom keeps returning data (e.g., broadcast storms, corrupt data)
             known_peers = self._get_known_peers()
+            receive_count = 0
             try:
-                while True:
+                while receive_count < self.config.max_receive_iterations:
                     data, _addr = sock.recvfrom(self.config.max_message_size)
+                    receive_count += 1
                     try:
                         msg = json.loads(data.decode())
                         if msg.get("type") == "p2p_discovery" and msg.get("node_id") != node_id:
@@ -152,6 +161,12 @@ class UdpDiscoveryLoop(BaseLoop):
                                     )
                     except json.JSONDecodeError:
                         pass  # Ignore malformed messages
+                # Warn if we hit the limit (potential broadcast storm)
+                if receive_count >= self.config.max_receive_iterations:
+                    logger.warning(
+                        f"[UdpDiscovery] Hit max receive limit ({self.config.max_receive_iterations}), "
+                        f"possible broadcast storm or misconfigured network"
+                    )
             except TimeoutError:
                 pass  # Normal - no more messages in timeout window
 

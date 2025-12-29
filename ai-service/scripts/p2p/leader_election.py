@@ -358,8 +358,14 @@ class LeaderElectionMixin(P2PMixinBase):
     def election_health_check(self) -> dict[str, Any]:
         """Return health status for leader election subsystem.
 
+        Also runs split-brain detection as a side effect, triggering automatic
+        resolution if multiple leaders are detected.
+
+        December 2025: Added split-brain detection integration to ensure it runs
+        periodically with health checks, enabling automatic resolution.
+
         Returns:
-            dict with is_healthy, role, leader_id, quorum status
+            dict with is_healthy, role, leader_id, quorum status, split_brain status
         """
         import time
 
@@ -367,8 +373,16 @@ class LeaderElectionMixin(P2PMixinBase):
         voter_count = len(self.voter_node_ids) if self.voter_node_ids else 0
         alive_voters = self._count_alive_peers(self.voter_node_ids or [])
         lease_remaining = max(0, self.leader_lease_expires - time.time())
-        # Unhealthy if no quorum and we should have voters
-        is_healthy = has_quorum or voter_count == 0
+
+        # December 2025: Run split-brain detection (triggers resolution if needed)
+        split_brain_info = self._detect_split_brain()
+        has_split_brain = split_brain_info is not None
+
+        # Unhealthy if:
+        # 1. No quorum and we should have voters, OR
+        # 2. Split-brain detected (critical severity)
+        is_healthy = (has_quorum or voter_count == 0) and not has_split_brain
+
         return {
             "is_healthy": is_healthy,
             "role": str(self.role) if self.role else "unknown",
@@ -377,6 +391,8 @@ class LeaderElectionMixin(P2PMixinBase):
             "voter_count": voter_count,
             "alive_voters": alive_voters,
             "lease_remaining_seconds": lease_remaining,
+            "split_brain_detected": has_split_brain,
+            "split_brain_info": split_brain_info,
         }
 
     def health_check(self) -> dict[str, Any]:

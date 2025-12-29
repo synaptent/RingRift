@@ -54,6 +54,65 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Event Emission Circuit Breaker (Phase 3.3 - Dec 29, 2025)
+# =============================================================================
+#
+# Circuit breaker for event emission to prevent cascading failures when the
+# event router is temporarily unavailable. Opens after consecutive failures
+# and resets after a timeout period.
+
+_event_circuit_lock = threading.Lock()
+_event_emission_failures = 0
+_event_circuit_open = False
+_event_circuit_opened_at: float = 0.0
+
+# Circuit breaker thresholds
+EVENT_CIRCUIT_FAILURE_THRESHOLD = 10  # Open circuit after 10 consecutive failures
+EVENT_CIRCUIT_RESET_TIMEOUT = 60.0  # Try again after 60 seconds
+
+
+def _get_event_circuit_state() -> tuple[bool, int]:
+    """Get current circuit breaker state.
+
+    Returns:
+        Tuple of (is_open, failure_count)
+    """
+    global _event_circuit_open, _event_circuit_opened_at
+    with _event_circuit_lock:
+        # Check if circuit should auto-reset (half-open state)
+        if _event_circuit_open:
+            if time.time() - _event_circuit_opened_at >= EVENT_CIRCUIT_RESET_TIMEOUT:
+                # Move to half-open state - allow a test request
+                _event_circuit_open = False
+                logger.info("[EventCircuitBreaker] Circuit moving to half-open, allowing test request")
+        return _event_circuit_open, _event_emission_failures
+
+
+def _record_event_emission_success() -> None:
+    """Record successful event emission, reset failure count."""
+    global _event_emission_failures, _event_circuit_open
+    with _event_circuit_lock:
+        if _event_emission_failures > 0 or _event_circuit_open:
+            logger.debug("[EventCircuitBreaker] Event emission succeeded, resetting circuit")
+        _event_emission_failures = 0
+        _event_circuit_open = False
+
+
+def _record_event_emission_failure() -> None:
+    """Record failed event emission, potentially open circuit."""
+    global _event_emission_failures, _event_circuit_open, _event_circuit_opened_at
+    with _event_circuit_lock:
+        _event_emission_failures += 1
+        if _event_emission_failures >= EVENT_CIRCUIT_FAILURE_THRESHOLD and not _event_circuit_open:
+            _event_circuit_open = True
+            _event_circuit_opened_at = time.time()
+            logger.warning(
+                f"[EventCircuitBreaker] Circuit OPENED after {_event_emission_failures} failures, "
+                f"will retry in {EVENT_CIRCUIT_RESET_TIMEOUT}s"
+            )
+
+
 class P2PMixinBase:
     """Unified base class for all P2P orchestrator mixins.
 
@@ -1000,15 +1059,18 @@ class EventSubscriptionMixin:
         self,
         event_type: str,
         payload: dict[str, Any] | None = None,
+        max_retries: int = 3,
     ) -> bool:
-        """Safely emit an event using the event router.
+        """Safely emit an event using the event router with circuit breaker and retry.
 
-        Wraps event emission in try-catch to prevent event failures
-        from crashing the caller. Tries multiple emission methods.
+        Phase 3.3 Dec 29, 2025: Added circuit breaker and retry with exponential backoff.
+        Wraps event emission in try-catch to prevent event failures from crashing
+        the caller. Tries multiple emission methods.
 
         Args:
             event_type: Event type string to emit
             payload: Optional event payload dict
+            max_retries: Maximum retry attempts (default 3)
 
         Returns:
             True if event was emitted successfully, False otherwise
@@ -1019,33 +1081,59 @@ class EventSubscriptionMixin:
                 {"job_id": job_id, "reason": "host_offline"},
             )
         """
-        try:
-            # Try using event router directly
+        # Phase 3.3 Dec 29, 2025: Check circuit breaker state
+        is_open, failure_count = _get_event_circuit_state()
+        if is_open:
+            self._log_debug(f"Event emission circuit open, skipping {event_type}")
+            return False
+
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries):
             try:
-                from app.coordination.event_router import emit_sync
-                emit_sync(event_type, payload or {})
-                return True
-            except ImportError:
-                pass
+                # Try using event router directly
+                try:
+                    from app.coordination.event_router import emit_sync
+                    emit_sync(event_type, payload or {})
+                    _record_event_emission_success()
+                    return True
+                except ImportError:
+                    pass
 
-            # Fallback to instance emit methods
-            emit_fn = getattr(self, "_emit_event", None)
-            if callable(emit_fn):
-                emit_fn(event_type, payload or {})
-                return True
-
-            for method_name in ("emit_event", "publish_event", "_publish"):
-                alt_fn = getattr(self, method_name, None)
-                if callable(alt_fn):
-                    alt_fn(event_type, payload or {})
+                # Fallback to instance emit methods
+                emit_fn = getattr(self, "_emit_event", None)
+                if callable(emit_fn):
+                    emit_fn(event_type, payload or {})
+                    _record_event_emission_success()
                     return True
 
-            return False
+                for method_name in ("emit_event", "publish_event", "_publish"):
+                    alt_fn = getattr(self, method_name, None)
+                    if callable(alt_fn):
+                        alt_fn(event_type, payload or {})
+                        _record_event_emission_success()
+                        return True
 
-        except (OSError, ConnectionError, RuntimeError, TypeError) as e:
-            # Dec 28, 2025: Specific exception types for event emission errors
-            self._log_debug(f"Event emission error: {e}")
-            return False
+                # No emission method available - not a retry-able error
+                return False
+
+            except (OSError, ConnectionError, RuntimeError, TypeError) as e:
+                last_error = e
+                _record_event_emission_failure()
+
+                # Retry with exponential backoff
+                if attempt < max_retries - 1:
+                    backoff = 1.0 * (2 ** attempt)  # 1s, 2s, 4s
+                    time.sleep(backoff)
+                    self._log_debug(
+                        f"Event emission retry {attempt + 1}/{max_retries} for {event_type} "
+                        f"after {backoff}s backoff"
+                    )
+
+        # All retries exhausted
+        if last_error:
+            self._log_debug(f"Event emission failed after {max_retries} attempts: {last_error}")
+        return False
 
 
 class P2PManagerBase(P2PMixinBase, EventSubscriptionMixin):

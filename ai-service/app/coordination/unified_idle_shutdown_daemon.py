@@ -288,34 +288,121 @@ class UnifiedIdleShutdownDaemon:
                 unregister_coordinator(self._daemon_name)
 
     async def _subscribe_to_events(self) -> None:
-        """Subscribe to events that affect idle detection."""
+        """Subscribe to events that affect idle detection.
+
+        Dec 2025: Added subscriptions for activity events that should cancel drain periods.
+        When activity is detected on a draining node, we cancel the drain to prevent
+        premature termination.
+        """
         try:
             from app.coordination.event_router import DataEventType, get_event_router
 
             router = get_event_router()
             router.subscribe(DataEventType.TRAINING_STARTED, self._on_training_started)
             router.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_completed)
-            logger.info(f"[{self._daemon_name}] Subscribed to events")
+
+            # Dec 2025: Additional events that indicate node activity - cancel drain
+            router.subscribe(DataEventType.WORK_STARTED, self._on_work_started)
+            router.subscribe(DataEventType.WORK_CLAIMED, self._on_work_claimed)
+            router.subscribe(DataEventType.TASK_SPAWNED, self._on_task_spawned)
+
+            logger.info(f"[{self._daemon_name}] Subscribed to 5 activity events")
         except ImportError:
             logger.debug(f"[{self._daemon_name}] Event router not available")
         except Exception as e:
             logger.warning(f"[{self._daemon_name}] Failed to subscribe: {e}")
 
+    def _cancel_drain_for_host(self, hostname: str, reason: str) -> bool:
+        """Cancel drain period for a node if it's currently draining.
+
+        Dec 2025: When activity is detected on a draining node, cancel the drain
+        to prevent premature termination.
+
+        Args:
+            hostname: Host name or IP that had activity
+            reason: Reason for cancelling drain (for logging)
+
+        Returns:
+            True if drain was cancelled, False if node wasn't draining
+        """
+        # Find matching node in draining_nodes by checking instance name
+        for instance_id, drain_started in list(self._draining_nodes.items()):
+            # Check if this instance matches the hostname
+            # Node status includes instance_name which should match hostname
+            status = self._node_status.get(instance_id)
+            if status and status.instance_name in hostname or hostname in (status.instance_name or ""):
+                del self._draining_nodes[instance_id]
+                drain_duration = time.time() - drain_started
+                logger.info(
+                    f"[{self._daemon_name}] Cancelled drain for {status.instance_name} "
+                    f"after {drain_duration:.0f}s: {reason}"
+                )
+                return True
+        return False
+
     async def _on_training_started(self, event) -> None:
-        """Handle training started - don't terminate nodes running training."""
+        """Handle training started - cancel drain and don't terminate training nodes."""
         try:
             payload = event.payload if hasattr(event, 'payload') else event
             host = payload.get("host", "unknown")
             logger.debug(f"[{self._daemon_name}] Training started on {host}")
+
+            # Dec 2025: Cancel drain if node was draining
+            self._cancel_drain_for_host(host, "training_started")
         except Exception as e:
             logger.debug(f"[{self._daemon_name}] Error handling training event: {e}")
 
     async def _on_selfplay_completed(self, event) -> None:
         """Handle selfplay completed - refresh utilization data."""
         try:
-            logger.debug(f"[{self._daemon_name}] Selfplay completed event")
+            payload = event.payload if hasattr(event, 'payload') else event
+            host = payload.get("host", payload.get("node", ""))
+            logger.debug(f"[{self._daemon_name}] Selfplay completed on {host}")
+
+            # Dec 2025: Cancel drain if node was draining (selfplay completed means it was active)
+            if host:
+                self._cancel_drain_for_host(host, "selfplay_completed")
         except Exception as e:
             logger.debug(f"[{self._daemon_name}] Error handling selfplay event: {e}")
+
+    async def _on_work_started(self, event) -> None:
+        """Handle work started - cancel drain for active worker.
+
+        Dec 2025: When work starts on a node, cancel any pending drain.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            host = payload.get("host", payload.get("worker_id", payload.get("node", "")))
+            if host:
+                self._cancel_drain_for_host(host, "work_started")
+        except Exception as e:
+            logger.debug(f"[{self._daemon_name}] Error handling work_started: {e}")
+
+    async def _on_work_claimed(self, event) -> None:
+        """Handle work claimed - cancel drain for worker claiming work.
+
+        Dec 2025: When a node claims work from the queue, cancel any pending drain.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            host = payload.get("worker_id", payload.get("node", payload.get("host", "")))
+            if host:
+                self._cancel_drain_for_host(host, "work_claimed")
+        except Exception as e:
+            logger.debug(f"[{self._daemon_name}] Error handling work_claimed: {e}")
+
+    async def _on_task_spawned(self, event) -> None:
+        """Handle task spawned - cancel drain for node running new task.
+
+        Dec 2025: When a task is spawned on a node, cancel any pending drain.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            host = payload.get("node", payload.get("host", payload.get("worker_id", "")))
+            if host:
+                self._cancel_drain_for_host(host, "task_spawned")
+        except Exception as e:
+            logger.debug(f"[{self._daemon_name}] Error handling task_spawned: {e}")
 
     async def stop(self) -> None:
         """Stop the daemon."""

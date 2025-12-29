@@ -148,6 +148,13 @@ class QueuePopulatorConfig:
     target_games_per_config: int = 10000
     data_gap_priority_boost: int = 20
 
+    # === Trickle Mode Settings (Phase 15.1.2 - Dec 2025) ===
+    # Trickle mode ensures work queue never completely starves under backpressure.
+    # Even at CRITICAL/STOP backpressure, we add trickle_min_items to prevent
+    # the pipeline from halting entirely.
+    trickle_mode_enabled: bool = True
+    trickle_min_items: int = 2  # Minimum items to add even under max backpressure
+
 
 # =============================================================================
 # State Tracking
@@ -786,10 +793,19 @@ class UnifiedQueuePopulator:
         # Check backpressure
         bp_level, reduction_factor = self._check_backpressure()
         if bp_level.should_stop():
-            logger.info(
-                f"[QueuePopulator] Backpressure {bp_level.value} - skipping population"
-            )
-            return 0
+            # Phase 15.1.2: Trickle mode - never completely stop population
+            # This prevents the pipeline from starving when backpressure is high
+            if self.config.trickle_mode_enabled:
+                logger.warning(
+                    f"[QueuePopulator] Backpressure {bp_level.value} - TRICKLE MODE: "
+                    f"adding {self.config.trickle_min_items} items to prevent starvation"
+                )
+                return self._populate_trickle_items()
+            else:
+                logger.info(
+                    f"[QueuePopulator] Backpressure {bp_level.value} - skipping population"
+                )
+                return 0
 
         items_needed = self.calculate_items_needed()
         if items_needed <= 0:
@@ -912,6 +928,54 @@ class UnifiedQueuePopulator:
     def populate_queue(self) -> int:
         """Backward-compatible alias for populate()."""
         return self.populate()
+
+    def _populate_trickle_items(self) -> int:
+        """Add minimal items under extreme backpressure (Phase 15.1.2).
+
+        This prevents complete pipeline starvation when backpressure is at
+        CRITICAL or STOP levels. We add a small number of selfplay items
+        focusing on the highest priority config.
+
+        Returns:
+            Number of items added (always <= trickle_min_items)
+        """
+        if self._work_queue is None:
+            return 0
+
+        unmet = self.get_unmet_targets()
+        if not unmet:
+            return 0
+
+        # Sort by curriculum weight (highest priority first)
+        scheduler_priorities = self._get_scheduler_priorities()
+        if scheduler_priorities:
+            unmet.sort(
+                key=lambda t: scheduler_priorities.get(t.config_key, 0.0),
+                reverse=True,
+            )
+        else:
+            unmet.sort(key=lambda t: t.curriculum_weight, reverse=True)
+
+        added = 0
+        items_to_add = min(self.config.trickle_min_items, len(unmet))
+
+        # Add selfplay items for highest priority configs only
+        for i in range(items_to_add):
+            target = unmet[i % len(unmet)]
+            try:
+                item = self._create_selfplay_item(target.board_type, target.num_players)
+                # Boost priority for trickle items to ensure they get processed
+                item.priority = self.config.selfplay_priority + 50
+                self._work_queue.add_work(item)
+                self._queued_work_ids.add(item.work_id)
+                added += 1
+            except Exception as e:
+                logger.error(f"[TrickleMode] Failed to add item: {e}")
+
+        if added > 0:
+            logger.info(f"[TrickleMode] Added {added} emergency items to prevent starvation")
+
+        return added
 
     # =========================================================================
     # Status

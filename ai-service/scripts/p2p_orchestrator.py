@@ -7081,9 +7081,8 @@ class P2POrchestrator(
             # (vast nodes have 256-512 CPUs vs lambda's 64) to free GPU nodes for training.
             if jsonl_db_path.exists() and not getattr(self, "_npz_export_running", False):
                 try:
-                    conn = sqlite3.connect(str(jsonl_db_path), timeout=5)
-                    game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-                    conn.close()
+                    with safe_db_connection(jsonl_db_path, timeout=5) as conn:
+                        game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
 
                     # Only export if we have enough games and it's been a while
                     training_dir = data_dir / "training"
@@ -7162,12 +7161,11 @@ class P2POrchestrator(
                 if ".tmp" in str(db_path) or db_path == main_db_path:
                     continue
                 try:
-                    conn = sqlite3.connect(str(db_path), timeout=5)
-                    count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-                    conn.close()
-                    if count > 0:
-                        dbs_to_merge.append((db_path, count))
-                except (KeyError, IndexError, AttributeError):
+                    with safe_db_connection(db_path, timeout=5) as conn:
+                        count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+                        if count > 0:
+                            dbs_to_merge.append((db_path, count))
+                except (KeyError, IndexError, AttributeError, sqlite3.Error):
                     pass
 
             if dbs_to_merge:
@@ -9957,7 +9955,8 @@ os.environ['RINGRIFT_SKIP_SHADOW_CONTRACTS'] = 'true'
 
 def load_agent(agent_id: str, player_idx: int, board_type: str, num_players: int):
     '''Load agent by ID - supports random, heuristic, or model paths.'''
-    config = AIConfig(board_type=board_type, num_players=num_players)
+    # Dec 29, 2025: Added difficulty=5 (medium) as required by AIConfig
+    config = AIConfig(board_type=board_type, num_players=num_players, difficulty=5)
     if agent_id == 'random':
         return RandomAI(player_idx, config=config)
     elif agent_id == 'heuristic':
@@ -10753,22 +10752,21 @@ print(json.dumps(result))
 
         try:
             import sqlite3
-            conn = sqlite3.connect(str(elo_db_path))
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT participant_id FROM elo_ratings
-                WHERE board_type = ? AND num_players = ? AND archived_at IS NULL
-                ORDER BY rating
-            """, (board_type, num_players))
-            rows = cursor.fetchall()
-            conn.close()
+            with safe_db_connection(elo_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT participant_id FROM elo_ratings
+                    WHERE board_type = ? AND num_players = ? AND archived_at IS NULL
+                    ORDER BY rating
+                """, (board_type, num_players))
+                rows = cursor.fetchall()
 
-            if not rows:
-                return None
+                if not rows:
+                    return None
 
-            # Return median model (middle of sorted list)
-            median_idx = len(rows) // 2
-            return rows[median_idx][0]
+                # Return median model (middle of sorted list)
+                median_idx = len(rows) // 2
+                return rows[median_idx][0]
         except Exception as e:  # noqa: BLE001
             logger.error(f"getting median model: {e}")
             return None
@@ -10809,15 +10807,14 @@ print(json.dumps(result))
         if elo_db_path.exists():
             try:
                 import sqlite3
-                conn = sqlite3.connect(str(elo_db_path))
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE elo_ratings
-                    SET archived_at = ?, archive_reason = ?
-                    WHERE participant_id = ? AND board_type = ? AND num_players = ?
-                """, (time.time(), reason, model_id, board_type, num_players))
-                conn.commit()
-                conn.close()
+                with safe_db_connection(elo_db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        UPDATE elo_ratings
+                        SET archived_at = ?, archive_reason = ?
+                        WHERE participant_id = ? AND board_type = ? AND num_players = ?
+                    """, (time.time(), reason, model_id, board_type, num_players))
+                    conn.commit()
             except Exception as e:  # noqa: BLE001
                 logger.error(f"updating ELO database for archived model: {e}")
 
@@ -11839,103 +11836,100 @@ print(json.dumps(result))
             # Use sqlite3 to merge games from validated_db to canonical_db
             import sqlite3
 
-            # Connect to both databases
-            src_conn = sqlite3.connect(str(validated_db))
-            dst_conn = sqlite3.connect(str(canonical_db))
+            # Phase 3.4 Dec 29, 2025: Use context managers to prevent connection leaks
+            with safe_db_connection(validated_db) as src_conn, \
+                 safe_db_connection(canonical_db) as dst_conn:
 
-            # Ensure destination tables exist
-            dst_conn.execute("""
-                CREATE TABLE IF NOT EXISTS games (
-                    game_id TEXT PRIMARY KEY,
-                    board_type TEXT NOT NULL,
-                    num_players INTEGER NOT NULL,
-                    winner INTEGER,
-                    move_count INTEGER,
-                    game_time_ms INTEGER,
-                    created_at REAL,
-                    source TEXT DEFAULT 'selfplay'
-                )
-            """)
-            dst_conn.execute("""
-                CREATE TABLE IF NOT EXISTS moves (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    game_id TEXT NOT NULL,
-                    move_number INTEGER NOT NULL,
-                    player INTEGER NOT NULL,
-                    move_type TEXT NOT NULL,
-                    from_pos TEXT,
-                    to_pos TEXT,
-                    direction TEXT,
-                    captured_pos TEXT,
-                    state_before TEXT,
-                    policy_probs TEXT,
-                    value_est REAL,
-                    FOREIGN KEY (game_id) REFERENCES games(game_id)
-                )
-            """)
-            dst_conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id)
-            """)
-            dst_conn.commit()
-
-            # Check source schema and copy games
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            src_tables = {row[0] for row in src_cursor.fetchall()}
-
-            imported = 0
-            if "games" in src_tables:
-                # Get existing game IDs in destination to avoid duplicates
-                dst_cursor = dst_conn.cursor()
-                dst_cursor.execute("SELECT game_id FROM games")
-                existing_ids = {row[0] for row in dst_cursor.fetchall()}
-
-                # Copy games that don't already exist
-                src_cursor.execute("SELECT * FROM games")
-                src_columns = [desc[0] for desc in src_cursor.description]
-
-                for row in src_cursor.fetchall():
-                    game_id_idx = src_columns.index("game_id") if "game_id" in src_columns else 0
-                    game_id = row[game_id_idx]
-
-                    if game_id in existing_ids:
-                        continue
-
-                    # Insert game with proper column mapping
-                    placeholders = ", ".join(["?"] * len(row))
-                    columns = ", ".join(src_columns)
-                    try:
-                        dst_conn.execute(
-                            f"INSERT OR IGNORE INTO games ({columns}) VALUES ({placeholders})",
-                            row
-                        )
-                        imported += 1
-                    except (AttributeError):
-                        continue
-
-                # Copy moves for new games
-                if "moves" in src_tables and imported > 0:
-                    src_cursor.execute("SELECT * FROM moves")
-                    move_columns = [desc[0] for desc in src_cursor.description]
-                    move_placeholders = ", ".join(["?"] * len(move_columns))
-                    move_col_str = ", ".join(move_columns)
-
-                    for row in src_cursor.fetchall():
-                        game_id_idx = move_columns.index("game_id") if "game_id" in move_columns else 1
-                        game_id = row[game_id_idx]
-                        if game_id not in existing_ids:
-                            try:
-                                dst_conn.execute(
-                                    f"INSERT OR IGNORE INTO moves ({move_col_str}) VALUES ({move_placeholders})",
-                                    row
-                                )
-                            except (AttributeError):
-                                continue
-
+                # Ensure destination tables exist
+                dst_conn.execute("""
+                    CREATE TABLE IF NOT EXISTS games (
+                        game_id TEXT PRIMARY KEY,
+                        board_type TEXT NOT NULL,
+                        num_players INTEGER NOT NULL,
+                        winner INTEGER,
+                        move_count INTEGER,
+                        game_time_ms INTEGER,
+                        created_at REAL,
+                        source TEXT DEFAULT 'selfplay'
+                    )
+                """)
+                dst_conn.execute("""
+                    CREATE TABLE IF NOT EXISTS moves (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        game_id TEXT NOT NULL,
+                        move_number INTEGER NOT NULL,
+                        player INTEGER NOT NULL,
+                        move_type TEXT NOT NULL,
+                        from_pos TEXT,
+                        to_pos TEXT,
+                        direction TEXT,
+                        captured_pos TEXT,
+                        state_before TEXT,
+                        policy_probs TEXT,
+                        value_est REAL,
+                        FOREIGN KEY (game_id) REFERENCES games(game_id)
+                    )
+                """)
+                dst_conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id)
+                """)
                 dst_conn.commit()
 
-            src_conn.close()
-            dst_conn.close()
+                # Check source schema and copy games
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                src_tables = {row[0] for row in src_cursor.fetchall()}
+
+                imported = 0
+                if "games" in src_tables:
+                    # Get existing game IDs in destination to avoid duplicates
+                    dst_cursor = dst_conn.cursor()
+                    dst_cursor.execute("SELECT game_id FROM games")
+                    existing_ids = {row[0] for row in dst_cursor.fetchall()}
+
+                    # Copy games that don't already exist
+                    src_cursor.execute("SELECT * FROM games")
+                    src_columns = [desc[0] for desc in src_cursor.description]
+
+                    for row in src_cursor.fetchall():
+                        game_id_idx = src_columns.index("game_id") if "game_id" in src_columns else 0
+                        game_id = row[game_id_idx]
+
+                        if game_id in existing_ids:
+                            continue
+
+                        # Insert game with proper column mapping
+                        placeholders = ", ".join(["?"] * len(row))
+                        columns = ", ".join(src_columns)
+                        try:
+                            dst_conn.execute(
+                                f"INSERT OR IGNORE INTO games ({columns}) VALUES ({placeholders})",
+                                row
+                            )
+                            imported += 1
+                        except (AttributeError):
+                            continue
+
+                    # Copy moves for new games
+                    if "moves" in src_tables and imported > 0:
+                        src_cursor.execute("SELECT * FROM moves")
+                        move_columns = [desc[0] for desc in src_cursor.description]
+                        move_placeholders = ", ".join(["?"] * len(move_columns))
+                        move_col_str = ", ".join(move_columns)
+
+                        for row in src_cursor.fetchall():
+                            game_id_idx = move_columns.index("game_id") if "game_id" in move_columns else 1
+                            game_id = row[game_id_idx]
+                            if game_id not in existing_ids:
+                                try:
+                                    dst_conn.execute(
+                                        f"INSERT OR IGNORE INTO moves ({move_col_str}) VALUES ({move_placeholders})",
+                                        row
+                                    )
+                                except (AttributeError):
+                                    continue
+
+                    dst_conn.commit()
 
             logger.info(f"Successfully imported {imported} GPU selfplay games to canonical DB")
 
@@ -12428,24 +12422,24 @@ print(json.dumps(result))
                 if not db_path.exists():
                     db_path = ai_root / "data" / "unified_elo.db"
                 if db_path.exists():
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    # Check which column name is used (model_id vs participant_id)
-                    cursor.execute("PRAGMA table_info(elo_ratings)")
-                    columns = [col[1] for col in cursor.fetchall()]
-                    id_col = "model_id" if "model_id" in columns else "participant_id"
-                    cursor.execute(f"""
-                        SELECT board_type, num_players, MAX(rating), {id_col}, games_played
-                        FROM elo_ratings
-                        WHERE games_played >= 10
-                        GROUP BY board_type, num_players
-                    """)
-                    for row in cursor.fetchall():
-                        bt, np, rating, model, games = row
-                        lines.append(f'ringrift_best_elo{{board_type="{bt}",num_players="{np}",model="{model}"}} {rating:.1f}')
-                        lines.append(f'ringrift_elo_games_played{{board_type="{bt}",num_players="{np}",model="{model}"}} {games}')
-                    conn.close()
-            except (OSError, KeyError, IndexError, AttributeError, ImportError):
+                    # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+                    with safe_db_connection(db_path) as conn:
+                        cursor = conn.cursor()
+                        # Check which column name is used (model_id vs participant_id)
+                        cursor.execute("PRAGMA table_info(elo_ratings)")
+                        columns = [col[1] for col in cursor.fetchall()]
+                        id_col = "model_id" if "model_id" in columns else "participant_id"
+                        cursor.execute(f"""
+                            SELECT board_type, num_players, MAX(rating), {id_col}, games_played
+                            FROM elo_ratings
+                            WHERE games_played >= 10
+                            GROUP BY board_type, num_players
+                        """)
+                        for row in cursor.fetchall():
+                            bt, np, rating, model, games = row
+                            lines.append(f'ringrift_best_elo{{board_type="{bt}",num_players="{np}",model="{model}"}} {rating:.1f}')
+                            lines.append(f'ringrift_elo_games_played{{board_type="{bt}",num_players="{np}",model="{model}"}} {games}')
+            except (OSError, KeyError, IndexError, AttributeError, ImportError, sqlite3.Error):
                 pass
 
             # Training Loss Metrics (from latest training)
@@ -13932,62 +13926,61 @@ print(json.dumps(result))
             return metrics
 
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+            with safe_db_connection(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            # Get holdout game counts by config
-            cursor.execute("""
-                SELECT board_type, num_players, COUNT(*) as game_count, SUM(num_positions) as total_positions
-                FROM holdout_games
-                GROUP BY board_type, num_players
-            """)
-            for row in cursor.fetchall():
-                config = f"{row['board_type']}_{row['num_players']}p"
-                metrics["configs"][config] = {
-                    "holdout_games": row["game_count"],
-                    "holdout_positions": row["total_positions"] or 0,
-                }
-
-            # Get latest evaluations per config
-            cursor.execute("""
-                SELECT model_path, board_type, num_players, holdout_loss, holdout_accuracy,
-                       train_loss, num_samples, evaluated_at, overfit_gap
-                FROM evaluations
-                WHERE id IN (
-                    SELECT MAX(id) FROM evaluations
+                # Get holdout game counts by config
+                cursor.execute("""
+                    SELECT board_type, num_players, COUNT(*) as game_count, SUM(num_positions) as total_positions
+                    FROM holdout_games
                     GROUP BY board_type, num_players
-                )
-                ORDER BY evaluated_at DESC
-            """)
-            for row in cursor.fetchall():
-                config = f"{row['board_type']}_{row['num_players']}p"
-                eval_data = {
-                    "config": config,
-                    "model": row["model_path"],
-                    "holdout_loss": row["holdout_loss"],
-                    "holdout_accuracy": row["holdout_accuracy"],
-                    "train_loss": row["train_loss"],
-                    "overfit_gap": row["overfit_gap"],
-                    "num_samples": row["num_samples"],
-                    "evaluated_at": row["evaluated_at"],
-                }
-                metrics["evaluations"].append(eval_data)
-                # Update config metrics
-                if config in metrics["configs"]:
-                    metrics["configs"][config].update({
+                """)
+                for row in cursor.fetchall():
+                    config = f"{row['board_type']}_{row['num_players']}p"
+                    metrics["configs"][config] = {
+                        "holdout_games": row["game_count"],
+                        "holdout_positions": row["total_positions"] or 0,
+                    }
+
+                # Get latest evaluations per config
+                cursor.execute("""
+                    SELECT model_path, board_type, num_players, holdout_loss, holdout_accuracy,
+                           train_loss, num_samples, evaluated_at, overfit_gap
+                    FROM evaluations
+                    WHERE id IN (
+                        SELECT MAX(id) FROM evaluations
+                        GROUP BY board_type, num_players
+                    )
+                    ORDER BY evaluated_at DESC
+                """)
+                for row in cursor.fetchall():
+                    config = f"{row['board_type']}_{row['num_players']}p"
+                    eval_data = {
+                        "config": config,
+                        "model": row["model_path"],
                         "holdout_loss": row["holdout_loss"],
                         "holdout_accuracy": row["holdout_accuracy"],
+                        "train_loss": row["train_loss"],
                         "overfit_gap": row["overfit_gap"],
-                    })
+                        "num_samples": row["num_samples"],
+                        "evaluated_at": row["evaluated_at"],
+                    }
+                    metrics["evaluations"].append(eval_data)
+                    # Update config metrics
+                    if config in metrics["configs"]:
+                        metrics["configs"][config].update({
+                            "holdout_loss": row["holdout_loss"],
+                            "holdout_accuracy": row["holdout_accuracy"],
+                            "overfit_gap": row["overfit_gap"],
+                        })
 
-            # Get summary stats
-            cursor.execute("SELECT COUNT(*) FROM holdout_games")
-            metrics["summary"]["total_holdout_games"] = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM evaluations")
-            metrics["summary"]["total_evaluations"] = cursor.fetchone()[0]
-
-            conn.close()
+                # Get summary stats
+                cursor.execute("SELECT COUNT(*) FROM holdout_games")
+                metrics["summary"]["total_holdout_games"] = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM evaluations")
+                metrics["summary"]["total_evaluations"] = cursor.fetchone()[0]
         except (sqlite3.Error, OSError, KeyError, IndexError, TypeError):
             pass
 
@@ -14130,85 +14123,84 @@ print(json.dumps(result))
             return matrix
 
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
+            # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+            with safe_db_connection(db_path) as conn:
+                conn.row_factory = sqlite3.Row
 
-            # Get all match history
-            rows = conn.execute("""
-                SELECT participant_a, participant_b, winner, board_type, num_players,
-                       game_length, duration_sec, timestamp
-                FROM match_history
-                WHERE timestamp > ?
-                ORDER BY timestamp DESC
-                LIMIT 10000
-            """, (now - 86400 * 7,)).fetchall()  # Last 7 days
+                # Get all match history
+                rows = conn.execute("""
+                    SELECT participant_a, participant_b, winner, board_type, num_players,
+                           game_length, duration_sec, timestamp
+                    FROM match_history
+                    WHERE timestamp > ?
+                    ORDER BY timestamp DESC
+                    LIMIT 10000
+                """, (now - 86400 * 7,)).fetchall()  # Last 7 days
 
-            # Build matchup stats
-            h2h: dict[str, dict[str, dict[str, int]]] = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0, "draws": 0}))
-            models = set()
-            config_stats = defaultdict(lambda: {"total_matches": 0, "avg_game_length": [], "avg_duration": []})
+                # Build matchup stats
+                h2h: dict[str, dict[str, dict[str, int]]] = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0, "draws": 0}))
+                models = set()
+                config_stats = defaultdict(lambda: {"total_matches": 0, "avg_game_length": [], "avg_duration": []})
 
-            for row in rows:
-                a = row["participant_a"]
-                b = row["participant_b"]
-                winner = row["winner"]
-                config = f"{row['board_type']}_{row['num_players']}p"
+                for row in rows:
+                    a = row["participant_a"]
+                    b = row["participant_b"]
+                    winner = row["winner"]
+                    config = f"{row['board_type']}_{row['num_players']}p"
 
-                if a and b:
-                    models.add(a)
-                    models.add(b)
+                    if a and b:
+                        models.add(a)
+                        models.add(b)
 
-                    if winner == a:
-                        h2h[a][b]["wins"] += 1
-                        h2h[b][a]["losses"] += 1
-                    elif winner == b:
-                        h2h[b][a]["wins"] += 1
-                        h2h[a][b]["losses"] += 1
+                        if winner == a:
+                            h2h[a][b]["wins"] += 1
+                            h2h[b][a]["losses"] += 1
+                        elif winner == b:
+                            h2h[b][a]["wins"] += 1
+                            h2h[a][b]["losses"] += 1
+                        else:
+                            h2h[a][b]["draws"] += 1
+                            h2h[b][a]["draws"] += 1
+
+                        config_stats[config]["total_matches"] += 1
+                        if row["game_length"]:
+                            config_stats[config]["avg_game_length"].append(row["game_length"])
+                        if row["duration_sec"]:
+                            config_stats[config]["avg_duration"].append(row["duration_sec"])
+
+                # Convert to matchup list
+                matchups = []
+                for model_a in sorted(models):
+                    for model_b in sorted(models):
+                        if model_a < model_b:  # Avoid duplicates
+                            stats = h2h[model_a][model_b]
+                            total = stats["wins"] + stats["losses"] + stats["draws"]
+                            if total > 0:
+                                matchups.append({
+                                    "model_a": model_a,
+                                    "model_b": model_b,
+                                    "a_wins": stats["wins"],
+                                    "b_wins": stats["losses"],
+                                    "draws": stats["draws"],
+                                    "total": total,
+                                    "a_win_rate": round(stats["wins"] / total, 3) if total > 0 else 0,
+                                })
+
+                # Compute config averages
+                for _config, data in config_stats.items():
+                    if data["avg_game_length"]:
+                        data["avg_game_length"] = round(sum(data["avg_game_length"]) / len(data["avg_game_length"]), 1)
                     else:
-                        h2h[a][b]["draws"] += 1
-                        h2h[b][a]["draws"] += 1
+                        data["avg_game_length"] = 0
+                    if data["avg_duration"]:
+                        data["avg_duration"] = round(sum(data["avg_duration"]) / len(data["avg_duration"]), 2)
+                    else:
+                        data["avg_duration"] = 0
 
-                    config_stats[config]["total_matches"] += 1
-                    if row["game_length"]:
-                        config_stats[config]["avg_game_length"].append(row["game_length"])
-                    if row["duration_sec"]:
-                        config_stats[config]["avg_duration"].append(row["duration_sec"])
-
-            # Convert to matchup list
-            matchups = []
-            for model_a in sorted(models):
-                for model_b in sorted(models):
-                    if model_a < model_b:  # Avoid duplicates
-                        stats = h2h[model_a][model_b]
-                        total = stats["wins"] + stats["losses"] + stats["draws"]
-                        if total > 0:
-                            matchups.append({
-                                "model_a": model_a,
-                                "model_b": model_b,
-                                "a_wins": stats["wins"],
-                                "b_wins": stats["losses"],
-                                "draws": stats["draws"],
-                                "total": total,
-                                "a_win_rate": round(stats["wins"] / total, 3) if total > 0 else 0,
-                            })
-
-            # Compute config averages
-            for _config, data in config_stats.items():
-                if data["avg_game_length"]:
-                    data["avg_game_length"] = round(sum(data["avg_game_length"]) / len(data["avg_game_length"]), 1)
-                else:
-                    data["avg_game_length"] = 0
-                if data["avg_duration"]:
-                    data["avg_duration"] = round(sum(data["avg_duration"]) / len(data["avg_duration"]), 2)
-                else:
-                    data["avg_duration"] = 0
-
-            matrix["matchups"] = matchups
-            matrix["models"] = sorted(models)
-            matrix["configs"] = dict(config_stats)
-            matrix["total_matches"] = sum(c["total_matches"] for c in config_stats.values())
-
-            conn.close()
+                matrix["matchups"] = matchups
+                matrix["models"] = sorted(models)
+                matrix["configs"] = dict(config_stats)
+                matrix["total_matches"] = sum(c["total_matches"] for c in config_stats.values())
         except (sqlite3.Error, OSError, KeyError, ValueError, TypeError):
             pass
 
@@ -14486,21 +14478,21 @@ print(json.dumps(result))
             elo_history = {}
 
             if db_path.exists():
-                conn = sqlite3.connect(db_path)
-                rows = conn.execute("""
-                    SELECT board_type, num_players, participant_id, rating, timestamp
-                    FROM rating_history
-                    WHERE timestamp > ?
-                    ORDER BY timestamp ASC
-                """, (now - 86400 * 7,)).fetchall()  # Last 7 days
+                # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+                with safe_db_connection(db_path) as conn:
+                    rows = conn.execute("""
+                        SELECT board_type, num_players, participant_id, rating, timestamp
+                        FROM rating_history
+                        WHERE timestamp > ?
+                        ORDER BY timestamp ASC
+                    """, (now - 86400 * 7,)).fetchall()  # Last 7 days
 
-                for row in rows:
-                    config = f"{row[0]}_{row[1]}p"
-                    if config not in elo_history:
-                        elo_history[config] = {"ratings": [], "timestamps": []}
-                    elo_history[config]["ratings"].append(row[3])
-                    elo_history[config]["timestamps"].append(row[4])
-                conn.close()
+                    for row in rows:
+                        config = f"{row[0]}_{row[1]}p"
+                        if config not in elo_history:
+                            elo_history[config] = {"ratings": [], "timestamps": []}
+                        elo_history[config]["ratings"].append(row[3])
+                        elo_history[config]["timestamps"].append(row[4])
 
             # Parse training logs for GPU hours
             logs_dir = ai_root / "logs" / "training"
@@ -14598,20 +14590,20 @@ print(json.dumps(result))
             elo_data = {}
             if db_path.exists():
                 import sqlite3
-                conn = sqlite3.connect(db_path)
-                rows = conn.execute("""
-                    SELECT board_type, num_players, participant_id, rating, timestamp
-                    FROM rating_history
-                    ORDER BY timestamp DESC
-                    LIMIT 1000
-                """).fetchall()
+                # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+                with safe_db_connection(db_path) as conn:
+                    rows = conn.execute("""
+                        SELECT board_type, num_players, participant_id, rating, timestamp
+                        FROM rating_history
+                        ORDER BY timestamp DESC
+                        LIMIT 1000
+                    """).fetchall()
 
-                for row in rows:
-                    config = f"{row[0]}_{row[1]}p"
-                    if config not in elo_data:
-                        elo_data[config] = []
-                    elo_data[config].append({"model": row[2], "rating": row[3], "timestamp": row[4]})
-                conn.close()
+                    for row in rows:
+                        config = f"{row[0]}_{row[1]}p"
+                        if config not in elo_data:
+                            elo_data[config] = []
+                        elo_data[config].append({"model": row[2], "rating": row[3], "timestamp": row[4]})
 
             # Check each config for rollback conditions
             for config, holdout_data in holdout.get("configs", {}).items():
@@ -14984,59 +14976,58 @@ print(json.dumps(result))
                     continue
 
                 try:
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
+                    # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+                    with safe_db_connection(db_path) as conn:
+                        cursor = conn.cursor()
 
-                    # Check if this DB has data
-                    cursor.execute("SELECT COUNT(*) FROM rating_history WHERE timestamp > ?", (cutoff,))
-                    count = cursor.fetchone()[0]
-                    if count == 0:
-                        conn.close()
-                        continue
+                        # Check if this DB has data
+                        cursor.execute("SELECT COUNT(*) FROM rating_history WHERE timestamp > ?", (cutoff,))
+                        count = cursor.fetchone()[0]
+                        if count == 0:
+                            continue
 
-                    # Build query - unified_elo.db has different schema (no board_type/num_players)
-                    cursor.execute("PRAGMA table_info(rating_history)")
-                    columns = {col[1] for col in cursor.fetchall()}
+                        # Build query - unified_elo.db has different schema (no board_type/num_players)
+                        cursor.execute("PRAGMA table_info(rating_history)")
+                        columns = {col[1] for col in cursor.fetchall()}
 
-                    if "board_type" in columns:
-                        # unified_elo.db schema
-                        query = """
-                            SELECT participant_id, board_type, num_players, rating, games_played, timestamp
-                            FROM rating_history
-                            WHERE timestamp > ?
-                        """
-                        params = [cutoff]
+                        if "board_type" in columns:
+                            # unified_elo.db schema
+                            query = """
+                                SELECT participant_id, board_type, num_players, rating, games_played, timestamp
+                                FROM rating_history
+                                WHERE timestamp > ?
+                            """
+                            params = [cutoff]
 
-                        if config_filter:
-                            parts = config_filter.replace("_", " ").split()
-                            if len(parts) >= 2:
-                                board_type = parts[0]
-                                num_players = int(parts[1].replace("p", ""))
-                                query += " AND board_type = ? AND num_players = ?"
-                                params.extend([board_type, num_players])
-                    else:
-                        # unified_elo.db schema (model_id instead of participant_id)
-                        query = """
-                            SELECT model_id, rating, games_played, timestamp
-                            FROM rating_history
-                            WHERE timestamp > ?
-                        """
-                        params = [cutoff]
+                            if config_filter:
+                                parts = config_filter.replace("_", " ").split()
+                                if len(parts) >= 2:
+                                    board_type = parts[0]
+                                    num_players = int(parts[1].replace("p", ""))
+                                    query += " AND board_type = ? AND num_players = ?"
+                                    params.extend([board_type, num_players])
+                        else:
+                            # unified_elo.db schema (model_id instead of participant_id)
+                            query = """
+                                SELECT model_id, rating, games_played, timestamp
+                                FROM rating_history
+                                WHERE timestamp > ?
+                            """
+                            params = [cutoff]
 
-                    if model_filter:
-                        col = "participant_id" if "participant_id" in columns else "model_id"
-                        query += f" AND {col} LIKE ?"
-                        params.append(f"%{model_filter}%")
+                        if model_filter:
+                            col = "participant_id" if "participant_id" in columns else "model_id"
+                            query += f" AND {col} LIKE ?"
+                            params.append(f"%{model_filter}%")
 
-                    if nn_only:
-                        col = "participant_id" if "participant_id" in columns else "model_id"
-                        query += f" AND ({col} LIKE '%nn%' OR {col} LIKE '%NN%')"
+                        if nn_only:
+                            col = "participant_id" if "participant_id" in columns else "model_id"
+                            query += f" AND ({col} LIKE '%nn%' OR {col} LIKE '%NN%')"
 
-                    query += f" ORDER BY timestamp DESC LIMIT {limit}"
+                        query += f" ORDER BY timestamp DESC LIMIT {limit}"
 
-                    cursor.execute(query, params)
-                    rows = cursor.fetchall()
-                    conn.close()
+                        cursor.execute(query, params)
+                        rows = cursor.fetchall()
 
                     # Format for Grafana time series
                     for row in rows:
@@ -16089,16 +16080,16 @@ print(json.dumps(result))
         import math
 
         try:
-            conn = sqlite3.connect(str(self.db_path))
-            cursor = conn.cursor()
+            # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
+            with safe_db_connection(self.db_path) as conn:
+                cursor = conn.cursor()
 
-            # Get game results
-            cursor.execute("""
-                SELECT model_a_result, model_a_score, model_b_score, game_length
-                FROM ab_test_games WHERE test_id = ?
-            """, (test_id,))
-            games = cursor.fetchall()
-            conn.close()
+                # Get game results
+                cursor.execute("""
+                    SELECT model_a_result, model_a_score, model_b_score, game_length
+                    FROM ab_test_games WHERE test_id = ?
+                """, (test_id,))
+                games = cursor.fetchall()
 
             if not games:
                 return {
@@ -17615,6 +17606,32 @@ print(json.dumps({{
                     self._release_voter_grant_if_self()
                     self._save_state()
                     continue  # Skip leader duties this cycle
+
+                # P0 Dec 2025: Monitor leader heartbeat for early warning
+                # Emit LEADER_HEARTBEAT_MISSING if leader lease is approaching expiry
+                if self.role == NodeRole.FOLLOWER and self.leader_id:
+                    now = time.time()
+                    # Warning threshold: 45 seconds (3x lease renewal interval)
+                    heartbeat_warning_threshold = LEADER_LEASE_RENEW_INTERVAL * 3
+                    time_until_expiry = self.leader_lease_expires - now
+                    # Emit warning if lease will expire within warning threshold
+                    if 0 < time_until_expiry < heartbeat_warning_threshold:
+                        last_warning = getattr(self, "_last_heartbeat_missing_warning", 0.0)
+                        # Only warn once per 30 seconds to avoid spam
+                        if now - last_warning > 30:
+                            self._last_heartbeat_missing_warning = now
+                            delay_seconds = (LEADER_LEASE_DURATION - time_until_expiry)
+                            try:
+                                from app.distributed.data_events import emit_leader_heartbeat_missing
+                                asyncio.create_task(emit_leader_heartbeat_missing(
+                                    leader_id=self.leader_id,
+                                    last_heartbeat=self.leader_lease_expires - LEADER_LEASE_DURATION,
+                                    expected_interval=LEADER_LEASE_RENEW_INTERVAL,
+                                    delay_seconds=delay_seconds,
+                                    source=self.node_id,
+                                ))
+                            except ImportError:
+                                pass  # Graceful degradation if event system not available
 
                 # LEARNED LESSONS - Lease renewal to maintain leadership
                 if self.role == NodeRole.LEADER:
@@ -24214,6 +24231,9 @@ print(json.dumps({{
 
     async def _discovery_loop(self):
         """Broadcast UDP discovery messages to find peers on local network."""
+        # Phase 3.1 Dec 29, 2025: Add max iterations to prevent infinite loop
+        MAX_RECEIVE_ITERATIONS = 100
+
         while self.running:
             try:
                 # Create UDP socket
@@ -24233,9 +24253,13 @@ print(json.dumps({{
                     sock.sendto(message, ("<broadcast>", DISCOVERY_PORT))
 
                 # Listen for responses
+                # Phase 3.1 Dec 29, 2025: Add max iterations to prevent infinite loop
+                # if recvfrom keeps returning data (e.g., broadcast storms)
+                receive_count = 0
                 try:
-                    while True:
+                    while receive_count < MAX_RECEIVE_ITERATIONS:
                         data, _addr = sock.recvfrom(1024)
+                        receive_count += 1
                         msg = json.loads(data.decode())
                         if msg.get("type") == "p2p_discovery" and msg.get("node_id") != self.node_id:
                             # Found a peer!
@@ -24243,6 +24267,9 @@ print(json.dumps({{
                             if peer_addr not in self.known_peers:
                                 self.known_peers.append(peer_addr)
                                 logger.info(f"Discovered peer: {msg.get('node_id')} at {peer_addr}")
+                    # Warn if we hit the limit
+                    if receive_count >= MAX_RECEIVE_ITERATIONS:
+                        logger.warning(f"[UdpDiscovery] Hit max receive limit ({MAX_RECEIVE_ITERATIONS})")
                 except TimeoutError:
                     pass
 

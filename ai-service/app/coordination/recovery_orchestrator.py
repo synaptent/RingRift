@@ -59,6 +59,11 @@ from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
+# SSH retry configuration
+SSH_MAX_RETRIES = 3
+SSH_BASE_DELAY = 1.0  # seconds
+SSH_MAX_DELAY = 4.0  # seconds
+
 
 class SystemRecoveryAction(str, Enum):
     """System-level recovery actions in escalation order.
@@ -236,6 +241,73 @@ class RecoveryOrchestrator:
         }
         return managers.get(provider)
 
+    async def _run_ssh_with_retry(
+        self,
+        manager,
+        instance: ProviderInstance,
+        cmd: str,
+        timeout: int = 30,
+        max_retries: int = SSH_MAX_RETRIES,
+    ) -> tuple[int, str, str]:
+        """Run SSH command with exponential backoff retry.
+
+        December 29, 2025: Added to fix single SSH failure causing permanent
+        recovery failure. Uses exponential backoff (1s, 2s, 4s).
+
+        Args:
+            manager: Provider manager with run_ssh_command method
+            instance: Target instance
+            cmd: Command to run
+            timeout: Timeout per attempt
+            max_retries: Maximum retry attempts
+
+        Returns:
+            Tuple of (exit_code, stdout, stderr) from the last attempt
+        """
+        last_error = None
+        last_result = (1, "", "No attempts made")
+
+        for attempt in range(max_retries):
+            try:
+                code, stdout, stderr = await manager.run_ssh_command(
+                    instance, cmd, timeout=timeout
+                )
+                last_result = (code, stdout, stderr)
+
+                # Success - return immediately
+                if code == 0:
+                    if attempt > 0:
+                        logger.info(
+                            f"[RecoveryOrchestrator] SSH succeeded on attempt {attempt + 1}"
+                        )
+                    return code, stdout, stderr
+
+                # Command failed but SSH worked - don't retry
+                logger.warning(
+                    f"[RecoveryOrchestrator] SSH command failed with code {code}: "
+                    f"{stderr or stdout}"
+                )
+                return code, stdout, stderr
+
+            except Exception as e:
+                last_error = e
+                delay = min(SSH_BASE_DELAY * (2 ** attempt), SSH_MAX_DELAY)
+
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"[RecoveryOrchestrator] SSH attempt {attempt + 1}/{max_retries} "
+                        f"failed: {e}. Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"[RecoveryOrchestrator] SSH failed after {max_retries} attempts: {e}"
+                    )
+
+        # All retries exhausted
+        error_msg = str(last_error) if last_error else last_result[2]
+        return 1, "", f"SSH failed after {max_retries} attempts: {error_msg}"
+
     def _get_next_action(
         self,
         node_state: NodeRecoveryState,
@@ -406,7 +478,10 @@ class RecoveryOrchestrator:
         manager,
         instance: ProviderInstance,
     ) -> tuple[bool, str]:
-        """Restart P2P daemon on instance."""
+        """Restart P2P daemon on instance.
+
+        December 29, 2025: Now uses SSH retry with exponential backoff.
+        """
         cmd = """
 cd ~/ringrift/ai-service 2>/dev/null || cd /root/ringrift/ai-service
 pkill -f 'app.p2p.orchestrator' 2>/dev/null
@@ -416,7 +491,9 @@ nohup python -m app.p2p.orchestrator > logs/p2p.log 2>&1 &
 sleep 3
 pgrep -f 'app.p2p.orchestrator' && echo "P2P restarted"
 """
-        code, stdout, stderr = await manager.run_ssh_command(instance, cmd, timeout=30)
+        code, stdout, stderr = await self._run_ssh_with_retry(
+            manager, instance, cmd, timeout=30
+        )
 
         if code == 0 and "P2P restarted" in stdout:
             return True, "P2P daemon restarted successfully"
@@ -427,7 +504,10 @@ pgrep -f 'app.p2p.orchestrator' && echo "P2P restarted"
         manager,
         instance: ProviderInstance,
     ) -> tuple[bool, str]:
-        """Restart Tailscale on instance."""
+        """Restart Tailscale on instance.
+
+        December 29, 2025: Now uses SSH retry with exponential backoff.
+        """
         # Try systemctl first (Lambda/Hetzner), then direct command (Vast)
         cmd = """
 if command -v systemctl >/dev/null 2>&1; then
@@ -440,7 +520,9 @@ fi
 sleep 3
 tailscale status >/dev/null 2>&1 && echo "Tailscale OK"
 """
-        code, stdout, stderr = await manager.run_ssh_command(instance, cmd, timeout=30)
+        code, stdout, stderr = await self._run_ssh_with_retry(
+            manager, instance, cmd, timeout=30
+        )
 
         if code == 0 and "Tailscale OK" in stdout:
             return True, "Tailscale restarted successfully"
@@ -615,8 +697,9 @@ sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 echo "Key deployed"
 """
-        code, stdout, stderr = await manager.run_ssh_command(
-            health.instance, cmd, timeout=30
+        # December 29, 2025: Now uses SSH retry with exponential backoff
+        code, stdout, stderr = await self._run_ssh_with_retry(
+            manager, health.instance, cmd, timeout=30
         )
 
         if code == 0 and "deployed" in stdout:

@@ -483,7 +483,9 @@ class DaemonLoopDefaults:
     MAX_CONSECUTIVE_ERRORS: int = _env_int("RINGRIFT_DAEMON_MAX_CONSECUTIVE_ERRORS", 5)
 
     # Shutdown grace period (seconds)
-    SHUTDOWN_GRACE_PERIOD: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_GRACE", 10.0)
+    # Dec 2025: Extended from 10s to 30s to prevent premature SIGKILL of slow-shutting daemons
+    # (e.g., daemons with large state files, pending sync operations, or cleanup tasks)
+    SHUTDOWN_GRACE_PERIOD: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_GRACE", 30.0)
 
     # Health check timeout (seconds)
     HEALTH_CHECK_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_HEALTH_TIMEOUT", 5.0)
@@ -1060,7 +1062,8 @@ class DaemonHealthDefaults:
     STARTUP_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_STARTUP_TIMEOUT", 30.0)
 
     # Shutdown timeout (seconds) - how long to wait for graceful shutdown
-    SHUTDOWN_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT", 10.0)
+    # Dec 2025: Extended from 10s to 30s (matching SHUTDOWN_GRACE_PERIOD)
+    SHUTDOWN_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT", 30.0)
 
 
 # =============================================================================

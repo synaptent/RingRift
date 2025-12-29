@@ -47,6 +47,12 @@ from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
+# December 29, 2025: Configurable process grace period
+# Allows longer cleanup time for P2P daemon and other processes
+# Default raised from 5s to 30s to prevent premature SIGKILL
+PROCESS_GRACE_PERIOD = float(os.environ.get("RINGRIFT_PROCESS_GRACE_PERIOD", "30.0"))
+PROCESS_FORCE_KILL_DELAY = float(os.environ.get("RINGRIFT_PROCESS_FORCE_KILL_DELAY", "10.0"))
+
 
 @dataclass
 class ProcessInfo:
@@ -561,7 +567,7 @@ def kill_process(
     pid: int,
     sig: int = signal.SIGTERM,
     wait: bool = False,
-    timeout: float = 5.0,
+    timeout: float | None = None,
 ) -> bool:
     """Kill a process by PID.
 
@@ -569,11 +575,14 @@ def kill_process(
         pid: Process ID to kill
         sig: Signal to send (default: SIGTERM)
         wait: Wait for process to terminate
-        timeout: Timeout for waiting (if wait=True)
+        timeout: Timeout for waiting (if wait=True). Defaults to
+            RINGRIFT_PROCESS_GRACE_PERIOD env var (30s).
 
     Returns:
         True if process was killed or already dead
     """
+    if timeout is None:
+        timeout = PROCESS_GRACE_PERIOD
     try:
         os.kill(pid, sig)
 
@@ -605,8 +614,8 @@ def kill_processes_by_pattern(
     pattern: str,
     sig: int = signal.SIGTERM,
     wait: bool = True,
-    timeout: float = 5.0,
-    force_after: float = 3.0,
+    timeout: float | None = None,
+    force_after: float | None = None,
 ) -> int:
     """Kill all processes matching a pattern.
 
@@ -614,12 +623,18 @@ def kill_processes_by_pattern(
         pattern: Regex pattern to match against process command line
         sig: Initial signal to send (default: SIGTERM)
         wait: Wait for processes to terminate
-        timeout: Total timeout for waiting
-        force_after: Send SIGKILL after this many seconds if still running
+        timeout: Total timeout for waiting. Defaults to
+            RINGRIFT_PROCESS_GRACE_PERIOD env var (30s).
+        force_after: Send SIGKILL after this many seconds if still running.
+            Defaults to RINGRIFT_PROCESS_FORCE_KILL_DELAY env var (10s).
 
     Returns:
         Number of processes killed
     """
+    if timeout is None:
+        timeout = PROCESS_GRACE_PERIOD
+    if force_after is None:
+        force_after = PROCESS_FORCE_KILL_DELAY
     processes = find_processes_by_pattern(pattern)
     if not processes:
         return 0

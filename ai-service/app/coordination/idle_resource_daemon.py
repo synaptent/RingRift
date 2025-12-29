@@ -149,8 +149,9 @@ class IdleResourceConfig:
     # Queue depth thresholds for scaling
     high_queue_depth: int = 20
     medium_queue_depth: int = 10
-    # Dec 27 2025: Raised for high-throughput selfplay (was 100)
-    max_queue_depth: int = 500
+    # Dec 29 2025: Reduced from 500 to 200 for more responsive backpressure
+    # (was 100, raised to 500, now 200 - proportional to cluster size)
+    max_queue_depth: int = 200
     # Training backlog threshold in hours - stop spawning if too much unprocessed data
     max_pending_training_hours: float = 24.0
     # Dec 26 2025: Max selfplay processes per node before skipping spawns
@@ -1673,7 +1674,12 @@ class IdleResourceDaemon:
         return "hex8_2p"  # Default to smallest config
 
     async def _get_queue_depth(self) -> int:
-        """Get current queue depth for scaling decisions."""
+        """Get current queue depth for scaling decisions.
+
+        December 29, 2025: Added work_queue fallback when job_scheduler unavailable.
+        This ensures queue depth checks work even when the scheduler is down.
+        """
+        # Try job_scheduler first (primary source)
         try:
             from app.coordination.job_scheduler import get_job_scheduler
 
@@ -1683,7 +1689,24 @@ class IdleResourceDaemon:
         except ImportError:
             pass  # Expected if job_scheduler not available
         except Exception as e:
-            logger.debug(f"[IdleResourceDaemon] Failed to get queue depth: {e}")
+            logger.debug(f"[IdleResourceDaemon] Failed to get queue depth from scheduler: {e}")
+
+        # Fallback: Try work_queue directly (December 29, 2025)
+        try:
+            from app.coordination.work_queue import get_work_queue
+
+            wq = get_work_queue()
+            if wq:
+                pending = wq.get_pending_count()
+                logger.debug(
+                    f"[IdleResourceDaemon] Using work_queue fallback: "
+                    f"pending={pending}"
+                )
+                return pending
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] work_queue not available for fallback")
+        except Exception as e:
+            logger.debug(f"[IdleResourceDaemon] work_queue fallback failed: {e}")
 
         return 0  # Default to no queue
 
@@ -2235,21 +2258,16 @@ class IdleResourceDaemon:
         num_players: int,
         games: int,
     ) -> bool:
-        """Distribute job via P2P orchestrator."""
+        """Distribute job via P2P direct dispatch.
+
+        Dec 29, 2025: Changed from work queue (submit_job) to direct dispatch.
+        The work queue model doesn't work for selfplay because workers only
+        pull when completely idle. Direct dispatch via /selfplay/start works
+        immediately on the target node.
+        """
         try:
-            from app.coordination.p2p_integration import get_p2p_orchestrator
-
-            p2p = get_p2p_orchestrator()
-            if p2p is None:
-                return False
-
-            # Submit job via P2P work queue
-            # Dec 29, 2025: Fixed payload format - must use work_type + config wrapper
-            # The /work/add handler expects:
-            #   work_type: str (e.g., "selfplay")
-            #   priority: int (0-100, higher = more urgent)
-            #   config: dict with actual job parameters
-            # Previously, config params were at top level and got lost!
+            from app.coordination.p2p_integration import dispatch_selfplay_direct
+            from app.config.cluster_config import get_p2p_port
 
             # Select engine based on board type for feasible throughput
             # Large boards (square19, hexagonal) use lighter engines
@@ -2262,47 +2280,33 @@ class IdleResourceDaemon:
             else:
                 engine_mode = "gumbel-mcts"  # GPU-accelerated Gumbel MCTS for small boards
 
-            # Get priority from SelfplayScheduler if available
-            priority = 50  # Default priority
-            try:
-                from app.coordination.selfplay_scheduler import get_selfplay_scheduler
+            # Get host from node - prefer host attribute, fall back to node_id
+            host = getattr(node, "host", None) or node.node_id
+            port = getattr(node, "port", None) or get_p2p_port()
 
-                scheduler = get_selfplay_scheduler()
-                if scheduler:
-                    config_key = f"{board_type}_{num_players}p"
-                    # Use sync version to get cached priority data
-                    priorities = scheduler.get_priority_configs_sync(
-                        filter_configs=[config_key]
-                    )
-                    if priorities:
-                        # priorities is a list of (config_key, priority_score)
-                        _, priority_score = priorities[0]
-                        # Normalize to 0-100 range (scores are typically 0-1)
-                        priority = int(min(100, max(0, priority_score * 100)))
-            except (ImportError, RuntimeError, AttributeError):
-                pass  # Use default priority
+            # Direct dispatch to /selfplay/start endpoint
+            result = await dispatch_selfplay_direct(
+                target_node=node.node_id,
+                host=host,
+                port=port,
+                board_type=board_type,
+                num_players=num_players,
+                num_games=games,
+                engine_mode=engine_mode,
+            )
 
-            # Correct work queue payload format
-            job_spec = {
-                "work_type": "selfplay",
-                "priority": priority,
-                "config": {
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "num_games": games,
-                    "engine_mode": engine_mode,
-                    "target_node": node.node_id,
-                },
-            }
+            if result.success:
+                logger.info(
+                    f"[IdleResourceDaemon] Dispatched selfplay to {node.node_id}: "
+                    f"{board_type}_{num_players}p, {games} games, job_id={result.job_id}"
+                )
+            return result.success
 
-            result = await p2p.submit_job(job_spec)
-            return result.get("success", False)
-
-        except ImportError:
-            logger.debug("P2P orchestrator not available for job distribution")
+        except ImportError as e:
+            logger.debug(f"P2P dispatch not available: {e}")
             return False
         except Exception as e:
-            logger.debug(f"P2P job distribution failed: {e}")
+            logger.debug(f"P2P job dispatch failed: {e}")
             return False
 
     async def _distribute_job_via_ssh(

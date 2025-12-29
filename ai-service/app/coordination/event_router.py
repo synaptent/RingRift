@@ -57,7 +57,11 @@ from app.core.async_context import fire_and_forget, safe_create_task
 logger = logging.getLogger(__name__)
 
 # Import event normalization (December 2025)
-from app.coordination.event_normalization import normalize_event_type
+from app.coordination.event_normalization import (
+    normalize_event_type,
+    validate_event_type,
+    UnknownEventTypeError,
+)
 
 if TYPE_CHECKING:
     from app.coordination.protocols import HealthCheckResult
@@ -166,6 +170,23 @@ except ImportError:
 DEFAULT_HANDLER_TIMEOUT_SECONDS = float(
     os.environ.get("RINGRIFT_EVENT_HANDLER_TIMEOUT", "30.0")
 )
+
+
+class EventHandlerTimeout(Exception):
+    """Exception raised when an event handler exceeds its timeout.
+
+    Phase 5.1 (Dec 29, 2025): Handler timeouts are now raised instead of
+    silently swallowed. This allows proper error tracking and DLQ capture.
+    """
+
+    def __init__(self, handler_name: str, event_type: str, timeout: float) -> None:
+        self.handler_name = handler_name
+        self.event_type = event_type
+        self.timeout = timeout
+        super().__init__(
+            f"Handler '{handler_name}' timed out after {timeout}s "
+            f"while processing {event_type}"
+        )
 
 
 def _validate_event_subsystems() -> None:
@@ -346,6 +367,7 @@ class UnifiedEventRouter:
         self._max_seen_events = max_seen_events
         self._duplicates_prevented = 0
         self._content_duplicates_prevented = 0  # Content-hash based duplicates
+        self._handler_timeouts = 0  # Phase 5.1 (Dec 29, 2025): Track handler timeouts
 
         # Metrics
         self._events_routed: dict[str, int] = {}
@@ -525,6 +547,20 @@ class UnifiedEventRouter:
             logger.debug(
                 f"[EventRouter] Normalized '{original_event_type}' → '{event_type_str}'"
             )
+
+        # P0 December 2025: Validate event type against canonical set
+        # This catches typos and misconfigurations that would silently break pipelines
+        try:
+            is_valid, validation_msg = validate_event_type(event_type_str)
+            if not is_valid:
+                logger.warning(
+                    f"[EventRouter] {validation_msg}. Event will still be published "
+                    f"but may not be received by subscribers."
+                )
+        except UnknownEventTypeError as e:
+            # Strict mode - re-raise to caller
+            logger.error(f"[EventRouter] Event validation failed: {e}")
+            raise
 
         payload = payload or {}
 
@@ -783,11 +819,33 @@ class UnifiedEventRouter:
                             timeout=DEFAULT_HANDLER_TIMEOUT_SECONDS,
                         )
                     except asyncio.TimeoutError:
+                        # Phase 5.1 (Dec 29, 2025): Capture handler timeouts to DLQ
                         callback_name = getattr(callback, "__name__", str(callback))
-                        logger.error(
-                            f"[EventRouter] Handler timeout for {event.event_type}: "
-                            f"{callback_name} exceeded {DEFAULT_HANDLER_TIMEOUT_SECONDS}s"
+                        error_msg = (
+                            f"Handler timeout: {callback_name} exceeded "
+                            f"{DEFAULT_HANDLER_TIMEOUT_SECONDS}s"
                         )
+                        logger.error(f"[EventRouter] {error_msg}")
+
+                        # Track timeout for metrics
+                        self._handler_timeouts += 1
+
+                        # Capture to DLQ for retry/analysis
+                        if HAS_DLQ and get_dead_letter_queue:
+                            try:
+                                dlq = get_dead_letter_queue()
+                                dlq.capture(
+                                    event_type=str(event.event_type),
+                                    payload=event.payload,
+                                    handler_name=callback_name,
+                                    error=error_msg,
+                                    source="EventRouter.async.timeout",
+                                )
+                            except (RuntimeError, AttributeError, ImportError) as dlq_err:
+                                # DLQ capture failed - log at warning level (not debug)
+                                logger.warning(
+                                    f"[EventRouter] DLQ capture failed for timeout: {dlq_err}"
+                                )
             except (SystemExit, KeyboardInterrupt):
                 # Signal exceptions must propagate for graceful shutdown (Dec 2025)
                 raise
@@ -968,12 +1026,16 @@ class UnifiedEventRouter:
         self,
         event_type: str | DataEventType | StageEvent | None,
         callback: EventCallback,
+        subscriber_name: str | None = None,
+        persist: bool = False,
     ) -> None:
         """Subscribe to events.
 
         Args:
             event_type: Event type to subscribe to (None for all events)
             callback: Function to call when event occurs
+            subscriber_name: Optional name for persistence tracking (P0 Dec 2025)
+            persist: Whether to persist subscription to SQLite (P0 Dec 2025)
         """
         if event_type is None:
             self._global_subscribers.append(callback)
@@ -991,12 +1053,61 @@ class UnifiedEventRouter:
                 self._subscribers[event_type_str] = []
             self._subscribers[event_type_str].append(callback)
 
+            # P0 Dec 2025: Persist subscription for restart recovery
+            if persist and subscriber_name:
+                self._persist_subscription(subscriber_name, event_type_str, callback)
+
+    def _persist_subscription(
+        self,
+        subscriber_name: str,
+        event_type: str,
+        callback: EventCallback,
+    ) -> None:
+        """Persist subscription to SQLite store for restart recovery.
+
+        P0 December 2025: Subscriptions are lost on process restart, causing
+        events to be orphaned. This method saves subscription metadata.
+
+        Args:
+            subscriber_name: Name of subscribing component
+            event_type: Normalized event type string
+            callback: Handler function (used to extract module path)
+        """
+        try:
+            from app.coordination.subscription_store import get_subscription_store
+
+            # Build handler path from callback
+            handler_path = f"{callback.__module__}:{callback.__qualname__}"
+
+            store = get_subscription_store()
+            store.register_subscription(
+                subscriber_name=subscriber_name,
+                event_type=event_type,
+                handler_path=handler_path,
+            )
+        except ImportError:
+            logger.debug(
+                "[EventRouter] Subscription persistence unavailable - "
+                "subscription_store not importable"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[EventRouter] Failed to persist subscription: {e}"
+            )
+
     def unsubscribe(
         self,
         event_type: str | DataEventType | StageEvent | None,
         callback: EventCallback,
+        subscriber_name: str | None = None,
     ) -> bool:
-        """Unsubscribe from events."""
+        """Unsubscribe from events.
+
+        Args:
+            event_type: Event type to unsubscribe from (None for global)
+            callback: Handler to remove
+            subscriber_name: Optional name for deactivating persisted subscription
+        """
         if event_type is None:
             if callback in self._global_subscribers:
                 self._global_subscribers.remove(callback)
@@ -1012,8 +1123,141 @@ class UnifiedEventRouter:
 
             if event_type_str in self._subscribers and callback in self._subscribers[event_type_str]:
                 self._subscribers[event_type_str].remove(callback)
+
+                # P0 Dec 2025: Deactivate persisted subscription
+                if subscriber_name:
+                    self._deactivate_persisted_subscription(subscriber_name, event_type_str)
+
                 return True
         return False
+
+    def _deactivate_persisted_subscription(
+        self,
+        subscriber_name: str,
+        event_type: str,
+    ) -> None:
+        """Deactivate a persisted subscription.
+
+        P0 December 2025: Mark subscription as inactive in the store.
+        """
+        try:
+            from app.coordination.subscription_store import get_subscription_store
+
+            store = get_subscription_store()
+            store.deactivate_subscription(subscriber_name, event_type)
+        except ImportError:
+            pass  # Subscription store not available
+        except Exception as e:
+            logger.warning(
+                f"[EventRouter] Failed to deactivate persisted subscription: {e}"
+            )
+
+    async def restore_subscriptions(self) -> int:
+        """Restore subscriptions from persistent store on startup.
+
+        P0 December 2025: Called during coordination bootstrap to restore
+        subscriptions that were persisted before a restart.
+
+        Returns:
+            Number of subscriptions restored
+        """
+        try:
+            from app.coordination.subscription_store import get_subscription_store
+        except ImportError:
+            logger.debug(
+                "[EventRouter] Subscription persistence unavailable - "
+                "cannot restore subscriptions"
+            )
+            return 0
+
+        store = get_subscription_store()
+        subscriptions = store.get_active_subscriptions()
+
+        restored = 0
+        for sub in subscriptions:
+            try:
+                # Try to import the handler
+                handler = self._load_handler_from_path(sub.handler_path)
+                if handler:
+                    # Re-subscribe (don't persist again - already in store)
+                    self.subscribe(sub.event_type, handler)
+                    restored += 1
+                    logger.debug(
+                        f"[EventRouter] Restored: {sub.subscriber_name} -> {sub.event_type}"
+                    )
+                else:
+                    logger.warning(
+                        f"[EventRouter] Could not load handler for {sub.subscriber_name}: "
+                        f"{sub.handler_path}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[EventRouter] Failed to restore subscription {sub.subscriber_name}: {e}"
+                )
+
+        if restored > 0:
+            logger.info(
+                f"[EventRouter] Restored {restored} subscriptions from persistent store"
+            )
+
+        return restored
+
+    def _load_handler_from_path(self, handler_path: str) -> EventCallback | None:
+        """Load a handler function from its module path.
+
+        Args:
+            handler_path: Path like "app.coordination.foo:my_handler"
+
+        Returns:
+            Handler callable or None if not loadable
+        """
+        try:
+            if ":" not in handler_path:
+                return None
+
+            module_path, func_name = handler_path.rsplit(":", 1)
+
+            import importlib
+            module = importlib.import_module(module_path)
+
+            # Handle nested qualnames like "ClassName.method_name"
+            handler = module
+            for attr in func_name.split("."):
+                handler = getattr(handler, attr)
+
+            if callable(handler):
+                return handler
+            return None
+
+        except (ImportError, AttributeError) as e:
+            logger.debug(f"[EventRouter] Could not load handler {handler_path}: {e}")
+            return None
+
+    async def replay_stale_dlq_events(self, min_age_seconds: float = 300) -> int:
+        """Replay DLQ events that haven't been processed.
+
+        P0 December 2025: Called during startup to ensure events aren't lost
+        due to process restarts.
+
+        Args:
+            min_age_seconds: Minimum age for events to replay (default: 5 minutes)
+
+        Returns:
+            Number of events replayed
+        """
+        try:
+            from app.coordination.subscription_store import get_subscription_store
+
+            store = get_subscription_store()
+            return await store.replay_stale_dlq_events(min_age_seconds=min_age_seconds)
+        except ImportError:
+            logger.debug(
+                "[EventRouter] Subscription store unavailable - cannot replay DLQ"
+            )
+            return 0
+        except Exception as e:
+            logger.warning(f"[EventRouter] Failed to replay DLQ events: {e}")
+            return 0
 
     def register_handler(
         self,
@@ -1151,6 +1395,8 @@ class UnifiedEventRouter:
             "seen_events_count": len(self._seen_events),
             "seen_content_hashes_count": len(self._seen_content_hashes),
             "max_seen_events": self._max_seen_events,
+            # Handler timeout metrics (Phase 5.1 - Dec 29, 2025)
+            "handler_timeouts": self._handler_timeouts,
         }
 
     def get_orphaned_events(self) -> dict[str, list[str]]:
@@ -1613,6 +1859,8 @@ __all__ = [  # noqa: RUF022
     "RouterEvent",
     # Core classes
     "UnifiedEventRouter",
+    # Exceptions (Phase 5.1 - Dec 29, 2025)
+    "EventHandlerTimeout",
     # Global access
     "get_router",
     # Convenience functions

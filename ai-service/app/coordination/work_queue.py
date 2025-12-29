@@ -748,6 +748,13 @@ class WorkQueue:
                     logger.debug(f"Node {node_id} excluded from {item.work_id}")
                     continue
 
+                # Dec 29, 2025: Check target_node hint (for NAT-blocked node work distribution)
+                # If work was queued for a specific node, only that node can claim it
+                target_node = item.config.get("target_node")
+                if target_node and target_node != node_id:
+                    logger.debug(f"Work {item.work_id} targeted for {target_node}, not {node_id}")
+                    continue
+
                 # Check policy
                 if self.policy_manager and not self.policy_manager.is_work_allowed(node_id, work_type):
                     logger.debug(f"Policy denies {work_type} on {node_id}")

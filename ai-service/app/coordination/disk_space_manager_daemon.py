@@ -94,6 +94,79 @@ def _is_protected_file(file_path: Path) -> bool:
 
 
 # =============================================================================
+# Disk Write Gate (Phase 2.3 - Dec 29, 2025)
+# =============================================================================
+#
+# Global write gate to prevent writes when disk is critically full.
+# Writers should call can_write_to_disk() before large write operations.
+# The DiskSpaceManagerDaemon automatically blocks writes when disk usage > 70%
+# and allows writes again when usage drops below target (50%).
+
+import threading
+
+_disk_write_lock = threading.Lock()
+_disk_write_allowed = True
+_disk_write_block_reason: str | None = None
+
+
+def can_write_to_disk() -> bool:
+    """Check if disk writes are currently allowed.
+
+    Usage in writers (e.g., GameReplayDB, selfplay_runner):
+        from app.coordination.disk_space_manager_daemon import can_write_to_disk
+
+        if not can_write_to_disk():
+            raise DiskSpaceError("Disk writes blocked due to low disk space")
+
+    Returns:
+        True if writes are allowed, False if writes are blocked.
+    """
+    with _disk_write_lock:
+        return _disk_write_allowed
+
+
+def get_disk_write_status() -> tuple[bool, str | None]:
+    """Get disk write status and reason if blocked.
+
+    Returns:
+        Tuple of (is_allowed, block_reason). block_reason is None if allowed.
+    """
+    with _disk_write_lock:
+        return _disk_write_allowed, _disk_write_block_reason
+
+
+def block_disk_writes(reason: str = "disk_space_critical") -> None:
+    """Block disk writes globally.
+
+    Called by DiskSpaceManagerDaemon when disk usage exceeds critical threshold.
+    Can also be called programmatically for maintenance operations.
+
+    Args:
+        reason: Human-readable reason for the block (for logging/debugging)
+    """
+    global _disk_write_allowed, _disk_write_block_reason
+    with _disk_write_lock:
+        if _disk_write_allowed:
+            _disk_write_allowed = False
+            _disk_write_block_reason = reason
+            logger.warning(f"Disk writes BLOCKED: {reason}")
+
+
+def allow_disk_writes() -> None:
+    """Allow disk writes globally.
+
+    Called by DiskSpaceManagerDaemon when disk usage drops below target threshold.
+    """
+    global _disk_write_allowed, _disk_write_block_reason
+    with _disk_write_lock:
+        if not _disk_write_allowed:
+            _disk_write_allowed = True
+            previous_reason = _disk_write_block_reason
+            _disk_write_block_reason = None
+            logger.info(f"Disk writes ALLOWED (was blocked: {previous_reason})")
+
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -366,6 +439,13 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
         """Perform cleanup operations based on priority."""
         logger.info(f"[{self._get_daemon_name()}] Starting cleanup (target: {self.config.target_disk_usage}%)")
 
+        # Phase 2.3 Dec 29, 2025: Block writes if disk usage exceeds critical threshold
+        # This prevents new writes from competing with cleanup operations
+        if status.is_critical or status.is_emergency:
+            block_disk_writes(
+                reason=f"disk_usage_{status.usage_percent:.1f}%_exceeds_critical_{self.config.critical_threshold}%"
+            )
+
         bytes_freed = 0
         for priority in self.config.cleanup_priorities:
             if status.usage_percent <= self.config.target_disk_usage:
@@ -398,6 +478,11 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
             f"[{self._get_daemon_name()}] Cleanup complete: "
             f"freed {freed_mb:.1f}MB, now at {status.usage_percent:.1f}%"
         )
+
+        # Phase 2.3 Dec 29, 2025: Re-allow writes if cleanup succeeded
+        # Only allow if we're now below the critical threshold
+        if status.usage_percent < self.config.critical_threshold:
+            allow_disk_writes()
 
         # Emit cleanup event
         if self.config.emit_events and bytes_freed > 0:
