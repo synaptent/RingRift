@@ -99,6 +99,50 @@ _circuit_states: dict[str, CircuitState] = {}
 CIRCUIT_FAILURE_THRESHOLD = int(os.environ.get("RINGRIFT_CIRCUIT_FAILURE_THRESHOLD", "5"))
 CIRCUIT_BACKOFF_SECONDS = float(os.environ.get("RINGRIFT_CIRCUIT_BACKOFF_SECONDS", "300"))  # 5 min
 
+# Dec 29, 2025 - Phase 3: Quality gate configuration
+# Training is blocked if quality score is below this threshold
+QUALITY_GATE_THRESHOLD = float(os.environ.get("RINGRIFT_QUALITY_GATE_THRESHOLD", "0.6"))
+
+
+async def _check_training_data_quality(config_key: str, npz_path: str) -> tuple[bool, float]:
+    """Check if training data quality is sufficient.
+
+    Dec 29, 2025 - Phase 3: Quality gate blocking training.
+    Prevents training on low-quality data (e.g., heuristic-only, high parity failures).
+
+    Args:
+        config_key: Config like "hex8_2p"
+        npz_path: Path to NPZ training data
+
+    Returns:
+        Tuple of (quality_ok, quality_score)
+    """
+    try:
+        from app.coordination.quality_monitor_daemon import get_quality_daemon
+
+        daemon = get_quality_daemon()
+        if daemon:
+            quality = daemon.get_config_quality(config_key)
+            if quality is not None:
+                return (quality >= QUALITY_GATE_THRESHOLD, quality)
+    except (ImportError, AttributeError):
+        pass
+
+    # If QualityMonitorDaemon not available, check the data pipeline orchestrator
+    try:
+        from app.coordination.data_pipeline_orchestrator import get_data_pipeline_orchestrator
+
+        orchestrator = get_data_pipeline_orchestrator()
+        if orchestrator and hasattr(orchestrator, "_check_training_data_quality"):
+            quality_ok = await orchestrator._check_training_data_quality(Path(npz_path))
+            if not quality_ok:
+                return (False, 0.5)  # Assume below threshold if check fails
+    except (ImportError, AttributeError):
+        pass
+
+    # Default: assume quality is acceptable if we can't check
+    return (True, 0.7)
+
 
 def _get_circuit_state(config_key: str) -> CircuitState:
     """Get or create circuit state for a config."""
@@ -793,6 +837,40 @@ async def trigger_training(
             duration_seconds=0.0,
             error=f"Circuit open for {config_key} - too many recent failures",
             metadata={"circuit_blocked": True, "config_key": config_key},
+        )
+
+    # Dec 29, 2025 - Phase 3: Quality gate blocking training
+    # Don't waste GPU cycles on low-quality data
+    quality_ok, quality_score = await _check_training_data_quality(config_key, npz_path)
+    if not quality_ok:
+        # Emit event so pipeline can regenerate data
+        try:
+            from app.coordination.event_emitters import emit_training_blocked_by_quality
+            await emit_training_blocked_by_quality(
+                config_key=config_key,
+                npz_path=npz_path,
+                quality_score=quality_score,
+                threshold=QUALITY_GATE_THRESHOLD,
+            )
+        except (ImportError, AttributeError):
+            pass
+
+        logger.warning(
+            f"[PipelineActions] Training blocked by quality gate: "
+            f"{config_key} quality={quality_score:.2f} < threshold={QUALITY_GATE_THRESHOLD}"
+        )
+        return StageCompletionResult(
+            success=False,
+            stage="training",
+            iteration=iteration,
+            duration_seconds=0.0,
+            error=f"Quality gate failed: {quality_score:.2f} < {QUALITY_GATE_THRESHOLD}",
+            metadata={
+                "quality_blocked": True,
+                "config_key": config_key,
+                "quality_score": quality_score,
+                "threshold": QUALITY_GATE_THRESHOLD,
+            },
         )
 
     # Emit training triggered event (December 2025)

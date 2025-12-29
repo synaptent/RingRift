@@ -203,6 +203,38 @@ class FeedbackState:
         return self.elo_velocity
 
 
+@dataclass
+class AdaptiveTrainingSignal:
+    """Adaptive training parameters based on evaluation results.
+
+    December 29, 2025: Phase 6 - Training parameters adapt based on evaluation results.
+    Consumed by training system to adjust LR, batch size, epochs, and gradient clipping.
+
+    Fields:
+        learning_rate_multiplier: Multiplier for base LR (0.2-1.0)
+        batch_size_multiplier: Multiplier for base batch size (1.0-2.0)
+        epochs_extension: Additional epochs to train (0-20)
+        gradient_clip_enabled: Whether to enable gradient clipping
+        reason: Human-readable explanation for the signal
+    """
+
+    learning_rate_multiplier: float = 1.0
+    batch_size_multiplier: float = 1.0
+    epochs_extension: int = 0
+    gradient_clip_enabled: bool = False
+    reason: str = ""
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for event emission."""
+        return {
+            "learning_rate_multiplier": self.learning_rate_multiplier,
+            "batch_size_multiplier": self.batch_size_multiplier,
+            "epochs_extension": self.epochs_extension,
+            "gradient_clip_enabled": self.gradient_clip_enabled,
+            "reason": self.reason,
+        }
+
+
 class FeedbackLoopController:
     """Central controller orchestrating all feedback signals.
 
@@ -433,6 +465,12 @@ class FeedbackLoopController:
                 event_count += 1
             if hasattr(DataEventType, 'HEALTH_CHECK_FAILED'):
                 bus.subscribe(DataEventType.HEALTH_CHECK_FAILED, self._on_health_check_failed)
+                event_count += 1
+
+            # Dec 29, 2025: Subscribe to PLATEAU_DETECTED for exploration boost
+            # Closes feedback loop: plateau detection → exploration boost → break out of plateau
+            if hasattr(DataEventType, 'PLATEAU_DETECTED'):
+                bus.subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
                 event_count += 1
 
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
@@ -948,6 +986,84 @@ class FeedbackLoopController:
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:
             logger.error(f"[FeedbackLoopController] Error handling loss trend: {e}")
 
+    def _on_plateau_detected(self, event: Any) -> None:
+        """Handle training plateau by boosting exploration.
+
+        Dec 29, 2025: Implements exploration boost based on plateau type.
+        - Overfitting: 1.5x exploration boost + temperature increase
+        - Data limitation: 1.3x exploration boost + request more games
+
+        Closes feedback loop: PLATEAU_DETECTED → exploration boost → SelfplayScheduler
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+
+            config_key = payload.get("config_key", "") or payload.get("config", "")
+            plateau_type = payload.get("plateau_type", "data_limitation")
+            exploration_boost = payload.get("exploration_boost", 1.3)
+            train_val_gap = payload.get("train_val_gap", 0.0)
+
+            if not config_key:
+                return
+
+            state = self._get_or_create_state(config_key)
+
+            # Apply exploration boost
+            state.exploration_boost = exploration_boost
+            state.exploration_boost_expires_at = time.time() + 3600  # 1 hour
+
+            if plateau_type == "overfitting":
+                # High train/val gap indicates overfitting - increase temperature for diversity
+                state.selfplay_temperature_boost = 1.2
+                logger.info(
+                    f"[FeedbackLoopController] Plateau (overfitting) for {config_key}: "
+                    f"exploration_boost={exploration_boost:.2f}, temp_boost=1.2, "
+                    f"train_val_gap={train_val_gap:.4f}"
+                )
+            else:
+                # Data-limited plateau - request more games
+                state.games_multiplier = 1.5
+                logger.info(
+                    f"[FeedbackLoopController] Plateau (data limited) for {config_key}: "
+                    f"exploration_boost={exploration_boost:.2f}, games_multiplier=1.5"
+                )
+
+            # Emit EXPLORATION_BOOST event for SelfplayScheduler
+            try:
+                from app.coordination.event_router import emit_exploration_boost
+
+                _safe_create_task(
+                    emit_exploration_boost(
+                        config_key=config_key,
+                        boost_factor=exploration_boost,
+                        reason="plateau",
+                        anomaly_count=1,  # Signal plateau occurrence
+                        source="FeedbackLoopController",
+                    ),
+                    context=f"emit_exploration_boost:plateau:{config_key}",
+                )
+                logger.debug(
+                    f"[FeedbackLoopController] Emitted EXPLORATION_BOOST event for {config_key}"
+                )
+            except (AttributeError, TypeError, RuntimeError) as e:
+                logger.warning(f"[FeedbackLoopController] Failed to emit EXPLORATION_BOOST: {e}")
+
+            # Track plateau count for escalation
+            if not hasattr(state, "plateau_count"):
+                state.plateau_count = 0
+            state.plateau_count += 1
+            state.last_plateau_time = time.time()
+
+            # If repeated plateaus, consider triggering hyperparameter search
+            if state.plateau_count >= 3:
+                logger.warning(
+                    f"[FeedbackLoopController] Repeated plateaus ({state.plateau_count}) "
+                    f"for {config_key}, consider hyperparameter search"
+                )
+
+        except (AttributeError, TypeError, KeyError, RuntimeError) as e:
+            logger.warning(f"[FeedbackLoopController] Error handling plateau: {e}")
+
     def _on_quality_degraded_for_training(self, event: Any) -> None:
         """Handle QUALITY_DEGRADED events to adjust training thresholds (P1.1).
 
@@ -1306,7 +1422,8 @@ class FeedbackLoopController:
         1. Record evaluation results
         2. Track Elo velocity (Dec 28 2025)
         3. Adjust selfplay intensity based on velocity
-        4. Consider promotion if win rate threshold met
+        4. Compute and emit adaptive training signal (Dec 29 2025 - Phase 6)
+        5. Consider promotion if win rate threshold met
         """
         try:
             payload = event.payload if hasattr(event, "payload") else {}
@@ -1333,6 +1450,11 @@ class FeedbackLoopController:
 
             # Dec 28 2025: Adjust selfplay based on velocity and Elo gap
             self._adjust_selfplay_for_velocity(config_key, state, elo, velocity)
+
+            # Dec 29 2025: Phase 6 - Compute and emit adaptive training parameters
+            eval_result = {"elo": elo, "win_rate": win_rate, "velocity": velocity}
+            adaptive_signal = self._compute_adaptive_signal(config_key, state, eval_result)
+            self._emit_adaptive_training_signal(config_key, adaptive_signal)
 
             # Consider promotion if threshold met
             if win_rate >= self.promotion_threshold:
@@ -1413,6 +1535,100 @@ class FeedbackLoopController:
                 )
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"[FeedbackLoopController] Could not emit selfplay adjustment: {e}")
+
+    def _compute_adaptive_signal(
+        self, config_key: str, state: FeedbackState, eval_result: dict
+    ) -> AdaptiveTrainingSignal:
+        """Compute adaptive training parameters based on evaluation results.
+
+        December 29, 2025: Phase 6 - Training parameters adapt to eval outcomes.
+
+        Strategy:
+        - Strong improvement (>50 Elo): Extend training epochs to capitalize
+        - Plateau (<10 Elo improvement): Reduce LR, increase batch size
+        - Regression (<-30 Elo): Aggressive LR reduction, enable gradient clipping
+
+        Args:
+            config_key: Configuration identifier (e.g., "hex8_2p")
+            state: Current feedback state for this config
+            eval_result: Evaluation result dict with elo, win_rate, etc.
+
+        Returns:
+            AdaptiveTrainingSignal with adjusted training parameters
+        """
+        signal = AdaptiveTrainingSignal()
+
+        # Compute Elo improvement from history
+        current_elo = eval_result.get("elo", 1500.0)
+        prev_elo = state.last_elo if state.last_elo > 0 else current_elo
+
+        # Only compute improvement if we have history
+        if len(state.elo_history) >= 2:
+            # Use second-to-last entry as previous reference
+            _, prev_elo = state.elo_history[-2]
+
+        elo_improvement = current_elo - prev_elo
+
+        # Strong improvement: extend training
+        if elo_improvement > 50:
+            signal.epochs_extension = 10
+            signal.reason = f"Strong improvement ({elo_improvement:.0f} Elo) - extending training"
+            logger.info(
+                f"[FeedbackLoopController] Adaptive signal for {config_key}: "
+                f"{signal.reason}"
+            )
+
+        # Plateau: reduce LR, increase batch size
+        elif elo_improvement < 10:
+            signal.learning_rate_multiplier = 0.5
+            signal.batch_size_multiplier = 1.5
+            signal.gradient_clip_enabled = True
+            signal.reason = f"Plateau ({elo_improvement:.0f} Elo) - reducing LR, enabling grad clip"
+            logger.info(
+                f"[FeedbackLoopController] Adaptive signal for {config_key}: "
+                f"{signal.reason}"
+            )
+
+        # Regression: aggressive LR reduction
+        if elo_improvement < -30:
+            signal.learning_rate_multiplier = 0.2
+            signal.gradient_clip_enabled = True
+            signal.epochs_extension = 0  # Don't extend on regression
+            signal.reason = f"Regression ({elo_improvement:.0f} Elo) - aggressive LR reduction"
+            logger.warning(
+                f"[FeedbackLoopController] Adaptive signal for {config_key}: "
+                f"{signal.reason}"
+            )
+
+        return signal
+
+    def _emit_adaptive_training_signal(
+        self, config_key: str, signal: AdaptiveTrainingSignal
+    ) -> None:
+        """Emit ADAPTIVE_PARAMS_CHANGED event with training adjustments.
+
+        December 29, 2025: Phase 6 - Consumed by training system.
+        """
+        if signal.reason == "":
+            # No adjustment needed
+            return
+
+        try:
+            from app.coordination.event_router import DataEventType, get_event_bus
+
+            bus = get_event_bus()
+            if bus and hasattr(DataEventType, 'ADAPTIVE_PARAMS_CHANGED'):
+                bus.emit(DataEventType.ADAPTIVE_PARAMS_CHANGED, {
+                    "config_key": config_key,
+                    **signal.to_dict(),
+                })
+                logger.debug(
+                    f"[FeedbackLoopController] Emitted ADAPTIVE_PARAMS_CHANGED for {config_key}"
+                )
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            logger.debug(
+                f"[FeedbackLoopController] Could not emit adaptive signal: {e}"
+            )
 
     def _on_evaluation_failed(self, event: Any) -> None:
         """Handle evaluation failure.
@@ -2958,6 +3174,7 @@ def reset_feedback_loop_controller() -> None:
 __all__ = [
     "FeedbackLoopController",
     "FeedbackState",
+    "AdaptiveTrainingSignal",  # Dec 29, 2025: Phase 6 adaptive training
     "get_feedback_loop_controller",
     "reset_feedback_loop_controller",
 ]

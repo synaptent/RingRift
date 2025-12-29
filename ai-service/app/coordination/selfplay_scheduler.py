@@ -816,15 +816,12 @@ class SelfplayScheduler:
         training_queue_depth = 0
         if self._backpressure_monitor:
             try:
-                # Synchronous check for queue depth
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    # Can't await in sync context, use cached value
-                    training_queue_depth = getattr(self._backpressure_monitor, '_last_queue_depth', 0)
-                except RuntimeError:
-                    # No running loop, try direct access
-                    training_queue_depth = getattr(self._backpressure_monitor, '_last_queue_depth', 0)
+                # Synchronous check for queue depth - use hasattr to avoid MagicMock issues
+                if hasattr(self._backpressure_monitor, '_last_queue_depth'):
+                    cached_depth = self._backpressure_monitor._last_queue_depth
+                    # Ensure numeric value (handles MagicMock in tests)
+                    if isinstance(cached_depth, (int, float)):
+                        training_queue_depth = int(cached_depth)
             except Exception:
                 pass
         weights.training_queue_depth = training_queue_depth
@@ -1412,6 +1409,10 @@ class SelfplayScheduler:
                 priority.games_allocated = sum(node_allocation.values())
                 priority.nodes_allocated = list(node_allocation.keys())
 
+        # Dec 29, 2025 - Phase 4: Enforce 4p allocation minimums
+        # If 4p configs are under-allocated, steal from 2p configs
+        allocation = self._enforce_4p_allocation_minimums(allocation, games_per_config)
+
         total_allocated = sum(
             sum(node_games.values()) for node_games in allocation.values()
         )
@@ -1426,6 +1427,93 @@ class SelfplayScheduler:
         # (IdleResourceDaemon, feedback loops, etc.)
         if total_allocated > 0:
             self._emit_allocation_updated(allocation, total_allocated, trigger="allocate_batch")
+
+        return allocation
+
+    def _enforce_4p_allocation_minimums(
+        self,
+        allocation: dict[str, dict[str, int]],
+        games_per_config: int,
+    ) -> dict[str, dict[str, int]]:
+        """Enforce minimum allocations for 4-player configs.
+
+        Dec 29, 2025 - Phase 4: 4-player allocation enforcement.
+        The 4p multiplier (4x) can't be satisfied if cluster has limited GPUs.
+        This method redistributes from 2p configs to ensure 4p gets minimum.
+
+        Target: 4p configs get at least 1.5x their proportional share.
+        If short, steal from 2p configs (which are easiest to generate).
+
+        Args:
+            allocation: Current allocation {config_key: {node_id: games}}
+            games_per_config: Base games per config
+
+        Returns:
+            Adjusted allocation with enforced 4p minimums
+        """
+        if not allocation:
+            return allocation
+
+        # Calculate per-config totals
+        totals: dict[str, int] = {}
+        for config_key, node_alloc in allocation.items():
+            totals[config_key] = sum(node_alloc.values())
+
+        # Identify 4p and 2p configs
+        four_p_configs = [c for c in totals if "_4p" in c]
+        two_p_configs = [c for c in totals if "_2p" in c]
+
+        if not four_p_configs or not two_p_configs:
+            return allocation
+
+        # Target: 4p should get at least 1.5x base allocation
+        min_4p_games = int(games_per_config * 1.5)
+        redistributed = 0
+
+        for config in four_p_configs:
+            current = totals.get(config, 0)
+            shortfall = max(0, min_4p_games - current)
+
+            if shortfall > 0:
+                # Try to steal from 2p configs
+                for donor in two_p_configs:
+                    donor_current = totals.get(donor, 0)
+                    donor_min = int(games_per_config * 0.5)  # 2p keeps at least 50%
+
+                    available = max(0, donor_current - donor_min)
+                    steal = min(shortfall, available)
+
+                    if steal > 0 and donor in allocation:
+                        # Remove from donor (proportionally from nodes)
+                        for node_id in allocation[donor]:
+                            node_games = allocation[donor][node_id]
+                            node_steal = int(steal * node_games / donor_current)
+                            allocation[donor][node_id] = max(0, node_games - node_steal)
+
+                        # Add to 4p config (to first available node)
+                        if config in allocation and allocation[config]:
+                            first_node = next(iter(allocation[config]))
+                            allocation[config][first_node] += steal
+                        elif config not in allocation:
+                            # Find a node that had this config's board type
+                            allocation[config] = {list(allocation[donor].keys())[0]: steal}
+
+                        totals[donor] -= steal
+                        totals[config] = totals.get(config, 0) + steal
+                        shortfall -= steal
+                        redistributed += steal
+
+                        logger.debug(
+                            f"[SelfplayScheduler] 4p enforcement: {donor} -> {config}: {steal} games"
+                        )
+
+                    if shortfall <= 0:
+                        break
+
+        if redistributed > 0:
+            logger.info(
+                f"[SelfplayScheduler] 4p allocation enforcement: redistributed {redistributed} games"
+            )
 
         return allocation
 

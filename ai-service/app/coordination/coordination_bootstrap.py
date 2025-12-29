@@ -865,10 +865,24 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     3. SELFPLAY_COMPLETE → SyncCoordinator (triggers data sync)
     4. MODEL_PROMOTED → SelfplayModelSelector (hot-reload model cache)
 
+    December 29, 2025: Refactored to use declarative registry for simpler subscriptions.
+    See event_subscription_registry.py for INIT_CALL_REGISTRY and DELEGATION_REGISTRY.
+
     Returns:
         Dict mapping subscription name to success status
     """
     results: dict[str, bool] = {}
+
+    # December 29, 2025: Process declarative registries first
+    try:
+        from app.coordination.event_subscription_registry import (
+            process_init_call_registry,
+            process_delegation_registry,
+        )
+        process_init_call_registry(results)
+        process_delegation_registry(results)
+    except ImportError as e:
+        logger.warning(f"[Bootstrap] Event subscription registry not available: {e}")
 
     # 1. Wire CLUSTER_SYNC_COMPLETE to DataPipelineOrchestrator
     try:
@@ -988,88 +1002,12 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["selfplay_to_sync"] = False
         logger.warning(f"[Bootstrap] Failed to wire selfplay to sync: {e}")
 
-    # 4. Initialize model selector events for hot-reload on MODEL_PROMOTED
-    # December 2025: Critical fix - handler existed but was never initialized!
-    try:
-        from app.training.selfplay_model_selector import _init_event_subscription as init_model_selector_events
-
-        init_model_selector_events()
-        results["model_selector_events"] = True
-        logger.debug("[Bootstrap] Initialized SelfplayModelSelector MODEL_PROMOTED subscription")
-
-    except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-        results["model_selector_events"] = False
-        logger.debug(f"[Bootstrap] Failed to init model selector events: {e}")
-
-    # 5. Wire LOW_QUALITY_DATA_WARNING to automatic model rollback (December 2025)
-    try:
-        from app.training.model_registry import get_model_registry
-        from app.training.rollback_manager import wire_quality_to_rollback
-
-        registry = get_model_registry()
-        watcher = wire_quality_to_rollback(registry)
-        results["quality_to_rollback"] = watcher is not None
-        if watcher:
-            logger.debug("[Bootstrap] Wired LOW_QUALITY_DATA_WARNING -> RollbackManager")
-        else:
-            logger.warning("[Bootstrap] Quality rollback watcher not subscribed - rollback on low quality data disabled")
-
-    except (AttributeError, TypeError, RuntimeError) as e:
-        results["quality_to_rollback"] = False
-        logger.warning(f"[Bootstrap] Failed to wire quality to rollback: {e}")
-
-    # 5b. Wire REGRESSION_DETECTED to automatic model rollback (December 2025)
-    # This completes the feedback loop: evaluation → regression → rollback
-    # Without this, regressions are detected but models aren't recovered
-    try:
-        from app.training.model_registry import get_model_registry
-        from app.training.rollback_manager import wire_regression_to_rollback
-
-        registry = get_model_registry()
-        # December 2025: Enable full auto-rollback for both CRITICAL and SEVERE regressions
-        # Setting require_approval_for_severe=False closes the feedback loop completely
-        handler = wire_regression_to_rollback(
-            registry,
-            auto_rollback_enabled=True,
-            require_approval_for_severe=False,  # Auto-rollback SEVERE regressions too
-        )
-        results["regression_to_rollback"] = handler is not None
-        if handler:
-            logger.debug("[Bootstrap] Wired REGRESSION_DETECTED -> RollbackManager (full auto-rollback enabled)")
-        else:
-            logger.warning("[Bootstrap] Regression rollback handler not subscribed - auto-rollback on regression disabled")
-
-    except (AttributeError, TypeError, RuntimeError) as e:
-        results["regression_to_rollback"] = False
-        logger.warning(f"[Bootstrap] Failed to wire regression to rollback: {e}")
-
-    # 6. Wire PLATEAU_DETECTED to curriculum rebalancing (December 2025)
-    try:
-        from app.training.curriculum_feedback import wire_plateau_to_curriculum
-
-        watcher = wire_plateau_to_curriculum()
-        results["plateau_to_curriculum"] = watcher is not None
-        if watcher:
-            logger.debug("[Bootstrap] Wired PLATEAU_DETECTED -> CurriculumFeedback")
-
-    except (AttributeError, TypeError, RuntimeError) as e:
-        results["plateau_to_curriculum"] = False
-        logger.warning(f"[Bootstrap] Failed to wire plateau to curriculum: {e}")
-
-    # 7. Wire TRAINING_EARLY_STOPPED to curriculum boost (December 2025)
-    # When training early-stops due to stagnation, boost that config's curriculum weight
-    # so more selfplay data is generated to help it improve
-    try:
-        from app.training.curriculum_feedback import wire_early_stop_to_curriculum
-
-        watcher = wire_early_stop_to_curriculum()
-        results["early_stop_to_curriculum"] = watcher is not None
-        if watcher:
-            logger.debug("[Bootstrap] Wired TRAINING_EARLY_STOPPED -> CurriculumFeedback")
-
-    except (AttributeError, TypeError, RuntimeError) as e:
-        results["early_stop_to_curriculum"] = False
-        logger.warning(f"[Bootstrap] Failed to wire early stop to curriculum: {e}")
+    # Items 4, 5, 5b, 6, 7 moved to INIT_CALL_REGISTRY in event_subscription_registry.py
+    # - model_selector_events (MODEL_PROMOTED -> SelfplayModelSelector)
+    # - quality_to_rollback (LOW_QUALITY_DATA_WARNING -> RollbackManager)
+    # - regression_to_rollback (REGRESSION_DETECTED -> RollbackManager)
+    # - plateau_to_curriculum (PLATEAU_DETECTED -> CurriculumFeedback)
+    # - early_stop_to_curriculum (TRAINING_EARLY_STOPPED -> CurriculumFeedback)
 
     # 8. Wire DAEMON_STARTED/DAEMON_STOPPED to DaemonManager for lifecycle tracking
     # December 2025: These events were orphaned - emitted but never tracked
@@ -1265,221 +1203,15 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["sync_failed_handler"] = False
         logger.warning(f"[Bootstrap] Failed to wire sync failed: {e}")
 
-    # 15. Wire SYNC_STALLED to escalation (December 2025)
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
+    # Items 15, 16, 17, 18 moved to DELEGATION_REGISTRY in event_subscription_registry.py
+    # - sync_stalled_handler (SYNC_STALLED -> SyncRouter)
+    # - host_offline_handler (HOST_OFFLINE -> UnifiedHealthManager)
+    # - host_online_handler (HOST_ONLINE -> UnifiedHealthManager)
+    # - leader_elected_handler (LEADER_ELECTED -> LeadershipCoordinator)
 
-        bus = get_event_bus()
-
-        async def on_sync_stalled(event):
-            """Handle SYNC_STALLED - try different transport, extend timeout."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            target_node = payload.get("target_node", "unknown")
-            duration = payload.get("stall_duration_seconds", 0)
-
-            logger.warning(
-                f"[Bootstrap] Sync stalled to {target_node} after {duration:.0f}s"
-            )
-
-            # Try to escalate to different transport via SyncRouter
-            try:
-                from app.coordination.sync_router import get_sync_router
-
-                router = get_sync_router()
-                if hasattr(router, "mark_transport_failed"):
-                    router.mark_transport_failed(target_node, reason="stall")
-            except (ImportError, AttributeError):
-                pass  # Router not available
-
-        bus.subscribe(DataEventType.SYNC_STALLED, on_sync_stalled)
-        results["sync_stalled_handler"] = True
-        logger.debug("[Bootstrap] Wired SYNC_STALLED -> transport escalation")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["sync_stalled_handler"] = False
-        logger.warning(f"[Bootstrap] Failed to wire sync stalled: {e}")
-
-    # 16. Wire HOST_OFFLINE to UnifiedHealthManager (December 2025 - Phase 12)
-    # P2P orchestrator emits this when a peer goes offline - health manager should respond
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_host_offline(event):
-            """Handle HOST_OFFLINE - notify health manager of node failure."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id") or payload.get("peer_id")
-
-            if not node_id:
-                return
-
-            logger.info(f"[Bootstrap] Node offline: {node_id}")
-
-            try:
-                from app.coordination.unified_health_manager import get_unified_health_manager
-
-                health_mgr = get_unified_health_manager()
-                if hasattr(health_mgr, "handle_node_offline"):
-                    await health_mgr.handle_node_offline(node_id)
-                elif hasattr(health_mgr, "mark_node_unhealthy"):
-                    health_mgr.mark_node_unhealthy(node_id, reason="p2p_offline")
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"[Bootstrap] Health manager unavailable for offline handling: {e}")
-
-        bus.subscribe(DataEventType.HOST_OFFLINE, on_host_offline)
-        results["host_offline_handler"] = True
-        logger.debug("[Bootstrap] Wired HOST_OFFLINE -> UnifiedHealthManager")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["host_offline_handler"] = False
-        logger.warning(f"[Bootstrap] Failed to wire host offline: {e}")
-
-    # 17. Wire HOST_ONLINE to UnifiedHealthManager (December 2025 - Phase 12)
-    # P2P orchestrator emits this when a previously offline peer recovers
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_host_online(event):
-            """Handle HOST_ONLINE - notify health manager of node recovery."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id") or payload.get("peer_id")
-
-            if not node_id:
-                return
-
-            logger.info(f"[Bootstrap] Node online: {node_id}")
-
-            try:
-                from app.coordination.unified_health_manager import get_unified_health_manager
-
-                health_mgr = get_unified_health_manager()
-                if hasattr(health_mgr, "handle_node_online"):
-                    await health_mgr.handle_node_online(node_id)
-                elif hasattr(health_mgr, "mark_node_healthy"):
-                    health_mgr.mark_node_healthy(node_id)
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"[Bootstrap] Health manager unavailable for online handling: {e}")
-
-        bus.subscribe(DataEventType.HOST_ONLINE, on_host_online)
-        results["host_online_handler"] = True
-        logger.debug("[Bootstrap] Wired HOST_ONLINE -> UnifiedHealthManager")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["host_online_handler"] = False
-        logger.warning(f"[Bootstrap] Failed to wire host online: {e}")
-
-    # 18. Wire LEADER_ELECTED to LeadershipCoordinator (December 2025 - Phase 12)
-    # P2P orchestrator emits this when leadership changes - coordinator should track
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_leader_elected(event):
-            """Handle LEADER_ELECTED - notify leadership coordinator of change."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            leader_id = payload.get("leader_id") or payload.get("new_leader")
-            previous_leader = payload.get("previous_leader")
-
-            if not leader_id:
-                return
-
-            logger.info(f"[Bootstrap] Leader elected: {leader_id} (was: {previous_leader})")
-
-            try:
-                from app.coordination.leadership_coordinator import get_leadership_coordinator
-
-                leadership = get_leadership_coordinator()
-                if hasattr(leadership, "on_leader_change"):
-                    await leadership.on_leader_change(leader_id, previous_leader)
-                elif hasattr(leadership, "set_leader"):
-                    leadership.set_leader(leader_id)
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"[Bootstrap] Leadership coordinator unavailable: {e}")
-
-        bus.subscribe(DataEventType.LEADER_ELECTED, on_leader_elected)
-        results["leader_elected_handler"] = True
-        logger.debug("[Bootstrap] Wired LEADER_ELECTED -> LeadershipCoordinator")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["leader_elected_handler"] = False
-        logger.warning(f"[Bootstrap] Failed to wire leader elected: {e}")
-
-    # 19. Wire NODE_SUSPECT to NodeRecoveryDaemon (December 2025 - Exploration audit)
-    # Emitted when node enters SUSPECT grace period before being marked failed
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_node_suspect(event):
-            """Handle NODE_SUSPECT - notify recovery daemon of suspected node."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id") or payload.get("peer_id")
-            reason = payload.get("reason", "unknown")
-
-            if not node_id:
-                return
-
-            logger.info(f"[Bootstrap] Node suspect: {node_id} ({reason})")
-
-            try:
-                from app.coordination.node_recovery_daemon import get_node_recovery_daemon
-
-                recovery = get_node_recovery_daemon()
-                if hasattr(recovery, "_on_node_suspect"):
-                    await recovery._on_node_suspect(node_id, reason)
-                elif hasattr(recovery, "mark_suspect"):
-                    recovery.mark_suspect(node_id, reason)
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"[Bootstrap] Recovery daemon unavailable for suspect handling: {e}")
-
-        bus.subscribe(DataEventType.NODE_SUSPECT, on_node_suspect)
-        results["node_suspect_handler"] = True
-        logger.debug("[Bootstrap] Wired NODE_SUSPECT -> NodeRecoveryDaemon")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["node_suspect_handler"] = False
-        logger.debug(f"[Bootstrap] NODE_SUSPECT not wired (may not exist): {e}")
-
-    # 20. Wire NODE_RETIRED to SelfplayScheduler (December 2025 - Exploration audit)
-    # Emitted when node is permanently retired from cluster
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_node_retired(event):
-            """Handle NODE_RETIRED - remove node from scheduling."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            node_id = payload.get("node_id") or payload.get("peer_id")
-
-            if not node_id:
-                return
-
-            logger.info(f"[Bootstrap] Node retired: {node_id}")
-
-            try:
-                from app.coordination.selfplay_scheduler import get_selfplay_scheduler
-
-                scheduler = get_selfplay_scheduler()
-                if hasattr(scheduler, "_on_node_retired"):
-                    await scheduler._on_node_retired(node_id)
-                elif hasattr(scheduler, "remove_node"):
-                    scheduler.remove_node(node_id)
-            except (ImportError, AttributeError) as e:
-                logger.debug(f"[Bootstrap] Scheduler unavailable for retired handling: {e}")
-
-        bus.subscribe(DataEventType.NODE_RETIRED, on_node_retired)
-        results["node_retired_handler"] = True
-        logger.debug("[Bootstrap] Wired NODE_RETIRED -> SelfplayScheduler")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["node_retired_handler"] = False
-        logger.debug(f"[Bootstrap] NODE_RETIRED not wired (may not exist): {e}")
+    # Items 19, 20 moved to DELEGATION_REGISTRY in event_subscription_registry.py
+    # - node_suspect_handler (NODE_SUSPECT -> NodeRecoveryDaemon)
+    # - node_retired_handler (NODE_RETIRED -> SelfplayScheduler)
 
     # 21. Wire HEALTH_CHECK_PASSED/FAILED to HealthCheckOrchestrator (December 2025)
     # Centralizes health status tracking from distributed health checks
@@ -1521,77 +1253,9 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
         results["health_check_handlers"] = False
         logger.debug(f"[Bootstrap] Health check handlers not wired: {e}")
 
-    # 22. Wire TASK_ORPHANED to cleanup handlers (December 2025)
-    # Tasks that lost their parent process should be cleaned up
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_task_orphaned(event):
-            """Handle TASK_ORPHANED - trigger cleanup and potential restart."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            task_id = payload.get("task_id")
-            job_type = payload.get("job_type", "unknown")
-            node_id = payload.get("node_id")
-
-            if not task_id:
-                return
-
-            logger.warning(f"[Bootstrap] Task orphaned: {task_id} ({job_type}) on {node_id}")
-
-            # Notify job manager for cleanup
-            try:
-                from scripts.p2p.managers.job_manager import JobManager
-
-                job_mgr = JobManager.get_instance()
-                if hasattr(job_mgr, "_on_task_orphaned"):
-                    await job_mgr._on_task_orphaned(task_id, node_id)
-                elif hasattr(job_mgr, "cleanup_orphan"):
-                    job_mgr.cleanup_orphan(task_id)
-            except (ImportError, AttributeError):
-                pass
-
-        bus.subscribe(DataEventType.TASK_ORPHANED, on_task_orphaned)
-        results["task_orphaned_handler"] = True
-        logger.debug("[Bootstrap] Wired TASK_ORPHANED -> JobManager cleanup")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["task_orphaned_handler"] = False
-        logger.debug(f"[Bootstrap] TASK_ORPHANED not wired: {e}")
-
-    # 23. Wire COORDINATOR_HEARTBEAT to watchdog (December 2025)
-    # Liveness signals from coordinators - used for stall detection
-    try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-
-        async def on_coordinator_heartbeat(event):
-            """Handle COORDINATOR_HEARTBEAT - update liveness tracking."""
-            payload = event.payload if hasattr(event, "payload") else {}
-            coordinator_name = payload.get("coordinator_name") or payload.get("name")
-            hostname = payload.get("hostname")
-
-            if not coordinator_name:
-                return
-
-            try:
-                from app.coordination.cluster_watchdog_daemon import get_cluster_watchdog
-
-                watchdog = get_cluster_watchdog()
-                if hasattr(watchdog, "record_heartbeat"):
-                    watchdog.record_heartbeat(coordinator_name, hostname)
-            except (ImportError, AttributeError):
-                pass  # Watchdog not available
-
-        bus.subscribe(DataEventType.COORDINATOR_HEARTBEAT, on_coordinator_heartbeat)
-        results["coordinator_heartbeat_handler"] = True
-        logger.debug("[Bootstrap] Wired COORDINATOR_HEARTBEAT -> ClusterWatchdog")
-
-    except (AttributeError, TypeError, KeyError, RuntimeError) as e:
-        results["coordinator_heartbeat_handler"] = False
-        logger.debug(f"[Bootstrap] COORDINATOR_HEARTBEAT not wired: {e}")
+    # Items 22, 23 moved to DELEGATION_REGISTRY in event_subscription_registry.py
+    # - task_orphaned_handler (TASK_ORPHANED -> JobManager)
+    # - coordinator_heartbeat_handler (COORDINATOR_HEARTBEAT -> ClusterWatchdog)
 
     wired = sum(1 for v in results.values() if v)
     total = len(results)

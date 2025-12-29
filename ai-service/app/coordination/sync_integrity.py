@@ -292,8 +292,12 @@ def verify_checksum(
 # =============================================================================
 
 
-def check_sqlite_integrity(db_path: Path) -> tuple[bool, list[str]]:
-    """Run SQLite PRAGMA integrity_check on a database.
+def check_sqlite_integrity(
+    db_path: Path,
+    timeout_seconds: float = 30.0,
+    use_quick_check: bool = False,
+) -> tuple[bool, list[str]]:
+    """Run SQLite PRAGMA integrity_check on a database with timeout protection.
 
     This performs a comprehensive integrity check of the database file,
     including:
@@ -304,58 +308,82 @@ def check_sqlite_integrity(db_path: Path) -> tuple[bool, list[str]]:
 
     Args:
         db_path: Path to SQLite database file
+        timeout_seconds: Maximum time to wait for integrity check (default: 30s)
+        use_quick_check: If True, use PRAGMA quick_check (faster, less thorough)
 
     Returns:
         Tuple of (is_valid, error_messages)
         - is_valid: True if database passes integrity check
         - error_messages: List of error messages (empty if valid)
 
+    Note:
+        Dec 2025: Added timeout protection to prevent hangs on corrupted/large DBs.
+        For very large databases (>1GB), consider using quick_check=True.
+
     Example:
         is_valid, errors = check_sqlite_integrity(Path("games.db"))
         if not is_valid:
             print(f"Database corrupted: {errors}")
     """
+    import concurrent.futures
+    import threading
+
     if not db_path.exists():
         return False, [f"Database file not found: {db_path}"]
 
     if not db_path.is_file():
         return False, [f"Path is not a file: {db_path}"]
 
-    errors = []
+    # Dec 2025: Run integrity check in thread with timeout to prevent hangs
+    def _run_integrity_check() -> tuple[bool, list[str]]:
+        """Execute integrity check in separate thread for timeout support."""
+        try:
+            # Use context manager to prevent connection leaks
+            # Open read-only to avoid locking issues
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10) as conn:
+                cursor = conn.cursor()
 
+                # Set busy timeout for locked database handling
+                cursor.execute("PRAGMA busy_timeout = 5000")
+
+                # Run integrity check (quick_check is faster but less thorough)
+                pragma = "quick_check" if use_quick_check else "integrity_check"
+                cursor.execute(f"PRAGMA {pragma}")
+                results = cursor.fetchall()
+
+                # Check results
+                # SQLite returns a single row with "ok" if everything is fine
+                # Otherwise, returns multiple rows describing errors
+                if len(results) == 1 and results[0][0] == "ok":
+                    return True, []
+                else:
+                    errors = [str(row[0]) for row in results]
+                    logger.warning(f"[SyncIntegrity] Database {db_path} integrity check failed: {errors}")
+                    return False, errors
+
+        except sqlite3.DatabaseError as e:
+            error_msg = f"Database error: {e}"
+            logger.error(f"[SyncIntegrity] {error_msg} for {db_path}")
+            return False, [error_msg]
+
+        except sqlite3.OperationalError as e:
+            error_msg = f"Database locked or inaccessible: {e}"
+            logger.warning(f"[SyncIntegrity] {error_msg} for {db_path}")
+            return False, [error_msg]
+
+        except Exception as e:
+            error_msg = f"Unexpected error: {e}"
+            logger.error(f"[SyncIntegrity] {error_msg} for {db_path}")
+            return False, [error_msg]
+
+    # Execute with timeout
     try:
-        # Dec 2025: Use context manager to prevent connection leaks
-        # Open read-only to avoid locking issues
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10) as conn:
-            cursor = conn.cursor()
-
-            # Run integrity check
-            cursor.execute("PRAGMA integrity_check")
-            results = cursor.fetchall()
-
-            # Check results
-            # SQLite returns a single row with "ok" if everything is fine
-            # Otherwise, returns multiple rows describing errors
-            if len(results) == 1 and results[0][0] == "ok":
-                return True, []
-            else:
-                errors = [str(row[0]) for row in results]
-                logger.warning(f"[SyncIntegrity] Database {db_path} integrity check failed: {errors}")
-                return False, errors
-
-    except sqlite3.DatabaseError as e:
-        error_msg = f"Database error: {e}"
-        logger.error(f"[SyncIntegrity] {error_msg} for {db_path}")
-        return False, [error_msg]
-
-    except sqlite3.OperationalError as e:
-        error_msg = f"Database locked or inaccessible: {e}"
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run_integrity_check)
+            return future.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError:
+        error_msg = f"Integrity check timed out after {timeout_seconds}s (database may be corrupted or very large)"
         logger.warning(f"[SyncIntegrity] {error_msg} for {db_path}")
-        return False, [error_msg]
-
-    except Exception as e:
-        error_msg = f"Unexpected error: {e}"
-        logger.error(f"[SyncIntegrity] {error_msg} for {db_path}")
         return False, [error_msg]
 
 

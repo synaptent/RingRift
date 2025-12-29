@@ -1293,10 +1293,48 @@ class GraduatedResponseAction(str, Enum):
     ESCALATE_HUMAN = "escalate_human"  # Require human intervention
 
 
+def get_adaptive_regression_threshold(config_key: str, current_elo: float) -> float:
+    """Get regression threshold adapted to board difficulty and model strength.
+
+    Dec 29, 2025 - Phase 5: Adaptive promotion thresholds.
+    Board difficulty varies: hex8 is easy (1200+ Elo), square19 is hard (<800 Elo).
+    Static -30 Elo threshold is too strict for hard boards, too lenient for easy ones.
+
+    Args:
+        config_key: Config like "hex8_2p" or board type like "hex8"
+        current_elo: Current model Elo rating
+
+    Returns:
+        Regression threshold (negative value, e.g., -50 for hex8, -20 for square19)
+    """
+    # Extract board type from config_key
+    board = config_key.split("_")[0] if "_" in config_key else config_key
+
+    # Board-specific base thresholds (harder boards = more lenient)
+    base_thresholds = {
+        "hex8": -50,      # Easy board - stricter threshold
+        "square8": -40,   # Medium board
+        "square19": -20,  # Hard board - more lenient
+        "hexagonal": -25, # Hard board - more lenient
+    }
+    threshold = base_thresholds.get(board, -30)
+
+    # Adjust for model strength
+    # Weak models (<700 Elo) get more lenient thresholds
+    # Strong models (>1500 Elo) get stricter thresholds
+    if current_elo < 700:
+        threshold = threshold * 1.5  # More lenient for weak models
+    elif current_elo > 1500:
+        threshold = threshold * 0.7  # Stricter for strong models
+
+    return threshold
+
+
 @dataclass
 class RollbackCriteria:
     """Criteria for automatic rollback decisions."""
     # Elo regression threshold (negative = regression)
+    # Dec 29, 2025: This is the default; use get_adaptive_regression_threshold() for config-specific
     elo_regression_threshold: float = -30.0
     # Minimum games required before considering rollback
     min_games_for_regression: int = 20

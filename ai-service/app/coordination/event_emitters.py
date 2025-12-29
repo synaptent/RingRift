@@ -221,7 +221,16 @@ async def _emit_data_event(
 
         return True
 
-    except Exception as e:
+    except asyncio.CancelledError:
+        # December 29, 2025: Let task cancellation propagate
+        raise
+    except (AttributeError, TypeError, ValueError, RuntimeError, OSError) as e:
+        # December 29, 2025: Narrowed from bare except Exception
+        # - AttributeError: Bus not available or method doesn't exist
+        # - TypeError: Wrong payload type or arguments
+        # - ValueError: Invalid event type
+        # - RuntimeError: No event loop, bus not initialized
+        # - OSError: Network/IO issues for cross-process events
         logger.debug(f"Failed to emit {event_type.value}: {e}")
         return False
 
@@ -277,7 +286,8 @@ def _emit_data_event_sync(
     except RuntimeError:
         # No event loop - cannot emit sync
         return False
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, ImportError) as e:
+        # December 29, 2025: Narrowed from bare except Exception
         logger.debug(f"Failed to schedule {event_type.value} emission: {e}")
         return False
 
@@ -357,7 +367,11 @@ async def _emit_data_event_with_retry(
 
             return True
 
-        except Exception as e:
+        except asyncio.CancelledError:
+            # December 29, 2025: Let task cancellation propagate
+            raise
+        except (AttributeError, TypeError, ValueError, RuntimeError, OSError) as e:
+            # December 29, 2025: Narrowed from bare except Exception
             last_error = e
             if attempt < max_retries:
                 delay = base_delay * (2 ** attempt)
@@ -426,7 +440,11 @@ async def _emit_via_router(
         logger.debug(f"Emitted {event_type} via unified router")
         return True
 
-    except Exception as e:
+    except asyncio.CancelledError:
+        # December 29, 2025: Let task cancellation propagate
+        raise
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # December 29, 2025: Narrowed from bare except Exception
         logger.debug(f"Failed to emit {event_type} via router: {e}")
         return False
 
@@ -462,7 +480,8 @@ def _emit_via_router_sync(
         logger.debug(f"Emitted {event_type} sync via unified router")
         return True
 
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # December 29, 2025: Narrowed from bare except Exception
         logger.debug(f"Failed to emit {event_type} sync via router: {e}")
         return False
 
@@ -518,7 +537,11 @@ async def _emit_stage_event(
         logger.debug(f"Emitted {result.event.value}")
         return True
 
-    except Exception as e:
+    except asyncio.CancelledError:
+        # December 29, 2025: Let task cancellation propagate
+        raise
+    except (AttributeError, TypeError, ValueError, RuntimeError, OSError) as e:
+        # December 29, 2025: Narrowed from bare except Exception
         logger.debug(f"Failed to emit {event}: {e}")
         return False
 
@@ -601,7 +624,11 @@ async def _emit_stage_event_with_retry(
                 logger.debug(f"Emitted {result.event.value}")
             return True
 
-        except Exception as e:
+        except asyncio.CancelledError:
+            # December 29, 2025: Let task cancellation propagate
+            raise
+        except (AttributeError, TypeError, ValueError, RuntimeError, OSError) as e:
+            # December 29, 2025: Narrowed from bare except Exception
             last_error = e
             if attempt < max_retries:
                 delay = base_delay * (2 ** attempt)
