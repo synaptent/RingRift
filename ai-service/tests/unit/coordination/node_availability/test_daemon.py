@@ -1,16 +1,24 @@
-"""Unit tests for NodeAvailabilityDaemon.
+"""Tests for node_availability/daemon.py - Cloud provider state sync.
 
-Tests the cloud provider state synchronization daemon.
+Tests cover:
+- NodeAvailabilityConfig from environment variables
+- DaemonStats tracking
+- NodeAvailabilityDaemon initialization and checker setup
+- Grace period logic for terminated nodes
+- Health check reporting
+- Status API
+- Singleton pattern
+- Cycle execution with mocked providers
 
-Created: Dec 29, 2025
-Phase 4: Test coverage for critical untested modules.
+December 2025 - Test coverage for critical daemon module.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import time
-from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,420 +30,671 @@ from app.coordination.node_availability.daemon import (
     get_node_availability_daemon,
     reset_daemon_instance,
 )
+from app.coordination.node_availability.state_checker import (
+    InstanceInfo,
+    ProviderInstanceState,
+)
+
+
+# =============================================================================
+# Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def reset_singleton():
+    """Reset singleton before and after each test."""
+    reset_daemon_instance()
+    yield
+    reset_daemon_instance()
+
+
+@pytest.fixture
+def mock_env():
+    """Fixture to mock environment variables."""
+    original = os.environ.copy()
+    yield
+    os.environ.clear()
+    os.environ.update(original)
+
+
+@pytest.fixture
+def mock_checkers():
+    """Mock all provider checkers as disabled."""
+    with patch(
+        "app.coordination.node_availability.daemon.VastChecker"
+    ) as vast, patch(
+        "app.coordination.node_availability.daemon.LambdaChecker"
+    ) as lambda_c, patch(
+        "app.coordination.node_availability.daemon.RunPodChecker"
+    ) as runpod:
+        vast.return_value.is_enabled = False
+        lambda_c.return_value.is_enabled = False
+        runpod.return_value.is_enabled = False
+        yield {"vast": vast, "lambda": lambda_c, "runpod": runpod}
+
+
+@pytest.fixture
+def mock_config_updater():
+    """Mock ConfigUpdater."""
+    with patch(
+        "app.coordination.node_availability.daemon.ConfigUpdater"
+    ) as updater_class:
+        updater = MagicMock()
+        updater.load_config = MagicMock(return_value={"hosts": {}})
+        updater.update_node_statuses = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                update_count=0,
+                dry_run=True,
+                changes={},
+                error=None,
+            )
+        )
+        updater_class.return_value = updater
+        yield updater
+
+
+# =============================================================================
+# NodeAvailabilityConfig Tests
+# =============================================================================
 
 
 class TestNodeAvailabilityConfig:
     """Tests for NodeAvailabilityConfig dataclass."""
 
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         """Test default configuration values."""
         config = NodeAvailabilityConfig()
+
         assert config.check_interval_seconds == 300.0
-        assert config.dry_run is True  # Safe default
+        assert config.dry_run is True
         assert config.grace_period_seconds == 60.0
         assert config.vast_enabled is True
         assert config.lambda_enabled is True
         assert config.runpod_enabled is True
+        assert config.vultr_enabled is True
+        assert config.hetzner_enabled is True
         assert config.auto_update_voters is False
 
-    def test_from_env_defaults(self):
+    def test_from_env_defaults(self, mock_env: None) -> None:
         """Test from_env with no environment variables."""
-        with patch.dict("os.environ", {}, clear=True):
-            config = NodeAvailabilityConfig.from_env()
-            # Default is enabled=True (code uses "1" as default)
-            assert config.enabled is True
-            assert config.dry_run is True  # Default is safe
+        config = NodeAvailabilityConfig.from_env()
 
-    def test_from_env_enabled(self):
-        """Test from_env with ENABLED set."""
-        with patch.dict(
-            "os.environ",
-            {
-                "RINGRIFT_NODE_AVAILABILITY_ENABLED": "1",
-                "RINGRIFT_NODE_AVAILABILITY_DRY_RUN": "0",
-                "RINGRIFT_NODE_AVAILABILITY_INTERVAL": "120",
-                "RINGRIFT_NODE_AVAILABILITY_GRACE_PERIOD": "30",
-            },
-            clear=True,
-        ):
-            config = NodeAvailabilityConfig.from_env()
-            assert config.enabled is True
-            assert config.dry_run is False
-            assert config.check_interval_seconds == 120.0
-            assert config.grace_period_seconds == 30.0
+        assert config.enabled is True
+        assert config.dry_run is True
+        assert config.check_interval_seconds == 300.0
 
-    def test_from_env_provider_toggles(self):
+    def test_from_env_disabled(self, mock_env: None) -> None:
+        """Test from_env with daemon disabled."""
+        os.environ["RINGRIFT_NODE_AVAILABILITY_ENABLED"] = "false"
+
+        config = NodeAvailabilityConfig.from_env()
+        assert config.enabled is False
+
+    def test_from_env_dry_run_false(self, mock_env: None) -> None:
+        """Test from_env with dry_run disabled."""
+        os.environ["RINGRIFT_NODE_AVAILABILITY_DRY_RUN"] = "0"
+
+        config = NodeAvailabilityConfig.from_env()
+        assert config.dry_run is False
+
+    def test_from_env_custom_interval(self, mock_env: None) -> None:
+        """Test from_env with custom interval."""
+        os.environ["RINGRIFT_NODE_AVAILABILITY_INTERVAL"] = "60"
+
+        config = NodeAvailabilityConfig.from_env()
+        assert config.check_interval_seconds == 60.0
+
+    def test_from_env_custom_grace_period(self, mock_env: None) -> None:
+        """Test from_env with custom grace period."""
+        os.environ["RINGRIFT_NODE_AVAILABILITY_GRACE_PERIOD"] = "120"
+
+        config = NodeAvailabilityConfig.from_env()
+        assert config.grace_period_seconds == 120.0
+
+    def test_from_env_provider_toggles(self, mock_env: None) -> None:
         """Test from_env with provider toggles."""
-        with patch.dict(
-            "os.environ",
-            {
-                "RINGRIFT_NODE_AVAILABILITY_VAST": "0",
-                "RINGRIFT_NODE_AVAILABILITY_LAMBDA": "1",
-                "RINGRIFT_NODE_AVAILABILITY_RUNPOD": "false",
-            },
-            clear=True,
-        ):
-            config = NodeAvailabilityConfig.from_env()
-            assert config.vast_enabled is False
-            assert config.lambda_enabled is True
-            assert config.runpod_enabled is False
+        os.environ["RINGRIFT_NODE_AVAILABILITY_VAST"] = "0"
+        os.environ["RINGRIFT_NODE_AVAILABILITY_LAMBDA"] = "false"
+        os.environ["RINGRIFT_NODE_AVAILABILITY_RUNPOD"] = "1"
+
+        config = NodeAvailabilityConfig.from_env()
+        assert config.vast_enabled is False
+        assert config.lambda_enabled is False
+        assert config.runpod_enabled is True
+
+    def test_from_env_auto_voters(self, mock_env: None) -> None:
+        """Test from_env with auto_update_voters enabled."""
+        os.environ["RINGRIFT_NODE_AVAILABILITY_AUTO_VOTERS"] = "true"
+
+        config = NodeAvailabilityConfig.from_env()
+        assert config.auto_update_voters is True
+
+
+# =============================================================================
+# DaemonStats Tests
+# =============================================================================
 
 
 class TestDaemonStats:
     """Tests for DaemonStats dataclass."""
 
-    def test_default_values(self):
-        """Test default stats values."""
+    def test_initial_values(self) -> None:
+        """Test initial statistics values."""
         stats = DaemonStats()
+
         assert stats.cycles_completed == 0
         assert stats.last_cycle_time is None
         assert stats.last_cycle_duration_seconds == 0.0
         assert stats.provider_checks == {}
         assert stats.provider_errors == {}
         assert stats.total_updates == 0
+        assert stats.nodes_updated == 0
+        assert stats.dry_run_updates == 0
 
-    def test_record_cycle(self):
-        """Test recording a cycle."""
+    def test_record_cycle(self) -> None:
+        """Test recording a completed cycle."""
         stats = DaemonStats()
-        stats.record_cycle(duration=2.5)
-        assert stats.cycles_completed == 1
-        assert stats.last_cycle_duration_seconds == 2.5
-        assert stats.last_cycle_time is not None
 
-    def test_record_provider_check_success(self):
+        stats.record_cycle(1.5)
+
+        assert stats.cycles_completed == 1
+        assert stats.last_cycle_time is not None
+        assert stats.last_cycle_duration_seconds == 1.5
+
+    def test_record_multiple_cycles(self) -> None:
+        """Test recording multiple cycles."""
+        stats = DaemonStats()
+
+        stats.record_cycle(1.0)
+        stats.record_cycle(2.0)
+        stats.record_cycle(3.0)
+
+        assert stats.cycles_completed == 3
+        assert stats.last_cycle_duration_seconds == 3.0
+
+    def test_record_provider_check_success(self) -> None:
         """Test recording successful provider check."""
         stats = DaemonStats()
+
         stats.record_provider_check("vast", success=True)
+
         assert stats.provider_checks["vast"] == 1
         assert stats.provider_errors.get("vast", 0) == 0
 
-    def test_record_provider_check_failure(self):
+    def test_record_provider_check_failure(self) -> None:
         """Test recording failed provider check."""
         stats = DaemonStats()
+
         stats.record_provider_check("lambda", success=False)
+
         assert stats.provider_checks["lambda"] == 1
         assert stats.provider_errors["lambda"] == 1
 
-    def test_record_update(self):
-        """Test recording an update."""
-        from app.coordination.node_availability.config_updater import ConfigUpdateResult
-
+    def test_record_provider_check_multiple(self) -> None:
+        """Test recording multiple provider checks."""
         stats = DaemonStats()
-        result = ConfigUpdateResult(
-            success=True,
-            nodes_updated=["node1", "node2"],
-            dry_run=True,
-        )
+
+        stats.record_provider_check("vast", success=True)
+        stats.record_provider_check("vast", success=True)
+        stats.record_provider_check("vast", success=False)
+
+        assert stats.provider_checks["vast"] == 3
+        assert stats.provider_errors["vast"] == 1
+
+    def test_record_update(self) -> None:
+        """Test recording an update result."""
+        stats = DaemonStats()
+
+        result = MagicMock()
+        result.update_count = 5
+        result.dry_run = False
 
         stats.record_update(result)
+
         assert stats.total_updates == 1
-        assert stats.nodes_updated == 2
+        assert stats.nodes_updated == 5
+        assert stats.dry_run_updates == 0
+
+    def test_record_update_dry_run(self) -> None:
+        """Test recording a dry-run update."""
+        stats = DaemonStats()
+
+        result = MagicMock()
+        result.update_count = 3
+        result.dry_run = True
+
+        stats.record_update(result)
+
+        assert stats.total_updates == 1
+        assert stats.nodes_updated == 3
         assert stats.dry_run_updates == 1
 
 
-class TestNodeAvailabilityDaemon:
-    """Tests for NodeAvailabilityDaemon."""
+# =============================================================================
+# NodeAvailabilityDaemon Tests
+# =============================================================================
 
-    def setup_method(self):
-        """Reset singleton before each test."""
-        reset_daemon_instance()
 
-    def teardown_method(self):
-        """Reset singleton after each test."""
-        reset_daemon_instance()
+class TestNodeAvailabilityDaemonInit:
+    """Tests for NodeAvailabilityDaemon initialization."""
 
-    def test_init_default_config(self):
-        """Test initialization with default config."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-            assert daemon.config is not None
-            assert daemon._stats is not None
-            assert daemon._pending_terminations == {}
+    def test_default_initialization(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test default daemon initialization."""
+        daemon = NodeAvailabilityDaemon()
 
-    def test_init_custom_config(self):
+        assert daemon.config.dry_run is True
+        assert isinstance(daemon._stats, DaemonStats)
+        assert daemon._pending_terminations == {}
+
+    def test_custom_config_initialization(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
         """Test initialization with custom config."""
         config = NodeAvailabilityConfig(
             dry_run=False,
-            check_interval_seconds=120.0,
+            check_interval_seconds=60.0,
+            grace_period_seconds=30.0,
         )
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon(config)
-            assert daemon.config.dry_run is False
-            assert daemon.config.check_interval_seconds == 120.0
 
-    def test_init_checkers(self):
-        """Test checker initialization."""
-        config = NodeAvailabilityConfig(
-            vast_enabled=True,
-            lambda_enabled=True,
-            runpod_enabled=True,
+        daemon = NodeAvailabilityDaemon(config)
+
+        assert daemon.config.dry_run is False
+        assert daemon.config.check_interval_seconds == 60.0
+        assert daemon.config.grace_period_seconds == 30.0
+
+    def test_checkers_disabled_no_api_keys(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that checkers are not added when API keys are missing."""
+        daemon = NodeAvailabilityDaemon()
+
+        # All checkers disabled (no API keys)
+        assert len(daemon._checkers) == 0
+
+
+class TestNodeAvailabilityDaemonGracePeriod:
+    """Tests for grace period logic."""
+
+    def test_first_termination_starts_grace_period(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that first termination starts grace period."""
+        config = NodeAvailabilityConfig(grace_period_seconds=60.0)
+        daemon = NodeAvailabilityDaemon(config)
+
+        result = daemon._check_grace_period("node-001")
+
+        assert result is False
+        assert "node-001" in daemon._pending_terminations
+
+    def test_grace_period_not_passed(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that node in grace period returns False."""
+        config = NodeAvailabilityConfig(grace_period_seconds=60.0)
+        daemon = NodeAvailabilityDaemon(config)
+
+        # First call starts grace period
+        daemon._check_grace_period("node-001")
+
+        # Second call within grace period
+        result = daemon._check_grace_period("node-001")
+
+        assert result is False
+        assert "node-001" in daemon._pending_terminations
+
+    def test_grace_period_passed(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that node past grace period returns True."""
+        config = NodeAvailabilityConfig(grace_period_seconds=0.1)  # 100ms
+        daemon = NodeAvailabilityDaemon(config)
+
+        # Start grace period
+        daemon._check_grace_period("node-001")
+
+        # Wait for grace period to pass
+        time.sleep(0.15)
+
+        result = daemon._check_grace_period("node-001")
+
+        assert result is True
+        # Node removed from pending after grace period
+        assert "node-001" not in daemon._pending_terminations
+
+    def test_multiple_nodes_independent_grace_periods(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that each node has independent grace period."""
+        config = NodeAvailabilityConfig(grace_period_seconds=60.0)
+        daemon = NodeAvailabilityDaemon(config)
+
+        daemon._check_grace_period("node-001")
+        daemon._check_grace_period("node-002")
+
+        assert "node-001" in daemon._pending_terminations
+        assert "node-002" in daemon._pending_terminations
+
+
+class TestNodeAvailabilityDaemonHealthCheck:
+    """Tests for health_check method."""
+
+    def test_health_check_no_checkers(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test health check with no enabled checkers."""
+        daemon = NodeAvailabilityDaemon()
+
+        result = daemon.health_check()
+
+        assert result.healthy is False
+        assert "No provider checkers enabled" in result.message
+
+    def test_health_check_with_checkers(
+        self, mock_config_updater: Any
+    ) -> None:
+        """Test health check with enabled checkers."""
+        with patch(
+            "app.coordination.node_availability.daemon.VastChecker"
+        ) as vast:
+            vast.return_value.is_enabled = True
+            with patch(
+                "app.coordination.node_availability.daemon.LambdaChecker"
+            ) as lambda_c:
+                lambda_c.return_value.is_enabled = False
+                with patch(
+                    "app.coordination.node_availability.daemon.RunPodChecker"
+                ) as runpod:
+                    runpod.return_value.is_enabled = False
+
+                    daemon = NodeAvailabilityDaemon()
+
+                    result = daemon.health_check()
+
+                    assert result.healthy is True
+                    assert "vast" in result.details["enabled_providers"]
+
+    def test_health_check_high_error_rate(
+        self, mock_config_updater: Any
+    ) -> None:
+        """Test health check with high provider error rate."""
+        with patch(
+            "app.coordination.node_availability.daemon.VastChecker"
+        ) as vast:
+            vast.return_value.is_enabled = True
+            with patch(
+                "app.coordination.node_availability.daemon.LambdaChecker"
+            ), patch(
+                "app.coordination.node_availability.daemon.RunPodChecker"
+            ):
+                daemon = NodeAvailabilityDaemon()
+
+                # Simulate high error rate
+                daemon._stats.provider_checks["vast"] = 10
+                daemon._stats.provider_errors["vast"] = 6
+
+                result = daemon.health_check()
+
+                assert result.healthy is False
+                assert "high error rate" in result.message.lower()
+
+    def test_health_check_details(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test health check includes correct details."""
+        daemon = NodeAvailabilityDaemon()
+        daemon._stats.cycles_completed = 5
+        daemon._stats.total_updates = 10
+        daemon._stats.nodes_updated = 25
+
+        result = daemon.health_check()
+
+        assert result.details["cycles_completed"] == 5
+        assert result.details["total_updates"] == 10
+        assert result.details["nodes_updated"] == 25
+        assert result.details["dry_run"] is True
+
+
+class TestNodeAvailabilityDaemonStatus:
+    """Tests for get_status method."""
+
+    def test_get_status_initial(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test status with initial daemon state."""
+        daemon = NodeAvailabilityDaemon()
+
+        status = daemon.get_status()
+
+        assert status["running"] is False
+        assert status["config"]["enabled"] is True
+        assert status["config"]["dry_run"] is True
+        assert status["config"]["interval_seconds"] == 300.0
+        assert status["stats"]["cycles_completed"] == 0
+        assert status["stats"]["total_updates"] == 0
+        assert status["pending_terminations"] == []
+
+    def test_get_status_with_stats(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test status after recording activity."""
+        daemon = NodeAvailabilityDaemon()
+
+        # Simulate activity
+        daemon._stats.record_cycle(2.5)
+        daemon._stats.total_updates = 3
+        daemon._stats.nodes_updated = 7
+        daemon._pending_terminations["node-001"] = time.time()
+
+        status = daemon.get_status()
+
+        assert status["stats"]["cycles_completed"] == 1
+        assert status["stats"]["last_cycle_duration"] == 2.5
+        assert status["stats"]["total_updates"] == 3
+        assert status["stats"]["nodes_updated"] == 7
+        assert "node-001" in status["pending_terminations"]
+
+
+# =============================================================================
+# Singleton Pattern Tests
+# =============================================================================
+
+
+class TestSingletonPattern:
+    """Tests for singleton pattern functions."""
+
+    def test_get_node_availability_daemon_creates_instance(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that get_node_availability_daemon creates singleton."""
+        daemon1 = get_node_availability_daemon()
+        daemon2 = get_node_availability_daemon()
+
+        assert daemon1 is daemon2
+
+    def test_get_node_availability_daemon_with_config(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that config is only used on first call."""
+        config1 = NodeAvailabilityConfig(check_interval_seconds=60.0)
+        config2 = NodeAvailabilityConfig(check_interval_seconds=120.0)
+
+        daemon1 = get_node_availability_daemon(config1)
+        daemon2 = get_node_availability_daemon(config2)
+
+        assert daemon1.config.check_interval_seconds == 60.0
+        assert daemon2.config.check_interval_seconds == 60.0  # Same instance
+
+    def test_reset_daemon_instance(
+        self, mock_checkers: dict, mock_config_updater: Any
+    ) -> None:
+        """Test that reset_daemon_instance clears singleton."""
+        daemon1 = get_node_availability_daemon()
+
+        reset_daemon_instance()
+
+        daemon2 = get_node_availability_daemon()
+
+        assert daemon1 is not daemon2
+
+
+# =============================================================================
+# Run Cycle Tests
+# =============================================================================
+
+
+class TestNodeAvailabilityDaemonCycle:
+    """Tests for _run_cycle method."""
+
+    @pytest.mark.asyncio
+    async def test_run_cycle_no_updates(
+        self, mock_config_updater: Any
+    ) -> None:
+        """Test run cycle with no updates needed."""
+        with patch(
+            "app.coordination.node_availability.daemon.VastChecker"
+        ) as vast_class:
+            checker = MagicMock()
+            checker.is_enabled = True
+            checker.get_instance_states = AsyncMock(return_value=[])
+            checker.get_terminated_instances = AsyncMock(return_value=[])
+            vast_class.return_value = checker
+
+            with patch(
+                "app.coordination.node_availability.daemon.LambdaChecker"
+            ) as lambda_class, patch(
+                "app.coordination.node_availability.daemon.RunPodChecker"
+            ) as runpod_class:
+                lambda_class.return_value.is_enabled = False
+                runpod_class.return_value.is_enabled = False
+                daemon = NodeAvailabilityDaemon()
+
+                await daemon._run_cycle()
+
+                assert daemon._stats.cycles_completed == 1
+                assert daemon._stats.provider_checks.get("vast", 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_run_cycle_with_updates(
+        self, mock_config_updater: Any
+    ) -> None:
+        """Test run cycle with state updates."""
+        mock_config_updater.load_config.return_value = {
+            "hosts": {
+                "vast-12345": {"status": "ready"},
+            }
+        }
+
+        # Mock update result with changes
+        update_result = MagicMock()
+        update_result.success = True
+        update_result.update_count = 1
+        update_result.dry_run = True
+        update_result.changes = {"vast-12345": ("ready", "offline")}
+        mock_config_updater.update_node_statuses = AsyncMock(
+            return_value=update_result
         )
 
         with patch(
             "app.coordination.node_availability.daemon.VastChecker"
-        ) as mock_vast:
+        ) as vast_class:
+            checker = MagicMock()
+            checker.is_enabled = True
+
+            instance = InstanceInfo(
+                instance_id="12345",
+                state=ProviderInstanceState.STOPPED,
+                provider="vast",
+                node_name="vast-12345",
+            )
+            checker.get_instance_states = AsyncMock(return_value=[instance])
+            checker.get_terminated_instances = AsyncMock(return_value=[])
+            checker.correlate_with_config = MagicMock(return_value=[instance])
+            vast_class.return_value = checker
+
             with patch(
                 "app.coordination.node_availability.daemon.LambdaChecker"
-            ) as mock_lambda:
-                with patch(
-                    "app.coordination.node_availability.daemon.RunPodChecker"
-                ) as mock_runpod:
-                    mock_vast.return_value.is_enabled = True
-                    mock_lambda.return_value.is_enabled = False
-                    mock_runpod.return_value.is_enabled = True
+            ) as lambda_class, patch(
+                "app.coordination.node_availability.daemon.RunPodChecker"
+            ) as runpod_class:
+                lambda_class.return_value.is_enabled = False
+                runpod_class.return_value.is_enabled = False
+                daemon = NodeAvailabilityDaemon()
 
-                    daemon = NodeAvailabilityDaemon(config)
-                    assert len(daemon._checkers) == 2
-                    assert "vast" in daemon._checkers
-                    assert "runpod" in daemon._checkers
-                    assert "lambda" not in daemon._checkers
-
-    def test_check_grace_period_first_time(self):
-        """Test grace period check first time."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-            result = daemon._check_grace_period("node1")
-            assert result is False
-            assert "node1" in daemon._pending_terminations
-
-    def test_check_grace_period_within(self):
-        """Test grace period check within period."""
-        config = NodeAvailabilityConfig(grace_period_seconds=60.0)
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon(config)
-            daemon._pending_terminations["node1"] = time.time()
-            result = daemon._check_grace_period("node1")
-            assert result is False
-
-    def test_check_grace_period_expired(self):
-        """Test grace period check after expiry."""
-        config = NodeAvailabilityConfig(grace_period_seconds=1.0)
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon(config)
-            daemon._pending_terminations["node1"] = time.time() - 2.0
-            result = daemon._check_grace_period("node1")
-            assert result is True
-            assert "node1" not in daemon._pending_terminations
-
-    @pytest.mark.asyncio
-    async def test_emit_state_change_event(self):
-        """Test emitting state change event handles errors gracefully.
-
-        Note: emit_generic_event may not exist in event_emitters.py.
-        The daemon method catches and logs any exceptions, so we verify
-        it doesn't raise.
-        """
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-
-            # The method should not raise even if emit_generic_event doesn't exist
-            # (the daemon code catches and logs exceptions)
-            await daemon._emit_state_change_event("node1", "ready", "offline")
-            # No assertion needed - test passes if no exception raised
-
-    def test_health_check_healthy(self):
-        """Test health check when healthy."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-            daemon._checkers = {"vast": MagicMock(), "lambda": MagicMock()}
-
-            health = daemon.health_check()
-            assert health.healthy is True
-            assert health.message == "OK"
-            assert "vast" in health.details["enabled_providers"]
-            assert "lambda" in health.details["enabled_providers"]
-
-    def test_health_check_no_checkers(self):
-        """Test health check when no checkers enabled."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-            daemon._checkers = {}
-
-            health = daemon.health_check()
-            assert health.healthy is False
-            assert "No provider checkers" in health.message
-
-    def test_health_check_high_error_rate(self):
-        """Test health check with high error rate."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-            daemon._checkers = {"vast": MagicMock()}
-            daemon._stats.provider_checks["vast"] = 10
-            daemon._stats.provider_errors["vast"] = 6
-
-            health = daemon.health_check()
-            assert health.healthy is False
-            assert "high error rate" in health.message
-
-    def test_get_status(self):
-        """Test get_status returns complete info."""
-        config = NodeAvailabilityConfig(dry_run=True)
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon(config)
-            daemon._running = True
-            daemon._stats.cycles_completed = 5
-            daemon._pending_terminations = {"node1": time.time()}
-
-            mock_checker = MagicMock()
-            mock_checker.get_status.return_value = {"enabled": True}
-            daemon._checkers = {"vast": mock_checker}
-
-            status = daemon.get_status()
-            assert status["running"] is True
-            assert status["config"]["dry_run"] is True
-            assert status["stats"]["cycles_completed"] == 5
-            assert "node1" in status["pending_terminations"]
-            assert "vast" in status["providers"]
-
-    @pytest.mark.asyncio
-    async def test_run_cycle_no_updates(self):
-        """Test run cycle with no updates needed."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-
-            mock_checker = MagicMock()
-            daemon._checkers = {"vast": mock_checker}
-            daemon._config_updater = MagicMock()
-            daemon._config_updater.load_config.return_value = {"hosts": {}}
-
-            with patch.object(
-                daemon,
-                "_check_provider",
-                new_callable=AsyncMock,
-                return_value={},
-            ):
-                await daemon._run_cycle()
-
-            assert daemon._stats.cycles_completed == 1
-
-    @pytest.mark.asyncio
-    async def test_run_cycle_with_updates(self):
-        """Test run cycle with updates needed."""
-        from app.coordination.node_availability.config_updater import ConfigUpdateResult
-
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-
-            mock_checker = MagicMock()
-            daemon._checkers = {"vast": mock_checker}
-
-            mock_result = ConfigUpdateResult(
-                success=True,
-                nodes_updated=["vast-12345"],
-                changes={"vast-12345": ("ready", "offline")},
-            )
-            daemon._config_updater = MagicMock()
-            daemon._config_updater.load_config.return_value = {"hosts": {}}
-            daemon._config_updater.update_node_statuses = AsyncMock(return_value=mock_result)
-
-            with patch.object(
-                daemon,
-                "_check_provider",
-                new_callable=AsyncMock,
-                return_value={"vast-12345": "offline"},
-            ):
                 with patch.object(
-                    daemon,
-                    "_emit_state_change_event",
-                    new_callable=AsyncMock,
-                ) as mock_emit:
+                    daemon, "_emit_state_change_event", new_callable=AsyncMock
+                ) as emit_mock:
                     await daemon._run_cycle()
 
-            assert daemon._stats.cycles_completed == 1
-            mock_emit.assert_called_once()
+                    assert daemon._stats.total_updates == 1
+                    emit_mock.assert_called_once_with(
+                        "vast-12345", "ready", "offline"
+                    )
 
     @pytest.mark.asyncio
-    async def test_stop_closes_checkers(self):
-        """Test stop closes checker sessions."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-
-            mock_checker = MagicMock()
-            mock_checker.close = AsyncMock()
-            daemon._checkers = {"vast": mock_checker}
-
-            await daemon.stop()
-            mock_checker.close.assert_called_once()
-
-
-class TestNodeAvailabilityDaemonSingleton:
-    """Tests for NodeAvailabilityDaemon singleton pattern."""
-
-    def setup_method(self):
-        """Reset singleton before each test."""
-        reset_daemon_instance()
-
-    def teardown_method(self):
-        """Reset singleton after each test."""
-        reset_daemon_instance()
-
-    def test_get_daemon(self):
-        """Test get_node_availability_daemon returns singleton."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            d1 = get_node_availability_daemon()
-            d2 = get_node_availability_daemon()
-            assert d1 is d2
-
-    def test_reset_daemon(self):
-        """Test reset_daemon_instance clears singleton."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            d1 = get_node_availability_daemon()
-            reset_daemon_instance()
-            d2 = get_node_availability_daemon()
-            assert d1 is not d2
-
-
-class TestCheckProvider:
-    """Tests for _check_provider method."""
-
-    def setup_method(self):
-        """Reset singleton before each test."""
-        reset_daemon_instance()
-
-    def teardown_method(self):
-        """Reset singleton after each test."""
-        reset_daemon_instance()
-
-    @pytest.mark.asyncio
-    async def test_check_provider_no_instances(self):
-        """Test check_provider when no instances returned."""
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-
-            mock_checker = MagicMock()
-            mock_checker.get_instance_states = AsyncMock(return_value=[])
-            mock_checker.get_terminated_instances = AsyncMock(return_value=["vast-123"])
-
-            updates = await daemon._check_provider(mock_checker, {"vast-123": {"status": "ready"}})
-            assert updates == {}  # Grace period not passed yet
-
-    @pytest.mark.asyncio
-    async def test_check_provider_with_state_change(self):
-        """Test check_provider with state change."""
-        from app.coordination.node_availability.state_checker import (
-            InstanceInfo,
-            ProviderInstanceState,
-        )
-
-        with patch.object(NodeAvailabilityDaemon, "_init_checkers"):
-            daemon = NodeAvailabilityDaemon()
-
-            # Note: yaml_status is a property, not an init parameter
-            mock_instance = InstanceInfo(
-                instance_id="inst-1",
-                provider="vast",
-                state=ProviderInstanceState.RUNNING,
-                node_name="vast-123",
+    async def test_run_cycle_provider_error(
+        self, mock_config_updater: Any
+    ) -> None:
+        """Test run cycle handles provider errors gracefully."""
+        with patch(
+            "app.coordination.node_availability.daemon.VastChecker"
+        ) as vast_class:
+            checker = MagicMock()
+            checker.is_enabled = True
+            checker.get_instance_states = AsyncMock(
+                side_effect=asyncio.TimeoutError("API timeout")
             )
-            # yaml_status is computed from state -> RUNNING maps to "ready"
+            vast_class.return_value = checker
 
-            mock_checker = MagicMock()
-            mock_checker.get_instance_states = AsyncMock(return_value=[mock_instance])
-            mock_checker.correlate_with_config.return_value = [mock_instance]
-            mock_checker.get_terminated_instances = AsyncMock(return_value=[])
+            with patch(
+                "app.coordination.node_availability.daemon.LambdaChecker"
+            ) as lambda_class, patch(
+                "app.coordination.node_availability.daemon.RunPodChecker"
+            ) as runpod_class:
+                lambda_class.return_value.is_enabled = False
+                runpod_class.return_value.is_enabled = False
+                daemon = NodeAvailabilityDaemon()
 
-            config_hosts = {"vast-123": {"status": "offline"}}
-            updates = await daemon._check_provider(mock_checker, config_hosts)
+                await daemon._run_cycle()
 
-            assert "vast-123" in updates
-            assert updates["vast-123"] == "ready"
+                assert daemon._stats.cycles_completed == 1
+                assert daemon._stats.provider_errors.get("vast", 0) == 1
+
+
+# =============================================================================
+# Stop Tests
+# =============================================================================
+
+
+class TestNodeAvailabilityDaemonStop:
+    """Tests for stop method."""
+
+    @pytest.mark.asyncio
+    async def test_stop_closes_checker_sessions(
+        self, mock_config_updater: Any
+    ) -> None:
+        """Test that stop closes HTTP sessions."""
+        with patch(
+            "app.coordination.node_availability.daemon.VastChecker"
+        ) as vast_class:
+            checker = MagicMock()
+            checker.is_enabled = True
+            checker.close = AsyncMock()
+            vast_class.return_value = checker
+
+            with patch(
+                "app.coordination.node_availability.daemon.LambdaChecker"
+            ) as lambda_class, patch(
+                "app.coordination.node_availability.daemon.RunPodChecker"
+            ) as runpod_class:
+                lambda_class.return_value.is_enabled = False
+                runpod_class.return_value.is_enabled = False
+                daemon = NodeAvailabilityDaemon()
+
+                await daemon.stop()
+
+                checker.close.assert_called_once()
