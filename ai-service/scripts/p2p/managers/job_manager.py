@@ -1316,6 +1316,7 @@ class JobManager(EventSubscriptionMixin):
                             num_players=num_players,
                             num_games=num_games,
                             duration_seconds=duration,
+                            engine_mode=effective_mode,  # Dec 29 2025: For bandit feedback
                         )
                     else:
                         error_msg = stderr.decode()[:500]
