@@ -42,6 +42,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from scripts.p2p.types import NodeHealthState
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -490,7 +492,7 @@ class CompositeScaleAdapter:
     def get_active_nodes(self) -> int:
         """Get count of currently active GPU nodes."""
         peers = self.peers_getter()
-        return len([p for p in peers.values() if p.get("alive", False)])
+        return len([p for p in peers.values() if p.get_health_state() == NodeHealthState.ALIVE])
 
     def get_idle_nodes(self) -> list[str]:
         """Get list of node IDs that are confirmed idle and safe to terminate.
@@ -507,7 +509,7 @@ class CompositeScaleAdapter:
         idle_candidates: list[str] = []
 
         for node_id, peer in peers.items():
-            if not peer.get("alive", False):
+            if peer.get_health_state() != NodeHealthState.ALIVE:
                 continue
 
             # Get or create idle status tracker
@@ -517,8 +519,8 @@ class CompositeScaleAdapter:
             status = self._node_idle_status[node_id]
 
             # Update status from peer info
-            gpu_util = peer.get("gpu_percent", 0.0) or 0.0
-            active_jobs = peer.get("selfplay_jobs", 0) + peer.get("training_jobs", 0)
+            gpu_util = peer.gpu_percent or 0.0
+            active_jobs = peer.selfplay_jobs + peer.training_jobs
 
             status.gpu_utilization = gpu_util
             status.active_jobs = active_jobs
@@ -791,7 +793,7 @@ class CompositeScaleAdapter:
         peers = self.peers_getter()
         overloaded_peers = [
             p_id for p_id, p_info in peers.items()
-            if p_info.get("alive", False) and p_info.get("gpu_util", 0) > 90
+            if p_info.get_health_state() == NodeHealthState.ALIVE and p_info.gpu_percent > 90
         ]
         if overloaded_peers:
             logger.info(

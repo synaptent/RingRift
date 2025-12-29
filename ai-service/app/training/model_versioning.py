@@ -202,6 +202,49 @@ class CheckpointConfigError(ModelVersioningError):
         super().__init__(message)
 
 
+class ArchitectureMismatchError(ModelVersioningError):
+    """Raised when checkpoint architecture doesn't match model architecture.
+
+    This is a critical error that prevents training from resuming with the
+    wrong model architecture. Unlike ConfigMismatchError (which can sometimes
+    be ignored), architecture mismatches always cause load_state_dict to fail.
+
+    The error message includes the specific mismatch and suggests the correct
+    --memory-tier flag to use.
+    """
+
+    def __init__(
+        self,
+        checkpoint_path: str,
+        key: str,
+        checkpoint_value: Any,
+        model_value: Any,
+        memory_tier: str | None = None,
+    ):
+        self.checkpoint_path = checkpoint_path
+        self.key = key
+        self.checkpoint_value = checkpoint_value
+        self.model_value = model_value
+        self.memory_tier = memory_tier
+
+        tier_hint = ""
+        if memory_tier:
+            tier_hint = f"\n  Suggested fix: Use --memory-tier={memory_tier} to match checkpoint architecture."
+
+        message = (
+            f"Architecture mismatch prevents checkpoint loading!\n"
+            f"  Checkpoint: {checkpoint_path}\n"
+            f"  Mismatch: {key}\n"
+            f"    Checkpoint has: {checkpoint_value}\n"
+            f"    Model expects: {model_value}\n"
+            f"{tier_hint}\n"
+            f"\n"
+            f"The checkpoint was trained with a different model architecture.\n"
+            f"You must use matching architecture parameters to resume training."
+        )
+        super().__init__(message)
+
+
 # =============================================================================
 # Metadata
 # =============================================================================

@@ -705,6 +705,12 @@ def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, Cluste
             gpu=cfg.get("gpu", ""),
             gpu_vram_gb=cfg.get("gpu_vram_gb", 0),
             bandwidth_mbps=cfg.get("bandwidth_mbps", 0),
+            # December 2025: GPU-aware job assignment fields
+            cuda_capable=cfg.get("cuda_capable", False),
+            selfplay_enabled=cfg.get("selfplay_enabled", True),
+            training_enabled=cfg.get("training_enabled", False),
+            preferred_workloads=cfg.get("preferred_workloads"),
+            excluded_workloads=cfg.get("excluded_workloads"),
             data_server_port=cfg.get("data_server_port", default_data_port),
             data_server_url=cfg.get("data_server_url"),
             is_coordinator=(name == elo_coordinator or cfg.get("is_coordinator", False)),
@@ -865,3 +871,177 @@ def get_gpu_types(config_path: str | Path | None = None) -> dict[str, int]:
             gpu_types[gpu_name] = node.gpu_vram_gb
 
     return gpu_types
+
+
+# =============================================================================
+# GPU-Aware Node Filtering (December 2025)
+# For GPU-aware job assignment system
+# =============================================================================
+
+
+def get_gpu_capable_nodes(
+    config_path: str | Path | None = None,
+    *,
+    only_active: bool = True,
+    only_selfplay_enabled: bool = True,
+) -> list[ClusterNode]:
+    """Get nodes capable of running GPU selfplay (neural network modes).
+
+    December 2025: Added for GPU-aware job assignment to prevent wasting
+    GPU compute on CPU-only selfplay.
+
+    Args:
+        config_path: Optional config file path.
+        only_active: If True, only return active nodes.
+        only_selfplay_enabled: If True, only return nodes with selfplay enabled.
+
+    Returns:
+        List of ClusterNode objects that can run GPU selfplay.
+    """
+    nodes = get_cluster_nodes(config_path).values()
+    result = []
+
+    for node in nodes:
+        if only_active and not node.is_active:
+            continue
+        if only_selfplay_enabled and not node.selfplay_enabled:
+            continue
+        if node.can_run_gpu_selfplay:
+            result.append(node)
+
+    return result
+
+
+def get_cpu_only_nodes(
+    config_path: str | Path | None = None,
+    *,
+    only_active: bool = True,
+) -> list[ClusterNode]:
+    """Get nodes without GPU capability (CPU-only selfplay).
+
+    December 2025: Added for GPU-aware job assignment.
+
+    Args:
+        config_path: Optional config file path.
+        only_active: If True, only return active nodes.
+
+    Returns:
+        List of ClusterNode objects without GPU capability.
+    """
+    nodes = get_cluster_nodes(config_path).values()
+    result = []
+
+    for node in nodes:
+        if only_active and not node.is_active:
+            continue
+        if not node.has_cuda_gpu:
+            result.append(node)
+
+    return result
+
+
+def get_nodes_for_engine_mode(
+    engine_mode: str,
+    config_path: str | Path | None = None,
+    *,
+    only_active: bool = True,
+) -> list[ClusterNode]:
+    """Get nodes suitable for a specific engine mode.
+
+    December 2025: Added for GPU-aware job assignment.
+
+    Args:
+        engine_mode: Engine mode string (e.g., "gumbel-mcts", "heuristic").
+        config_path: Optional config file path.
+        only_active: If True, only return active nodes.
+
+    Returns:
+        List of ClusterNode objects suitable for the engine mode.
+    """
+    # GPU-required engine modes (neural network inference)
+    GPU_REQUIRED_MODES = {
+        "gumbel-mcts", "mcts", "nnue-guided", "policy-only",
+        "nn-minimax", "nn-descent", "gnn", "hybrid",
+        "gmo", "ebmo", "ig-gmo", "cage",
+    }
+
+    requires_gpu = engine_mode.lower() in GPU_REQUIRED_MODES
+
+    if requires_gpu:
+        return get_gpu_capable_nodes(config_path, only_active=only_active)
+    else:
+        # CPU-compatible modes can run on any node
+        return get_active_nodes(config_path) if only_active else list(
+            get_cluster_nodes(config_path).values()
+        )
+
+
+def filter_nodes_by_workload(
+    workload_type: str,
+    config_path: str | Path | None = None,
+    *,
+    only_active: bool = True,
+) -> list[ClusterNode]:
+    """Filter nodes by preferred/excluded workload configuration.
+
+    December 2025: Added for workload-aware job assignment.
+
+    Args:
+        workload_type: Workload type (e.g., "gpu-selfplay", "training", "cpu-selfplay").
+        config_path: Optional config file path.
+        only_active: If True, only return active nodes.
+
+    Returns:
+        List of ClusterNode objects suitable for the workload type.
+    """
+    nodes = get_cluster_nodes(config_path).values()
+    result = []
+
+    for node in nodes:
+        if only_active and not node.is_active:
+            continue
+
+        # Check excluded workloads
+        if node.excluded_workloads and workload_type in node.excluded_workloads:
+            continue
+
+        # Nodes with preferred_workloads set are prioritized for those workloads
+        # but can still run other workloads if not excluded
+        result.append(node)
+
+    # Sort by preference: nodes with this workload in preferred_workloads first
+    def preference_key(n: ClusterNode) -> int:
+        if n.preferred_workloads and workload_type in n.preferred_workloads:
+            return 0  # Highest priority
+        return 1  # Default priority
+
+    result.sort(key=preference_key)
+    return result
+
+
+def get_training_nodes(
+    config_path: str | Path | None = None,
+    *,
+    only_active: bool = True,
+) -> list[ClusterNode]:
+    """Get nodes enabled for training jobs.
+
+    December 2025: Added for GPU-aware job assignment.
+
+    Args:
+        config_path: Optional config file path.
+        only_active: If True, only return active nodes.
+
+    Returns:
+        List of ClusterNode objects enabled for training.
+    """
+    nodes = get_cluster_nodes(config_path).values()
+    result = []
+
+    for node in nodes:
+        if only_active and not node.is_active:
+            continue
+        if node.training_enabled:
+            result.append(node)
+
+    return result

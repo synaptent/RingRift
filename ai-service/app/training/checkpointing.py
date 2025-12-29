@@ -77,9 +77,11 @@ import torch.nn as nn
 import torch.optim as optim
 
 from app.training.model_versioning import (
+    ArchitectureMismatchError,
     LegacyCheckpointError,
     ModelVersionManager,
     VersionMismatchError,
+    get_model_config,
 )
 from app.training.training_enhancements import EarlyStopping
 from app.utils.resource_guard import LIMITS, check_disk_space, get_disk_usage

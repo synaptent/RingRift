@@ -430,17 +430,18 @@ class GameWriter:
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Context manager exit - cleanup on exit.
 
-        If an exception occurred and the game wasn't finalized, we clean up
+        If the game wasn't finalized (whether due to exception or not), we clean up
         the placeholder game to prevent orphan records in the database.
         Returns False to propagate any exceptions.
         """
-        if exc_type is not None and not self._finalized:
-            # Exception occurred - clean up the placeholder game
-            # This prevents orphan game records that have no move data
+        if not self._finalized:
+            # Game wasn't finalized - clean up the placeholder game
+            # This prevents orphan game records that have incomplete data
+            reason = f"exception: {exc_val}" if exc_type is not None else "not finalized"
             try:
                 self._db._delete_game(self._game_id)
                 logger.warning(
-                    f"Cleaned up incomplete game {self._game_id} after exception: {exc_val}"
+                    f"Cleaned up incomplete game {self._game_id} ({reason})"
                 )
             except Exception as cleanup_error:
                 logger.error(

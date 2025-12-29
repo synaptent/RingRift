@@ -36,6 +36,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Import port configuration
+try:
+    from app.config.ports import P2P_DEFAULT_PORT
+except ImportError:
+    P2P_DEFAULT_PORT = 8770  # Fallback if ports module unavailable
+
 # Default paths
 DEFAULT_PROMETHEUS_PORT = 9090
 DEFAULT_GRAFANA_PORT = 3000
@@ -121,7 +127,7 @@ class PeerInfo:
     """Minimal peer info for monitoring config generation."""
     node_id: str
     host: str
-    port: int = 8770
+    port: int = P2P_DEFAULT_PORT
     gpu_type: str | None = None
     is_alive: bool = True
 

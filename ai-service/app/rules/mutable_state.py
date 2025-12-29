@@ -1423,9 +1423,16 @@ class MutableGameState:
         active_players = self._get_active_player_numbers()
 
         if len(active_players) == 0:
-            # All players eliminated - should not happen in normal play
+            # All players eliminated - use deterministic tiebreaker (lowest player number)
+            # This mirrors VictoryAggregate.ts - games must ALWAYS have a winner.
+            # Per RR-CANON: The game must always produce a winner.
+            all_player_numbers = list(range(1, self._num_players + 1))
+            self._winner = min(all_player_numbers)
             self._game_status = GameStatus.COMPLETED
-            self._winner = None
+            logger.warning(
+                f"Degenerate game state: all players eliminated. "
+                f"Winner by tiebreaker: {self._winner}"
+            )
             return True
 
         if len(active_players) == 1:

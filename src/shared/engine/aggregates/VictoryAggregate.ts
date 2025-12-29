@@ -105,7 +105,8 @@ export type VictoryReason =
   | 'ring_elimination'
   | 'territory_control'
   | 'last_player_standing'
-  | 'game_completed';
+  | 'game_completed'
+  | 'tiebreaker_by_player_number';
 
 /**
  * Result of evaluating victory conditions.
@@ -577,12 +578,16 @@ export function evaluateVictory(state: GameState): VictoryResult {
     };
   }
 
-  // Safety fallback: in degenerate cases where no last actor can be
-  // determined (e.g. malformed game state), mark the game as completed
-  // without a specific winner.
+  // Deterministic final tiebreaker: lowest player number wins.
+  // This ensures games ALWAYS have a winner - draws are not allowed.
+  // Per RR-CANON: The game must always produce a winner.
+  const allPlayerNumbers = players.map((p) => p.playerNumber);
+  const lowestPlayer = Math.min(...allPlayerNumbers);
+
   return {
     isGameOver: true,
-    reason: 'game_completed',
+    winner: lowestPlayer,
+    reason: 'tiebreaker_by_player_number',
     handCountsAsEliminated,
   };
 }

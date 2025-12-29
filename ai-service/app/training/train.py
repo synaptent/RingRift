@@ -1907,6 +1907,29 @@ def train_model(
                     config.board_type.name,
                 )
 
+    # December 2025: Auto-detect tier from checkpoint when resuming
+    # This ensures model architecture matches the checkpoint to prevent silent failures
+    if resume_path is not None:
+        detected = detect_tier_from_checkpoint(resume_path, device=device)
+        if detected:
+            ckpt_tier, ckpt_version, ckpt_filters, ckpt_blocks = detected
+            # Check if current settings differ from checkpoint
+            current_filters = num_filters if num_filters is not None else 96
+            current_blocks = num_res_blocks if num_res_blocks is not None else 6
+            if (ckpt_version != model_version or
+                    ckpt_filters != current_filters or
+                    ckpt_blocks != current_blocks):
+                if not distributed or is_main_process():
+                    logger.warning(
+                        f"Checkpoint architecture differs from requested settings. "
+                        f"Requested: version={model_version}, filters={current_filters}, blocks={current_blocks}. "
+                        f"Checkpoint: tier={ckpt_tier}, version={ckpt_version}, filters={ckpt_filters}, blocks={ckpt_blocks}. "
+                        f"Using checkpoint architecture to ensure compatibility."
+                    )
+                model_version = ckpt_version
+                num_filters = ckpt_filters
+                num_res_blocks = ckpt_blocks
+
     hex_in_channels = 0
     hex_num_players = num_players
     # Compute hex_radius from board_type: HEX8 has radius 4, HEXAGONAL has radius 12

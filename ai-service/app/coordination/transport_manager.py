@@ -49,6 +49,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
+from app.config.ports import P2P_DEFAULT_PORT
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -133,7 +135,7 @@ class TransportConfig:
     )
 
     # P2P settings
-    p2p_port: int = 8770
+    p2p_port: int = P2P_DEFAULT_PORT
     http_data_port: int = 8780
 
     # S3 settings

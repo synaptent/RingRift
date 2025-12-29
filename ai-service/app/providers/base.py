@@ -15,6 +15,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from app.config.ports import P2P_DEFAULT_PORT
+
 logger = logging.getLogger(__name__)
 
 
@@ -220,7 +222,7 @@ class ProviderManager(ABC):
     async def check_p2p_health(
         self,
         instance: ProviderInstance,
-        port: int = 8770,
+        port: int = P2P_DEFAULT_PORT,
     ) -> HealthCheckResult:
         """Check if P2P daemon is responding."""
         import time

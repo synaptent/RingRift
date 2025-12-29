@@ -1713,7 +1713,18 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
 
             # Get move from MCTS (use correct player's MCTS instance)
             mcts = self._mcts_instances[state.current_player]
-            move = mcts.select_move(state)
+            try:
+                move = mcts.select_move(state)
+                if move is None:
+                    # MCTS returned None - fall back to random move
+                    logger.warning(f"MCTS returned None for game {game_id}, falling back to random")
+                    import random
+                    move = random.choice(valid_moves)
+            except (ValueError, RuntimeError, AttributeError, TypeError) as e:
+                # MCTS failed - fall back to random move to complete the game
+                logger.warning(f"MCTS failed for game {game_id}: {e}, falling back to random")
+                import random
+                move = random.choice(valid_moves)
 
             # Extract MCTS distribution data after move selection
             # get_visit_distribution() returns (moves, probs) from last search

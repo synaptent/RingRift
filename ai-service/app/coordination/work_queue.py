@@ -1275,14 +1275,19 @@ class WorkQueue:
         # Emit event for coordination layer
         try:
             from app.coordination.event_router import get_event_bus
+            from app.core.async_context import fire_and_forget
             bus = get_event_bus()
-            bus.publish("BACKPRESSURE_ACTIVATED", {
+            coro = bus.publish("BACKPRESSURE_ACTIVATED", {
                 "pending_count": pending_count,
                 "trigger": trigger,
                 "soft_limit": BACKPRESSURE_SOFT_LIMIT,
                 "hard_limit": BACKPRESSURE_HARD_LIMIT,
                 "timestamp": time.time(),
             })
+            try:
+                fire_and_forget(coro)
+            except Exception:
+                coro.close()
         except ImportError:
             pass  # Event system not available
 
@@ -1298,12 +1303,17 @@ class WorkQueue:
         # Emit event for coordination layer
         try:
             from app.coordination.event_router import get_event_bus
+            from app.core.async_context import fire_and_forget
             bus = get_event_bus()
-            bus.publish("BACKPRESSURE_RELEASED", {
+            coro = bus.publish("BACKPRESSURE_RELEASED", {
                 "pending_count": pending_count,
                 "recovery_threshold": BACKPRESSURE_RECOVERY_THRESHOLD,
                 "timestamp": time.time(),
             })
+            try:
+                fire_and_forget(coro)
+            except Exception:
+                coro.close()
         except ImportError:
             pass  # Event system not available
 
