@@ -25,7 +25,6 @@ Generated: 2025-12-29
 | `RINGRIFT_ALERT_MAX_PER_HOUR`                          | `ai-service/config/cluster_env.sh:21`                                       |                |
 | `RINGRIFT_ALERT_MIN_INTERVAL`                          | `ai-service/config/cluster_env.sh:20`                                       |                |
 | `RINGRIFT_ALERT_STATE_DIR`                             | `ai-service/scripts/monitoring/cluster_health_check.sh:29`                  |                |
-| `RINGRIFT_ALLOCATION_CHECK_INTERVAL`                   | `ai-service/app/config/env.py:889`                                          |                |
 | `RINGRIFT_ALLOW_STALE_TRAINING`                        | `ai-service/scripts/master_loop.py:1652`                                    |                |
 | `RINGRIFT_ARBITER_URL`                                 | `ai-service/app/p2p/constants.py:269`                                       |                |
 | `RINGRIFT_ARCHIVE_DIR`                                 | `ai-service/app/coordination/maintenance_daemon.py:72`                      |                |
@@ -185,9 +184,6 @@ Generated: 2025-12-29
 | `RINGRIFT_FLAG`                                        | `tests/unit/envFlags.test.ts:32`                                            | test-only      |
 | `RINGRIFT_FORCE_BOOKKEEPING_MOVES`                     | `ai-service/app/rules/default_engine.py:134`                                |                |
 | `RINGRIFT_FORCE_COORDINATOR`                           | `ai-service/scripts/cluster_join.sh:22`                                     |                |
-| `RINGRIFT_FRESHNESS_ENFORCE_SYNC`                      | `ai-service/app/config/coordination_defaults.py:271`                        |                |
-| `RINGRIFT_FRESHNESS_SYNC_TIMEOUT`                      | `ai-service/app/config/coordination_defaults.py:274`                        |                |
-| `RINGRIFT_FRESHNESS_WARNING_HOURS`                     | `ai-service/app/config/coordination_defaults.py:264`                        |                |
 | `RINGRIFT_FSM_TRACE_DEBUG`                             | `src/shared/utils/envFlags.ts:206`                                          |                |
 | `RINGRIFT_FUTURE_RESULT_TIMEOUT`                       | `ai-service/app/config/coordination_defaults.py:1536`                       |                |
 | `RINGRIFT_GAMES_PER_JOB`                               | `ai-service/scripts/ops/maintain_selfplay_load.sh:17`                       |                |
@@ -261,11 +257,8 @@ Generated: 2025-12-29
 | `RINGRIFT_LOW_QUALITY_THRESHOLD`                       | `ai-service/app/config/coordination_defaults.py:2101`                       |                |
 | `RINGRIFT_MANIFEST_CACHE`                              | `ai-service/app/coordination/training_data_manifest.py:161`                 |                |
 | `RINGRIFT_MASTERY_THRESHOLD`                           | `ai-service/app/config/coordination_defaults.py:2089`                       |                |
-| `RINGRIFT_MASTER_LOOP_INTERVAL`                        | `ai-service/app/config/env.py:879`                                          |                |
 | `RINGRIFT_MAX_CONCURRENT_TRANSFERS`                    | `ai-service/app/config/coordination_defaults.py:505`                        |                |
 | `RINGRIFT_MAX_CURRICULUM_WEIGHT`                       | `ai-service/app/config/coordination_defaults.py:2111`                       |                |
-| `RINGRIFT_MAX_DATA_AGE_HOURS`                          | `ai-service/app/config/coordination_defaults.py:260`                        |                |
-| `RINGRIFT_MAX_DATA_STALENESS_HOURS`                    | `ai-service/app/config/env.py:907`                                          |                |
 | `RINGRIFT_MAX_DEFAULT_WORKERS`                         | `ai-service/app/training/parallel_selfplay.py:659`                          |                |
 | `RINGRIFT_MAX_DISK_USAGE_PERCENT`                      | `ai-service/scripts/p2p/handlers/sync.py:569`                               |                |
 | `RINGRIFT_MAX_HEALTH_CHECKS`                           | `ai-service/app/config/coordination_defaults.py:457`                        |                |
@@ -287,7 +280,6 @@ Generated: 2025-12-29
 | `RINGRIFT_MIN_AVAILABILITY_SCORE`                      | `ai-service/app/config/coordination_defaults.py:185`                        |                |
 | `RINGRIFT_MIN_CURRICULUM_WEIGHT`                       | `ai-service/app/config/coordination_defaults.py:2114`                       |                |
 | `RINGRIFT_MIN_DISK_FREE_GB`                            | `ai-service/scripts/p2p/managers/job_manager.py:404`                        |                |
-| `RINGRIFT_MIN_GAMES_FOR_EXPORT`                        | `ai-service/app/config/env.py:899`                                          |                |
 | `RINGRIFT_MIN_GAMES_FOR_UPDATE`                        | `ai-service/app/config/coordination_defaults.py:2105`                       |                |
 | `RINGRIFT_MIN_GAMES_PER_ALLOCATION`                    | `ai-service/app/config/coordination_defaults.py:1784`                       |                |
 | `RINGRIFT_MIN_GPU_NODES`                               | `ai-service/app/coordination/availability/capacity_planner.py:183`          |                |
@@ -317,14 +309,14 @@ Generated: 2025-12-29
 | `RINGRIFT_NN_MODEL_ID`                                 | `ai-service/app/config/training_config.py:188`                              |                |
 | `RINGRIFT_NN_RESOLVE_MAX_PROBE`                        | `ai-service/app/ai/_neural_net_legacy.py:3488`                              |                |
 | `RINGRIFT_NODE_AVAILABILITY`                           | `ai-service/app/coordination/node_availability/daemon.py:83`                |                |
-| `RINGRIFT_NODE_AVAILABILITY_AUTO_VOTERS`               | `ai-service/tests/unit/coordination/test_node_availability_daemon.py:91`    | test-only      |
+| `RINGRIFT_NODE_AVAILABILITY_AUTO_VOTERS`               | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:169`   | test-only      |
 | `RINGRIFT_NODE_AVAILABILITY_DRY_RUN`                   | `ai-service/app/coordination/node_availability/__init__.py:23`              |                |
 | `RINGRIFT_NODE_AVAILABILITY_ENABLED`                   | `ai-service/app/coordination/node_availability/__init__.py:22`              |                |
-| `RINGRIFT_NODE_AVAILABILITY_GRACE_PERIOD`              | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:57`    | test-only      |
+| `RINGRIFT_NODE_AVAILABILITY_GRACE_PERIOD`              | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:151`   | test-only      |
 | `RINGRIFT_NODE_AVAILABILITY_INTERVAL`                  | `ai-service/app/coordination/node_availability/__init__.py:24`              |                |
-| `RINGRIFT_NODE_AVAILABILITY_LAMBDA`                    | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:73`    | test-only      |
-| `RINGRIFT_NODE_AVAILABILITY_RUNPOD`                    | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:74`    | test-only      |
-| `RINGRIFT_NODE_AVAILABILITY_VAST`                      | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:72`    | test-only      |
+| `RINGRIFT_NODE_AVAILABILITY_LAMBDA`                    | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:159`   | test-only      |
+| `RINGRIFT_NODE_AVAILABILITY_RUNPOD`                    | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:160`   | test-only      |
+| `RINGRIFT_NODE_AVAILABILITY_VAST`                      | `ai-service/tests/unit/coordination/node_availability/test_daemon.py:158`   | test-only      |
 | `RINGRIFT_NODE_BLACKLIST_DURATION`                     | `ai-service/app/config/coordination_defaults.py:1685`                       |                |
 | `RINGRIFT_NODE_ID__`                                   | `ai-service/scripts/install_launchd_services.sh:99`                         | prefix/pattern |
 | `RINGRIFT_NODE_OFFLINE_THRESHOLD`                      | `ai-service/app/config/coordination_defaults.py:725`                        |                |
@@ -603,8 +595,6 @@ Generated: 2025-12-29
 | `RINGRIFT_SSH_LONG_COMMAND_TIMEOUT`                    | `ai-service/app/config/coordination_defaults.py:1933`                       |                |
 | `RINGRIFT_SSH_MAX_DELAY`                               | `ai-service/app/config/coordination_defaults.py:690`                        |                |
 | `RINGRIFT_STAGING_`                                    | `ai-service/scripts/run_improvement_loop.py:2163`                           | prefix/pattern |
-| `RINGRIFT_STATE_SAVE_INTERVAL`                         | `ai-service/app/config/env.py:912`                                          |                |
-| `RINGRIFT_STRICT_DATA_FRESHNESS`                       | `ai-service/app/config/coordination_defaults.py:268`                        |                |
 | `RINGRIFT_STUCK_JOB_THRESHOLD`                         | `ai-service/app/config/coordination_defaults.py:1737`                       |                |
 | `RINGRIFT_SUBDIR`                                      | `ai-service/app/utils/ramdrive.py:49`                                       |                |
 | `RINGRIFT_SUBSCRIBER_TIMEOUT`                          | `ai-service/app/config/coordination_defaults.py:1814`                       |                |
@@ -659,7 +649,6 @@ Generated: 2025-12-29
 | `RINGRIFT_TRAINING_ACTIVITY`                           | `ai-service/app/coordination/training_activity_daemon.py:63`                |                |
 | `RINGRIFT_TRAINING_ACTIVITY_ENABLED`                   | `ai-service/tests/unit/coordination/test_training_activity_daemon.py:82`    | test-only      |
 | `RINGRIFT_TRAINING_ACTIVITY_TRIGGER_SYNC`              | `ai-service/tests/unit/coordination/test_training_activity_daemon.py:83`    | test-only      |
-| `RINGRIFT_TRAINING_CHECK_INTERVAL`                     | `ai-service/app/config/env.py:884`                                          |                |
 | `RINGRIFT_TRAINING_DEADLINE`                           | `ai-service/app/coordination/sync_planner_v2.py:226`                        |                |
 | `RINGRIFT_TRAINING_DIR`                                | `ai-service/app/coordination/training_data_manifest.py:156`                 |                |
 | `RINGRIFT_TRAINING_EPOCHS`                             | `ai-service/app/training/curriculum.py:209`                                 |                |

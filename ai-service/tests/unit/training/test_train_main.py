@@ -90,9 +90,9 @@ class TestTrainConfigDefaults:
         assert config.lr_scheduler == "cosine"
 
     def test_default_early_stopping(self):
-        """Default early stopping patience is 5."""
+        """Default early stopping patience is 25 (increased from 5 for stability)."""
         config = TrainConfig()
-        assert config.early_stopping_patience == 5
+        assert config.early_stopping_patience == 25
 
     def test_default_allow_empty_policies(self):
         """Default allows empty policies."""
@@ -277,12 +277,14 @@ class TestTrainingCompatibilityValidation:
         """Validation passes for compatible model and dataset."""
         from app.training.train import _validate_training_compatibility
 
-        # Create mock model and dataset with matching policy_size
+        # Create mock model and dataset with matching policy_size and board_type
         model = MagicMock()
         model.policy_size = 64
+        model.board_type = BoardType.SQUARE8
 
         dataset = MagicMock()
         dataset.policy_size = 64
+        dataset.board_type = BoardType.SQUARE8  # Must match model
         dataset.__len__ = MagicMock(return_value=100)
         dataset.__getitem__ = MagicMock(return_value=(
             torch.zeros(10),  # features
