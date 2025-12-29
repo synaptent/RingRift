@@ -827,12 +827,10 @@ class TrainingTriggerDaemon(HandlerBase):
                 base_dir = Path(__file__).resolve().parent.parent.parent
                 npz_path = state.npz_path or f"data/training/{config_key}.npz"
 
-                # December 29, 2025: Generate predictable model path for event emission
-                # This allows EvaluationDaemon to find the model after training
-                import socket
-                timestamp = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S")
-                hostname = socket.gethostname()[:20]
-                model_filename = f"{config_key}_{hostname}_{timestamp}.pth"
+                # December 29, 2025: Use canonical model paths for consistent naming
+                # Training outputs to models/canonical_{board}_{n}p.pth
+                # The training script also saves timestamped checkpoints alongside for history
+                model_filename = f"canonical_{config_key}.pth"
                 model_path = str(base_dir / "models" / model_filename)
 
                 cmd = [

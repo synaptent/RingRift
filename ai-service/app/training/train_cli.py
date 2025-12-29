@@ -723,10 +723,17 @@ def main() -> None:
             num_players=args.num_players or 2,
             fallback_path=os.path.join(config.data_dir, "dataset.npz"),
         )
-    save_path = args.save_path or os.path.join(
-        config.model_dir,
-        f"{config.model_id}.pth",
-    )
+    # December 29, 2025: Use canonical model paths by default
+    # This ensures consistent naming across all training paths
+    if args.save_path:
+        save_path = args.save_path
+    else:
+        board_type = args.board_type or 'square8'
+        num_players = args.num_players or 2
+        save_path = os.path.join(
+            config.model_dir,
+            f"canonical_{board_type}_{num_players}p.pth",
+        )
     # Board-aware default model version (centralized in config.py)
     # Auto-detects from data if data_path provided (Dec 2025)
     model_version = args.model_version

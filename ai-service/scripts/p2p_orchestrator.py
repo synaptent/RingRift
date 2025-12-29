@@ -10988,11 +10988,11 @@ print(json.dumps(result))
             learning_rate = data.get("learning_rate", None)
 
             # Start NNUE training subprocess
+            # December 29, 2025: Use canonical model paths for consistent naming
             output_path = os.path.join(
-                self.ringrift_path, "ai-service", "models", "nnue",
-                f"{board_type}_{num_players}p_auto.pt"
+                self.ringrift_path, "ai-service", "models",
+                f"canonical_{board_type}_{num_players}p.pth"
             )
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
             # Collect local selfplay databases. The NNUE trainer requires at
             # least one DB (it can replay moves when snapshots are absent).
