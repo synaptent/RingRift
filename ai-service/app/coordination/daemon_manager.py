@@ -2352,42 +2352,105 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             except (RuntimeError, OSError) as e:
                 logger.error(f"Health check error: {e}")
 
+    async def _check_single_daemon_health(
+        self,
+        daemon_type: DaemonType,
+        info: DaemonInfo,
+        health_check_timeout: float,
+    ) -> tuple[DaemonType, dict[str, Any] | None]:
+        """Check health of a single daemon.
+
+        Returns (daemon_type, health_result) where health_result is None if no check was performed.
+        Dec 29, 2025: Extracted for parallel health checks.
+        """
+        if info.instance is None or not hasattr(info.instance, 'health_check'):
+            return (daemon_type, None)
+
+        try:
+            health_method = info.instance.health_check
+            loop = asyncio.get_event_loop()
+
+            # Check if health_check is a coroutine function (async def)
+            if asyncio.iscoroutinefunction(health_method):
+                try:
+                    health_result = await asyncio.wait_for(
+                        health_method(), timeout=health_check_timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"{daemon_type.value} async health_check() timed out ({health_check_timeout}s)"
+                    )
+                    return (daemon_type, {"healthy": False, "message": f"timeout ({health_check_timeout}s)"})
+            else:
+                try:
+                    health_result = await asyncio.wait_for(
+                        loop.run_in_executor(None, health_method),
+                        timeout=health_check_timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"{daemon_type.value} sync health_check() timed out ({health_check_timeout}s)"
+                    )
+                    return (daemon_type, {"healthy": False, "message": f"timeout ({health_check_timeout}s)"})
+
+            # Handle coroutine or awaitable results
+            if asyncio.iscoroutine(health_result) or callable(getattr(health_result, '__await__', None)):
+                try:
+                    health_result = await asyncio.wait_for(health_result, timeout=health_check_timeout)
+                except asyncio.TimeoutError:
+                    return (daemon_type, {"healthy": False, "message": f"timeout ({health_check_timeout}s)"})
+
+            # Normalize result to dict
+            if hasattr(health_result, 'healthy'):
+                return (daemon_type, {"healthy": health_result.healthy, "message": getattr(health_result, 'message', '')})
+            elif isinstance(health_result, dict):
+                return (daemon_type, health_result)
+            elif isinstance(health_result, bool):
+                return (daemon_type, {"healthy": health_result, "message": ""})
+            return (daemon_type, {"healthy": True, "message": ""})
+
+        except (RuntimeError, OSError, AttributeError) as e:
+            logger.debug(f"Error calling health_check for {daemon_type.value}: {e}")
+            return (daemon_type, None)
+
     async def _check_health(self) -> None:
         """Check health of all daemons and attempt recovery of FAILED ones.
 
-        Note: Acquires self._lock to prevent race conditions with start/stop/register.
-        Restarts are done outside the lock to avoid deadlock since start() also acquires lock.
+        Dec 29, 2025: Parallelized health checks for O(t) instead of O(n*t) time.
+        - Phase 1: Under lock, identify failed daemons and collect those needing health check
+        - Phase 2: Outside lock, run health checks in parallel
+        - Phase 3: Under lock, process health check results
+
+        Note: Restarts are done outside lock to avoid deadlock (start() also acquires lock).
         """
         daemons_to_restart: list[DaemonType] = []
+        daemons_to_check: list[tuple[DaemonType, DaemonInfo]] = []
+        health_check_timeout = DaemonHealthDefaults.HEALTH_CHECK_TIMEOUT
 
+        # Phase 1: Collect daemons needing checks (under lock)
         async with self._lock:
             current_time = time.time()
 
             for daemon_type, info in list(self._daemons.items()):
                 # Attempt recovery of FAILED daemons after cooldown period
                 if info.state == DaemonState.FAILED:
-                    # Skip daemons with import errors - they can't be recovered
                     if info.import_error:
                         continue
-
                     time_since_failure = current_time - info.last_failure_time
                     if time_since_failure >= self.config.recovery_cooldown:
                         logger.info(
                             f"Attempting recovery of {daemon_type.value} after "
                             f"{time_since_failure:.0f}s cooldown"
                         )
-                        # Reset restart count to allow recovery attempts
                         info.restart_count = 0
-                        info.state = DaemonState.STOPPED  # Reset state before restart
+                        info.state = DaemonState.STOPPED
                         daemons_to_restart.append(daemon_type)
                     continue
 
                 if info.state != DaemonState.RUNNING:
                     continue
 
-                # December 2025: Skip health checks during startup grace period
-                # Slow-starting daemons (e.g., loading large state files) need time
-                # to initialize before health checks begin
+                # Skip during startup grace period
                 uptime = current_time - info.start_time
                 if uptime < info.startup_grace_period:
                     logger.debug(
@@ -2410,111 +2473,64 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                         info.last_failure_time = current_time
                     continue
 
-                # December 2025: Call daemon's health_check() if available
-                # This enables daemon-specific health monitoring beyond just task liveness
-                # December 2025 (P1): Add timeout protection to prevent health loop hanging
-                # December 2025: Enhanced to handle both sync and async methods with timeout
+                # Queue for health check if has health_check method
                 if info.instance is not None and hasattr(info.instance, 'health_check'):
-                    try:
-                        health_check_timeout = 5.0  # seconds
-                        health_method = info.instance.health_check
-                        loop = asyncio.get_event_loop()
+                    daemons_to_check.append((daemon_type, info))
 
-                        # Check if health_check is a coroutine function (async def)
-                        if asyncio.iscoroutinefunction(health_method):
-                            # Async health check - call and await with timeout
-                            try:
-                                health_result = await asyncio.wait_for(
-                                    health_method(), timeout=health_check_timeout
-                                )
-                            except asyncio.TimeoutError:
-                                logger.warning(
-                                    f"{daemon_type.value} async health_check() timed out "
-                                    f"({health_check_timeout}s)"
-                                )
-                                health_result = {
-                                    "healthy": False,
-                                    "message": f"health_check() timeout ({health_check_timeout}s)",
-                                }
+        # Phase 2: Run health checks in parallel (outside lock)
+        # Dec 29, 2025: Parallel health checks reduce time from O(n*t) to O(t)
+        health_results: dict[DaemonType, dict[str, Any] | None] = {}
+        if daemons_to_check and DaemonHealthDefaults.PARALLEL_HEALTH_CHECKS:
+            max_concurrent = DaemonHealthDefaults.MAX_PARALLEL_HEALTH_CHECKS
+            if max_concurrent <= 0:
+                max_concurrent = len(daemons_to_check)
+
+            # Create semaphore to limit concurrency
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+            async def check_with_semaphore(dt: DaemonType, di: DaemonInfo) -> tuple[DaemonType, dict[str, Any] | None]:
+                async with semaphore:
+                    return await self._check_single_daemon_health(dt, di, health_check_timeout)
+
+            # Run all health checks concurrently
+            results = await asyncio.gather(
+                *[check_with_semaphore(dt, di) for dt, di in daemons_to_check],
+                return_exceptions=True
+            )
+
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.debug(f"Health check exception: {result}")
+                else:
+                    daemon_type, health_result = result
+                    health_results[daemon_type] = health_result
+        elif daemons_to_check:
+            # Fallback to sequential (if parallel disabled)
+            for daemon_type, info in daemons_to_check:
+                _, health_result = await self._check_single_daemon_health(daemon_type, info, health_check_timeout)
+                health_results[daemon_type] = health_result
+
+        # Phase 3: Process health check results (under lock)
+        if health_results:
+            async with self._lock:
+                current_time = time.time()
+                for daemon_type, health_result in health_results.items():
+                    if health_result is None:
+                        continue
+                    info = self._daemons.get(daemon_type)
+                    if info is None:
+                        continue
+
+                    is_healthy = health_result.get('healthy', True)
+                    if not is_healthy:
+                        message = health_result.get('message', 'unhealthy')
+                        logger.warning(f"{daemon_type.value} health check failed: {message}")
+                        info.last_error = f"Health check failed: {message}"
+                        if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
+                            daemons_to_restart.append(daemon_type)
                         else:
-                            # Sync health check - run in executor with timeout
-                            # This prevents blocking sync calls from hanging the health loop
-                            try:
-                                health_result = await asyncio.wait_for(
-                                    loop.run_in_executor(None, health_method),
-                                    timeout=health_check_timeout
-                                )
-                            except asyncio.TimeoutError:
-                                logger.warning(
-                                    f"{daemon_type.value} sync health_check() timed out "
-                                    f"({health_check_timeout}s)"
-                                )
-                                health_result = {
-                                    "healthy": False,
-                                    "message": f"health_check() timeout ({health_check_timeout}s)",
-                                }
-
-                        # Handle case where sync method returns a coroutine (unusual but possible)
-                        if asyncio.iscoroutine(health_result):
-                            try:
-                                health_result = await asyncio.wait_for(
-                                    health_result, timeout=health_check_timeout
-                                )
-                            except asyncio.TimeoutError:
-                                logger.warning(
-                                    f"{daemon_type.value} returned coroutine timed out "
-                                    f"({health_check_timeout}s)"
-                                )
-                                health_result = {
-                                    "healthy": False,
-                                    "message": f"health_check() timeout ({health_check_timeout}s)",
-                                }
-                        elif callable(getattr(health_result, '__await__', None)):
-                            # Awaitable object (not coroutine but can be awaited)
-                            try:
-                                health_result = await asyncio.wait_for(
-                                    health_result, timeout=health_check_timeout
-                                )
-                            except asyncio.TimeoutError:
-                                logger.warning(
-                                    f"{daemon_type.value} awaitable health_check() timed out "
-                                    f"({health_check_timeout}s)"
-                                )
-                                health_result = {
-                                    "healthy": False,
-                                    "message": f"health_check() timeout ({health_check_timeout}s)",
-                                }
-
-                        # Check if result indicates unhealthy state
-                        is_healthy = True
-                        if hasattr(health_result, 'healthy'):
-                            is_healthy = health_result.healthy
-                        elif isinstance(health_result, dict):
-                            is_healthy = health_result.get('healthy', True)
-                        elif isinstance(health_result, bool):
-                            is_healthy = health_result
-
-                        if not is_healthy:
-                            message = ""
-                            if hasattr(health_result, 'message'):
-                                message = health_result.message
-                            elif isinstance(health_result, dict):
-                                message = health_result.get('message', 'unhealthy')
-
-                            logger.warning(
-                                f"{daemon_type.value} health check failed: {message}"
-                            )
-                            info.last_error = f"Health check failed: {message}"
-                            # Mark for restart if auto-restart is enabled
-                            if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
-                                daemons_to_restart.append(daemon_type)
-                            else:
-                                info.state = DaemonState.FAILED
-                                info.last_failure_time = current_time
-                    except (RuntimeError, OSError, AttributeError) as e:
-                        logger.debug(
-                            f"Error calling health_check for {daemon_type.value}: {e}"
-                        )
+                            info.state = DaemonState.FAILED
+                            info.last_failure_time = current_time
 
         # Handle restarts outside lock to prevent deadlock (start() also acquires lock)
         # Dec 2025: Check cascade circuit breaker first - if too many restarts are happening
