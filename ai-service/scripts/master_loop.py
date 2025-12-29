@@ -656,13 +656,36 @@ class MasterLoopController:
         December 2025: Added as part of Phase E cluster integration.
         Prevents master loop from starting if P2P cluster is unavailable.
 
+        December 29, 2025: Added container networking setup for Vast.ai/RunPod nodes.
+        Container nodes need userspace Tailscale with SOCKS5 proxy before P2P works.
+
         Returns:
             Tuple of (success, list of error messages)
         """
         import aiohttp
         from app.config.cluster_config import load_cluster_config, get_p2p_port
+        from app.config.env import env
 
         errors = []
+
+        # Container networking setup (December 29, 2025)
+        # Container nodes (Vast.ai, RunPod) need userspace Tailscale for P2P
+        if env.needs_userspace_tailscale:
+            try:
+                from app.coordination.container_tailscale_setup import setup_container_networking
+                setup_ok, setup_message = await setup_container_networking()
+                if setup_ok:
+                    logger.info(f"[MasterLoop] Container networking ready: {setup_message}")
+                else:
+                    logger.warning(f"[MasterLoop] Container networking setup failed: {setup_message}")
+                    errors.append(f"Container networking: {setup_message}")
+                    # Don't fail hard - container might already have Tailscale from startup script
+            except ImportError:
+                logger.debug("[MasterLoop] Container tailscale setup module not available")
+            except Exception as e:
+                logger.warning(f"[MasterLoop] Container networking setup error: {e}")
+                errors.append(f"Container networking error: {e}")
+
         config = load_cluster_config()
 
         # Get voter nodes from config

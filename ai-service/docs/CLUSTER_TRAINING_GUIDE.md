@@ -154,7 +154,7 @@ Per TRAINING_DATA_REGISTRY.md, canonical training data must:
 1. Pass TS↔Python parity validation
 2. Use canonical phase history (7-phase model)
 3. Include explicit bookkeeping moves
-4. Be schema version 9+
+4. Be schema version 15+ (see `ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md`)
 
 ### Coverage Matrix Target
 

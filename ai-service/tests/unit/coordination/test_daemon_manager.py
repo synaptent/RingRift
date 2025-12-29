@@ -2002,7 +2002,9 @@ class TestCheckHealth:
     @pytest.mark.asyncio
     async def test_check_health_async_result(self):
         """_check_health() handles async health_check method."""
-        manager = DaemonManager()
+        # Disable coordination wiring to avoid hanging in tests
+        config = DaemonManagerConfig(enable_coordination_wiring=False)
+        manager = DaemonManager(config)
         manager._factories.clear()
         manager._daemons.clear()
         manager._running = True
@@ -2028,11 +2030,12 @@ class TestCheckHealth:
     @pytest.mark.asyncio
     async def test_check_health_unhealthy_triggers_restart(self):
         """_check_health() triggers restart on unhealthy result."""
-        manager = DaemonManager()
+        # Disable coordination wiring to avoid hanging in tests
+        config = DaemonManagerConfig(enable_coordination_wiring=False, auto_restart_failed=True)
+        manager = DaemonManager(config)
         manager._factories.clear()
         manager._daemons.clear()
         manager._running = True
-        manager.config.auto_restart_failed = True
 
         class UnhealthyDaemon:
             def health_check(self):

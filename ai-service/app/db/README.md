@@ -318,6 +318,7 @@ for game in games:
 ```python
 from app.db import GameReplayDB
 from app.game_engine import GameEngine
+from app.models import Move
 
 db = GameReplayDB("data/games/selfplay.db")
 game_id = "abc123"
@@ -471,6 +472,9 @@ SQLite timeout values are configured in `app/config/thresholds.py`
 ### Recording Configuration
 
 ```python
+from dataclasses import dataclass, field
+from app.db import RecordSource
+
 @dataclass
 class RecordingConfig:
     board_type: str
