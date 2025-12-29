@@ -1952,10 +1952,12 @@ class P2POrchestrator(
         December 2025: Extracted loops run alongside inline loops during
         the gradual migration. Once verified, inline loops will be deprecated.
         """
+        logger.info(f"[LoopManager] _register_extracted_loops called, already_registered={self._loops_registered}")
         if self._loops_registered:
             return True
 
         manager = self._get_loop_manager()
+        logger.info(f"[LoopManager] Got manager: {manager}")
         if manager is None:
             logger.info("LoopManager: not available, using inline loops only")
             return False
@@ -8127,6 +8129,16 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             partition_status = {"error": str(e)}
 
+        # Phase 4 (Dec 2025): Background loop status from LoopManager
+        try:
+            loop_manager = self._get_loop_manager()
+            if loop_manager is not None:
+                background_loops = loop_manager.get_all_status()
+            else:
+                background_loops = {"error": "LoopManager not initialized"}
+        except Exception as e:  # noqa: BLE001
+            background_loops = {"error": str(e)}
+
         return web.json_response({
             "node_id": self.node_id,
             "role": self.role.value,
@@ -8157,6 +8169,7 @@ class P2POrchestrator(
             "swim_raft": swim_raft_status,
             "event_subscriptions": event_subscriptions,
             "partition": partition_status,
+            "background_loops": background_loops,
         })
 
     async def handle_external_work(self, request: web.Request) -> web.Response:
@@ -25379,6 +25392,7 @@ print(json.dumps({{
         # - WorkQueueMaintenanceLoop, NATManagementLoop, ManifestCollectionLoop, ValidationLoop
         # - DataManagementLoop, ModelSyncLoop
         job_reaper_started = False
+        logger.info(f"[LoopManager] Phase 4 startup: EXTRACTED_LOOPS_ENABLED={EXTRACTED_LOOPS_ENABLED}")
         if EXTRACTED_LOOPS_ENABLED and self._register_extracted_loops():
             loop_manager = self._get_loop_manager()
             if loop_manager is not None:
