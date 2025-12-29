@@ -220,7 +220,9 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                     updates = await self._check_provider(checker, hosts)
                     all_updates.update(updates)
                     self._stats.record_provider_check(provider, success=True)
-                except Exception as e:
+                except (OSError, asyncio.TimeoutError, ValueError, KeyError) as e:
+                    # OSError: network/file issues, TimeoutError: API timeout
+                    # ValueError: JSON/data parsing, KeyError: missing response fields
                     logger.error(f"Error checking {provider}: {e}")
                     self._stats.record_provider_check(provider, success=False)
 

@@ -174,14 +174,14 @@ def _check_integrity_with_interrupt(
             cursor = conn.cursor()
             cursor.execute("PRAGMA integrity_check")
             result_container["result"] = cursor.fetchone()
-        except Exception as e:
+        except sqlite3.Error as e:
             result_container["error"] = e
 
     def interrupt_check():
         if conn is not None:
             try:
                 conn.interrupt()
-            except Exception:
+            except (RuntimeError, OSError):
                 pass
 
     check_thread = threading.Thread(target=run_check)
@@ -195,7 +195,7 @@ def _check_integrity_with_interrupt(
         if conn:
             try:
                 conn.close()
-            except Exception:
+            except (sqlite3.ProgrammingError, OSError):
                 pass
         # Fall back to quick check
         return _check_integrity_quick(db_path)
@@ -204,7 +204,7 @@ def _check_integrity_with_interrupt(
     if conn:
         try:
             conn.close()
-        except Exception:
+        except (sqlite3.ProgrammingError, OSError):
             pass
 
     if result_container["error"]:
@@ -287,7 +287,7 @@ def recover_corrupted_database(
     except subprocess.TimeoutExpired:
         print(f"{log_prefix} Recovery timed out for {db_path.name}")
         return False
-    except Exception as e:
+    except (OSError, subprocess.CalledProcessError) as e:
         print(f"{log_prefix} Recovery error for {db_path.name}: {e}")
         return False
 
@@ -363,7 +363,7 @@ def check_and_repair_databases(
                     db_path.rename(backup_path)
                     results["failed"] += 1  # Counts as failed since no recovery attempted
                     print(f"{log_prefix} Moved corrupted DB to {backup_path}")
-                except Exception as e:
+                except OSError as e:
                     print(f"{log_prefix} Failed to move corrupted DB: {e}")
 
     return results

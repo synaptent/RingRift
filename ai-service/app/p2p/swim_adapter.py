@@ -309,8 +309,8 @@ class SwimMembershipManager:
                     f"SWIM bootstrap attempt {attempt + 1}/{bootstrap_config.max_attempts} "
                     f"failed (network): {e}"
                 )
-            except Exception as e:
-                # Non-network errors may not be retryable
+            except (RuntimeError, ValueError) as e:
+                # Configuration/initialization errors may not be retryable
                 last_error = e
                 logger.warning(
                     f"SWIM bootstrap attempt {attempt + 1}/{bootstrap_config.max_attempts} "
@@ -340,7 +340,7 @@ class SwimMembershipManager:
         if self._swim and self._started:
             try:
                 await self._swim.stop()
-            except Exception as e:
+            except (RuntimeError, asyncio.CancelledError) as e:
                 logger.warning(f"Error stopping SWIM: {e}")
             finally:
                 self._started = False
@@ -435,7 +435,7 @@ class SwimMembershipManager:
                     else "unknown"
                 ),
             }
-        except Exception as e:
+        except (RuntimeError, AttributeError, ValueError) as e:
             return {
                 "healthy": False,
                 "started": True,
@@ -451,7 +451,7 @@ class SwimMembershipManager:
         if self.on_member_alive:
             try:
                 self.on_member_alive(member.id)
-            except Exception as e:
+            except (TypeError, AttributeError, ValueError) as e:
                 logger.error(f"Error in on_member_alive callback: {e}")
 
     def _handle_member_failed(self, member: SwimMember):
@@ -461,7 +461,7 @@ class SwimMembershipManager:
         if self.on_member_failed:
             try:
                 self.on_member_failed(member.id)
-            except Exception as e:
+            except (TypeError, AttributeError, ValueError) as e:
                 logger.error(f"Error in on_member_failed callback: {e}")
 
     def get_alive_peers(self) -> list[str]:
@@ -498,7 +498,7 @@ class SwimMembershipManager:
                 if (member.state if hasattr(member, 'state') else "alive") == "alive"
                 and (member.id if hasattr(member, 'id') else str(member)) != self.node_id
             ]
-        except Exception as e:
+        except (RuntimeError, AttributeError, StopIteration) as e:
             logger.error(f"Error getting alive peers: {e}")
             return []
 
@@ -549,7 +549,7 @@ class SwimMembershipManager:
                 return False
             state = member.state if hasattr(member, 'state') else "unknown"
             return state == "alive"
-        except Exception as e:
+        except (RuntimeError, AttributeError, StopIteration) as e:
             logger.error(f"Error checking peer {peer_id}: {e}")
             return False
 
@@ -601,7 +601,7 @@ class SwimMembershipManager:
                 "bind_port": self.config.bind_port,
                 "failure_timeout": self.config.failure_timeout,
             }
-        except Exception as e:
+        except (RuntimeError, AttributeError, ValueError) as e:
             logger.error(f"Error getting membership summary: {e}")
             return {
                 "node_id": self.node_id,
@@ -758,7 +758,7 @@ class HybridMembershipManager:
         if self.swim_manager and self.swim_manager._started:
             try:
                 swim_alive = set(self.swim_manager.get_alive_peers())
-            except Exception as e:
+            except (RuntimeError, AttributeError, StopIteration) as e:
                 logger.debug(f"SWIM get_alive_peers error: {e}")
 
         # Get HTTP alive peers

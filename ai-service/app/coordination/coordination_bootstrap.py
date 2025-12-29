@@ -595,7 +595,9 @@ def _init_coordinator_from_spec(
                             "Sync will not respond to events."
                         )
                         status.error = "SyncRouter wiring failed - method missing"
-                    except Exception as wire_err:
+                    except (TypeError, ValueError, RuntimeError, ImportError) as wire_err:
+                        # TypeError: wrong callback signature, ValueError: invalid config
+                        # RuntimeError: event router init failed, ImportError: missing module
                         logger.error(
                             f"[Bootstrap] CRITICAL: SyncRouter wiring failed: {wire_err}"
                         )
@@ -1405,7 +1407,9 @@ def _restore_event_subscriptions() -> dict[str, Any]:
     except ImportError as e:
         results["errors"].append(f"Event router not available: {e}")
         logger.debug(f"[Bootstrap] Subscription restoration not available: {e}")
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+        # AttributeError/TypeError: invalid method access, ValueError: bad config
+        # RuntimeError: initialization failure
         results["errors"].append(str(e))
         logger.warning(f"[Bootstrap] Subscription restoration failed: {e}")
 

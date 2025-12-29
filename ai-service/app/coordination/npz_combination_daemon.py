@@ -202,7 +202,8 @@ class NPZCombinationDaemon(HandlerBase):
                 self.combination_stats.combinations_failed += 1
                 error = result.error if result else "Unknown error"
                 self._emit_combination_failed(config_key, error)
-        except Exception as e:
+        except (OSError, IOError, ValueError, MemoryError) as e:
+            # OSError/IOError: file access, ValueError: data format, MemoryError: large arrays
             logger.exception(f"Error combining NPZ for {config_key}: {e}")
             self.combination_stats.combinations_failed += 1
             self._emit_combination_failed(config_key, str(e))

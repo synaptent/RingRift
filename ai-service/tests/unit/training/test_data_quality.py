@@ -416,3 +416,487 @@ class TestDatabaseCheckerEdgeCases:
         db_path.write_text("not a valid sqlite database")
         score = checker.get_quality_score(str(db_path))
         assert score == 0.0
+
+
+# =============================================================================
+# embed_checksums_in_save_kwargs Tests
+# =============================================================================
+
+
+class TestEmbedChecksumsInSaveKwargs:
+    """Tests for embed_checksums_in_save_kwargs function."""
+
+    def test_adds_checksum_field(self):
+        """Checksums are added to save_kwargs."""
+        from app.training.data_quality import embed_checksums_in_save_kwargs
+
+        data = {
+            "features": np.random.randn(10, 5).astype(np.float32),
+            "values": np.random.rand(10).astype(np.float32),
+        }
+        result = embed_checksums_in_save_kwargs(data)
+        assert "data_checksums" in result
+        assert isinstance(result["data_checksums"], np.ndarray)
+
+    def test_checksums_are_json(self):
+        """Checksum field contains valid JSON."""
+        import json
+
+        from app.training.data_quality import embed_checksums_in_save_kwargs
+
+        data = {"arr": np.array([1, 2, 3])}
+        result = embed_checksums_in_save_kwargs(data)
+        checksums_json = str(result["data_checksums"])
+        parsed = json.loads(checksums_json)
+        assert "arr" in parsed
+
+    def test_original_data_preserved(self):
+        """Original arrays are preserved in result."""
+        from app.training.data_quality import embed_checksums_in_save_kwargs
+
+        data = {
+            "features": np.array([1, 2, 3]),
+            "values": np.array([0.5, 0.5]),
+        }
+        result = embed_checksums_in_save_kwargs(data)
+        assert "features" in result
+        assert "values" in result
+        assert np.array_equal(result["features"], data["features"])
+
+
+# =============================================================================
+# validate_database_for_export Tests
+# =============================================================================
+
+
+class TestValidateDatabaseForExport:
+    """Tests for validate_database_for_export function."""
+
+    @pytest.fixture
+    def db_with_moves(self, tmp_path):
+        """Create a database with game_moves table."""
+        db_path = tmp_path / "with_moves.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT NOT NULL,
+                num_players INTEGER NOT NULL,
+                game_status TEXT NOT NULL,
+                winner INTEGER,
+                total_moves INTEGER NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE game_moves (
+                id INTEGER PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                move_number INTEGER NOT NULL,
+                move_data TEXT NOT NULL,
+                FOREIGN KEY (game_id) REFERENCES games(game_id)
+            )
+        """)
+        # Insert games with moves
+        for i in range(10):
+            game_id = f"game_{i}"
+            cursor.execute(
+                "INSERT INTO games VALUES (?, 'hex8', 2, 'completed', 0, 5)",
+                (game_id,),
+            )
+            for j in range(5):
+                cursor.execute(
+                    "INSERT INTO game_moves (game_id, move_number, move_data) VALUES (?, ?, ?)",
+                    (game_id, j, '{"type": "PLACE_RING", "to": [0, 0]}'),
+                )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    @pytest.fixture
+    def db_without_moves(self, tmp_path):
+        """Create a database without moves."""
+        db_path = tmp_path / "no_moves.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT NOT NULL,
+                num_players INTEGER NOT NULL,
+                game_status TEXT NOT NULL,
+                winner INTEGER,
+                total_moves INTEGER NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE game_moves (
+                id INTEGER PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                move_number INTEGER NOT NULL,
+                move_data TEXT NOT NULL
+            )
+        """)
+        # Insert games WITHOUT moves
+        for i in range(10):
+            cursor.execute(
+                "INSERT INTO games VALUES (?, 'hex8', 2, 'completed', 0, 5)",
+                (f"game_{i}",),
+            )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    def test_valid_database_passes(self, db_with_moves):
+        """Database with moves passes validation."""
+        from app.training.data_quality import validate_database_for_export
+
+        is_valid, msg = validate_database_for_export(db_with_moves)
+        assert is_valid
+        assert "OK" in msg or "100" in msg
+
+    def test_missing_database_fails(self):
+        """Missing database fails validation."""
+        from app.training.data_quality import validate_database_for_export
+
+        is_valid, msg = validate_database_for_export("/nonexistent/db.db")
+        assert not is_valid
+        assert "not found" in msg.lower()
+
+    def test_database_without_moves_fails(self, db_without_moves):
+        """Database without move data fails validation."""
+        from app.training.data_quality import validate_database_for_export
+
+        is_valid, msg = validate_database_for_export(db_without_moves)
+        assert not is_valid
+        assert "move" in msg.lower() or "CRITICAL" in msg
+
+    def test_config_filter(self, db_with_moves):
+        """Config filter for board_type and num_players works."""
+        from app.training.data_quality import validate_database_for_export
+
+        # hex8 2p exists
+        is_valid, msg = validate_database_for_export(
+            db_with_moves, board_type="hex8", num_players=2
+        )
+        assert is_valid
+
+        # square8 4p doesn't exist
+        is_valid, msg = validate_database_for_export(
+            db_with_moves, board_type="square8", num_players=4
+        )
+        assert not is_valid
+
+
+# =============================================================================
+# MultiplayerValidationResult Tests
+# =============================================================================
+
+
+class TestMultiplayerValidationResult:
+    """Tests for MultiplayerValidationResult dataclass."""
+
+    def test_creation(self):
+        """Result can be created with required fields."""
+        from app.training.data_quality import MultiplayerValidationResult
+
+        result = MultiplayerValidationResult(
+            valid=True,
+            num_samples=1000,
+            expected_players=4,
+            values_mp_shape=(1000, 4),
+        )
+        assert result.valid is True
+        assert result.num_samples == 1000
+        assert result.expected_players == 4
+
+    def test_default_lists(self):
+        """Errors and warnings default to empty lists."""
+        from app.training.data_quality import MultiplayerValidationResult
+
+        result = MultiplayerValidationResult(
+            valid=True,
+            num_samples=100,
+            expected_players=2,
+            values_mp_shape=(100, 2),
+        )
+        assert result.errors == []
+        assert result.warnings == []
+
+    def test_str_representation(self):
+        """String representation is informative."""
+        from app.training.data_quality import MultiplayerValidationResult
+
+        result = MultiplayerValidationResult(
+            valid=False,
+            num_samples=50,
+            expected_players=4,
+            values_mp_shape=(50, 2),
+            errors=["Wrong dimension"],
+        )
+        str_repr = str(result)
+        assert "FAIL" in str_repr
+        assert "50" in str_repr
+        assert "Wrong dimension" in str_repr
+
+
+# =============================================================================
+# validate_multiplayer_training_data Tests
+# =============================================================================
+
+
+class TestValidateMultiplayerTrainingData:
+    """Tests for validate_multiplayer_training_data function."""
+
+    @pytest.fixture
+    def valid_4p_npz(self, tmp_path):
+        """Create valid 4-player NPZ file."""
+        npz_path = tmp_path / "4p_valid.npz"
+        n_samples = 2000
+        np.savez(
+            npz_path,
+            features=np.random.randn(n_samples, 16, 9, 9).astype(np.float32),
+            values_mp=np.random.rand(n_samples, 4).astype(np.float32) * 2 - 1,  # [-1, 1]
+            num_players=np.full(n_samples, 4, dtype=np.int32),
+        )
+        return npz_path
+
+    @pytest.fixture
+    def wrong_dimension_npz(self, tmp_path):
+        """Create NPZ with wrong values_mp dimension."""
+        npz_path = tmp_path / "wrong_dim.npz"
+        n_samples = 1000
+        np.savez(
+            npz_path,
+            features=np.random.randn(n_samples, 16, 9, 9).astype(np.float32),
+            values_mp=np.random.rand(n_samples, 2).astype(np.float32),  # Only 2 columns!
+            num_players=np.full(n_samples, 4, dtype=np.int32),
+        )
+        return npz_path
+
+    def test_valid_data_passes(self, valid_4p_npz):
+        """Valid 4-player data passes validation."""
+        from app.training.data_quality import validate_multiplayer_training_data
+
+        result = validate_multiplayer_training_data(valid_4p_npz, expected_players=4)
+        assert result.valid
+        assert result.num_samples == 2000
+        assert len(result.errors) == 0
+
+    def test_missing_file_fails(self):
+        """Missing file fails validation."""
+        from app.training.data_quality import validate_multiplayer_training_data
+
+        result = validate_multiplayer_training_data(
+            "/nonexistent/file.npz", expected_players=4
+        )
+        assert not result.valid
+        assert "not found" in result.errors[0].lower()
+
+    def test_wrong_dimension_fails(self, wrong_dimension_npz):
+        """Wrong values_mp dimension fails validation."""
+        from app.training.data_quality import validate_multiplayer_training_data
+
+        result = validate_multiplayer_training_data(
+            wrong_dimension_npz, expected_players=4
+        )
+        assert not result.valid
+        assert any("dimension" in e.lower() for e in result.errors)
+
+    def test_insufficient_samples_fails(self, tmp_path):
+        """Insufficient samples fails validation."""
+        from app.training.data_quality import validate_multiplayer_training_data
+
+        npz_path = tmp_path / "small.npz"
+        np.savez(
+            npz_path,
+            features=np.random.randn(50, 16, 9, 9).astype(np.float32),
+            values_mp=np.random.rand(50, 4).astype(np.float32),
+            num_players=np.full(50, 4, dtype=np.int32),
+        )
+        result = validate_multiplayer_training_data(
+            npz_path, expected_players=4, min_samples=1000
+        )
+        assert not result.valid
+        assert any("insufficient" in e.lower() for e in result.errors)
+
+    def test_missing_values_mp_fails(self, tmp_path):
+        """Missing values_mp array fails validation."""
+        from app.training.data_quality import validate_multiplayer_training_data
+
+        npz_path = tmp_path / "no_values_mp.npz"
+        np.savez(
+            npz_path,
+            features=np.random.randn(1000, 16, 9, 9).astype(np.float32),
+            values=np.random.rand(1000).astype(np.float32),  # Old format, no values_mp
+        )
+        result = validate_multiplayer_training_data(npz_path, expected_players=4)
+        assert not result.valid
+        assert any("values_mp" in e.lower() for e in result.errors)
+
+
+# =============================================================================
+# check_games_with_moves Tests
+# =============================================================================
+
+
+class TestCheckGamesWithMoves:
+    """Tests for DatabaseQualityChecker.check_games_with_moves method."""
+
+    @pytest.fixture
+    def checker(self):
+        return DatabaseQualityChecker()
+
+    @pytest.fixture
+    def db_high_coverage(self, tmp_path):
+        """Database with 95% move coverage."""
+        db_path = tmp_path / "high_coverage.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT NOT NULL,
+                num_players INTEGER NOT NULL,
+                game_status TEXT NOT NULL,
+                winner INTEGER,
+                total_moves INTEGER NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE game_moves (
+                id INTEGER PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                move_number INTEGER NOT NULL,
+                move_data TEXT NOT NULL
+            )
+        """)
+        # 95 games with moves, 5 without
+        for i in range(100):
+            game_id = f"game_{i}"
+            cursor.execute(
+                "INSERT INTO games VALUES (?, 'hex8', 2, 'completed', 0, 5)",
+                (game_id,),
+            )
+            if i < 95:  # 95% have moves
+                cursor.execute(
+                    "INSERT INTO game_moves (game_id, move_number, move_data) VALUES (?, 0, '{}')",
+                    (game_id,),
+                )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    @pytest.fixture
+    def db_low_coverage(self, tmp_path):
+        """Database with only 5% move coverage."""
+        db_path = tmp_path / "low_coverage.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT,
+                num_players INTEGER,
+                game_status TEXT,
+                winner INTEGER,
+                total_moves INTEGER
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE game_moves (
+                id INTEGER PRIMARY KEY,
+                game_id TEXT,
+                move_number INTEGER,
+                move_data TEXT
+            )
+        """)
+        # 5 games with moves, 95 without
+        for i in range(100):
+            game_id = f"game_{i}"
+            cursor.execute(
+                "INSERT INTO games VALUES (?, 'hex8', 2, 'completed', 0, 5)",
+                (game_id,),
+            )
+            if i < 5:  # Only 5% have moves
+                cursor.execute(
+                    "INSERT INTO game_moves (game_id, move_number, move_data) VALUES (?, 0, '{}')",
+                    (game_id,),
+                )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    def test_high_coverage_passes(self, checker, db_high_coverage):
+        """High move coverage passes check."""
+        passes, stats = checker.check_games_with_moves(db_high_coverage)
+        assert passes
+        assert stats["coverage_percent"] >= 90.0
+        assert stats["games_with_moves"] == 95
+
+    def test_low_coverage_fails(self, checker, db_low_coverage):
+        """Low move coverage fails check."""
+        passes, stats = checker.check_games_with_moves(db_low_coverage)
+        assert not passes
+        assert stats["coverage_percent"] < 10.0
+        assert "CRITICAL" in stats["issue"]
+
+    def test_missing_db(self, checker):
+        """Missing database fails check."""
+        passes, stats = checker.check_games_with_moves("/nonexistent.db")
+        assert not passes
+        assert stats["issue"] is not None
+
+    def test_stats_structure(self, checker, db_high_coverage):
+        """Stats dict has expected structure."""
+        _, stats = checker.check_games_with_moves(db_high_coverage)
+        assert "total_games" in stats
+        assert "games_with_moves" in stats
+        assert "games_without_moves" in stats
+        assert "coverage_percent" in stats
+        assert "schema_type" in stats
+
+
+# =============================================================================
+# DataQualityReport __str__ Tests
+# =============================================================================
+
+
+class TestDataQualityReportStr:
+    """Tests for DataQualityReport string representation."""
+
+    def test_str_includes_path(self):
+        """String includes database path."""
+        report = DataQualityReport(database_path="/path/to/db.db")
+        assert "/path/to/db.db" in str(report)
+
+    def test_str_includes_counts(self):
+        """String includes game counts."""
+        report = DataQualityReport(total_games=1000, valid_games=950)
+        s = str(report)
+        assert "1,000" in s or "1000" in s
+        assert "950" in s
+
+    def test_str_includes_score(self):
+        """String includes quality score."""
+        report = DataQualityReport(quality_score=0.85)
+        assert "85" in str(report)
+
+    def test_str_includes_issues(self):
+        """String includes issues."""
+        report = DataQualityReport(issues=["Issue one", "Issue two"])
+        s = str(report)
+        assert "Issue one" in s
+        assert "Issue two" in s
+
+    def test_str_includes_recommendations(self):
+        """String includes recommendations."""
+        report = DataQualityReport(recommendations=["Fix this", "Improve that"])
+        s = str(report)
+        assert "Fix this" in s
+        assert "Improve that" in s
+
+    def test_str_no_issues_message(self):
+        """String shows 'no issues' when list is empty."""
+        report = DataQualityReport(issues=[])
+        assert "No issues" in str(report) or "no issues" in str(report).lower()

@@ -3600,6 +3600,44 @@ async def emit_node_capacity_updated(
 
 
 # =============================================================================
+# Parity Validation Events (December 29, 2025)
+# =============================================================================
+
+
+async def emit_parity_failure_rate_changed(
+    new_rate: float,
+    old_rate: float,
+    board_type: str = "",
+    num_players: int = 0,
+    total_checked: int = 0,
+    *,
+    source: str = "ParityValidator",
+) -> None:
+    """Emit PARITY_FAILURE_RATE_CHANGED event when parity failure rate changes significantly.
+
+    Args:
+        new_rate: New parity failure rate (0.0-1.0)
+        old_rate: Previous parity failure rate (0.0-1.0)
+        board_type: Board type being validated (if config-specific)
+        num_players: Number of players (if config-specific)
+        total_checked: Total games checked in this batch
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.PARITY_FAILURE_RATE_CHANGED,
+        payload={
+            "new_rate": new_rate,
+            "old_rate": old_rate,
+            "board_type": board_type,
+            "num_players": num_players,
+            "total_checked": total_checked,
+            "rate_change": new_rate - old_rate,
+        },
+        source=source,
+    ))
+
+
+# =============================================================================
 # Deprecation Support (December 2025)
 # =============================================================================
 # This module is deprecated in favor of app.coordination.event_router.
