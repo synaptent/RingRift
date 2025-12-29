@@ -414,6 +414,26 @@ class ModelVersioningError(TrainingError):
     code = ErrorCode.MODEL_LOAD_FAILED
 
 
+class CheckpointError(TrainingError):
+    """Error during checkpoint save/load operations."""
+    code = ErrorCode.CHECKPOINT_CORRUPT
+
+
+class DataLoadError(TrainingError):
+    """Error loading training data."""
+    code = ErrorCode.DATA_QUALITY_LOW
+
+
+class EvaluationError(TrainingError):
+    """Error during model evaluation."""
+    code = ErrorCode.TRAINING_INTERRUPTED
+
+
+class SelfplayError(TrainingError):
+    """Error during self-play data generation."""
+    code = ErrorCode.TRAINING_INTERRUPTED
+
+
 # =============================================================================
 # Daemon Errors
 # =============================================================================
@@ -582,6 +602,10 @@ __all__ = [
     "CheckpointCorruptError",
     "ConvergenceError",
     "ModelVersioningError",
+    "CheckpointError",
+    "DataLoadError",
+    "EvaluationError",
+    "SelfplayError",
     # Daemon
     "DaemonError",
     "DaemonStartupError",
