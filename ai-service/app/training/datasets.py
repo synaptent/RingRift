@@ -1030,6 +1030,98 @@ class WeightedRingRiftDataset(RingRiftDataset):
 
                 weights[i] = weight
 
+        elif self.weighting == 'quality':
+            # Weight by per-game quality score (computed during export)
+            # Quality scores range [0, 1] - scale to [0.5, 2.0] for weighting
+            quality_scores = None
+            if self.data is not None and 'quality_score' in self.data:
+                quality_scores = self.data['quality_score']
+
+            if quality_scores is not None:
+                for i, orig_idx in enumerate(self.valid_indices):
+                    q = float(quality_scores[orig_idx])
+                    # Scale [0, 1] to [0.5, 2.0]
+                    weights[i] = 0.5 + 1.5 * q
+            else:
+                logger.warning(
+                    "quality weighting requested but quality_score not in dataset. "
+                    "Using uniform weights. Re-export with export_replay_dataset.py to include."
+                )
+
+        elif self.weighting == 'opponent_elo':
+            # Weight higher for games against stronger opponents
+            # Stronger opponents produce more valuable training signal
+            opponent_elo = None
+            if self.data is not None and 'opponent_elo' in self.data:
+                opponent_elo = self.data['opponent_elo']
+
+            if opponent_elo is not None:
+                # Normalize Elo to [0, 1] range based on reasonable bounds
+                # Assume Elo range is ~400 (random) to ~2000 (strong)
+                min_elo, max_elo = 400.0, 2000.0
+                for i, orig_idx in enumerate(self.valid_indices):
+                    elo = float(opponent_elo[orig_idx])
+                    normalized = (elo - min_elo) / (max_elo - min_elo)
+                    normalized = max(0.0, min(1.0, normalized))  # Clamp
+                    # Scale [0, 1] to [0.5, 2.0]
+                    weights[i] = 0.5 + 1.5 * normalized
+            else:
+                logger.warning(
+                    "opponent_elo weighting requested but opponent_elo not in dataset. "
+                    "Using uniform weights."
+                )
+
+        elif self.weighting == 'quality_combined':
+            # Full combination: quality + opponent_elo + late_game + source
+            # December 2025: Highest-quality weighting combining all signals
+            late_game_available = (
+                move_numbers is not None and total_game_moves is not None
+            )
+            engine_modes = None
+            if self.data is not None and 'engine_modes' in self.data:
+                engine_modes = self.data['engine_modes']
+            quality_scores = None
+            if self.data is not None and 'quality_score' in self.data:
+                quality_scores = self.data['quality_score']
+            opponent_elo = None
+            if self.data is not None and 'opponent_elo' in self.data:
+                opponent_elo = self.data['opponent_elo']
+
+            from app.training.source_weighting import get_quality_tier
+
+            for i, orig_idx in enumerate(self.valid_indices):
+                weight = 1.0
+
+                # Quality score factor (0.5 to 2.0)
+                if quality_scores is not None:
+                    q = float(quality_scores[orig_idx])
+                    weight *= (0.5 + 1.5 * q)
+
+                # Opponent Elo factor (0.7 to 1.3 - smaller range)
+                if opponent_elo is not None:
+                    elo = float(opponent_elo[orig_idx])
+                    normalized = (elo - 400.0) / (2000.0 - 400.0)
+                    normalized = max(0.0, min(1.0, normalized))
+                    weight *= (0.7 + 0.6 * normalized)
+
+                # Late game factor (0.5 to 1.0)
+                if late_game_available:
+                    move_num = move_numbers[orig_idx]
+                    total = max(total_game_moves[orig_idx], 1)
+                    progress = move_num / total
+                    weight *= (0.5 + 0.5 * progress)
+
+                # Source quality factor (1.0 to 3.0 for Gumbel)
+                if engine_modes is not None:
+                    mode = str(engine_modes[orig_idx])
+                    tier = get_quality_tier(mode)
+                    if tier == 'high':
+                        weight *= 3.0
+                    elif tier == 'medium':
+                        weight *= 1.5
+
+                weights[i] = weight
+
         else:
             logger.warning(
                 f"Unknown weighting strategy '{self.weighting}'. Using uniform."

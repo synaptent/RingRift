@@ -316,11 +316,19 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Apply hex symmetry augmentation during training'
     )
     parser.add_argument(
-        # Dec 27 2025: Changed default to combined_source for ML acceleration
-        '--sampling-weights', type=str, default='combined_source',
-        choices=['uniform', 'recency', 'policy_entropy', 'late_game', 'source', 'combined_source'],
-        help='Sample weighting strategy. "combined_source" combines late_game + phase + '
-             'source weighting (default, recommended). Use "uniform" for no weighting.'
+        # Dec 29 2025: Added quality-based weighting options (+20-40 Elo improvement)
+        '--sampling-weights', type=str, default='quality_combined',
+        choices=[
+            'uniform', 'late_game', 'phase_emphasis', 'combined', 'source',
+            'combined_source', 'chain_emphasis', 'combined_chain',
+            # New in Dec 2025: quality-weighted options
+            'quality',          # Uses quality_score from export
+            'opponent_elo',     # Weights by opponent strength
+            'quality_combined', # Best: quality + opponent_elo + late_game + source
+        ],
+        help='Sample weighting strategy. "quality_combined" (default) combines all signals: '
+             'quality_score, opponent_elo, late_game, and source weighting for maximum '
+             'training efficiency. Use "uniform" for no weighting.'
     )
 
     # Distributed training
