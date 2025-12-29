@@ -640,53 +640,26 @@ class TestExtractFeaturesFromMutable:
 
     def test_falls_back_to_immutable_if_no_arrays(self):
         """Test falls back to immutable extraction if internal arrays missing."""
-        from app.ai.nnue import extract_features_from_mutable
+        from app.ai.nnue import extract_features_from_mutable, FEATURE_DIMS
         from app.rules.mutable_state import MutableGameState
 
         state = MagicMock(spec=MutableGameState)
         state.board_type = BoardType.SQUARE8
         state._rings = None  # No internal arrays
 
-        # Mock to_immutable to return a usable game state with all required fields
-        # All numeric fields must be actual numbers, not MagicMock
-        mock_player1 = MagicMock()
-        mock_player1.number = 1
-        mock_player1.rings_on_board = 0
-        mock_player1.markers_on_board = 0
-        mock_player1.rings_in_hand = 5
-        mock_player1.rings_eliminated = 0
-        mock_player1.eliminated_rings = 0
-        mock_player1.territory_spaces = 0
-        mock_player1.stacks = []
-        mock_player1.territory_count = 0
-
-        mock_player2 = MagicMock()
-        mock_player2.number = 2
-        mock_player2.rings_on_board = 0
-        mock_player2.markers_on_board = 0
-        mock_player2.rings_in_hand = 5
-        mock_player2.rings_eliminated = 0
-        mock_player2.eliminated_rings = 0
-        mock_player2.territory_spaces = 0
-        mock_player2.stacks = []
-        mock_player2.territory_count = 0
-
+        # Mock to_immutable to return a game state
         mock_immutable = MagicMock()
-        mock_immutable.board = MagicMock()
-        mock_immutable.board.type = BoardType.SQUARE8
-        mock_immutable.board.size = 8
-        mock_immutable.board.stacks = {}
-        mock_immutable.board.territories = {}
-        mock_immutable.board.markers = {}
-        mock_immutable.players = [mock_player1, mock_player2]
-        mock_immutable.phase = GamePhase.RING_PLACEMENT
-        mock_immutable.current_player = 1
-        mock_immutable.turn_count = 0  # Must be an int, not MagicMock
-        mock_immutable.num_players = 2
         state.to_immutable = MagicMock(return_value=mock_immutable)
 
-        features = extract_features_from_mutable(state, player_number=1)
-        assert isinstance(features, np.ndarray)
+        # Patch extract_features_from_gamestate to verify it gets called
+        expected_features = np.zeros(FEATURE_DIMS[BoardType.SQUARE8], dtype=np.float32)
+        with patch("app.ai.nnue.extract_features_from_gamestate", return_value=expected_features) as mock_extract:
+            features = extract_features_from_mutable(state, player_number=1)
+
+            # Verify fallback was triggered
+            mock_extract.assert_called_once_with(mock_immutable, 1)
+            assert isinstance(features, np.ndarray)
+            assert features.shape == expected_features.shape
 
 
 # =============================================================================
