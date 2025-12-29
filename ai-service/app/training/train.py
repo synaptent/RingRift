@@ -2043,6 +2043,72 @@ def train_model(
             hex_in_channels = expected_in_channels
         hex_num_players = MAX_PLAYERS if multi_player else num_players
 
+    # ===================================================================
+    # Architecture-Data Compatibility Validation (December 2025)
+    # Validates that the training data is compatible with the selected
+    # model architecture, especially for heuristic-dependent models.
+    # ===================================================================
+    def _validate_architecture_data_compatibility() -> None:
+        """Validate training data is compatible with selected architecture.
+
+        This catches errors early before expensive model initialization:
+        - V5-heavy requires at least 21 heuristic features (fast heuristics)
+        - V6 requires all 49 heuristic features (full heuristics)
+
+        Raises:
+            ValueError: If data is incompatible with selected architecture
+        """
+        nonlocal detected_num_heuristics
+
+        # Only validate for architectures that require heuristics
+        if not (use_hex_v5 or model_version in ('v5', 'v5-gnn', 'v5-heavy', 'v6')):
+            return
+
+        # Import encoder registry to get requirements
+        try:
+            from app.training.encoder_registry import get_encoder_config
+            board_type_name = config.board_type.name if hasattr(config.board_type, 'name') else str(config.board_type)
+            version_key = "v6" if model_version == "v6" else "v5-heavy"
+            encoder_config = get_encoder_config(board_type_name, version_key)
+        except (ValueError, ImportError):
+            # Registry doesn't have this config, skip validation
+            return
+
+        # Check if architecture requires heuristics
+        if not encoder_config.requires_heuristics:
+            return
+
+        min_required = encoder_config.min_heuristic_features
+        actual_heuristics = detected_num_heuristics or 0
+
+        if actual_heuristics < min_required:
+            version_name = "V6" if model_version == "v6" else "V5-Heavy"
+            raise ValueError(
+                f"\n{'='*70}\n"
+                f"ARCHITECTURE-DATA COMPATIBILITY ERROR\n"
+                f"{'='*70}\n\n"
+                f"Model: {version_name} (--model-version {model_version})\n"
+                f"  - Requires at least {min_required} heuristic features\n\n"
+                f"Dataset: {data_path_str if isinstance(data_path, str) else data_path[0] if data_path else 'unknown'}\n"
+                f"  - Has {actual_heuristics} heuristic features\n\n"
+                f"SOLUTIONS:\n"
+                f"  1. Re-export data with --full-heuristics flag:\n"
+                f"     python scripts/export_replay_dataset.py --full-heuristics ...\n"
+                f"  2. Use a different architecture that doesn't require heuristics:\n"
+                f"     --model-version v2 or --model-version v4\n"
+                f"{'='*70}"
+            )
+
+        if not distributed or is_main_process():
+            logger.info(
+                f"Architecture validation passed: {model_version} requires {min_required} "
+                f"heuristics, dataset has {actual_heuristics}"
+            )
+
+    # Run architecture-data compatibility check
+    if use_hex_model or use_hex_v5 or model_version in ('v5', 'v5-gnn', 'v5-heavy', 'v6'):
+        _validate_architecture_data_compatibility()
+
     if not distributed or is_main_process():
         if use_hex_model:
             if use_hex_v5:

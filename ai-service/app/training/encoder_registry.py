@@ -41,6 +41,9 @@ class EncoderConfig:
         spatial_size: Board spatial dimension for the encoder
         policy_size: Policy output size for the encoder
         board_types: List of board type names this encoder supports
+        requires_heuristics: Whether this architecture requires heuristic features
+        min_heuristic_features: Minimum number of heuristic features required (0=none, 21=fast, 49=full)
+        encoder_version: Version string for encoder compatibility tracking
     """
     encoder_type: str
     encoder_class_name: str
@@ -50,6 +53,9 @@ class EncoderConfig:
     spatial_size: int
     policy_size: int
     board_types: list[str]
+    requires_heuristics: bool = False
+    min_heuristic_features: int = 0
+    encoder_version: str = "1.0"
 
     @property
     def frames(self) -> int:
@@ -152,15 +158,93 @@ def _build_registry():
         board_types=["SQUARE19"],
     )
 
+    # Hex V5-Heavy encoder (16 base channels + 21 heuristic features required)
+    hex_v5_heavy_config = EncoderConfig(
+        encoder_type="hex_v5_heavy",
+        encoder_class_name="HexNeuralNet_v5_Heavy",
+        base_channels=16,
+        history_length=3,
+        in_channels=64,  # 16 × 4
+        spatial_size=25,
+        policy_size=sizes["P_HEX"],
+        board_types=["HEXAGONAL"],
+        requires_heuristics=True,
+        min_heuristic_features=21,  # Fast heuristics minimum
+        encoder_version="5.0",
+    )
+
+    hex8_v5_heavy_config = EncoderConfig(
+        encoder_type="hex_v5_heavy",
+        encoder_class_name="HexNeuralNet_v5_Heavy",
+        base_channels=16,
+        history_length=3,
+        in_channels=64,  # 16 × 4
+        spatial_size=9,
+        policy_size=sizes["POLICY_SIZE_HEX8"],
+        board_types=["HEX8"],
+        requires_heuristics=True,
+        min_heuristic_features=21,
+        encoder_version="5.0",
+    )
+
+    # Hex V6 encoder (16 base channels + 49 full heuristic features required)
+    hex_v6_config = EncoderConfig(
+        encoder_type="hex_v6",
+        encoder_class_name="HexNeuralNet_v5_Heavy",  # V6 uses same architecture as V5
+        base_channels=16,
+        history_length=3,
+        in_channels=64,  # 16 × 4
+        spatial_size=25,
+        policy_size=sizes["P_HEX"],
+        board_types=["HEXAGONAL"],
+        requires_heuristics=True,
+        min_heuristic_features=49,  # Full heuristics required
+        encoder_version="6.0",
+    )
+
+    hex8_v6_config = EncoderConfig(
+        encoder_type="hex_v6",
+        encoder_class_name="HexNeuralNet_v5_Heavy",
+        base_channels=16,
+        history_length=3,
+        in_channels=64,  # 16 × 4
+        spatial_size=9,
+        policy_size=sizes["POLICY_SIZE_HEX8"],
+        board_types=["HEX8"],
+        requires_heuristics=True,
+        min_heuristic_features=49,
+        encoder_version="6.0",
+    )
+
+    # Square V5-Heavy encoder (14 base channels + 21 heuristic features required)
+    square8_v5_heavy_config = EncoderConfig(
+        encoder_type="square_v5_heavy",
+        encoder_class_name="RingRiftCNN_v5_Heavy",
+        base_channels=14,
+        history_length=3,
+        in_channels=56,  # 14 × 4
+        spatial_size=8,
+        policy_size=sizes["POLICY_SIZE_8x8"],
+        board_types=["SQUARE8"],
+        requires_heuristics=True,
+        min_heuristic_features=21,
+        encoder_version="5.0",
+    )
+
     # Register all configurations
     _ENCODER_REGISTRY[("HEXAGONAL", "v2")] = hex_v2_config
     _ENCODER_REGISTRY[("HEXAGONAL", "v3")] = hex_v3_config
     _ENCODER_REGISTRY[("HEXAGONAL", "v4")] = hex_v3_config  # v4 uses same encoding as v3
+    _ENCODER_REGISTRY[("HEXAGONAL", "v5-heavy")] = hex_v5_heavy_config
+    _ENCODER_REGISTRY[("HEXAGONAL", "v6")] = hex_v6_config
     _ENCODER_REGISTRY[("HEX8", "v2")] = hex8_v2_config
     _ENCODER_REGISTRY[("HEX8", "v3")] = hex8_v3_config
     _ENCODER_REGISTRY[("HEX8", "v4")] = hex8_v3_config  # v4 uses same encoding as v3
+    _ENCODER_REGISTRY[("HEX8", "v5-heavy")] = hex8_v5_heavy_config
+    _ENCODER_REGISTRY[("HEX8", "v6")] = hex8_v6_config
     _ENCODER_REGISTRY[("SQUARE8", "v2")] = square8_config
     _ENCODER_REGISTRY[("SQUARE8", "v3")] = square8_config  # Same encoding for square
+    _ENCODER_REGISTRY[("SQUARE8", "v5-heavy")] = square8_v5_heavy_config
     _ENCODER_REGISTRY[("SQUARE19", "v2")] = square19_config
     _ENCODER_REGISTRY[("SQUARE19", "v3")] = square19_config
 
@@ -174,7 +258,7 @@ def get_encoder_config(
 
     Args:
         board_type: Board type (enum or string name)
-        model_version: Model version ("v2", "v3", "v4")
+        model_version: Model version ("v2", "v3", "v4", "v5-heavy", "v6")
         history_length: Number of history frames (adjusts in_channels if non-default)
 
     Returns:
@@ -196,11 +280,12 @@ def get_encoder_config(
 
     if config is None:
         available = sorted(set(k[0] for k in _ENCODER_REGISTRY.keys()))
+        versions = sorted(set(k[1] for k in _ENCODER_REGISTRY.keys()))
         raise ValueError(
             f"No encoder configuration for board_type={board_type_name}, "
             f"model_version={model_version}.\n"
             f"Available board types: {available}\n"
-            f"Available versions: v2, v3, v4"
+            f"Available versions: {versions}"
         )
 
     # Adjust in_channels if history_length differs from default

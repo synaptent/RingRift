@@ -657,10 +657,12 @@ class UnifiedModelLoader:
             ModelArchitecture.CNN_V3,
             ModelArchitecture.CNN_V3_LITE,
             ModelArchitecture.CNN_V4,
+            ModelArchitecture.CNN_V5_HEAVY,
             ModelArchitecture.HEX_V2,
             ModelArchitecture.HEX_V2_LITE,
             ModelArchitecture.HEX_V3,
             ModelArchitecture.HEX_V3_LITE,
+            ModelArchitecture.HEX_V5_HEAVY,
         }
 
         # Create result
