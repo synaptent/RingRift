@@ -124,7 +124,6 @@ CREATE INDEX IF NOT EXISTS idx_games_parity_status ON games(parity_status);
 CREATE INDEX IF NOT EXISTS idx_games_board_parity ON games(board_type, parity_status);
 -- Performance indexes for common query patterns (v15)
 CREATE INDEX IF NOT EXISTS idx_games_config ON games(board_type, num_players, game_status);
-CREATE INDEX IF NOT EXISTS idx_moves_lookup ON game_moves(game_id, move_index);
 
 -- Per-player metadata
 CREATE TABLE IF NOT EXISTS game_players (
@@ -177,6 +176,8 @@ CREATE TABLE IF NOT EXISTS game_moves (
 );
 
 CREATE INDEX IF NOT EXISTS idx_moves_game_turn ON game_moves(game_id, turn_number);
+-- Performance index for move lookup (v15)
+CREATE INDEX IF NOT EXISTS idx_moves_lookup ON game_moves(game_id, move_number);
 
 -- State snapshots for fast seeking
 CREATE TABLE IF NOT EXISTS game_state_snapshots (

@@ -331,12 +331,12 @@ Lifecycle management for 73 daemon types:
 
 ### Pipeline Thresholds
 
-| Threshold                       | Default | Description                         |
-| ------------------------------- | ------- | ----------------------------------- |
-| `TRAINING_GAME_THRESHOLD`       | 1000    | Min games before training triggers  |
-| `EVALUATION_WIN_RATE_RANDOM`    | 85%     | Required vs Random for promotion    |
-| `EVALUATION_WIN_RATE_HEURISTIC` | 60%     | Required vs Heuristic for promotion |
-| `SYNC_INTERVAL_SECONDS`         | 60      | AutoSyncDaemon cycle interval       |
+| Threshold                       | Default | Description                                                     |
+| ------------------------------- | ------- | --------------------------------------------------------------- |
+| `TRAINING_GAME_THRESHOLD`       | 1000    | Min games before training triggers                              |
+| `EVALUATION_WIN_RATE_RANDOM`    | 85%     | Required vs Random for promotion                                |
+| `EVALUATION_WIN_RATE_HEURISTIC` | 60%     | Required vs Heuristic for promotion                             |
+| `SYNC_INTERVAL_SECONDS`         | 60      | AutoSyncDaemon cycle interval (AutoSyncConfig.interval_seconds) |
 
 ### Environment Variables
 
@@ -346,8 +346,10 @@ RINGRIFT_TRAINING_THRESHOLD=1000
 RINGRIFT_EVALUATION_GAMES=50
 
 # Sync settings
-RINGRIFT_SYNC_INTERVAL=60
-RINGRIFT_SYNC_ENABLED=true
+RINGRIFT_MIN_SYNC_INTERVAL=2.0
+RINGRIFT_DATA_SYNC_INTERVAL=120
+RINGRIFT_FAST_SYNC_INTERVAL=30
+RINGRIFT_AUTO_SYNC_MAX_CONCURRENT=6
 
 # Circuit breaker
 RINGRIFT_CB_FAILURE_THRESHOLD=5

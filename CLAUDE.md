@@ -75,7 +75,7 @@ python scripts/master_loop.py --dry-run
 This orchestrates:
 
 - **SelfplayScheduler**: Priority-based selfplay allocation (staleness, Elo velocity, curriculum weights)
-- **DaemonManager**: 72 background daemons for sync, training, evaluation (6 deprecated)
+- **DaemonManager**: 82 background daemons for sync, training, evaluation (6 deprecated)
 - **FeedbackLoopController**: Training feedback signals and curriculum adjustments
 - **DataPipelineOrchestrator**: Export → training → evaluation → promotion
 
@@ -144,7 +144,7 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 RingRift uses a P2P mesh network for distributed training across ~36 configured nodes (Dec 2025).
 
-### Active Cluster (Dec 28, 2025)
+### Active Cluster (Dec 29, 2025)
 
 | Provider     | Nodes | GPUs                                        | Status |
 | ------------ | ----- | ------------------------------------------- | ------ |
@@ -164,7 +164,7 @@ RingRift uses a P2P mesh network for distributed training across ~36 configured 
 
 ```bash
 # Check cluster status via P2P
-curl -s http://localhost:8770/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"Leader: {d.get(\"leader_id\")}"); print(f"Alive: {d.get(\"alive_peers\")}")'
+curl -s http://localhost:8770/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print("Leader:", d.get("leader_id")); print("Alive:", d.get("alive_peers"))'
 
 # Or use the monitor
 cd ai-service && python -m app.distributed.cluster_monitor

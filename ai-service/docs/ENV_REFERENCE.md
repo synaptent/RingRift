@@ -206,13 +206,17 @@ Use `{PROVIDER}_IDLE_*` prefix (e.g., `VAST_IDLE_ENABLED`, `RUNPOD_IDLE_THRESHOL
 
 ## Sync & Bandwidth
 
-| Variable                       | Type  | Default | Description                     |
-| ------------------------------ | ----- | ------- | ------------------------------- |
-| `RINGRIFT_SYNC_INTERVAL`       | int   | `300`   | Sync interval (seconds)         |
-| `RINGRIFT_SYNC_TIMEOUT`        | int   | `600`   | Sync timeout (seconds)          |
-| `RINGRIFT_MIN_SYNC_INTERVAL`   | float | `2.0`   | Minimum sync interval (seconds) |
-| `RINGRIFT_BANDWIDTH_LIMIT_MBS` | int   | `100`   | Global bandwidth limit (MB/s)   |
-| `RINGRIFT_SYNC_ENABLED`        | bool  | `true`  | Enable automatic sync           |
+| Variable                            | Type  | Default | Description                          |
+| ----------------------------------- | ----- | ------- | ------------------------------------ |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | float | `120`   | Games sync interval (seconds)        |
+| `RINGRIFT_MODEL_SYNC_INTERVAL`      | float | `600`   | Model sync interval (seconds)        |
+| `RINGRIFT_ELO_SYNC_INTERVAL`        | float | `60`    | Elo sync interval (seconds)          |
+| `RINGRIFT_REGISTRY_SYNC_INTERVAL`   | float | `120`   | Registry sync interval (seconds)     |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | float | `30`    | Fast sync interval (seconds)         |
+| `RINGRIFT_SYNC_FULL_INTERVAL`       | int   | `3600`  | Full sync interval (seconds)         |
+| `RINGRIFT_SYNC_TIMEOUT`             | float | `300`   | Sync timeout (seconds)               |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | float | `2.0`   | Minimum auto-sync interval (seconds) |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | int   | `6`     | Max concurrent auto-sync transfers   |
 
 ---
 
