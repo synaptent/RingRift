@@ -857,9 +857,16 @@ class SelfplayScheduler(EventSubscriptionMixin):
             },
         ]
 
-        # Filter by node memory (avoid large boards on small nodes)
-        node_mem = int(getattr(node, "memory_gb", 0) or 0)
-        if node_mem and node_mem < 48:
+        # Filter by GPU VRAM (avoid large boards on low-VRAM GPUs)
+        # NOTE: Use gpu_vram_gb (GPU memory), NOT memory_gb (system RAM)
+        # Bug fix Dec 2025: Was incorrectly using system RAM which filtered out
+        # Vast.ai nodes with 12-16GB VRAM but >48GB system RAM
+        gpu_vram = int(
+            getattr(node, "gpu_vram_gb", 0)
+            or getattr(node, "gpu_memory_gb", 0)
+            or 0
+        )
+        if gpu_vram and gpu_vram < 48:
             selfplay_configs = [
                 c for c in selfplay_configs if c.get("board_type") == "square8"
             ]
@@ -873,7 +880,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
             node_id = getattr(node, "node_id", "unknown")
             logger.warning(
                 f"No compatible selfplay configs for node {node_id} "
-                f"(has_gpu={self._node_has_gpu(node)}, memory={node_mem}GB)"
+                f"(has_gpu={self._node_has_gpu(node)}, gpu_vram={gpu_vram}GB)"
             )
             return None
 

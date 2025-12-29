@@ -116,6 +116,14 @@ except ImportError:
     JobStallDetector = None
     get_stall_detector = None
 
+# Event emission for node incompatibility (December 2025 - Phase 2 training loop fix)
+try:
+    from app.distributed.data_events import emit_node_incompatible_with_workload
+    HAS_INCOMPATIBILITY_EVENTS = True
+except ImportError:
+    HAS_INCOMPATIBILITY_EVENTS = False
+    emit_node_incompatible_with_workload = None
+
 
 @dataclass
 class IdleResourceConfig:
@@ -363,6 +371,11 @@ class IdleResourceDaemon:
         self._last_broadcast_time: float = 0.0
         self._broadcast_interval: float = 30.0  # Broadcast local state every 30s
         self._state_stale_threshold: float = 120.0  # States older than 2min are stale
+
+        # Incompatible node tracking (December 2025 - Phase 2 training loop fix)
+        # Maps node_id -> (gpu_vram_gb, timestamp) for nodes with no compatible configs
+        # Prevents wasted evaluation cycles on nodes that can't run any workload
+        self._incompatible_nodes_cache: dict[str, tuple[float, float]] = {}
 
         # CoordinatorProtocol state
         self._coordinator_status = CoordinatorStatus.INITIALIZING
@@ -1858,6 +1871,29 @@ class IdleResourceDaemon:
             return False
 
         # =======================================================================
+        # Incompatible Node Check (December 2025 - Phase 2 Training Loop Fix)
+        # =======================================================================
+        # Skip nodes that have been cached as incompatible (no compatible configs)
+        # Clear cache if GPU VRAM has changed (node might now be compatible)
+        if node.node_id in self._incompatible_nodes_cache:
+            cached_vram, cached_time = self._incompatible_nodes_cache[node.node_id]
+            current_vram = getattr(node, "gpu_memory_total_gb", 0.0)
+
+            # Clear cache if GPU VRAM changed significantly (might now be compatible)
+            if abs(current_vram - cached_vram) > 1.0:
+                logger.info(
+                    f"[IdleResourceDaemon] Clearing incompatibility cache for {node.node_id}: "
+                    f"VRAM changed {cached_vram:.0f}GB -> {current_vram:.0f}GB"
+                )
+                del self._incompatible_nodes_cache[node.node_id]
+            else:
+                logger.debug(
+                    f"[IdleResourceDaemon] Skipping {node.node_id}: cached as incompatible "
+                    f"(VRAM={cached_vram:.0f}GB, cached {now - cached_time:.0f}s ago)"
+                )
+                return False
+
+        # =======================================================================
         # Stall Detection Check (Phase 21.5 - December 2025)
         # =======================================================================
         # Skip nodes that are penalized due to previous job stalls
@@ -1977,11 +2013,18 @@ class IdleResourceDaemon:
 
         return True
 
-    def _select_config_for_gpu(self, gpu_memory_gb: float) -> str:
+    def _select_config_for_gpu(self, gpu_memory_gb: float) -> str | None:
         """Select appropriate board config for GPU memory.
 
         December 2025 - Phase 2C.4: Now uses SelfplayScheduler priorities
         to select the highest-priority config that fits the GPU.
+
+        December 2025 - Phase 2 Training Loop Fix: Returns None if no configs
+        are compatible with this GPU, allowing caller to cache the node as
+        incompatible and emit an event.
+
+        Returns:
+            config_key if a compatible config exists, None otherwise.
         """
         # Get configs that fit this GPU's memory
         valid_configs = {
@@ -1991,7 +2034,12 @@ class IdleResourceDaemon:
         }
 
         if not valid_configs:
-            return "hex8_2p"  # Smallest config as fallback
+            # No configs fit this GPU - return None to signal incompatibility
+            logger.debug(
+                f"[IdleResourceDaemon] No configs fit GPU with {gpu_memory_gb:.0f}GB VRAM "
+                f"(min required: {min(self.config.gpu_memory_thresholds.values())}GB)"
+            )
+            return None
 
         # Try to get priority from SelfplayScheduler
         try:
@@ -2029,8 +2077,8 @@ class IdleResourceDaemon:
             if gpu_memory_gb >= required_memory:
                 return config_key
 
-        # Default to smallest config
-        return "hex8_2p"
+        # No compatible config found
+        return None
 
     async def _spawn_selfplay(self, node: NodeStatus) -> bool:
         """Spawn a selfplay job on the given node."""
@@ -2053,6 +2101,36 @@ class IdleResourceDaemon:
                         return False
 
                 config_key = self._select_config_for_gpu(node.gpu_memory_total_gb)
+
+                # December 2025 - Phase 2 Training Loop Fix: Handle incompatible nodes
+                if config_key is None:
+                    gpu_vram = node.gpu_memory_total_gb
+                    has_gpu = gpu_vram > 0
+
+                    # Cache this node as incompatible (with timestamp for expiry)
+                    self._incompatible_nodes_cache[node.node_id] = (gpu_vram, time.time())
+
+                    # Emit event once per node (not on every cycle)
+                    if HAS_INCOMPATIBILITY_EVENTS and emit_node_incompatible_with_workload:
+                        try:
+                            await emit_node_incompatible_with_workload(
+                                node_id=node.node_id,
+                                node_ip=getattr(node, "host", ""),
+                                gpu_vram_gb=gpu_vram,
+                                has_gpu=has_gpu,
+                                reason="no_compatible_configs",
+                                compatible_configs=[],
+                                source="IdleResourceDaemon",
+                            )
+                        except Exception as emit_err:
+                            logger.debug(f"[IdleResourceDaemon] Failed to emit incompatibility event: {emit_err}")
+
+                    logger.warning(
+                        f"[IdleResourceDaemon] Node {node.node_id} has no compatible configs: "
+                        f"GPU VRAM={gpu_vram:.0f}GB. Caching as incompatible."
+                    )
+                    self._stats.failed_spawns += 1
+                    return False
 
                 # P11-CRITICAL-2: Check free GPU memory before spawning
                 # This prevents OOM errors by ensuring adequate VRAM headroom

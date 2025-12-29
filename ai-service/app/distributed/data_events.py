@@ -279,6 +279,7 @@ class DataEventType(Enum):
     NODE_RETIRED = "node_retired"  # Dec 2025: Node explicitly retired from cluster
     NODE_ACTIVATED = "node_activated"  # Node activated by cluster activator
     NODE_TERMINATED = "node_terminated"  # Node terminated/deprovisioned
+    NODE_INCOMPATIBLE_WITH_WORKLOAD = "node_incompatible_with_workload"  # Dec 2025: Node has no compatible selfplay configs
 
     # Lock/Synchronization events (December 2025)
     LOCK_TIMEOUT = "lock_timeout"
@@ -3111,6 +3112,44 @@ async def emit_node_retired(
             "reason": reason,
             "last_seen": last_seen,
             "total_uptime_seconds": total_uptime_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_node_incompatible_with_workload(
+    node_id: str,
+    *,
+    node_ip: str = "",
+    gpu_vram_gb: float = 0.0,
+    has_gpu: bool = False,
+    reason: str = "",
+    compatible_configs: list[str] | None = None,
+    source: str = "",
+) -> None:
+    """Emit NODE_INCOMPATIBLE_WITH_WORKLOAD when a node has no compatible selfplay configs.
+
+    December 2025: Added to track nodes that are idle but cannot run any selfplay
+    due to GPU/memory constraints. This prevents wasted evaluation cycles.
+
+    Args:
+        node_id: Identifier for the node
+        node_ip: Node IP address
+        gpu_vram_gb: GPU VRAM in GB
+        has_gpu: Whether node has a GPU
+        reason: Why the node is incompatible (e.g., "no_compatible_configs", "gpu_too_small")
+        compatible_configs: List of configs node could run (empty if none)
+        source: Component emitting this event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.NODE_INCOMPATIBLE_WITH_WORKLOAD,
+        payload={
+            "node_id": node_id,
+            "node_ip": node_ip,
+            "gpu_vram_gb": gpu_vram_gb,
+            "has_gpu": has_gpu,
+            "reason": reason,
+            "compatible_configs": compatible_configs or [],
         },
         source=source,
     ))
