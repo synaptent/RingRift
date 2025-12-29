@@ -903,6 +903,19 @@ class JobManager(EventSubscriptionMixin):
         output_dir = Path(self.ringrift_path) / "ai-service" / "data" / "selfplay" / "p2p_gpu" / f"{board_norm}_{num_players}p" / job_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # December 2025: Check disk space before spawning job to avoid silent failures
+        has_space, space_reason = self._check_disk_space(output_dir)
+        if not has_space:
+            logger.warning(
+                f"Skipping selfplay job {job_id} due to insufficient disk space: {space_reason}"
+            )
+            self._emit_task_event(
+                "TASK_FAILED", job_id, "selfplay",
+                error=f"disk_space_check_failed: {space_reason}",
+                board_type=board_type, num_players=num_players,
+            )
+            return
+
         effective_mode = engine_mode or "heuristic-only"
 
         # December 2025: GPU availability check using GPU_REQUIRED_ENGINE_MODES
@@ -1237,6 +1250,21 @@ class JobManager(EventSubscriptionMixin):
                     }
                     continue
 
+                # December 2025: Disk space check before dispatch
+                has_space, space_reason = await self._check_disk_space_async(
+                    worker_id, output_dir, min_free_gb=10.0
+                )
+                if not has_space:
+                    logger.warning(
+                        f"Skipping worker {worker_id}: insufficient disk space - {space_reason}"
+                    )
+                    results[worker_id] = {
+                        "success": False,
+                        "error": f"disk_space: {space_reason}",
+                        "skipped": True,
+                    }
+                    continue
+
                 url = f"http://{worker_ip}:{worker_port}/run-selfplay"
                 payload = {
                     "job_id": f"{job_id}_{worker_id}",
@@ -1291,6 +1319,19 @@ class JobManager(EventSubscriptionMixin):
             model_path: Path to model (or None for heuristic)
             output_dir: Output directory for games
         """
+        # December 2025: Check disk space before spawning local selfplay
+        has_space, space_reason = self._check_disk_space(output_dir)
+        if not has_space:
+            logger.warning(
+                f"Skipping local selfplay job {job_id} due to insufficient disk space: {space_reason}"
+            )
+            self._emit_task_event(
+                "TASK_FAILED", job_id, "selfplay",
+                error=f"disk_space_check_failed: {space_reason}",
+                board_type=board_type,
+            )
+            return
+
         output_file = os.path.join(output_dir, f"{self.node_id}_games.jsonl")
 
         # Build selfplay command
@@ -1392,6 +1433,18 @@ class JobManager(EventSubscriptionMixin):
 
         # Ensure output directory exists
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+        # December 2025: Check disk space before export job
+        has_space, space_reason = self._check_disk_space(os.path.dirname(output_file))
+        if not has_space:
+            logger.warning(
+                f"Skipping export job {job_id} due to insufficient disk space: {space_reason}"
+            )
+            self._emit_task_event(
+                "TASK_FAILED", job_id, "export",
+                error=f"disk_space_check_failed: {space_reason}",
+            )
+            return
 
         jsonl_files = list(Path(iteration_dir).glob("*.jsonl"))
         if not jsonl_files:
@@ -1755,13 +1808,18 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
     def _get_tournament_workers(self) -> list[Any]:
         """Get available workers for tournament matches.
 
+        Dec 29, 2025: Filter out NAT-blocked workers since direct HTTP won't work.
+
         Returns:
-            List of worker node info objects
+            List of worker node info objects (only non-NAT-blocked)
         """
         workers = []
         with self.peers_lock:
             for peer in self.peers.values():
                 if hasattr(peer, "is_healthy") and peer.is_healthy():
+                    # Skip NAT-blocked workers - can't reach them directly
+                    if getattr(peer, "nat_blocked", False):
+                        continue
                     # Prefer GPU nodes for neural net matches
                     if hasattr(peer, "has_gpu") and peer.has_gpu:
                         workers.insert(0, peer)
@@ -1830,6 +1888,11 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
 
                 if not worker_ip:
                     logger.debug(f"Worker {worker_id} has no IP address, skipping")
+                    continue
+
+                # Dec 29, 2025: Skip NAT-blocked workers - direct connection will fail
+                if getattr(worker, "nat_blocked", False):
+                    logger.debug(f"Worker {worker_id} is NAT-blocked, skipping")
                     continue
 
                 # Send each match individually to /tournament/match endpoint
