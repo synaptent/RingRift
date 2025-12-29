@@ -8,10 +8,15 @@ from __future__ import annotations
 import pytest
 
 from app.coordination.priority_calculator import (
+    ALL_CONFIGS,
     ClusterState,
     DynamicWeights,
+    PLAYER_COUNT_ALLOCATION_MULTIPLIER,
+    PRIORITY_OVERRIDE_MULTIPLIERS,
     PriorityCalculator,
     PriorityInputs,
+    SAMPLES_PER_GAME_BY_BOARD,
+    VOI_SAMPLE_COST_BY_BOARD,
     clamp_weight,
     compute_data_deficit_factor,
     compute_dynamic_weights,
@@ -21,8 +26,6 @@ from app.coordination.priority_calculator import (
     compute_velocity_factor,
     compute_voi_score,
     extract_player_count,
-    PRIORITY_OVERRIDE_MULTIPLIERS,
-    PLAYER_COUNT_ALLOCATION_MULTIPLIER,
 )
 
 
@@ -518,3 +521,132 @@ class TestConstants:
         """Test player count multiplier values."""
         assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[2] == 1.0
         assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[4] == 4.0
+
+
+# =============================================================================
+# ALL_CONFIGS Tests (December 2025 consolidation)
+# =============================================================================
+
+
+class TestAllConfigs:
+    """Tests for ALL_CONFIGS constant."""
+
+    def test_contains_12_configs(self):
+        """ALL_CONFIGS should contain exactly 12 configurations."""
+        assert len(ALL_CONFIGS) == 12
+
+    def test_contains_all_board_types(self):
+        """ALL_CONFIGS should contain all 4 board types."""
+        board_types = {"hex8", "square8", "square19", "hexagonal"}
+        found_boards = set()
+        for config in ALL_CONFIGS:
+            board_type = config.split("_")[0]
+            found_boards.add(board_type)
+        assert found_boards == board_types
+
+    def test_contains_all_player_counts(self):
+        """ALL_CONFIGS should contain all player counts (2, 3, 4)."""
+        player_counts = set()
+        for config in ALL_CONFIGS:
+            suffix = config.split("_")[1]
+            player_counts.add(suffix)
+        assert player_counts == {"2p", "3p", "4p"}
+
+    def test_format_consistency(self):
+        """All configs should follow board_Xp format."""
+        for config in ALL_CONFIGS:
+            parts = config.split("_")
+            assert len(parts) == 2
+            assert parts[1] in {"2p", "3p", "4p"}
+
+    def test_specific_configs_present(self):
+        """Specific commonly-used configs should be present."""
+        assert "hex8_2p" in ALL_CONFIGS
+        assert "square8_4p" in ALL_CONFIGS
+        assert "hexagonal_3p" in ALL_CONFIGS
+
+
+# =============================================================================
+# SAMPLES_PER_GAME_BY_BOARD Tests (December 2025 consolidation)
+# =============================================================================
+
+
+class TestSamplesPerGameByBoard:
+    """Tests for SAMPLES_PER_GAME_BY_BOARD constant."""
+
+    def test_contains_all_board_types(self):
+        """SAMPLES_PER_GAME_BY_BOARD should have entries for all board types."""
+        expected_boards = {"hex8", "square8", "square19", "hexagonal"}
+        assert set(SAMPLES_PER_GAME_BY_BOARD.keys()) == expected_boards
+
+    def test_each_board_has_all_player_counts(self):
+        """Each board type should have entries for 2p, 3p, 4p."""
+        expected_players = {"2p", "3p", "4p"}
+        for board_type, players_dict in SAMPLES_PER_GAME_BY_BOARD.items():
+            assert set(players_dict.keys()) == expected_players
+
+    def test_samples_are_positive(self):
+        """All sample counts should be positive integers."""
+        for board_type, players_dict in SAMPLES_PER_GAME_BY_BOARD.items():
+            for player_key, samples in players_dict.items():
+                assert samples > 0
+                assert isinstance(samples, int)
+
+    def test_larger_boards_more_samples(self):
+        """Larger boards should have more samples per game."""
+        # hex8 is smallest, hexagonal is largest
+        hex8_2p = SAMPLES_PER_GAME_BY_BOARD["hex8"]["2p"]
+        hexagonal_2p = SAMPLES_PER_GAME_BY_BOARD["hexagonal"]["2p"]
+        assert hexagonal_2p > hex8_2p * 2  # Much larger
+
+    def test_more_players_more_samples(self):
+        """More players should generally produce more samples per game."""
+        for board_type in SAMPLES_PER_GAME_BY_BOARD:
+            samples_2p = SAMPLES_PER_GAME_BY_BOARD[board_type]["2p"]
+            samples_4p = SAMPLES_PER_GAME_BY_BOARD[board_type]["4p"]
+            assert samples_4p >= samples_2p
+
+
+# =============================================================================
+# VOI_SAMPLE_COST_BY_BOARD Tests (December 2025 consolidation)
+# =============================================================================
+
+
+class TestVoiSampleCostByBoard:
+    """Tests for VOI_SAMPLE_COST_BY_BOARD constant."""
+
+    def test_contains_all_board_types(self):
+        """VOI_SAMPLE_COST_BY_BOARD should have entries for all board types."""
+        expected_boards = {"hex8", "square8", "square19", "hexagonal"}
+        assert set(VOI_SAMPLE_COST_BY_BOARD.keys()) == expected_boards
+
+    def test_each_board_has_all_player_counts(self):
+        """Each board type should have entries for 2p, 3p, 4p."""
+        expected_players = {"2p", "3p", "4p"}
+        for board_type, players_dict in VOI_SAMPLE_COST_BY_BOARD.items():
+            assert set(players_dict.keys()) == expected_players
+
+    def test_costs_are_positive(self):
+        """All VOI costs should be positive floats."""
+        for board_type, players_dict in VOI_SAMPLE_COST_BY_BOARD.items():
+            for player_key, cost in players_dict.items():
+                assert cost > 0
+                assert isinstance(cost, (int, float))
+
+    def test_small_boards_baseline_cost(self):
+        """Small boards (hex8, square8) should have baseline cost of 1.0 for 2p."""
+        assert VOI_SAMPLE_COST_BY_BOARD["hex8"]["2p"] == 1.0
+        assert VOI_SAMPLE_COST_BY_BOARD["square8"]["2p"] == 1.0
+
+    def test_larger_boards_higher_cost(self):
+        """Larger boards should have higher VOI costs."""
+        hex8_2p = VOI_SAMPLE_COST_BY_BOARD["hex8"]["2p"]
+        hexagonal_2p = VOI_SAMPLE_COST_BY_BOARD["hexagonal"]["2p"]
+        assert hexagonal_2p > hex8_2p * 2  # Much more expensive
+
+    def test_more_players_higher_cost(self):
+        """More players should increase VOI cost."""
+        for board_type in VOI_SAMPLE_COST_BY_BOARD:
+            cost_2p = VOI_SAMPLE_COST_BY_BOARD[board_type]["2p"]
+            cost_4p = VOI_SAMPLE_COST_BY_BOARD[board_type]["4p"]
+            assert cost_4p > cost_2p

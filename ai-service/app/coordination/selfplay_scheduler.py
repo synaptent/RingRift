@@ -94,18 +94,23 @@ from app.config.thresholds import (
     SELFPLAY_GAMES_PER_NODE,
     is_ephemeral_node,
     get_gpu_weight,
-    # Dec 29, 2025: Gumbel budget tiers for adaptive search
-    GUMBEL_BUDGET_STANDARD,
-    GUMBEL_BUDGET_QUALITY,
-    GUMBEL_BUDGET_ULTIMATE,
-    GUMBEL_BUDGET_MASTER,
-    # Dec 29, 2025: Bootstrap budget tiers for starved configs
-    GUMBEL_BUDGET_BOOTSTRAP_TIER1,
-    GUMBEL_BUDGET_BOOTSTRAP_TIER2,
-    GUMBEL_BUDGET_BOOTSTRAP_TIER3,
-    BOOTSTRAP_TIER1_GAME_THRESHOLD,
-    BOOTSTRAP_TIER2_GAME_THRESHOLD,
-    BOOTSTRAP_TIER3_GAME_THRESHOLD,
+)
+
+# December 2025: Constants consolidated in priority_calculator.py
+from app.coordination.priority_calculator import (
+    ALL_CONFIGS,
+    PLAYER_COUNT_ALLOCATION_MULTIPLIER,
+    PRIORITY_OVERRIDE_MULTIPLIERS,
+    SAMPLES_PER_GAME_BY_BOARD,
+    VOI_SAMPLE_COST_BY_BOARD,
+)
+
+# December 2025: Budget calculation extracted to budget_calculator.py
+from app.coordination.budget_calculator import (
+    get_adaptive_budget_for_elo as _get_budget_for_elo,
+    get_adaptive_budget_for_games as _get_budget_for_games,
+    compute_target_games as _compute_target,
+    parse_config_key,
 )
 from app.coordination.protocols import HealthCheckResult
 
@@ -122,14 +127,9 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Configuration
 # =============================================================================
-
-# All supported configurations
-ALL_CONFIGS = [
-    "hex8_2p", "hex8_3p", "hex8_4p",
-    "square8_2p", "square8_3p", "square8_4p",
-    "square19_2p", "square19_3p", "square19_4p",
-    "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
-]
+# Note: ALL_CONFIGS, PRIORITY_OVERRIDE_MULTIPLIERS, PLAYER_COUNT_ALLOCATION_MULTIPLIER,
+# SAMPLES_PER_GAME_BY_BOARD, and VOI_SAMPLE_COST_BY_BOARD are imported from
+# app.coordination.priority_calculator (December 2025 consolidation)
 
 # Priority calculation weights (BASE values - adjusted dynamically)
 # Dec 29, 2025: These are now baseline weights that get adjusted based on cluster state.
@@ -165,23 +165,8 @@ VOI_WEIGHT = _priority_weight_defaults.VOI_WEIGHT
 # Now sourced from centralized config with env var support
 DYNAMIC_WEIGHT_BOUNDS = _priority_weight_defaults.get_weight_bounds()
 
-# =============================================================================
-# VOI (Value of Information) Constants (Dec 29, 2025)
-# =============================================================================
-# VOI prioritizes configs where more games yield the highest expected Elo gain.
-# Formula: VOI = (Elo_gap * uncertainty_factor) / sample_cost
-# - Elo_gap: distance from target Elo (farther = higher VOI)
-# - uncertainty_factor: based on Elo confidence interval (higher uncertainty = more value in data)
-# - sample_cost: relative cost per game (large boards cost more)
+# VOI target Elo (from coordination_defaults)
 VOI_ELO_TARGET = _priority_weight_defaults.VOI_ELO_TARGET
-VOI_SAMPLE_COST_BY_BOARD = {
-    # Relative cost per game (compute time * complexity)
-    # Small boards are baseline (1.0), large boards cost more
-    "hex8": {"2p": 1.0, "3p": 1.3, "4p": 1.5},
-    "square8": {"2p": 1.0, "3p": 1.3, "4p": 1.5},
-    "square19": {"2p": 5.0, "3p": 7.0, "4p": 9.0},
-    "hexagonal": {"2p": 8.0, "3p": 11.0, "4p": 14.0},
-}
 
 # Thresholds for dynamic weight adjustment triggers (now env-configurable)
 IDLE_GPU_HIGH_THRESHOLD = _priority_weight_defaults.IDLE_GPU_HIGH_THRESHOLD
@@ -195,16 +180,6 @@ ELO_MEDIUM_THRESHOLD = _priority_weight_defaults.ELO_MEDIUM_THRESHOLD
 TARGET_GAMES_FOR_2000_ELO = _priority_weight_defaults.TARGET_GAMES_FOR_2000_ELO
 LARGE_BOARD_TARGET_MULTIPLIER = _priority_weight_defaults.LARGE_BOARD_TARGET_MULTIPLIER
 
-# Priority override multipliers (Dec 2025)
-# Maps priority level (0-3) to score multiplier
-# 0 = CRITICAL, 1 = HIGH, 2 = MEDIUM, 3 = LOW
-PRIORITY_OVERRIDE_MULTIPLIERS = {
-    0: 3.0,  # CRITICAL: 3x boost for critically data-starved configs
-    1: 2.0,  # HIGH: 2x boost
-    2: 1.25,  # MEDIUM: 25% boost
-    3: 1.0,  # LOW: no boost (normal priority)
-}
-
 # Dec 29, 2025: Data starvation thresholds (now env-configurable)
 # Configs with fewer games than these thresholds get priority boosts
 # Especially critical for 4-player configs which have near-zero games
@@ -216,30 +191,8 @@ DATA_STARVATION_ULTRA_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_ULT
 DATA_STARVATION_EMERGENCY_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_EMERGENCY_MULTIPLIER
 DATA_STARVATION_CRITICAL_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_CRITICAL_MULTIPLIER
 
-# Dec 29, 2025: Samples-per-game estimates by board type and player count
-# Used for game count normalization - ensures selfplay generates enough games
-# to meet training sample targets. Based on historical data from export scripts.
-SAMPLES_PER_GAME_BY_BOARD = {
-    "hex8": {"2p": 35, "3p": 40, "4p": 45},
-    "square8": {"2p": 40, "3p": 50, "4p": 55},
-    "square19": {"2p": 150, "3p": 180, "4p": 200},
-    "hexagonal": {"2p": 250, "3p": 300, "4p": 350},
-}
-
 # Default training sample target per config
 DEFAULT_TRAINING_SAMPLES_TARGET = 50000
-
-# December 2025: Player count allocation multipliers
-# 3p/4p games take ~2x longer but were getting equal allocation, leading to
-# undertraining for multiplayer configs (hex8_4p Elo 594, square19_3p Elo 409)
-# Updated Dec 29, 2025 Phase 3: Increased multipliers for aggressive data deficit fix
-# Target allocation: ~40% 2p / ~30% 3p / ~30% 4p (was 50/25/25)
-# Expected impact: +100-150 Elo for 3p/4p configs
-PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
-    2: 1.0,  # Baseline - 2p games are fastest, already have most data
-    3: 3.0,  # 3x priority for 3p (severe data deficit: hex8_3p=500, square19_3p=237)
-    4: 4.0,  # 4x priority for 4p (critical data deficit: hex8_4p=45, square19_4p=0)
-}
 
 # Staleness thresholds (hours) - now env-configurable
 FRESH_DATA_THRESHOLD = _priority_weight_defaults.FRESH_DATA_THRESHOLD
@@ -1303,115 +1256,26 @@ class SelfplayScheduler:
     def _get_adaptive_budget_for_elo(self, elo: float) -> int:
         """Get Gumbel MCTS budget based on current Elo tier.
 
-        Dec 29, 2025: Higher Elo models benefit from deeper search.
-        Scale budget with Elo tier to maximize training data quality.
-
-        Args:
-            elo: Current Elo rating for the config
-
-        Returns:
-            Gumbel budget for selfplay (one of the tier constants)
+        December 2025: Delegated to budget_calculator module.
+        See budget_calculator.get_adaptive_budget_for_elo() for full docs.
         """
-        if elo >= 2000:
-            return GUMBEL_BUDGET_MASTER  # 3200 - master tier
-        elif elo >= 1800:
-            return GUMBEL_BUDGET_ULTIMATE  # 1600 - ultimate tier
-        elif elo >= 1500:
-            return GUMBEL_BUDGET_QUALITY  # 800 - quality tier
-        else:
-            return GUMBEL_BUDGET_STANDARD  # 800 - standard tier
+        return _get_budget_for_elo(elo)
 
     def _get_adaptive_budget_for_games(self, game_count: int, elo: float) -> int:
         """Get Gumbel MCTS budget based on game count (prioritizes bootstrapping).
 
-        December 29, 2025: Added for accelerating AI self-improvement.
-        When a config has very few games, prioritize QUANTITY over QUALITY
-        to rapidly bootstrap the training dataset. As game count grows,
-        transition to Elo-based quality budgets.
-
-        Bootstrap tiers (game_count < threshold):
-        - <100 games:  64 budget (THROUGHPUT - max speed for rapid bootstrap)
-        - <500 games:  150 budget (faster iteration, acceptable quality)
-        - <1000 games: 200 budget (balanced speed/quality)
-        - >=1000 games: Use Elo-based adaptive budget (STANDARD/QUALITY/ULTIMATE/MASTER)
-
-        Args:
-            game_count: Number of games in the database for this config
-            elo: Current Elo rating for the config (used when game_count >= 1000)
-
-        Returns:
-            Gumbel budget for selfplay
+        December 2025: Delegated to budget_calculator module.
+        See budget_calculator.get_adaptive_budget_for_games() for full docs.
         """
-        # Bootstrap phase: prioritize game generation speed
-        if game_count < BOOTSTRAP_TIER1_GAME_THRESHOLD:
-            # Very starved (<100 games): maximum throughput
-            return GUMBEL_BUDGET_BOOTSTRAP_TIER1  # 64
-
-        if game_count < BOOTSTRAP_TIER2_GAME_THRESHOLD:
-            # Moderately starved (<500 games): fast iteration
-            return GUMBEL_BUDGET_BOOTSTRAP_TIER2  # 150
-
-        if game_count < BOOTSTRAP_TIER3_GAME_THRESHOLD:
-            # Somewhat starved (<1000 games): balanced
-            return GUMBEL_BUDGET_BOOTSTRAP_TIER3  # 200
-
-        # Mature phase (>=1000 games): use Elo-based quality budget
-        return self._get_adaptive_budget_for_elo(elo)
+        return _get_budget_for_games(game_count, elo)
 
     def _compute_target_games(self, config: str, current_elo: float) -> int:
         """Compute dynamic target games needed based on Elo gap and board difficulty.
 
-        December 29, 2025: Phase 8 - Dynamic target games calculation.
-        Replaces static TARGET_GAMES_FOR_2000_ELO with adaptive targets based on:
-        - Elo gap to target (1900)
-        - Board difficulty (larger boards need more games)
-        - Player count (multiplayer needs more games per sample)
-
-        Args:
-            config: Config key (e.g., "hex8_2p", "square19_4p")
-            current_elo: Current Elo rating for the config
-
-        Returns:
-            Target games needed to reach 1900 Elo
+        December 2025: Delegated to budget_calculator module.
+        See budget_calculator.compute_target_games() for full docs.
         """
-        target_elo = 1900
-        elo_gap = max(0, target_elo - current_elo)
-
-        # No more games needed if already at target
-        if elo_gap <= 0:
-            return 0
-
-        # Base: ~500 games per Elo point needed (empirical from training data)
-        base_target = elo_gap * 500
-
-        # Parse config for board type and player count
-        try:
-            parts = config.split("_")
-            board = parts[0] if parts else "hex8"
-            players = int(parts[1][0]) if len(parts) > 1 else 2
-        except (IndexError, ValueError):
-            board = "hex8"
-            players = 2
-
-        # Board difficulty multipliers (larger boards need more games)
-        board_mult = {
-            "hex8": 1.0,       # Smallest - baseline
-            "square8": 1.2,   # 64 cells, more complex than hex8
-            "square19": 2.0,  # Go-sized (361 cells) - much harder
-            "hexagonal": 2.5, # Largest (469 cells) - hardest
-        }
-        base_target *= board_mult.get(board, 1.0)
-
-        # Player count multipliers (multiplayer needs more diverse games)
-        player_mult = {
-            2: 1.0,   # 2p baseline
-            3: 1.5,   # 3p more complex game tree
-            4: 2.5,   # 4p exponentially more complex
-        }
-        base_target *= player_mult.get(players, 1.0)
-
-        # Cap to reasonable maximum (no need for more than 500K games)
-        return min(int(base_target), 500000)
+        return _compute_target(config, current_elo)
 
     def get_target_games_for_config(self, config: str) -> int:
         """Get dynamic target games for a config (public accessor).

@@ -45,6 +45,17 @@ MAX_STALENESS_HOURS = _priority_weight_defaults.MAX_STALENESS_HOURS
 TARGET_GAMES_FOR_2000_ELO = _priority_weight_defaults.TARGET_GAMES_FOR_2000_ELO
 LARGE_BOARD_TARGET_MULTIPLIER = _priority_weight_defaults.LARGE_BOARD_TARGET_MULTIPLIER
 
+# =============================================================================
+# Canonical Configuration Constants (December 2025)
+# =============================================================================
+# All supported board/player combinations
+ALL_CONFIGS = [
+    "hex8_2p", "hex8_3p", "hex8_4p",
+    "square8_2p", "square8_3p", "square8_4p",
+    "square19_2p", "square19_3p", "square19_4p",
+    "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
+]
+
 # Priority override multipliers
 PRIORITY_OVERRIDE_MULTIPLIERS = {
     0: 3.0,  # CRITICAL: 3x boost
@@ -58,6 +69,29 @@ PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
     2: 1.0,  # Baseline
     3: 3.0,  # 3x priority for 3p
     4: 4.0,  # 4x priority for 4p
+}
+
+# =============================================================================
+# Game Estimation Constants (December 2025)
+# =============================================================================
+# Samples-per-game estimates by board type and player count
+# Used for game count normalization - ensures selfplay generates enough games
+# to meet training sample targets. Based on historical data from export scripts.
+SAMPLES_PER_GAME_BY_BOARD = {
+    "hex8": {"2p": 35, "3p": 40, "4p": 45},
+    "square8": {"2p": 40, "3p": 50, "4p": 55},
+    "square19": {"2p": 150, "3p": 180, "4p": 200},
+    "hexagonal": {"2p": 250, "3p": 300, "4p": 350},
+}
+
+# VOI (Value of Information) sample cost by board type
+# Relative cost per game (compute time * complexity)
+# Small boards are baseline (1.0), large boards cost more
+VOI_SAMPLE_COST_BY_BOARD = {
+    "hex8": {"2p": 1.0, "3p": 1.3, "4p": 1.5},
+    "square8": {"2p": 1.0, "3p": 1.3, "4p": 1.5},
+    "square19": {"2p": 5.0, "3p": 7.0, "4p": 9.0},
+    "hexagonal": {"2p": 8.0, "3p": 11.0, "4p": 14.0},
 }
 
 
