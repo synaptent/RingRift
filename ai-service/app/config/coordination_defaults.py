@@ -37,6 +37,14 @@ def _env_float(key: str, default: float) -> float:
     return float(os.environ.get(key, default))
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    """Get boolean from environment or use default."""
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    return val.lower() in ("true", "1", "yes", "on")
+
+
 # =============================================================================
 # Distributed Locking Defaults
 # =============================================================================
@@ -232,14 +240,6 @@ class TrainingDefaults:
 # =============================================================================
 # Data Freshness Defaults (December 2025)
 # =============================================================================
-
-def _env_bool(key: str, default: bool) -> bool:
-    """Get boolean from environment or use default."""
-    val = os.environ.get(key, "")
-    if not val:
-        return default
-    return val.lower() in ("true", "1", "yes")
-
 
 @dataclass(frozen=True)
 class DataFreshnessDefaults:
