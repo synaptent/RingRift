@@ -335,6 +335,59 @@ class GPUMCTSSelfplayRunner:
 
         return games
 
+    def run(self) -> "RunStats":
+        """Run selfplay games and return aggregate statistics.
+
+        This method provides compatibility with the SelfplayRunner interface,
+        calling run_batch() in batches until num_games is reached.
+
+        Returns:
+            RunStats with aggregate statistics
+        """
+        from .selfplay_runner import RunStats, GameResult
+
+        start_time = time.time()
+        stats = RunStats()
+
+        # Get total games from config (SelfplayConfig has num_games)
+        total_games = getattr(self.config, "num_games", 1000)
+        batch_size = getattr(self.config, "batch_size", 256)
+
+        games_completed = 0
+        while games_completed < total_games:
+            # Run a batch
+            remaining = total_games - games_completed
+            batch_count = min(batch_size, remaining)
+
+            try:
+                game_records = self.run_batch(num_games=batch_count)
+            except Exception as e:
+                logger.error(f"Batch failed: {e}")
+                stats.games_failed += batch_count
+                break
+
+            # Convert GameRecords to stats
+            for record in game_records:
+                if record.termination_reason == "normal":
+                    # Create a GameResult for stats tracking
+                    result = GameResult(
+                        winner=record.winner,
+                        samples=record.samples,  # type: ignore
+                        num_moves=record.total_moves,
+                        duration_ms=(time.time() - start_time) * 1000 / max(1, len(game_records)),
+                    )
+                    stats.record_game(result)
+                else:
+                    stats.games_failed += 1
+
+            games_completed += len(game_records)
+            logger.info(
+                f"Progress: {games_completed}/{total_games} games "
+                f"({stats.games_completed} completed, {stats.games_failed} failed)"
+            )
+
+        return stats
+
     def _create_sample(
         self,
         state: "GameState",
