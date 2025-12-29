@@ -778,9 +778,12 @@ class TestHotDataBufferPriority:
             )
             buffer.add_game(game)
 
-        states, policies, values, weights = buffer.get_priority_training_batch(batch_size=5)
+        board_features, global_features, policies, values, weights = buffer.get_priority_training_batch(batch_size=5)
 
-        assert len(states) == 5
+        assert len(board_features) == 5
+        assert len(global_features) == 5
+        assert len(policies) == 5
+        assert len(values) == 5
         assert len(weights) == 5
         # Weights should be normalized with max=1
         assert weights.max() == pytest.approx(1.0)

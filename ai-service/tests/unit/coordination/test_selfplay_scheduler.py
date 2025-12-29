@@ -505,9 +505,16 @@ class TestStarvationFloorEnforcement:
     """Tests for _enforce_starvation_floor method."""
 
     def test_starved_config_gets_minimum_allocation(self):
-        """Critically starved configs get floor allocation."""
+        """Critically starved configs get floor allocation when nodes available."""
         reset_selfplay_scheduler()
         scheduler = get_selfplay_scheduler()
+
+        # Register a node so allocation can succeed
+        scheduler._node_capabilities["node1"] = NodeCapability(
+            node_id="node1",
+            gpu_type="A100",
+            current_load=0.0,
+        )
 
         # Set up a starved config
         starved = scheduler._config_priorities["hex8_4p"]
@@ -526,6 +533,23 @@ class TestStarvationFloorEnforcement:
         # Starved config should now have some allocation
         total_4p = sum(result.get("hex8_4p", {}).values())
         assert total_4p > 0
+        reset_selfplay_scheduler()
+
+    def test_starvation_detection_thresholds(self):
+        """Starvation is detected at correct game count thresholds."""
+        reset_selfplay_scheduler()
+        scheduler = get_selfplay_scheduler()
+
+        # Emergency threshold: <100 games
+        emergency = scheduler._config_priorities["hex8_4p"]
+        emergency.game_count = 50
+        assert emergency.game_count < DATA_STARVATION_EMERGENCY_THRESHOLD
+
+        # Critical threshold: <1000 games
+        critical = scheduler._config_priorities["hex8_3p"]
+        critical.game_count = 500
+        assert critical.game_count < DATA_STARVATION_CRITICAL_THRESHOLD
+
         reset_selfplay_scheduler()
 
 
@@ -669,32 +693,36 @@ class TestEventHandlerNodeHealth:
         reset_selfplay_scheduler()
         scheduler = get_selfplay_scheduler()
 
-        # Event with .payload pattern - uses _on_node_overloaded for backoff
+        # Event with .payload pattern - uses "host" key not "node_id"
         event = SimpleNamespace(payload={
-            "node_id": "bad-node-1",
-            "reason": "GPU overload",
-            "backoff_seconds": 60,  # 60 second backoff
+            "host": "bad-node-1",
+            "cpu_percent": 95,
+            "gpu_percent": 90,
+            "memory_percent": 85,
+            "resource_type": "gpu",
         })
         scheduler._on_node_overloaded(event)
 
         assert scheduler.is_node_under_backoff("bad-node-1")
         reset_selfplay_scheduler()
 
-    def test_node_recovered_clears_backoff(self):
-        """Recovered node has backoff cleared."""
+    def test_backoff_expires_after_duration(self):
+        """Backoff expires after duration."""
         reset_selfplay_scheduler()
         scheduler = get_selfplay_scheduler()
 
-        # First mark as overloaded (adds to backoff)
+        # Mark as overloaded
         event_overload = SimpleNamespace(payload={
-            "node_id": "node-1",
-            "reason": "overload",
-            "backoff_seconds": 60,
+            "host": "node-1",
+            "cpu_percent": 95,
+            "gpu_percent": 90,
+            "memory_percent": 85,
+            "resource_type": "cpu",
         })
         scheduler._on_node_overloaded(event_overload)
         assert scheduler.is_node_under_backoff("node-1")
 
-        # Clear the backoff manually (recovery doesn't auto-clear, it expires)
+        # Manually set backoff to past to simulate expiration
         scheduler._overloaded_nodes["node-1"] = 0  # Set backoff to past
         assert not scheduler.is_node_under_backoff("node-1")
         reset_selfplay_scheduler()

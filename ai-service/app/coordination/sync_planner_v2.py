@@ -57,7 +57,7 @@ import logging
 import socket
 import time
 from dataclasses import dataclass, field
-from enum import Enum, IntEnum
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
@@ -98,18 +98,8 @@ __all__ = [
 # Enums
 # =============================================================================
 
-
-class SyncPriority(IntEnum):
-    """Sync operation priority levels.
-
-    Higher values = higher priority (processed first).
-    """
-
-    BACKGROUND = 0      # Opportunistic sync during idle
-    LOW = 10            # Normal replication, no urgency
-    NORMAL = 50         # Standard sync operations
-    HIGH = 75           # Training dependencies, model sync
-    CRITICAL = 100      # Ephemeral node rescue, data at risk
+# Import from canonical location (December 2025 consolidation)
+from app.coordination.sync_constants import SyncPriority
 
 
 # =============================================================================

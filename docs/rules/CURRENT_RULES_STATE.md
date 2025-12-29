@@ -72,15 +72,9 @@ Additional rules‑UX and onboarding specs:
 
 ### AI & Training
 
-<<<<<<< Updated upstream
-| Document | Description | When to Use |
-| --------------------------------------------------------------------- | -------------------------- | ----------------------------------------------- |
-=======
-| Document | Description | When to Use |
+| Document                                                                 | Description                | When to Use                                     |
 | ------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------- |
-
-> > > > > > > Stashed changes
-> > > > > > > | [docs/ai/AI_TRAINING_AND_DATASETS.md](../ai/AI_TRAINING_AND_DATASETS.md) | AI alignment documentation | Training AI or ensuring rules consistency in AI |
+| [docs/ai/AI_TRAINING_AND_DATASETS.md](../ai/AI_TRAINING_AND_DATASETS.md) | AI alignment documentation | Training AI or ensuring rules consistency in AI |
 
 #### Decision timers and countdowns
 
