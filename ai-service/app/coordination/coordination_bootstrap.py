@@ -95,6 +95,7 @@ Benefits:
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -522,7 +523,7 @@ def _init_coordinator_from_spec(
 
     try:
         # Import the module
-        module = __import__(spec.module_path, fromlist=[spec.func_name or ""])
+        module = importlib.import_module(spec.module_path)
 
         if spec.pattern == InitPattern.WIRE:
             # Call wire function
@@ -578,7 +579,7 @@ def _init_coordinator_from_spec(
         if spec.extra_wiring and status.initialized:
             try:
                 extra_module_path, extra_func_name = spec.extra_wiring
-                extra_module = __import__(extra_module_path, fromlist=[extra_func_name])
+                extra_module = importlib.import_module(extra_module_path)
                 extra_func = getattr(extra_module, extra_func_name)
 
                 # Special handling for sync_router - wiring is MANDATORY
@@ -763,7 +764,7 @@ def _validate_critical_imports() -> dict[str, Any]:
     # Validate critical modules
     for module_path, description in _CRITICAL_MODULES:
         try:
-            __import__(module_path)
+            importlib.import_module(module_path)
             result["validated"].append(f"{description} ({module_path})")
         except ImportError as e:
             failure_msg = f"{description} ({module_path}): {e}"
@@ -772,7 +773,7 @@ def _validate_critical_imports() -> dict[str, Any]:
     # Validate optional modules (just log warnings)
     for module_path, description in _OPTIONAL_MODULES:
         try:
-            __import__(module_path)
+            importlib.import_module(module_path)
             result["validated"].append(f"{description} ({module_path})")
         except ImportError as e:
             failure_msg = f"{description} ({module_path}): {e}"

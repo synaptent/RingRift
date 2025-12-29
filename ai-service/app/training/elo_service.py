@@ -1501,7 +1501,7 @@ def reset_elo_service() -> None:
                     if hasattr(local, 'connection') and local.connection is not None:
                         local.connection.close()
                         local.connection = None
-            except Exception:
+            except (sqlite3.Error, AttributeError):
                 pass  # Ignore close errors, connection will be GC'd
             _elo_service_instance = None
 

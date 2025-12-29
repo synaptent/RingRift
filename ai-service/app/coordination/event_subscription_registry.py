@@ -12,6 +12,7 @@ This module provides:
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -246,7 +247,7 @@ def process_init_call_registry(results: dict[str, bool]) -> None:
     for spec in INIT_CALL_REGISTRY:
         try:
             # Dynamic import
-            module = __import__(spec.import_path, fromlist=[spec.function_name])
+            module = importlib.import_module(spec.import_path)
             func = getattr(module, spec.function_name)
 
             # Call the init function
@@ -340,7 +341,7 @@ def _create_delegation_handler(spec: DelegationSpec) -> Callable:
 
         try:
             # Import orchestrator module
-            module = __import__(spec.orchestrator_import, fromlist=[spec.orchestrator_getter.split(".")[0]])
+            module = importlib.import_module(spec.orchestrator_import)
 
             # Get orchestrator instance (handle Class.get_instance() pattern)
             if "." in spec.orchestrator_getter:

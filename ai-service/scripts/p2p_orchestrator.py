@@ -45,8 +45,8 @@ def _load_env_local():
                             if key not in _os.environ:  # Don't override existing
                                 _os.environ[key] = value
                 break
-            except Exception:
-                pass
+            except (OSError, IOError, UnicodeDecodeError):
+                pass  # Skip if .env.local can't be read
 
 _load_env_local()
 
@@ -8939,7 +8939,7 @@ class P2POrchestrator(
         """
         try:
             data = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return web.json_response(
                 {"success": False, "error": "Invalid JSON body"},
                 status=400,

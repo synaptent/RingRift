@@ -56,6 +56,7 @@ Usage:
 """
 
 import atexit
+import importlib
 import logging
 import os
 import socket
@@ -1608,7 +1609,7 @@ def auto_register_known_coordinators() -> dict[str, bool]:
                 continue
 
             # Dynamic import
-            module = __import__(module_path, fromlist=[coord_def["getter"]])
+            module = importlib.import_module(module_path)
             getter = getattr(module, coord_def["getter"])
             coordinator = getter()
 
@@ -1710,9 +1711,7 @@ def discover_and_register_orchestrators() -> dict[str, Any]:
                 continue
 
             # Dynamic import
-            module_parts = module_path.rsplit(".", 1)
-            package = __import__(module_parts[0], fromlist=[module_parts[1]])
-            module = getattr(package, module_parts[1])
+            module = importlib.import_module(module_path)
 
             # Verify class or getter function exists
             getattr(module, orch_def["class_or_getter"])
