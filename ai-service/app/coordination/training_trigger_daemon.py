@@ -102,6 +102,10 @@ class TrainingTriggerConfig:
     gpu_idle_threshold_percent: float = 20.0
     # Timeout for training subprocess (24 hours)
     training_timeout_seconds: int = 86400
+    # December 29, 2025: Training timeout watchdog (Phase 2 - 48h autonomous operation)
+    # Independent watchdog kills training jobs that exceed this limit
+    # This catches hung processes even if the daemon restarts
+    training_timeout_hours: float = 4.0
     # Check interval for periodic scans
     # December 29, 2025: Reduced from 120s to 30s for faster detection
     scan_interval_seconds: int = 30  # 30 seconds
@@ -126,6 +130,8 @@ class ConfigTrainingState:
     last_training_time: float = 0.0
     training_in_progress: bool = False
     training_pid: int | None = None
+    # December 29, 2025: Training timeout watchdog (Phase 2)
+    training_start_time: float = 0.0  # When current training started
     # Data status
     last_npz_update: float = 0.0
     npz_sample_count: int = 0
@@ -179,6 +185,17 @@ class TrainingTriggerDaemon(HandlerBase):
             "pauses_due_to_backpressure": 0,
             "resumes_after_backpressure": 0,
             "last_backpressure_time": 0.0,
+        }
+        # December 29, 2025 (Phase 3): Training retry queue for failed jobs
+        # Tuple: (config_key, board_type, num_players, attempts, next_retry_time, error)
+        from collections import deque
+        self._training_retry_queue: deque[tuple[str, str, int, int, float, str]] = deque()
+        self._max_training_retries = 3
+        self._base_training_retry_delay = 300.0  # 5 minutes, exponential backoff
+        self._retry_stats = {
+            "retries_queued": 0,
+            "retries_succeeded": 0,
+            "retries_exhausted": 0,
         }
 
     def _init_state_db(self) -> None:
@@ -413,6 +430,8 @@ class TrainingTriggerDaemon(HandlerBase):
             "EVALUATION_BACKPRESSURE_RELEASED": self._on_evaluation_backpressure_released,
             # December 29, 2025: Elo velocity-based training decisions
             "elo_velocity_changed": self._on_elo_velocity_changed,
+            # December 29, 2025 (Phase 3): Training failure with retry
+            "training_failed": self._on_training_failed,
         }
 
     async def _on_start(self) -> None:
@@ -1087,6 +1106,204 @@ class TrainingTriggerDaemon(HandlerBase):
         except (ValueError, KeyError, TypeError, AttributeError) as e:
             logger.debug(f"[TrainingTriggerDaemon] Error handling ELO_VELOCITY_CHANGED: {e}")
 
+    async def _on_training_failed(self, event: Any) -> None:
+        """Handle TRAINING_FAILED event with retry logic.
+
+        December 29, 2025 (Phase 3): Implements automatic retry for transient
+        training failures (GPU OOM, network issues, temporary resource constraints).
+
+        Retries are queued with exponential backoff (5min, 10min, 20min).
+        After max retries (3), the failure is permanent and state is updated.
+
+        Args:
+            event: Event with payload containing config_key, error, job_id, etc.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            error = payload.get("error", "Unknown error")
+            job_id = payload.get("job_id", "")
+
+            if not config_key:
+                return
+
+            # Parse board_type and num_players from config_key
+            board_type = config_key.rsplit("_", 1)[0] if "_" in config_key else ""
+            try:
+                num_players = int(config_key.rsplit("_", 1)[1].rstrip("p"))
+            except (ValueError, IndexError):
+                num_players = 2
+
+            state = self._get_or_create_state(config_key, board_type, num_players)
+
+            # Clear training_in_progress flag
+            state.training_in_progress = False
+            state.consecutive_failures += 1
+
+            # Determine if error is retryable
+            error_lower = error.lower()
+            is_retryable = any(pattern in error_lower for pattern in [
+                "cuda", "out of memory", "timeout", "connection",
+                "temporarily unavailable", "resource", "network",
+            ])
+
+            if is_retryable:
+                queued = self._queue_training_retry(
+                    config_key, board_type, num_players, error,
+                    current_attempts=0  # Will check retry queue for existing attempts
+                )
+                if queued:
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Queued retry for {config_key} "
+                        f"after transient failure: {error[:100]}"
+                    )
+                    return  # Don't update permanent failure state yet
+
+            # Permanent failure or max retries exceeded
+            logger.error(
+                f"[TrainingTriggerDaemon] Training permanently failed for {config_key}: "
+                f"{error[:200]} (consecutive_failures={state.consecutive_failures})"
+            )
+
+            # If too many consecutive failures, reduce intensity
+            if state.consecutive_failures >= 3:
+                if state.training_intensity not in ("paused", "reduced"):
+                    old_intensity = state.training_intensity
+                    state.training_intensity = "reduced"
+                    logger.warning(
+                        f"[TrainingTriggerDaemon] Reduced training intensity for {config_key} "
+                        f"after {state.consecutive_failures} consecutive failures "
+                        f"({old_intensity} -> reduced)"
+                    )
+
+            self._save_state()
+
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            logger.debug(f"[TrainingTriggerDaemon] Error handling TRAINING_FAILED: {e}")
+
+    def _queue_training_retry(
+        self,
+        config_key: str,
+        board_type: str,
+        num_players: int,
+        error: str,
+        current_attempts: int = 0,
+    ) -> bool:
+        """Queue failed training for retry with exponential backoff.
+
+        December 29, 2025 (Phase 3): Implements automatic retry for transient failures.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            board_type: Board type for the training
+            num_players: Number of players
+            error: Failure reason (for logging)
+            current_attempts: Number of attempts already made
+
+        Returns:
+            True if queued for retry, False if max attempts exceeded.
+        """
+        # Check existing retries for this config
+        existing_attempts = 0
+        for item in self._training_retry_queue:
+            if item[0] == config_key:
+                existing_attempts = max(existing_attempts, item[3])
+
+        attempts = max(current_attempts, existing_attempts) + 1
+
+        if attempts > self._max_training_retries:
+            self._retry_stats["retries_exhausted"] += 1
+            logger.error(
+                f"[TrainingTriggerDaemon] Max retries ({self._max_training_retries}) exceeded "
+                f"for {config_key}: {error[:100]}"
+            )
+            return False
+
+        # Exponential backoff: 5min, 10min, 20min
+        delay = self._base_training_retry_delay * (2 ** (attempts - 1))
+        next_retry = time.time() + delay
+
+        self._training_retry_queue.append(
+            (config_key, board_type, num_players, attempts, next_retry, error[:200])
+        )
+        self._retry_stats["retries_queued"] += 1
+
+        logger.info(
+            f"[TrainingTriggerDaemon] Queued training retry #{attempts} for {config_key} "
+            f"in {delay/60:.0f}min (reason: {error[:50]}...)"
+        )
+        return True
+
+    async def _process_training_retry_queue(self) -> None:
+        """Process pending training retries whose delay has elapsed.
+
+        December 29, 2025 (Phase 3): Called at the start of each cycle
+        to re-attempt failed training jobs with exponential backoff.
+        """
+        if not self._training_retry_queue:
+            return
+
+        now = time.time()
+        ready_for_retry: list[tuple[str, str, int, int, str]] = []
+        remaining: list[tuple[str, str, int, int, float, str]] = []
+
+        while self._training_retry_queue:
+            item = self._training_retry_queue.popleft()
+            config_key, board_type, num_players, attempts, next_retry_time, error = item
+
+            if next_retry_time <= now:
+                ready_for_retry.append((config_key, board_type, num_players, attempts, error))
+            else:
+                remaining.append(item)
+
+        # Put back items not yet ready
+        for item in remaining:
+            self._training_retry_queue.append(item)
+
+        # Process ready items
+        for config_key, board_type, num_players, attempts, error in ready_for_retry:
+            state = self._get_or_create_state(config_key, board_type, num_players)
+
+            # Skip if already training
+            if state.training_in_progress:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Retry deferred (already training): {config_key}"
+                )
+                # Re-queue with same attempt count but short delay
+                self._training_retry_queue.append(
+                    (config_key, board_type, num_players, attempts, now + 60.0, error)
+                )
+                continue
+
+            logger.info(
+                f"[TrainingTriggerDaemon] Retrying training #{attempts} for {config_key}"
+            )
+
+            # Trigger training check (will go through normal validation)
+            can_train, reason = await self._check_training_readiness(config_key, state)
+            if can_train:
+                success = await self._trigger_training(config_key, state)
+                if success:
+                    self._retry_stats["retries_succeeded"] += 1
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Retry #{attempts} succeeded for {config_key}"
+                    )
+                else:
+                    # Re-queue for next attempt
+                    self._queue_training_retry(
+                        config_key, board_type, num_players,
+                        f"retry failed: {reason}", attempts
+                    )
+            else:
+                # Re-queue for later (conditions not met yet)
+                delay = self._base_training_retry_delay / 2  # Shorter delay for condition check
+                self._training_retry_queue.append(
+                    (config_key, board_type, num_players, attempts, now + delay, error)
+                )
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Retry deferred for {config_key}: {reason}"
+                )
+
     def _get_velocity_adjusted_cooldown(self, state: ConfigTrainingState) -> float:
         """Get training cooldown adjusted for Elo velocity.
 
@@ -1506,6 +1723,7 @@ class TrainingTriggerDaemon(HandlerBase):
 
         async with self._training_semaphore:
             state.training_in_progress = True
+            state.training_start_time = time.time()  # Phase 2: Timeout watchdog
 
             try:
                 # Get intensity-adjusted training parameters
@@ -1723,11 +1941,100 @@ class TrainingTriggerDaemon(HandlerBase):
         except Exception as e:
             logger.warning(f"[TrainingTriggerDaemon] Failed to emit training event: {e}")
 
+    async def _check_training_timeouts(self) -> None:
+        """Check for and kill training jobs that exceed the timeout.
+
+        December 29, 2025 (Phase 2): Training timeout watchdog for 48h autonomous operation.
+        This catches hung training processes even if the daemon restarts.
+        """
+        timeout_seconds = self.config.training_timeout_hours * 3600
+        now = time.time()
+
+        for config_key, state in self._training_states.items():
+            if not state.training_in_progress:
+                continue
+
+            if state.training_start_time <= 0:
+                continue  # No start time recorded (shouldn't happen)
+
+            elapsed = now - state.training_start_time
+            if elapsed < timeout_seconds:
+                continue
+
+            # Training has exceeded timeout
+            elapsed_hours = elapsed / 3600
+            logger.warning(
+                f"[TrainingTriggerDaemon] Training timeout for {config_key}: "
+                f"running for {elapsed_hours:.1f}h (limit: {self.config.training_timeout_hours}h)"
+            )
+
+            # Kill the training process if we have a PID
+            if state.training_pid is not None:
+                try:
+                    os.kill(state.training_pid, 9)  # SIGKILL
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Killed timed-out training process "
+                        f"PID {state.training_pid} for {config_key}"
+                    )
+                except ProcessLookupError:
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] Process {state.training_pid} already dead"
+                    )
+                except PermissionError:
+                    logger.error(
+                        f"[TrainingTriggerDaemon] Permission denied killing PID {state.training_pid}"
+                    )
+
+            # Reset state
+            state.training_in_progress = False
+            state.training_pid = None
+            state.training_start_time = 0.0
+            state.consecutive_failures += 1
+
+            # Cancel the asyncio task if it exists
+            if config_key in self._active_training_tasks:
+                task = self._active_training_tasks.pop(config_key)
+                if not task.done():
+                    task.cancel()
+
+            # Emit training failed event
+            await self._emit_training_failed(config_key, "timeout")
+
+    async def _emit_training_failed(self, config_key: str, reason: str) -> None:
+        """Emit TRAINING_FAILED event for timed-out or errored training."""
+        try:
+            from app.distributed.data_events import DataEventType
+
+            bus = self._get_event_bus()
+            if bus:
+                bus.publish_sync(
+                    DataEventType.TRAINING_FAILED.value,
+                    {
+                        "config_key": config_key,
+                        "reason": reason,
+                        "timestamp": time.time(),
+                        "source": "TrainingTriggerDaemon",
+                    },
+                )
+                logger.info(
+                    f"[TrainingTriggerDaemon] Emitted TRAINING_FAILED for {config_key}: {reason}"
+                )
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Failed to emit TRAINING_FAILED: {e}")
+
     async def _run_cycle(self) -> None:
         """Main work loop iteration - called by HandlerBase at scan_interval_seconds."""
         # Skip if we're on a coordinator node
         if self._coordinator_skip:
             return
+
+        # December 29, 2025 (Phase 2): Check for timed-out training jobs
+        await self._check_training_timeouts()
+
+        # December 29, 2025 (Phase 3): Process pending training retries
+        await self._process_training_retry_queue()
 
         # Scan for training opportunities
         await self._scan_for_training_opportunities()
@@ -1847,6 +2154,11 @@ class TrainingTriggerDaemon(HandlerBase):
                 "evaluation_backpressure": self._evaluation_backpressure,
                 "backpressure_pauses": self._backpressure_stats["pauses_due_to_backpressure"],
                 "backpressure_resumes": self._backpressure_stats["resumes_after_backpressure"],
+                # December 29, 2025 (Phase 3): Training retry stats
+                "retry_queue_size": len(self._training_retry_queue),
+                "retries_queued": self._retry_stats["retries_queued"],
+                "retries_succeeded": self._retry_stats["retries_succeeded"],
+                "retries_exhausted": self._retry_stats["retries_exhausted"],
             },
         )
 

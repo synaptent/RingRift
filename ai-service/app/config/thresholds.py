@@ -613,8 +613,10 @@ SQLITE_SHORT_TIMEOUT = 10
 
 # SQLite PRAGMA settings (December 2025 - consolidated)
 # busy_timeout in milliseconds - how long to wait for locks
-SQLITE_BUSY_TIMEOUT_MS = 10000  # 10 seconds (standard)
-SQLITE_BUSY_TIMEOUT_LONG_MS = 30000  # 30 seconds (for cross-process events)
+# December 29, 2025: Increased standard from 10s to 30s for cluster operations
+# This prevents lock timeout errors during concurrent selfplay/training
+SQLITE_BUSY_TIMEOUT_MS = 30000  # 30 seconds (standard for cluster ops)
+SQLITE_BUSY_TIMEOUT_LONG_MS = 60000  # 60 seconds (for heavy merge operations)
 SQLITE_BUSY_TIMEOUT_SHORT_MS = 5000  # 5 seconds (for quick registry ops)
 
 # Journal mode - WAL for better concurrency

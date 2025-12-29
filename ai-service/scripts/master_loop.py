@@ -1103,6 +1103,9 @@ class MasterLoopController:
             DaemonType.NODE_RECOVERY,
             DaemonType.TRAINING_NODE_WATCHER,
             DaemonType.QUALITY_MONITOR,
+            # December 29, 2025: Proactive disk space management
+            # Prevents sync/training failures due to disk full conditions
+            DaemonType.DISK_SPACE_MANAGER,
         ]
 
         # S3 backup daemons - only if AWS credentials are configured (December 2025)
@@ -1243,8 +1246,14 @@ class MasterLoopController:
                 f"[MasterLoop] CRITICAL DAEMONS FAILED: {critical_issues}. "
                 f"Started: {started_daemons}, Failed: {failed_daemons}"
             )
-            # Don't raise - log warning but continue (graceful degradation)
-            # In production, consider: raise RuntimeError(f"Critical daemons failed: {critical_issues}")
+            # December 29, 2025: Add fail-fast option for critical daemon failures
+            # Set RINGRIFT_FAIL_ON_CRITICAL_DAEMON_FAILURE=1 to enforce strict startup
+            fail_fast = os.environ.get("RINGRIFT_FAIL_ON_CRITICAL_DAEMON_FAILURE", "").lower() in ("1", "true", "yes")
+            if fail_fast:
+                raise RuntimeError(
+                    f"FATAL: Critical daemons failed to start: {critical_issues}. "
+                    "Set RINGRIFT_FAIL_ON_CRITICAL_DAEMON_FAILURE=0 to disable strict mode."
+                )
         else:
             skipped_critical = CRITICAL_DAEMON_NAMES - expected_critical
             if skipped_critical:
@@ -1787,6 +1796,9 @@ class MasterLoopController:
             )
 
             if allocation:
+                # December 29, 2025: Track dispatch stats for reliability monitoring
+                dispatch_stats = {"success": 0, "failed": 0}
+
                 # Emit job allocation events
                 for config_key, nodes in allocation.items():
                     total_games = sum(nodes.values())
@@ -1795,9 +1807,32 @@ class MasterLoopController:
                         f"across {len(nodes)} nodes"
                     )
 
-                    # Emit event for each node allocation
+                    # Emit event for each node allocation and track results
                     for node_id, num_games in nodes.items():
-                        await self._emit_selfplay_job(node_id, config_key, num_games)
+                        success = await self._emit_selfplay_job(node_id, config_key, num_games)
+                        if success:
+                            dispatch_stats["success"] += 1
+                        else:
+                            dispatch_stats["failed"] += 1
+                            logger.warning(
+                                f"[MasterLoop] Failed dispatch: {config_key} to {node_id}"
+                            )
+
+                # Log aggregate stats and warn if majority failed
+                total_dispatches = dispatch_stats["success"] + dispatch_stats["failed"]
+                if total_dispatches > 0:
+                    if dispatch_stats["failed"] > dispatch_stats["success"]:
+                        logger.error(
+                            f"[MasterLoop] MAJORITY OF DISPATCHES FAILED: "
+                            f"{dispatch_stats['failed']}/{total_dispatches} "
+                            f"({dispatch_stats['failed']*100//total_dispatches}% failure rate)"
+                        )
+                    else:
+                        logger.info(
+                            f"[MasterLoop] Dispatch stats: "
+                            f"{dispatch_stats['success']} succeeded, "
+                            f"{dispatch_stats['failed']} failed"
+                        )
 
                 logger.info(f"[MasterLoop] Rebalanced {len(allocation)} configs")
             else:
@@ -1837,19 +1872,22 @@ class MasterLoopController:
         node_id: str,
         config_key: str,
         num_games: int,
-    ) -> None:
+    ) -> bool:
         """Emit a selfplay job and dispatch it directly to the target node.
 
         December 2025 - Phase 2A.2: Emits events for work queue integration.
         December 29, 2025: Added direct dispatch via /selfplay/start endpoint.
         The event-only approach didn't work because IdleResourceDaemon only
         logs the event and waits for its regular loop to pick it up.
+
+        Returns:
+            True if dispatch succeeded, False otherwise.
         """
         try:
             # Parse config key
             parts = config_key.rsplit("_", 1)
             if len(parts) != 2:
-                return
+                return False
 
             board_type = parts[0]
             num_players = int(parts[1].replace("p", ""))
@@ -1887,8 +1925,10 @@ class MasterLoopController:
                     "dispatched": dispatch_success,
                 }
             )
+            return dispatch_success
         except Exception as e:
             logger.debug(f"[MasterLoop] Error emitting selfplay job: {e}")
+            return False
 
     async def _dispatch_selfplay_to_node(
         self,

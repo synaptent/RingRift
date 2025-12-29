@@ -30,6 +30,7 @@ __all__ = [
     "DaemonType",
     "MAX_RESTART_DELAY",
     "DAEMON_RESTART_RESET_AFTER",
+    "RestartTier",  # December 2025: Graceful degradation
     "get_daemon_startup_position",
     "mark_daemon_ready",
     "register_mark_ready_callback",
@@ -300,6 +301,15 @@ class DaemonType(Enum):
     # Accelerates multiplayer model training by starting from learned features
     CASCADE_TRAINING = "cascade_training"
 
+    # =========================================================================
+    # 48-Hour Autonomous Operation daemons (December 29, 2025)
+    # These daemons enable the system to run unattended for 48+ hours:
+    # - ProgressWatchdog: Detects Elo velocity stalls and triggers recovery
+    # - P2PRecovery: Auto-restarts P2P orchestrator on partition/failure
+    # =========================================================================
+    PROGRESS_WATCHDOG = "progress_watchdog"
+    P2P_RECOVERY = "p2p_recovery"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -310,6 +320,26 @@ class DaemonState(Enum):
     FAILED = "failed"
     RESTARTING = "restarting"
     IMPORT_FAILED = "import_failed"  # Permanent failure due to missing imports
+    DEGRADED = "degraded"  # December 2025: Daemon in degraded mode (exceeds restart limits)
+
+
+class RestartTier(Enum):
+    """Restart tier for graceful degradation.
+
+    December 2025: Part of 48-hour autonomous operation plan.
+    Instead of blocking daemons for 24 hours when restart limits are exceeded,
+    we use tiered restart policies with degraded mode.
+
+    Tiers:
+    - NORMAL: 1-5 restarts, standard exponential backoff (5s → 80s)
+    - ELEVATED: 6-10 restarts, extended backoff (160s → 320s)
+    - DEGRADED: >10 restarts, keep retrying with longer intervals
+      - Critical daemons: 30 min retry interval
+      - Non-critical daemons: 4 hour retry interval
+    """
+    NORMAL = "normal"
+    ELEVATED = "elevated"
+    DEGRADED = "degraded"
 
 
 # Constants for recovery behavior (December 2025: imported from centralized thresholds)

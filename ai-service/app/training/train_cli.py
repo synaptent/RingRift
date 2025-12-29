@@ -412,6 +412,23 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
              'Not recommended - may degrade model quality. Use only when fresh data is unavailable.'
     )
 
+    # Stale fallback for 48-hour autonomous operation (December 2025)
+    parser.add_argument(
+        '--disable-stale-fallback', action='store_true',
+        help='Disable stale data fallback (strict mode). By default, training will proceed '
+             'with stale data after --max-sync-failures failures or --max-sync-duration timeout.'
+    )
+    parser.add_argument(
+        '--max-sync-failures', type=int, default=5,
+        help='Maximum sync failures before allowing stale fallback (default: 5). '
+             'Set higher for stricter data freshness requirements.'
+    )
+    parser.add_argument(
+        '--max-sync-duration', type=float, default=2700.0,
+        help='Maximum time (seconds) to wait for sync before fallback (default: 2700 = 45 min). '
+             'Training will proceed with stale data if sync takes longer than this.'
+    )
+
     # Adaptive training intensity (2025-12)
     parser.add_argument(
         '--use-adaptive-intensity', action='store_true',

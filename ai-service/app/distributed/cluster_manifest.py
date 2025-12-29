@@ -53,6 +53,10 @@ from pathlib import Path
 from typing import Any, Generator
 
 from app.config.cluster_config import load_cluster_config
+from app.distributed.cluster_config_manager import (
+    ClusterConfigManager,
+    NodeSyncPolicy as ConfigNodeSyncPolicy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -449,170 +453,37 @@ class ClusterManifest:
         self._conn: sqlite3.Connection | None = None
         self._lock = threading.RLock()  # RLock allows reentrant locking (e.g., get_node_inventory -> get_node_capacity)
 
-        # Load host configuration
-        self._hosts_config: dict[str, Any] = {}
-        self._exclusion_rules: dict[str, NodeSyncPolicy] = {}
-        self._max_disk_usage = MAX_DISK_USAGE_PERCENT
-        self._priority_hosts: set[str] = set()
-        self._load_config(config_path)
+        # Load host configuration via ClusterConfigManager
+        self._config_manager = ClusterConfigManager(config_path)
 
         # Initialize database
         self._init_db()
 
         logger.info(f"ClusterManifest initialized: node={self.node_id}, db={db_path}")
 
-    def _load_config(self, config_path: Path | None = None) -> None:
-        """Load host configuration and exclusion rules.
+    # -------------------------------------------------------------------------
+    # Config accessors (delegated to ClusterConfigManager)
+    # -------------------------------------------------------------------------
 
-        Uses the consolidated cluster_config module instead of inline yaml loading.
-        """
-        try:
-            cluster_config = load_cluster_config(config_path)
+    @property
+    def _hosts_config(self) -> dict[str, Any]:
+        """Get hosts configuration (delegated to ClusterConfigManager)."""
+        return self._config_manager.hosts_config
 
-            self._hosts_config = cluster_config.hosts_raw
+    @property
+    def _exclusion_rules(self) -> dict[str, ConfigNodeSyncPolicy]:
+        """Get exclusion rules (delegated to ClusterConfigManager)."""
+        return self._config_manager.get_all_policies()
 
-            # Build exclusion rules from config (use raw section for backwards compat)
-            raw_config = {
-                "hosts": cluster_config.hosts_raw,
-                "sync_routing": cluster_config.get_raw_section("sync_routing"),
-                "auto_sync": cluster_config.get_raw_section("auto_sync"),
-            }
-            self._build_exclusion_rules(raw_config)
+    @property
+    def _max_disk_usage(self) -> float:
+        """Get max disk usage percent (delegated to ClusterConfigManager)."""
+        return self._config_manager.max_disk_usage_percent
 
-        except Exception as e:
-            logger.error(f"Failed to load config: {e}")
-
-    def _build_exclusion_rules(self, config: dict[str, Any]) -> None:
-        """Build node exclusion rules from configuration."""
-        hosts = config.get("hosts", {})
-
-        # Get sync routing configuration
-        sync_routing = config.get("sync_routing", {})
-
-        # Read max disk usage from config
-        self._max_disk_usage = sync_routing.get(
-            "max_disk_usage_percent", MAX_DISK_USAGE_PERCENT
-        )
-
-        # Auto-sync exclusion from auto_sync section
-        auto_sync = config.get("auto_sync", {})
-        exclude_hosts = set(auto_sync.get("exclude_hosts", []))
-
-        # Process sync_routing.excluded_hosts with detailed policies
-        excluded_host_policies: dict[str, dict] = {}
-        for entry in sync_routing.get("excluded_hosts", []):
-            if isinstance(entry, dict):
-                name = entry.get("name", "")
-                if name:
-                    exclude_hosts.add(name)
-                    excluded_host_policies[name] = entry
-            else:
-                exclude_hosts.add(entry)
-
-        # Process allowed_external_storage overrides
-        external_storage_overrides: dict[str, dict] = {}
-        for entry in sync_routing.get("allowed_external_storage", []):
-            if isinstance(entry, dict):
-                host = entry.get("host", "")
-                if host:
-                    external_storage_overrides[host] = entry
-
-        # Priority hosts for training data
-        self._priority_hosts = set(sync_routing.get("priority_hosts", []))
-
-        for host_name, host_config in hosts.items():
-            role = host_config.get("role", "selfplay")
-
-            # Default policy
-            policy = NodeSyncPolicy(
-                node_id=host_name,
-                max_disk_usage_percent=self._max_disk_usage,
-            )
-
-            # Check if coordinator (typically dev machines)
-            if role == "coordinator":
-                policy.receive_games = False
-                policy.receive_npz = False
-                policy.receive_models = True  # Still receive models
-                policy.exclusion_reason = "coordinator node"
-
-            # Check if explicitly excluded with detailed policy
-            if host_name in excluded_host_policies:
-                entry = excluded_host_policies[host_name]
-                policy.receive_games = entry.get("receive_games", False)
-                policy.receive_npz = entry.get("receive_npz", False)
-                policy.receive_models = entry.get("receive_models", True)
-                policy.exclusion_reason = entry.get("reason", "explicitly excluded")
-            elif host_name in exclude_hosts:
-                policy.receive_games = False
-                policy.receive_npz = False
-                policy.receive_models = True
-                policy.exclusion_reason = "explicitly excluded"
-
-            # Check selfplay_enabled/training_enabled flags
-            if not host_config.get("selfplay_enabled", True) and \
-               not host_config.get("training_enabled", True):
-                policy.receive_games = False
-                policy.receive_npz = False
-                policy.exclusion_reason = "selfplay and training disabled"
-
-            # Mac machines - special handling
-            if self._is_local_mac(host_name, host_config):
-                # Exclude local Macs by default
-                policy.receive_games = False
-                policy.receive_npz = False
-                policy.receive_models = True
-                policy.exclusion_reason = "local Mac machine"
-
-                # Check for external storage override (e.g., OWC drive)
-                if host_name in external_storage_overrides:
-                    override = external_storage_overrides[host_name]
-                    # Only apply override if the external path exists
-                    ext_path = override.get("path", "")
-                    if ext_path and Path(ext_path).exists():
-                        policy.receive_games = override.get("receive_games", True)
-                        policy.receive_npz = override.get("receive_npz", True)
-                        policy.receive_models = override.get("receive_models", True)
-                        policy.exclusion_reason = ""
-                        logger.info(
-                            f"External storage override for {host_name}: {ext_path}"
-                        )
-                elif self._has_owc_external_drive(host_name, host_config):
-                    # Fallback to legacy detection
-                    policy.receive_games = True
-                    policy.receive_npz = True
-                    policy.exclusion_reason = ""
-
-            self._exclusion_rules[host_name] = policy
-
-    def _is_local_mac(self, host_name: str, host_config: dict) -> bool:
-        """Check if this is a local Mac machine."""
-        # Check hostname patterns
-        if "mac" in host_name.lower() or "mbp" in host_name.lower():
-            return True
-
-        # Check GPU field for MPS
-        gpu = host_config.get("gpu", "")
-        if "MPS" in gpu or "M1" in gpu or "M2" in gpu or "M3" in gpu:
-            return True
-
-        return False
-
-    def _has_owc_external_drive(self, host_name: str, host_config: dict) -> bool:
-        """Check if this Mac has an OWC external drive for sync."""
-        # Mac Studio with external storage
-        if "mac-studio" in host_name.lower():
-            # Check for configured external drive path
-            ringrift_path = host_config.get("ringrift_path", "")
-            if "/Volumes/OWC" in ringrift_path or "/Volumes/External" in ringrift_path:
-                return True
-
-            # Check for sync_storage_path configuration
-            sync_path = host_config.get("sync_storage_path", "")
-            if "/Volumes/OWC" in sync_path:
-                return True
-
-        return False
+    @property
+    def _priority_hosts(self) -> set[str]:
+        """Get priority hosts (delegated to ClusterConfigManager)."""
+        return self._config_manager.priority_hosts
 
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:

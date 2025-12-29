@@ -605,7 +605,12 @@ class AutoExportDaemon(HandlerBase):
         )
 
         # Check if we should trigger export
-        await self._maybe_trigger_export(config_key)
+        # December 2025: Use event-driven batch accumulation if enabled
+        if self._daemon_config.event_driven:
+            await self._evaluate_batch_trigger(config_key)
+        else:
+            # Fallback to original threshold-based triggering
+            await self._maybe_trigger_export(config_key)
 
     async def _maybe_trigger_export(self, config_key: str) -> None:
         """Check conditions and trigger export if appropriate."""
@@ -740,6 +745,10 @@ class AutoExportDaemon(HandlerBase):
 
                     # Emit completion event
                     await self._emit_export_complete(config_key, output_path, samples)
+
+                    # December 2025: Emit NEW_GAMES_AVAILABLE for pipeline coordination
+                    # This triggers downstream consumers (training, evaluation) immediately
+                    await self._emit_new_games_available(config_key, samples)
                     return True
 
                 else:
@@ -853,6 +862,49 @@ class AutoExportDaemon(HandlerBase):
 
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[AutoExportDaemon] Failed to emit export complete event: {e}")
+
+    async def _emit_new_games_available(
+        self, config_key: str, samples: int | None
+    ) -> None:
+        """Emit NEW_GAMES_AVAILABLE event for pipeline coordination.
+
+        December 2025: Part of 48-hour autonomous operation optimization.
+        This event signals to downstream consumers (training, evaluation)
+        that new training data is immediately available, enabling reactive
+        dispatch instead of polling-based detection.
+        """
+        try:
+            from app.distributed.data_events import DataEvent, DataEventType
+            from app.coordination.event_router import get_event_bus
+
+            state = self._export_states.get(config_key)
+            parts = config_key.rsplit("_", 1)
+            board_type = parts[0] if len(parts) == 2 else config_key
+            num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
+
+            event = DataEvent(
+                event_type=DataEventType.NEW_GAMES_AVAILABLE,
+                payload={
+                    "config_key": config_key,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "samples": samples,
+                    "games_exported": state.last_export_games if state else 0,
+                    "source": "auto_export_daemon",
+                    "trigger": "event_driven_batch",
+                },
+                source="AutoExportDaemon",
+            )
+
+            bus = get_event_bus()
+            await bus.publish(event)
+            logger.debug(
+                f"[AutoExportDaemon] Emitted NEW_GAMES_AVAILABLE for {config_key} "
+                f"({samples or 0} samples)"
+            )
+
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[AutoExportDaemon] Failed to emit new games available event: {e}")
 
     async def _run_cycle(self) -> None:
         """Main work loop iteration - called by HandlerBase at 5 minute intervals."""
@@ -979,6 +1031,7 @@ async def start_auto_export_daemon() -> AutoExportDaemon:
 __all__ = [
     "AutoExportConfig",
     "AutoExportDaemon",
+    "BatchAccumulator",
     "ConfigExportState",
     "get_auto_export_daemon",
     "reset_auto_export_daemon",

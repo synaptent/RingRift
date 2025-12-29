@@ -1570,6 +1570,59 @@ async def create_availability_provisioner() -> None:
 
 
 # =============================================================================
+# 48-Hour Autonomous Operation Daemons (December 29, 2025)
+# =============================================================================
+
+
+async def create_progress_watchdog() -> None:
+    """Create and run ProgressWatchdog daemon.
+
+    December 29, 2025: Part of 48-hour autonomous operation enablement.
+    Monitors Elo velocity across all 12 configs and detects training stalls.
+
+    - Tracks Elo velocity per config
+    - Detects stalls (6+ hours without progress)
+    - Triggers recovery via PROGRESS_STALL_DETECTED event
+
+    Subscribes to: ELO_UPDATED
+    Emits: PROGRESS_STALL_DETECTED, PROGRESS_RECOVERED
+    """
+    try:
+        from app.coordination.progress_watchdog_daemon import get_progress_watchdog
+
+        daemon = get_progress_watchdog()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"ProgressWatchdog not available: {e}")
+        raise
+
+
+async def create_p2p_recovery() -> None:
+    """Create and run P2PRecovery daemon.
+
+    December 29, 2025: Part of 48-hour autonomous operation enablement.
+    Monitors P2P cluster health and auto-restarts on partition/failure.
+
+    - Checks P2P /status endpoint every 60s
+    - Tracks consecutive failures
+    - Restarts P2P after 3 consecutive failures
+    - Respects 5-minute cooldown between restarts
+
+    Emits: P2P_RESTART_TRIGGERED, P2P_HEALTH_RECOVERED
+    """
+    try:
+        from app.coordination.p2p_recovery_daemon import get_p2p_recovery_daemon
+
+        daemon = get_p2p_recovery_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"P2PRecovery not available: {e}")
+        raise
+
+
+# =============================================================================
 # Runner Registry
 # =============================================================================
 
@@ -1665,6 +1718,9 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.CASCADE_TRAINING.name: create_cascade_training,
         # PER orchestrator (December 29, 2025)
         DaemonType.PER_ORCHESTRATOR.name: create_per_orchestrator,
+        # 48-Hour Autonomous Operation (December 29, 2025)
+        DaemonType.PROGRESS_WATCHDOG.name: create_progress_watchdog,
+        DaemonType.P2P_RECOVERY.name: create_p2p_recovery,
     }
 
 

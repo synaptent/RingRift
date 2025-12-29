@@ -50,7 +50,7 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
-from app.config.coordination_defaults import DaemonHealthDefaults
+from app.config.coordination_defaults import DaemonHealthDefaults, DegradedModeDefaults
 from app.core.async_context import fire_and_forget, safe_create_task
 
 # Singleton mixin for thread-safe singleton pattern (Dec 2025)
@@ -63,6 +63,7 @@ from app.coordination.daemon_types import (
     DaemonManagerConfig,
     DaemonState,
     DaemonType,
+    RestartTier,  # December 2025: Graceful degradation
     mark_daemon_ready,
     register_mark_ready_callback,
 )
@@ -183,6 +184,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         self._restart_timestamps: dict[str, list[float]] = {}  # Daemon -> list of restart times
         self._permanently_failed: dict[str, float] = {}  # Daemon -> timestamp when marked failed
 
+        # Dec 2025: Degraded mode tracking (48-hour autonomous operation)
+        # Tracks daemons in degraded mode with their next retry time and tier
+        # Key: daemon_name, Value: (next_retry_time, restart_tier, entered_degraded_at)
+        self._degraded_daemons: dict[str, tuple[float, RestartTier, float]] = {}
+
         # Dec 2025: Cascade restart circuit breaker state
         # Tracks global restart activity to prevent thundering herd effect
         self._cascade_breaker_open: bool = False
@@ -243,6 +249,8 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     instance._restart_timestamps.clear()
                 if hasattr(instance, "_permanently_failed"):
                     instance._permanently_failed.clear()
+                if hasattr(instance, "_degraded_daemons"):
+                    instance._degraded_daemons.clear()
 
                 # 3. Mark as not running
                 if hasattr(instance, "_running"):
@@ -395,45 +403,185 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         except OSError as e:
             logger.warning(f"[DaemonManager] Failed to save restart counts: {e}")
 
-    def record_restart(self, daemon_type: DaemonType) -> bool:
-        """Record a daemon restart and check if it should be permanently failed.
+    def _get_restart_tier(self, hourly_restarts: int) -> RestartTier:
+        """Get the restart tier based on hourly restart count.
 
-        December 2025: Tracks restart timestamps to detect daemons that are
-        failing repeatedly within a short time window. If a daemon restarts
-        more than MAX_RESTARTS_PER_HOUR times in an hour, it is marked as
-        permanently failed and requires manual intervention.
+        December 2025: Part of 48-hour autonomous operation plan.
+
+        Args:
+            hourly_restarts: Number of restarts in the last hour
+
+        Returns:
+            RestartTier based on restart count
+        """
+        if hourly_restarts <= DegradedModeDefaults.NORMAL_MAX_RESTARTS:
+            return RestartTier.NORMAL
+        elif hourly_restarts <= DegradedModeDefaults.ELEVATED_MAX_RESTARTS:
+            return RestartTier.ELEVATED
+        else:
+            return RestartTier.DEGRADED
+
+    def _get_backoff_delay(
+        self, daemon_type: DaemonType, tier: RestartTier, restart_count: int
+    ) -> float:
+        """Compute restart backoff delay based on tier and restart count.
+
+        December 2025: Part of 48-hour autonomous operation plan.
+
+        Args:
+            daemon_type: Type of daemon
+            tier: Current restart tier
+            restart_count: Number of restarts in current tier
+
+        Returns:
+            Backoff delay in seconds
+        """
+        is_critical = daemon_type in CRITICAL_DAEMONS
+
+        if tier == RestartTier.NORMAL:
+            # Exponential backoff: 5, 10, 20, 40, 80
+            base = DegradedModeDefaults.NORMAL_BACKOFF_BASE
+            max_backoff = DegradedModeDefaults.NORMAL_BACKOFF_MAX
+            delay = min(base * (2 ** min(restart_count - 1, 4)), max_backoff)
+            return delay
+
+        elif tier == RestartTier.ELEVATED:
+            # Extended backoff: 160, 320
+            base = DegradedModeDefaults.ELEVATED_BACKOFF_BASE
+            max_backoff = DegradedModeDefaults.ELEVATED_BACKOFF_MAX
+            # restart_count here is 6-10, so normalize to 0-4 for tier
+            tier_count = restart_count - DegradedModeDefaults.NORMAL_MAX_RESTARTS
+            delay = min(base * (2 ** min(tier_count - 1, 1)), max_backoff)
+            return delay
+
+        else:  # DEGRADED
+            # Long intervals based on criticality
+            if is_critical:
+                return DegradedModeDefaults.CRITICAL_RETRY_INTERVAL
+            else:
+                return DegradedModeDefaults.NONCRITICAL_RETRY_INTERVAL
+
+    def _is_degraded_ready_to_retry(self, daemon_name: str) -> bool:
+        """Check if a degraded daemon is ready to retry.
+
+        December 2025: Part of 48-hour autonomous operation plan.
+
+        Args:
+            daemon_name: Name of the daemon
+
+        Returns:
+            True if the daemon should retry, False if still waiting
+        """
+        if daemon_name not in self._degraded_daemons:
+            return True
+
+        next_retry, tier, entered_at = self._degraded_daemons[daemon_name]
+        current_time = time.time()
+
+        # Check if auto-recovery period has passed (reset to normal)
+        if current_time - entered_at >= DegradedModeDefaults.RESET_AFTER_HOURS * 3600:
+            logger.info(
+                f"[DaemonManager] {daemon_name} auto-recovered from degraded mode after "
+                f"{DegradedModeDefaults.RESET_AFTER_HOURS}h"
+            )
+            del self._degraded_daemons[daemon_name]
+            self._restart_timestamps.pop(daemon_name, None)
+            self._save_restart_counts()
+            return True
+
+        return current_time >= next_retry
+
+    def get_degraded_daemons(self) -> dict[str, dict]:
+        """Get information about daemons in degraded mode.
+
+        December 2025: Part of 48-hour autonomous operation plan.
+
+        Returns:
+            Dict of daemon_name -> {tier, next_retry, entered_at, is_critical}
+        """
+        result = {}
+        current_time = time.time()
+
+        for daemon_name, (next_retry, tier, entered_at) in self._degraded_daemons.items():
+            # Find daemon type
+            daemon_type = None
+            for dt in DaemonType:
+                if dt.value == daemon_name:
+                    daemon_type = dt
+                    break
+
+            result[daemon_name] = {
+                "tier": tier.value,
+                "next_retry_in_seconds": max(0, next_retry - current_time),
+                "entered_degraded_at": entered_at,
+                "time_in_degraded_seconds": current_time - entered_at,
+                "is_critical": daemon_type in CRITICAL_DAEMONS if daemon_type else False,
+                "auto_recovery_in_seconds": max(
+                    0,
+                    (entered_at + DegradedModeDefaults.RESET_AFTER_HOURS * 3600) - current_time
+                ),
+            }
+
+        return result
+
+    def record_restart(self, daemon_type: DaemonType) -> bool:
+        """Record a daemon restart and determine restart action.
+
+        December 2025: Updated for graceful degradation (48-hour autonomous operation).
+        Instead of marking daemons as "permanently failed" after 10 restarts/hour,
+        we now use tiered restart policies:
+        - NORMAL (1-5 restarts): Standard exponential backoff (5s → 80s)
+        - ELEVATED (6-10 restarts): Extended backoff (160s → 320s)
+        - DEGRADED (>10 restarts): Keep retrying with longer intervals
+          - Critical daemons: 30 min retry interval
+          - Non-critical daemons: 4 hour retry interval
 
         Args:
             daemon_type: Type of daemon being restarted
 
         Returns:
-            True if the daemon should be allowed to restart,
-            False if it has exceeded the hourly limit and should be marked permanently failed
+            True if the daemon should be allowed to restart now,
+            False if it should wait (in degraded mode) or is blocked
         """
         daemon_name = daemon_type.value
         current_time = time.time()
 
-        # Check if already permanently failed
+        # Check if degraded mode is disabled (legacy behavior)
+        if not DegradedModeDefaults.ENABLED:
+            return self._record_restart_legacy(daemon_type)
+
+        # Check if in degraded mode and not ready to retry
+        if daemon_name in self._degraded_daemons:
+            if not self._is_degraded_ready_to_retry(daemon_name):
+                next_retry, tier, _ = self._degraded_daemons[daemon_name]
+                wait_seconds = next_retry - current_time
+                logger.info(
+                    f"[DaemonManager] {daemon_name} is in {tier.value} mode, "
+                    f"next retry in {wait_seconds:.0f}s"
+                )
+                return False
+            else:
+                # Ready to retry - will update next_retry below
+                logger.info(f"[DaemonManager] {daemon_name} degraded mode retry starting")
+
+        # Legacy: Check if permanently failed (for backward compatibility during migration)
         if daemon_name in self._permanently_failed:
             failed_at = self._permanently_failed[daemon_name]
             age_seconds = current_time - failed_at
 
-            # Auto-recover after 24 hours
             if age_seconds >= PERMANENT_FAILURE_RECOVERY_SECONDS:
                 logger.info(
                     f"[DaemonManager] {daemon_name} auto-recovered after "
                     f"{age_seconds / 3600:.1f}h in permanent failure state"
                 )
                 del self._permanently_failed[daemon_name]
-                # Clear restart timestamps to give it a fresh start
                 self._restart_timestamps.pop(daemon_name, None)
                 self._save_restart_counts()
             else:
-                logger.error(
-                    f"[DaemonManager] {daemon_name} is permanently failed "
-                    f"({age_seconds / 3600:.1f}h ago), not restarting. "
-                    f"Will auto-recover in {(PERMANENT_FAILURE_RECOVERY_SECONDS - age_seconds) / 3600:.1f}h"
-                )
+                # Migrate to degraded mode if enabled
+                self._enter_degraded_mode(daemon_type, current_time)
+                del self._permanently_failed[daemon_name]
+                self._save_restart_counts()
                 return False
 
         # Get or create timestamp list for this daemon
@@ -449,17 +597,18 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             if ts > current_time - 3600
         ]
 
+        hourly_restarts = len(self._restart_timestamps[daemon_name])
+        tier = self._get_restart_tier(hourly_restarts)
+
         # Check for crash loop early warning (3+ restarts in 5 minutes)
-        # December 2025: Emit warning before permanent failure to enable proactive intervention
-        CRASH_LOOP_WINDOW_SECONDS = 300  # 5 minutes
-        CRASH_LOOP_THRESHOLD = 3  # restarts in window
+        CRASH_LOOP_WINDOW_SECONDS = 300
+        CRASH_LOOP_THRESHOLD = 3
         recent_timestamps = [
             ts for ts in self._restart_timestamps[daemon_name]
             if ts > current_time - CRASH_LOOP_WINDOW_SECONDS
         ]
         recent_restarts = len(recent_timestamps)
 
-        # Emit crash loop warning if threshold exceeded (but not yet permanent failure)
         if recent_restarts >= CRASH_LOOP_THRESHOLD:
             logger.warning(
                 f"[DaemonManager] {daemon_name} is crash looping "
@@ -471,23 +620,178 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 CRASH_LOOP_WINDOW_SECONDS // 60,
             )
 
-        # Check if hourly limit exceeded
+        # Handle based on tier
+        if tier == RestartTier.DEGRADED:
+            self._enter_degraded_mode(daemon_type, current_time)
+            logger.warning(
+                f"[DaemonManager] {daemon_name} entered DEGRADED mode "
+                f"({hourly_restarts} restarts/hour). Will keep retrying with "
+                f"{'30min' if daemon_type in CRITICAL_DAEMONS else '4hr'} intervals."
+            )
+            self._emit_degraded_mode_event(daemon_type, hourly_restarts)
+            self._save_restart_counts()
+            return False  # Don't restart immediately, wait for next retry
+        else:
+            # Normal or elevated tier - compute backoff and allow restart
+            backoff = self._get_backoff_delay(daemon_type, tier, hourly_restarts)
+            logger.info(
+                f"[DaemonManager] {daemon_name} restart #{hourly_restarts} "
+                f"(tier={tier.value}, backoff={backoff:.1f}s)"
+            )
+
+            # Update daemon state if it was in degraded mode
+            if daemon_name in self._degraded_daemons:
+                del self._degraded_daemons[daemon_name]
+                if daemon_type in self._daemons:
+                    self._daemons[daemon_type].state = DaemonState.RESTARTING
+
+            self._save_restart_counts()
+            return True
+
+    def _enter_degraded_mode(self, daemon_type: DaemonType, current_time: float) -> None:
+        """Enter degraded mode for a daemon.
+
+        December 2025: Part of 48-hour autonomous operation plan.
+
+        Args:
+            daemon_type: Type of daemon entering degraded mode
+            current_time: Current timestamp
+        """
+        daemon_name = daemon_type.value
+        is_critical = daemon_type in CRITICAL_DAEMONS
+        hourly_restarts = len(self._restart_timestamps.get(daemon_name, []))
+
+        # Compute next retry time
+        if is_critical:
+            retry_delay = DegradedModeDefaults.CRITICAL_RETRY_INTERVAL
+        else:
+            retry_delay = DegradedModeDefaults.NONCRITICAL_RETRY_INTERVAL
+
+        next_retry = current_time + retry_delay
+
+        # Track when we entered degraded mode (for first entry) or keep original
+        if daemon_name in self._degraded_daemons:
+            _, _, entered_at = self._degraded_daemons[daemon_name]
+        else:
+            entered_at = current_time
+
+        self._degraded_daemons[daemon_name] = (next_retry, RestartTier.DEGRADED, entered_at)
+
+        # Update daemon state
+        if daemon_type in self._daemons:
+            self._daemons[daemon_type].state = DaemonState.DEGRADED
+
+        logger.info(
+            f"[DaemonManager] {daemon_name} entered degraded mode "
+            f"(critical={is_critical}, next_retry_in={retry_delay/60:.0f}min, "
+            f"restarts={hourly_restarts})"
+        )
+
+    def _emit_degraded_mode_event(self, daemon_type: DaemonType, restart_count: int) -> None:
+        """Emit DAEMON_DEGRADED_MODE event for monitoring/alerting.
+
+        December 2025: Part of 48-hour autonomous operation plan.
+        Notifies external systems when a daemon enters degraded mode.
+        """
+        try:
+            from app.distributed.data_events import DataEventType
+
+            import socket
+            hostname = socket.gethostname()
+
+            is_critical = daemon_type in CRITICAL_DAEMONS
+            retry_interval = (
+                DegradedModeDefaults.CRITICAL_RETRY_INTERVAL
+                if is_critical
+                else DegradedModeDefaults.NONCRITICAL_RETRY_INTERVAL
+            )
+
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                logger.info(
+                    f"DAEMON_DEGRADED_MODE: {daemon_type.value} "
+                    f"(restart_count={restart_count}, retry_in={retry_interval/60:.0f}min, "
+                    f"no event loop)"
+                )
+                return
+
+            # Emit via event router if available
+            try:
+                from app.coordination.event_router import get_router
+
+                router = get_router()
+                router.publish(
+                    "daemon.degraded_mode",
+                    {
+                        "daemon_name": daemon_type.value,
+                        "hostname": hostname,
+                        "restart_count": restart_count,
+                        "is_critical": is_critical,
+                        "retry_interval_seconds": retry_interval,
+                        "source": "DaemonManager",
+                    },
+                )
+                logger.info(f"Emitted DAEMON_DEGRADED_MODE for {daemon_type.value}")
+            except Exception as e:
+                logger.debug(f"Failed to emit DAEMON_DEGRADED_MODE via router: {e}")
+
+        except ImportError:
+            logger.debug("data_events not available for DAEMON_DEGRADED_MODE")
+        except Exception as e:
+            logger.debug(f"Failed to emit DAEMON_DEGRADED_MODE: {e}")
+
+    def _record_restart_legacy(self, daemon_type: DaemonType) -> bool:
+        """Legacy restart recording (when degraded mode is disabled).
+
+        December 2025: Preserved for backward compatibility when
+        RINGRIFT_DEGRADED_MODE_ENABLED=false.
+        """
+        daemon_name = daemon_type.value
+        current_time = time.time()
+
+        # Check if already permanently failed
+        if daemon_name in self._permanently_failed:
+            failed_at = self._permanently_failed[daemon_name]
+            age_seconds = current_time - failed_at
+
+            if age_seconds >= PERMANENT_FAILURE_RECOVERY_SECONDS:
+                logger.info(
+                    f"[DaemonManager] {daemon_name} auto-recovered after "
+                    f"{age_seconds / 3600:.1f}h in permanent failure state"
+                )
+                del self._permanently_failed[daemon_name]
+                self._restart_timestamps.pop(daemon_name, None)
+                self._save_restart_counts()
+            else:
+                logger.error(
+                    f"[DaemonManager] {daemon_name} is permanently failed "
+                    f"({age_seconds / 3600:.1f}h ago), not restarting. "
+                    f"Will auto-recover in {(PERMANENT_FAILURE_RECOVERY_SECONDS - age_seconds) / 3600:.1f}h"
+                )
+                return False
+
+        # Get or create timestamp list for this daemon
+        if daemon_name not in self._restart_timestamps:
+            self._restart_timestamps[daemon_name] = []
+
+        self._restart_timestamps[daemon_name].append(current_time)
+        self._restart_timestamps[daemon_name] = [
+            ts for ts in self._restart_timestamps[daemon_name]
+            if ts > current_time - 3600
+        ]
+
         hourly_restarts = len(self._restart_timestamps[daemon_name])
         if hourly_restarts > MAX_RESTARTS_PER_HOUR:
             logger.error(
                 f"[DaemonManager] {daemon_name} exceeded hourly restart limit "
-                f"({hourly_restarts} > {MAX_RESTARTS_PER_HOUR}), marking permanently failed. "
-                f"Will auto-recover in {PERMANENT_FAILURE_RECOVERY_SECONDS / 3600:.0f}h"
+                f"({hourly_restarts} > {MAX_RESTARTS_PER_HOUR}), marking permanently failed."
             )
-            self._permanently_failed[daemon_name] = current_time  # Track WHEN failed for auto-recovery
+            self._permanently_failed[daemon_name] = current_time
             self._save_restart_counts()
-
-            # Emit DAEMON_PERMANENTLY_FAILED event
             self._emit_permanently_failed_event(daemon_type)
-
             return False
 
-        # Save updated state
         self._save_restart_counts()
         return True
 

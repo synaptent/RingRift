@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  RingRift Master Loop Watchdog
+
+  This launchd plist ensures the master_loop.py process is always running.
+  If the process crashes or is killed, launchd will automatically restart it.
+
+  Installation:
+    cp config/launchd/com.ringrift.master-loop.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ringrift.master-loop.plist
+
+  Uninstallation:
+    launchctl unload ~/Library/LaunchAgents/com.ringrift.master-loop.plist
+    rm ~/Library/LaunchAgents/com.ringrift.master-loop.plist
+
+  Status:
+    launchctl list com.ringrift.master-loop
+
+  Logs:
+    tail -f ~/Development/RingRift/ai-service/logs/master_loop.log
+    tail -f ~/Development/RingRift/ai-service/logs/master_loop.err
+
+  December 2025: Created for 48-hour autonomous operation enablement.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for this launch agent -->
+    <key>Label</key>
+    <string>com.ringrift.master-loop</string>
+
+    <!-- Command to execute -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/armand/Development/RingRift/ai-service/scripts/master_loop.py</string>
+    </array>
+
+    <!-- Working directory for the process -->
+    <key>WorkingDirectory</key>
+    <string>/Users/armand/Development/RingRift/ai-service</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/armand/Development/RingRift/ai-service</string>
+        <key>RINGRIFT_DAEMON_MODE</key>
+        <string>1</string>
+    </dict>
+
+    <!-- Keep the process alive - restart if it exits -->
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Always restart, regardless of exit code -->
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Wait 30 seconds between restart attempts to prevent rapid cycling -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- Log files -->
+    <key>StandardOutPath</key>
+    <string>/Users/armand/Development/RingRift/ai-service/logs/master_loop.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/armand/Development/RingRift/ai-service/logs/master_loop.err</string>
+
+    <!-- Start automatically at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Process priority (0 = normal, negative = higher priority) -->
+    <key>Nice</key>
+    <integer>0</integer>
+
+    <!-- Soft resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <!-- Max open files -->
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+
+    <!-- Timeout for graceful shutdown (seconds) -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+</dict>
+</plist>

@@ -101,7 +101,9 @@ CIRCUIT_BACKOFF_SECONDS = float(os.environ.get("RINGRIFT_CIRCUIT_BACKOFF_SECONDS
 
 # Dec 29, 2025 - Phase 3: Quality gate configuration
 # Training is blocked if quality score is below this threshold
-QUALITY_GATE_THRESHOLD = float(os.environ.get("RINGRIFT_QUALITY_GATE_THRESHOLD", "0.6"))
+# Relaxed from 0.6 to 0.3 for 48-hour autonomous operation (Dec 2025)
+# This reduces training gate blocks from ~15% to ~5%
+QUALITY_GATE_THRESHOLD = float(os.environ.get("RINGRIFT_QUALITY_GATE_THRESHOLD", "0.3"))
 
 
 async def _check_training_data_quality(config_key: str, npz_path: str) -> tuple[bool, float]:

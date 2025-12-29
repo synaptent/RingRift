@@ -255,9 +255,10 @@ class DataFreshnessDefaults:
     """
     # Maximum acceptable age of training data (hours)
     # Data older than this is considered stale and may trigger sync
-    # December 29, 2025: Tightened from 24.0 to 4.0 for faster feedback loop
-    # Phase 3: Fresher data = better convergence, +30-50 Elo expected
-    MAX_DATA_AGE_HOURS: float = _env_float("RINGRIFT_MAX_DATA_AGE_HOURS", 4.0)
+    # December 29, 2025: Relaxed from 4.0 to 24.0 for 48-hour autonomous operation
+    # This reduces training gate blocks from ~15% to ~5% by allowing older data
+    # when fresh data isn't available, prioritizing training throughput
+    MAX_DATA_AGE_HOURS: float = _env_float("RINGRIFT_MAX_DATA_AGE_HOURS", 24.0)
 
     # Warning threshold (hours) - emit DATA_STALE warning above this
     # December 29, 2025: Tightened from 8.0 to 1.0 for earlier warnings
@@ -1479,6 +1480,47 @@ class DegradedModeDefaults:
 
 
 # =============================================================================
+# Stale Data Fallback Defaults (December 2025 - 48-hour autonomous operation)
+# =============================================================================
+
+@dataclass(frozen=True)
+class StaleFallbackDefaults:
+    """Default values for training stale data fallback.
+
+    December 2025: Part of 48-hour autonomous operation plan.
+    When sync failures block training indefinitely, allow training to proceed
+    with stale data after N failures or timeout.
+
+    Problem: Sync failures can block training indefinitely, freezing progress.
+    Solution: After configurable failures or timeout, allow training with
+    older data while continuing to attempt sync in background.
+
+    Used by: app/coordination/stale_fallback.py, app/training/train.py
+    """
+    # Maximum sync failures before allowing stale fallback
+    MAX_SYNC_FAILURES: int = _env_int("RINGRIFT_MAX_SYNC_FAILURES", 5)
+
+    # Maximum sync duration before fallback (seconds) - 45 minutes
+    MAX_SYNC_DURATION: float = _env_float("RINGRIFT_MAX_SYNC_DURATION", 2700.0)
+
+    # Absolute maximum data age allowed even in fallback mode (hours)
+    # Training will NEVER proceed if data is older than this
+    ABSOLUTE_MAX_DATA_AGE: float = _env_float("RINGRIFT_ABSOLUTE_MAX_DATA_AGE", 24.0)
+
+    # Whether stale fallback is enabled (can disable for strict mode)
+    ENABLE_STALE_FALLBACK: bool = _env_bool("RINGRIFT_ENABLE_STALE_FALLBACK", True)
+
+    # Minimum games required for fallback to proceed
+    MIN_GAMES_FOR_FALLBACK: int = _env_int("RINGRIFT_MIN_GAMES_FOR_FALLBACK", 1000)
+
+    # Cooldown between fallback attempts (seconds) - prevent rapid retries
+    FALLBACK_COOLDOWN: float = _env_float("RINGRIFT_FALLBACK_COOLDOWN", 300.0)
+
+    # Whether to emit events when falling back to stale data
+    EMIT_FALLBACK_EVENTS: bool = _env_bool("RINGRIFT_EMIT_FALLBACK_EVENTS", True)
+
+
+# =============================================================================
 # SQLite Database Defaults (December 2025)
 # =============================================================================
 
@@ -1520,7 +1562,9 @@ class SQLiteDefaults:
     WAL_CHECKPOINT_THRESHOLD: int = _env_int("RINGRIFT_SQLITE_WAL_CHECKPOINT", 1000)
 
     # Busy timeout for lock contention (milliseconds)
-    BUSY_TIMEOUT_MS: int = _env_int("RINGRIFT_SQLITE_BUSY_TIMEOUT_MS", 5000)
+    # December 29, 2025: Increased default from 5s to 30s to match thresholds.py
+    # This prevents lock timeout errors during concurrent cluster operations
+    BUSY_TIMEOUT_MS: int = _env_int("RINGRIFT_SQLITE_BUSY_TIMEOUT_MS", 30000)
 
 
 def get_sqlite_timeout(operation: str) -> float:
@@ -2521,6 +2565,16 @@ def get_all_defaults() -> dict:
             "enabled": DegradedModeDefaults.ENABLED,
             "reset_after_hours": DegradedModeDefaults.RESET_AFTER_HOURS,
         },
+        # December 2025: Stale fallback (48-hour autonomous operation)
+        "stale_fallback": {
+            "max_sync_failures": StaleFallbackDefaults.MAX_SYNC_FAILURES,
+            "max_sync_duration": StaleFallbackDefaults.MAX_SYNC_DURATION,
+            "absolute_max_data_age": StaleFallbackDefaults.ABSOLUTE_MAX_DATA_AGE,
+            "enabled": StaleFallbackDefaults.ENABLE_STALE_FALLBACK,
+            "min_games_for_fallback": StaleFallbackDefaults.MIN_GAMES_FOR_FALLBACK,
+            "fallback_cooldown": StaleFallbackDefaults.FALLBACK_COOLDOWN,
+            "emit_fallback_events": StaleFallbackDefaults.EMIT_FALLBACK_EVENTS,
+        },
         # December 27, 2025: Idle threshold defaults
         "idle_threshold": {
             "gpu_idle_threshold": IdleThresholdDefaults.GPU_IDLE_THRESHOLD,
@@ -2612,6 +2666,7 @@ __all__ = [
     "DaemonHealthDefaults",
     "DaemonLoopDefaults",
     "DegradedModeDefaults",  # December 2025 - 48-hour autonomous operation
+    "StaleFallbackDefaults",  # December 2025 - 48-hour autonomous operation
     "DurationDefaults",
     "EphemeralDefaults",
     "EphemeralGuardDefaults",

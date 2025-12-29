@@ -191,8 +191,56 @@ class SelfplayRunner(ABC):
         """Run a single selfplay game. Must be implemented by subclasses."""
         ...
 
+    def _check_process_limit(self) -> bool:
+        """Check if node is under selfplay process limit.
+
+        December 29, 2025: Prevents runaway process spawning that causes OOM.
+        Set RINGRIFT_RUNAWAY_SELFPLAY_PROCESS_THRESHOLD to configure limit (default: 128).
+
+        Returns:
+            True if under limit, False if at/over limit.
+        """
+        try:
+            import psutil
+            from ..config.env import env
+
+            threshold = env.runaway_selfplay_process_threshold
+            # Count Python processes that look like selfplay
+            selfplay_count = 0
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    cmdline = " ".join(proc.info.get("cmdline") or [])
+                    if "python" in proc.info.get("name", "").lower():
+                        if "selfplay" in cmdline.lower() or "gpu_parallel" in cmdline.lower():
+                            selfplay_count += 1
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+
+            if selfplay_count >= threshold:
+                logger.warning(
+                    f"[ProcessLimit] At limit: {selfplay_count}/{threshold} selfplay processes. "
+                    "Skipping this run to prevent OOM."
+                )
+                return False
+
+            logger.debug(f"[ProcessLimit] Under limit: {selfplay_count}/{threshold} selfplay processes")
+            return True
+
+        except ImportError:
+            # psutil not available, skip check
+            logger.debug("[ProcessLimit] psutil not available, skipping process limit check")
+            return True
+        except (OSError, RuntimeError) as e:
+            logger.debug(f"[ProcessLimit] Error checking processes: {e}")
+            return True  # Don't block on errors
+
     def setup(self) -> None:
         """Called before run loop. Override for custom initialization."""
+        # December 29, 2025: Check process limit before starting
+        if not self._check_process_limit():
+            self.running = False
+            return
+
         logger.info(f"SelfplayRunner starting: {self.config.board_type}_{self.config.num_players}p")
         logger.info(f"  Engine: {self.config.engine_mode.value}")
         self._apply_elo_adaptive_config()  # Set model_elo for Elo-adaptive budget/temperature
