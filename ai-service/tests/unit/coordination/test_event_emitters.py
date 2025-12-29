@@ -1176,6 +1176,8 @@ class TestEmitGameQualityScore:
             return True
 
         with patch(
+            "app.coordination.event_emitters.HAS_DATA_EVENTS", True
+        ), patch(
             "app.coordination.event_emitters.DataEventType", MockDataEventType
         ), patch(
             "app.coordination.event_emitters._emit_data_event",
