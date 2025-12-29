@@ -4528,15 +4528,37 @@ def train_model(
                     if anomaly_detector.check_loss(loss_val, anomaly_step):
                         anomaly_summary = anomaly_detector.get_summary()
                         consecutive = anomaly_summary.get('consecutive_anomalies', 0)
+                        # Dec 29, 2025: Detect NaN/Inf explicitly for event emission
+                        is_nan = loss_val != loss_val  # NaN != NaN is True
+                        is_inf = not is_nan and (loss_val == float('inf') or loss_val == float('-inf'))
+                        anomaly_type = 'nan' if is_nan else ('inf' if is_inf else 'spike')
                         logger.warning(
-                            f"Training anomaly detected at batch {i}: "
+                            f"Training anomaly detected at batch {i}: type={anomaly_type}, "
                             f"total={anomaly_summary.get('total_anomalies', 0)}, "
                             f"consecutive={consecutive}"
                         )
                         # Update Prometheus anomaly counter
                         if HAS_PROMETHEUS and ANOMALY_DETECTIONS and (not distributed or is_main_process()):
-                            anomaly_type = 'nan' if loss_val != loss_val else 'spike'  # NaN != NaN
                             ANOMALY_DETECTIONS.labels(config=config_label, type=anomaly_type).inc()
+
+                        # Dec 29, 2025: Emit event for batch-level NaN/Inf (critical anomalies)
+                        if (is_nan or is_inf) and HAS_TRAINING_EVENTS and (not distributed or is_main_process()):
+                            try:
+                                import asyncio
+                                config_key = f"{config.board_type.value}_{num_players}p"
+                                loop = asyncio.get_running_loop()
+                                asyncio.ensure_future(emit_training_loss_anomaly(
+                                    config_key=config_key,
+                                    current_loss=0.0 if is_nan else loss_val,
+                                    avg_loss=0.0,
+                                    epoch=epoch + 1,
+                                    anomaly_ratio=float('inf'),
+                                    source="train.py",
+                                    anomaly_type=anomaly_type,
+                                    batch=i,
+                                ))
+                            except RuntimeError:
+                                pass  # No event loop - OK in non-async context
 
                         # Auto-reduce learning rate on repeated anomalies (2025-12)
                         # Reduce by 30% after 3 consecutive anomalies (before circuit breaker)
@@ -5096,6 +5118,41 @@ def train_model(
                                     ))
                                 except RuntimeError:
                                     pass
+
+                        # Dec 29, 2025: Stricter plateau detection (0.1% over 10 epochs)
+                        # This catches subtle plateaus that the 5-epoch/5% threshold misses
+                        if (epoch + 1) % 10 == 0 and len(epoch_losses) >= 10:
+                            last_10_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
+                                              for e in epoch_losses[-10:] if e]
+                            prev_10_losses = [e.get('avg_val_loss', e.get('avg_train_loss', 0.0))
+                                              for e in epoch_losses[-20:-10] if e]
+                            if len(last_10_losses) >= 10 and len(prev_10_losses) >= 5:
+                                last_10_avg = sum(last_10_losses) / len(last_10_losses)
+                                prev_10_avg = sum(prev_10_losses) / len(prev_10_losses)
+                                long_term_improvement = (prev_10_avg - last_10_avg) / prev_10_avg if prev_10_avg > 0 else 0.0
+
+                                # Plateau: < 0.1% improvement over 10 epochs
+                                if abs(long_term_improvement) < 0.001:
+                                    logger.warning(
+                                        f"[TRAINING PLATEAU] Detected at epoch {epoch+1}: "
+                                        f"<0.1% improvement over 10 epochs "
+                                        f"(last_10={last_10_avg:.5f}, prev_10={prev_10_avg:.5f})"
+                                    )
+                                    try:
+                                        loop = asyncio.get_running_loop()
+                                        asyncio.ensure_future(emit_training_loss_trend(
+                                            config_key=config_key,
+                                            trend="plateau",
+                                            epoch=epoch + 1,
+                                            current_loss=last_10_avg,
+                                            previous_loss=prev_10_avg,
+                                            improvement_rate=long_term_improvement,
+                                            source="train.py",
+                                            window_size=10,
+                                        ))
+                                    except RuntimeError:
+                                        pass
+
                 except (RuntimeError, ConnectionError, TimeoutError, AttributeError) as e:
                     # Event emission failures, network issues, or missing attributes
                     logger.debug(f"Failed to emit training events: {e}")

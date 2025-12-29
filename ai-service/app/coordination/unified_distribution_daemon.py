@@ -313,6 +313,178 @@ class UnifiedDistributionDaemon:
         )
 
     # =========================================================================
+    # Distribution Verification (December 2025 - Phase 3)
+    # =========================================================================
+
+    async def verify_distribution(
+        self,
+        model_path: str,
+        min_nodes: int | None = None,
+    ) -> tuple[bool, int]:
+        """Check if model is distributed to at least min_nodes.
+
+        Uses ClusterManifest to query model locations across the cluster.
+        This is the core verification method used before promotion/evaluation.
+
+        Args:
+            model_path: Path to the model file (can be relative or absolute)
+            min_nodes: Minimum number of nodes required (default from DistributionDefaults)
+
+        Returns:
+            Tuple of (success, actual_node_count)
+
+        Example:
+            success, count = await daemon.verify_distribution("models/canonical_hex8_2p.pth")
+            if not success:
+                logger.warning(f"Model only on {count} nodes, distribution incomplete")
+        """
+        try:
+            from app.config.coordination_defaults import DistributionDefaults
+            from app.distributed.cluster_manifest import get_cluster_manifest
+
+            if min_nodes is None:
+                min_nodes = DistributionDefaults.MIN_NODES_FOR_PROMOTION
+
+            manifest = get_cluster_manifest()
+
+            # Normalize model path to just filename for matching
+            model_name = Path(model_path).name
+            locations = manifest.find_model(model_name)
+
+            # Get unique nodes
+            unique_nodes = {loc.node_id for loc in locations}
+            actual_count = len(unique_nodes)
+
+            success = actual_count >= min_nodes
+
+            logger.debug(
+                f"[DistributionVerification] Model {model_name}: "
+                f"{actual_count}/{min_nodes} nodes (success={success})"
+            )
+
+            return (success, actual_count)
+
+        except ImportError as e:
+            logger.warning(f"[DistributionVerification] ClusterManifest unavailable: {e}")
+            return (False, 0)
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.error(f"[DistributionVerification] Error checking distribution: {e}")
+            return (False, 0)
+
+    def get_model_availability_score(self, model_path: str) -> float:
+        """Return 0-1 score for how well model is distributed.
+
+        Score = (nodes with model) / (total GPU nodes in cluster)
+
+        Args:
+            model_path: Path to the model file
+
+        Returns:
+            Float between 0.0 and 1.0 indicating distribution coverage
+        """
+        try:
+            from app.config.cluster_config import get_gpu_nodes
+            from app.distributed.cluster_manifest import get_cluster_manifest
+
+            manifest = get_cluster_manifest()
+            model_name = Path(model_path).name
+            locations = manifest.find_model(model_name)
+
+            # Get unique nodes with model
+            nodes_with_model = len({loc.node_id for loc in locations})
+
+            # Get total GPU nodes
+            try:
+                gpu_nodes = get_gpu_nodes()
+                total_gpu_nodes = len(gpu_nodes)
+            except (ImportError, RuntimeError) as e:
+                logger.debug(f"[DistributionVerification] Could not get GPU nodes: {e}")
+                # Fallback to reasonable estimate
+                total_gpu_nodes = 30
+
+            if total_gpu_nodes == 0:
+                return 0.0
+
+            score = nodes_with_model / total_gpu_nodes
+            return min(1.0, score)
+
+        except ImportError:
+            return 0.0
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.error(f"[DistributionVerification] Error calculating score: {e}")
+            return 0.0
+
+    async def wait_for_adequate_distribution(
+        self,
+        model_path: str,
+        min_nodes: int | None = None,
+        timeout: float | None = None,
+    ) -> tuple[bool, int]:
+        """Wait for model to be distributed to adequate number of nodes.
+
+        Polls verify_distribution() periodically until success or timeout.
+
+        Args:
+            model_path: Path to the model file
+            min_nodes: Minimum nodes required (default from DistributionDefaults)
+            timeout: Maximum wait time in seconds (default from DistributionDefaults)
+
+        Returns:
+            Tuple of (success, final_node_count)
+        """
+        try:
+            from app.config.coordination_defaults import DistributionDefaults
+
+            if min_nodes is None:
+                min_nodes = DistributionDefaults.MIN_NODES_FOR_PROMOTION
+            if timeout is None:
+                timeout = DistributionDefaults.DISTRIBUTION_TIMEOUT_SECONDS
+
+            retry_interval = DistributionDefaults.DISTRIBUTION_RETRY_INTERVAL
+            start_time = time.time()
+
+            model_name = Path(model_path).name
+            logger.info(
+                f"[DistributionVerification] Waiting for {model_name} "
+                f"to reach {min_nodes} nodes (timeout: {timeout}s)"
+            )
+
+            while (time.time() - start_time) < timeout:
+                success, count = await self.verify_distribution(model_path, min_nodes)
+                if success:
+                    logger.info(
+                        f"[DistributionVerification] {model_name} reached {count} nodes"
+                    )
+                    return (True, count)
+
+                await asyncio.sleep(retry_interval)
+
+            # Final check
+            success, count = await self.verify_distribution(model_path, min_nodes)
+            if not success:
+                logger.warning(
+                    f"[DistributionVerification] Timeout: {model_name} only on {count}/{min_nodes} nodes"
+                )
+                # Emit DISTRIBUTION_INCOMPLETE event
+                try:
+                    from app.distributed.data_events import emit_event
+
+                    emit_event("DISTRIBUTION_INCOMPLETE", {
+                        "model_path": model_path,
+                        "required_nodes": min_nodes,
+                        "actual_nodes": count,
+                        "timeout_seconds": timeout,
+                    })
+                except ImportError:
+                    pass
+
+            return (success, count)
+
+        except ImportError as e:
+            logger.warning(f"[DistributionVerification] Config unavailable: {e}")
+            return (False, 0)
+
+    # =========================================================================
     # Lifecycle
     # =========================================================================
 
@@ -2077,6 +2249,84 @@ def get_all_cached_remote_paths() -> dict[str, str]:
     """
     with _remote_path_cache_lock:
         return _remote_path_cache.copy()
+
+
+# =============================================================================
+# Distribution Verification Convenience Functions (December 2025 - Phase 3)
+# =============================================================================
+
+
+async def verify_model_distribution(
+    model_path: str,
+    min_nodes: int | None = None,
+) -> tuple[bool, int]:
+    """Module-level convenience function for verifying model distribution.
+
+    Creates a temporary daemon instance to perform verification.
+    For repeated checks, prefer creating a daemon instance directly.
+
+    Args:
+        model_path: Path to the model file
+        min_nodes: Minimum nodes required (default from DistributionDefaults)
+
+    Returns:
+        Tuple of (success, actual_node_count)
+
+    Example:
+        success, count = await verify_model_distribution("models/canonical_hex8_2p.pth")
+        if not success:
+            print(f"Warning: Model only on {count} nodes")
+    """
+    daemon = UnifiedDistributionDaemon()
+    return await daemon.verify_distribution(model_path, min_nodes)
+
+
+def get_model_availability_score(model_path: str) -> float:
+    """Module-level convenience function for checking model availability.
+
+    Args:
+        model_path: Path to the model file
+
+    Returns:
+        Float between 0.0 and 1.0 indicating distribution coverage
+
+    Example:
+        score = get_model_availability_score("models/canonical_hex8_2p.pth")
+        if score < 0.3:
+            print("Warning: Model poorly distributed")
+    """
+    daemon = UnifiedDistributionDaemon()
+    return daemon.get_model_availability_score(model_path)
+
+
+async def wait_for_model_availability(
+    model_path: str,
+    min_nodes: int | None = None,
+    timeout: float | None = None,
+) -> tuple[bool, int]:
+    """Wait for a model to be distributed to adequate nodes.
+
+    Module-level convenience function that polls until success or timeout.
+
+    Args:
+        model_path: Path to the model file
+        min_nodes: Minimum nodes required (default from DistributionDefaults)
+        timeout: Maximum wait time in seconds (default from DistributionDefaults)
+
+    Returns:
+        Tuple of (success, final_node_count)
+
+    Example:
+        success, count = await wait_for_model_availability(
+            "models/canonical_hex8_2p.pth",
+            min_nodes=5,
+            timeout=300,
+        )
+        if success:
+            print(f"Model distributed to {count} nodes, proceeding with evaluation")
+    """
+    daemon = UnifiedDistributionDaemon()
+    return await daemon.wait_for_adequate_distribution(model_path, min_nodes, timeout)
 
 
 # =============================================================================
