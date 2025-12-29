@@ -230,6 +230,12 @@ class DataEventType(Enum):
     P2P_NODE_DEAD = "p2p_node_dead"  # Dec 2025: Single node dead (vs P2P_NODES_DEAD for batch)
     P2P_NODES_DEAD = "p2p_nodes_dead"
     P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"
+    P2P_RESTART_TRIGGERED = "p2p_restart_triggered"  # Dec 2025: P2P orchestrator restart initiated
+    P2P_HEALTH_RECOVERED = "p2p_health_recovered"  # Dec 2025: P2P cluster recovered from unhealthy
+
+    # Progress monitoring events (December 2025 - 48h autonomous operation)
+    PROGRESS_STALL_DETECTED = "progress_stall_detected"  # Config Elo stalled, recovery triggered
+    PROGRESS_RECOVERED = "progress_recovered"  # Config resumed making Elo progress
 
     # Orphan detection events
     ORPHAN_GAMES_DETECTED = "orphan_games_detected"  # Unregistered game databases found

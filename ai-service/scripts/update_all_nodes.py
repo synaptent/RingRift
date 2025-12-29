@@ -155,11 +155,44 @@ async def update_node(
             # Wait for graceful shutdown
             await asyncio.sleep(2)
 
-            # Start P2P in background
+            # Build proper P2P start command
             venv_activate = node_config.get('venv_activate', 'source venv/bin/activate')
+
+            # Build P2P arguments
+            p2p_args = [
+                f"--node-id {node_name}",
+                "--port 8770",
+                f"--ringrift-path {node_path}",
+                "--kill-duplicates",  # Kill any stale processes
+            ]
+
+            # Add advertise-host for Tailscale nodes
+            tailscale_ip = node_config.get('tailscale_ip')
+            if tailscale_ip:
+                p2p_args.append(f"--advertise-host {tailscale_ip}")
+
+            # Add relay-peers for NAT-blocked nodes (use p2p_voters as relay)
+            if node_config.get('nat_blocked') or node_config.get('force_relay_mode'):
+                # Use non-NAT-blocked voters as relay peers
+                relay_peers = ['vultr-a100-20gb:8770', 'nebius-h100-3:8770']
+                p2p_args.append(f"--relay-peers {','.join(relay_peers)}")
+
+            # Build known peers list from p2p_voters
+            known_peers = [
+                'vultr-a100-20gb:8770',
+                'nebius-h100-3:8770',
+                'hetzner-cpu1:8770',
+                'nebius-backbone-1:8770',
+            ]
+            p2p_args.append(f"--peers {','.join(known_peers)}")
+
+            p2p_args_str = ' '.join(p2p_args)
+
             start_cmd = (
                 f"cd {node_path} && {venv_activate} && "
-                f"nohup python -m app.distributed.p2p_orchestrator > logs/p2p.log 2>&1 &"
+                f"mkdir -p logs && "
+                f"nohup python scripts/p2p_orchestrator.py {p2p_args_str} "
+                f"> logs/p2p.log 2>&1 &"
             )
             start_result = await client.run_async(start_cmd, timeout=15)
 
@@ -167,7 +200,7 @@ async def update_node(
                 logger.warning(f"[{node_name}] P2P restart may have failed: {start_result.stderr}")
             else:
                 # Give it a moment to start
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
                 # Verify it's running
                 if await check_p2p_running(client, node_name, node_path):
                     return (node_name, True, f"Updated to {current_commit}, P2P restarted")

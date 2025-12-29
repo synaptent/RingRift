@@ -324,16 +324,15 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
     async def _emit_restart_event(self) -> None:
         """Emit event when P2P restart is triggered."""
         try:
-            from app.distributed.data_events import emit_event
+            from app.distributed.data_events import DataEventType, emit_data_event
 
-            await emit_event(
-                "P2P_RESTART_TRIGGERED",
-                {
-                    "consecutive_failures": self._consecutive_failures,
-                    "last_status": self._last_status,
-                    "total_restarts": self._total_restarts,
-                    "unhealthy_duration_seconds": time.time() - self._last_healthy_time,
-                },
+            emit_data_event(
+                DataEventType.P2P_RESTART_TRIGGERED,
+                consecutive_failures=self._consecutive_failures,
+                last_status=self._last_status,
+                total_restarts=self._total_restarts,
+                unhealthy_duration_seconds=time.time() - self._last_healthy_time,
+                source="P2PRecoveryDaemon",
             )
         except Exception as e:
             logger.debug(f"Failed to emit P2P_RESTART_TRIGGERED: {e}")
@@ -341,15 +340,14 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
     async def _emit_recovery_event(self, status: dict[str, Any]) -> None:
         """Emit event when P2P recovers."""
         try:
-            from app.distributed.data_events import emit_event
+            from app.distributed.data_events import DataEventType, emit_data_event
 
-            await emit_event(
-                "P2P_HEALTH_RECOVERED",
-                {
-                    "alive_peers": status.get("alive_peers", 0),
-                    "leader_id": status.get("leader_id"),
-                    "recovery_duration_seconds": time.time() - self._last_healthy_time,
-                },
+            emit_data_event(
+                DataEventType.P2P_HEALTH_RECOVERED,
+                alive_peers=status.get("alive_peers", 0),
+                leader_id=status.get("leader_id"),
+                recovery_duration_seconds=time.time() - self._last_healthy_time,
+                source="P2PRecoveryDaemon",
             )
         except Exception as e:
             logger.debug(f"Failed to emit P2P_HEALTH_RECOVERED: {e}")

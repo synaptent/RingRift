@@ -429,6 +429,17 @@ class IdleResourceDaemon:
                 )
             scaled = max(1, reduced)  # Always allow at least 1 spawn
 
+        # Apply memory pressure reduction (December 29, 2025 - 48-hour autonomous operation)
+        # Memory pressure is more critical - can reduce spawns to 0
+        memory_reduction = getattr(self, "_memory_pressure_spawn_reduction", 1.0)
+        if memory_reduction < 1.0:
+            mem_reduced = int(scaled * memory_reduction)
+            if mem_reduced < scaled:
+                logger.debug(
+                    f"[IdleResourceDaemon] Memory pressure reducing spawns: {scaled} → {mem_reduced}"
+                )
+            scaled = mem_reduced  # Can reduce to 0 during memory pressure
+
         # Apply cluster health reduction (December 2025 - P2P integration)
         cluster_health = getattr(self, "_cluster_health_reduction", 1.0)
         if cluster_health < 1.0:
@@ -730,13 +741,46 @@ class IdleResourceDaemon:
             router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, _on_backpressure_activated)
             router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, _on_backpressure_released)
 
+            # December 29, 2025: Add MEMORY_PRESSURE handling (48-hour autonomous operation)
+            def _on_memory_pressure(event: Any) -> None:
+                """Handle MEMORY_PRESSURE - pause spawning on affected node."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                source = payload.get("source", "unknown")
+                gpu_utilization = payload.get("gpu_utilization", 0)
+                ram_utilization = payload.get("ram_utilization", 0)
+
+                logger.warning(
+                    f"[IdleResourceDaemon] Memory pressure detected: "
+                    f"source={source}, GPU={gpu_utilization:.1%}, RAM={ram_utilization:.1%}"
+                )
+
+                # Pause spawning during memory pressure (more aggressive than backpressure)
+                if not hasattr(self, "_memory_pressure_active"):
+                    self._memory_pressure_active = True
+                self._memory_pressure_active = True
+                self._memory_pressure_spawn_reduction = 0.0  # Complete pause
+
+            def _on_memory_pressure_cleared(event: Any) -> None:
+                """Handle memory pressure cleared - resume spawning."""
+                logger.info("[IdleResourceDaemon] Memory pressure cleared, resuming spawning")
+                self._memory_pressure_active = False
+                self._memory_pressure_spawn_reduction = 1.0
+
+            router.subscribe(DataEventType.MEMORY_PRESSURE.value, _on_memory_pressure)
+            # Also listen for RESOURCE_CONSTRAINT as a signal to be cautious
+            router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, _on_memory_pressure)
+
+            # Initialize memory pressure state
+            self._memory_pressure_active = False
+            self._memory_pressure_spawn_reduction: float = 1.0
+
             # Initialize backpressure state
             self._backpressure_active: set[str] = set()
             self._backpressure_spawn_reduction: float = 1.0
 
             logger.info(
-                "[IdleResourceDaemon] Subscribed to backpressure events "
-                "(BACKPRESSURE_ACTIVATED, BACKPRESSURE_RELEASED)"
+                "[IdleResourceDaemon] Subscribed to pressure events "
+                "(BACKPRESSURE_*, MEMORY_PRESSURE, RESOURCE_CONSTRAINT)"
             )
 
         except ImportError:
