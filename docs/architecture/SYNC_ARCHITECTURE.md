@@ -258,11 +258,7 @@ print(f"Synced {stats.files_synced} files, {stats.bytes_transferred} bytes")
 ### Background Daemon
 
 ```python
-from app.coordination.auto_sync_daemon import (
-    AutoSyncDaemon,
-    AutoSyncConfig,
-    create_ephemeral_sync_daemon,
-)
+from app.coordination.auto_sync_daemon import AutoSyncDaemon, AutoSyncConfig
 
 # Standard daemon (for persistent hosts)
 config = AutoSyncConfig(
@@ -273,7 +269,11 @@ daemon = AutoSyncDaemon(config=config)
 await daemon.start()
 
 # Ephemeral daemon (for Vast.ai/spot)
-ephemeral_daemon = create_ephemeral_sync_daemon()
+ephemeral_config = AutoSyncConfig(
+    interval_seconds=5,
+    strategy="ephemeral",
+)
+ephemeral_daemon = AutoSyncDaemon(config=ephemeral_config)
 await ephemeral_daemon.start()
 ```
 

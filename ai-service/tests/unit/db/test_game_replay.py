@@ -21,7 +21,7 @@ from app.db.game_replay import (
     GameWriter,
     SCHEMA_VERSION,
 )
-from app.models import BoardType, GameState, Move, MoveType, Phase
+from app.models import BoardType, GameState, Move, MoveType
 
 
 # =============================================================================

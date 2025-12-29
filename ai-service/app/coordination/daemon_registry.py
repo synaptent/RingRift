@@ -549,6 +549,20 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.AVAILABILITY_CAPACITY_PLANNER),
         category="resource",
     ),
+    # =========================================================================
+    # Cascade Training & PER (December 29, 2025)
+    # =========================================================================
+    DaemonType.CASCADE_TRAINING: DaemonSpec(
+        runner_name="create_cascade_training",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
+        category="pipeline",
+    ),
+    DaemonType.PER_ORCHESTRATOR: DaemonSpec(
+        runner_name="create_per_orchestrator",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="pipeline",
+        health_check_interval=60.0,  # Monitor PER buffer health
+    ),
 }
 
 

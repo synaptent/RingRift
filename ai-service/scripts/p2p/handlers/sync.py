@@ -372,13 +372,20 @@ class SyncHandlersMixin(BaseP2PHandler):
                     )
 
             elif pull_required:
-                # Large file - we'll need to pull it via rsync
-                # Just acknowledge for now
+                # Large file - queue rsync pull from source node
                 logger.info(
                     f"Received push notification from {source_node}: {file_path} "
-                    f"({file_size} bytes, pull required)"
+                    f"({file_size} bytes, queuing rsync pull)"
                 )
-                # TODO: Queue rsync pull from source_node
+
+                # Queue the rsync pull request
+                self._queue_rsync_pull(
+                    source_node=source_node,
+                    file_path=file_path,
+                    local_path=str(local_path),
+                    expected_checksum=expected_checksum,
+                    file_size=file_size,
+                )
 
             else:
                 return self.error_response(
@@ -741,3 +748,106 @@ class SyncHandlersMixin(BaseP2PHandler):
             return True, 0.0
         except Exception:
             return True, 0.0  # Fail open
+
+    def _queue_rsync_pull(
+        self,
+        source_node: str,
+        file_path: str,
+        local_path: str,
+        expected_checksum: str,
+        file_size: int,
+    ) -> None:
+        """Queue an rsync pull request for a large file.
+
+        December 29, 2025: Implements the rsync pull queue for large files that
+        can't be included inline in push notifications. The queue is processed
+        by the sync coordinator using bandwidth-coordinated rsync.
+
+        Args:
+            source_node: Node ID that has the file
+            file_path: Path to the file on the source node
+            local_path: Where to save the file locally
+            expected_checksum: SHA256 checksum for verification
+            file_size: Size of the file in bytes
+        """
+        # Lazy init the queue
+        if not hasattr(self, "_pending_rsync_pulls"):
+            self._pending_rsync_pulls: list[dict[str, Any]] = []
+            self._pending_rsync_pulls_lock = Lock()
+
+        pull_request = {
+            "source_node": source_node,
+            "file_path": file_path,
+            "local_path": local_path,
+            "expected_checksum": expected_checksum,
+            "file_size": file_size,
+            "queued_at": time.time(),
+            "status": "pending",
+        }
+
+        with self._pending_rsync_pulls_lock:
+            # Check for duplicates (same source + file_path)
+            for existing in self._pending_rsync_pulls:
+                if (existing["source_node"] == source_node and
+                    existing["file_path"] == file_path):
+                    logger.debug(
+                        f"Skipping duplicate rsync pull: {file_path} from {source_node}"
+                    )
+                    return
+
+            self._pending_rsync_pulls.append(pull_request)
+            queue_size = len(self._pending_rsync_pulls)
+
+        logger.info(
+            f"Queued rsync pull: {file_path} from {source_node} "
+            f"({file_size / 1024 / 1024:.1f}MB, queue size: {queue_size})"
+        )
+
+        # Try to process queue immediately if sync coordinator is available
+        try:
+            from app.coordination.sync_bandwidth import get_coordinated_rsync
+
+            # Fire and forget - sync coordinator will process the queue
+            # This is a notification, actual transfer happens async
+            rsync = get_coordinated_rsync()
+            if rsync and hasattr(rsync, "queue_pull"):
+                rsync.queue_pull(pull_request)
+        except ImportError:
+            # sync_bandwidth not available, queue will be processed later
+            pass
+        except Exception as e:
+            logger.debug(f"Could not notify sync coordinator: {e}")
+
+    def get_pending_rsync_pulls(self) -> list[dict[str, Any]]:
+        """Get list of pending rsync pull requests.
+
+        Returns:
+            List of pending pull requests with source, path, size info
+        """
+        if not hasattr(self, "_pending_rsync_pulls"):
+            return []
+
+        with self._pending_rsync_pulls_lock:
+            return list(self._pending_rsync_pulls)
+
+    def clear_completed_rsync_pulls(self) -> int:
+        """Remove completed or failed rsync pulls from the queue.
+
+        Returns:
+            Number of pulls removed
+        """
+        if not hasattr(self, "_pending_rsync_pulls"):
+            return 0
+
+        with self._pending_rsync_pulls_lock:
+            original_count = len(self._pending_rsync_pulls)
+            self._pending_rsync_pulls = [
+                p for p in self._pending_rsync_pulls
+                if p.get("status") == "pending"
+            ]
+            removed = original_count - len(self._pending_rsync_pulls)
+
+        if removed > 0:
+            logger.debug(f"Cleared {removed} completed rsync pulls from queue")
+
+        return removed

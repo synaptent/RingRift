@@ -1663,6 +1663,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.AVAILABILITY_PROVISIONER.name: create_availability_provisioner,
         # Cascade training (December 29, 2025)
         DaemonType.CASCADE_TRAINING.name: create_cascade_training,
+        # PER orchestrator (December 29, 2025)
+        DaemonType.PER_ORCHESTRATOR.name: create_per_orchestrator,
     }
 
 
