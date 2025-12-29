@@ -158,8 +158,9 @@ class TestCheckEvaluationPassed:
         trigger = PipelineTrigger(config)
         result = await trigger.check_evaluation_passed(0.80, 0.70)
         assert not result.passed
-        assert "random" in result.message.lower()
+        assert "threshold" in result.message.lower()
         assert len(result.details["issues"]) >= 1
+        assert "random" in result.details["issues"][0].lower()
 
     @pytest.mark.asyncio
     async def test_fails_when_heuristic_threshold_not_met(self):
@@ -519,7 +520,9 @@ async def test_check_databases_exist_counts_games(monkeypatch, tmp_path) -> None
 
     monkeypatch.setattr("app.utils.game_discovery.GameDiscovery", FakeDiscovery)
 
-    trigger = PipelineTrigger()
+    # Use custom config with low threshold (default is 50)
+    config = TriggerConfig(min_games_for_export=1)
+    trigger = PipelineTrigger(config)
     result = await trigger.check_databases_exist("square8", 2)
 
     assert result.passed

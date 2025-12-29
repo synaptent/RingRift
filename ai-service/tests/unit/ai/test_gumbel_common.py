@@ -202,7 +202,11 @@ class TestGetBudgetForDifficulty:
         for diff in range(7, 10):
             assert get_budget_for_difficulty(diff) == GUMBEL_BUDGET_QUALITY
 
-    def test_high_difficulty_gets_ultimate(self):
-        """Test difficulties 10+ get ultimate budget."""
-        for diff in range(10, 13):
-            assert get_budget_for_difficulty(diff) == GUMBEL_BUDGET_ULTIMATE
+    def test_high_difficulty_gets_ultimate_or_master(self):
+        """Test difficulty 10 gets ultimate, 11+ gets master budget."""
+        # Difficulty 10: ULTIMATE (1600)
+        assert get_budget_for_difficulty(10) == GUMBEL_BUDGET_ULTIMATE
+        # Difficulty 11+: MASTER (3200) - December 2025 addition for 2000+ Elo
+        from app.ai.gumbel_common import GUMBEL_BUDGET_MASTER
+        for diff in range(11, 13):
+            assert get_budget_for_difficulty(diff) == GUMBEL_BUDGET_MASTER

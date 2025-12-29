@@ -484,7 +484,14 @@ class SyncPushMixin(SyncMixinBase):
                 }
 
         except asyncio.TimeoutError:
-            logger.error(f"[AutoSyncDaemon] Sync to {target['node_id']} timed out")
+            logger.warning(f"[AutoSyncDaemon] Rsync to {target['node_id']} timed out, trying fallback")
+            # December 2025: Use robust_push fallback on timeout
+            fallback_result = await self._robust_push_fallback(
+                source, target, ssh_user, games_path, start_time
+            )
+            if fallback_result.get("success"):
+                return fallback_result
+
             # Emit SYNC_STALLED for failover routing (Dec 2025)
             fire_and_forget(
                 self._emit_sync_stalled(
@@ -499,15 +506,124 @@ class SyncPushMixin(SyncMixinBase):
                 "target": target["node_id"],
                 "success": False,
                 "duration_seconds": time.time() - start_time,
-                "error": "Timeout",
+                "error": "Timeout (all transports failed)",
             }
         except (OSError, asyncio.CancelledError, subprocess.SubprocessError) as e:
-            logger.error(f"[AutoSyncDaemon] Sync to {target['node_id']} error: {e}")
+            logger.warning(f"[AutoSyncDaemon] Rsync to {target['node_id']} error: {e}, trying fallback")
+            # December 2025: Use robust_push fallback on rsync failure
+            fallback_result = await self._robust_push_fallback(
+                source, target, ssh_user, games_path, start_time
+            )
+            if fallback_result.get("success"):
+                return fallback_result
+
             # Dec 2025: Emit DATA_SYNC_FAILED for sync exceptions
             fire_and_forget(
                 self._emit_sync_failure(target["node_id"], str(source), str(e)),
                 on_error=lambda exc: logger.debug(f"Failed to emit sync failure: {exc}"),
             )
+            return {
+                "source": str(source),
+                "target": target["node_id"],
+                "success": False,
+                "duration_seconds": time.time() - start_time,
+                "error": str(e),
+            }
+
+    async def _robust_push_fallback(
+        self,
+        source: Path,
+        target: dict[str, Any],
+        ssh_user: str,
+        games_path: str,
+        start_time: float,
+    ) -> dict[str, Any]:
+        """Fallback to robust_push when rsync fails.
+
+        December 2025: Added for improved sync reliability.
+        Uses multi-transport fallback: rsync → scp → base64
+
+        Args:
+            source: Source database path
+            target: Target node info dict
+            ssh_user: SSH username
+            games_path: Remote games directory path
+            start_time: Sync start time for duration tracking
+
+        Returns:
+            Sync result dict with success, bytes_transferred, duration, error
+        """
+        try:
+            from scripts.lib.transfer import robust_push, TransferConfig
+
+            # Get SSH key from cluster config or use default
+            ssh_key = "~/.ssh/id_cluster"
+            try:
+                from app.config.cluster_config import get_cluster_nodes
+                cluster_nodes = get_cluster_nodes()
+                node_config = cluster_nodes.get(target["node_id"])
+                if node_config and node_config.ssh_key:
+                    ssh_key = node_config.ssh_key
+            except ImportError:
+                pass
+
+            config = TransferConfig(
+                ssh_key=ssh_key,
+                ssh_user=ssh_user,
+                ssh_port=22,
+                connect_timeout=10,
+                transfer_timeout=300,
+                max_retries=2,
+                compress=True,
+                verify_checksum=True,
+            )
+
+            remote_path = f"{games_path}/synced/{source.name}"
+
+            # Run in thread pool since robust_push is synchronous
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: robust_push(source, target["host"], 22, remote_path, config),
+            )
+
+            if result.success:
+                logger.info(
+                    f"[AutoSyncDaemon] Fallback sync succeeded via {result.method}: "
+                    f"{source.name} -> {target['node_id']}"
+                )
+                return {
+                    "source": str(source),
+                    "target": target["node_id"],
+                    "success": True,
+                    "bytes_transferred": result.bytes_transferred,
+                    "duration_seconds": time.time() - start_time,
+                    "method": result.method,
+                }
+            else:
+                logger.warning(
+                    f"[AutoSyncDaemon] All fallback transports failed for {target['node_id']}: "
+                    f"{result.error}"
+                )
+                return {
+                    "source": str(source),
+                    "target": target["node_id"],
+                    "success": False,
+                    "duration_seconds": time.time() - start_time,
+                    "error": result.error,
+                }
+
+        except ImportError:
+            logger.debug("[AutoSyncDaemon] robust_push not available")
+            return {
+                "source": str(source),
+                "target": target["node_id"],
+                "success": False,
+                "duration_seconds": time.time() - start_time,
+                "error": "Fallback transport not available",
+            }
+        except Exception as e:
+            logger.warning(f"[AutoSyncDaemon] Fallback sync error: {e}")
             return {
                 "source": str(source),
                 "target": target["node_id"],

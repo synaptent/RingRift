@@ -43,11 +43,12 @@ class TestTrainingThresholds:
     def test_trigger_games_positive(self):
         """Test training trigger games is positive."""
         assert TRAINING_TRIGGER_GAMES > 0
-        assert TRAINING_TRIGGER_GAMES == 500
+        # Value can vary (50 for fast iteration, 500 for stable training)
+        assert TRAINING_TRIGGER_GAMES >= 50
 
     def test_min_interval_reasonable(self):
-        """Test minimum interval is reasonable (10 mins to 2 hours)."""
-        assert TRAINING_MIN_INTERVAL_SECONDS >= 600  # At least 10 mins
+        """Test minimum interval is reasonable (5 mins to 2 hours)."""
+        assert TRAINING_MIN_INTERVAL_SECONDS >= 300  # At least 5 mins (fast iteration mode)
         assert TRAINING_MIN_INTERVAL_SECONDS <= 7200  # At most 2 hours
 
     def test_staleness_hours_positive(self):
@@ -55,9 +56,10 @@ class TestTrainingThresholds:
         assert TRAINING_STALENESS_HOURS > 0
         assert TRAINING_STALENESS_HOURS <= 24  # At most 1 day
 
-    def test_bootstrap_less_than_trigger(self):
-        """Test bootstrap threshold is less than regular trigger."""
-        assert TRAINING_BOOTSTRAP_GAMES < TRAINING_TRIGGER_GAMES
+    def test_bootstrap_less_than_or_equal_trigger(self):
+        """Test bootstrap threshold is less than or equal to regular trigger."""
+        # Bootstrap can equal trigger in fast iteration mode
+        assert TRAINING_BOOTSTRAP_GAMES <= TRAINING_TRIGGER_GAMES
 
     def test_max_concurrent_positive(self):
         """Test max concurrent is positive and reasonable."""

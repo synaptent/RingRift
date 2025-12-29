@@ -1034,3 +1034,39 @@ class EventEmissionMixin(P2PMixinBase):
         except (AttributeError, RuntimeError, TypeError) as e:
             logger.debug(f"[P2P Event] Failed to emit BATCH_DISPATCHED: {e}")
             return False
+
+    # =========================================================================
+    # Health Check Implementation (Dec 29, 2025)
+    # =========================================================================
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for event emission subsystem.
+
+        Checks if event emitters are available and functional.
+        Consistent with ConsensusMixin and MembershipMixin patterns.
+
+        Returns:
+            dict with keys:
+                - healthy: bool - Overall health status
+                - message: str - Human-readable status message
+                - details: dict - Detailed health information
+        """
+        # Check if event emission infrastructure is available
+        if EventEmissionMixin._event_emitters_available is None:
+            EventEmissionMixin._event_emitters_available = _check_event_emitters()
+
+        is_healthy = EventEmissionMixin._event_emitters_available
+
+        message = (
+            "Event emitters available"
+            if is_healthy
+            else "Event emitters unavailable"
+        )
+
+        details = {
+            "event_emitters_available": is_healthy,
+            "mixin_type": self.MIXIN_TYPE,
+            "node_id": getattr(self, "node_id", "unknown"),
+        }
+
+        return self._build_health_response(is_healthy, message, details)

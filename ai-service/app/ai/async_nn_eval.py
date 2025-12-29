@@ -141,7 +141,8 @@ class _GlobalNNMicroBatcher:
         head = pending[0]
         try:
             head_key = self._request_key(head)
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError, TypeError) as e:
+            # Request key extraction errors: mismatched boards, missing attributes
             pending.popleft()
             head.future.set_exception(e)
             return
@@ -154,7 +155,8 @@ class _GlobalNNMicroBatcher:
             req = pending.popleft()
             try:
                 key = self._request_key(req)
-            except Exception as e:
+            except (ValueError, AttributeError, KeyError, TypeError) as e:
+                # Request key extraction errors: mismatched boards, missing attributes
                 req.future.set_exception(e)
                 continue
 
@@ -191,7 +193,8 @@ class _GlobalNNMicroBatcher:
             values, policies = rep.evaluate_batch(combined_states, value_head=value_head)
             for req, start, end in offsets:
                 req.future.set_result((values[start:end], policies[start:end]))
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, AttributeError, IndexError) as e:
+            # Neural net evaluation errors: CUDA failures, shape mismatches, bad inputs
             for req, _, _ in offsets:
                 req.future.set_exception(e)
 

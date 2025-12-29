@@ -164,8 +164,9 @@ class ConfigValidator:
 
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
-        except Exception as e:
-            errors.append(f"Unexpected error: {e}")
+        except (KeyError, TypeError, AttributeError, OSError) as e:
+            # Config access/file errors: missing keys, wrong types, file I/O
+            errors.append(f"Config validation error: {e}")
 
         return ValidationResult(
             valid=len(errors) == 0,
@@ -222,8 +223,9 @@ class ConfigValidator:
 
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
-        except Exception as e:
-            errors.append(f"Unexpected error: {e}")
+        except (KeyError, TypeError, AttributeError, OSError) as e:
+            # Config access/file errors: missing keys, wrong types, file I/O
+            errors.append(f"Config validation error: {e}")
 
         return ValidationResult(
             valid=len(errors) == 0,
