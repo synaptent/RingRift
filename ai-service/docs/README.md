@@ -79,6 +79,12 @@ Active development roadmaps and plans.
 
 Operational runbooks for incident response.
 
+### [audits/](audits)
+
+Generated audits and code health reports.
+
+- [Circular Dependency Map](audits/CIRCULAR_DEPENDENCY_MAP.md)
+
 - Cluster health critical
 - Coordinator errors
 - Sync host issues

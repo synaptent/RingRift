@@ -291,6 +291,11 @@ class DaemonType(Enum):
     AVAILABILITY_PROVISIONER = "availability_provisioner"
     AVAILABILITY_CAPACITY_PLANNER = "availability_capacity_planner"
 
+    # Cascade training orchestrator (December 29, 2025) - multiplayer bootstrapping
+    # Orchestrates 2p → 3p → 4p training cascade with transfer learning
+    # Accelerates multiplayer model training by starting from learned features
+    CASCADE_TRAINING = "cascade_training"
+
 
 class DaemonState(Enum):
     """State of a daemon."""

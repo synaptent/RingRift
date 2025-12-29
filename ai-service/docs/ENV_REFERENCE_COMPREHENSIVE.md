@@ -215,21 +215,22 @@ value = env.get("CUSTOM_VAR", "default")
 
 ## Training
 
-| Variable                              | Type  | Default | In env.py | Description                  |
-| ------------------------------------- | ----- | ------- | --------- | ---------------------------- |
-| `RINGRIFT_TRAINING_THRESHOLD`         | int   | `500`   | ✓         | Games before training        |
-| `RINGRIFT_MIN_GAMES_FOR_TRAINING`     | int   | `100`   | ✓         | Minimum games required       |
-| `RINGRIFT_MIN_TRAINING_GAMES`         | int   | None    |           | Alternative min games        |
-| `RINGRIFT_MIN_GAMES_TRAINING`         | int   | None    |           | Alternative min games        |
-| `RINGRIFT_LEARNING_RATE`              | float | `0.001` | ✓         | Learning rate                |
-| `RINGRIFT_BATCH_SIZE`                 | int   | `512`   | ✓         | Batch size                   |
-| `RINGRIFT_TRAINING_BATCH_SIZE`        | int   | None    |           | Training-specific batch size |
-| `RINGRIFT_EPOCHS`                     | int   | `20`    | ✓         | Training epochs              |
-| `RINGRIFT_DATALOADER_WORKERS`         | int   | None    |           | DataLoader workers           |
-| `RINGRIFT_ENABLE_POLICY_TRAINING`     | bool  | None    |           | Enable policy training       |
-| `RINGRIFT_ENABLE_INCREMENTAL_EXPORT`  | bool  | None    |           | Enable incremental export    |
-| `RINGRIFT_PROFILE_TRAINING`           | bool  | None    |           | Profile training             |
-| `RINGRIFT_MIN_HOURS_BETWEEN_TRAINING` | int   | None    |           | Min hours between runs       |
+| Variable                              | Type  | Default | In env.py | Description                        |
+| ------------------------------------- | ----- | ------- | --------- | ---------------------------------- |
+| `RINGRIFT_TRAINING_THRESHOLD`         | int   | `500`   | ✓         | Games before training              |
+| `RINGRIFT_MIN_GAMES_FOR_TRAINING`     | int   | `100`   | ✓         | Minimum games required             |
+| `RINGRIFT_MIN_TRAINING_GAMES`         | int   | None    |           | Alternative min games              |
+| `RINGRIFT_MIN_GAMES_TRAINING`         | int   | None    |           | Alternative min games              |
+| `RINGRIFT_LEARNING_RATE`              | float | `0.001` | ✓         | Learning rate                      |
+| `RINGRIFT_BATCH_SIZE`                 | int   | `512`   | ✓         | Batch size                         |
+| `RINGRIFT_TRAINING_BATCH_SIZE`        | int   | None    |           | Training-specific batch size       |
+| `RINGRIFT_EPOCHS`                     | int   | `20`    | ✓         | Training epochs                    |
+| `RINGRIFT_DATALOADER_WORKERS`         | int   | None    |           | DataLoader workers                 |
+| `RINGRIFT_ENABLE_POLICY_TRAINING`     | bool  | None    |           | Enable policy training             |
+| `RINGRIFT_ENABLE_INCREMENTAL_EXPORT`  | bool  | None    |           | Enable incremental export          |
+| `RINGRIFT_PROFILE_TRAINING`           | bool  | None    |           | Profile training                   |
+| `RINGRIFT_MIN_HOURS_BETWEEN_TRAINING` | int   | None    |           | Min hours between runs             |
+| `RINGRIFT_TRAINING_RETRY_SLEEP`       | float | `2.0`   |           | Pause between training retries (s) |
 
 ---
 
@@ -421,6 +422,16 @@ value = env.get("CUSTOM_VAR", "default")
 | Variable                       | Type | Default | In env.py | Description                |
 | ------------------------------ | ---- | ------- | --------- | -------------------------- |
 | `RINGRIFT_ENCODING_CHUNK_SIZE` | int  | `64`    |           | ParallelEncoder chunk size |
+
+---
+
+## Data Export
+
+| Variable                        | Type  | Default | In env.py | Description                              |
+| ------------------------------- | ----- | ------- | --------- | ---------------------------------------- |
+| `RINGRIFT_DB_LOCK_MAX_RETRIES`  | int   | `5`     |           | Max retries for locked databases         |
+| `RINGRIFT_DB_LOCK_INITIAL_WAIT` | float | `0.5`   |           | Initial wait between lock retries (s)    |
+| `RINGRIFT_DB_LOCK_MAX_WAIT`     | float | `30.0`  |           | Maximum cumulative wait for DB locks (s) |
 
 ---
 

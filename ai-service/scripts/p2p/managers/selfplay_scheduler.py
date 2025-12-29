@@ -30,11 +30,24 @@ try:
         MEMORY_WARNING_THRESHOLD,
         MIN_MEMORY_GB_FOR_TASKS,
     )
+    from app.p2p.constants import (
+        CPU_ONLY_JOB_MIN_CPUS,
+        EXPLORATION_BOOST_DEFAULT_DURATION,
+        PLATEAU_CLEAR_WIN_RATE,
+        PLATEAU_PENALTY_DEFAULT_DURATION,
+        TRAINING_BOOST_DURATION,
+    )
 except ImportError:
     # Fallback for testing/standalone use - match canonical values in app/p2p/constants.py
     MIN_MEMORY_GB_FOR_TASKS = 64  # Must match app/p2p/constants.py:84
     DISK_WARNING_THRESHOLD = 65  # Conservative: match constants.py
     MEMORY_WARNING_THRESHOLD = 75  # Conservative: match constants.py
+    # Selfplay scheduler constants - match app/p2p/constants.py
+    CPU_ONLY_JOB_MIN_CPUS = 128
+    EXPLORATION_BOOST_DEFAULT_DURATION = 900  # 15 minutes
+    PLATEAU_CLEAR_WIN_RATE = 0.50
+    PLATEAU_PENALTY_DEFAULT_DURATION = 1800  # 30 minutes
+    TRAINING_BOOST_DURATION = 1800  # 30 minutes
 
 
 @dataclass
