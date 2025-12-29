@@ -1,0 +1,290 @@
+"""Budget and target games calculation for selfplay scheduling.
+
+December 2025: Extracted from selfplay_scheduler.py (~3900 LOC) to reduce module size
+and make budget calculation reusable across the codebase.
+
+This module provides pure functions for:
+- Gumbel MCTS budget selection based on Elo tier
+- Bootstrap budget tiers for data-starved configs
+- Dynamic target games calculation based on board/player complexity
+
+Usage:
+    from app.coordination.budget_calculator import (
+        get_adaptive_budget_for_elo,
+        get_adaptive_budget_for_games,
+        compute_target_games,
+    )
+
+    # Get budget for selfplay based on current Elo
+    budget = get_adaptive_budget_for_elo(1650)  # Returns GUMBEL_BUDGET_QUALITY
+
+    # Get budget accounting for bootstrap phase
+    budget = get_adaptive_budget_for_games(game_count=50, elo=1200)  # Returns 64 (bootstrap)
+
+    # Compute target games needed
+    target = compute_target_games("hex8_2p", current_elo=1450)  # Returns ~225000
+"""
+
+from __future__ import annotations
+
+import logging
+
+from app.config.thresholds import (
+    # Elo-based budget tiers
+    GUMBEL_BUDGET_STANDARD,
+    GUMBEL_BUDGET_QUALITY,
+    GUMBEL_BUDGET_ULTIMATE,
+    GUMBEL_BUDGET_MASTER,
+    # Bootstrap budget tiers for starved configs
+    GUMBEL_BUDGET_BOOTSTRAP_TIER1,
+    GUMBEL_BUDGET_BOOTSTRAP_TIER2,
+    GUMBEL_BUDGET_BOOTSTRAP_TIER3,
+    BOOTSTRAP_TIER1_GAME_THRESHOLD,
+    BOOTSTRAP_TIER2_GAME_THRESHOLD,
+    BOOTSTRAP_TIER3_GAME_THRESHOLD,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Board and Player Complexity Multipliers
+# =============================================================================
+
+# Board difficulty multipliers for target games calculation
+# Larger boards need more games to reach the same Elo
+BOARD_DIFFICULTY_MULTIPLIERS: dict[str, float] = {
+    "hex8": 1.0,       # Smallest - baseline (61 cells)
+    "square8": 1.2,    # 64 cells, more complex than hex8
+    "square19": 2.0,   # Go-sized (361 cells) - much harder
+    "hexagonal": 2.5,  # Largest (469 cells) - hardest
+}
+
+# Player count multipliers for target games calculation
+# More players = more diverse games needed
+PLAYER_COUNT_MULTIPLIERS: dict[int, float] = {
+    2: 1.0,   # 2-player baseline
+    3: 1.5,   # 3-player more complex game tree
+    4: 2.5,   # 4-player exponentially more complex
+}
+
+# Elo tier thresholds for budget selection
+ELO_TIER_MASTER = 2000     # 2000+ Elo: master tier
+ELO_TIER_ULTIMATE = 1800   # 1800+ Elo: ultimate tier
+ELO_TIER_QUALITY = 1500    # 1500+ Elo: quality tier
+
+# Target Elo for training completion
+TARGET_ELO_THRESHOLD = 1900
+
+# Games per Elo point (empirical from training data)
+GAMES_PER_ELO_POINT = 500
+
+# Maximum target games cap
+MAX_TARGET_GAMES = 500_000
+
+
+# =============================================================================
+# Budget Calculation Functions
+# =============================================================================
+
+def get_adaptive_budget_for_elo(elo: float) -> int:
+    """Get Gumbel MCTS budget based on current Elo tier.
+
+    Higher Elo models benefit from deeper search. Scale budget with
+    Elo tier to maximize training data quality.
+
+    Tiers:
+    - 2000+ Elo: MASTER tier (3200 budget) - maximum quality
+    - 1800+ Elo: ULTIMATE tier (1600 budget) - high quality
+    - 1500+ Elo: QUALITY tier (800 budget) - standard quality
+    - <1500 Elo: STANDARD tier (800 budget) - baseline
+
+    Args:
+        elo: Current Elo rating for the config
+
+    Returns:
+        Gumbel budget for selfplay (one of the tier constants)
+
+    Examples:
+        >>> get_adaptive_budget_for_elo(2100)
+        3200
+        >>> get_adaptive_budget_for_elo(1850)
+        1600
+        >>> get_adaptive_budget_for_elo(1600)
+        800
+    """
+    if elo >= ELO_TIER_MASTER:
+        return GUMBEL_BUDGET_MASTER  # 3200 - master tier
+    elif elo >= ELO_TIER_ULTIMATE:
+        return GUMBEL_BUDGET_ULTIMATE  # 1600 - ultimate tier
+    elif elo >= ELO_TIER_QUALITY:
+        return GUMBEL_BUDGET_QUALITY  # 800 - quality tier
+    else:
+        return GUMBEL_BUDGET_STANDARD  # 800 - standard tier
+
+
+def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
+    """Get Gumbel MCTS budget based on game count (prioritizes bootstrapping).
+
+    When a config has very few games, prioritize QUANTITY over QUALITY
+    to rapidly bootstrap the training dataset. As game count grows,
+    transition to Elo-based quality budgets.
+
+    Bootstrap tiers (game_count < threshold):
+    - <100 games:  64 budget (THROUGHPUT - max speed for rapid bootstrap)
+    - <500 games:  150 budget (faster iteration, acceptable quality)
+    - <1000 games: 200 budget (balanced speed/quality)
+    - >=1000 games: Use Elo-based adaptive budget (STANDARD/QUALITY/ULTIMATE/MASTER)
+
+    Args:
+        game_count: Number of games in the database for this config
+        elo: Current Elo rating for the config (used when game_count >= 1000)
+
+    Returns:
+        Gumbel budget for selfplay
+
+    Examples:
+        >>> get_adaptive_budget_for_games(50, 1200)   # Bootstrap tier 1
+        64
+        >>> get_adaptive_budget_for_games(300, 1400)  # Bootstrap tier 2
+        150
+        >>> get_adaptive_budget_for_games(750, 1450)  # Bootstrap tier 3
+        200
+        >>> get_adaptive_budget_for_games(2000, 1800) # Mature - uses Elo-based
+        1600
+    """
+    # Bootstrap phase: prioritize game generation speed
+    if game_count < BOOTSTRAP_TIER1_GAME_THRESHOLD:
+        # Very starved (<100 games): maximum throughput
+        return GUMBEL_BUDGET_BOOTSTRAP_TIER1  # 64
+
+    if game_count < BOOTSTRAP_TIER2_GAME_THRESHOLD:
+        # Moderately starved (<500 games): fast iteration
+        return GUMBEL_BUDGET_BOOTSTRAP_TIER2  # 150
+
+    if game_count < BOOTSTRAP_TIER3_GAME_THRESHOLD:
+        # Somewhat starved (<1000 games): balanced
+        return GUMBEL_BUDGET_BOOTSTRAP_TIER3  # 200
+
+    # Mature phase (>=1000 games): use Elo-based quality budget
+    return get_adaptive_budget_for_elo(elo)
+
+
+def parse_config_key(config: str) -> tuple[str, int]:
+    """Parse a config key into board type and player count.
+
+    Args:
+        config: Config key (e.g., "hex8_2p", "square19_4p")
+
+    Returns:
+        Tuple of (board_type, num_players)
+
+    Examples:
+        >>> parse_config_key("hex8_2p")
+        ("hex8", 2)
+        >>> parse_config_key("square19_4p")
+        ("square19", 4)
+    """
+    try:
+        parts = config.split("_")
+        board = parts[0] if parts and parts[0] else "hex8"
+        players = int(parts[1][0]) if len(parts) > 1 else 2
+        return board, players
+    except (IndexError, ValueError):
+        return "hex8", 2
+
+
+def compute_target_games(config: str, current_elo: float) -> int:
+    """Compute dynamic target games needed based on Elo gap and board difficulty.
+
+    Calculates how many games are needed to reach target Elo (1900) based on:
+    - Elo gap to target (larger gap = more games needed)
+    - Board difficulty (larger boards need more games)
+    - Player count (multiplayer needs more games per sample)
+
+    Args:
+        config: Config key (e.g., "hex8_2p", "square19_4p")
+        current_elo: Current Elo rating for the config
+
+    Returns:
+        Target games needed to reach 1900 Elo (0 if already at target)
+
+    Examples:
+        >>> compute_target_games("hex8_2p", 1900)  # Already at target
+        0
+        >>> compute_target_games("hex8_2p", 1500)  # 400 Elo gap
+        200000  # 400 * 500 * 1.0 (board) * 1.0 (players)
+        >>> compute_target_games("square19_4p", 1500)  # Hard config
+        1000000  # 400 * 500 * 2.0 (board) * 2.5 (players), capped at 500K
+    """
+    elo_gap = max(0, TARGET_ELO_THRESHOLD - current_elo)
+
+    # No more games needed if already at target
+    if elo_gap <= 0:
+        return 0
+
+    # Base: ~500 games per Elo point needed (empirical from training data)
+    base_target = float(elo_gap * GAMES_PER_ELO_POINT)
+
+    # Parse config for board type and player count
+    board, players = parse_config_key(config)
+
+    # Apply board difficulty multiplier
+    base_target *= BOARD_DIFFICULTY_MULTIPLIERS.get(board, 1.0)
+
+    # Apply player count multiplier
+    base_target *= PLAYER_COUNT_MULTIPLIERS.get(players, 1.0)
+
+    # Cap to reasonable maximum
+    return min(int(base_target), MAX_TARGET_GAMES)
+
+
+def get_budget_tier_name(budget: int) -> str:
+    """Get human-readable name for a budget tier.
+
+    Args:
+        budget: The Gumbel budget value
+
+    Returns:
+        Tier name string
+
+    Examples:
+        >>> get_budget_tier_name(3200)
+        "MASTER"
+        >>> get_budget_tier_name(64)
+        "BOOTSTRAP_TIER1"
+    """
+    budget_names = {
+        GUMBEL_BUDGET_MASTER: "MASTER",
+        GUMBEL_BUDGET_ULTIMATE: "ULTIMATE",
+        GUMBEL_BUDGET_QUALITY: "QUALITY",
+        GUMBEL_BUDGET_STANDARD: "STANDARD",
+        GUMBEL_BUDGET_BOOTSTRAP_TIER1: "BOOTSTRAP_TIER1",
+        GUMBEL_BUDGET_BOOTSTRAP_TIER2: "BOOTSTRAP_TIER2",
+        GUMBEL_BUDGET_BOOTSTRAP_TIER3: "BOOTSTRAP_TIER3",
+    }
+    return budget_names.get(budget, f"CUSTOM({budget})")
+
+
+# =============================================================================
+# Module Exports
+# =============================================================================
+
+__all__ = [
+    # Budget calculation
+    "get_adaptive_budget_for_elo",
+    "get_adaptive_budget_for_games",
+    "get_budget_tier_name",
+    # Target games calculation
+    "compute_target_games",
+    "parse_config_key",
+    # Constants (for reference)
+    "BOARD_DIFFICULTY_MULTIPLIERS",
+    "PLAYER_COUNT_MULTIPLIERS",
+    "ELO_TIER_MASTER",
+    "ELO_TIER_ULTIMATE",
+    "ELO_TIER_QUALITY",
+    "TARGET_ELO_THRESHOLD",
+    "GAMES_PER_ELO_POINT",
+    "MAX_TARGET_GAMES",
+]

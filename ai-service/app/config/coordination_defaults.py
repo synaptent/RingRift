@@ -436,6 +436,44 @@ def get_circuit_breaker_for_provider(provider: str) -> dict[str, float | int]:
 
 
 # =============================================================================
+# Partition Recovery Defaults (December 29, 2025)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class PartitionRecoveryDefaults:
+    """Default values for network partition recovery.
+
+    Part of 48-hour autonomous operation optimization.
+    Used by: scripts/p2p/loops/resilience_loops.py
+
+    Previous assumption: Partitions heal within ~60s
+    New assumption: Extended partitions can last hours; need graceful handling
+    """
+
+    # Expected healing time for network partitions (seconds)
+    # 2 hours - generous to handle extended cloud provider issues
+    HEALING_TIME_SECONDS: int = _env_int("RINGRIFT_PARTITION_HEALING_TIME", 7200)
+
+    # Delay after partition heals before triggering resync (seconds)
+    # Wait for quorum to stabilize before syncing
+    RESYNC_DELAY_SECONDS: int = _env_int("RINGRIFT_PARTITION_RESYNC_DELAY", 60)
+
+    # Minimum peers required for healthy cluster
+    MIN_PEERS_FOR_HEALTHY: int = _env_int("RINGRIFT_MIN_PEERS_HEALTHY", 3)
+
+    # Duration before emitting partition alert (seconds)
+    # 30 minutes - enough to distinguish from transient issues
+    PARTITION_ALERT_THRESHOLD: int = _env_int("RINGRIFT_PARTITION_ALERT_THRESHOLD", 1800)
+
+    # Maximum retries for resync after partition heals
+    MAX_RESYNC_RETRIES: int = 3
+
+    # Backoff multiplier between resync retries
+    RESYNC_BACKOFF_MULTIPLIER: float = 2.0
+
+
+# =============================================================================
 # Health Check Defaults (December 2025)
 # =============================================================================
 

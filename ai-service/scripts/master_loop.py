@@ -119,8 +119,18 @@ ALL_CONFIGS = [
 # Use env.master_loop_interval, env.training_check_interval, etc.
 from app.config.env import env
 
+# December 29, 2025: Reactive dispatch mode (48-hour autonomous operation)
+# When enabled, selfplay is dispatched via events instead of polling
+REACTIVE_DISPATCH_ENABLED = os.environ.get("RINGRIFT_REACTIVE_DISPATCH", "true").lower() in ("true", "1", "yes")
+# Watchdog interval when reactive dispatch is enabled (300s = 5 min fallback)
+WATCHDOG_INTERVAL_SECONDS = int(os.environ.get("RINGRIFT_WATCHDOG_INTERVAL", "300"))
+
 # Legacy constants for backward compatibility (use env properties directly preferred)
-LOOP_INTERVAL_SECONDS = env.master_loop_interval  # RINGRIFT_MASTER_LOOP_INTERVAL (default: 30)
+# When reactive dispatch is enabled, use longer watchdog interval
+LOOP_INTERVAL_SECONDS = (
+    WATCHDOG_INTERVAL_SECONDS if REACTIVE_DISPATCH_ENABLED
+    else env.master_loop_interval  # RINGRIFT_MASTER_LOOP_INTERVAL (default: 30)
+)
 TRAINING_CHECK_INTERVAL = env.training_check_interval  # RINGRIFT_TRAINING_CHECK_INTERVAL (default: 60)
 ALLOCATION_CHECK_INTERVAL = env.allocation_check_interval  # RINGRIFT_ALLOCATION_CHECK_INTERVAL (default: 120)
 

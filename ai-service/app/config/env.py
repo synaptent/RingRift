@@ -928,6 +928,119 @@ class RingRiftEnv:
         return os.environ.get("RINGRIFT_NPX_PATH")
 
     # ==========================================================================
+    # Container Environment (December 2025)
+    # ==========================================================================
+
+    @cached_property
+    def is_container(self) -> bool:
+        """Detect if running in container environment.
+
+        Checks for Docker, Podman, LXC, Kubernetes, Vast.ai, and RunPod containers.
+        Container nodes need userspace Tailscale with SOCKS5 proxy for P2P.
+        """
+        # Check for Docker
+        if os.path.exists("/.dockerenv"):
+            return True
+
+        # Check cgroup for container indicators
+        try:
+            with open("/proc/1/cgroup", "r") as f:
+                cgroup_content = f.read().lower()
+                if "docker" in cgroup_content or "lxc" in cgroup_content:
+                    return True
+        except (FileNotFoundError, PermissionError):
+            pass
+
+        # Check for Podman
+        if os.path.exists("/run/.containerenv"):
+            return True
+
+        # Check environment variables set by container runtimes
+        if os.environ.get("container") == "podman":
+            return True
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            return True
+
+        # Check for Vast.ai specific indicators
+        if os.environ.get("VAST_CONTAINERLABEL"):
+            return True
+
+        # Check for RunPod specific indicators
+        if os.environ.get("RUNPOD_POD_ID"):
+            return True
+
+        return False
+
+    @cached_property
+    def container_type(self) -> str | None:
+        """Get container type if running in container.
+
+        Returns:
+            'docker', 'podman', 'lxc', 'kubernetes', or None if not in container.
+        """
+        if os.path.exists("/.dockerenv"):
+            return "docker"
+        if os.path.exists("/run/.containerenv"):
+            return "podman"
+        if os.environ.get("container") == "podman":
+            return "podman"
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            return "kubernetes"
+        if os.environ.get("VAST_CONTAINERLABEL"):
+            return "docker"  # Vast.ai uses Docker
+        if os.environ.get("RUNPOD_POD_ID"):
+            return "docker"  # RunPod uses Docker
+
+        try:
+            with open("/proc/1/cgroup", "r") as f:
+                cgroup_content = f.read().lower()
+                if "docker" in cgroup_content:
+                    return "docker"
+                if "lxc" in cgroup_content:
+                    return "lxc"
+        except (FileNotFoundError, PermissionError):
+            pass
+
+        return None
+
+    @cached_property
+    def tailscale_auth_key(self) -> str | None:
+        """Tailscale auth key for container authentication.
+
+        Used by container_tailscale_setup to authenticate userspace Tailscale.
+        """
+        return os.environ.get("TAILSCALE_AUTH_KEY")
+
+    @cached_property
+    def socks_proxy(self) -> str | None:
+        """SOCKS5 proxy URL for P2P connections.
+
+        Set automatically by container_tailscale_setup when userspace
+        Tailscale is running (socks5://localhost:1055).
+        """
+        return os.environ.get("RINGRIFT_SOCKS_PROXY")
+
+    @cached_property
+    def tailscale_socks_port(self) -> int:
+        """SOCKS5 proxy port for userspace Tailscale (default: 1055)."""
+        return int(os.environ.get("RINGRIFT_TAILSCALE_SOCKS_PORT", "1055"))
+
+    @cached_property
+    def needs_userspace_tailscale(self) -> bool:
+        """Check if this node needs userspace Tailscale for P2P.
+
+        True for container environments that can't use kernel Tailscale.
+        """
+        # Explicit override
+        explicit = os.environ.get("RINGRIFT_NEEDS_USERSPACE_TAILSCALE", "").lower()
+        if explicit in ("1", "true", "yes"):
+            return True
+        if explicit in ("0", "false", "no"):
+            return False
+        # Default: containers need userspace Tailscale
+        return self.is_container
+
+    # ==========================================================================
     # Helper Methods
     # ==========================================================================
 

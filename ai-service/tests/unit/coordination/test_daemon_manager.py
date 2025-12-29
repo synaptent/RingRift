@@ -88,8 +88,8 @@ class TestDaemonState:
         assert DaemonState.IMPORT_FAILED.value == "import_failed"
 
     def test_state_count(self):
-        """Should have exactly 7 states."""
-        assert len(DaemonState) == 7
+        """Should have exactly 8 states (including DEGRADED for graceful degradation)."""
+        assert len(DaemonState) == 8
 
 
 # =============================================================================

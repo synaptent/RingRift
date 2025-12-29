@@ -1,3 +1,14 @@
+"""Tournament Configuration Module.
+
+Provides shared configuration dataclasses for tournament CLI entrypoints,
+including TournamentConfig for cross-configuration tournament settings.
+
+Usage:
+    from app.tournament.config import TournamentConfig
+
+    config = TournamentConfig.from_args(args, yaml_config, config_path)
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -79,6 +79,208 @@ def is_parity_validation_enabled() -> bool:
     return get_parity_mode() != ParityMode.OFF
 
 
+class ValidationBackend:
+    """Available validation backends for parity checking."""
+    SKIP = "skip"           # Skip validation entirely
+    TS = "ts"               # Full TypeScript validation (requires npx)
+    PYTHON_ONLY = "python_only"  # Python-only replay validation
+    TS_HASHES = "ts_hashes"      # Validate against stored TS hashes
+
+
+def get_validation_backend() -> str:
+    """Auto-detect the best validation backend based on environment.
+
+    December 2025: Part of 48-hour autonomous operation plan.
+    Enables automatic fallback to Python-only validation on cluster nodes
+    that don't have Node.js/npx installed.
+
+    Returns:
+        ValidationBackend constant indicating the best available backend.
+
+    Environment Variables:
+        RINGRIFT_SKIP_PARITY: Set to "1" to skip all validation
+        RINGRIFT_PARITY_BACKEND: Explicit backend override ("ts", "python_only", "ts_hashes")
+    """
+    # Check for explicit skip
+    if os.environ.get("RINGRIFT_SKIP_PARITY", "").lower() in ("1", "true", "yes"):
+        logger.debug("[Parity] Validation skipped (RINGRIFT_SKIP_PARITY=1)")
+        return ValidationBackend.SKIP
+
+    # Check for explicit backend override
+    explicit = os.environ.get("RINGRIFT_PARITY_BACKEND", "").lower()
+    if explicit in ("ts", "typescript"):
+        return ValidationBackend.TS
+    elif explicit in ("python", "python_only"):
+        return ValidationBackend.PYTHON_ONLY
+    elif explicit in ("ts_hashes", "hashes"):
+        return ValidationBackend.TS_HASHES
+    elif explicit in ("skip", "off", "none"):
+        return ValidationBackend.SKIP
+
+    # Auto-detect based on npx availability
+    if _find_npx():
+        return ValidationBackend.TS  # Full TypeScript validation
+
+    # Fallback to Python-only on cluster nodes without npx
+    logger.info(
+        "[Parity] npx not available, using Python-only validation. "
+        "Set RINGRIFT_PARITY_BACKEND=ts to force TypeScript validation."
+    )
+    return ValidationBackend.PYTHON_ONLY
+
+
+def validate_game_auto(
+    db_path: str,
+    game_id: str,
+    *,
+    mode: str | None = None,
+    dump_dir: Path | None = None,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """Validate a game using the best available backend.
+
+    This is the recommended entry point for parity validation. It automatically
+    selects the best validation backend based on environment capabilities.
+
+    December 2025: Part of 48-hour autonomous operation plan.
+
+    Args:
+        db_path: Path to the GameReplayDB database
+        game_id: ID of the game to validate
+        mode: Override parity mode (uses env var if None)
+        dump_dir: Override dump directory (for TS mode)
+        verbose: Log detailed progress
+
+    Returns:
+        Dict with validation result:
+        - passed: bool
+        - backend: str (which validation backend was used)
+        - error: str | None (error message if failed)
+        - details: dict (backend-specific details)
+
+    Raises:
+        ParityValidationError: If mode is 'strict' and divergence is found (TS backend only)
+    """
+    backend = get_validation_backend()
+
+    if backend == ValidationBackend.SKIP:
+        return {
+            "passed": True,
+            "backend": "skip",
+            "error": None,
+            "details": {"reason": "validation skipped"},
+        }
+
+    db = GameReplayDB(db_path)
+
+    if backend == ValidationBackend.TS:
+        # Full TypeScript validation
+        try:
+            divergence = validate_game_parity(
+                db_path, game_id, mode=mode, dump_dir=dump_dir
+            )
+            return {
+                "passed": divergence is None,
+                "backend": "ts",
+                "error": divergence.mismatch_context if divergence else None,
+                "details": divergence.to_dict() if divergence else {},
+            }
+        except ParityValidationError as e:
+            raise  # Re-raise in strict mode
+        except RuntimeError as e:
+            # npx not available - fall back to Python-only
+            logger.warning(f"[Parity] TS validation failed, falling back to Python: {e}")
+            backend = ValidationBackend.PYTHON_ONLY
+
+    if backend == ValidationBackend.TS_HASHES:
+        # Validate against stored TS hashes
+        result = validate_game_against_ts_hashes(db, game_id, verbose=verbose)
+        return {
+            "passed": result.passed,
+            "backend": "ts_hashes",
+            "error": result.error_message,
+            "details": {
+                "moves_checked": result.moves_checked,
+                "total_ts_hashes": result.total_ts_hashes,
+                "diverged_at": result.diverged_at,
+                "mismatch_kind": result.mismatch_kind,
+            },
+        }
+
+    # Python-only validation (default fallback)
+    result = validate_game_python_only(db, game_id, verbose=verbose)
+    return {
+        "passed": result.passed,
+        "backend": "python_only",
+        "error": result.error_message,
+        "details": {
+            "moves_replayed": result.moves_replayed,
+            "total_moves": result.total_moves,
+            "error_at_move": result.error_at_move,
+            "replay_time_ms": result.replay_time_ms,
+        },
+    }
+
+
+def validate_database_auto(
+    db_path: str | Path,
+    *,
+    max_games: int | None = None,
+    update_status: bool = True,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """Validate all games in database using the best available backend.
+
+    This is the recommended entry point for database-wide parity validation.
+    It automatically selects the best validation backend based on environment.
+
+    December 2025: Part of 48-hour autonomous operation plan.
+
+    Args:
+        db_path: Path to the GameReplayDB database
+        max_games: Maximum number of games to validate (None = all)
+        update_status: Update parity_status in database
+        verbose: Log detailed progress
+
+    Returns:
+        Dict with validation statistics
+    """
+    backend = get_validation_backend()
+
+    if backend == ValidationBackend.SKIP:
+        return {
+            "database": str(db_path),
+            "backend": "skip",
+            "total_games": 0,
+            "passed": 0,
+            "failed": 0,
+            "pass_rate": 1.0,
+            "elapsed_seconds": 0.0,
+        }
+
+    if backend == ValidationBackend.TS:
+        # Full TypeScript validation - not yet batch-supported, use Python-only
+        logger.info(
+            "[Parity] Batch TS validation not implemented, using Python-only. "
+            "For full TS validation, use validate_game_parity() per game."
+        )
+        backend = ValidationBackend.PYTHON_ONLY
+
+    if backend == ValidationBackend.TS_HASHES:
+        result = validate_database_with_ts_hashes(
+            db_path, max_games=max_games, update_status=update_status, verbose=verbose
+        )
+        result["backend"] = "ts_hashes"
+        return result
+
+    # Python-only validation (default fallback)
+    result = validate_database_python_only(
+        db_path, max_games=max_games, update_status=update_status, verbose=verbose
+    )
+    result["backend"] = "python_only"
+    return result
+
+
 # -----------------------------------------------------------------------------
 # Data Classes
 # -----------------------------------------------------------------------------
