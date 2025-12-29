@@ -59,6 +59,16 @@ summary = manager.get_membership_summary()
 - `HybridMembershipManager` - SWIM + HTTP fallback
 - `SwimConfig` - Protocol tuning (failure_timeout, ping_interval)
 
+### SWIM Health and Recovery
+
+The P2P orchestrator mixin (`scripts/p2p/membership_mixin.py`) exposes helper
+methods for observability and recovery:
+
+- `get_swim_health()` returns SWIM health and recovery stats.
+- `_check_and_recover_swim()` can be called periodically to restart SWIM when
+  unhealthy (rate-limited to once per 5 minutes).
+- Successful recovery emits `SWIM_RECOVERED` (see `ai-service/docs/EVENT_CATALOG.md`).
+
 ## Raft State Machines
 
 Raft provides strongly consistent replicated state via PySyncObj.

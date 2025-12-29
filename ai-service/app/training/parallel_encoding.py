@@ -638,8 +638,9 @@ class ParallelEncoder:
         errors: list[str] = []
 
         # Use map for simpler, more reliable parallel processing
-        # Process in chunks for better progress reporting
-        chunk_size = max(10, len(games) // 10)
+        # Process in fixed chunks for better cache locality (Dec 2025)
+        # Fixed chunk size instead of dynamic % for consistent performance
+        chunk_size = int(os.getenv("RINGRIFT_ENCODING_CHUNK_SIZE", "64"))
         total_completed = 0
 
         for i in range(0, len(games), chunk_size):

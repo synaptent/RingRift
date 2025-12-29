@@ -2,7 +2,7 @@
 
 This document catalogs all events in the RingRift AI-Service event system.
 
-**Last Updated**: December 28, 2025
+**Last Updated**: December 29, 2025
 
 ## Overview
 
@@ -48,6 +48,14 @@ These events form the main training pipeline:
 | ------------------------ | ----------------------- | ------------------------ | ---------------------------- |
 | `CONSOLIDATION_STARTED`  | DataConsolidationDaemon | DaemonManager            | Track consolidation state    |
 | `CONSOLIDATION_COMPLETE` | DataConsolidationDaemon | DataPipelineOrchestrator | Games merged to canonical DB |
+
+---
+
+## Cluster Health Events
+
+| Event            | Emitter         | Subscribers                | Purpose                        |
+| ---------------- | --------------- | -------------------------- | ------------------------------ |
+| `SWIM_RECOVERED` | MembershipMixin | Metrics/Alerting/Observers | SWIM membership auto-recovered |
 
 ---
 

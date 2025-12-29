@@ -655,6 +655,28 @@ Configuration for model evaluation (shadow and full tournaments).
 
 ---
 
+## EvaluationDaemonConfig
+
+Configuration for the auto-evaluation daemon in
+`ai-service/app/coordination/evaluation_daemon.py`.
+
+| Option                           | Type      | Default                 | Description                             |
+| -------------------------------- | --------- | ----------------------- | --------------------------------------- |
+| `games_per_baseline`             | int       | 20                      | Games per baseline opponent             |
+| `baselines`                      | List[str] | ["random", "heuristic"] | Baseline opponents                      |
+| `early_stopping_enabled`         | bool      | True                    | Enable early stopping                   |
+| `early_stopping_confidence`      | float     | 0.95                    | Confidence threshold for early stopping |
+| `early_stopping_min_games`       | int       | 10                      | Minimum games before early stopping     |
+| `max_concurrent_evaluations`     | int       | 8                       | Concurrent evaluations                  |
+| `evaluation_timeout_seconds`     | float     | 1800.0                  | Per-evaluation timeout (seconds)        |
+| `dedup_cooldown_seconds`         | float     | 300.0                   | Cooldown window per model               |
+| `dedup_max_tracked_models`       | int       | 1000                    | Max models tracked for dedup            |
+| `max_queue_depth`                | int       | 50                      | Max pending evaluations                 |
+| `backpressure_threshold`         | int       | 25                      | Emit backpressure at this depth         |
+| `backpressure_release_threshold` | int       | 15                      | Release backpressure at this depth      |
+
+---
+
 ## PromotionConfig
 
 Configuration for automatic model promotion.
