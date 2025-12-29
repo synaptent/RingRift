@@ -1209,6 +1209,9 @@ class SelfplayScheduler:
                 _safe_subscribe(DataEventType.NODE_UNHEALTHY, self._on_node_unhealthy, "NODE_UNHEALTHY")
             if hasattr(DataEventType, 'NODE_RECOVERED'):
                 _safe_subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered, "NODE_RECOVERED")
+            # Dec 28, 2025: NODE_ACTIVATED from cluster activator/watchdog also means node is available
+            if hasattr(DataEventType, 'NODE_ACTIVATED'):
+                _safe_subscribe(DataEventType.NODE_ACTIVATED, self._on_node_recovered, "NODE_ACTIVATED")
             if hasattr(DataEventType, 'P2P_NODE_DEAD'):
                 _safe_subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_unhealthy, "P2P_NODE_DEAD")
             if hasattr(DataEventType, 'P2P_CLUSTER_UNHEALTHY'):

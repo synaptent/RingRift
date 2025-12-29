@@ -805,7 +805,42 @@ class GameEngine:
 
         This function returns a (possibly modified) game_state with the phase
         coerced to match the incoming move's expected phase.
+
+        LONG-TERM FIX (Dec 2025): If move.phase is populated (from new selfplay
+        recordings), we use it directly instead of the complex case-by-case
+        coercion below. This "fast path" is preferred for all new data.
+        Historical data (move.phase=None) still uses the legacy coercion.
         """
+        # ═══════════════════════════════════════════════════════════════════
+        # FAST PATH: If move.phase is populated, use it directly (Dec 2025)
+        # This handles all games generated after the long-term fix was applied.
+        # We trust the recorded phase since it was captured at move creation.
+        # ═══════════════════════════════════════════════════════════════════
+        if hasattr(move, "phase") and move.phase is not None:
+            # Parse the recorded phase
+            recorded_phase_str = move.phase if isinstance(move.phase, str) else str(move.phase)
+            try:
+                recorded_phase = GamePhase(recorded_phase_str)
+            except ValueError:
+                # Invalid phase string, fall through to legacy coercion
+                pass
+            else:
+                # Valid phase - coerce state to match if different
+                if game_state.current_phase != recorded_phase or game_state.current_player != move.player:
+                    new_state = game_state.model_copy()
+                    new_state.current_phase = recorded_phase
+                    new_state.current_player = move.player
+                    # Clear pending flags that might conflict with the recorded phase
+                    if recorded_phase == GamePhase.TERRITORY_PROCESSING:
+                        new_state.pending_line_reward_elimination = False
+                    return new_state
+                # Already matches - return unchanged
+                return game_state
+
+        # ═══════════════════════════════════════════════════════════════════
+        # LEGACY PATH: Complex case-by-case coercion for historical data
+        # This handles games recorded before move.phase was populated.
+        # ═══════════════════════════════════════════════════════════════════
         phase = game_state.current_phase
         mtype = move.type
 
