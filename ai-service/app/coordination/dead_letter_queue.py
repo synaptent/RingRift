@@ -718,11 +718,24 @@ class DLQRetryDaemon:
         if stale_abandoned > 0:
             self._metrics["total_stale_abandoned"] += stale_abandoned
 
+        # Check for stale events and emit alert if many are pending
+        # December 29, 2025: Added DLQ_STALE_EVENTS emission
+        pending = self.dlq.get_pending_events(limit=100)
+        if len(pending) >= 50:
+            event_types = list({e.event_type for e in pending})
+            self._emit_stale_events(len(pending), event_types)
+
         # Then retry pending events
         stats = await self.dlq.retry_failed_events(max_events=self.max_events)
 
         self._metrics["total_recovered"] += stats["recovered"]
         self._metrics["total_failed"] += stats["failed"]
+
+        # December 29, 2025: Emit DLQ_EVENTS_REPLAYED when events are recovered
+        if stats["recovered"] > 0:
+            # Get event types that were just recovered for the event payload
+            recovered_types = self._get_recent_recovered_types(limit=stats["recovered"])
+            self._emit_replayed_events(stats["recovered"], recovered_types)
 
         if stats["recovered"] or stats["failed"]:
             logger.info(
@@ -749,6 +762,32 @@ class DLQRetryDaemon:
             abandoned = cursor.rowcount
             conn.commit()
         return abandoned
+
+    def _get_recent_recovered_types(self, limit: int = 10) -> list[str]:
+        """Get event types of recently recovered events.
+
+        December 29, 2025: Helper for DLQ_EVENTS_REPLAYED emission.
+
+        Args:
+            limit: Maximum number of events to check
+
+        Returns:
+            List of distinct event types
+        """
+        try:
+            with sqlite3.connect(self.dlq.db_path) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT event_type FROM dead_letter
+                    WHERE status = 'recovered'
+                    ORDER BY last_retry_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+                return [row[0] for row in rows]
+        except Exception:
+            return []
 
     def _abandon_stale_events(self, max_age_hours: float = 168.0) -> int:
         """Abandon events that are too old, regardless of retry count.
@@ -812,6 +851,61 @@ class DLQRetryDaemon:
                 bus.publish(event)
         except Exception as e:
             logger.debug(f"[DLQRetryDaemon] Failed to emit purge event: {e}")
+
+    def _emit_stale_events(self, stale_count: int, event_types: list[str]) -> None:
+        """Emit DLQ_STALE_EVENTS event when many stale events are detected.
+
+        December 29, 2025: Added to complete DLQ event emission chain.
+        UnifiedHealthManager subscribes to this for health monitoring.
+        """
+        try:
+            from app.distributed.data_events import DataEvent, DataEventType
+
+            event = DataEvent(
+                event_type=DataEventType.DLQ_STALE_EVENTS,
+                payload={
+                    "stale_count": stale_count,
+                    "event_types": event_types,
+                    "max_stale_hours": self.max_stale_hours,
+                    "timestamp": datetime.now().isoformat(),
+                },
+                source="DLQRetryDaemon",
+            )
+
+            from app.coordination.event_router import get_event_bus
+
+            bus = get_event_bus()
+            if bus:
+                bus.publish(event)
+        except Exception as e:
+            logger.debug(f"[DLQRetryDaemon] Failed to emit stale events: {e}")
+
+    def _emit_replayed_events(self, recovered_count: int, event_types: list[str]) -> None:
+        """Emit DLQ_EVENTS_REPLAYED event when events are successfully recovered.
+
+        December 29, 2025: Added to complete DLQ event emission chain.
+        UnifiedHealthManager subscribes to this for health monitoring.
+        """
+        try:
+            from app.distributed.data_events import DataEvent, DataEventType
+
+            event = DataEvent(
+                event_type=DataEventType.DLQ_EVENTS_REPLAYED,
+                payload={
+                    "recovered_count": recovered_count,
+                    "event_types": event_types,
+                    "timestamp": datetime.now().isoformat(),
+                },
+                source="DLQRetryDaemon",
+            )
+
+            from app.coordination.event_router import get_event_bus
+
+            bus = get_event_bus()
+            if bus:
+                bus.publish(event)
+        except Exception as e:
+            logger.debug(f"[DLQRetryDaemon] Failed to emit replayed events: {e}")
 
     def get_metrics(self) -> dict:
         """Get daemon metrics.

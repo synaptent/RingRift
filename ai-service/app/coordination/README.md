@@ -115,7 +115,7 @@ await shutdown_all_coordinators()
 
 | Module                     | Purpose                         | Key Classes/Functions                              |
 | -------------------------- | ------------------------------- | -------------------------------------------------- |
-| `sync_coordinator.py`      | Sync scheduling                 | `SyncScheduler`, `get_sync_recommendations()`      |
+| `sync_coordinator.py`      | Sync scheduling (deprecated)    | `SyncScheduler`, `get_sync_recommendations()`      |
 | `sync_mutex.py`            | Cross-process sync locks        | `sync_lock()`, `acquire_sync_lock()`               |
 | `sync_bandwidth.py`        | Bandwidth-coordinated transfers | (integrated with bandwidth_manager)                |
 | `transfer_verification.py` | Checksum verification           | `verify_transfer()`, `compute_file_checksum()`     |

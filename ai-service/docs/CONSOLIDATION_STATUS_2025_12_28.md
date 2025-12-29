@@ -3,6 +3,8 @@
 **Date:** December 28, 2025
 **Auditor:** Infrastructure Reliability Session
 
+> Status: Historical snapshot (Dec 2025). Kept for reference; current sync design is in `ai-service/docs/sync_architecture.md`.
+
 ## Executive Summary
 
 The sync infrastructure has been significantly consolidated in December 2025. This audit confirms the current state and identifies remaining consolidation opportunities.

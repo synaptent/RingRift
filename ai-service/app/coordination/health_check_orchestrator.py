@@ -570,7 +570,12 @@ class HealthCheckOrchestrator:
             })
         except ImportError:
             pass  # Event router not available
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, RuntimeError) as e:
+            # December 29, 2025: Narrowed from bare except Exception
+            # - AttributeError: publish_sync not available or misconfigured
+            # - TypeError: Wrong argument types for publish_sync
+            # - ValueError: Invalid event type
+            # - RuntimeError: Event loop issues
             logger.debug(f"[HealthCheckOrchestrator] Failed to emit capacity update: {e}")
 
     def _get_manager_for_provider(self, provider: Provider):

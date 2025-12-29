@@ -727,6 +727,114 @@ class WorkQueue:
         self._emit_work_event("WORK_QUEUED", item)
         return item.work_id
 
+    def add_work_batch(self, items: list[WorkItem], force: bool = False) -> list[str]:
+        """Add multiple work items to the queue efficiently.
+
+        December 29, 2025: Added for batch performance optimization.
+        Uses executemany() for efficient bulk inserts instead of individual writes.
+
+        Args:
+            items: List of work items to add
+            force: If True, bypass backpressure limits
+
+        Returns:
+            List of work_ids for successfully added items
+
+        Raises:
+            RuntimeError: If queue is at hard limit and force=False
+        """
+        if not items:
+            return []
+
+        added_ids: list[str] = []
+
+        with self.lock:
+            # Check backpressure once for the entire batch
+            pending = sum(1 for i in self.items.values() if i.status == WorkStatus.PENDING)
+            batch_size = len(items)
+
+            if pending + batch_size > BACKPRESSURE_HARD_LIMIT and not force:
+                self._backpressure_stats["rejections"] += batch_size
+                self._backpressure_stats["last_rejection_at"] = time.time()
+                raise RuntimeError(
+                    f"[BACKPRESSURE] Batch of {batch_size} items would exceed hard limit "
+                    f"({pending + batch_size}/{BACKPRESSURE_HARD_LIMIT}). "
+                    f"Use force=True to override."
+                )
+
+            # Update in-memory state first
+            for item in items:
+                self.items[item.work_id] = item
+                added_ids.append(item.work_id)
+
+            self.stats["total_added"] += batch_size
+
+            # Batch save to database using executemany
+            self._save_items_batch(items)
+            self._save_stats()
+
+            if pending + batch_size > BACKPRESSURE_SOFT_LIMIT:
+                self._check_and_update_backpressure(pending + batch_size)
+
+            logger.info(f"Added batch of {batch_size} work items")
+
+        # Emit events outside lock
+        for item in items:
+            self.notifier.on_work_added(item)
+            self._emit_work_event("WORK_QUEUED", item)
+
+        return added_ids
+
+    def _save_items_batch(self, items: list[WorkItem]) -> None:
+        """Save multiple work items to the database efficiently.
+
+        December 29, 2025: Uses executemany() for O(1) database round trips
+        instead of O(n) individual inserts.
+        """
+        if self._readonly_mode or not items:
+            return
+
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                # Prepare batch data
+                batch_data = [
+                    (
+                        item.work_id,
+                        item.work_type.value,
+                        item.priority,
+                        json.dumps(item.config),
+                        item.created_at,
+                        item.claimed_at,
+                        item.started_at,
+                        item.completed_at,
+                        item.status.value,
+                        item.claimed_by,
+                        item.attempts,
+                        item.max_attempts,
+                        item.timeout_seconds,
+                        json.dumps(item.result) if item.result else None,
+                        item.error,
+                        json.dumps(item.depends_on),
+                    )
+                    for item in items
+                ]
+                cursor.executemany("""
+                    INSERT OR REPLACE INTO work_items
+                    (work_id, work_type, priority, config, created_at, claimed_at,
+                     started_at, completed_at, status, claimed_by, attempts,
+                     max_attempts, timeout_seconds, result, error, depends_on)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, batch_data)
+                conn.commit()
+                logger.debug(f"Batch saved {len(items)} work items")
+        except sqlite3.OperationalError as e:
+            if is_enospc_error(e):
+                handle_enospc_error(e, self.db_path, operation="batch save work items")
+            logger.error(f"Database error in batch save: {e}")
+        except sqlite3.IntegrityError as e:
+            logger.error(f"Database integrity error in batch save: {e}")
+
     def add_training(self, board_type: str, num_players: int, priority: int = 100) -> str:
         """Convenience method to add training work."""
         item = WorkItem(

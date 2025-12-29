@@ -4,6 +4,8 @@
 **Status**: Analysis Complete - Implementation Ready
 **Goal**: Consolidate 8 competing sync implementations into unified facade
 
+> Status: Historical snapshot (Dec 2025). Kept for reference; current sync docs live under `ai-service/docs/`.
+
 ## Executive Summary
 
 The codebase has evolved 8 different sync implementations over time, creating confusion and maintenance burden. This document analyzes all implementations, identifies which are actively used, and provides a consolidation plan with minimal disruption.

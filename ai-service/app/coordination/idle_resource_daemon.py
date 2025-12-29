@@ -671,6 +671,9 @@ class IdleResourceDaemon:
         # December 27, 2025: Subscribe to quality degradation events
         self._wire_quality_events()
 
+        # December 29, 2025: Subscribe to selfplay rate change events
+        self._wire_selfplay_rate_events()
+
         # Start monitoring loop
         self._monitor_task = safe_create_task(
             self._monitor_loop(),
@@ -1049,6 +1052,97 @@ class IdleResourceDaemon:
             logger.debug("[IdleResourceDaemon] Event router not available, quality events disabled")
         except Exception as e:
             logger.warning(f"[IdleResourceDaemon] Failed to wire quality events: {e}")
+
+    def _wire_selfplay_rate_events(self) -> None:
+        """Subscribe to SELFPLAY_RATE_CHANGED events from FeedbackAccelerator.
+
+        December 29, 2025: When selfplay rate multiplier changes by >20%,
+        we should adjust GPU allocation targets to match the new demand.
+        This enables the cluster to adapt GPU resources when:
+        - Training momentum increases (need more selfplay data)
+        - Quality issues cause rate reduction (need fewer GPUs)
+        - Curriculum advancement changes priorities
+
+        Events handled:
+        - SELFPLAY_RATE_CHANGED: Adjust GPU allocation targets for affected config
+        """
+        try:
+            from app.coordination.event_router import DataEventType, get_router
+
+            router = get_router()
+
+            # Track rate changes for spawning decisions
+            if not hasattr(self, "_selfplay_rate_adjustments"):
+                self._selfplay_rate_adjustments: dict[str, dict[str, Any]] = {}
+
+            def _on_selfplay_rate_changed(event: Any) -> None:
+                """Handle SELFPLAY_RATE_CHANGED - adjust GPU allocation for affected config."""
+                payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+                config_key = payload.get("config_key", "")
+                new_rate = payload.get("new_rate", 1.0)
+                old_rate = payload.get("old_rate", 1.0)
+                reason = payload.get("reason", "unknown")
+
+                if not config_key:
+                    return
+
+                # Store rate adjustment for spawning decisions
+                self._selfplay_rate_adjustments[config_key] = {
+                    "rate_multiplier": new_rate,
+                    "previous_rate": old_rate,
+                    "change_percent": abs(new_rate - old_rate) / max(old_rate, 0.01) * 100,
+                    "reason": reason,
+                    "timestamp": time.time(),
+                }
+
+                # Log significant rate changes
+                change_pct = abs(new_rate - old_rate) / max(old_rate, 0.01) * 100
+                direction = "increased" if new_rate > old_rate else "decreased"
+                logger.info(
+                    f"[IdleResourceDaemon] SELFPLAY_RATE_CHANGED: {config_key} "
+                    f"rate {direction} by {change_pct:.1f}% "
+                    f"({old_rate:.2f} → {new_rate:.2f}), reason={reason}"
+                )
+
+            # Subscribe to the event
+            if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
+                router.subscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, _on_selfplay_rate_changed)
+                logger.info(
+                    "[IdleResourceDaemon] Subscribed to SELFPLAY_RATE_CHANGED "
+                    "(GPU allocation adjustment on rate changes)"
+                )
+            else:
+                logger.debug("[IdleResourceDaemon] SELFPLAY_RATE_CHANGED event type not available")
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] Event router not available, selfplay rate events disabled")
+        except Exception as e:
+            logger.warning(f"[IdleResourceDaemon] Failed to wire selfplay rate events: {e}")
+
+    def get_selfplay_rate_adjustments(self) -> dict[str, dict[str, Any]]:
+        """Get current selfplay rate adjustments for spawning decisions.
+
+        December 29, 2025: Returns configs with rate adjustments from
+        SELFPLAY_RATE_CHANGED events. Prunes entries older than 15 minutes.
+
+        Returns:
+            Dict mapping config_key to rate metadata (rate_multiplier, reason, timestamp, etc.)
+        """
+        if not hasattr(self, "_selfplay_rate_adjustments"):
+            return {}
+
+        # Prune stale entries (older than 15 minutes)
+        now = time.time()
+        stale_threshold = 15 * 60  # 15 minutes
+        stale_keys = [
+            key for key, meta in self._selfplay_rate_adjustments.items()
+            if now - meta.get("timestamp", 0) > stale_threshold
+        ]
+        for key in stale_keys:
+            del self._selfplay_rate_adjustments[key]
+            logger.debug(f"[IdleResourceDaemon] Pruned stale rate adjustment for {key}")
+
+        return self._selfplay_rate_adjustments.copy()
 
     def get_quality_degraded_configs(self) -> dict[str, dict[str, Any]]:
         """Get current quality-degraded configs for spawning decisions.

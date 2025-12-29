@@ -219,6 +219,7 @@ status = await monitor.get_cluster_status_async()
 | ----------------------- | ------------------------- | ----------------------------------------- |
 | Daemon not starting     | `--status`, check logs    | Check dependencies, restart DaemonManager |
 | Events not flowing      | Cross-process queue depth | Restart EVENT_ROUTER                      |
+| Handlers failing        | DLQ backlog               | Run dlq_dashboard.py, retry or purge DLQ  |
 | Sync stalled            | `/status` endpoint        | Check network, BACKPRESSURE events        |
 | Node not responding     | `/health` on 8770         | SSH to node, check P2P process            |
 | Training not triggering | TRAINING_THRESHOLD events | Check DATA_PIPELINE, game counts          |
@@ -242,6 +243,9 @@ python scripts/unified_data_sync.py --force
 
 # Check P2P voter quorum
 curl -s http://localhost:8770/status | jq '.voter_quorum'
+
+# DLQ dashboard (failed event handlers)
+python scripts/dlq_dashboard.py --pending --limit 20
 ```
 
 ---

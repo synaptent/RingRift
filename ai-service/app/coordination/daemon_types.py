@@ -214,6 +214,9 @@ class DaemonType(Enum):
     # Metrics analysis (December 2025) - continuous metrics monitoring and plateau detection
     METRICS_ANALYSIS = "metrics_analysis"
 
+    # PER orchestrator (December 2025) - monitors Prioritized Experience Replay buffers
+    PER_ORCHESTRATOR = "per_orchestrator"
+
     # Adaptive resource manager (December 2025) - dynamic resource scaling based on workload
     ADAPTIVE_RESOURCES = "adaptive_resources"
 

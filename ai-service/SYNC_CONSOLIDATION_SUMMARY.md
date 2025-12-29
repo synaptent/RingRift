@@ -4,6 +4,8 @@
 **Status**: ✅ Phase 1 Complete
 **Implementer**: Claude Code
 
+> Status: Historical snapshot (Dec 2025). Kept for reference; see `ai-service/docs/sync_architecture.md` for current sync design.
+
 ## What Was Done
 
 ### 1. Comprehensive Analysis

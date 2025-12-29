@@ -461,6 +461,14 @@ COORDINATOR_REGISTRY: dict[str, CoordinatorSpec] = {
         pattern=InitPattern.WIRE,
         func_name="wire_optimization_events",
     ),
+    # === PER (Prioritized Experience Replay) - December 29, 2025 ===
+    "per_orchestrator": CoordinatorSpec(
+        name="per_orchestrator",
+        display_name="PEROrchestrator",
+        module_path="app.training.per_orchestrator",
+        pattern=InitPattern.WIRE,
+        func_name="wire_per_events",
+    ),
     # === Leadership layer (coordinates all others) ===
     "leadership_coordinator": CoordinatorSpec(
         name="leadership_coordinator",
@@ -1439,6 +1447,7 @@ def bootstrap_coordination(
     enable_orphan_detection: bool = True,
     enable_training_activity: bool = True,
     enable_curriculum_integration: bool = True,
+    enable_per: bool = True,  # December 29, 2025: PER orchestrator for experience replay
     pipeline_auto_trigger: bool = False,
     register_with_registry: bool = True,
     # Training config (December 2025 - CLI connection)
@@ -1596,6 +1605,7 @@ def bootstrap_coordination(
         # --- Layer 8: Top-Level Coordination ---
         ("metrics_orchestrator", enable_metrics),  # Depends on pipeline
         ("optimization_coordinator", enable_optimization),  # Depends on metrics
+        ("per_orchestrator", enable_per),  # Dec 29, 2025: PER buffer monitoring
         ("leadership_coordinator", enable_leadership),  # Coordinates all others
     ]
 

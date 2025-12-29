@@ -2,6 +2,8 @@
 
 This document summarizes all major module consolidations completed in December 2025 and provides migration paths for deprecated code.
 
+> Status: Historical snapshot (Dec 2025). Kept for reference; consult `ai-service/docs/README.md` for current guidance.
+
 ## Quick Reference Table
 
 | Category        | Deprecated Module                                            | Replacement                             | LOC Saved |

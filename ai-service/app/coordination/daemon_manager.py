@@ -3175,7 +3175,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.JOB_SCHEDULER,  # Phase 3: Centralized job scheduling with PID-based allocation
         DaemonType.IDLE_RESOURCE,  # Phase 20: Monitor idle GPUs and spawn selfplay
         DaemonType.NODE_RECOVERY,  # Phase 21: Auto-recover terminated nodes
-        DaemonType.LAMBDA_IDLE,  # Dec 2025: Auto-terminate idle Lambda nodes (suspended - keep for restoration)
+        # NOTE: LAMBDA_IDLE removed Dec 29, 2025 - GH200 nodes are dedicated training, don't need idle shutdown
         DaemonType.QUEUE_POPULATOR,  # Phase 4: Auto-populate work queue with jobs
         DaemonType.CURRICULUM_INTEGRATION,  # Bridges feedback loops for self-improvement
         DaemonType.AUTO_EXPORT,  # Auto-export NPZ when game threshold met

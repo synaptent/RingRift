@@ -607,6 +607,12 @@ class UnifiedDistributionDaemon:
                 subscribe(DataEventType.TRAINING_PROGRESS, self._on_training_progress_for_prefetch)
                 logger.info("Subscribed to TRAINING_PROGRESS for background prefetch")
 
+                # December 29, 2025: Re-distribute models blocked from evaluation
+                # When evaluation is blocked due to insufficient model distribution,
+                # prioritize re-distribution of that model
+                subscribe(DataEventType.MODEL_EVALUATION_BLOCKED, self._on_model_evaluation_blocked)
+                logger.info("Subscribed to MODEL_EVALUATION_BLOCKED for re-distribution")
+
                 # NPZ events
                 try:
                     from app.coordination.event_router import StageEvent
@@ -744,6 +750,42 @@ class UnifiedDistributionDaemon:
             )
         else:
             logger.warning(f"MODEL_DISTRIBUTION_FAILED (no retry - missing info): {error}")
+
+    def _on_model_evaluation_blocked(self, event: dict[str, Any] | Any) -> None:
+        """Handle MODEL_EVALUATION_BLOCKED event - prioritize model re-distribution.
+
+        December 29, 2025: When evaluation is blocked because a model isn't
+        distributed to enough nodes, prioritize re-distributing that model.
+
+        Args:
+            event: Event with model_path, required_nodes, actual_nodes
+        """
+        payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+        model_path = payload.get("model_path", "")
+        required_nodes = payload.get("required_nodes", 0)
+        actual_nodes = payload.get("actual_nodes", 0)
+        reason = payload.get("reason", "")
+
+        if not model_path:
+            logger.warning("MODEL_EVALUATION_BLOCKED received without model_path")
+            return
+
+        logger.info(
+            f"MODEL_EVALUATION_BLOCKED: {model_path} has {actual_nodes}/{required_nodes} nodes "
+            f"(reason: {reason}), prioritizing re-distribution"
+        )
+
+        # Enqueue for priority distribution (timestamp in past = high priority)
+        item = {
+            "data_type": DataType.MODEL,
+            "path": model_path,
+            "priority": True,  # Mark as priority
+            "reason": "evaluation_blocked",
+            "required_nodes": required_nodes,
+            "actual_nodes": actual_nodes,
+            "timestamp": time.time() - 3600,  # Priority: 1 hour ago
+        }
+        self._enqueue_item(item)
 
     def _on_npz_exported(self, event: dict[str, Any] | Any) -> None:
         """Handle NPZ_EXPORT_COMPLETE event."""

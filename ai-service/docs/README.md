@@ -104,7 +104,8 @@ Historical documentation and status reports.
 | [COORDINATION_ARCHITECTURE](COORDINATION_ARCHITECTURE.md)             | Event system & coordination      |
 | [P2P_HANDLERS](P2P_HANDLERS.md)                                       | P2P orchestrator handler mixins  |
 | [EVENT_CATALOG](EVENT_CATALOG.md)                                     | Event types reference            |
-| [CONSOLIDATION_STATUS_2025_12_19](CONSOLIDATION_STATUS_2025_12_19.md) | Current consolidation status     |
+| [sync_architecture](sync_architecture.md)                             | Canonical sync architecture      |
+| [CONSOLIDATION_STATUS_2025_12_19](CONSOLIDATION_STATUS_2025_12_19.md) | Historical consolidation status  |
 | [HEX_ARTIFACTS_DEPRECATED](HEX_ARTIFACTS_DEPRECATED.md)               | Deprecated hex data notice       |
 
 ## See Also

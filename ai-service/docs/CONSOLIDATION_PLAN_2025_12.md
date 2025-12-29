@@ -4,6 +4,8 @@
 **Status**: Active
 **Focus**: Code quality, module consolidation, exception handling, test coverage
 
+> Status: Historical plan (Dec 2025). Kept for reference; current consolidation status lives in `ai-service/docs/COORDINATION_MODULE_INVENTORY.md` and `ai-service/docs/README.md`.
+
 ---
 
 ## Executive Summary
@@ -126,7 +128,7 @@ Based on comprehensive codebase exploration, the ai-service has grown to **651 P
 | Training | `training_orchestrator.py`, `unified_orchestrator.py`, `optimization_orchestrator.py`, `per_orchestrator.py`                | `TrainingOrchestrator` facade   |
 | Data     | `data_pipeline_orchestrator.py`, `cache_coordination_orchestrator.py`, `data_quality_orchestrator.py`                       | `DataOrchestrator` facade       |
 | Cluster  | `health_check_orchestrator.py`, `recovery_orchestrator.py`, `multi_provider_orchestrator.py`, `node_health_orchestrator.py` | `ClusterOrchestrator` facade    |
-| Sync     | `sync_orchestrator.py` (legacy; prefer `sync_facade.py`)                                                                     | Keep separate (execution layer) |
+| Sync     | `sync_orchestrator.py` (legacy; prefer `sync_facade.py`)                                                                    | Keep separate (execution layer) |
 
 ### 3.2 Coordinator Proliferation
 

@@ -216,7 +216,10 @@ class LeadershipCoordinator:
         except ImportError:
             logger.warning("[LeadershipCoordinator] data_events not available")
             return False
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
+            # December 29, 2025: Narrowed from bare except Exception
+            # - AttributeError: Router or subscribe method not available
+            # - TypeError: Wrong argument types for subscribe
             logger.error(f"[LeadershipCoordinator] Failed to subscribe: {e}")
             return False
 
@@ -609,7 +612,11 @@ class LeadershipCoordinator:
                 message=f"LeadershipCoordinator healthy: {stats.online_nodes} nodes, {len(stats.leaders_by_domain)} domains",
                 details=details,
             )
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError) as e:
+            # December 29, 2025: Narrowed from bare except Exception
+            # - AttributeError: Stats method or attributes not available
+            # - TypeError: Wrong types passed to HealthCheckResult
+            # - KeyError: Missing dict keys in stats
             logger.warning(f"[LeadershipCoordinator] health_check error: {e}")
             return HealthCheckResult(
                 healthy=False,

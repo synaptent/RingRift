@@ -60,6 +60,7 @@ The following modules have been fully removed and are now documented only in mig
 | ---------------------------------------- | ------------------------------------------ | ------------- |
 | `app.coordination.cluster_data_sync`     | `auto_sync_daemon.py`                      | December 2025 |
 | `app.coordination.ephemeral_sync`        | `auto_sync_daemon.py` (strategy=ephemeral) | December 2025 |
+| `app.coordination.node_health_monitor`   | `health_check_orchestrator.py`             | December 2025 |
 | `app.coordination.system_health_monitor` | `unified_health_manager.py`                | December 2025 |
 
 See `archive/deprecated_coordination/README.md` for historical migration guides for fully removed modules.

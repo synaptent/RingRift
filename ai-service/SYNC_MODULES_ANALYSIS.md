@@ -4,6 +4,8 @@
 **Analyst**: Claude
 **Purpose**: Identify unused/deprecated sync modules for archival
 
+> Status: Historical snapshot (Dec 2025). Kept for reference; current sync design is documented in `ai-service/docs/sync_architecture.md`.
+
 ## Executive Summary
 
 Analyzed sync-related modules in `ai-service/app/coordination/` to identify candidates for archival.

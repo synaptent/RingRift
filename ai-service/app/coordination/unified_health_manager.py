@@ -27,6 +27,10 @@ Event Integration:
 - Subscribes to DLQ_STALE_EVENTS: Track stale events in dead letter queue (Dec 29, 2025)
 - Subscribes to DLQ_EVENTS_REPLAYED: Track successful event replays from DLQ (Dec 29, 2025)
 - Subscribes to DLQ_EVENTS_PURGED: Track purged events for data loss visibility (Dec 29, 2025)
+- Subscribes to CAPACITY_LOW: Track when cluster GPU capacity drops (Dec 29, 2025)
+- Subscribes to CAPACITY_RESTORED: Track when capacity recovers (Dec 29, 2025)
+- Subscribes to BUDGET_EXCEEDED: Track when spending exceeds limits (Dec 29, 2025)
+- Subscribes to BUDGET_ALERT: Track approaching budget thresholds (Dec 29, 2025)
 
 Usage:
     from app.coordination.unified_health_manager import (
