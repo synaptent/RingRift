@@ -953,6 +953,11 @@ class MasterLoopController:
         if not self.skip_daemons:
             await self._start_daemons()
 
+        # December 29, 2025: Start ReactiveDispatcher for event-driven selfplay
+        # Part of 48-hour autonomous operation optimization
+        if REACTIVE_DISPATCH_ENABLED and not self.dry_run:
+            await self._start_reactive_dispatcher()
+
         # Subscribe to events
         self._subscribe_to_events()
 
@@ -978,6 +983,10 @@ class MasterLoopController:
 
         # Remove PID file (December 2025)
         self._remove_pid_file()
+
+        # Stop ReactiveDispatcher (December 29, 2025)
+        if REACTIVE_DISPATCH_ENABLED:
+            await self._stop_reactive_dispatcher()
 
         # Stop daemons
         if not self.skip_daemons and self._daemon_manager is not None:
@@ -1285,6 +1294,42 @@ class MasterLoopController:
                 logger.info("[MasterLoop] Started FeedbackLoopController")
         except Exception as e:
             logger.warning(f"[MasterLoop] Failed to start FeedbackLoopController: {e}")
+
+    async def _start_reactive_dispatcher(self) -> None:
+        """Start the ReactiveDispatcher for event-driven selfplay.
+
+        December 29, 2025: Part of 48-hour autonomous operation optimization.
+        Replaces polling-based selfplay dispatch with event-driven dispatch.
+
+        When enabled, the master loop interval increases to 5 minutes (watchdog mode)
+        since selfplay is dispatched via events (node_recovered, training_completed, etc.)
+        """
+        try:
+            from app.coordination.reactive_dispatcher import (
+                ReactiveDispatcher,
+                start_reactive_dispatcher,
+            )
+
+            self._reactive_dispatcher = await start_reactive_dispatcher()
+            logger.info(
+                f"[MasterLoop] Started ReactiveDispatcher "
+                f"(loop interval: {LOOP_INTERVAL_SECONDS}s watchdog mode)"
+            )
+        except ImportError as e:
+            logger.warning(f"[MasterLoop] ReactiveDispatcher not available: {e}")
+            self._reactive_dispatcher = None
+        except Exception as e:
+            logger.error(f"[MasterLoop] Failed to start ReactiveDispatcher: {e}")
+            self._reactive_dispatcher = None
+
+    async def _stop_reactive_dispatcher(self) -> None:
+        """Stop the ReactiveDispatcher."""
+        if hasattr(self, "_reactive_dispatcher") and self._reactive_dispatcher is not None:
+            try:
+                await self._reactive_dispatcher.stop()
+                logger.info("[MasterLoop] Stopped ReactiveDispatcher")
+            except Exception as e:
+                logger.warning(f"[MasterLoop] Error stopping ReactiveDispatcher: {e}")
 
     # =========================================================================
     # Event handling

@@ -122,9 +122,11 @@ class TestParseConfigKey:
         assert parse_config_key("hexagonal_2p") == ("hexagonal", 2)
 
     def test_malformed_config_returns_defaults(self):
-        """Malformed configs return defaults (hex8, 2)."""
+        """Malformed or partial configs return defaults for missing parts."""
+        # Empty string -> default board
         assert parse_config_key("") == ("hex8", 2)
-        assert parse_config_key("invalid") == ("hex8", 2)
+        # Single word -> uses it as board, defaults player count
+        assert parse_config_key("invalid") == ("invalid", 2)
         assert parse_config_key("hex8") == ("hex8", 2)
 
     def test_edge_cases(self):

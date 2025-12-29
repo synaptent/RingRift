@@ -1629,7 +1629,11 @@ class TestRestartCountPersistence:
         assert len(timestamps) == 2
 
     def test_record_restart_exceeds_hourly_limit(self):
-        """record_restart() blocks when hourly limit exceeded."""
+        """record_restart() enters DEGRADED mode when hourly limit exceeded.
+
+        December 2025: Changed from permanent failure to graceful degradation.
+        Daemons now enter DEGRADED mode and keep retrying with longer intervals.
+        """
         manager = DaemonManager()
 
         # Pre-populate with many recent restarts
@@ -1642,8 +1646,10 @@ class TestRestartCountPersistence:
         with patch.object(manager, "_save_restart_counts"):
             result = manager.record_restart(DaemonType.EVENT_ROUTER)
 
+        # Still returns False (restart not allowed yet) but enters DEGRADED mode
         assert result is False
-        assert daemon_name in manager._permanently_failed
+        # New behavior: tracked in _degraded_daemons instead of _permanently_failed
+        assert daemon_name in manager._degraded_daemons
 
     def test_record_restart_cleans_old_timestamps(self):
         """record_restart() removes timestamps older than 1 hour."""
@@ -1667,20 +1673,28 @@ class TestRestartCountPersistence:
         assert manager.is_permanently_failed(DaemonType.EVENT_ROUTER) is False
 
     def test_is_permanently_failed_true(self):
-        """is_permanently_failed() returns True for failed daemon."""
+        """is_permanently_failed() returns True for failed daemon.
+
+        December 2025: _permanently_failed is now a dict (daemon_name -> timestamp).
+        """
         manager = DaemonManager()
-        manager._permanently_failed.add(DaemonType.EVENT_ROUTER.value)
+        # Now a dict: daemon_name -> timestamp
+        manager._permanently_failed[DaemonType.EVENT_ROUTER.value] = time.time()
 
         assert manager.is_permanently_failed(DaemonType.EVENT_ROUTER) is True
 
     def test_clear_permanently_failed(self):
-        """clear_permanently_failed() resets failure status."""
+        """clear_permanently_failed() resets failure status.
+
+        December 2025: Also clears _degraded_daemons for graceful degradation.
+        """
         manager = DaemonManager()
         manager._factories.clear()
         manager._daemons.clear()
 
         manager.register_factory(DaemonType.EVENT_ROUTER, lambda: None)
-        manager._permanently_failed.add(DaemonType.EVENT_ROUTER.value)
+        # Now a dict: daemon_name -> timestamp
+        manager._permanently_failed[DaemonType.EVENT_ROUTER.value] = time.time()
         manager._restart_timestamps[DaemonType.EVENT_ROUTER.value] = [time.time()]
         manager._daemons[DaemonType.EVENT_ROUTER].restart_count = 5
 
