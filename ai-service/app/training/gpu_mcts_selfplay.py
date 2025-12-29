@@ -147,7 +147,8 @@ class GPUMCTSSelfplayRunner:
         self._max_moves_per_game = getattr(self.config, "max_moves_per_game", 300)
         self._encoder_version = getattr(self.config, "encoder_version", 2)
         self._feature_version = getattr(self.config, "feature_version", 2)
-        self._model_path = getattr(self.config, "model_path", None)
+        # Check both model_path (GPUMCTSSelfplayConfig) and weights_file (SelfplayConfig)
+        self._model_path = getattr(self.config, "model_path", None) or getattr(self.config, "weights_file", None)
 
         # Parse board type
         board_type_str = self.config.board_type.lower()
