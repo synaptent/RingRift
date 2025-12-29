@@ -24617,7 +24617,7 @@ print(json.dumps({{
         # Fixes "Request Entity Too Large" for Elo DB and other file uploads
         app = web.Application(
             middlewares=[auth_middleware],
-            client_max_body_size=100 * 1024 * 1024,  # 100 MB
+            client_max_size=100 * 1024 * 1024,  # 100 MB
         )
 
         # Register all routes from centralized route registry (December 2025)
