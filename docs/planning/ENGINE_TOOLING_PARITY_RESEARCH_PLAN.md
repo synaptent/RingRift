@@ -278,8 +278,10 @@ from Python scripts.
      - `termination_reason` (TEXT, optional)
      - `total_moves`, `total_turns`
      - `duration_ms` (optional)
-     - `source` (TEXT, e.g. `'self_play'`, `'selfplay_soak'`,
-       `'training_data_generation'`, `'sensitivity_test'`, `'cmaes'`, etc.)
+     - `source` (TEXT, e.g. `'self_play'`, `'soak_test'`, `'cmaes'`, `'gauntlet'`,
+       `'tournament'`, `'training'`, `'manual'`; script-specific values like
+       `'selfplay_soak'`, `'python-strict'`, `'training_data_generation'`,
+       `'sensitivity_test'` may appear.)
      - `schema_version` (INTEGER)
      - Time control fields (v2):
        - `time_control_type` (TEXT, default `'none'`)
@@ -417,7 +419,7 @@ from Python scripts.
   - `get_or_create_db` from `app.db` (aliased import).
   - `record_completed_game` to persist completed self‑play games.
 - Per‑game metadata recorded (and now persisted via `metadata_json`):
-  - `source = "selfplay_soak"`.
+  - `source = "selfplay_soak"` (script-specific tag; canonical source is `soak_test`).
   - `engine_mode` (`"mixed"` / `"descent-only"`).
   - `difficulty_band` (e.g. `"canonical"`, `"light"`).
   - `termination_reason` (explicit reason string).

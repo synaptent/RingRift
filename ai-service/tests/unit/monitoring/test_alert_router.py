@@ -536,13 +536,19 @@ class TestPartitionDetection:
             assert "PARTITION DETECTED" in alert.message
 
     def test_partition_suppression_subsequent(self):
-        """Test that subsequent partition alerts are suppressed."""
+        """Test that subsequent partition alerts are suppressed.
+
+        Note: The partition suppression check uses the specific node's send_count,
+        not a cluster-level count. This means for a truly subsequent alert from
+        the SAME node, it would be suppressed if send_count > 0.
+        """
         with patch("app.monitoring.alert_router.STATE_FILE", Path(tempfile.mktemp())):
             router = AlertRouter()
 
-            # Add nodes and mark first alert as sent
+            # Add nodes and mark the SPECIFIC node's alert as sent
             router._active_issues["node_offline"] = {f"node{i}" for i in range(21)}
-            router._states["node_offline:cluster"] = AlertState(send_count=1)
+            # Set state for the specific node that will send the alert
+            router._states["node_offline:node22"] = AlertState(send_count=1)
 
             alert = Alert(
                 severity=AlertSeverity.WARNING,

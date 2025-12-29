@@ -195,6 +195,8 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
             try:
                 await self._check_config_progress(config_key)
             except Exception as e:
+                # Intentionally broad: daemon loop must continue even if one config
+                # fails. Errors are logged and tracked for monitoring.
                 logger.error(f"Error checking progress for {config_key}: {e}")
                 self._errors_count += 1
                 self._last_error = str(e)
@@ -258,7 +260,7 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
 
             # Fallback: calculate from Elo database
             return await self._calculate_elo_velocity_from_db(config_key)
-        except Exception as e:
+        except (sqlite3.Error, OSError, ValueError, AttributeError) as e:
             logger.debug(f"Could not get Elo velocity for {config_key}: {e}")
             return 0.0
 
@@ -306,7 +308,7 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
                 return 0.0
 
             return (last_rating - first_rating) / hours
-        except Exception as e:
+        except (sqlite3.Error, OSError, ValueError, TypeError) as e:
             logger.debug(f"Error calculating Elo velocity: {e}")
             return 0.0
 
