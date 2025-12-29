@@ -1264,14 +1264,33 @@ class UnifiedDistributionDaemon:
         """Get list of training-capable nodes.
 
         December 2025: Fallback migrated to use cluster_config helpers instead of inline YAML.
+        December 29, 2025: Fixed bug - convert SyncCandidateNode objects to dicts.
+        get_sync_targets() returns SyncCandidateNode but callers expect dicts with
+        'node_id', 'host', 'user' keys.
         """
         try:
+            from app.config.cluster_config import get_cluster_nodes
             from app.coordination.sync_router import (
                 DataType as SRDataType,
                 get_sync_router,
             )
             router = get_sync_router()
-            return router.get_sync_targets(SRDataType.NPZ)
+            sync_targets = router.get_sync_targets(SRDataType.NPZ)
+
+            # December 29, 2025: Convert SyncCandidateNode to dicts with SSH info
+            # SyncCandidateNode only has node_id, priority, reason, capacity
+            # We need to look up host/user from cluster_config
+            cluster_nodes = get_cluster_nodes()
+            result = []
+            for target in sync_targets:
+                node_config = cluster_nodes.get(target.node_id)
+                if node_config:
+                    result.append({
+                        "node_id": target.node_id,
+                        "host": node_config.best_ip,
+                        "user": node_config.ssh_user,
+                    })
+            return result
         except ImportError:
             # Fallback to cluster_config helpers (Dec 2025)
             try:
