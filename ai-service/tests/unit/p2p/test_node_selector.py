@@ -30,6 +30,7 @@ class MockNodeInfo:
     _gpu_power: float = 100.0
     _cpu_power: float = 50.0
     _load: float = 0.5
+    capabilities: list = field(default_factory=lambda: ["selfplay", "training"])
 
     def is_alive(self) -> bool:
         return self._alive
