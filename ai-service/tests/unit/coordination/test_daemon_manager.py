@@ -164,7 +164,7 @@ class TestDaemonManagerConfig:
 
         assert config.auto_start is False
         assert config.health_check_interval == 30.0
-        assert config.shutdown_timeout == 10.0
+        assert config.shutdown_timeout == 30.0
         assert config.auto_restart_failed is True
         assert config.max_restart_attempts == 5
 
@@ -619,11 +619,12 @@ class TestDaemonProfiles:
         profile = DAEMON_PROFILES["training_node"]
         assert DaemonType.EVENT_ROUTER in profile
 
-    def test_ephemeral_has_ephemeral_sync(self):
-        """Ephemeral profile should include ephemeral_sync."""
+    def test_ephemeral_has_auto_sync(self):
+        """Ephemeral profile should include auto_sync (replaced ephemeral_sync)."""
         from app.coordination.daemon_manager import DAEMON_PROFILES
         profile = DAEMON_PROFILES["ephemeral"]
-        assert DaemonType.EPHEMERAL_SYNC in profile
+        # EPHEMERAL_SYNC was consolidated into AUTO_SYNC (Dec 2025)
+        assert DaemonType.AUTO_SYNC in profile
 
     def test_minimal_is_truly_minimal(self):
         """Minimal profile should have only 1 daemon."""
