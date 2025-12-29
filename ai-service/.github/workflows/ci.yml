@@ -145,6 +145,27 @@ jobs:
           echo "Checking architecture constraints..."
           lint-imports || echo "::warning::Architecture constraint violations detected"
 
+  circular-import-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check for circular imports
+        run: |
+          echo "Checking for circular import dependencies..."
+          python scripts/audit_circular_deps.py --path app/coordination --max-depth 5
+          CYCLES_FOUND=$?
+          if [ $CYCLES_FOUND -ne 0 ]; then
+            echo "::error::Circular import dependencies detected in app/coordination/"
+            exit 1
+          fi
+          echo "No circular imports found in app/coordination/"
+
   deprecation-check:
     runs-on: ubuntu-latest
     steps:
