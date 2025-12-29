@@ -162,6 +162,11 @@ class FeedbackState:
     last_evaluation_time: float = 0.0
     last_promotion_time: float = 0.0
 
+    # Dec 29 2025: Engine bandit tracking
+    last_selfplay_engine: str = "gumbel-mcts"  # Last engine mode used for selfplay
+    last_selfplay_games: int = 0  # Games from last selfplay batch
+    elo_before_training: float = 1500.0  # Elo before the most recent training
+
     # Work queue metrics (December 2025)
     work_completed_count: int = 0  # Total work items completed
     last_work_completion_time: float = 0.0
@@ -662,6 +667,7 @@ class FeedbackLoopController:
         1. Assess data quality
         2. Update training intensity based on quality
         3. Signal training readiness if quality is sufficient
+        4. Track engine mode for bandit feedback (Dec 29 2025)
         """
         try:
             payload = event.payload if hasattr(event, "payload") else {}
@@ -669,12 +675,17 @@ class FeedbackLoopController:
             config_key = payload.get("config", "")
             games_count = payload.get("games_count", 0)
             db_path = payload.get("db_path", "")
+            engine_mode = payload.get("engine_mode", "gumbel-mcts")  # Dec 29 2025
 
             if not config_key:
                 return
 
             state = self._get_or_create_state(config_key)
             state.last_selfplay_time = time.time()
+
+            # Dec 29 2025: Track engine mode for bandit feedback
+            state.last_selfplay_engine = engine_mode
+            state.last_selfplay_games += games_count  # Accumulate across batches
 
             # Assess data quality
             previous_quality = state.last_selfplay_quality
@@ -1309,6 +1320,7 @@ class FeedbackLoopController:
         1. Record training metrics
         2. Trigger evaluation if accuracy threshold met
         3. Adjust curriculum based on metrics
+        4. Snapshot Elo for bandit feedback (Dec 29 2025)
         """
         try:
             payload = event.payload if hasattr(event, "payload") else {}
@@ -1324,6 +1336,10 @@ class FeedbackLoopController:
             state = self._get_or_create_state(config_key)
             state.last_training_time = time.time()
             state.last_training_accuracy = policy_accuracy
+
+            # Dec 29 2025: Snapshot current Elo before evaluation
+            # This allows computing Elo gain after evaluation for bandit feedback
+            state.elo_before_training = state.last_elo
 
             logger.info(
                 f"[FeedbackLoopController] Training complete for {config_key}: "

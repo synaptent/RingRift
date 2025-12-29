@@ -1152,11 +1152,12 @@ class MasterLoopController:
             # These manage coordinator disk space by syncing data to external storage
             coordinator_daemons = {
                 DaemonType.COORDINATOR_DISK_MANAGER,  # Proactive disk cleanup with external sync
+                DaemonType.EXTERNAL_DRIVE_SYNC,       # Pull data from cluster to OWC drive (Dec 29)
             }
 
             # December 2025: Add S3_CONSOLIDATION on coordinator if AWS is configured
             # This merges data from all nodes into consolidated S3 view
-            if os.getenv("AWS_ACCESS_KEY_ID"):
+            if self._has_aws_credentials():
                 coordinator_daemons.add(DaemonType.S3_CONSOLIDATION)
             for daemon in coordinator_daemons:
                 if daemon not in daemons:
