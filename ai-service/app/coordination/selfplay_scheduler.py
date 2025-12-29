@@ -225,6 +225,18 @@ class ConfigPriority:
         # Higher factor for configs further from target
         deficit_ratio = 1.0 - (self.game_count / target)
         return min(1.0, deficit_ratio)
+    @property
+    def player_count(self) -> int:
+        """Extract player count from config_key (e.g., 'hex8_2p' -> 2).
+
+        Dec 29, 2025: Added for player-count based allocation multiplier.
+        """
+        try:
+            suffix = self.config_key.split("_")[-1]  # "2p", "3p", "4p"
+            return int(suffix.rstrip("p"))
+        except (ValueError, IndexError):
+            return 2  # Default to 2-player
+
 
 
 @dataclass
