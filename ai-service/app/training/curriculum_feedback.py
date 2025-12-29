@@ -109,6 +109,11 @@ class CurriculumFeedback:
         # OpponentWinRateTracker for weak opponent detection (Dec 2025)
         self._opponent_tracker = opponent_tracker
 
+        # December 29, 2025: Thread safety lock for all mutable state
+        # Protects: _game_history, _config_metrics, _current_weights, _curriculum_stages
+        # Required because record_game/update_elo called from multiple threads
+        self._lock = threading.RLock()
+
         # Game history (circular buffer per config)
         self._game_history: dict[str, list[GameRecord]] = defaultdict(list)
         self._max_history_per_config = 1000
@@ -333,6 +338,8 @@ class CurriculumFeedback:
             winner: 1 = model won, -1 = model lost, 0 = draw
             model_elo: Current model Elo rating
             opponent_type: Type of opponent (baseline, selfplay, etc.)
+
+        Thread-safe: Uses self._lock to protect _game_history modifications.
         """
         record = GameRecord(
             config_key=config_key,
@@ -342,21 +349,26 @@ class CurriculumFeedback:
             opponent_type=opponent_type,
         )
 
-        # Add to history
-        history = self._game_history[config_key]
-        history.append(record)
+        with self._lock:
+            # Add to history
+            history = self._game_history[config_key]
+            history.append(record)
 
-        # Trim to max size
-        if len(history) > self._max_history_per_config:
-            self._game_history[config_key] = history[-self._max_history_per_config:]
+            # Trim to max size
+            if len(history) > self._max_history_per_config:
+                self._game_history[config_key] = history[-self._max_history_per_config:]
 
-        self._last_update_time = time.time()
+            self._last_update_time = time.time()
 
     def record_training(self, config_key: str) -> None:
-        """Record that training ran for a config."""
-        metrics = self._get_or_create_metrics(config_key)
-        metrics.last_training_time = time.time()
-        self._last_update_time = time.time()
+        """Record that training ran for a config.
+
+        Thread-safe: Uses self._lock to protect metrics modifications.
+        """
+        with self._lock:
+            metrics = self._get_or_create_metrics(config_key)
+            metrics.last_training_time = time.time()
+            self._last_update_time = time.time()
 
     def record_promotion(
         self,
@@ -380,39 +392,45 @@ class CurriculumFeedback:
 
         December 2025: Added to close the feedback loop from evaluation
         to curriculum weights.
+
+        Thread-safe: Uses self._lock to protect metrics and weights modifications.
         """
-        metrics = self._get_or_create_metrics(config_key)
-        metrics.model_count += 1 if promoted else 0
+        with self._lock:
+            metrics = self._get_or_create_metrics(config_key)
+            metrics.model_count += 1 if promoted else 0
 
-        if new_elo is not None:
-            # Update Elo tracking
-            old_elo = metrics.avg_elo
-            metrics.avg_elo = new_elo
-            metrics.elo_trend = new_elo - old_elo
+            if new_elo is not None:
+                # Update Elo tracking
+                old_elo = metrics.avg_elo
+                metrics.avg_elo = new_elo
+                metrics.elo_trend = new_elo - old_elo
 
-        # Adjust weight based on promotion result
-        current_weight = self._current_weights.get(config_key, 1.0)
+            # Adjust weight based on promotion result
+            current_weight = self._current_weights.get(config_key, 1.0)
 
-        if promoted:
-            # Successful promotion: Model is performing well
-            # Reduce weight slightly to reallocate resources to weaker configs
-            adjustment = -0.1
-            logger.info(
-                f"CurriculumFeedback: {config_key} promoted, reducing weight "
-                f"({current_weight:.2f} -> {max(self.weight_min, current_weight + adjustment):.2f})"
-            )
-        else:
-            # Failed promotion: Model needs more training
-            # Increase weight to allocate more resources
-            adjustment = 0.15
-            logger.info(
-                f"CurriculumFeedback: {config_key} failed promotion, increasing weight "
-                f"({current_weight:.2f} -> {min(self.weight_max, current_weight + adjustment):.2f})"
-            )
+            if promoted:
+                # Successful promotion: Model is performing well
+                # Reduce weight slightly to reallocate resources to weaker configs
+                adjustment = -0.1
+                log_msg = (
+                    f"CurriculumFeedback: {config_key} promoted, reducing weight "
+                    f"({current_weight:.2f} -> {max(self.weight_min, current_weight + adjustment):.2f})"
+                )
+            else:
+                # Failed promotion: Model needs more training
+                # Increase weight to allocate more resources
+                adjustment = 0.15
+                log_msg = (
+                    f"CurriculumFeedback: {config_key} failed promotion, increasing weight "
+                    f"({current_weight:.2f} -> {min(self.weight_max, current_weight + adjustment):.2f})"
+                )
 
-        new_weight = max(self.weight_min, min(self.weight_max, current_weight + adjustment))
-        self._current_weights[config_key] = new_weight
-        self._last_update_time = time.time()
+            new_weight = max(self.weight_min, min(self.weight_max, current_weight + adjustment))
+            self._current_weights[config_key] = new_weight
+            self._last_update_time = time.time()
+
+        # Log outside lock to minimize lock hold time
+        logger.info(log_msg)
 
         # Emit curriculum update event (December 2025)
         self._emit_curriculum_updated(config_key, new_weight, "promotion")
@@ -507,11 +525,15 @@ class CurriculumFeedback:
         return self._compute_metrics(config_key)
 
     def get_all_metrics(self) -> dict[str, ConfigMetrics]:
-        """Get metrics for all configs."""
-        result = {}
-        for config_key in set(self._game_history.keys()) | set(self._config_metrics.keys()):
-            result[config_key] = self._compute_metrics(config_key)
-        return result
+        """Get metrics for all configs.
+
+        Thread-safe: Uses self._lock to get consistent snapshot of all configs.
+        """
+        with self._lock:
+            result = {}
+            for config_key in set(self._game_history.keys()) | set(self._config_metrics.keys()):
+                result[config_key] = self._compute_metrics(config_key)
+            return result
 
     def get_curriculum_weights(self) -> dict[str, float]:
         """Compute curriculum weights based on current metrics.

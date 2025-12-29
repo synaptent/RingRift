@@ -1283,6 +1283,40 @@ class TrainingCoordinator:
                 "after successful promotion"
             )
 
+    def _on_adaptive_params_changed(self, event: Any) -> None:
+        """Handle ADAPTIVE_PARAMS_CHANGED event - react to hyperparameter updates.
+
+        Dec 2025: Wires feedback loop from gauntlet evaluation to training.
+        When adaptive parameters are adjusted based on evaluation results:
+        1. Log the change for monitoring
+        2. Update internal priority state
+        3. Could trigger mid-training LR adjustments (future enhancement)
+
+        This closes the feedback loop: gauntlet -> feedback_controller -> training.
+        """
+        payload = event.payload if hasattr(event, 'payload') else {}
+
+        config_key = payload.get("config_key") or payload.get("config", "")
+        actions = payload.get("actions_taken", [])
+        reason = payload.get("reason", "unknown")
+
+        self._events_processed += 1
+
+        logger.info(
+            f"[TrainingCoordinator] Adaptive params changed: config={config_key or 'unknown'}, "
+            f"actions={actions}, reason={reason}"
+        )
+
+        # Track configs with recent adaptive adjustments for priority decisions
+        if config_key:
+            if not hasattr(self, '_adaptive_adjusted_configs'):
+                self._adaptive_adjusted_configs = {}
+            self._adaptive_adjusted_configs[config_key] = {
+                "timestamp": time.time(),
+                "actions": actions,
+                "reason": reason,
+            }
+
     @property
     def cluster_healthy(self) -> bool:
         """Check if cluster is healthy for training."""

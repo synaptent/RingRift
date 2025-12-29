@@ -154,7 +154,13 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'TIER_PROMOTION'):
                 router.subscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
 
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION")
+            # December 29, 2025: Subscribe to CURRICULUM_ADVANCEMENT_NEEDED to handle
+            # stagnant configs (3+ evaluations with minimal Elo improvement).
+            # Emitted by TrainingTriggerDaemon._signal_curriculum_advancement().
+            if hasattr(DataEventType, 'CURRICULUM_ADVANCEMENT_NEEDED'):
+                router.subscribe(DataEventType.CURRICULUM_ADVANCEMENT_NEEDED, self._on_curriculum_advancement_needed)
+
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED")
             return True
 
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
@@ -194,6 +200,9 @@ class MomentumToCurriculumBridge:
                 # December 2025: Unsubscribe from TIER_PROMOTION
                 if hasattr(DataEventType, 'TIER_PROMOTION'):
                     router.unsubscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
+                # December 29, 2025: Unsubscribe from CURRICULUM_ADVANCEMENT_NEEDED
+                if hasattr(DataEventType, 'CURRICULUM_ADVANCEMENT_NEEDED'):
+                    router.unsubscribe(DataEventType.CURRICULUM_ADVANCEMENT_NEEDED, self._on_curriculum_advancement_needed)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -454,6 +463,103 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error handling tier promotion: {e}")
+
+    def _on_curriculum_advancement_needed(self, event) -> None:
+        """Handle CURRICULUM_ADVANCEMENT_NEEDED event - advance curriculum for stagnant configs.
+
+        December 29, 2025: When a config has 3+ evaluations with minimal Elo improvement,
+        TrainingTriggerDaemon signals that curriculum should advance. This handler:
+        1. Increases opponent difficulty for the config
+        2. Boosts exploration temperature to encourage novelty
+        3. Adjusts curriculum weight to prioritize the stagnant config
+        4. Emits CURRICULUM_ADVANCED event for downstream consumers
+
+        This closes the feedback loop: stagnant Elo → harder curriculum → fresh training signal.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event if isinstance(event, dict) else {}
+
+            config_key = payload.get("config_key", payload.get("config", ""))
+            reason = payload.get("reason", "unknown")
+            timestamp = payload.get("timestamp", 0.0)
+
+            if not config_key:
+                logger.debug("[MomentumToCurriculumBridge] CURRICULUM_ADVANCEMENT_NEEDED without config_key")
+                return
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] CURRICULUM_ADVANCEMENT_NEEDED: {config_key}, "
+                f"reason={reason}"
+            )
+
+            # 1. Increase opponent difficulty by boosting curriculum weight
+            # This prioritizes training against stronger opponents for the stagnant config
+            try:
+                from app.training.curriculum_feedback import get_curriculum_feedback
+
+                curriculum = get_curriculum_feedback()
+                if curriculum:
+                    # Increase weight for stagnant config to force harder training
+                    current_weights = curriculum.get_curriculum_weights()
+                    old_weight = current_weights.get(config_key, 1.0)
+
+                    # Boost by 30% to prioritize this config
+                    new_weight = min(old_weight * 1.3, 2.0)  # Cap at 2.0x
+
+                    curriculum.update_weight(
+                        config_key=config_key,
+                        new_weight=new_weight,
+                        source="curriculum_advancement",
+                    )
+                    logger.info(
+                        f"[MomentumToCurriculumBridge] Boosted curriculum weight for {config_key}: "
+                        f"{old_weight:.2f} -> {new_weight:.2f}"
+                    )
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[MomentumToCurriculumBridge] Could not update curriculum weight: {e}")
+
+            # 2. Boost exploration temperature to encourage novel game states
+            try:
+                from app.training.temperature_scheduling import boost_exploration_for_config
+
+                boost_exploration_for_config(config_key, boost_factor=1.2, duration_games=500)
+                logger.info(
+                    f"[MomentumToCurriculumBridge] Boosted exploration temperature for {config_key}"
+                )
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[MomentumToCurriculumBridge] Could not boost exploration: {e}")
+
+            # 3. Trigger full weight sync to propagate changes
+            self._sync_weights()
+
+            # 4. Emit CURRICULUM_ADVANCED to signal downstream consumers
+            try:
+                from app.coordination.event_emitters import emit_curriculum_advanced
+                import asyncio
+
+                async def _emit():
+                    await emit_curriculum_advanced(
+                        config_key=config_key,
+                        old_tier="stagnant",
+                        new_tier="advancing",
+                        trigger=f"curriculum_advancement_{reason}",
+                        source="curriculum_integration",
+                    )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_emit())
+                except RuntimeError:
+                    # No running loop - skip async emission
+                    pass
+
+            except ImportError:
+                pass
+
+            self._last_sync_time = time.time()
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling curriculum advancement: {e}")
 
     def _sync_weights_for_momentum(
         self,
