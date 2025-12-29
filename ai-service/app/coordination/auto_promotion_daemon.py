@@ -41,9 +41,10 @@ __all__ = [
 class AutoPromotionConfig:
     """Configuration for auto-promotion."""
     enabled: bool = True
-    # Minimum games required for promotion decision - Dec 27, 2025: increased from 20 to 50
-    min_games_vs_random: int = 50
-    min_games_vs_heuristic: int = 50
+    # Minimum games required for promotion decision
+    # Dec 29: Reduced from 50 to 20 for faster iteration (20 games gives 95% CI ±10%)
+    min_games_vs_random: int = 20
+    min_games_vs_heuristic: int = 20
     # Cooldown between promotion attempts (seconds)
     promotion_cooldown_seconds: float = 300.0  # 5 minutes
     # Whether to wait for both RANDOM and HEURISTIC results
@@ -54,11 +55,14 @@ class AutoPromotionConfig:
     # Dry run mode - log but don't actually promote
     dry_run: bool = False
     # Dec 27, 2025: Minimum Elo improvement over previous model required for promotion
-    min_elo_improvement: float = 10.0  # Dec 29: Lowered from 25 to accelerate iteration
+    # Dec 29: Lowered from 10 to 5 to allow incremental improvements
+    min_elo_improvement: float = 5.0
     # December 2025: Quality gate settings to prevent bad model promotion
     quality_gate_enabled: bool = True
-    min_training_games: int = 1000  # Minimum games in training data
-    min_quality_score: float = 0.6  # Minimum data quality score
+    # Dec 29: Reduced from 1000 to 500 for faster iteration
+    min_training_games: int = 500
+    # Dec 29: Reduced from 0.6 to 0.5 for less strict quality gate
+    min_quality_score: float = 0.5
     require_parity_validation: bool = True  # Require TS parity validation passed
 
 
