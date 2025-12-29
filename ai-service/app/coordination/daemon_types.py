@@ -51,8 +51,8 @@ _DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
     "ephemeral_sync": ("AUTO_SYNC", "Q2 2026"),
     "cluster_data_sync": ("AUTO_SYNC", "Q2 2026"),
     "system_health_monitor": ("HEALTH_SERVER", "Q2 2026"),  # Use unified_health_manager
-    # December 2025: Lambda Labs account terminated - use VAST_IDLE or UNIFIED_IDLE
-    "lambda_idle": ("VAST_IDLE", "Q2 2026"),
+    # December 2025: Lambda GH200 nodes are dedicated training (restored Dec 28). Use UNIFIED_IDLE for ephemeral nodes.
+    "lambda_idle": ("UNIFIED_IDLE", "Q2 2026"),
 }
 
 
@@ -234,8 +234,9 @@ class DaemonType(Enum):
     UTILIZATION_OPTIMIZER = "utilization_optimizer"
 
     # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
-    # DEPRECATED: Lambda Labs account permanently terminated Dec 2025. No Lambda nodes remain.
-    # Code retained for historical reference. Use VAST_IDLE or other provider daemons instead.
+    # DEPRECATED: Lambda Labs GH200 nodes are now dedicated training infrastructure (restored Dec 28, 2025).
+    # Dedicated GPU nodes don't need idle shutdown - they run continuous training workloads.
+    # Use UNIFIED_IDLE for ephemeral/on-demand instances instead.
     LAMBDA_IDLE = "lambda_idle"
 
     # Vast.ai idle shutdown (December 2025) - terminates idle Vast.ai nodes to save costs
