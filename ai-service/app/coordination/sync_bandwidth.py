@@ -163,6 +163,7 @@ class BandwidthConfig:
     # Allocation settings
     allocation_timeout_seconds: float = 3600.0  # 1 hour max allocation
     priority_multipliers: dict[TransferPriority, float] = field(default_factory=lambda: {
+        TransferPriority.BACKGROUND: 0.25,  # Lowest priority
         TransferPriority.LOW: 0.5,
         TransferPriority.NORMAL: 1.0,
         TransferPriority.HIGH: 1.5,
