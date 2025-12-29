@@ -47,7 +47,10 @@ from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from threading import RLock
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+
+if TYPE_CHECKING:
+    from app.coordination.protocols import HealthCheckResult
 
 __all__ = [
     "CircuitBreaker",
@@ -1072,6 +1075,52 @@ class CircuitBreakerRegistry:
                 if open_states:
                     result[op_type] = open_states
         return result
+
+    def health_check(self) -> "HealthCheckResult":
+        """Health check for monitoring integration.
+
+        Returns:
+            HealthCheckResult with circuit breaker health status.
+        """
+        # Lazy import to avoid circular dependency
+        from app.coordination.protocols import HealthCheckResult
+
+        with self._lock:
+            total_breakers = len(self._breakers)
+            total_circuits = 0
+            open_circuits = 0
+            half_open_circuits = 0
+
+            for breaker in self._breakers.values():
+                states = breaker.get_all_states()
+                for status in states.values():
+                    total_circuits += 1
+                    if status.state == CircuitState.OPEN:
+                        open_circuits += 1
+                    elif status.state == CircuitState.HALF_OPEN:
+                        half_open_circuits += 1
+
+            # Unhealthy if more than 50% of circuits are open
+            open_ratio = open_circuits / total_circuits if total_circuits > 0 else 0.0
+            is_healthy = open_ratio < 0.5
+
+            if is_healthy:
+                message = "OK"
+            else:
+                message = f"High open circuit ratio: {open_ratio:.1%}"
+
+            return HealthCheckResult(
+                healthy=is_healthy,
+                message=message,
+                details={
+                    "total_breakers": total_breakers,
+                    "total_circuits": total_circuits,
+                    "open_circuits": open_circuits,
+                    "half_open_circuits": half_open_circuits,
+                    "closed_circuits": total_circuits - open_circuits - half_open_circuits,
+                    "open_ratio": round(open_ratio, 3),
+                },
+            )
 
 
 _circuit_registry: CircuitBreakerRegistry | None = None

@@ -48,6 +48,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.coordination.protocols import HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 # Import duration scheduler for historical data
@@ -654,8 +656,12 @@ class LoadForecaster:
         # For now, return rate only
         return (time.time(), games_per_hour)
 
-    def health_check(self) -> dict[str, Any]:
-        """Health check for monitoring integration."""
+    def health_check(self) -> HealthCheckResult:
+        """Health check for monitoring integration.
+
+        Returns:
+            HealthCheckResult with current health status and metrics.
+        """
         try:
             conn = self._get_connection()
 
@@ -669,17 +675,25 @@ class LoadForecaster:
             # Get accuracy metrics count
             accuracy = self.get_duration_accuracy()
 
-            return {
-                "healthy": True,
-                "snapshots_7d": snapshots,
-                "accuracy_tracked_types": len(accuracy),
-                "has_scheduler": self._scheduler is not None,
-            }
-        except Exception as e:
-            return {
-                "healthy": False,
-                "error": str(e),
-            }
+            # Determine health status
+            is_healthy = snapshots > 0 or self._scheduler is not None
+            message = "OK" if is_healthy else "No recent data and no scheduler"
+
+            return HealthCheckResult(
+                healthy=is_healthy,
+                message=message,
+                details={
+                    "snapshots_7d": snapshots,
+                    "accuracy_tracked_types": len(accuracy),
+                    "has_scheduler": self._scheduler is not None,
+                },
+            )
+        except (sqlite3.Error, OSError) as e:
+            return HealthCheckResult(
+                healthy=False,
+                message=f"Database error: {e}",
+                details={"error": str(e)},
+            )
 
     def cleanup_old_data(self, max_age_days: int = 90) -> int:
         """Clean up old forecasting data."""
