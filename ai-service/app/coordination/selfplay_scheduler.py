@@ -455,6 +455,12 @@ class SelfplayScheduler:
         self._last_dynamic_weights_update = 0.0
         self._dynamic_weights_update_interval = 60.0  # Update every 60 seconds
 
+        # Dec 29, 2025 - Phase 2: Elo velocity tracking
+        # Track Elo history per config: list of (timestamp, elo) tuples
+        # Used to compute Elo/hour velocity for priority adjustment
+        self._elo_history: dict[str, list[tuple[float, float]]] = {}
+        self._elo_velocity: dict[str, float] = {}  # Computed Elo change per hour
+
         # Lazy dependencies
         self._training_freshness = None
         self._cluster_manifest = None
@@ -941,9 +947,12 @@ class SelfplayScheduler:
         # Positive when config is on a promotion streak
         improvement = priority.improvement_boost * w.improvement
 
-        # Phase 5: Quality penalty (0.0 to -0.20)
-        # Applied when quality degrades below threshold
-        quality = priority.quality_penalty
+        # Dec 29, 2025 - Phase 1: Quality-weighted selfplay allocation
+        # Combines quality_penalty from ConfigPriority (0.0 to -0.20) with
+        # dynamic quality score from QualityMonitorDaemon (0.0 to 1.0)
+        # High-quality data generators get boosted, low-quality get penalized
+        quality_score = self._get_config_data_quality(priority.config_key)
+        quality = (quality_score - 0.7) * w.quality + priority.quality_penalty  # Normalized around 0.7
 
         # Dec 2025: Data deficit factor - boost configs with low game counts
         # Large boards (square19, hexagonal) especially need more data
@@ -971,6 +980,15 @@ class SelfplayScheduler:
                 f"[SelfplayScheduler] Momentum multiplier applied to {priority.config_key}: "
                 f"{priority.momentum_multiplier:.2f}x (score: {score_before_momentum:.3f} → {score:.3f})"
             )
+
+        # Dec 29, 2025 - Phase 2: Elo velocity multiplier
+        # Stagnant configs (velocity < 0.5 Elo/hour) get reduced allocation
+        # Fast-improving configs (velocity > 5.0 Elo/hour) get boosted allocation
+        elo_velocity = self.get_elo_velocity(priority.config_key)
+        if elo_velocity < 0.5:
+            score *= 0.7  # Reduce allocation for stagnant configs
+        elif elo_velocity > 5.0:
+            score *= 1.2  # Boost allocation for fast improvers
 
         # Dec 2025: Apply priority override from config
         # Boosts critically data-starved configs (hexagonal_*, square19_3p/4p)
@@ -1176,6 +1194,47 @@ class SelfplayScheduler:
                     f"scale={scale:.3f}, sum={sum(result.values()):.2f}"
                 )
 
+        return result
+
+    def _get_config_data_quality(self, config: str) -> float:
+        """Get data quality score for a config from QualityMonitorDaemon.
+
+        Dec 29, 2025 - Phase 1: Quality-weighted selfplay allocation.
+        Higher quality score = better training data (Gumbel MCTS, passed parity).
+        Lower quality = heuristic-only games, parity failures.
+
+        Args:
+            config: Config key like "hex8_2p"
+
+        Returns:
+            Quality score 0.0-1.0 (default 0.7 if unavailable)
+        """
+        try:
+            from app.coordination.quality_monitor_daemon import get_quality_daemon
+
+            daemon = get_quality_daemon()
+            if daemon:
+                quality = daemon.get_config_quality(config)
+                if quality is not None:
+                    return quality
+        except ImportError:
+            logger.debug("[SelfplayScheduler] quality_monitor_daemon not available")
+        except (AttributeError, KeyError) as e:
+            logger.debug(f"[SelfplayScheduler] Error getting quality for {config}: {e}")
+
+        return 0.7  # Default medium quality
+
+    async def _get_all_config_qualities(self) -> dict[str, float]:
+        """Get data quality scores for all configs.
+
+        Dec 29, 2025 - Phase 1: Batch quality lookup for priority calculation.
+
+        Returns:
+            Dict mapping config_key to quality score (0.0-1.0)
+        """
+        result = {}
+        for config in ALL_CONFIGS:
+            result[config] = self._get_config_data_quality(config)
         return result
 
     def _get_improvement_boosts(self) -> dict[str, float]:
@@ -1688,6 +1747,10 @@ class SelfplayScheduler:
                 _safe_subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated, "BACKPRESSURE_ACTIVATED")
             if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
                 _safe_subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released, "BACKPRESSURE_RELEASED")
+
+            # Dec 29, 2025 - Phase 2: Subscribe to ELO_UPDATED for velocity tracking
+            if hasattr(DataEventType, 'ELO_UPDATED'):
+                _safe_subscribe(DataEventType.ELO_UPDATED, self._on_elo_updated, "ELO_UPDATED")
 
             self._subscribed = subscribed_count > 0
             if self._subscribed:
@@ -2797,6 +2860,70 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling backpressure released: {e}")
+
+    def _on_elo_updated(self, event: Any) -> None:
+        """Handle ELO_UPDATED - track Elo history and compute velocity.
+
+        Dec 29, 2025 - Phase 2: Elo velocity integration.
+        Tracks Elo changes over time to compute velocity (Elo/hour).
+        Stagnant configs (velocity < 0.5) get reduced allocation.
+        Fast-improving configs (velocity > 5.0) get boosted allocation.
+
+        Args:
+            event: Event with payload containing config_key, new_elo, old_elo
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            new_elo = payload.get("new_elo", 0.0)
+
+            if not config_key or new_elo <= 0:
+                return
+
+            now = time.time()
+
+            # Initialize history if needed
+            if config_key not in self._elo_history:
+                self._elo_history[config_key] = []
+
+            # Add new data point
+            self._elo_history[config_key].append((now, new_elo))
+
+            # Keep only last 24 hours of history
+            cutoff = now - 86400  # 24 hours
+            self._elo_history[config_key] = [
+                (t, e) for t, e in self._elo_history[config_key] if t >= cutoff
+            ]
+
+            # Compute velocity: Elo change per hour over last 24 hours
+            recent = self._elo_history[config_key]
+            if len(recent) >= 2:
+                hours = (recent[-1][0] - recent[0][0]) / 3600
+                if hours > 0.5:  # Need at least 30 min of data
+                    velocity = (recent[-1][1] - recent[0][1]) / hours
+                    old_velocity = self._elo_velocity.get(config_key, 0.0)
+                    self._elo_velocity[config_key] = velocity
+
+                    # Log significant velocity changes
+                    if abs(velocity - old_velocity) > 1.0:
+                        logger.info(
+                            f"[SelfplayScheduler] Elo velocity for {config_key}: "
+                            f"{velocity:.2f} Elo/hour (was {old_velocity:.2f})"
+                        )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling Elo update: {e}")
+
+    def get_elo_velocity(self, config_key: str) -> float:
+        """Get computed Elo velocity for a config.
+
+        Args:
+            config_key: Config like "hex8_2p"
+
+        Returns:
+            Elo change per hour (can be negative for regression)
+        """
+        return self._elo_velocity.get(config_key, 0.0)
 
     # =========================================================================
     # Status & Metrics

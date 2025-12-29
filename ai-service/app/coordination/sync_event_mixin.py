@@ -344,8 +344,15 @@ class SyncEventMixin(SyncMixinBase):
 
             self._events_processed += 1
 
-            # Trigger immediate sync for this config
-            fire_and_forget(self._trigger_urgent_sync(config_key))
+            # Track the urgent sync request
+            self._urgent_sync_pending[config_key] = time.time()
+
+            # December 29, 2025: Wake the sync loop immediately via event
+            if hasattr(self, 'trigger_sync'):
+                self.trigger_sync()
+            else:
+                # Fallback for backward compatibility
+                fire_and_forget(self._trigger_urgent_sync(config_key))
 
             # Also push to neighbors for Layer 1 replication
             fire_and_forget(self._push_to_neighbors(config_key, games_played))
@@ -597,15 +604,24 @@ class SyncEventMixin(SyncMixinBase):
             self._backpressure_reason = ""
             self._events_processed += 1
 
-            # Trigger a sync cycle to catch up on missed data
-            if paused_duration > 60.0:  # If paused for more than a minute
-                logger.info(
-                    "[AutoSyncDaemon] Extended backpressure period - triggering catch-up sync"
-                )
-                fire_and_forget(
-                    self._sync_all(),
-                    on_error=lambda exc: logger.warning(f"Catch-up sync failed: {exc}"),
-                )
+            # December 29, 2025: Wake the sync loop immediately via event
+            # The loop will do a catch-up sync on resume
+            if hasattr(self, 'trigger_sync'):
+                self.trigger_sync()
+                if paused_duration > 60.0:
+                    logger.info(
+                        "[AutoSyncDaemon] Extended backpressure period - sync loop will catch up"
+                    )
+            else:
+                # Fallback for backward compatibility
+                if paused_duration > 60.0:
+                    logger.info(
+                        "[AutoSyncDaemon] Extended backpressure period - triggering catch-up sync"
+                    )
+                    fire_and_forget(
+                        self._sync_all(),
+                        on_error=lambda exc: logger.warning(f"Catch-up sync failed: {exc}"),
+                    )
 
         except (RuntimeError, OSError, ConnectionError) as e:
             self._errors_count += 1
