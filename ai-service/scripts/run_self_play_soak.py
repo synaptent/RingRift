@@ -206,6 +206,7 @@ from app.ai.neural_net import clear_model_cache
 from app.board_manager import BoardManager
 from app.db import (
     ParityValidationError,
+    RecordSource,
     get_or_create_db,
     record_completed_game_with_parity_check,
 )
@@ -2533,7 +2534,7 @@ def run_self_play_soak(
                                 final_state=state,
                                 moves=game_moves_for_recording,
                                 metadata={
-                                    "source": "selfplay_soak",
+                                    "source": RecordSource.SOAK_TEST,
                                     "engine_mode": engine_mode,
                                     "difficulty_band": difficulty_band,
                                     "termination_reason": termination_reason,

@@ -51,6 +51,7 @@ from app.coordination.node_availability.state_checker import (
 from app.coordination.node_availability.providers.vast_checker import VastChecker
 from app.coordination.node_availability.providers.lambda_checker import LambdaChecker
 from app.coordination.node_availability.providers.runpod_checker import RunPodChecker
+from app.coordination.node_availability.providers.tailscale_checker import TailscaleChecker
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,10 @@ class NodeAvailabilityConfig(DaemonConfig):
     vultr_enabled: bool = True
     hetzner_enabled: bool = True
 
+    # Tailscale mesh connectivity checker (December 2025)
+    # Unlike cloud provider checkers, this checks actual P2P connectivity
+    tailscale_enabled: bool = True
+
     # P2P integration
     auto_update_voters: bool = False  # Auto-remove offline nodes from P2P voters
 
@@ -98,6 +103,7 @@ class NodeAvailabilityConfig(DaemonConfig):
         config.runpod_enabled = os.environ.get(f"{prefix}_RUNPOD", "1").lower() in ("1", "true")
         config.vultr_enabled = os.environ.get(f"{prefix}_VULTR", "1").lower() in ("1", "true")
         config.hetzner_enabled = os.environ.get(f"{prefix}_HETZNER", "1").lower() in ("1", "true")
+        config.tailscale_enabled = os.environ.get(f"{prefix}_TAILSCALE", "1").lower() in ("1", "true")
 
         # P2P integration
         config.auto_update_voters = os.environ.get(f"{prefix}_AUTO_VOTERS", "0").lower() in ("1", "true")
@@ -197,6 +203,15 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                 self._checkers["runpod"] = checker
             else:
                 logger.info("RunPod checker disabled (no API key)")
+
+        # Tailscale mesh connectivity checker (December 2025)
+        # Unlike cloud providers, this checks actual P2P connectivity
+        if self.config.tailscale_enabled:
+            ts_checker = TailscaleChecker()
+            if ts_checker.is_enabled:
+                self._checkers["tailscale"] = ts_checker
+            else:
+                logger.info("Tailscale checker disabled (not installed)")
 
         logger.info(f"Initialized {len(self._checkers)} provider checkers: {list(self._checkers.keys())}")
 

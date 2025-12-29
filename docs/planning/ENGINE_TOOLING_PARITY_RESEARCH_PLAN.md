@@ -254,7 +254,7 @@ from Python scripts.
 
 **Schema version**
 
-- `SCHEMA_VERSION = 6`
+- `SCHEMA_VERSION = 6` (historical; current schema v15)
   - v1: initial schema.
   - v2: time control + engine eval fields on moves.
   - v3: `game_history_entries` and state hash fields.

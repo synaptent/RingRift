@@ -904,7 +904,8 @@ class SyncRouter:
                     return quality.overall_score
         except ImportError:
             pass
-        except Exception as e:
+        except (ValueError, KeyError, TypeError, AttributeError, RuntimeError) as e:
+            # Quality scorer or computation errors (December 2025 exception narrowing)
             logger.debug(f"[SyncRouter] Could not get quality for {game_id}: {e}")
 
         return 0.5  # Default neutral quality
@@ -957,7 +958,8 @@ class SyncRouter:
             manifest_healthy = self._manifest is not None and hasattr(
                 self._manifest, "find_game"
             )
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
+            # Manifest access errors (December 2025 exception narrowing)
             coordinator_status = CoordinatorStatus.STOPPED
             message = f"Manifest error: {e}"
             errors_count += 1
@@ -1410,7 +1412,8 @@ class SyncRouter:
                         },
                         source="SyncRouter",
                     )
-                except Exception as e:
+                except (ImportError, RuntimeError, OSError, AttributeError) as e:
+                    # Event emission infrastructure errors (December 2025 exception narrowing)
                     logger.debug(f"[SyncRouter] Could not emit SYNC_RETRY_REQUESTED: {e}")
             else:
                 # All transports have failed - disable sync to this node

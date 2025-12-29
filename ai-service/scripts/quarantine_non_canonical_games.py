@@ -12,7 +12,7 @@ Non-canonical sources identified:
 - p2p_gpu: Old GPU selfplay
 
 Canonical sources (keep):
-- selfplay_soak: Canonical engine test games
+- soak_test: Canonical engine test games (legacy: selfplay_soak)
 - canonical_*: Explicit canonical source prefix
 - any source with passed parity_status
 
@@ -54,7 +54,8 @@ NON_CANONICAL_SOURCES = {
 
 # Sources known to be canonical
 CANONICAL_SOURCES = {
-    "selfplay_soak",
+    "soak_test",
+    "selfplay_soak",  # legacy tag from pre-normalization runs
     # Any source starting with "canonical_" is canonical
 }
 

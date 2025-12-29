@@ -159,7 +159,7 @@ def main() -> None:
     parser.add_argument(
         "--source",
         type=str,
-        help="Filter by source tag (e.g. selfplay_soak, cmaes_optimization).",
+        help="Filter by source tag (e.g. soak_test, self_play, cmaes; legacy: selfplay_soak).",
     )
     parser.add_argument(
         "--min-moves",
