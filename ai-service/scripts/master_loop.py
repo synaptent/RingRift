@@ -112,21 +112,23 @@ ALL_CONFIGS = [
     "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
 ]
 
-# Loop timing (Dec 2025: Reduced from 60/300/600 for faster event-driven pipeline)
-LOOP_INTERVAL_SECONDS = 30  # Check every 30 seconds
-TRAINING_CHECK_INTERVAL = 60  # Check training readiness every minute (fallback for events)
-ALLOCATION_CHECK_INTERVAL = 120  # Rebalance allocations every 2 minutes (fallback for events)
+# Loop timing - now configurable via environment (Dec 2025)
+# Use env.master_loop_interval, env.training_check_interval, etc.
+from app.config.env import env
 
-# Thresholds
-# Dec 28, 2025: Lowered from 1000 to 100 to unblock training pipeline
-# High threshold was causing 10x mismatch with TRAINING_TRIGGER_GAMES=100
-MIN_GAMES_FOR_EXPORT = 100  # Minimum new games before triggering export
+# Legacy constants for backward compatibility (use env properties directly preferred)
+LOOP_INTERVAL_SECONDS = env.master_loop_interval  # RINGRIFT_MASTER_LOOP_INTERVAL (default: 30)
+TRAINING_CHECK_INTERVAL = env.training_check_interval  # RINGRIFT_TRAINING_CHECK_INTERVAL (default: 60)
+ALLOCATION_CHECK_INTERVAL = env.allocation_check_interval  # RINGRIFT_ALLOCATION_CHECK_INTERVAL (default: 120)
+
+# Thresholds - now configurable via environment (Dec 2025)
+MIN_GAMES_FOR_EXPORT = env.min_games_for_export  # RINGRIFT_MIN_GAMES_FOR_EXPORT (default: 100)
 # Dec 29, 2025: Use DataFreshnessDefaults for unified freshness config
 MAX_DATA_STALENESS_HOURS = DataFreshnessDefaults().MAX_DATA_AGE_HOURS
 
 # State persistence path (Gap 3 fix: Dec 2025)
 STATE_DB_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop_state.db"
-STATE_SAVE_INTERVAL_SECONDS = 300  # Save state every 5 minutes
+STATE_SAVE_INTERVAL_SECONDS = env.state_save_interval  # RINGRIFT_STATE_SAVE_INTERVAL (default: 300)
 
 # PID file for master loop detection (December 2025)
 PID_FILE_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop.pid"

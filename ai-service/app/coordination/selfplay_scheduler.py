@@ -1240,6 +1240,12 @@ class SelfplayScheduler:
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                 _safe_subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected, "REGRESSION_DETECTED")
 
+            # Dec 29, 2025: Subscribe to backpressure events for reactive scheduling
+            if hasattr(DataEventType, 'BACKPRESSURE_ACTIVATED'):
+                _safe_subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated, "BACKPRESSURE_ACTIVATED")
+            if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
+                _safe_subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released, "BACKPRESSURE_RELEASED")
+
             self._subscribed = subscribed_count > 0
             if self._subscribed:
                 logger.info(
@@ -2268,6 +2274,86 @@ class SelfplayScheduler:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling cluster healthy: {e}")
+
+    # =========================================================================
+    # Backpressure Event Handlers (Dec 29, 2025)
+    # =========================================================================
+
+    def _on_backpressure_activated(self, event: Any) -> None:
+        """Handle BACKPRESSURE_ACTIVATED - reduce selfplay rate.
+
+        Dec 29, 2025: When work queue hits backpressure limits, reduce selfplay
+        rate to prevent generating games that can't be processed.
+
+        Args:
+            event: Event with payload containing pending_count, trigger, limits
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            pending_count = payload.get("pending_count", 0)
+            trigger = payload.get("trigger", "unknown")
+            soft_limit = payload.get("soft_limit", 500)
+
+            # Track backpressure state
+            if not hasattr(self, "_backpressure_active"):
+                self._backpressure_active = False
+            self._backpressure_active = True
+
+            # Calculate reduction factor based on how far over soft limit we are
+            overage = pending_count - soft_limit
+            reduction_factor = max(0.5, 1.0 - (overage / soft_limit) * 0.5)
+
+            # Apply reduction to exploration boost (reduces all allocations)
+            if hasattr(self, "_exploration_boost"):
+                old_boost = self._exploration_boost
+                self._exploration_boost = max(0.5, self._exploration_boost * reduction_factor)
+                logger.warning(
+                    f"[SelfplayScheduler] Backpressure activated ({trigger}): "
+                    f"queue={pending_count}, exploration_boost {old_boost:.2f} -> {self._exploration_boost:.2f}"
+                )
+            else:
+                logger.warning(
+                    f"[SelfplayScheduler] Backpressure activated ({trigger}): queue={pending_count}"
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling backpressure activated: {e}")
+
+    def _on_backpressure_released(self, event: Any) -> None:
+        """Handle BACKPRESSURE_RELEASED - restore normal selfplay rate.
+
+        Dec 29, 2025: When work queue drains below recovery threshold,
+        restore normal selfplay allocation rates.
+
+        Args:
+            event: Event with payload containing pending_count, recovery_threshold
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            pending_count = payload.get("pending_count", 0)
+
+            # Track backpressure state
+            if not hasattr(self, "_backpressure_active"):
+                self._backpressure_active = False
+
+            if self._backpressure_active:
+                self._backpressure_active = False
+
+                # Restore exploration boost gradually
+                if hasattr(self, "_exploration_boost") and self._exploration_boost < 1.0:
+                    old_boost = self._exploration_boost
+                    self._exploration_boost = min(1.0, self._exploration_boost * 1.5)
+                    logger.info(
+                        f"[SelfplayScheduler] Backpressure released: "
+                        f"queue={pending_count}, exploration_boost {old_boost:.2f} -> {self._exploration_boost:.2f}"
+                    )
+                else:
+                    logger.info(
+                        f"[SelfplayScheduler] Backpressure released: queue={pending_count}"
+                    )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling backpressure released: {e}")
 
     # =========================================================================
     # Status & Metrics

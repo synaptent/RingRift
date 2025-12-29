@@ -870,6 +870,40 @@ class RingRiftEnv:
         return os.environ.get("RINGRIFT_CLUSTER_API")
 
     # ==========================================================================
+    # Master Loop Settings (December 2025)
+    # ==========================================================================
+
+    @cached_property
+    def master_loop_interval(self) -> float:
+        """Master loop check interval in seconds."""
+        return float(os.environ.get("RINGRIFT_MASTER_LOOP_INTERVAL", "30"))
+
+    @cached_property
+    def training_check_interval(self) -> float:
+        """Training readiness check interval in seconds."""
+        return float(os.environ.get("RINGRIFT_TRAINING_CHECK_INTERVAL", "60"))
+
+    @cached_property
+    def allocation_check_interval(self) -> float:
+        """Allocation rebalance interval in seconds."""
+        return float(os.environ.get("RINGRIFT_ALLOCATION_CHECK_INTERVAL", "120"))
+
+    @cached_property
+    def min_games_for_export(self) -> int:
+        """Minimum new games before triggering export."""
+        return int(os.environ.get("RINGRIFT_MIN_GAMES_FOR_EXPORT", "100"))
+
+    @cached_property
+    def max_data_staleness_hours(self) -> float:
+        """Trigger sync if data older than this many hours."""
+        return float(os.environ.get("RINGRIFT_MAX_DATA_STALENESS_HOURS", "4.0"))
+
+    @cached_property
+    def state_save_interval(self) -> float:
+        """State persistence save interval in seconds."""
+        return float(os.environ.get("RINGRIFT_STATE_SAVE_INTERVAL", "300"))
+
+    # ==========================================================================
     # Project Root Paths (December 2025)
     # ==========================================================================
 

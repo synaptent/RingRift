@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -43,6 +44,10 @@ from app.config.coordination_defaults import DataFreshnessDefaults, SyncDefaults
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
+
+# Dec 29, 2025: Event deduplication to prevent multiple training triggers
+# for the same config within a short window
+TRIGGER_DEDUP_WINDOW_SECONDS = 300  # 5 minutes
 
 # Circuit breaker integration (Phase 4 - December 2025)
 try:
@@ -95,6 +100,9 @@ class TrainingTriggerConfig:
     default_batch_size: int = 512
     # Model version
     model_version: str = "v2"
+    # December 29, 2025: State persistence for daemon restarts (Phase 3)
+    state_db_path: str = "data/coordination/training_trigger_state.db"
+    state_save_interval_seconds: float = 300.0  # Save every 5 minutes
 
 
 @dataclass
@@ -144,11 +152,36 @@ class TrainingTriggerDaemon(HandlerBase):
         self._active_training_tasks: dict[str, asyncio.Task] = {}
         # Track whether we should skip due to coordinator mode
         self._coordinator_skip = False
+        # Dec 29, 2025: Deduplication tracking for training triggers
+        self._recent_triggers: dict[str, float] = {}  # config_key -> last_trigger_time
 
     @property
     def config(self) -> TrainingTriggerConfig:
         """Get the daemon configuration."""
         return self._daemon_config
+
+    def _should_skip_duplicate_trigger(self, config_key: str) -> bool:
+        """Check if this config was recently triggered (deduplication).
+
+        Dec 29, 2025: Prevents multiple event paths from triggering duplicate
+        training attempts for the same config within a 5-minute window.
+
+        Args:
+            config_key: Configuration identifier (e.g., "hex8_2p")
+
+        Returns:
+            True if trigger should be skipped (duplicate), False otherwise
+        """
+        now = time.time()
+        last_trigger = self._recent_triggers.get(config_key, 0)
+        if now - last_trigger < TRIGGER_DEDUP_WINDOW_SECONDS:
+            logger.debug(
+                f"[TrainingTriggerDaemon] Skipping duplicate trigger for {config_key} "
+                f"(last trigger {now - last_trigger:.0f}s ago)"
+            )
+            return True
+        self._recent_triggers[config_key] = now
+        return False
 
     def _get_event_subscriptions(self) -> dict[str, Callable]:
         """Return event subscriptions for HandlerBase.
@@ -344,6 +377,10 @@ class TrainingTriggerDaemon(HandlerBase):
             payload = getattr(event, "payload", {})
             config_key = payload.get("config") or payload.get("config_key")
             if not config_key:
+                return
+
+            # Dec 29, 2025: Check for duplicate trigger within dedup window
+            if self._should_skip_duplicate_trigger(config_key):
                 return
 
             board_type = payload.get("board_type")

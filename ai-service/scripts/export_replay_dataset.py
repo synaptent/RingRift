@@ -84,8 +84,9 @@ import sqlite3
 
 
 # Dec 28, 2025: Disk space reservation to prevent partial writes
-DISK_SPACE_SAFETY_MARGIN_MB = 500  # Keep 500MB free after write
-NPZ_COMPRESSION_RATIO = 0.25  # Estimated compression ratio (actual ~0.2-0.3)
+# Dec 29, 2025: Increased from 500MB to 2GB for safety margin after corruption incidents
+DISK_SPACE_SAFETY_MARGIN_MB = 2048  # Keep 2GB free after write (was 500MB)
+NPZ_COMPRESSION_RATIO = 0.30  # Conservative compression ratio estimate (was 0.25)
 
 
 def _estimate_npz_size(save_kwargs: dict) -> int:

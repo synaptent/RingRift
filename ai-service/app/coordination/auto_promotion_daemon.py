@@ -75,6 +75,9 @@ class PromotionCandidate:
     estimated_elo: float = 0.0  # Estimated Elo from evaluation
     # Dec 28, 2025: Track if model beats current best (for relative promotion)
     beats_current_best: bool = False  # True if this model won head-to-head vs champion
+    # Dec 29, 2025: Track consecutive failures for curriculum regression
+    consecutive_failures: int = 0  # Number of consecutive failed promotions
+    previous_elo: float = 0.0  # Elo before this evaluation (for calculating change)
 
 
 class AutoPromotionDaemon:
@@ -697,6 +700,52 @@ class AutoPromotionDaemon:
                 )
         except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit PROMOTION_FAILED event: {e}")
+
+    async def _emit_promotion_completed(
+        self,
+        candidate: PromotionCandidate,
+        success: bool,
+    ) -> None:
+        """Emit unified PROMOTION_COMPLETED event for curriculum feedback.
+
+        Dec 29, 2025: Provides a single event for curriculum_integration to
+        subscribe to, containing all information needed for curriculum
+        advancement or regression decisions.
+
+        Args:
+            candidate: PromotionCandidate that was evaluated
+            success: Whether promotion succeeded
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                # Calculate Elo change
+                elo_change = candidate.estimated_elo - candidate.previous_elo
+
+                await router.publish(
+                    event_type="PROMOTION_COMPLETED",
+                    payload={
+                        "config_key": candidate.config_key,
+                        "success": success,
+                        "elo_change": elo_change,
+                        "estimated_elo": candidate.estimated_elo,
+                        "previous_elo": candidate.previous_elo,
+                        "consecutive_failures": candidate.consecutive_failures,
+                        "consecutive_passes": candidate.consecutive_passes,
+                        "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
+                        "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
+                        "timestamp": time.time(),
+                    },
+                    source="auto_promotion_daemon",
+                )
+                logger.info(
+                    f"[AutoPromotion] Emitted PROMOTION_COMPLETED for {candidate.config_key}: "
+                    f"success={success}, elo_change={elo_change:+.0f}"
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[AutoPromotion] Failed to emit PROMOTION_COMPLETED event: {e}")
 
     def get_status(self) -> dict[str, Any]:
         """Get daemon status."""

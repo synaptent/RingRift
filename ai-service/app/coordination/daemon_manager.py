@@ -1082,6 +1082,15 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         # master_loop.py calls start() individually instead of start_all().
         await self._ensure_coordination_wired()
 
+        # Dec 2025: Check memory pressure before spawning daemon
+        # Log warning if memory is high, but don't block critical daemons
+        if self._check_memory_pressure(threshold_percent=90.0):
+            if daemon_type not in CRITICAL_DAEMONS:
+                logger.warning(
+                    f"Skipping non-critical daemon {daemon_type.value} due to memory pressure"
+                )
+                return False
+
         # Dec 27, 2025: Wait for dependencies before starting
         if wait_for_deps:
             await self._wait_for_dependencies(daemon_type)
@@ -2624,6 +2633,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             status = CoordinatorStatus.STOPPED
             message = "DaemonManager not running"
 
+        # Dec 2025: Include memory pressure info
+        memory_info = self._get_memory_info()
+
         return HealthCheckResult(
             healthy=is_healthy,
             status=status,
@@ -2634,8 +2646,88 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 "daemons_running": running_count,
                 "daemons_failed": failed_count,
                 "uptime_seconds": round(time.time() - self._start_time, 1),
+                "memory_percent": memory_info.get("percent", 0),
+                "memory_available_gb": memory_info.get("available_gb", 0),
             },
         )
+
+    def _get_memory_info(self) -> dict[str, float]:
+        """Get current memory usage info using psutil.
+
+        Returns:
+            Dict with memory stats: percent (used), available_gb
+        """
+        try:
+            import psutil
+
+            mem = psutil.virtual_memory()
+            return {
+                "percent": round(mem.percent, 1),
+                "available_gb": round(mem.available / (1024**3), 2),
+            }
+        except ImportError:
+            # psutil not available, skip memory monitoring
+            return {"percent": 0, "available_gb": 0}
+        except Exception as e:
+            logger.debug(f"Memory info unavailable: {e}")
+            return {"percent": 0, "available_gb": 0}
+
+    def _check_memory_pressure(self, threshold_percent: float = 90.0) -> bool:
+        """Check if system is under memory pressure.
+
+        December 2025: Added to prevent spawning daemons when memory is low.
+
+        Args:
+            threshold_percent: Memory usage threshold (default 90%)
+
+        Returns:
+            True if memory pressure is HIGH (should not spawn more daemons)
+        """
+        memory_info = self._get_memory_info()
+        if memory_info["percent"] >= threshold_percent:
+            logger.warning(
+                f"Memory pressure HIGH: {memory_info['percent']:.1f}% used, "
+                f"{memory_info['available_gb']:.1f}GB available"
+            )
+            # Emit RESOURCE_CONSTRAINT event
+            self._emit_memory_constraint(memory_info)
+            return True
+        return False
+
+    def _emit_memory_constraint(self, memory_info: dict[str, float]) -> None:
+        """Emit RESOURCE_CONSTRAINT event for memory pressure.
+
+        December 2025: Integrated with event system for pipeline coordination.
+        """
+        try:
+            from app.coordination.event_router import (
+                DataEvent,
+                DataEventType,
+                get_event_bus,
+            )
+
+            event = DataEvent(
+                event_type=DataEventType.RESOURCE_CONSTRAINT,
+                payload={
+                    "constraint_type": "memory",
+                    "memory_percent": memory_info.get("percent", 0),
+                    "available_gb": memory_info.get("available_gb", 0),
+                    "source": "daemon_manager",
+                },
+                source="DaemonManager",
+            )
+
+            import asyncio
+
+            bus = get_event_bus()
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(bus.publish(event))
+            except RuntimeError:
+                # Not in async context, use fire_and_forget
+                pass
+        except Exception as e:
+            logger.debug(f"Best-effort memory constraint event failed: {e}")
 
     def is_running(self, daemon_type: DaemonType) -> bool:
         """Check if a daemon is running."""

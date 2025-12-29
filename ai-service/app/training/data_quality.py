@@ -1018,6 +1018,57 @@ def validate_database_for_export(
             f"({games_with}/{total}). Export will proceed but some games will be skipped."
         )
 
+    # Dec 29, 2025: Additional validation for multiplayer games (3p/4p)
+    # Check for corrupted move data (e.g., PLACE_RING moves with to=None)
+    # This caused hex8_4p Elo regression from 1500 to 594
+    if num_players and num_players >= 3:
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10.0)
+            cursor = conn.cursor()
+            # Sample a few moves to check for corruption
+            cursor.execute("""
+                SELECT m.move_data
+                FROM game_moves m
+                JOIN games g ON m.game_id = g.game_id
+                WHERE g.num_players = ?
+                  AND g.board_type = ?
+                LIMIT 100
+            """, (num_players, board_type))
+            rows = cursor.fetchall()
+            conn.close()
+
+            corrupted_count = 0
+            for row in rows:
+                try:
+                    import json
+                    move_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                    # Check for PLACE_RING moves with to=None
+                    if isinstance(move_data, dict):
+                        move_type = move_data.get("type") or move_data.get("moveType")
+                        if move_type in ("PLACE_RING", "place_ring"):
+                            to_field = move_data.get("to")
+                            if to_field is None:
+                                corrupted_count += 1
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    continue
+
+            if corrupted_count > 0:
+                corruption_rate = corrupted_count / max(len(rows), 1) * 100
+                if corruption_rate > 50:
+                    return False, (
+                        f"CRITICAL: {corrupted_count}/{len(rows)} sampled moves ({corruption_rate:.0f}%) "
+                        f"have corrupted data (PLACE_RING with to=None). "
+                        f"This {num_players}p database needs regeneration."
+                    )
+                elif corruption_rate > 10:
+                    return True, (
+                        f"WARNING: {corrupted_count}/{len(rows)} sampled moves have corrupted data. "
+                        f"Export will proceed but some games may fail replay."
+                    )
+        except Exception as e:
+            # Don't block export on validation failure, just warn
+            logger.warning(f"Multiplayer move validation failed: {e}")
+
     return True, f"Database OK: {games_with}/{total} games ({coverage:.1f}%) have move data"
 
 
