@@ -46,6 +46,15 @@ DEFAULT_WEIGHT_MAX = 2.0
 DEFAULT_LOOKBACK_MINUTES = 30
 DEFAULT_TARGET_WIN_RATE = 0.55
 
+# December 29, 2025: All 12 canonical configs for consistent initialization
+# This ensures all configs have weights from startup, fixing missing 4p feedback
+ALL_CANONICAL_CONFIGS = [
+    "hex8_2p", "hex8_3p", "hex8_4p",
+    "square8_2p", "square8_3p", "square8_4p",
+    "square19_2p", "square19_3p", "square19_4p",
+    "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
+]
+
 
 @dataclass
 class ConfigMetrics:
@@ -115,6 +124,10 @@ class CurriculumFeedback:
         # Updated by _on_curriculum_advanced() when CURRICULUM_ADVANCED events received
         self._curriculum_stages: dict[str, int] = {}
 
+        # December 29, 2025: Initialize all 12 canonical configs with default weights
+        # This fixes the square8_4p feedback loop issue where 4p configs weren't initialized
+        self._ensure_all_canonical_configs_initialized()
+
         # Last update time for change detection
         self._last_update_time: float = 0
 
@@ -130,6 +143,29 @@ class CurriculumFeedback:
         """
         self._opponent_tracker = tracker
         logger.info("CurriculumFeedback: OpponentWinRateTracker integrated")
+
+    def _ensure_all_canonical_configs_initialized(self) -> None:
+        """Ensure all 12 canonical configs are initialized with default weights.
+
+        December 29, 2025: Added to fix square8_4p feedback loop issue.
+        Previously, configs were only added to _current_weights and _curriculum_stages
+        when they received evaluation events. This caused 4-player configs to be
+        missing from feedback loops if they hadn't been evaluated yet.
+
+        Now all canonical configs are initialized at startup with:
+        - Default weight of 1.0 (neutral priority)
+        - Default curriculum stage of 0 (beginner)
+        """
+        for config in ALL_CANONICAL_CONFIGS:
+            if config not in self._current_weights:
+                self._current_weights[config] = 1.0
+            if config not in self._curriculum_stages:
+                self._curriculum_stages[config] = 0
+
+        logger.debug(
+            f"[CurriculumFeedback] Initialized {len(ALL_CANONICAL_CONFIGS)} configs: "
+            f"{len(self._current_weights)} weights, {len(self._curriculum_stages)} stages"
+        )
 
     def _auto_wire_curriculum_advanced(self) -> None:
         """Auto-wire to CURRICULUM_ADVANCED events for closed-loop feedback.
