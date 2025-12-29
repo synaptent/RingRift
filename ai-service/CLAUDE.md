@@ -65,7 +65,11 @@ python scripts/update_all_nodes.py --restart-p2p
 | `daemon_registry.py`            | Declarative daemon specs (DaemonSpec dataclass)   |
 | `daemon_runners.py`             | 62 async runner functions                         |
 | `event_router.py`               | Unified event bus (118 event types, SHA256 dedup) |
-| `selfplay_scheduler.py`         | Priority-based selfplay allocation (~3,900 LOC)   |
+| `selfplay_scheduler.py`         | Priority-based selfplay allocation (~3,800 LOC)   |
+| `budget_calculator.py`          | Gumbel budget tiers, target games calculation     |
+| `progress_watchdog_daemon.py`   | Stall detection for 48h autonomous operation      |
+| `p2p_recovery_daemon.py`        | P2P cluster health recovery                       |
+| `stale_fallback.py`             | Graceful degradation with older models            |
 | `data_pipeline_orchestrator.py` | Pipeline stage tracking                           |
 | `auto_sync_daemon.py`           | P2P data synchronization                          |
 | `sync_router.py`                | Intelligent sync routing                          |
@@ -114,6 +118,7 @@ health = dm.get_all_daemon_health()
 | Pipeline | DATA_PIPELINE, SELFPLAY_COORDINATOR |
 | Health | NODE_HEALTH_MONITOR, QUALITY_MONITOR, NODE_AVAILABILITY |
 | Resources | IDLE_RESOURCE, NODE_RECOVERY |
+| Autonomous | PROGRESS_WATCHDOG, P2P_RECOVERY, STALE_FALLBACK |
 
 **Health Monitoring (85%+ coverage):**
 
