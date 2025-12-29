@@ -110,7 +110,9 @@ ALL_CONFIGS = [
     "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
 ]
 
-# Priority calculation weights
+# Priority calculation weights (BASE values - adjusted dynamically)
+# Dec 29, 2025: These are now baseline weights that get adjusted based on cluster state
+# See _compute_dynamic_weights() for adaptive reweighting logic
 STALENESS_WEIGHT = 0.30  # Data freshness importance
 ELO_VELOCITY_WEIGHT = 0.20  # ELO improvement velocity
 TRAINING_NEED_WEIGHT = 0.10  # Waiting for training
@@ -118,6 +120,29 @@ EXPLORATION_BOOST_WEIGHT = 0.10  # Feedback loop exploration signal
 CURRICULUM_WEIGHT = 0.10  # Curriculum-based priority (Phase 2C.3)
 IMPROVEMENT_BOOST_WEIGHT = 0.15  # Phase 5: ImprovementOptimizer boost
 DATA_DEFICIT_WEIGHT = 0.25  # Dec 2025: Boost configs with low game counts
+
+# =============================================================================
+# Dynamic Weight Bounds (Dec 29, 2025)
+# =============================================================================
+# Min/max bounds for dynamic weight adjustment based on cluster state
+# These prevent any single factor from dominating allocation decisions
+DYNAMIC_WEIGHT_BOUNDS = {
+    "staleness": (0.15, 0.50),      # Range: 15-50% (boost when GPUs idle)
+    "velocity": (0.10, 0.30),        # Range: 10-30% (reduce if most at target)
+    "training": (0.05, 0.20),        # Range: 5-20%
+    "exploration": (0.05, 0.20),     # Range: 5-20%
+    "curriculum": (0.05, 0.25),      # Range: 5-25% (boost for higher Elo models)
+    "improvement": (0.10, 0.25),     # Range: 10-25%
+    "data_deficit": (0.15, 0.40),    # Range: 15-40%
+}
+
+# Thresholds for dynamic weight adjustment triggers
+IDLE_GPU_HIGH_THRESHOLD = 0.5       # >50% idle GPUs = boost data generation
+IDLE_GPU_LOW_THRESHOLD = 0.1        # <10% idle GPUs = reduce data generation
+TRAINING_QUEUE_HIGH_THRESHOLD = 10  # >10 pending training jobs = high backlog
+CONFIGS_AT_TARGET_THRESHOLD = 0.5   # >50% configs at Elo target
+ELO_HIGH_THRESHOLD = 1800           # High Elo models need harder curriculum
+ELO_MEDIUM_THRESHOLD = 1500         # Medium Elo is baseline
 
 # Target games per config for data deficit calculation
 TARGET_GAMES_FOR_2000_ELO = 100000  # Need 100K games for strong AI
@@ -159,6 +184,51 @@ MIN_GAMES_PER_ALLOCATION = SelfplayAllocationDefaults.MIN_GAMES_PER_ALLOCATION
 MIN_MEMORY_GB_FOR_TASKS = SelfplayAllocationDefaults.MIN_MEMORY_GB
 DISK_WARNING_THRESHOLD = SelfplayAllocationDefaults.DISK_WARNING_THRESHOLD
 MEMORY_WARNING_THRESHOLD = SelfplayAllocationDefaults.MEMORY_WARNING_THRESHOLD
+
+
+@dataclass
+class DynamicWeights:
+    """Dynamically computed priority weights based on cluster state.
+
+    Dec 29, 2025: Implements adaptive reweighting to optimize resource allocation.
+    Weights are adjusted based on:
+    - Idle GPU fraction: More idle GPUs → boost staleness weight (generate more data)
+    - Training backlog: Large queue → reduce staleness weight (don't flood queue)
+    - Configs at Elo target: Many at target → reduce velocity weight (focus elsewhere)
+    - Average model Elo: Higher Elo → boost curriculum weight (harder positions needed)
+
+    All weights are bounded by DYNAMIC_WEIGHT_BOUNDS to prevent any single factor
+    from dominating allocation decisions.
+    """
+    staleness: float = STALENESS_WEIGHT
+    velocity: float = ELO_VELOCITY_WEIGHT
+    training: float = TRAINING_NEED_WEIGHT
+    exploration: float = EXPLORATION_BOOST_WEIGHT
+    curriculum: float = CURRICULUM_WEIGHT
+    improvement: float = IMPROVEMENT_BOOST_WEIGHT
+    data_deficit: float = DATA_DEFICIT_WEIGHT
+
+    # Cluster state that drove these weights (for debugging/logging)
+    idle_gpu_fraction: float = 0.0
+    training_queue_depth: int = 0
+    configs_at_target_fraction: float = 0.0
+    average_elo: float = 1500.0
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert to dict for logging."""
+        return {
+            "staleness": self.staleness,
+            "velocity": self.velocity,
+            "training": self.training,
+            "exploration": self.exploration,
+            "curriculum": self.curriculum,
+            "improvement": self.improvement,
+            "data_deficit": self.data_deficit,
+            "idle_gpu_fraction": self.idle_gpu_fraction,
+            "training_queue_depth": self.training_queue_depth,
+            "configs_at_target_fraction": self.configs_at_target_fraction,
+            "average_elo": self.average_elo,
+        }
 
 
 @dataclass
@@ -337,6 +407,11 @@ class SelfplayScheduler:
 
         # Event subscription
         self._subscribed = False
+
+        # Dec 29, 2025: Dynamic priority weights (adjusted based on cluster state)
+        self._dynamic_weights = DynamicWeights()
+        self._last_dynamic_weights_update = 0.0
+        self._dynamic_weights_update_interval = 60.0  # Update every 60 seconds
 
         # Lazy dependencies
         self._training_freshness = None
@@ -557,6 +632,151 @@ class SelfplayScheduler:
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Failed to record utilization: {e}")
 
+    def _compute_dynamic_weights(self) -> DynamicWeights:
+        """Compute dynamic priority weights based on current cluster state.
+
+        Dec 29, 2025: Implements adaptive reweighting to optimize resource allocation.
+
+        Weight adjustment logic:
+        - High idle GPU fraction → Boost staleness weight (generate more data)
+        - Large training queue → Reduce staleness weight (don't flood queue)
+        - Many configs at Elo target → Reduce velocity weight (focus on struggling configs)
+        - High average Elo → Boost curriculum weight (need harder positions)
+
+        Returns:
+            DynamicWeights with adjusted values based on cluster state
+        """
+        now = time.time()
+
+        # Rate-limit weight updates (expensive to compute cluster state)
+        if now - self._last_dynamic_weights_update < self._dynamic_weights_update_interval:
+            return self._dynamic_weights
+
+        self._last_dynamic_weights_update = now
+
+        # Start with default weights
+        weights = DynamicWeights()
+
+        # --- Gather cluster state ---
+
+        # 1. Idle GPU fraction (from node capabilities)
+        idle_gpu_fraction = 0.0
+        if self._node_capabilities:
+            total_nodes = len(self._node_capabilities)
+            idle_nodes = sum(
+                1 for cap in self._node_capabilities.values()
+                if cap.current_jobs == 0 and cap.gpu_memory_gb > 0
+            )
+            idle_gpu_fraction = idle_nodes / max(1, total_nodes)
+        weights.idle_gpu_fraction = idle_gpu_fraction
+
+        # 2. Training queue depth (check backpressure monitor)
+        training_queue_depth = 0
+        if self._backpressure_monitor:
+            try:
+                # Synchronous check for queue depth
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Can't await in sync context, use cached value
+                    training_queue_depth = getattr(self._backpressure_monitor, '_last_queue_depth', 0)
+                except RuntimeError:
+                    # No running loop, try direct access
+                    training_queue_depth = getattr(self._backpressure_monitor, '_last_queue_depth', 0)
+            except Exception:
+                pass
+        weights.training_queue_depth = training_queue_depth
+
+        # 3. Configs at Elo target fraction
+        elo_target = 2000.0  # From thresholds
+        configs_at_target = 0
+        total_configs = len(self._config_priorities)
+        for cfg, priority in self._config_priorities.items():
+            # Check if config has reached target Elo
+            if hasattr(priority, 'current_elo') and priority.current_elo >= elo_target:
+                configs_at_target += 1
+        configs_at_target_fraction = configs_at_target / max(1, total_configs)
+        weights.configs_at_target_fraction = configs_at_target_fraction
+
+        # 4. Average model Elo
+        elo_sum = 0.0
+        elo_count = 0
+        for priority in self._config_priorities.values():
+            if hasattr(priority, 'current_elo') and priority.current_elo > 0:
+                elo_sum += priority.current_elo
+                elo_count += 1
+        average_elo = elo_sum / max(1, elo_count) if elo_count > 0 else 1500.0
+        weights.average_elo = average_elo
+
+        # --- Apply weight adjustments ---
+
+        # Helper to clamp weight within bounds
+        def clamp_weight(name: str, value: float) -> float:
+            min_w, max_w = DYNAMIC_WEIGHT_BOUNDS.get(name, (0.05, 0.50))
+            return max(min_w, min(max_w, value))
+
+        # 1. Staleness weight adjustment
+        #    - High idle GPUs → boost (generate more data to use capacity)
+        #    - Large training queue → reduce (don't flood with more data)
+        staleness_adj = STALENESS_WEIGHT
+        if idle_gpu_fraction > IDLE_GPU_HIGH_THRESHOLD:
+            # Many idle GPUs - boost data generation by 50%
+            staleness_adj = STALENESS_WEIGHT * 1.5
+        elif idle_gpu_fraction < IDLE_GPU_LOW_THRESHOLD:
+            # Few idle GPUs - reduce data generation by 30%
+            staleness_adj = STALENESS_WEIGHT * 0.7
+        if training_queue_depth > TRAINING_QUEUE_HIGH_THRESHOLD:
+            # Large training backlog - reduce data generation by 40%
+            staleness_adj *= 0.6
+        weights.staleness = clamp_weight("staleness", staleness_adj)
+
+        # 2. Velocity weight adjustment
+        #    - Many configs at target → reduce (focus on struggling configs)
+        velocity_adj = ELO_VELOCITY_WEIGHT
+        if configs_at_target_fraction > CONFIGS_AT_TARGET_THRESHOLD:
+            # Most configs are strong - reduce velocity weight by 40%
+            velocity_adj = ELO_VELOCITY_WEIGHT * 0.6
+        weights.velocity = clamp_weight("velocity", velocity_adj)
+
+        # 3. Curriculum weight adjustment
+        #    - Higher average Elo → boost (need harder positions for strong models)
+        curriculum_adj = CURRICULUM_WEIGHT
+        if average_elo > ELO_HIGH_THRESHOLD:
+            # Strong models - boost curriculum weight by 80%
+            curriculum_adj = CURRICULUM_WEIGHT * 1.8
+        elif average_elo > ELO_MEDIUM_THRESHOLD:
+            # Medium models - boost curriculum weight by 30%
+            curriculum_adj = CURRICULUM_WEIGHT * 1.3
+        weights.curriculum = clamp_weight("curriculum", curriculum_adj)
+
+        # 4. Data deficit weight adjustment
+        #    - High idle GPUs → boost (use capacity to fill deficits)
+        data_deficit_adj = DATA_DEFICIT_WEIGHT
+        if idle_gpu_fraction > IDLE_GPU_HIGH_THRESHOLD:
+            # Use idle capacity to fill data deficits
+            data_deficit_adj = DATA_DEFICIT_WEIGHT * 1.4
+        weights.data_deficit = clamp_weight("data_deficit", data_deficit_adj)
+
+        # Keep other weights at default (exploration, training, improvement)
+        weights.exploration = clamp_weight("exploration", EXPLORATION_BOOST_WEIGHT)
+        weights.training = clamp_weight("training", TRAINING_NEED_WEIGHT)
+        weights.improvement = clamp_weight("improvement", IMPROVEMENT_BOOST_WEIGHT)
+
+        # Log significant weight changes
+        old_weights = self._dynamic_weights
+        if (abs(weights.staleness - old_weights.staleness) > 0.05 or
+            abs(weights.curriculum - old_weights.curriculum) > 0.03):
+            logger.info(
+                f"[SelfplayScheduler] Dynamic weights updated: "
+                f"staleness={weights.staleness:.2f} (was {old_weights.staleness:.2f}), "
+                f"curriculum={weights.curriculum:.2f} (was {old_weights.curriculum:.2f}), "
+                f"idle_gpus={idle_gpu_fraction:.1%}, queue={training_queue_depth}, "
+                f"at_target={configs_at_target_fraction:.1%}, avg_elo={average_elo:.0f}"
+            )
+
+        self._dynamic_weights = weights
+        return weights
+
     def _compute_priority_score(self, priority: ConfigPriority) -> float:
         """Compute overall priority score for a configuration.
 
@@ -566,20 +786,24 @@ class SelfplayScheduler:
         December 2025 - Phase 5: Now includes improvement boost and quality penalty.
         December 2025 - Phase 19: Now includes momentum multiplier from FeedbackAccelerator.
         December 2025 - Data deficit factor for large boards with low game counts.
+        December 2025 - Dynamic weight adjustment based on cluster state.
         """
-        # Base factors
-        staleness = priority.staleness_factor * STALENESS_WEIGHT
-        velocity = priority.velocity_factor * ELO_VELOCITY_WEIGHT
-        training = (1.0 if priority.training_pending else 0.0) * TRAINING_NEED_WEIGHT
-        exploration = (priority.exploration_boost - 1.0) * EXPLORATION_BOOST_WEIGHT
+        # Dec 29, 2025: Use dynamic weights instead of static constants
+        w = self._compute_dynamic_weights()
+
+        # Base factors (now using dynamic weights)
+        staleness = priority.staleness_factor * w.staleness
+        velocity = priority.velocity_factor * w.velocity
+        training = (1.0 if priority.training_pending else 0.0) * w.training
+        exploration = (priority.exploration_boost - 1.0) * w.exploration
 
         # Phase 2C.3: Curriculum weight factor (normalized around 1.0)
         # Higher curriculum weight = more data needed for this config
-        curriculum = (priority.curriculum_weight - 1.0) * CURRICULUM_WEIGHT
+        curriculum = (priority.curriculum_weight - 1.0) * w.curriculum
 
         # Phase 5: Improvement optimizer boost (-0.10 to +0.15)
         # Positive when config is on a promotion streak
-        improvement = priority.improvement_boost * IMPROVEMENT_BOOST_WEIGHT
+        improvement = priority.improvement_boost * w.improvement
 
         # Phase 5: Quality penalty (0.0 to -0.20)
         # Applied when quality degrades below threshold
@@ -587,7 +811,7 @@ class SelfplayScheduler:
 
         # Dec 2025: Data deficit factor - boost configs with low game counts
         # Large boards (square19, hexagonal) especially need more data
-        data_deficit = priority.data_deficit_factor * DATA_DEFICIT_WEIGHT
+        data_deficit = priority.data_deficit_factor * w.data_deficit
 
         # Combine factors
         score = staleness + velocity + training + exploration + curriculum + improvement + quality + data_deficit
