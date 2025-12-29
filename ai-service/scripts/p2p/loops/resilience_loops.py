@@ -158,12 +158,21 @@ class SplitBrainDetectionConfig:
 
     December 2025 P2P Hardening: Detect network partitions that could
     cause multiple leaders in the cluster.
+
+    December 29, 2025: Added partition recovery settings for 48-hour
+    autonomous operation.
     """
 
     detection_interval_seconds: float = 60.0
     initial_delay_seconds: float = 120.0
     request_timeout_seconds: float = 5.0
     min_peers_for_detection: int = 3
+
+    # December 29, 2025: Partition recovery settings (48-hour autonomous operation)
+    # Using PartitionRecoveryDefaults from coordination_defaults.py
+    partition_alert_threshold_seconds: int = 1800  # 30 min before alert
+    partition_resync_delay_seconds: int = 60  # Wait after partition heals before resync
+    min_peers_for_healthy: int = 3  # Minimum peers for healthy cluster
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -175,6 +184,19 @@ class SplitBrainDetectionConfig:
             raise ValueError("request_timeout_seconds must be > 0")
         if self.min_peers_for_detection < 1:
             raise ValueError("min_peers_for_detection must be >= 1")
+
+    @classmethod
+    def from_defaults(cls) -> "SplitBrainDetectionConfig":
+        """Create config from PartitionRecoveryDefaults."""
+        try:
+            from app.config.coordination_defaults import PartitionRecoveryDefaults
+            return cls(
+                partition_alert_threshold_seconds=PartitionRecoveryDefaults.PARTITION_ALERT_THRESHOLD,
+                partition_resync_delay_seconds=PartitionRecoveryDefaults.RESYNC_DELAY_SECONDS,
+                min_peers_for_healthy=PartitionRecoveryDefaults.MIN_PEERS_FOR_HEALTHY,
+            )
+        except ImportError:
+            return cls()
 
 
 # =============================================================================
@@ -536,6 +558,11 @@ class SplitBrainDetectionLoop(BaseLoop):
         self._checks_performed = 0
         self._last_detection_time: float = 0.0
         self._last_leaders_seen: list[str] = []
+
+        # December 29, 2025: Partition tracking for 48-hour autonomous operation
+        self._partition_start_time: float = 0.0  # When partition was first detected
+        self._partition_alert_emitted: bool = False  # Track if we emitted alert
+        self._last_healthy_time: float = time.time()  # Last time we saw healthy cluster
 
     async def _on_start(self) -> None:
         """Initial delay before starting detection."""
