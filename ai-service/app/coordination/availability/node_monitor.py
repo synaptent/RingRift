@@ -72,7 +72,7 @@ class NodeMonitorConfig(DaemonConfig):
     provider_check_enabled: bool = True
     consecutive_failures_before_unhealthy: int = 3
     consecutive_failures_before_recovery: int = 5
-    p2p_port: int = 8770
+    p2p_port: int = P2P_DEFAULT_PORT
 
 
 class NodeMonitor(BaseDaemon):

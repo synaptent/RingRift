@@ -64,6 +64,9 @@ from app.coordination.node_circuit_breaker import (
     NodeCircuitState,
 )
 
+# Dec 2025: Centralized port configuration
+from app.config.ports import P2P_DEFAULT_PORT
+
 
 # December 2025: Provider-specific bandwidth hints (KB/s)
 # Consolidated to use cluster_config as the single source of truth.
@@ -998,7 +1001,7 @@ class BandwidthCoordinatedRsync:
         use_base64_fallback: bool = True,
         use_chunked_fallback: bool = True,
         use_http_fallback: bool = True,
-        p2p_port: int = 8770,
+        p2p_port: int = P2P_DEFAULT_PORT,
     ) -> SyncResult:
         """Execute bandwidth-coordinated rsync with automatic fallback.
 
@@ -1387,7 +1390,7 @@ class BandwidthCoordinatedRsync:
             )
 
     async def _fallback_http(
-        self, source: str, dest: str, host: str, p2p_port: int = 8770
+        self, source: str, dest: str, host: str, p2p_port: int = P2P_DEFAULT_PORT
     ) -> SyncResult:
         """Execute HTTP transfer fallback via P2P endpoints.
 
