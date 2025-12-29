@@ -871,9 +871,10 @@ class AutoSyncDaemon(
 
             try:
                 games_synced = await self._sync_cycle()
-                self._stats.total_syncs += 1
-                self._stats.successful_syncs += 1
-                self._stats.last_sync_time = time.time()
+                # Use actual field names, not readonly property aliases
+                self._stats.operations_attempted += 1
+                self._stats.syncs_completed += 1
+                self._stats.last_check_time = time.time()
                 # Emit DATA_SYNC_COMPLETED event for feedback loop
                 if games_synced and games_synced > 0:
                     fire_and_forget(
@@ -883,7 +884,7 @@ class AutoSyncDaemon(
             except asyncio.CancelledError:
                 break
             except (RuntimeError, OSError, ConnectionError) as e:
-                self._stats.failed_syncs += 1
+                self._stats.syncs_failed += 1
                 self._stats.last_error = str(e)
                 logger.error(f"Sync cycle error: {e}")
                 # Emit DATA_SYNC_FAILED event
@@ -906,57 +907,86 @@ class AutoSyncDaemon(
         Returns:
             Number of games synced (0 if skipped or no data).
         """
-        # December 2025: Use broadcast sync cycle for BROADCAST strategy
-        if self._is_broadcast:
-            return await self.broadcast_sync_cycle()
+        # December 2025: Initialize progress tracking
+        self._update_progress(phase="initializing")
 
-        # December 2025: Use pull sync cycle for PULL strategy (coordinator recovery)
-        if self._resolved_strategy == SyncStrategy.PULL:
-            return await self._pull_from_cluster_nodes()
+        try:
+            # December 2025: Use broadcast sync cycle for BROADCAST strategy
+            if self._is_broadcast:
+                self._update_progress(phase="broadcast_sync")
+                result = await self.broadcast_sync_cycle()
+                self._complete_progress(success=result > 0)
+                return result
 
-        # Skip if NFS node and skip_nfs_sync is enabled
-        if self._is_nfs_node and self.config.skip_nfs_sync:
-            logger.debug("Skipping sync cycle (NFS node)")
-            return 0
+            # December 2025: Use pull sync cycle for PULL strategy (coordinator recovery)
+            if self._resolved_strategy == SyncStrategy.PULL:
+                self._update_progress(phase="pull_from_cluster")
+                result = await self._pull_from_cluster_nodes()
+                self._complete_progress(success=result > 0)
+                return result
 
-        # Skip if this node is excluded
-        if self.node_id in self.config.exclude_hosts:
-            logger.debug("Skipping sync cycle (excluded host)")
-            return 0
-
-        # Check ClusterManifest exclusion rules
-        if self._cluster_manifest:
-            from app.distributed.cluster_manifest import DataType
-            if not self._cluster_manifest.can_receive_data(self.node_id, DataType.GAME):
-                policy = self._cluster_manifest.get_sync_policy(self.node_id)
-                logger.debug(
-                    f"Skipping sync cycle (manifest exclusion: {policy.exclusion_reason})"
-                )
+            # Skip if NFS node and skip_nfs_sync is enabled
+            if self._is_nfs_node and self.config.skip_nfs_sync:
+                logger.debug("Skipping sync cycle (NFS node)")
+                self._complete_progress(success=True)
                 return 0
 
-        # Check disk capacity before syncing
-        if not await self._check_disk_capacity():
-            return 0
+            # Skip if this node is excluded
+            if self.node_id in self.config.exclude_hosts:
+                logger.debug("Skipping sync cycle (excluded host)")
+                self._complete_progress(success=True)
+                return 0
 
-        # Check for pending data to sync
-        pending = await self._get_pending_sync_data()
-        if pending < self.config.min_games_to_sync:
-            logger.debug(f"Skipping sync: only {pending} games pending")
-            return 0
+            # Check ClusterManifest exclusion rules
+            if self._cluster_manifest:
+                from app.distributed.cluster_manifest import DataType
+                if not self._cluster_manifest.can_receive_data(self.node_id, DataType.GAME):
+                    policy = self._cluster_manifest.get_sync_policy(self.node_id)
+                    logger.debug(
+                        f"Skipping sync cycle (manifest exclusion: {policy.exclusion_reason})"
+                    )
+                    self._complete_progress(success=True)
+                    return 0
 
-        logger.info(f"Sync cycle: {pending} games pending")
+            # Check disk capacity before syncing
+            self._update_progress(phase="checking_capacity")
+            if not await self._check_disk_capacity():
+                self._complete_progress(success=False, error="disk_capacity_exceeded")
+                return 0
 
-        # Trigger data collection from peers
-        await self._collect_from_peers()
+            # Check for pending data to sync
+            self._update_progress(phase="checking_pending_data")
+            pending = await self._get_pending_sync_data()
+            if pending < self.config.min_games_to_sync:
+                logger.debug(f"Skipping sync: only {pending} games pending")
+                self._complete_progress(success=True)
+                return 0
+
+            logger.info(f"Sync cycle: {pending} games pending")
+
+            # December 2025: Update progress with estimated file count
+            self._update_progress(phase="collecting_from_peers", files_total=pending)
+
+            # Trigger data collection from peers
+            await self._collect_from_peers()
+        except Exception as e:
+            self._complete_progress(success=False, error=str(e))
+            raise
 
         # December 2025 - Gap 4 fix: Verify synced databases after collection
+        self._update_progress(phase="verifying_databases")
         verification_passed = await self._verify_synced_databases()
         if not verification_passed:
             logger.warning("[AutoSyncDaemon] Some databases failed verification")
             # Continue anyway - partial data is better than no data
 
         # Register synced data to manifest
+        self._update_progress(phase="registering_data")
         await self._register_synced_data()
+
+        # December 2025: Mark progress as complete
+        self._update_progress(files_completed=pending)
+        self._complete_progress(success=True)
 
         return pending
 
@@ -1526,6 +1556,8 @@ class AutoSyncDaemon(
             "databases_verified": self._stats.databases_verified,
             "databases_verification_failed": self._stats.databases_verification_failed,
             "last_verification_time": self._stats.last_verification_time,
+            # December 2025: Real-time sync progress
+            "sync_progress": self._progress.to_dict(),
         }
 
     def get_sync_progress(self) -> SyncProgress:

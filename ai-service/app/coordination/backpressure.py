@@ -319,6 +319,9 @@ class BackpressureMonitor:
             return 0.0
         if value >= high:
             return 1.0
+        # Guard against division by zero when thresholds are equal
+        if high <= low:
+            return 0.0
         return (value - low) / (high - low)
 
     def get_cached_signal(self) -> BackpressureSignal | None:
