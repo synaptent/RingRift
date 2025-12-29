@@ -658,16 +658,18 @@ class WorkQueue:
             logger.error(f"Failed to save work stats: {e}")
 
     def _delete_item(self, work_id: str) -> None:
-        """Delete a work item from the database."""
+        """Delete a work item from the database.
+
+        December 2025: Refactored to use context manager for safe cleanup.
+        """
         # Skip write if in readonly mode (December 2025: Lazy init)
         if self._readonly_mode:
             return
-        conn = None
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM work_items WHERE work_id = ?", (work_id,))
-            conn.commit()
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM work_items WHERE work_id = ?", (work_id,))
+                conn.commit()
         except sqlite3.OperationalError as e:
             # Dec 28, 2025: Check for ENOSPC and emit DISK_FULL event
             if is_enospc_error(e):
@@ -677,13 +679,6 @@ class WorkQueue:
             logger.error(f"Database integrity error deleting work item {work_id}: {e}")
         except Exception as e:
             logger.error(f"Failed to delete work item {work_id}: {e}")
-        finally:
-            # Dec 2025: Ensure connection is closed even on error
-            if conn is not None:
-                try:
-                    conn.close()
-                except (sqlite3.Error, OSError):
-                    pass  # Suppress cleanup errors to avoid masking original error
 
     def add_work(self, item: WorkItem, force: bool = False) -> str:
         """Add work to the queue. Returns work_id.
