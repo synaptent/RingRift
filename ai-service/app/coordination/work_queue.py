@@ -567,7 +567,8 @@ class WorkQueue:
             logger.info(f"Loaded {len(self._items)} work items from database")
         except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
             logger.error(f"Database error loading work items: {e}")
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
+            # Catch remaining DB errors and file system issues
             logger.error(f"Failed to load work items from database: {e}")
         finally:
             # Dec 2025: Ensure connection is closed even on error
@@ -655,7 +656,8 @@ class WorkQueue:
             logger.error(f"Database error saving work stats: {e}")
         except sqlite3.IntegrityError as e:
             logger.error(f"Database integrity error saving work stats: {e}")
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
+            # Catch remaining DB errors and file system issues
             logger.error(f"Failed to save work stats: {e}")
 
     def _delete_item(self, work_id: str) -> None:
@@ -1011,7 +1013,8 @@ class WorkQueue:
                 except (sqlite3.Error, OSError):
                     pass
             success = False
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
+            # Catch remaining DB errors and file system issues
             logger.error(f"Atomic claim failed for {work_id}: {e}")
             if conn:
                 try:
@@ -1374,7 +1377,8 @@ class WorkQueue:
 
         except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
             logger.error(f"Database error getting work history: {e}")
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
+            # Catch remaining DB errors and file system issues
             logger.error(f"Failed to get work history: {e}")
         finally:
             if conn is not None:

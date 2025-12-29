@@ -2,10 +2,12 @@
 
 Cluster-wide coordination infrastructure for the RingRift AI training pipeline.
 
-**219 modules** (~175K LOC) providing event-driven orchestration, resource management, and fault tolerance.
-Counts are snapshots; run `rg --files -g "*.py" app/coordination | wc -l` to refresh.
+**221 modules** (~180K LOC) providing event-driven orchestration, resource management, and fault tolerance.
+Counts are snapshots; run `find app/coordination -name "*.py" | wc -l` to refresh.
 
-> **Note**: Consolidation target is 15 modules. See [Consolidation Roadmap](../../docs/planning/CONSOLIDATION_ROADMAP.md).
+**Last Updated**: December 29, 2025
+
+> **Architecture Status**: Production-ready. Major consolidation completed Dec 2025 - see `archive/deprecated_coordination/` for historical modules. Current architecture uses 73 daemon types managed by `DaemonManager`.
 
 ## Quick Start
 

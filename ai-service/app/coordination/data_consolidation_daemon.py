@@ -550,6 +550,32 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # December 29, 2025: Add indexes for query optimization
+            # These indexes improve common query patterns:
+            # - Filtering games by board config
+            # - Looking up moves by game_id (FK performance)
+            # - Querying by consolidation time
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_games_board_players
+                ON games(board_type, num_players)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_games_consolidated_at
+                ON games(consolidated_at)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_moves_game_id
+                ON game_moves(game_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_snapshots_game_id
+                ON game_state_snapshots(game_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_players_game_id
+                ON game_players(game_id)
+            """)
+
             conn.commit()
             # Note: conn.close() not needed - context manager handles it
 
