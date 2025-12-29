@@ -413,6 +413,14 @@ value = env.get("CUSTOM_VAR", "default")
 
 ---
 
+## Training Data Encoding
+
+| Variable                       | Type | Default | In env.py | Description                |
+| ------------------------------ | ---- | ------- | --------- | -------------------------- |
+| `RINGRIFT_ENCODING_CHUNK_SIZE` | int  | `64`    |           | ParallelEncoder chunk size |
+
+---
+
 ## Evaluation
 
 | Variable                               | Type | Default | In env.py | Description                 |

@@ -183,6 +183,14 @@ Use `{PROVIDER}_IDLE_*` prefix (e.g., `VAST_IDLE_ENABLED`, `RUNPOD_IDLE_THRESHOL
 
 ---
 
+## Training Data Encoding
+
+| Variable                       | Type | Default | Description                            |
+| ------------------------------ | ---- | ------- | -------------------------------------- |
+| `RINGRIFT_ENCODING_CHUNK_SIZE` | int  | `64`    | Chunk size for ParallelEncoder batches |
+
+---
+
 ## Sync & Bandwidth
 
 | Variable                       | Type  | Default | Description                     |
