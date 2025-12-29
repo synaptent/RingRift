@@ -23,7 +23,7 @@ prometheus_client==0.23.1
 pytest==9.0.1
 pytest-asyncio==1.3.0
 pytest-timeout==2.4.0
-pytest-cov==6.0.0
+pytest-cov==7.0.0
 hypothesis==6.116.0
 black==25.12.0
 flake8==7.3.0
