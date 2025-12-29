@@ -283,19 +283,22 @@ class TestAugmentBatch:
         manager.initialize_all()
         return manager
 
-    def test_augment_batch_dense_returns_dict(self, manager_with_augmentation) -> None:
-        """Test augment_batch_dense returns a dictionary."""
-        batch = {
-            "features": np.random.randn(4, 16, 8, 8).astype(np.float32),
-            "policy": np.random.randn(4, 64).astype(np.float32),
-            "value": np.random.randn(4).astype(np.float32),
-        }
+    def test_augment_batch_dense_returns_tuple(self, manager_with_augmentation) -> None:
+        """Test augment_batch_dense returns a tuple of (features, policy)."""
+        import torch
 
-        result = manager_with_augmentation.augment_batch_dense(batch)
-        assert isinstance(result, dict)
-        assert "features" in result
-        assert "policy" in result
-        assert "value" in result
+        # augment_batch_dense takes torch tensors, returns tuple
+        features = torch.randn(4, 16, 8, 8)
+        policy_targets = torch.randn(4, 64)
+
+        result = manager_with_augmentation.augment_batch_dense(features, policy_targets)
+
+        # Returns tuple of (augmented_features, augmented_policy)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        # When augmentor is None, returns inputs unchanged
+        assert result[0].shape == features.shape
+        assert result[1].shape == policy_targets.shape
 
 
 class TestComputeSampleWeights:
