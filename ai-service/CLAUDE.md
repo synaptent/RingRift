@@ -477,14 +477,14 @@ Unified training pipeline orchestration:
 
 The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGISTRY.md` for full reference.
 
-| Category  | Key Daemon Types                                             | Purpose                      |
-| --------- | ------------------------------------------------------------ | ---------------------------- |
-| Core      | `EVENT_ROUTER`, `DAEMON_WATCHDOG`                            | Event bus, health monitoring |
-| Sync      | `AUTO_SYNC`, `MODEL_DISTRIBUTION`, `ELO_SYNC`                | Data/model synchronization   |
-| Training  | `DATA_PIPELINE`, `SELFPLAY_COORDINATOR`, `TRAINING_ACTIVITY` | Pipeline orchestration       |
-| Eval      | `EVALUATION`, `AUTO_PROMOTION`                               | Model evaluation/promotion   |
-| Health    | `NODE_HEALTH_MONITOR`, `QUALITY_MONITOR`                     | Cluster health               |
-| Resources | `IDLE_RESOURCE`, `NODE_RECOVERY`                             | GPU utilization, recovery    |
+| Category  | Key Daemon Types                                              | Purpose                       |
+| --------- | ------------------------------------------------------------- | ----------------------------- |
+| Core      | `EVENT_ROUTER`, `DAEMON_WATCHDOG`                             | Event bus, health monitoring  |
+| Sync      | `AUTO_SYNC`, `MODEL_DISTRIBUTION`, `ELO_SYNC`                 | Data/model synchronization    |
+| Training  | `DATA_PIPELINE`, `SELFPLAY_COORDINATOR`, `TRAINING_ACTIVITY`  | Pipeline orchestration        |
+| Eval      | `EVALUATION`, `AUTO_PROMOTION`                                | Model evaluation/promotion    |
+| Health    | `NODE_HEALTH_MONITOR`, `QUALITY_MONITOR`, `NODE_AVAILABILITY` | Cluster health, provider sync |
+| Resources | `IDLE_RESOURCE`, `NODE_RECOVERY`                              | GPU utilization, recovery     |
 
 **Key files:**
 
@@ -495,6 +495,10 @@ The `DaemonManager` coordinates 60+ background services. See `docs/DAEMON_REGIST
 - **`sync_bandwidth.py`**: Bandwidth-coordinated rsync with host-level limits
 - **`auto_sync_daemon.py`**: Automated P2P data sync with push-from-generator + gossip replication
 - **`training_activity_daemon.py`**: Detects training activity, triggers priority sync (Dec 2025)
+- **`node_availability/`**: Cloud provider state synchronization (Dec 2025)
+  - Syncs Vast.ai, Lambda Labs, RunPod instance states with `distributed_hosts.yaml`
+  - Providers: `vast_checker.py`, `lambda_checker.py`, `runpod_checker.py`
+  - Standalone: `scripts/launch_node_availability.py`
 
 **Architecture (December 2025):**
 
@@ -1882,6 +1886,54 @@ PYTHONPATH=. python3 scripts/auto_promote.py --gauntlet \
 - COORDINATOR_REGISTRY: 27 coordinators with declarative wiring
 - DaemonManager: 66 daemon types, all with health monitoring
 - Event system: 118 event types, unified router with deduplication
+
+### NodeAvailabilityDaemon (Dec 28, 2025)
+
+Synchronizes cloud provider instance state with `distributed_hosts.yaml`:
+
+**Problem Solved:**
+
+- Config had nodes marked `status: ready` that were actually terminated in cloud providers
+- SSH timeouts when reaching dead nodes wasted cluster resources
+- P2P showed 0 alive peers due to stale config
+
+**Providers Supported (3 total):**
+
+| Provider    | API                           | Instances |
+| ----------- | ----------------------------- | --------- |
+| Vast.ai     | CLI (`vastai show instances`) | 14        |
+| Lambda Labs | REST API                      | 6         |
+| RunPod      | GraphQL API                   | 8         |
+
+**Usage:**
+
+```bash
+# One-shot mode (check and exit)
+python scripts/launch_node_availability.py --once
+
+# Continuous mode (default: 5 minute interval)
+python scripts/launch_node_availability.py
+
+# Enable writes (default: dry_run=True logs only)
+python scripts/launch_node_availability.py --enable-writes
+
+# Custom interval
+python scripts/launch_node_availability.py --interval 60
+```
+
+**Configuration:**
+
+- API keys read from environment or config files (`~/.config/vastai/vast_api_key`, `~/.lambda_api_key`, `~/.runpod/config.toml`)
+- State maps: RUNNING→ready, STARTING→setup, STOPPED→offline, TERMINATED→retired
+- Grace period before marking terminated (default: 60s)
+- Part of `standard` daemon profile in `master_loop.py`
+
+**Files:**
+
+- `app/coordination/node_availability/daemon.py` - Main daemon
+- `app/coordination/node_availability/providers/*.py` - Per-provider checkers
+- `scripts/launch_node_availability.py` - Standalone launcher
+- `tests/unit/coordination/test_node_availability.py` - Unit tests
 
 ---
 

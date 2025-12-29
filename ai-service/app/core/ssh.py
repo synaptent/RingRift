@@ -679,7 +679,8 @@ class SSHClient:
 
             except Exception as e:
                 last_error = str(e)
-                logger.debug(f"SSH via {transport_name} failed: {e}")
+                # December 2025: Elevated from DEBUG to WARNING for visibility
+                logger.warning(f"SSH via {transport_name} to {self._config.host} failed: {e}")
                 continue
 
         elapsed_ms = (time.time() - start_time) * 1000
@@ -797,7 +798,8 @@ class SSHClient:
 
             except Exception as e:
                 last_error = str(e)
-                logger.debug(f"SSH via {transport_name} failed: {e}")
+                # December 2025: Elevated from DEBUG to WARNING for visibility
+                logger.warning(f"SSH via {transport_name} to {self._config.host} failed: {e}")
                 continue
 
         elapsed_ms = (time.time() - start_time) * 1000

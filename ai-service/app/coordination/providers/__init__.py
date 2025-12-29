@@ -82,6 +82,9 @@ def get_provider(provider_type: ProviderType) -> "CloudProvider":
     elif provider_type == ProviderType.VAST:
         from app.coordination.providers.vast_provider import VastProvider
         _provider_cache[provider_type] = VastProvider()
+    elif provider_type == ProviderType.RUNPOD:
+        from app.coordination.providers.runpod_provider import RunPodProvider
+        _provider_cache[provider_type] = RunPodProvider()
     else:
         raise ValueError(f"Unknown provider type: {provider_type}")
 

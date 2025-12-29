@@ -55,12 +55,20 @@ class NodeRecoveryAction(Enum):
     NOTE (Dec 2025): Renamed from RecoveryAction to avoid collision with
     JobRecoveryAction in unified_health_manager.py and SystemRecoveryAction
     in recovery_orchestrator.py which have different semantics.
+
+    December 2025: Added escalation tiers with graduated responses:
+    - SOFT_RESTART: Restart P2P service only (3 failures)
+    - RESTART: Full instance restart (6 failures)
+    - FAILOVER: Migrate workload to another node (10 failures)
+    - RETIRE: Mark as retired, alert operator (20 failures)
     """
     NONE = "none"
-    RESTART = "restart"
+    SOFT_RESTART = "soft_restart"  # December 2025: P2P service restart only
+    RESTART = "restart"  # Full instance restart
     PREEMPTIVE_RESTART = "preemptive_restart"
     NOTIFY = "notify"  # Just notify, don't auto-recover
     FAILOVER = "failover"  # Migrate workload to another node
+    RETIRE = "retire"  # December 2025: Mark as retired, alert operator
 
 
 # Backward-compat alias (deprecated)
@@ -81,6 +89,8 @@ class NodeRecoveryConfig(DaemonConfig):
     """Configuration for node recovery.
 
     Extends DaemonConfig with recovery-specific settings.
+
+    December 2025: Added escalation tiers for graduated recovery responses.
     """
 
     # Provider-specific settings
@@ -94,6 +104,24 @@ class NodeRecoveryConfig(DaemonConfig):
     memory_exhaustion_threshold: float = 0.02  # 2% per minute memory growth
     memory_exhaustion_window_minutes: int = 30
     preemptive_recovery_enabled: bool = True
+
+    # December 2025: Escalation tiers for graduated recovery
+    # Failures -> Action:
+    #   3 failures: soft restart (P2P service only)
+    #   6 failures: hard restart (instance restart)
+    #   10 failures: failover (migrate workload)
+    #   20 failures: retire (mark as retired, alert operator)
+    escalation_soft_restart_threshold: int = 3
+    escalation_hard_restart_threshold: int = 6
+    escalation_failover_threshold: int = 10
+    escalation_retire_threshold: int = 20
+
+    # Escalating cooldowns (seconds) by tier
+    # Tier 1 (soft restart): 60s
+    # Tier 2 (hard restart): 300s
+    # Tier 3 (failover): 900s
+    # Tier 4 (retire): 3600s
+    escalation_cooldowns: tuple[int, ...] = (60, 300, 900, 3600)
 
     @classmethod
     def from_env(cls, prefix: str = "RINGRIFT_NODE_RECOVERY") -> "NodeRecoveryConfig":
@@ -438,28 +466,36 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         return NodeProvider.UNKNOWN
 
     def _determine_recovery_action(self, node: NodeInfo) -> RecoveryAction:
-        """Determine what recovery action to take for a node."""
+        """Determine what recovery action to take for a node.
+
+        December 2025: Updated with escalation tiers for graduated responses.
+        The action escalates based on consecutive failures:
+        - 3 failures: soft restart (P2P service only)
+        - 6 failures: hard restart (instance restart)
+        - 10 failures: failover (migrate workload)
+        - 20 failures: retire (mark as retired, alert operator)
+
+        Cooldowns also escalate: 60s -> 300s -> 900s -> 3600s
+        """
         now = time.time()
 
-        # Check cooldown
+        # December 2025: Determine escalation tier and corresponding cooldown
+        tier = self._get_escalation_tier(node.consecutive_failures)
+        cooldown = self._get_tier_cooldown(tier)
+
+        # Check cooldown based on tier
         if node.last_recovery_attempt > 0:
             time_since_recovery = now - node.last_recovery_attempt
-            if time_since_recovery < self.config.recovery_cooldown_seconds:
+            if time_since_recovery < cooldown:
                 return RecoveryAction.NONE
 
         # Check for terminated/failed status
         if node.status in ("terminated", "failed"):
-            if node.consecutive_failures >= self.config.max_consecutive_failures:
-                return RecoveryAction.RESTART
-            else:
-                return RecoveryAction.NOTIFY
+            return self._get_escalated_action(node.consecutive_failures)
 
         # Check for unreachable nodes
         if node.status == "unreachable":
-            if node.consecutive_failures >= self.config.max_consecutive_failures:
-                return RecoveryAction.RESTART
-            else:
-                return RecoveryAction.NOTIFY
+            return self._get_escalated_action(node.consecutive_failures)
 
         # Proactive recovery based on resource trends
         if self.config.preemptive_recovery_enabled:
@@ -468,6 +504,71 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
                 return trend_action
 
         return RecoveryAction.NONE
+
+    def _get_escalation_tier(self, consecutive_failures: int) -> int:
+        """Get escalation tier based on consecutive failures.
+
+        Returns:
+            Tier 0: < soft_restart threshold (notify only)
+            Tier 1: >= soft_restart threshold (soft restart)
+            Tier 2: >= hard_restart threshold (full restart)
+            Tier 3: >= failover threshold (migrate workload)
+            Tier 4: >= retire threshold (mark as retired)
+
+        December 2025: Added for graduated recovery responses.
+        """
+        if consecutive_failures >= self.config.escalation_retire_threshold:
+            return 4
+        elif consecutive_failures >= self.config.escalation_failover_threshold:
+            return 3
+        elif consecutive_failures >= self.config.escalation_hard_restart_threshold:
+            return 2
+        elif consecutive_failures >= self.config.escalation_soft_restart_threshold:
+            return 1
+        else:
+            return 0
+
+    def _get_tier_cooldown(self, tier: int) -> int:
+        """Get cooldown seconds for an escalation tier.
+
+        December 2025: Cooldowns escalate with severity:
+        - Tier 0/1: 60s (soft restart)
+        - Tier 2: 300s (hard restart)
+        - Tier 3: 900s (failover)
+        - Tier 4: 3600s (retire)
+        """
+        if tier <= 0:
+            return self.config.escalation_cooldowns[0] if self.config.escalation_cooldowns else 60
+        elif tier >= len(self.config.escalation_cooldowns):
+            return self.config.escalation_cooldowns[-1]
+        else:
+            return self.config.escalation_cooldowns[tier - 1]
+
+    def _get_escalated_action(self, consecutive_failures: int) -> RecoveryAction:
+        """Get the appropriate recovery action based on failure count.
+
+        December 2025: Maps failure count to escalated recovery action:
+        - < 3 failures: notify only
+        - 3+ failures: soft restart (P2P service)
+        - 6+ failures: hard restart (instance)
+        - 10+ failures: failover (migrate workload)
+        - 20+ failures: retire (mark as retired)
+        """
+        tier = self._get_escalation_tier(consecutive_failures)
+
+        action_map = {
+            0: RecoveryAction.NOTIFY,
+            1: RecoveryAction.SOFT_RESTART,
+            2: RecoveryAction.RESTART,
+            3: RecoveryAction.FAILOVER,
+            4: RecoveryAction.RETIRE,
+        }
+
+        action = action_map.get(tier, RecoveryAction.RETIRE)
+        logger.debug(
+            f"Escalation tier {tier} (failures={consecutive_failures}) -> {action.value}"
+        )
+        return action
 
     def _check_resource_trends(self, node: NodeInfo) -> RecoveryAction:
         """Check for resource exhaustion trends for preemptive recovery."""

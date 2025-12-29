@@ -398,11 +398,27 @@ class JobManager(EventSubscriptionMixin):
             - (False, reason) if node cannot accept the job
 
         December 2025: Convenience method combining preflight and GPU checks.
+        Updated Dec 2025: Now checks availability cache first for fast rejection.
         """
+        # Step 0: Check availability cache first (fast path for known-unavailable nodes)
+        try:
+            from app.coordination.node_availability_cache import get_availability_cache
+
+            cache = get_availability_cache()
+            if not cache.is_available(node_id):
+                entry = cache.get_entry(node_id)
+                reason = entry.reason.value if entry else "cached_unavailable"
+                logger.debug(f"Node {node_id} rejected by availability cache: {reason}")
+                return False, f"cached_{reason}"
+        except ImportError:
+            pass  # Cache not available, continue with full checks
+
         # Step 1: Basic preflight check
         is_available, reason = await self._preflight_check_node(node_id, preflight_timeout)
         if not is_available:
             logger.warning(f"Node {node_id} failed preflight check: {reason}")
+            # Update cache with failure
+            self._update_availability_cache(node_id, available=False, reason=reason)
             return False, f"preflight_{reason}"
 
         # Step 2: GPU health check if required
@@ -410,9 +426,53 @@ class JobManager(EventSubscriptionMixin):
             is_healthy, gpu_reason = await self._check_gpu_health(node_id, gpu_check_timeout)
             if not is_healthy:
                 logger.warning(f"Node {node_id} failed GPU health check: {gpu_reason}")
+                # Update cache with GPU failure
+                self._update_availability_cache(node_id, available=False, reason=gpu_reason)
                 return False, f"gpu_{gpu_reason}"
 
+        # Node is valid - update cache with success
+        self._update_availability_cache(node_id, available=True)
         return True, "ok"
+
+    def _update_availability_cache(
+        self, node_id: str, available: bool, reason: str | None = None
+    ) -> None:
+        """Update the availability cache based on validation result.
+
+        Args:
+            node_id: The node ID
+            available: Whether the node is available
+            reason: Reason for unavailability (if not available)
+        """
+        try:
+            from app.coordination.node_availability_cache import (
+                AvailabilityReason,
+                get_availability_cache,
+            )
+
+            cache = get_availability_cache()
+            if available:
+                cache.mark_available(node_id, source="job_validation")
+            else:
+                # Map reason string to AvailabilityReason
+                reason_map = {
+                    "ssh_timeout": AvailabilityReason.SSH_TIMEOUT,
+                    "ssh_probe_failed": AvailabilityReason.SSH_FAILED,
+                    "gpu_busy_or_unavailable": AvailabilityReason.GPU_ERROR,
+                    "cuda_error": AvailabilityReason.GPU_ERROR,
+                    "no_gpu_devices": AvailabilityReason.GPU_ERROR,
+                }
+                availability_reason = reason_map.get(
+                    reason or "", AvailabilityReason.HEALTH_CHECK_FAILED
+                )
+                cache.mark_unavailable(
+                    node_id,
+                    availability_reason,
+                    source="job_validation",
+                    error_message=reason,
+                )
+        except ImportError:
+            pass  # Cache not available
 
     # Event Subscriptions (December 2025)
     # =========================================================================
