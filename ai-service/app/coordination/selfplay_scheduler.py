@@ -48,6 +48,7 @@ __all__ = [
     "CURRICULUM_WEIGHT",
     "DATA_DEFICIT_WEIGHT",
     "DEFAULT_GAMES_PER_CONFIG",
+    "DEFAULT_TRAINING_SAMPLES_TARGET",
     "ELO_VELOCITY_WEIGHT",
     "EXPLORATION_BOOST_WEIGHT",
     "FRESH_DATA_THRESHOLD",
@@ -56,6 +57,7 @@ __all__ = [
     "MAX_STALENESS_HOURS",
     "MIN_GAMES_PER_ALLOCATION",
     "PRIORITY_OVERRIDE_MULTIPLIERS",
+    "SAMPLES_PER_GAME_BY_BOARD",
     "STALE_DATA_THRESHOLD",
     "STALENESS_WEIGHT",
     "TRAINING_NEED_WEIGHT",
@@ -158,6 +160,19 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
     3: 1.0,  # LOW: no boost (normal priority)
 }
 
+# Dec 29, 2025: Samples-per-game estimates by board type and player count
+# Used for game count normalization - ensures selfplay generates enough games
+# to meet training sample targets. Based on historical data from export scripts.
+SAMPLES_PER_GAME_BY_BOARD = {
+    "hex8": {"2p": 35, "3p": 40, "4p": 45},
+    "square8": {"2p": 40, "3p": 50, "4p": 55},
+    "square19": {"2p": 150, "3p": 180, "4p": 200},
+    "hexagonal": {"2p": 250, "3p": 300, "4p": 350},
+}
+
+# Default training sample target per config
+DEFAULT_TRAINING_SAMPLES_TARGET = 50000
+
 # December 2025: Player count allocation multipliers
 # 3p/4p games take ~2x longer but were getting equal allocation, leading to
 # undertraining for multiplayer configs (hex8_4p Elo 594, square19_3p Elo 409)
@@ -253,6 +268,10 @@ class ConfigPriority:
     search_budget: int = 400  # Dec 28 2025: Gumbel MCTS budget from velocity feedback
     current_elo: float = 1500.0  # Dec 29 2025: Current Elo rating for dynamic weight calculation
 
+    # Dec 29, 2025: Game count normalization fields
+    target_training_samples: int = DEFAULT_TRAINING_SAMPLES_TARGET  # Target samples for training
+    samples_per_game_estimate: float = 50.0  # Historical average samples per game
+
     # Computed priority
     priority_score: float = 0.0
 
@@ -311,6 +330,22 @@ class ConfigPriority:
         except (ValueError, IndexError):
             return 2  # Default to 2-player
 
+    @property
+    def games_needed(self) -> int:
+        """Calculate games needed to reach training sample target.
+
+        Dec 29, 2025: Part of game count normalization feature.
+        Uses current game count and samples-per-game estimate to determine
+        how many more games are needed to meet the training target.
+
+        Returns:
+            Number of additional games needed (0 if target already met)
+        """
+        if self.samples_per_game_estimate <= 0:
+            return 0
+        current_samples = int(self.game_count * self.samples_per_game_estimate)
+        remaining_samples = max(0, self.target_training_samples - current_samples)
+        return int(remaining_samples / self.samples_per_game_estimate)
 
 
 @dataclass
@@ -462,6 +497,99 @@ class SelfplayScheduler:
                     return
                 except (yaml.YAMLError, OSError, KeyError, AttributeError) as e:
                     logger.warning(f"[SelfplayScheduler] Failed to load config {config_path}: {e}")
+
+    # =========================================================================
+    # Game Count Normalization (Dec 29, 2025)
+    # =========================================================================
+
+    def _get_samples_per_game_estimate(self, config_key: str) -> float:
+        """Get estimated samples per game for a config.
+
+        Uses historical averages from SAMPLES_PER_GAME_BY_BOARD, falling back
+        to a conservative default of 50 samples/game if config not found.
+
+        Args:
+            config_key: Config key like "hex8_2p", "square19_4p"
+
+        Returns:
+            Estimated samples per game
+        """
+        try:
+            parts = config_key.split("_")
+            if len(parts) >= 2:
+                board_type = parts[0]  # "hex8", "square8", etc.
+                player_key = parts[1]  # "2p", "3p", "4p"
+                if board_type in SAMPLES_PER_GAME_BY_BOARD:
+                    return float(SAMPLES_PER_GAME_BY_BOARD[board_type].get(player_key, 50))
+        except (ValueError, IndexError):
+            pass
+        return 50.0  # Conservative default
+
+    def set_target_training_samples(self, config_key: str, target_samples: int) -> None:
+        """Set training sample target for a configuration.
+
+        Dec 29, 2025: Part of game count normalization feature.
+        DataPipelineOrchestrator calls this before requesting export to
+        communicate how many samples are needed for training.
+
+        This updates the ConfigPriority's target_training_samples and
+        samples_per_game_estimate, which are then used by games_needed
+        property to determine how many more games should be generated.
+
+        Args:
+            config_key: Config key (e.g., "hex8_2p", "square19_4p")
+            target_samples: Number of training samples needed
+
+        Example:
+            scheduler.set_target_training_samples("hex8_2p", 100000)
+            # Now scheduler.get_games_needed("hex8_2p") returns games needed
+        """
+        if config_key not in self._config_priorities:
+            logger.warning(
+                f"[SelfplayScheduler] Unknown config {config_key}, creating priority entry"
+            )
+            self._config_priorities[config_key] = ConfigPriority(config_key=config_key)
+
+        priority = self._config_priorities[config_key]
+        priority.target_training_samples = target_samples
+        priority.samples_per_game_estimate = self._get_samples_per_game_estimate(config_key)
+
+        games_needed = priority.games_needed
+        logger.info(
+            f"[SelfplayScheduler] Set training target for {config_key}: "
+            f"{target_samples} samples, {priority.samples_per_game_estimate:.0f} samples/game estimate, "
+            f"{games_needed} games needed"
+        )
+
+    def get_games_needed(self, config_key: str) -> int:
+        """Get number of additional games needed for a configuration.
+
+        Dec 29, 2025: Part of game count normalization feature.
+        Returns how many more games are needed to meet the training sample target.
+
+        Args:
+            config_key: Config key (e.g., "hex8_2p", "square19_4p")
+
+        Returns:
+            Number of games needed (0 if target already met or config unknown)
+        """
+        if config_key not in self._config_priorities:
+            return 0
+        return self._config_priorities[config_key].games_needed
+
+    def get_all_games_needed(self) -> dict[str, int]:
+        """Get games needed for all configurations.
+
+        Dec 29, 2025: Part of game count normalization feature.
+        Returns a dict mapping config_key to games_needed for all configs.
+
+        Returns:
+            Dict[config_key, games_needed] for all tracked configurations
+        """
+        return {
+            cfg: priority.games_needed
+            for cfg, priority in self._config_priorities.items()
+        }
 
     # =========================================================================
     # Priority Calculation
