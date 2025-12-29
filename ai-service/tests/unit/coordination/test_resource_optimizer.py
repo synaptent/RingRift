@@ -1741,13 +1741,16 @@ class TestHealthCheck:
     @pytest.fixture
     def optimizer(self, temp_db_path):
         """Provide ResourceOptimizer instance for health check tests."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import ResourceOptimizer
 
         with patch("app.coordination.resource_optimizer.COORDINATION_DB_PATH", temp_db_path):
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "health-test-node"
                 mock_env.orchestrator_id = "test-orchestrator"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 opt = ResourceOptimizer()
                 yield opt
 
@@ -1808,6 +1811,7 @@ class TestGetMaxSelfplayForNodeById:
 
     def test_node_in_database(self, temp_db_path):
         """Should return hardware-aware limit for known node."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_max_selfplay_for_node_by_id,
@@ -1818,7 +1822,9 @@ class TestGetMaxSelfplayForNodeById:
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 optimizer = ResourceOptimizer()
 
                 # Report a node with hardware info
@@ -1839,6 +1845,7 @@ class TestGetMaxSelfplayForNodeById:
 
     def test_node_not_in_database_h100_pattern(self, temp_db_path):
         """Should use hostname pattern for unknown H100 nodes."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_max_selfplay_for_node_by_id,
@@ -1849,7 +1856,9 @@ class TestGetMaxSelfplayForNodeById:
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 ResourceOptimizer()  # Initialize singleton
 
                 # The function should fall back to pattern matching
@@ -1859,6 +1868,7 @@ class TestGetMaxSelfplayForNodeById:
 
     def test_node_not_in_database_4090_pattern(self, temp_db_path):
         """Should use hostname pattern for unknown 4090 nodes."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_max_selfplay_for_node_by_id,
@@ -1868,7 +1878,9 @@ class TestGetMaxSelfplayForNodeById:
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 ResourceOptimizer()  # Initialize singleton
 
                 result = get_max_selfplay_for_node_by_id("vast-4090-node")
@@ -1877,6 +1889,7 @@ class TestGetMaxSelfplayForNodeById:
 
     def test_node_not_in_database_unknown(self, temp_db_path):
         """Should use conservative default for unknown nodes."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_max_selfplay_for_node_by_id,
@@ -1886,7 +1899,9 @@ class TestGetMaxSelfplayForNodeById:
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 ResourceOptimizer()  # Initialize singleton
 
                 result = get_max_selfplay_for_node_by_id("unknown-mystery-node")
@@ -1899,6 +1914,7 @@ class TestGetNodeHardwareInfo:
 
     def test_node_found(self, temp_db_path):
         """Should return hardware info dict for known node."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_node_hardware_info,
@@ -1909,7 +1925,9 @@ class TestGetNodeHardwareInfo:
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 optimizer = ResourceOptimizer()
 
                 # Report a node
@@ -1934,6 +1952,7 @@ class TestGetNodeHardwareInfo:
 
     def test_node_not_found(self, temp_db_path):
         """Should return None for unknown node."""
+        import app.coordination.resource_optimizer as ro_module
         from app.coordination.resource_optimizer import (
             ResourceOptimizer,
             get_node_hardware_info,
@@ -1943,7 +1962,9 @@ class TestGetNodeHardwareInfo:
             with patch("app.coordination.resource_optimizer.env") as mock_env:
                 mock_env.node_id = "test-node"
                 mock_env.orchestrator_id = "test"
+                # Reset both class-level and module-level singletons
                 ResourceOptimizer._instance = None
+                ro_module._optimizer = None
                 ResourceOptimizer()
 
                 result = get_node_hardware_info("nonexistent-node")

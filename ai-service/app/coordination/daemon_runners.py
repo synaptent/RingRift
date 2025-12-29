@@ -1,18 +1,42 @@
 """Daemon runner functions extracted from DaemonManager.
 
-This module contains the async runner functions for each daemon type.
-These functions handle:
-- Importing the daemon class
-- Creating and configuring the daemon instance
-- Starting the daemon and waiting for completion
+December 2025: Extracted from DaemonManager to reduce module size and improve testability.
 
-December 2025 - Code quality refactoring to reduce daemon_manager.py size.
+This module provides async runner functions for all 73 daemon types in the system.
+Each runner follows a consistent pattern:
+
+1. **Import the daemon class** - Lazy imports to avoid circular dependencies
+2. **Create and configure** - Instantiate with config (from env or defaults)
+3. **Start the daemon** - Call `await daemon.start()`
+4. **Wait for completion** - Use `_wait_for_daemon()` to block until stopped
+
+Runner Function Pattern:
+    async def create_<daemon_name>() -> None:
+        '''Brief description of daemon purpose.'''
+        try:
+            from app.coordination.<module> import <DaemonClass>
+
+            daemon = <DaemonClass>()
+            await daemon.start()
+            await _wait_for_daemon(daemon)
+        except ImportError as e:
+            logger.error(f"<DaemonClass> not available: {e}")
+            raise
+
+Key functions:
+- get_runner(DaemonType) -> Callable: Get runner function for a daemon type
+- get_all_runners() -> dict: Get full registry mapping names to runners
+- _wait_for_daemon(daemon) -> None: Block until daemon.is_running is False
+
+The registry (_RUNNER_REGISTRY) is built lazily on first access to avoid
+import-time circular dependencies with daemon_types.py.
 
 Usage:
     from app.coordination.daemon_runners import get_runner
+    from app.coordination.daemon_types import DaemonType
 
     runner = get_runner(DaemonType.AUTO_SYNC)
-    await runner()
+    await runner()  # Starts AutoSyncDaemon and blocks until stopped
 """
 
 from __future__ import annotations

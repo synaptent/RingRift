@@ -1987,7 +1987,9 @@ class ResourceOptimizer:
             cluster_state = self.get_cluster_state(max_age_seconds=120)
 
             # Check if we have any nodes reporting
-            if cluster_state.node_count == 0:
+            # Note: cpu_node_count is the total node count (including CPU-only and GPU nodes)
+            total_node_count = cluster_state.cpu_node_count
+            if total_node_count == 0:
                 return HealthCheckResult(
                     healthy=True,
                     status=CoordinatorStatus.DEGRADED,
@@ -2008,18 +2010,18 @@ class ResourceOptimizer:
                     details={
                         "cpu_util": cpu_util,
                         "gpu_util": gpu_util,
-                        "node_count": cluster_state.node_count,
+                        "node_count": total_node_count,
                     },
                 )
 
             return HealthCheckResult(
                 healthy=True,
                 status=CoordinatorStatus.RUNNING,
-                message=f"Healthy: {cluster_state.node_count} nodes, CPU {cpu_util:.0f}%, GPU {gpu_util:.0f}%",
+                message=f"Healthy: {total_node_count} nodes, CPU {cpu_util:.0f}%, GPU {gpu_util:.0f}%",
                 details={
                     "cpu_util": cpu_util,
                     "gpu_util": gpu_util,
-                    "node_count": cluster_state.node_count,
+                    "node_count": total_node_count,
                     "gpu_node_count": cluster_state.gpu_node_count,
                 },
             )

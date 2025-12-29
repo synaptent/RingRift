@@ -16,6 +16,7 @@ import asyncio
 import json
 import threading
 import time
+from enum import Enum
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,8 +31,8 @@ from scripts.p2p.handlers.tournament import TournamentHandlersMixin
 # =============================================================================
 
 
-class MockNodeRole:
-    """Mock NodeRole enum."""
+class MockNodeRole(str, Enum):
+    """Mock NodeRole enum that inherits from str like the real one."""
 
     LEADER = "leader"
     FOLLOWER = "follower"
@@ -62,6 +63,8 @@ class MockDistributedTournamentState:
         total_matches: int = 0,
         pending_matches: list | None = None,
         status: str = "pending",
+        started_at: float | None = None,
+        last_update: float | None = None,
         completed_matches: int = 0,
         results: list | None = None,
     ):
@@ -73,8 +76,8 @@ class MockDistributedTournamentState:
         self.total_matches = total_matches
         self.pending_matches = pending_matches or []
         self.status = status
-        self.started_at = time.time()
-        self.last_update = time.time()
+        self.started_at = started_at if started_at is not None else time.time()
+        self.last_update = last_update if last_update is not None else time.time()
         self.completed_matches = completed_matches
         self.results = results or []
         self.worker_nodes = []

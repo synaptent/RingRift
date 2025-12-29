@@ -402,7 +402,8 @@ class TestHealthCheckIntegration:
     def test_health_check_with_validation(self, state_manager: StateManager):
         """Health check should include validation state."""
         health = state_manager.health_check()
-        assert health["status"] == "healthy"
-        assert "peer_count" in health
-        assert "job_count" in health
-        assert "cluster_epoch" in health
+        # health_check returns a HealthCheckResult dataclass
+        assert health.healthy is True
+        assert health.details.get("peer_count") is not None
+        assert health.details.get("job_count") is not None
+        assert health.details.get("cluster_epoch") is not None

@@ -158,18 +158,64 @@ class LoadedModel:
     is_multiplayer_value: bool = False  # Whether value is per-player
 
 
-def detect_architecture(state_dict: dict[str, Any]) -> ModelArchitecture:
-    """Detect model architecture from checkpoint state dict keys.
+def detect_architecture(
+    state_dict: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> ModelArchitecture:
+    """Detect model architecture from checkpoint metadata or state dict keys.
 
-    Examines the keys in a PyTorch state_dict to determine which
-    architecture family the model belongs to.
+    First checks checkpoint metadata for explicit model architecture info,
+    then falls back to examining state_dict key patterns.
 
     Args:
         state_dict: The model's state dictionary (key -> tensor mapping)
+        metadata: Optional checkpoint metadata (_versioning_metadata)
 
     Returns:
         The detected ModelArchitecture enum value
     """
+    # Check metadata first for explicit model architecture
+    if metadata:
+        # Check _versioning_metadata.model field (e.g., "RingRiftCNN_v4")
+        model_name = metadata.get("model")
+        if not model_name:
+            # Also check nested config.model
+            config = metadata.get("config", {})
+            model_name = config.get("model")
+
+        if model_name:
+            # Map model name to architecture enum
+            model_name_lower = model_name.lower()
+            if "v5_heavy" in model_name_lower or "v5heavy" in model_name_lower:
+                if "hex" in model_name_lower:
+                    return ModelArchitecture.HEX_V5_HEAVY
+                return ModelArchitecture.CNN_V5_HEAVY
+            elif "v4" in model_name_lower:
+                if "hex" in model_name_lower:
+                    return ModelArchitecture.HEX_V3  # Hex doesn't have V4 yet
+                return ModelArchitecture.CNN_V4
+            elif "v3" in model_name_lower:
+                if "lite" in model_name_lower:
+                    if "hex" in model_name_lower:
+                        return ModelArchitecture.HEX_V3_LITE
+                    return ModelArchitecture.CNN_V3_LITE
+                if "hex" in model_name_lower:
+                    return ModelArchitecture.HEX_V3
+                return ModelArchitecture.CNN_V3
+            elif "v2" in model_name_lower:
+                if "lite" in model_name_lower:
+                    if "hex" in model_name_lower:
+                        return ModelArchitecture.HEX_V2_LITE
+                    return ModelArchitecture.CNN_V2_LITE
+                if "hex" in model_name_lower:
+                    return ModelArchitecture.HEX_V2
+                return ModelArchitecture.CNN_V2
+            elif "nnue" in model_name_lower:
+                if "policy" in model_name_lower:
+                    return ModelArchitecture.NNUE_WITH_POLICY
+                return ModelArchitecture.NNUE_VALUE_ONLY
+
+    # Fall back to state_dict key pattern matching
     keys = set(state_dict.keys())
 
     def has_prefix(prefix: str) -> bool:
