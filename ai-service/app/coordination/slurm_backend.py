@@ -518,6 +518,58 @@ class SlurmBackend:
             await self._refresh_jobs()
         return self._jobs
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for daemon manager integration.
+
+        Returns:
+            HealthCheckResult with Slurm backend health status
+        """
+        try:
+            from app.coordination.protocols import HealthCheckResult
+        except ImportError:
+            # Fallback if protocols not available
+            return {"healthy": True, "message": "OK", "details": {}}
+
+        # Check if we have recent state
+        is_stale = (time.time() - self._last_refresh) > (self._refresh_interval * 3)
+
+        # Count node states
+        idle_nodes = sum(1 for n in self._nodes.values() if n.state == "idle")
+        busy_nodes = sum(1 for n in self._nodes.values() if n.state in ("alloc", "mixed"))
+        down_nodes = sum(1 for n in self._nodes.values() if "down" in n.state.lower())
+
+        # Count job states
+        running_jobs = sum(1 for j in self._jobs.values() if j.state == SlurmJobState.RUNNING)
+        pending_jobs = sum(1 for j in self._jobs.values() if j.state == SlurmJobState.PENDING)
+
+        # Determine health
+        if is_stale and not self._nodes:
+            return HealthCheckResult(
+                healthy=False,
+                message="Slurm state stale and no nodes cached",
+                details={"last_refresh": self._last_refresh}
+            )
+        elif down_nodes > 0 and idle_nodes == 0 and busy_nodes == 0:
+            return HealthCheckResult(
+                healthy=False,
+                message=f"All {down_nodes} Slurm nodes down",
+                details={"down_nodes": down_nodes}
+            )
+        else:
+            return HealthCheckResult(
+                healthy=True,
+                message=f"Slurm: {idle_nodes} idle, {busy_nodes} busy, {running_jobs} running jobs",
+                details={
+                    "idle_nodes": idle_nodes,
+                    "busy_nodes": busy_nodes,
+                    "down_nodes": down_nodes,
+                    "running_jobs": running_jobs,
+                    "pending_jobs": pending_jobs,
+                    "last_refresh": self._last_refresh,
+                    "is_stale": is_stale,
+                }
+            )
+
     async def submit_job(self, job: SlurmJob) -> int | None:
         """Submit a job to Slurm and return the job ID."""
         # Generate script if command provided
