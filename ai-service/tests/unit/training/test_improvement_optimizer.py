@@ -537,6 +537,8 @@ class TestImprovementOptimizerFastTrack:
 
     def test_fast_track_on_promotion_streak(self, optimizer):
         """Test fast-track on 2+ promotion streak."""
+        # Set low parity rate to disable fast-track (default 1.0 triggers it)
+        optimizer.record_data_quality(0.90, 0.90)
         assert not optimizer.should_fast_track_training("hex8_2p")
 
         optimizer.record_promotion_success("hex8_2p", 25.0)
@@ -546,8 +548,11 @@ class TestImprovementOptimizerFastTrack:
 
     def test_fast_track_on_high_quality(self, optimizer):
         """Test fast-track on high data quality."""
+        # Set low parity rate first to disable fast-track
+        optimizer.record_data_quality(0.90, 0.90)
         assert not optimizer.should_fast_track_training("hex8_2p")
 
+        # Now set high parity rate to enable fast-track
         optimizer.record_data_quality(0.99, 0.99)
 
         assert optimizer.should_fast_track_training("hex8_2p")

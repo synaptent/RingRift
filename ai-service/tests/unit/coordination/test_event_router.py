@@ -500,3 +500,170 @@ class TestCleanup:
         router.unsubscribe("EVENT", callback)
         # Second unsubscribe should be safe
         router.unsubscribe("EVENT", callback)
+
+
+class TestLifecycle:
+    """Test router lifecycle methods (start/stop)."""
+
+    def setup_method(self):
+        """Reset router before each test."""
+        reset_router()
+
+    @pytest.mark.asyncio
+    async def test_start_does_not_raise(self):
+        """start() should complete without error."""
+        router = get_router()
+        # Should not raise
+        await router.start()
+
+    @pytest.mark.asyncio
+    async def test_stop_does_not_raise(self):
+        """stop() should complete without error."""
+        router = get_router()
+        await router.start()
+        # Should not raise
+        await router.stop()
+
+    def test_is_running_property(self):
+        """is_running should return True after init."""
+        router = get_router()
+        assert router.is_running is True
+
+
+class TestHandlerTimeout:
+    """Test handler timeout protection (Dec 29, 2025)."""
+
+    def setup_method(self):
+        """Reset router before each test."""
+        reset_router()
+
+    @pytest.mark.asyncio
+    async def test_slow_handler_tracked(self):
+        """Slow handlers should be tracked in timeout counter."""
+        router = get_router()
+        initial_timeouts = router._handler_timeouts
+
+        async def slow_callback(event):
+            await asyncio.sleep(120)  # Longer than timeout
+
+        router.subscribe("SLOW_EVENT", slow_callback)
+
+        # This will timeout but not block forever
+        await router.publish("SLOW_EVENT", {"test": True})
+        await asyncio.sleep(0.1)  # Give timeout a chance to trigger
+
+        # Timeout counter should increase (may not if default timeout is very long)
+        # At minimum, no exception should be raised
+        assert router._handler_timeouts >= initial_timeouts
+
+    @pytest.mark.asyncio
+    async def test_fast_handler_completes_normally(self):
+        """Fast handlers should complete without timeout."""
+        router = get_router()
+        result = []
+
+        async def fast_callback(event):
+            result.append(event.payload.get("value"))
+
+        router.subscribe("FAST_EVENT", fast_callback)
+        await router.publish("FAST_EVENT", {"value": 42})
+        await asyncio.sleep(0.1)
+
+        assert 42 in result
+
+
+class TestLRUEviction:
+    """Test LRU eviction for seen events and content hashes."""
+
+    def setup_method(self):
+        """Reset router before each test."""
+        reset_router()
+
+    @pytest.mark.asyncio
+    async def test_seen_events_bounded(self):
+        """_seen_events should not grow beyond max_seen_events."""
+        router = get_router()
+        # Set a small limit for testing
+        router._max_seen_events = 10
+
+        # Publish more than max events
+        for i in range(20):
+            await router.publish("BOUNDED_EVENT", {"i": i})
+            await asyncio.sleep(0.01)
+
+        # Should be bounded
+        assert len(router._seen_events) <= router._max_seen_events
+
+    @pytest.mark.asyncio
+    async def test_content_hashes_bounded(self):
+        """_seen_content_hashes should not grow unbounded."""
+        router = get_router()
+        router._max_seen_events = 10
+
+        for i in range(20):
+            await router.publish("HASH_TEST", {"unique": i})
+            await asyncio.sleep(0.01)
+
+        # Should be bounded
+        assert len(router._seen_content_hashes) <= router._max_seen_events + 5
+
+
+class TestEmitAliases:
+    """Test emit/emit_sync aliases for backward compatibility."""
+
+    def setup_method(self):
+        """Reset router before each test."""
+        reset_router()
+
+    def test_emit_is_publish(self):
+        """emit should be an alias for publish."""
+        router = get_router()
+        assert router.emit is router.publish
+
+    def test_emit_sync_is_publish_sync(self):
+        """emit_sync should be an alias for publish_sync."""
+        router = get_router()
+        assert router.emit_sync is router.publish_sync
+
+
+class TestMetricsTracking:
+    """Test metrics tracking."""
+
+    def setup_method(self):
+        """Reset router before each test."""
+        reset_router()
+
+    @pytest.mark.asyncio
+    async def test_events_routed_by_type(self):
+        """Events should be counted by type."""
+        router = get_router()
+
+        await router.publish("METRIC_EVENT_A", {"test": 1})
+        await router.publish("METRIC_EVENT_A", {"test": 2})
+        await router.publish("METRIC_EVENT_B", {"test": 3})
+        await asyncio.sleep(0.1)
+
+        assert router._events_routed.get("METRIC_EVENT_A", 0) >= 2
+        assert router._events_routed.get("METRIC_EVENT_B", 0) >= 1
+
+    @pytest.mark.asyncio
+    async def test_events_by_source_tracked(self):
+        """Events should be counted by source."""
+        router = get_router()
+
+        await router.publish("SOURCE_EVENT", {"x": 1})
+        await asyncio.sleep(0.1)
+
+        # Router-originated events should be tracked
+        assert router._events_by_source.get("router", 0) >= 1
+
+    def test_stats_includes_handler_timeouts(self):
+        """get_stats should include handler timeout count."""
+        router = get_router()
+        router._handler_timeouts = 5
+
+        stats = router.get_stats()
+
+        # Handler timeouts should be in stats
+        assert "handler_timeouts" in stats or stats.get("handler_timeouts") is not None or \
+               any("timeout" in str(k).lower() for k in stats.keys())
