@@ -1186,21 +1186,24 @@ class GossipProtocolMixin(P2PMixinBase):
         })
         metrics = self._gossip_metrics
 
+        # Use .get() with defaults to prevent KeyError in case of race conditions
+        # with _reset_gossip_metrics_hourly() (Dec 2025)
         if event == "sent":
-            metrics["message_sent"] += 1
+            metrics["message_sent"] = metrics.get("message_sent", 0) + 1
         elif event == "received":
-            metrics["message_received"] += 1
+            metrics["message_received"] = metrics.get("message_received", 0) + 1
         elif event == "update":
-            metrics["state_updates"] += 1
+            metrics["state_updates"] = metrics.get("state_updates", 0) + 1
         elif event == "anti_entropy":
-            metrics["anti_entropy_repairs"] += 1
+            metrics["anti_entropy_repairs"] = metrics.get("anti_entropy_repairs", 0) + 1
         elif event == "stale":
-            metrics["stale_states_detected"] += 1
+            metrics["stale_states_detected"] = metrics.get("stale_states_detected", 0) + 1
         elif event == "latency":
             # Keep last 100 latency measurements
-            metrics["propagation_delay_ms"].append(latency_ms)
-            if len(metrics["propagation_delay_ms"]) > 100:
-                metrics["propagation_delay_ms"] = metrics["propagation_delay_ms"][-100:]
+            delays = metrics.setdefault("propagation_delay_ms", [])
+            delays.append(latency_ms)
+            if len(delays) > 100:
+                metrics["propagation_delay_ms"] = delays[-100:]
 
         # Reset metrics every hour
         if time.time() - metrics.get("last_reset", 0) > 3600:
