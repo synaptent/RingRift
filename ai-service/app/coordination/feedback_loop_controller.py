@@ -1607,9 +1607,20 @@ class FeedbackLoopController:
             # This helps the bandit learn which engines produce best training data
             self._report_engine_bandit_feedback(config_key, state, elo)
 
-            # Consider promotion if threshold met
-            if win_rate >= self.promotion_threshold:
+            # Dec 29 2025: Consider promotion with Elo-adaptive threshold
+            # Higher Elo models need to show stronger performance to be promoted
+            adaptive_threshold = self._get_adaptive_promotion_threshold(elo, state)
+            if win_rate >= adaptive_threshold:
                 self._consider_promotion(config_key, model_path, win_rate, elo)
+            else:
+                # Log near-miss promotions for debugging
+                margin = adaptive_threshold - win_rate
+                if margin < 0.05:  # Within 5% of threshold
+                    logger.info(
+                        f"[FeedbackLoopController] Near-miss promotion for {config_key}: "
+                        f"win_rate={win_rate:.2%} < threshold={adaptive_threshold:.2%} "
+                        f"(margin={margin:.2%}, elo={elo:.0f})"
+                    )
 
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:
             logger.error(f"[FeedbackLoopController] Error handling evaluation complete: {e}")

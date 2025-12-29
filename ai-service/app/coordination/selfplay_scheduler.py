@@ -61,6 +61,8 @@ __all__ = [
     "STALE_DATA_THRESHOLD",
     "STALENESS_WEIGHT",
     "TRAINING_NEED_WEIGHT",
+    "VOI_WEIGHT",
+    "VOI_SAMPLE_COST_BY_BOARD",
     # Functions
     "get_selfplay_scheduler",
     "reset_selfplay_scheduler",
@@ -70,6 +72,7 @@ __all__ = [
 
 import contextlib
 import logging
+import math
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -817,7 +820,6 @@ class SelfplayScheduler:
             # Dec 29, 2025: Update Elo uncertainty for VOI calculation
             # Uncertainty decreases with more games (statistical sampling theory)
             # Base uncertainty of 300 Elo, reduces with sqrt(game_count)
-            import math
             BASE_UNCERTAINTY = 300.0
             MIN_UNCERTAINTY = 30.0  # Floor to prevent near-zero uncertainty
             if priority.game_count > 0:
