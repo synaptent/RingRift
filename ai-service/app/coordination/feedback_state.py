@@ -254,6 +254,27 @@ class MonitoringFeedbackState(CanonicalFeedbackState):
     urgency_score: float = 0.0
     last_urgency_update: float = 0.0
 
+    # Promotion tracking (Dec 29, 2025 - migrated from feedback_loop_controller)
+    last_promotion_success: bool | None = None
+
+    # Engine bandit tracking (Dec 29, 2025 - migrated from feedback_loop_controller)
+    last_selfplay_engine: str = "gumbel-mcts"
+    last_selfplay_games: int = 0
+    elo_before_training: float = 1500.0
+
+    # Curriculum tier tracking (Dec 29, 2025 - migrated from feedback_loop_controller)
+    curriculum_tier: int = 0
+    curriculum_last_advanced: float = 0.0
+
+    # Work queue metrics (Dec 29, 2025 - migrated from feedback_loop_controller)
+    work_completed_count: int = 0
+    last_work_completion_time: float = 0.0
+
+    # Feedback signals (Dec 29, 2025 - migrated from feedback_loop_controller)
+    training_intensity: str = "normal"  # normal, accelerated, hot_path, reduced
+    exploration_boost: float = 1.0  # 1.0 = normal, >1.0 = more exploration
+    search_budget: int = 400  # Gumbel MCTS budget
+
     def update_parity(self, passed: bool, alpha: float = 0.1) -> None:
         """Update rolling parity failure rate.
 
@@ -409,6 +430,18 @@ class MonitoringFeedbackState(CanonicalFeedbackState):
                 "parity_checks_total": self.parity_checks_total,
                 "urgency_score": self.urgency_score,
                 "last_urgency_update": self.last_urgency_update,
+                # Dec 29, 2025 - migrated from feedback_loop_controller
+                "last_promotion_success": self.last_promotion_success,
+                "last_selfplay_engine": self.last_selfplay_engine,
+                "last_selfplay_games": self.last_selfplay_games,
+                "elo_before_training": self.elo_before_training,
+                "curriculum_tier": self.curriculum_tier,
+                "curriculum_last_advanced": self.curriculum_last_advanced,
+                "work_completed_count": self.work_completed_count,
+                "last_work_completion_time": self.last_work_completion_time,
+                "training_intensity": self.training_intensity,
+                "exploration_boost": self.exploration_boost,
+                "search_budget": self.search_budget,
             }
         )
         return base

@@ -53,31 +53,20 @@ from app.coordination.core_utils import (
 )
 ```
 
-### core_base.py (Consolidated)
+### Coordinator Base Modules (core_base.py deferred)
 
-**Consolidates:** `coordinator_base.py`, `coordinator_dependencies.py`
-
-**Old:**
+The planned `core_base.py` consolidation was deferred; import from the source modules directly.
 
 ```python
-from app.coordination.coordinator_base import CoordinatorBase, CoordinatorStatus
-from app.coordination.coordinator_dependencies import get_initialization_order
-```
+from app.coordination.coordinator_base import (
+    CoordinatorBase, CoordinatorStats, CoordinatorProtocol, CoordinatorStatus,
+    SQLitePersistenceMixin, SingletonMixin, CallbackMixin, EventDrivenMonitorMixin,
+    CoordinatorRegistry, get_coordinator_registry, get_all_coordinators,
+    get_coordinator_statuses, shutdown_all_coordinators,
+)
 
-**New:**
-
-```python
-from app.coordination.core_base import (
-    # Base classes
-    CoordinatorBase, CoordinatorStats,
-    # Protocols and enums
-    CoordinatorProtocol, CoordinatorStatus, HealthCheckResult,
-    # Mixins
-    SQLitePersistenceMixin, SingletonMixin, CallbackMixin,
-    # Registry
-    CoordinatorRegistry, get_coordinator_registry,
-    # Dependencies
-    CoordinatorDependencyGraph, get_initialization_order,
+from app.coordination.coordinator_dependencies import (
+    CoordinatorDependencyGraph, validate_dependencies, get_initialization_order,
 )
 ```
 
@@ -219,6 +208,7 @@ scheduler = get_sync_scheduler()
 **Old:**
 
 ```python
+# Removed Dec 2025; use unified_health_manager instead
 from app.coordination.system_health_monitor import (
     calculate_system_health_score,
     get_system_health_level,
