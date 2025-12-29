@@ -511,7 +511,11 @@ class TestHandleTournamentMatch:
 
     @pytest.mark.asyncio
     async def test_match_request_accepted(self, handler):
-        """Match request is accepted and started."""
+        """Match request is accepted and runs synchronously.
+
+        Dec 28, 2025: Updated to match current behavior where matches run
+        synchronously and return 'match_completed' status.
+        """
         request = MockRequest(
             json_data={
                 "job_id": "tournament_abc123",
@@ -524,15 +528,19 @@ class TestHandleTournamentMatch:
         )
 
         response = await handler.handle_tournament_match(request)
-        await asyncio.sleep(0.05)  # Let task run
 
         body = json.loads(response.body)
         assert body["success"] is True
-        assert body["status"] == "match_started"
+        assert body["status"] == "match_completed"  # Dec 28, 2025: Now synchronous
 
     @pytest.mark.asyncio
-    async def test_match_launches_task(self, handler):
-        """Match request launches _play_tournament_match task."""
+    async def test_match_calls_play_tournament_match(self, handler):
+        """Match request calls _play_tournament_match synchronously.
+
+        Dec 28, 2025: Updated to verify synchronous match execution.
+        The handler now calls _play_tournament_match directly and waits
+        for it to complete before returning results.
+        """
         match_info = {"agent1": "a", "agent2": "b", "game_num": 0}
         request = MockRequest(
             json_data={
@@ -541,11 +549,16 @@ class TestHandleTournamentMatch:
             }
         )
 
-        await handler.handle_tournament_match(request)
-        await asyncio.sleep(0.05)
+        response = await handler.handle_tournament_match(request)
 
+        # Verify _play_tournament_match was called (tracked in _play_match_tasks)
         assert len(handler._play_match_tasks) == 1
         assert handler._play_match_tasks[0] == ("job123", match_info)
+
+        # Verify response includes results
+        body = json.loads(response.body)
+        assert body["status"] == "match_completed"
+        assert "results" in body
 
     @pytest.mark.asyncio
     async def test_missing_job_id_returns_400(self, handler):
