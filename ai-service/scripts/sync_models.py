@@ -131,6 +131,20 @@ import contextlib
 
 from scripts.lib.logging_config import setup_script_logging
 
+# Import robust transfer utilities for connection reset handling
+try:
+    from scripts.lib.transfer import (
+        TransferConfig,
+        robust_push,
+        chunked_push_progressive,
+    )
+    HAS_ROBUST_TRANSFER = True
+except ImportError:
+    HAS_ROBUST_TRANSFER = False
+    robust_push = None
+    chunked_push_progressive = None
+    TransferConfig = None
+
 logger = setup_script_logging("sync_models")
 
 # Storage provider/NFS-aware helpers (optional)
@@ -748,11 +762,70 @@ def sync_model_to_host(
                 except Exception as verify_err:
                     logger.debug(f"Verification skipped: {verify_err}")
                 return True, f"Synced {model_name} to {host.name}"
+
+            # Dec 2025: Check for connection reset errors and try robust fallback
+            stderr_lower = result.stderr.lower() if result.stderr else ""
+            is_connection_error = any(
+                pattern in stderr_lower
+                for pattern in ["connection reset", "broken pipe", "connection refused", "timed out"]
+            )
+
+            if is_connection_error and HAS_ROBUST_TRANSFER and robust_push is not None:
+                logger.info(f"{host.name}: rsync failed with connection error, trying robust_push fallback")
+                try:
+                    ssh_port = int(host.ssh_port) if host.ssh_port else 22
+                    remote_file = f"{remote_dir}{model_name}"
+                    config = TransferConfig(
+                        ssh_key=os.path.expanduser(host.ssh_key) if host.ssh_key else None,
+                        timeout=dynamic_timeout,
+                        bandwidth_kbps=bwlimit_kbs,
+                    )
+                    transfer_result = robust_push(
+                        str(local_path),
+                        host.ssh_host if hasattr(host, 'ssh_host') else host.name,
+                        ssh_port,
+                        remote_file,
+                        config,
+                    )
+                    if transfer_result.success:
+                        logger.info(f"{host.name}: robust_push succeeded via {transfer_result.method}")
+                        return True, f"Synced {model_name} to {host.name} (via {transfer_result.method})"
+                    else:
+                        logger.warning(f"{host.name}: robust_push also failed: {transfer_result.error}")
+                except Exception as fallback_err:
+                    logger.warning(f"{host.name}: robust_push fallback failed: {fallback_err}")
+
             # Sync failed - add to retry queue if enabled
             if not skip_retry_queue:
                 _add_to_retry_queue(model_name, host.name, 0)
             return False, result.stderr[:200]
         except subprocess.TimeoutExpired:
+            # Dec 2025: Try robust_push fallback for timeout (may be connection issue)
+            if HAS_ROBUST_TRANSFER and robust_push is not None:
+                logger.info(f"{host.name}: rsync timeout, trying robust_push fallback")
+                try:
+                    ssh_port = int(host.ssh_port) if host.ssh_port else 22
+                    remote_file = f"{remote_dir}{model_name}"
+                    config = TransferConfig(
+                        ssh_key=os.path.expanduser(host.ssh_key) if host.ssh_key else None,
+                        timeout=dynamic_timeout,
+                        bandwidth_kbps=bwlimit_kbs,
+                    )
+                    transfer_result = robust_push(
+                        str(local_path),
+                        host.ssh_host if hasattr(host, 'ssh_host') else host.name,
+                        ssh_port,
+                        remote_file,
+                        config,
+                    )
+                    if transfer_result.success:
+                        logger.info(f"{host.name}: robust_push succeeded via {transfer_result.method}")
+                        return True, f"Synced {model_name} to {host.name} (via {transfer_result.method})"
+                    else:
+                        logger.warning(f"{host.name}: robust_push also failed: {transfer_result.error}")
+                except Exception as fallback_err:
+                    logger.warning(f"{host.name}: robust_push fallback failed: {fallback_err}")
+
             # Timeout - add to retry queue if enabled
             if not skip_retry_queue:
                 _add_to_retry_queue(model_name, host.name, 0)
