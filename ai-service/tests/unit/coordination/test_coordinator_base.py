@@ -341,23 +341,22 @@ class TestSingletonMixin:
             pass
 
         # Reset for clean test
-        if hasattr(MySingleton, '_instances'):
-            MySingleton._instances = {}
+        MySingleton._clear_instance()
 
-        a = MySingleton.get_instance()
-        b = MySingleton.get_instance()
+        a = MySingleton._get_or_create_instance()
+        b = MySingleton._get_or_create_instance()
         assert a is b
 
     def test_reset_instance_clears_singleton(self):
         class ResetSingleton(SingletonMixin):
             pass
 
-        if hasattr(ResetSingleton, '_instances'):
-            ResetSingleton._instances = {}
+        # Reset for clean test
+        ResetSingleton._clear_instance()
 
-        a = ResetSingleton.get_instance()
-        ResetSingleton.reset_instance()
-        b = ResetSingleton.get_instance()
+        a = ResetSingleton._get_or_create_instance()
+        ResetSingleton._clear_instance()
+        b = ResetSingleton._get_or_create_instance()
         assert a is not b
 
 
@@ -369,7 +368,8 @@ class TestSingletonMixin:
 class TestCallbackMixin:
     """Tests for CallbackMixin."""
 
-    def test_register_and_call_callback(self):
+    @pytest.mark.asyncio
+    async def test_register_and_call_callback(self):
         class MyClass(CallbackMixin):
             def __init__(self):
                 super().__init__()
@@ -382,11 +382,12 @@ class TestCallbackMixin:
             results.append(value)
 
         obj.register_callback("test_event", my_callback)
-        obj._fire_callbacks("test_event", "hello")
+        await obj.invoke_callbacks("test_event", "hello")
 
         assert "hello" in results
 
-    def test_unregister_callback(self):
+    @pytest.mark.asyncio
+    async def test_unregister_callback(self):
         class MyClass(CallbackMixin):
             def __init__(self):
                 super().__init__()
@@ -400,7 +401,7 @@ class TestCallbackMixin:
 
         obj.register_callback("event", my_callback)
         obj.unregister_callback("event", my_callback)
-        obj._fire_callbacks("event", "value")
+        await obj.invoke_callbacks("event", "value")
 
         assert len(results) == 0
 
