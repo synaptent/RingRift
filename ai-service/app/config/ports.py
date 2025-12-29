@@ -91,7 +91,7 @@ def get_p2p_status_url(host: str = "localhost", port: int | None = None) -> str:
     return f"http://{host}:{port}/status"
 
 
-def get_p2p_base_url(host: str = "localhost", port: int | None = None) -> str:
+def get_p2p_base_url(host: str = "127.0.0.1", port: int | None = None) -> str:
     """Build P2P base URL for a given host.
 
     Args:

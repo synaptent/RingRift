@@ -769,6 +769,27 @@ class TournamentRunner:
                 pass
         return int(agent.search_depth + default_offset)
 
+    def _create_fallback_random_ai(self) -> Any:
+        """Create a random AI instance for filling missing player slots.
+
+        Used when tournaments register fewer agents than num_players in a game.
+        The fallback AI simply picks random legal moves.
+        """
+        from app.ai.random_ai import RandomAI
+        from app.models import AIConfig
+
+        config = AIConfig(difficulty=1)
+        random_ai = RandomAI(player_number=0, config=config)
+
+        class RandomAgentWrapper:
+            def __init__(self, ai):
+                self._ai = ai
+
+            def get_best_move(self, state, legal_moves):
+                return self._ai.select_move(state)
+
+        return RandomAgentWrapper(random_ai)
+
     def _execute_match_local(
         self,
         match: Match,
@@ -805,6 +826,17 @@ class TournamentRunner:
             agent = agents[agent_id]
             ai = self._create_ai_instance(agent, match.board_type, match.num_players)
             ai_instances.append(ai)
+
+        # Fill missing player slots with random AI if needed
+        # This handles cases where tournaments register fewer agents than num_players
+        if len(ai_instances) < match.num_players:
+            logger.warning(
+                f"Match {match.match_id}: Only {len(ai_instances)} agents for "
+                f"{match.num_players}-player game. Filling slots with random AI."
+            )
+            while len(ai_instances) < match.num_players:
+                fallback_ai = self._create_fallback_random_ai()
+                ai_instances.append(fallback_ai)
 
         recorded_move_types: list[str] = []
         recording_enabled = (
