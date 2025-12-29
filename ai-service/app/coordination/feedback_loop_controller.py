@@ -2992,6 +2992,88 @@ class FeedbackLoopController:
                 f"score={quality_score:.2f} (prev={prev_quality:.2f})"
             )
 
+        # Dec 29, 2025: Emit EXPLORATION_ADJUSTED for quality-driven selfplay adjustment
+        # This closes the feedback loop: quality → exploration → data quality → training
+        self._emit_exploration_adjustment(config_key, quality_score, trend)
+
+    def _emit_exploration_adjustment(
+        self, config_key: str, quality_score: float, trend: str
+    ) -> None:
+        """Emit exploration adjustment signal based on quality score.
+
+        Dec 29, 2025: Quality-driven selfplay exploration signals.
+        Adjusts exploration parameters to match data quality needs:
+        - Low quality → harder positions, more MCTS budget
+        - High quality → standard exploration, normal budget
+        - Declining trend → boost exploration temperature
+
+        Args:
+            config_key: Configuration key
+            quality_score: Current quality score (0-1)
+            trend: Quality trend (improving, declining, stable)
+        """
+        try:
+            from app.coordination.event_router import DataEventType, get_event_bus
+
+            # Determine exploration adjustments based on quality
+            if quality_score < 0.5:
+                # Very low quality → aggressive exploration needed
+                position_difficulty = "hard"
+                mcts_budget_multiplier = 1.5  # 50% more MCTS budget
+                exploration_temp_boost = 1.3  # Higher temperature
+            elif quality_score < 0.7:
+                # Medium quality → slightly harder positions
+                position_difficulty = "medium-hard"
+                mcts_budget_multiplier = 1.2  # 20% more MCTS budget
+                exploration_temp_boost = 1.15
+            elif quality_score > 0.9:
+                # High quality → can reduce budget for efficiency
+                position_difficulty = "normal"
+                mcts_budget_multiplier = 0.8  # 20% less budget (already have good data)
+                exploration_temp_boost = 1.0
+            else:
+                # Normal quality
+                position_difficulty = "normal"
+                mcts_budget_multiplier = 1.0
+                exploration_temp_boost = 1.0
+
+            # Boost exploration if trend is declining (need to find better positions)
+            if trend == "declining":
+                exploration_temp_boost *= 1.2
+                mcts_budget_multiplier = max(mcts_budget_multiplier, 1.3)
+
+            # Only emit if adjustments differ from baseline
+            if (mcts_budget_multiplier != 1.0 or exploration_temp_boost != 1.0 or
+                position_difficulty != "normal"):
+
+                payload = {
+                    "config_key": config_key,
+                    "quality_score": quality_score,
+                    "trend": trend,
+                    "position_difficulty": position_difficulty,
+                    "mcts_budget_multiplier": mcts_budget_multiplier,
+                    "exploration_temp_boost": exploration_temp_boost,
+                    "timestamp": time.time(),
+                }
+
+                bus = get_event_bus()
+                from app.distributed.data_events import DataEvent
+                event = DataEvent(
+                    event_type=DataEventType.EXPLORATION_ADJUSTED,
+                    payload=payload,
+                    source="FeedbackLoopController",
+                )
+                bus.publish(event)
+
+                logger.info(
+                    f"[FeedbackLoopController] Exploration adjusted for {config_key}: "
+                    f"difficulty={position_difficulty}, mcts_mult={mcts_budget_multiplier:.1f}, "
+                    f"temp_boost={exploration_temp_boost:.2f} (quality={quality_score:.2f})"
+                )
+
+        except Exception as e:
+            logger.debug(f"[FeedbackLoopController] Failed to emit exploration adjustment: {e}")
+
     def _on_cluster_capacity_changed(self, event) -> None:
         """Handle CLUSTER_CAPACITY_CHANGED - cluster resources changed.
 

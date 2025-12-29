@@ -1177,7 +1177,8 @@ class BandwidthCoordinatedRsync:
             node_config = nodes.get(host)
             ssh_key = node_config.ssh_key if node_config else None
             ssh_port = node_config.ssh_port if node_config else 22
-        except Exception:
+        except (ImportError, KeyError, AttributeError, ValueError, TypeError, OSError):
+            # Config module unavailable, host not found, or malformed config
             ssh_key = None
             ssh_port = 22
 
@@ -1248,7 +1249,8 @@ class BandwidthCoordinatedRsync:
             node_config = nodes.get(host)
             ssh_key = node_config.ssh_key if node_config else None
             ssh_port = node_config.ssh_port if node_config else 22
-        except Exception:
+        except (ImportError, KeyError, AttributeError, ValueError, TypeError, OSError):
+            # Config module unavailable, host not found, or malformed config
             ssh_key = None
             ssh_port = 22
 
@@ -1456,7 +1458,8 @@ class BandwidthCoordinatedRsync:
             else:
                 # Extract from remote_target
                 http_host = remote_target.split("@")[-1]
-        except Exception:
+        except (ImportError, KeyError, AttributeError, ValueError, TypeError, OSError):
+            # Config module unavailable, host not found, or malformed config
             http_host = remote_target.split("@")[-1]
 
         # Determine endpoint from path

@@ -141,13 +141,24 @@ is_coordinator = env.is_coordinator
 
 ## Training
 
-| Variable                          | Type  | Default | Description                    |
-| --------------------------------- | ----- | ------- | ------------------------------ |
-| `RINGRIFT_TRAINING_THRESHOLD`     | int   | `500`   | Games required before training |
-| `RINGRIFT_MIN_GAMES_FOR_TRAINING` | int   | `100`   | Minimum games for training     |
-| `RINGRIFT_LEARNING_RATE`          | float | `0.001` | Default learning rate          |
-| `RINGRIFT_BATCH_SIZE`             | int   | `512`   | Default batch size             |
-| `RINGRIFT_EPOCHS`                 | int   | `20`    | Default number of epochs       |
+| Variable                          | Type  | Default | Description                        |
+| --------------------------------- | ----- | ------- | ---------------------------------- |
+| `RINGRIFT_TRAINING_THRESHOLD`     | int   | `500`   | Games required before training     |
+| `RINGRIFT_MIN_GAMES_FOR_TRAINING` | int   | `100`   | Minimum games for training         |
+| `RINGRIFT_LEARNING_RATE`          | float | `0.001` | Default learning rate              |
+| `RINGRIFT_BATCH_SIZE`             | int   | `512`   | Default batch size                 |
+| `RINGRIFT_EPOCHS`                 | int   | `20`    | Default number of epochs           |
+| `RINGRIFT_TRAINING_RETRY_SLEEP`   | float | `2.0`   | Pause between training retries (s) |
+
+---
+
+## Data Export
+
+| Variable                        | Type  | Default | Description                              |
+| ------------------------------- | ----- | ------- | ---------------------------------------- |
+| `RINGRIFT_DB_LOCK_MAX_RETRIES`  | int   | `5`     | Max retries for locked databases         |
+| `RINGRIFT_DB_LOCK_INITIAL_WAIT` | float | `0.5`   | Initial wait between lock retries (s)    |
+| `RINGRIFT_DB_LOCK_MAX_WAIT`     | float | `30.0`  | Maximum cumulative wait for DB locks (s) |
 
 ---
 

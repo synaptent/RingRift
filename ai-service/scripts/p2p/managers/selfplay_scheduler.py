@@ -1769,7 +1769,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
     # Health Check (December 2025)
     # =========================================================================
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Check health status of SelfplayScheduler.
 
         Returns:

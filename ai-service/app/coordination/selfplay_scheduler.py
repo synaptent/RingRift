@@ -272,6 +272,12 @@ class ConfigPriority:
     search_budget: int = 400  # Dec 28 2025: Gumbel MCTS budget from velocity feedback
     current_elo: float = 1500.0  # Dec 29 2025: Current Elo rating for dynamic weight calculation
 
+    # Dec 29, 2025: VOI (Value of Information) based prioritization
+    # Uncertainty in Elo estimate (confidence interval width in Elo points)
+    elo_uncertainty: float = 200.0  # Default high uncertainty for new configs
+    # Target Elo for this config
+    target_elo: float = 2000.0
+
     # Dec 29, 2025: Game count normalization fields
     target_training_samples: int = DEFAULT_TRAINING_SAMPLES_TARGET  # Target samples for training
     samples_per_game_estimate: float = 50.0  # Historical average samples per game

@@ -284,7 +284,7 @@ Each transport has configurable timeouts:
 Per-host circuit breakers prevent cascading failures:
 
 ```
-CLOSED ──(3 failures)──> OPEN ──(60s timeout)──> HALF_OPEN
+CLOSED ──(5 failures)──> OPEN ──(60s timeout)──> HALF_OPEN
    ▲                                                  │
    └──────────────(success)───────────────────────────┘
 ```

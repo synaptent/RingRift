@@ -2702,7 +2702,7 @@ def should_pause_pipeline(
 
 
 # Backward compatibility - import aliases from system_health_monitor.py
-def get_system_health():
+def get_system_health() -> "UnifiedHealthManager":
     """DEPRECATED: Use get_health_manager() and calculate_system_health_score().
 
     Returns the UnifiedHealthManager for backward compatibility.

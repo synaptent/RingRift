@@ -137,21 +137,21 @@ HAS_DATA_EVENTS = _state.data_available
 HAS_EVENT_ROUTER = _state.router_available
 
 
-def get_stage_bus():
+def get_stage_bus() -> Any | None:
     """Get stage event bus (backward-compat wrapper)."""
     if _state.get_stage_bus:
         return _state.get_stage_bus()
     return None
 
 
-def get_data_bus():
+def get_data_bus() -> Any | None:
     """Get data event bus (backward-compat wrapper)."""
     if _state.get_data_bus:
         return _state.get_data_bus()
     return None
 
 
-def get_event_router():
+def get_event_router() -> Any | None:
     """Get unified event router (backward-compat wrapper)."""
     if _state.get_router:
         return _state.get_router()

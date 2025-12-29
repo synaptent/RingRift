@@ -340,7 +340,7 @@ class JobReaperDaemon:
 
         return True
 
-    def blacklist_node(self, node_id: str, reason: str, duration: float = NODE_BLACKLIST_DURATION):
+    def blacklist_node(self, node_id: str, reason: str, duration: float = NODE_BLACKLIST_DURATION) -> None:
         """Add a node to the temporary blacklist.
 
         P0.4 Dec 2025: Now persists to SQLite so blacklist survives restart.
@@ -553,7 +553,7 @@ class JobReaperDaemon:
             del self.blacklisted_nodes[node_id]
             logger.info(f"Node {node_id} removed from blacklist (expired)")
 
-    async def run(self):
+    async def run(self) -> None:
         """Main daemon loop.
 
         December 2025: Now includes P2P leader awareness. The daemon will:
@@ -628,7 +628,7 @@ class JobReaperDaemon:
 
         logger.info("Job Reaper Daemon stopped")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the daemon."""
         self.running = False
 

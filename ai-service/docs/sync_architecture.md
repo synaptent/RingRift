@@ -249,7 +249,7 @@ Each node has an independent circuit breaker:
 States: CLOSED → OPEN → HALF_OPEN → CLOSED
 
 CLOSED:     Normal operation
-OPEN:       Node unreachable, skip for 5 minutes
+OPEN:       Node unreachable, skip for recovery_timeout (default 60s)
 HALF_OPEN:  Test with single request
 ```
 

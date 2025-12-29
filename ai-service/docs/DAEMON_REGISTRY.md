@@ -2,7 +2,7 @@
 
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
-**Last updated:** December 28, 2025 (Session - Event Subscriptions & Documentation)
+**Last updated:** December 29, 2025 (Phase 2 training loop improvements)
 **Total Daemon Types:** 73 (72 in `daemon_runners.py` + 1 inline in `daemon_manager.py`, 7 deprecated)
 **Startup Order:** 18 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
 **Dependencies:** All 73 daemons have entries in `DAEMON_DEPENDENCIES`
@@ -397,7 +397,7 @@ Profiles group daemons by node role for easier management.
 
 Runs on the central coordinator node (typically MacBook M3).
 
-**Daemon Count:** 35
+**Daemon Count:** 36
 
 **Daemons:**
 
@@ -436,6 +436,7 @@ Runs on the central coordinator node (typically MacBook M3).
 - `DATA_CONSOLIDATION` (December 2025)
 - `DISK_SPACE_MANAGER` (December 2025)
 - `COORDINATOR_DISK_MANAGER` (December 2025)
+- `EXTERNAL_DRIVE_SYNC` (December 2025)
 
 **Use Case:** Centralized coordination, monitoring, and job scheduling for the entire cluster.
 
