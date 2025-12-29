@@ -178,12 +178,17 @@ class TestBandwidthConfig:
     """Tests for BandwidthConfig dataclass."""
 
     def test_default_values(self):
-        """Test default configuration values."""
+        """Test default configuration values.
+
+        Dec 2025: Increased defaults for 2-3x faster sync:
+        - default_bwlimit_kbps: 10000 -> 25000 (25 MB/s)
+        - max_bwlimit_kbps: 50000 -> 150000 (150 MB/s)
+        """
         config = BandwidthConfig()
-        assert config.default_bwlimit_kbps == 10000
-        assert config.max_bwlimit_kbps == 50000
+        assert config.default_bwlimit_kbps == 25000  # Dec 2025: increased 2.5x
+        assert config.max_bwlimit_kbps == 150000  # Dec 2025: increased 3x
         assert config.min_bwlimit_kbps == 1000
-        assert config.max_concurrent_per_host == 2
+        assert config.max_concurrent_per_host == 3  # Dec 2025: increased for faster parallel sync
         assert config.max_concurrent_total == 8
 
     def test_priority_multipliers(self):

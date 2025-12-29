@@ -432,7 +432,8 @@ class ExternalDriveSyncDaemon:
                 for section in config.sections():
                     if config.get(section, "aws_access_key_id", fallback=None):
                         return True
-            except Exception:
+            except (configparser.Error, OSError, UnicodeDecodeError):
+                # Config file malformed, unreadable, or encoding issue
                 pass
 
         return False

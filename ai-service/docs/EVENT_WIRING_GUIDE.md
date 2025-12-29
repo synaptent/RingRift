@@ -39,6 +39,8 @@ async def my_handler(event: dict) -> None:
 
 ## Core Event Types
 
+These tables are representative. For the full event list, see `EVENT_CATALOG.md`.
+
 ### Training Pipeline Events
 
 | Event Type               | Emitter               | Subscribers                                         | Purpose                               |

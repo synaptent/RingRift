@@ -133,6 +133,9 @@ MAX_DATA_STALENESS_HOURS = DataFreshnessDefaults().MAX_DATA_AGE_HOURS
 STATE_DB_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop_state.db"
 STATE_SAVE_INTERVAL_SECONDS = env.state_save_interval  # RINGRIFT_STATE_SAVE_INTERVAL (default: 300)
 
+# Load forecasting snapshot interval (December 2025)
+LOAD_SNAPSHOT_INTERVAL = 3600  # 1 hour - record cluster load for pattern learning
+
 # PID file for master loop detection (December 2025)
 PID_FILE_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop.pid"
 LOCK_DIR = Path(__file__).parent.parent / "data" / "coordination"
@@ -271,6 +274,7 @@ class MasterLoopController:
         # Timing
         self._last_training_check = 0.0
         self._last_allocation_check = 0.0
+        self._last_load_snapshot = 0.0  # Load forecasting (Dec 2025)
 
         # Control
         self._running = False
@@ -1009,6 +1013,11 @@ class MasterLoopController:
                     # 7. Update heartbeat for health monitoring (Dec 2025)
                     self._update_heartbeat("running")
 
+                    # 8. Record load snapshot for forecasting (Dec 2025)
+                    if now - self._last_load_snapshot >= LOAD_SNAPSHOT_INTERVAL:
+                        await self._record_load_snapshot(health)
+                        self._last_load_snapshot = now
+
                 except asyncio.CancelledError:
                     # Allow cancellation to propagate for clean shutdown
                     raise
@@ -1574,6 +1583,35 @@ class MasterLoopController:
             )
         except Exception as e:
             logger.debug(f"[MasterLoop] Error emitting throttle event: {e}")
+
+    async def _record_load_snapshot(self, health: ClusterHealth) -> None:
+        """Record cluster load snapshot for forecasting.
+
+        December 2025: Added for load forecasting integration.
+        Records hourly load snapshots to learn cluster usage patterns.
+        """
+        try:
+            from app.coordination.load_forecaster import record_hourly_load
+
+            # Count active jobs from P2P status
+            active_jobs = health.training_nodes + health.selfplay_nodes
+            busy_hosts = active_jobs  # Approximate
+
+            record_hourly_load(
+                active_jobs=active_jobs,
+                busy_hosts=busy_hosts,
+                total_hosts=health.total_nodes,
+                gpu_utilization=health.avg_gpu_utilization / 100,  # Convert to 0-1
+                cpu_utilization=0.0,  # Not tracked yet
+            )
+            logger.debug(
+                f"[MasterLoop] Recorded load snapshot: jobs={active_jobs}, "
+                f"busy={busy_hosts}/{health.total_nodes}"
+            )
+        except ImportError:
+            logger.debug("[MasterLoop] Load forecaster not available")
+        except Exception as e:
+            logger.debug(f"[MasterLoop] Error recording load snapshot: {e}")
 
     # =========================================================================
     # Training coordination

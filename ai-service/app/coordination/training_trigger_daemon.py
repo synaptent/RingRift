@@ -83,6 +83,13 @@ class TrainingTriggerConfig:
     # Minimum samples to trigger training
     # December 29, 2025: Reduced from 10000 to 5000 for faster iteration cycles
     min_samples_threshold: int = 5000
+    # December 29, 2025: Confidence-based early triggering
+    # Allows training to start earlier if statistical confidence is high
+    confidence_early_trigger_enabled: bool = True
+    # Minimum samples to even consider confidence-based early trigger (safety floor)
+    confidence_min_samples: int = 1000
+    # Target confidence interval width (95% CI width, e.g., 0.05 = ±2.5%)
+    confidence_target_ci_width: float = 0.05
     # Cooldown between training runs for same config
     # December 29, 2025: Reduced from 1.0 to 0.083 (5 min) for faster iteration cycles
     training_cooldown_hours: float = 0.083
@@ -458,6 +465,73 @@ class TrainingTriggerDaemon(HandlerBase):
 
         # Fallback to static config threshold
         return self.config.min_samples_threshold
+
+    def _check_confidence_early_trigger(
+        self, config_key: str, sample_count: int
+    ) -> tuple[bool, str]:
+        """Check if confidence-based early trigger conditions are met.
+
+        Dec 29, 2025: Implements confidence-based training thresholds.
+        Allows training to start earlier than min_samples_threshold when
+        statistical confidence in training data is high enough.
+
+        The confidence is estimated using the formula for 95% CI width:
+            CI_width = 2 * 1.96 * sqrt(variance / n)
+
+        For win rate estimates with variance ~0.25 (binary outcome):
+            CI_width ≈ 0.98 / sqrt(n)
+
+        To achieve target_ci_width of 0.05 (±2.5%):
+            n = (0.98 / 0.05)^2 ≈ 384 samples
+
+        But we use the actual quality variance when available for more
+        accurate confidence estimation.
+
+        Args:
+            config_key: Configuration identifier
+            sample_count: Current number of training samples
+
+        Returns:
+            Tuple of (should_trigger, reason)
+        """
+        if not self.config.confidence_early_trigger_enabled:
+            return False, "confidence early trigger disabled"
+
+        # Safety floor: never trigger with fewer than confidence_min_samples
+        if sample_count < self.config.confidence_min_samples:
+            return False, f"below safety floor ({sample_count} < {self.config.confidence_min_samples})"
+
+        # Estimate confidence interval width
+        # For binary outcomes (win/loss), variance is p*(1-p) ≤ 0.25
+        # Using 0.25 as conservative estimate
+        variance = 0.25
+        z_score = 1.96  # 95% confidence
+
+        # Try to get actual variance from quality monitor
+        try:
+            from app.coordination.quality_monitor_daemon import get_quality_monitor_daemon
+            qm = get_quality_monitor_daemon()
+            if qm and hasattr(qm, 'get_quality_metrics'):
+                metrics = qm.get_quality_metrics(config_key)
+                if metrics and 'variance' in metrics:
+                    variance = min(0.25, metrics['variance'])  # Cap at 0.25
+        except Exception:
+            pass  # Use default variance
+
+        # Calculate CI width: 2 * z * sqrt(variance / n)
+        import math
+        ci_width = 2 * z_score * math.sqrt(variance / sample_count)
+
+        # Check if confidence is high enough
+        if ci_width <= self.config.confidence_target_ci_width:
+            logger.info(
+                f"[TrainingTriggerDaemon] Confidence early trigger for {config_key}: "
+                f"CI_width={ci_width:.4f} ≤ target={self.config.confidence_target_ci_width:.4f}, "
+                f"samples={sample_count}"
+            )
+            return True, f"confidence threshold met (CI={ci_width:.4f})"
+
+        return False, f"confidence not met (CI={ci_width:.4f} > target={self.config.confidence_target_ci_width:.4f})"
 
     async def _on_npz_export_complete(self, result: Any) -> None:
         """Handle NPZ export completion - immediate training trigger."""
@@ -1116,12 +1190,29 @@ class TrainingTriggerDaemon(HandlerBase):
             else:
                 return False, f"data too old ({data_age_hours:.1f}h)"
 
-        # 4. Check minimum samples
-        # Phase 5 (Dec 2025): Use dynamic threshold from ImprovementOptimizer
-        # Lower threshold when on a promotion streak, higher when struggling
-        min_samples = self._get_dynamic_sample_threshold(config_key)
-        if state.npz_sample_count < min_samples:
-            return False, f"insufficient samples ({state.npz_sample_count} < {min_samples})"
+        # 4. Check minimum samples (with confidence-based early trigger)
+        # Dec 29, 2025: Try confidence-based early trigger first
+        # This allows training to start earlier when statistical confidence is high
+        if state.npz_sample_count >= self.config.confidence_min_samples:
+            early_trigger, early_reason = self._check_confidence_early_trigger(
+                config_key, state.npz_sample_count
+            )
+            if early_trigger:
+                logger.info(
+                    f"[TrainingTriggerDaemon] {config_key}: early trigger - {early_reason}"
+                )
+                # Skip the min_samples check - confidence is high enough
+            else:
+                # Fall back to dynamic threshold from ImprovementOptimizer
+                # Phase 5 (Dec 2025): Lower when on promotion streak, higher when struggling
+                min_samples = self._get_dynamic_sample_threshold(config_key)
+                if state.npz_sample_count < min_samples:
+                    return False, f"insufficient samples ({state.npz_sample_count} < {min_samples}), {early_reason}"
+        else:
+            # Below confidence minimum - use dynamic threshold
+            min_samples = self._get_dynamic_sample_threshold(config_key)
+            if state.npz_sample_count < min_samples:
+                return False, f"insufficient samples ({state.npz_sample_count} < {min_samples})"
 
         # 5. Check if idle GPU available (optional - allow training anyway)
         gpu_available = await self._check_gpu_availability()

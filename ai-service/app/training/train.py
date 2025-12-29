@@ -51,6 +51,7 @@ from app.config.thresholds import (
     EARLY_STOPPING_PATIENCE,
     ELO_PATIENCE,
     MIN_TRAINING_EPOCHS,
+    TRAINING_RETRY_SLEEP_SECONDS,
 )
 
 # Training metrics extracted to dedicated module (December 2025)
@@ -3831,7 +3832,7 @@ def train_model(
                         # File I/O errors, state restoration failures, or missing attributes
                         logger.error(f"Rollback failed: {e}")
 
-                time.sleep(10.0)  # Brief pause before retry
+                time.sleep(TRAINING_RETRY_SLEEP_SECONDS)  # Configurable pause before retry
                 continue
 
             # Update circuit breaker state metric (0=closed, training can proceed)
@@ -5698,7 +5699,7 @@ def train_model(
                         logger.info(
                             f"[Checkpoint Averaging] Saved averaged model ({checkpoint_averager.num_stored} checkpoints) to {save_path}"
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError, TypeError, MemoryError) as e:
                         logger.warning(f"[Checkpoint Averaging] Failed to average checkpoints: {e}")
                     finally:
                         checkpoint_averager.cleanup()

@@ -768,6 +768,12 @@ RETRY_BASE_DELAY = 1.0
 # Maximum delay between retries (seconds)
 RETRY_MAX_DELAY = 60.0
 
+# Training retry sleep (seconds)
+# Dec 29, 2025: Reduced from 10s to 2s for faster failure recovery
+# Configurable via RINGRIFT_TRAINING_RETRY_SLEEP env var
+import os as _os
+TRAINING_RETRY_SLEEP_SECONDS = float(_os.getenv("RINGRIFT_TRAINING_RETRY_SLEEP", "2.0"))
+
 # =============================================================================
 # Model Management
 # =============================================================================

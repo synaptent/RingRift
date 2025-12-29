@@ -13,6 +13,10 @@ The event system uses three layers unified through `event_router.py`:
 | **StageEvent**             | `app/coordination/stage_events.py`         | Pipeline stage completion events          |
 | **CrossProcessEventQueue** | `app/coordination/cross_process_events.py` | SQLite-backed cross-process persistence   |
 
+Note: Diagrams emphasize the primary flow and omit optional stages (for example
+NPZ combination and data freshness gates). For a complete event list, see
+`EVENT_CATALOG.md`.
+
 ### Key Concepts
 
 - **Emitter**: Component that publishes an event
