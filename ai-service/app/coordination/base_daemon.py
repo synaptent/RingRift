@@ -479,7 +479,7 @@ class BaseDaemon(ABC, Generic[ConfigT]):
 
         fire_and_forget(
             self._graceful_shutdown(),
-            error_callback=lambda e: logger.error(f"[{self._get_daemon_name()}] Graceful shutdown error: {e}"),
+            on_error=lambda e: logger.error(f"[{self._get_daemon_name()}] Graceful shutdown error: {e}"),
         )
 
     async def _graceful_shutdown(self) -> None:

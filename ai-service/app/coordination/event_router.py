@@ -289,6 +289,9 @@ class RouterEvent:
 
     Phase 12 (December 2025): Added trace_id, correlation_id, parent_event_id
     for distributed tracing and request correlation across the cluster.
+
+    Phase 5.1 (December 29, 2025): Added success and iteration fields
+    for handler result tracking and pipeline iteration context.
     """
     event_type: str  # String representation of the event type
     payload: dict[str, Any] = field(default_factory=dict)
@@ -301,6 +304,10 @@ class RouterEvent:
     trace_id: str = ""  # Trace ID for distributed tracing (propagated across services)
     correlation_id: str = ""  # Correlation ID for request grouping (e.g., all events from one user action)
     parent_event_id: str = ""  # Parent event ID for event causality chains
+
+    # Phase 5.1: Handler result and iteration tracking (December 29, 2025)
+    success: bool = True  # Whether the event was processed successfully
+    iteration: int = 0  # Pipeline iteration number for context
 
     # Original event objects (for type-specific handling)
     data_event: Any | None = None
