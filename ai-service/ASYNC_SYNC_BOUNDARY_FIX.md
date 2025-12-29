@@ -1,10 +1,15 @@
 # Async/Sync Boundary Fix - December 2025
 
+> Status: Historical snapshot (Dec 2025). Current event/coordination guidance
+> lives in `ai-service/docs/COORDINATION_ARCHITECTURE.md` and
+> `ai-service/docs/EVENT_SYSTEM_REFERENCE.md`.
+
 ## Problem
 
 The EventBus and AsyncBridgeManager were using `threading.RLock` and `threading.Lock` respectively in async methods. This caused event loop blocking because threading locks hold the GIL and block the event loop thread.
 
 ### Symptoms
+
 - Event loop blocking when publishing/subscribing to events
 - Thread pool executor operations blocking async code
 - Potential deadlocks when multiple async operations wait on threading locks
@@ -12,7 +17,8 @@ The EventBus and AsyncBridgeManager were using `threading.RLock` and `threading.
 ## Solution
 
 Implemented dual-lock pattern:
-- **asyncio.Lock** for async methods (publish, _dispatch, etc.)
+
+- **asyncio.Lock** for async methods (publish, \_dispatch, etc.)
 - **threading.Lock** for sync methods (publish_sync, get_stats, etc.)
 
 ## Files Modified
@@ -20,16 +26,19 @@ Implemented dual-lock pattern:
 ### 1. app/core/event_bus.py
 
 **Changes:**
+
 - Replaced single `self._lock = threading.RLock()` with dual locks:
   - `self._async_lock = asyncio.Lock()` for async methods
   - `self._sync_lock = threading.RLock()` for sync methods
 
 **Async methods (use `async with self._async_lock`):**
+
 - `async def publish()`
 - `async def _get_matching_subscriptions_async()`
 - `async def _remove_subscription_async()`
 
 **Sync methods (use `with self._sync_lock`):**
+
 - `def add_subscription()`
 - `def unsubscribe()`
 - `def publish_sync()`
@@ -42,15 +51,18 @@ Implemented dual-lock pattern:
 ### 2. app/coordination/async_bridge_manager.py
 
 **Changes:**
+
 - Replaced single `self._lock = threading.Lock()` with dual locks:
   - `self._async_lock = asyncio.Lock()` for async methods
   - `self._sync_lock = threading.Lock()` for sync methods
 
 **Async methods (use `async with self._async_lock`):**
+
 - `async def run_sync()` - statistics tracking
 - Statistics updates in try/except/finally blocks
 
 **Sync methods (use `with self._sync_lock`):**
+
 - `def initialize()`
 - `def register_bridge()`
 - `def unregister_bridge()`
@@ -61,6 +73,7 @@ Implemented dual-lock pattern:
 ### 3. app/coordination/event_router.py
 
 **Status:** ✓ Already correct
+
 - Already uses `self._lock = asyncio.Lock()` for async methods
 - Already uses `self._sync_lock = threading.Lock()` for sync methods
 - No changes needed
@@ -68,13 +81,16 @@ Implemented dual-lock pattern:
 ## Testing
 
 ### Unit Tests
+
 All existing tests pass:
+
 ```bash
 pytest tests/unit/core/test_event_bus.py -v     # 55 tests PASSED
 pytest tests/unit/coordination/test_integration_bridge.py -v  # 3 tests PASSED
 ```
 
 ### Manual Tests
+
 ```python
 # Test EventBus
 import asyncio
@@ -111,18 +127,22 @@ asyncio.run(test_bridge())
 ## Impact
 
 ### Performance
+
 - **Before:** Threading locks caused event loop blocking
 - **After:** Async locks allow proper cooperative multitasking
 - **Result:** No blocking, proper async/await semantics
 
 ### Compatibility
+
 - ✓ Fully backward compatible
 - ✓ All existing tests pass
 - ✓ Both async and sync usage patterns supported
 - ✓ No API changes
 
 ### Related Systems
+
 This fix ensures proper async behavior in:
+
 - Event routing and subscription system
 - Cross-process event coordination
 - Training pipeline orchestration
@@ -153,6 +173,7 @@ class MyCoordinator:
 ```
 
 **Key rules:**
+
 1. Never use `threading.Lock` in `async def` methods
 2. Never use `asyncio.Lock` in non-async methods
 3. If a method can be called from both contexts, provide separate async/sync versions

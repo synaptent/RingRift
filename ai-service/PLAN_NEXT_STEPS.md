@@ -3,6 +3,10 @@
 This plan prioritizes long-term correctness, data integrity, and cluster utilization.
 All items assume canonical rules and TS engine parity are non-negotiable.
 
+> Status: Historical snapshot (Dec 2025). Current planning lives in
+> `ai-service/docs/planning/NEXT_STEPS_PLAN.md` and
+> `ai-service/docs/planning/NEXT_AREAS_EXECUTION_PLAN.md`.
+
 ## Lane 1: Orchestration Truth and State Reconciliation (Complete)
 
 Goal: One authoritative view of job states and utilization across Slurm/Vast/P2P.

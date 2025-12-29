@@ -353,8 +353,10 @@ class TestGauntletIntegration:
         )
 
         # Skip actual gauntlet execution (model doesn't exist)
+        # Dec 2025: Also mock _fetch_model_from_training_node since "test-worker" doesn't exist
         with patch.dict('os.environ', {'RINGRIFT_SKIP_POST_TRAINING_GAUNTLET': '1'}):
-            await coord.handle_training_job_completion(job)
+            with patch.object(coord, '_fetch_model_from_training_node', return_value=True):
+                await coord.handle_training_job_completion(job)
 
         # Cycle manager should have been notified
         assert cycle_manager.handle_training_complete_called
@@ -389,14 +391,17 @@ class TestGauntletIntegration:
             board_type="hex8",
             num_players=2,
             status="completed",
+            worker_node="test-worker",  # Dec 2025: Required for model fetch
             output_model_path="/nonexistent/model.pth",
             data_games_count=2000,
         )
 
         # Mock gauntlet to raise an exception
-        with patch.object(coord, '_run_post_training_gauntlet', side_effect=Exception("Gauntlet error")):
-            # Should not raise - exception should be caught
-            await coord.handle_training_job_completion(job)
+        # Dec 2025: Also mock _fetch_model_from_training_node so gauntlet is actually called
+        with patch.object(coord, '_fetch_model_from_training_node', return_value=True):
+            with patch.object(coord, '_run_post_training_gauntlet', side_effect=Exception("Gauntlet error")):
+                # Should not raise - exception should be caught
+                await coord.handle_training_job_completion(job)
 
     @pytest.mark.asyncio
     async def test_model_promotion_on_gauntlet_pass(self, temp_ringrift_path, mock_training_jobs, training_lock, peers_lock):
@@ -437,12 +442,14 @@ class TestGauntletIntegration:
         )
 
         # Mock gauntlet to pass
-        with patch.object(coord, '_run_post_training_gauntlet', return_value=True):
-            with patch.object(coord, '_archive_failed_model') as mock_archive:
-                await coord.handle_training_job_completion(job)
+        # Dec 2025: Also mock _fetch_model_from_training_node since "test-worker" doesn't exist
+        with patch.object(coord, '_fetch_model_from_training_node', return_value=True):
+            with patch.object(coord, '_run_post_training_gauntlet', return_value=True):
+                with patch.object(coord, '_archive_failed_model') as mock_archive:
+                    await coord.handle_training_job_completion(job)
 
-                # Model should NOT be archived (it passed)
-                mock_archive.assert_not_called()
+                    # Model should NOT be archived (it passed)
+                    mock_archive.assert_not_called()
 
         # Cycle manager should have been called
         assert cycle_manager.handle_training_complete_called
@@ -544,8 +551,10 @@ class TestModelPromotion:
         )
 
         # Mock gauntlet to FAIL (model regressed)
-        with patch.object(coord, '_run_post_training_gauntlet', return_value=False):
-            await coord.handle_training_job_completion(job)
+        # Dec 2025: Also mock _fetch_model_from_training_node since "test-worker" doesn't exist
+        with patch.object(coord, '_fetch_model_from_training_node', return_value=True):
+            with patch.object(coord, '_run_post_training_gauntlet', return_value=False):
+                await coord.handle_training_job_completion(job)
 
         # Model should be archived
         archive_dir = temp_ringrift_path / "ai-service" / "models" / "archived" / "hex8_2p"

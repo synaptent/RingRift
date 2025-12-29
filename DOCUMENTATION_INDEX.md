@@ -421,6 +421,7 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | -------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | `ai-service/docs/archive/status_reports/TRAINING_PIPELINE_STATUS_2025_12_12.md` (local-only, gitignored) | Training pipeline status update |
 | [ai-service/AI_ASSESSMENT_REPORT.md](ai-service/AI_ASSESSMENT_REPORT.md)                                 | AI service technical assessment |
+| [ai-service/reports/README.md](ai-service/reports/README.md)                                             | Historical operational reports  |
 | [ai-service/AI_IMPROVEMENT_PLAN.md](ai-service/AI_IMPROVEMENT_PLAN.md)                                   | AI service improvement roadmap  |
 
 ---

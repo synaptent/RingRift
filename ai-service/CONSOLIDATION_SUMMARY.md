@@ -3,6 +3,9 @@
 **Date**: December 26, 2025
 **Goal**: Identify and execute low-risk consolidations for 67→15 module reduction
 
+> Status: Historical snapshot (Dec 2025). For current consolidation status, see
+> `ai-service/docs/CONSOLIDATION_STATUS_2025_12_28.md` and `ai-service/docs/CONSOLIDATION_ROADMAP.md`.
+
 ## ✅ Completed Actions
 
 ### 1. Deprecation Warnings Added (3 modules)

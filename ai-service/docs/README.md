@@ -93,6 +93,10 @@ Generated audits and code health reports.
 
 Historical documentation and status reports.
 
+### Historical Reports
+
+- `ai-service/reports/README.md` - Point-in-time operational reports (Dec 2025)
+
 ## Root Level Docs
 
 | Document                                                              | Description                      |

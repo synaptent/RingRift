@@ -4,6 +4,9 @@
 **Status**: ✅ Complete
 **Objective**: Extend `app/core/ssh.py` with missing features from duplicated SSH utilities
 
+> Status: Historical snapshot (Dec 2025). Current SSH guidance lives in
+> `ai-service/docs/SSH_CONSOLIDATION_PHASE1.md` and `ai-service/docs/SSH_QUICK_REFERENCE.md`.
+
 ---
 
 ## Changes Made

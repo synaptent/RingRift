@@ -3,6 +3,9 @@
 **Date:** December 26, 2025
 **Report Generated At:** 2025-12-26T05:15:00 UTC
 
+> Status: Historical snapshot (Dec 2025). The consolidated, maintained report is
+> `ai-service/docs/infrastructure/reports/2025-12-26_p2p_cluster_status.md`.
+
 ## Executive Summary
 
 - **Total Nodes with P2P Enabled:** 30 (in config)

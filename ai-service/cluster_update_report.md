@@ -3,6 +3,9 @@
 **Date:** 2025-12-25
 **Operation:** Update all cluster nodes with latest code from GitHub
 
+> Status: Historical snapshot (Dec 2025). For current cluster procedures, see
+> `ai-service/docs/CLUSTER_OPERATIONS.md` and `ai-service/docs/runbooks/`.
+
 ## Summary
 
 **Total Nodes:** 24

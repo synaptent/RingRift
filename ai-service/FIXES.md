@@ -1,5 +1,8 @@
 # Recent Fixes
 
+> Status: Historical snapshot (Dec 2025). For current issues and changes, see
+> `ai-service/docs/KNOWN_ISSUES.md` and `CHANGELOG.md`.
+
 ## Model Distribution Race Condition (Dec 26, 2025)
 
 **Problem:**

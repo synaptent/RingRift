@@ -4,6 +4,9 @@
 
 This report documents LOW-RISK consolidations completed for the 67→15 module reduction goal.
 
+> Status: Historical snapshot (Dec 2025). For current consolidation status, see
+> `ai-service/docs/CONSOLIDATION_STATUS_2025_12_28.md` and `ai-service/docs/CONSOLIDATION_ROADMAP.md`.
+
 ## Executive Summary
 
 **Goal**: Reduce ai-service modules from 685 to a more maintainable count through:
