@@ -151,6 +151,14 @@ def _get_cached_nnue_policy(board_type: BoardType, num_players: int) -> Any | No
 
 
 def _pos_key(pos: Any | None) -> str | None:
+    """Convert a position object to a hashable string key for caching.
+
+    Args:
+        pos: Position object with either a to_key() method or x,y[,z] attributes.
+
+    Returns:
+        String key like "x,y" or "x,y,z", or None if position is invalid.
+    """
     if pos is None:
         return None
     to_key = getattr(pos, "to_key", None)
@@ -165,6 +173,14 @@ def _pos_key(pos: Any | None) -> str | None:
 
 
 def _pos_seq_key(seq: tuple[Any, ...] | None) -> tuple[str, ...] | None:
+    """Convert a sequence of positions to a hashable tuple of string keys.
+
+    Args:
+        seq: Tuple of position objects.
+
+    Returns:
+        Tuple of position keys, or None if sequence is empty/None.
+    """
     if not seq:
         return None
     return tuple(k for k in (_pos_key(p) for p in seq) if k is not None)
@@ -643,6 +659,20 @@ class DynamicBatchSizer:
 
 @dataclass
 class _EvalBatchLegacy:
+    """Batch evaluation state for legacy (immutable) MCTS search.
+
+    Aggregates leaves to be evaluated in a single neural network forward pass.
+    Separates cached results from uncached ones to minimize redundant inference.
+
+    Attributes:
+        leaves: Tuples of (node, game_state, legal_moves) for each leaf.
+        states: All game states corresponding to leaves (for NN input).
+        cached_results: Pre-computed results as (index, value, policy).
+        uncached_indices: Indices of leaves needing NN evaluation.
+        uncached_states: States of uncached leaves for batched inference.
+        use_hex_nn: Whether to use hex-specific neural network format.
+    """
+
     leaves: list[tuple[MCTSNode, GameState, list[Move]]]
     states: list[GameState]
     cached_results: list[tuple[int, float, Any]]
@@ -653,6 +683,20 @@ class _EvalBatchLegacy:
 
 @dataclass
 class _EvalBatchIncremental:
+    """Batch evaluation state for incremental (mutable) MCTS search.
+
+    Like _EvalBatchLegacy but uses lightweight nodes and undo stacks
+    for memory-efficient incremental tree traversal.
+
+    Attributes:
+        leaves: Tuples of (node, undo_stack, legal_moves) for each leaf.
+        states: All game states corresponding to leaves (for NN input).
+        cached_results: Pre-computed results as (index, value, policy).
+        uncached_indices: Indices of leaves needing NN evaluation.
+        uncached_states: States of uncached leaves for batched inference.
+        use_hex_nn: Whether to use hex-specific neural network format.
+    """
+
     leaves: list[tuple[MCTSNodeLite, list[MoveUndo], list[Move]]]
     states: list[GameState]
     cached_results: list[tuple[int, float, Any]]
