@@ -20,12 +20,10 @@ from app.models import (
     BoardType,
     GamePhase,
     GameState,
-    Marker,
     Move,
     MoveType,
     Player,
     Position,
-    Stack,
 )
 from app.training.encoding import (
     HexStateEncoder,

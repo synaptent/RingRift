@@ -633,6 +633,7 @@ class ResourceMonitoringCoordinator:
         """Check if cluster capacity changed and emit event if so (December 2025).
 
         This wires the previously orphaned CLUSTER_CAPACITY_CHANGED event.
+        Also emits CAPACITY_LOW when available GPUs drop below minimum threshold.
         """
         # Calculate current cluster capacity
         total_gpus = 0
@@ -689,6 +690,57 @@ class ResourceMonitoringCoordinator:
             except (ImportError, RuntimeError) as e:
                 # RuntimeError covers "no running event loop" in sync contexts
                 logger.debug(f"Could not emit capacity change: {e}")
+
+        # December 29, 2025: Emit CAPACITY_LOW when available GPUs drop below threshold
+        min_gpus = getattr(self, "_min_gpu_threshold", 3)  # Default: 3 GPUs minimum
+        was_low = getattr(self, "_capacity_was_low", False)
+
+        if available_gpus < min_gpus and not was_low:
+            # Capacity dropped below minimum - emit CAPACITY_LOW
+            try:
+                from app.distributed.data_events import emit_capacity_low
+                from app.core.async_context import fire_and_forget
+
+                fire_and_forget(
+                    emit_capacity_low(
+                        current_gpus=available_gpus,
+                        min_gpus=min_gpus,
+                        provider="",  # Cluster-wide
+                        source="resource_monitoring_coordinator",
+                    ),
+                    name="emit_capacity_low",
+                )
+                self._capacity_was_low = True
+                logger.warning(
+                    f"[ResourceMonitoringCoordinator] CAPACITY_LOW: "
+                    f"{available_gpus} GPUs < {min_gpus} minimum"
+                )
+
+            except (ImportError, RuntimeError) as e:
+                logger.debug(f"Could not emit capacity_low: {e}")
+
+        elif available_gpus >= min_gpus and was_low:
+            # Capacity restored above minimum - emit CAPACITY_RESTORED
+            try:
+                from app.distributed.data_events import emit_capacity_restored
+                from app.core.async_context import fire_and_forget
+
+                fire_and_forget(
+                    emit_capacity_restored(
+                        current_gpus=available_gpus,
+                        min_gpus=min_gpus,
+                        source="resource_monitoring_coordinator",
+                    ),
+                    name="emit_capacity_restored",
+                )
+                self._capacity_was_low = False
+                logger.info(
+                    f"[ResourceMonitoringCoordinator] CAPACITY_RESTORED: "
+                    f"{available_gpus} GPUs >= {min_gpus} minimum"
+                )
+
+            except (ImportError, RuntimeError) as e:
+                logger.debug(f"Could not emit capacity_restored: {e}")
 
     def on_backpressure_change(
         self, callback: Callable[[str, bool, BackpressureLevel], None]

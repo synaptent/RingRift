@@ -285,6 +285,75 @@ For detailed migration guides per module category, see:
 - [`archive/deprecated_ai/README.md`](archive/deprecated_ai/README.md) - AI module migrations
 - [`archive/deprecated_training/README.md`](archive/deprecated_training/README.md) - Training module migrations
 
+---
+
+## December 29, 2025 Updates
+
+### Centralized Port Configuration
+
+Fixed 6 files with hardcoded port 8770 references to use centralized `app/config/ports.py`:
+
+| File                                                | Change                                          |
+| --------------------------------------------------- | ----------------------------------------------- |
+| `app/coordination/availability/capacity_planner.py` | Uses `get_p2p_status_url()`                     |
+| `app/routes/cluster.py`                             | Uses `get_p2p_status_url()`                     |
+| `app/integration/__init__.py`                       | Uses `get_local_p2p_url()`                      |
+| `app/coordination/unified_data_plane_daemon.py`     | Uses `get_p2p_status_url()`, `P2P_DEFAULT_PORT` |
+| `app/monitoring/keepalive_dashboard.py`             | Uses `get_p2p_status_url()`                     |
+| `app/tournament/distributed_gauntlet.py`            | Uses `get_local_p2p_url()`                      |
+| `app/utils/env_config.py`                           | Uses `get_local_p2p_url()`                      |
+
+**Migration**:
+
+```python
+# OLD - Hardcoded
+P2P_STATUS_URL = "http://localhost:8770/status"
+
+# NEW - Centralized
+from app.config.ports import get_p2p_status_url
+P2P_STATUS_URL = get_p2p_status_url()
+```
+
+---
+
+### train.py Decomposition Status (6,003 LOC)
+
+**Analysis Summary**:
+
+The main training function `train_model()` spans ~5,250 lines with:
+
+- 116 parameters (lines 657-772)
+- Inline validation duplicating `train_validation.py` (~200 LOC)
+- Model initialization not using `train_model_init.py` (~400 LOC)
+- Training loop not using `train_loop.py` (~2,000 LOC)
+
+**Existing Extracted Modules (NOT YET INTEGRATED)**:
+
+| Module                | Purpose                   | LOC  | Status      |
+| --------------------- | ------------------------- | ---- | ----------- |
+| `train_validation.py` | Data validation           | 21KB | ✅ Imported |
+| `train_loop.py`       | Training loop             | 15KB | ❌ Not used |
+| `train_model_init.py` | Model initialization      | 12KB | ❌ Not used |
+| `train_setup.py`      | Training setup utilities  | 17KB | ❌ Not used |
+| `train_config.py`     | Configuration dataclasses | 11KB | ✅ Imported |
+
+**Recommended Phased Integration**:
+
+1. **Phase 1**: Integrate `train_model_init.py` for model creation (~400 LOC reduction)
+2. **Phase 2**: Integrate `train_setup.py` for optimizer/scheduler setup (~300 LOC reduction)
+3. **Phase 3**: Refactor 116-parameter signature to use `FullTrainingConfig` dataclass
+4. **Phase 4**: Extract training loop to use `train_loop.py` (~2,000 LOC reduction)
+
+**Priority**: Medium (deferred to Q1 2026 due to complexity)
+
+**Note**: The extracted modules exist but full integration was deferred due to:
+
+- Risk of breaking cluster training jobs
+- Extensive parameter passing complexity
+- Need for comprehensive test coverage
+
+---
+
 ## Verification Commands
 
 Check for remaining deprecated imports:
