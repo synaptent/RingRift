@@ -297,6 +297,9 @@ class ExternalDriveSyncDaemon:
             f"{self._stats['nodes_synced']} nodes processed"
         )
 
+        # December 2025: Emit backup completion event
+        await self._emit_backup_completed("games", len(nodes))
+
     async def _sync_games_from_node(
         self,
         node: ClusterNode,
@@ -469,6 +472,7 @@ class ExternalDriveSyncDaemon:
             if proc.returncode == 0:
                 self._stats["npz_synced"] += 1
                 logger.info(f"[ExternalDriveSync] Synced NPZ from S3 to {dest_path}")
+                await self._emit_backup_completed("npz", 1)
             else:
                 self._stats["sync_errors"] += 1
                 logger.warning(
@@ -510,6 +514,7 @@ class ExternalDriveSyncDaemon:
             if proc.returncode == 0:
                 self._stats["models_synced"] += 1
                 logger.info(f"[ExternalDriveSync] Synced models from S3 to {dest_path}")
+                await self._emit_backup_completed("models", 1)
             else:
                 self._stats["sync_errors"] += 1
                 logger.warning(
@@ -520,6 +525,41 @@ class ExternalDriveSyncDaemon:
         except Exception as e:
             self._stats["sync_errors"] += 1
             logger.error(f"[ExternalDriveSync] Error syncing models from S3: {e}")
+
+    # =========================================================================
+    # Event Emission
+    # =========================================================================
+
+    async def _emit_backup_completed(self, data_type: str, items_count: int) -> None:
+        """Emit DATA_BACKUP_COMPLETED event after successful sync.
+
+        December 2025: Added to enable coordination with other daemons and
+        monitoring systems. The event signals that backup data is now available
+        on the external storage.
+
+        Args:
+            data_type: Type of data synced ("games", "npz", "models")
+            items_count: Number of items (nodes, files) synced
+        """
+        try:
+            from app.coordination.event_router import publish
+
+            await publish(
+                event_type="DATA_BACKUP_COMPLETED",
+                payload={
+                    "data_type": data_type,
+                    "items_count": items_count,
+                    "storage_path": self._storage_config.path if self._storage_config else None,
+                    "stats": self._stats.copy(),
+                },
+                source="external_drive_sync_daemon",
+            )
+            logger.debug(
+                f"[ExternalDriveSync] Emitted DATA_BACKUP_COMPLETED: "
+                f"type={data_type}, items={items_count}"
+            )
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug(f"[ExternalDriveSync] Failed to emit backup event: {e}")
 
     # =========================================================================
     # Health Check

@@ -172,6 +172,10 @@ class BackpressureMonitor:
         self._cached_signal: BackpressureSignal | None = None
         self._cache_time: float = 0
         self._lock = asyncio.Lock()
+        # December 2025: Track state for event emission
+        self._was_paused: bool = False
+        self._last_event_time: float = 0.0
+        self._event_cooldown: float = 60.0  # Min 60s between same event type
 
     async def get_signal(self, force_refresh: bool = False) -> BackpressureSignal:
         """Get current backpressure signal.
@@ -198,7 +202,78 @@ class BackpressureMonitor:
             self._cached_signal = signal
             self._cache_time = now
 
+            # December 2025: Emit state change events
+            await self._check_and_emit_state_change(signal, now)
+
             return signal
+
+    async def _check_and_emit_state_change(
+        self, signal: BackpressureSignal, now: float
+    ) -> None:
+        """Check for backpressure state changes and emit events.
+
+        December 2025: Added to enable sync router and selfplay scheduler to
+        react to backpressure changes. Emits BACKPRESSURE_ACTIVATED when
+        spawning should pause, and BACKPRESSURE_RELEASED when it's safe again.
+
+        Args:
+            signal: Current backpressure signal
+            now: Current timestamp
+        """
+        is_paused = signal.should_pause
+
+        # Check if state changed
+        if is_paused == self._was_paused:
+            return
+
+        # Apply cooldown to prevent event spam
+        if now - self._last_event_time < self._event_cooldown:
+            return
+
+        try:
+            from app.coordination.event_router import publish
+
+            if is_paused and not self._was_paused:
+                # Backpressure activated
+                await publish(
+                    event_type="BACKPRESSURE_ACTIVATED",
+                    payload={
+                        "overall_pressure": signal.overall_pressure,
+                        "spawn_rate_multiplier": signal.spawn_rate_multiplier,
+                        "queue_pressure": signal.queue_pressure,
+                        "training_pressure": signal.training_pressure,
+                        "disk_pressure": signal.disk_pressure,
+                        "sync_pressure": signal.sync_pressure,
+                        "memory_pressure": signal.memory_pressure,
+                        "details": signal.source_details,
+                    },
+                    source="backpressure_monitor",
+                )
+                logger.info(
+                    f"[Backpressure] ACTIVATED: pressure={signal.overall_pressure:.2f}, "
+                    f"multiplier={signal.spawn_rate_multiplier:.2f}"
+                )
+
+            elif not is_paused and self._was_paused:
+                # Backpressure released
+                await publish(
+                    event_type="BACKPRESSURE_RELEASED",
+                    payload={
+                        "overall_pressure": signal.overall_pressure,
+                        "spawn_rate_multiplier": signal.spawn_rate_multiplier,
+                    },
+                    source="backpressure_monitor",
+                )
+                logger.info(
+                    f"[Backpressure] RELEASED: pressure={signal.overall_pressure:.2f}, "
+                    f"multiplier={signal.spawn_rate_multiplier:.2f}"
+                )
+
+            self._was_paused = is_paused
+            self._last_event_time = now
+
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug(f"[Backpressure] Failed to emit event: {e}")
 
     async def _collect_metrics(self) -> BackpressureSignal:
         """Collect metrics from all sources."""

@@ -856,11 +856,12 @@ The `GossipMetricsMixin` class was merged into `GossipProtocolMixin`:
 
 **New Canonical Modules (Phase 5 - 157→15 Consolidation):**
 
-| Module           | Exports | Purpose                                                     |
-| ---------------- | ------- | ----------------------------------------------------------- |
-| `core_utils.py`  | 57      | Tracing, locking, optional imports, YAML utilities          |
-| `core_base.py`   | 23      | Coordinator base classes, protocols, registry, dependencies |
-| `core_events.py` | 127     | Event router, mappings, emitters, normalization             |
+| Module                        | Exports | Purpose                                                |
+| ----------------------------- | ------- | ------------------------------------------------------ |
+| `core_utils.py`               | 57      | Tracing, locking, optional imports, YAML utilities     |
+| `coordinator_base.py`         | 20+     | Coordinator base classes, registry, persistence mixins |
+| `coordinator_dependencies.py` | 10+     | Dependency graph + initialization ordering             |
+| `core_events.py`              | 127     | Event router, mappings, emitters, normalization        |
 
 **`core_utils.py`** consolidates utility modules:
 
@@ -877,19 +878,22 @@ from app.coordination.core_utils import (
 )
 ```
 
-**`core_base.py`** consolidates coordinator infrastructure:
+**`coordinator_base.py` + `coordinator_dependencies.py`** provide coordinator infrastructure:
 
 ```python
-from app.coordination.core_base import (
+from app.coordination.coordinator_base import (
     # Base classes
-    CoordinatorBase, CoordinatorStats, HealthCheckResult,
+    CoordinatorBase, CoordinatorStats,
     # Protocols and enums
     CoordinatorProtocol, CoordinatorStatus,
     # Mixins
     SQLitePersistenceMixin, SingletonMixin, CallbackMixin, EventDrivenMonitorMixin,
     # Registry
-    CoordinatorRegistry, get_coordinator_registry, get_all_coordinators, shutdown_all_coordinators,
-    # Dependencies
+    CoordinatorRegistry, get_coordinator_registry, get_all_coordinators,
+    get_coordinator_statuses, shutdown_all_coordinators,
+)
+
+from app.coordination.coordinator_dependencies import (
     CoordinatorDependencyGraph, validate_dependencies, get_initialization_order,
 )
 ```
@@ -947,7 +951,8 @@ Special handlers retained for `_init_pipeline_orchestrator` (extra args) and `_i
 | Opportunity                        | Current LOC | Savings | Priority |
 | ---------------------------------- | ----------- | ------- | -------- |
 | Archive unified_cluster_monitor.py | 951         | ~951    | MEDIUM   |
-| Archive node_health_monitor.py     | 386         | ~350    | LOW      |
+
+Note: `node_health_monitor.py` was removed in Dec 2025; no remaining consolidation work.
 
 **Completed Consolidation (December 2025):**
 
@@ -1053,17 +1058,17 @@ Verified and tested coordination module integration:
 
 **Sync Module Status (December 2025):**
 
-| Module                                      | Status     | Notes                                                   |
-| ------------------------------------------- | ---------- | ------------------------------------------------------- |
-| `app/distributed/sync_coordinator.py`       | **ACTIVE** | Main sync layer for P2P orchestrator                    |
-| `app/coordination/database_sync_manager.py` | **ACTIVE** | Base class for Elo/Registry sync (Dec 27, 2025)         |
-| `app/coordination/auto_sync_daemon.py`      | **ACTIVE** | Automated P2P data sync with strategies                 |
-| `app/coordination/sync_router.py`           | **ACTIVE** | Intelligent routing based on node capabilities          |
-| `app/coordination/sync_facade.py`           | **ACTIVE** | Unified programmatic entry point for sync               |
-| `app/coordination/sync_coordinator.py`      | DEPRECATED | Archive Q2 2026                                         |
-| `app/coordination/cluster_data_sync.py`     | DEPRECATED | Has callers, use `AutoSyncDaemon(strategy="broadcast")` |
-| `app/coordination/ephemeral_sync.py`        | DEPRECATED | Has callers, use `AutoSyncDaemon(strategy="ephemeral")` |
-| `app/coordination/system_health_monitor.py` | DEPRECATED | Has callers, use `unified_health_manager.py`            |
+| Module                                      | Status     | Notes                                                      |
+| ------------------------------------------- | ---------- | ---------------------------------------------------------- |
+| `app/distributed/sync_coordinator.py`       | **ACTIVE** | Main sync layer for P2P orchestrator                       |
+| `app/coordination/database_sync_manager.py` | **ACTIVE** | Base class for Elo/Registry sync (Dec 27, 2025)            |
+| `app/coordination/auto_sync_daemon.py`      | **ACTIVE** | Automated P2P data sync with strategies                    |
+| `app/coordination/sync_router.py`           | **ACTIVE** | Intelligent routing based on node capabilities             |
+| `app/coordination/sync_facade.py`           | **ACTIVE** | Unified programmatic entry point for sync                  |
+| `app/coordination/sync_coordinator.py`      | DEPRECATED | Archive Q2 2026                                            |
+| `app/coordination/cluster_data_sync.py`     | ARCHIVED   | Module removed; use `AutoSyncDaemon(strategy="broadcast")` |
+| `app/coordination/ephemeral_sync.py`        | ARCHIVED   | Module removed; use `AutoSyncDaemon(strategy="ephemeral")` |
+| `app/coordination/system_health_monitor.py` | ARCHIVED   | Module removed; use `unified_health_manager.py`            |
 
 **New Feedback Loop Modules (December 2025):**
 
@@ -1865,14 +1870,14 @@ PYTHONPATH=. python3 scripts/auto_promote.py --gauntlet \
 
 **Infrastructure Verification Complete:**
 
-| Component          | Status          | Details                                                                       |
-| ------------------ | --------------- | ----------------------------------------------------------------------------- |
-| P2P Cluster        | ✅ Healthy      | 33 alive peers, 5/5 voter quorum, leader=vultr-a100-20gb                      |
-| Test Suite         | ✅ Excellent    | 18,730 tests, 98.5%+ pass rate                                                |
-| Coordination Tests | ✅ Complete     | 198 test files for 176 modules (111% coverage)                                |
-| Health Checks      | ✅ Complete     | All 13 daemon classes have health_check()                                     |
-| Deprecated Modules | ✅ Consolidated | cluster_data_sync, ephemeral_sync, system_health_monitor, node_health_monitor |
-| Event Wiring       | ✅ Complete     | 27 coordinators in COORDINATOR_REGISTRY, 12 orphan events fixed               |
+| Component          | Status          | Details                                                                                         |
+| ------------------ | --------------- | ----------------------------------------------------------------------------------------------- |
+| P2P Cluster        | ✅ Healthy      | 33 alive peers, 5/5 voter quorum, leader=vultr-a100-20gb                                        |
+| Test Suite         | ✅ Excellent    | 18,730 tests, 98.5%+ pass rate                                                                  |
+| Coordination Tests | ✅ Complete     | 198 test files for 176 modules (111% coverage)                                                  |
+| Health Checks      | ✅ Complete     | All 13 daemon classes have health_check()                                                       |
+| Deprecated Modules | ✅ Consolidated | cluster_data_sync/ephemeral_sync (removed), system_health_monitor/node_health_monitor (removed) |
+| Event Wiring       | ✅ Complete     | 27 coordinators in COORDINATOR_REGISTRY, 12 orphan events fixed                                 |
 
 **Test Fixes Applied:**
 
@@ -2420,14 +2425,14 @@ Applied to `work_queue.py` and `cross_process_events.py` (Dec 27-28):
 
 **Verification Status**:
 
-| Component                           | Status          | Notes                                 |
-| ----------------------------------- | --------------- | ------------------------------------- |
-| cross_process_events import         | ✅ No recursion | \_from_init flag breaks cycle         |
-| SelfplayScheduler health_check      | ✅ Implemented  | Returns HealthCheckResult             |
-| FeedbackLoopController health_check | ✅ Implemented  | Returns HealthCheckResult             |
-| TrainingTriggerDaemon health_check  | ✅ Implemented  | Returns HealthCheckResult             |
-| Checkpoint format                   | ✅ Standardized | Uses \_versioning_metadata.config     |
-| Deprecated module archival          | ✅ Complete     | system_health_monitor.py is re-export |
+| Component                           | Status          | Notes                                                       |
+| ----------------------------------- | --------------- | ----------------------------------------------------------- |
+| cross_process_events import         | ✅ No recursion | \_from_init flag breaks cycle                               |
+| SelfplayScheduler health_check      | ✅ Implemented  | Returns HealthCheckResult                                   |
+| FeedbackLoopController health_check | ✅ Implemented  | Returns HealthCheckResult                                   |
+| TrainingTriggerDaemon health_check  | ✅ Implemented  | Returns HealthCheckResult                                   |
+| Checkpoint format                   | ✅ Standardized | Uses \_versioning_metadata.config                           |
+| Deprecated module archival          | ✅ Complete     | system_health_monitor removed; health_facade alias retained |
 
 ### S3 Backup Infrastructure (Dec 28, 2025)
 

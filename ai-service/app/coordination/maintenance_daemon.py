@@ -286,18 +286,22 @@ class MaintenanceDaemon:
             return
 
         now = time.time()
+        cycle_start = now
+        tasks_run = []
 
         # Hourly: Log rotation
         hours_since_log_rotation = (now - self._stats.last_log_rotation) / 3600
         if hours_since_log_rotation >= self.config.log_rotation_interval_hours:
             await self._rotate_logs()
             self._stats.last_log_rotation = now
+            tasks_run.append("log_rotation")
 
         # Daily: Archive old games
         hours_since_archive = (now - self._stats.last_archive_run) / 3600
         if hours_since_archive >= self.config.archive_interval_hours:
             if self.config.archive_enabled:
                 await self._archive_old_games()
+                tasks_run.append("archive")
             self._stats.last_archive_run = now
 
         # Weekly: VACUUM databases
@@ -305,6 +309,7 @@ class MaintenanceDaemon:
         if hours_since_vacuum >= self.config.db_vacuum_interval_hours:
             if self.config.db_maintenance_enabled:
                 await self._vacuum_databases()
+                tasks_run.append("vacuum")
             self._stats.last_db_vacuum = now
 
         # Weekly: DLQ cleanup
@@ -312,12 +317,14 @@ class MaintenanceDaemon:
         if hours_since_dlq >= self.config.dlq_cleanup_interval_hours:
             await self._cleanup_dlq()
             self._stats.last_dlq_cleanup = now
+            tasks_run.append("dlq_cleanup")
 
         # Hourly: Work queue stale item cleanup (December 2025)
         hours_since_queue = (now - self._stats.last_queue_cleanup) / 3600
         if hours_since_queue >= self.config.queue_cleanup_interval_hours:
             if self.config.queue_cleanup_enabled:
                 await self._cleanup_stale_queue_items()
+                tasks_run.append("queue_cleanup")
             self._stats.last_queue_cleanup = now
 
         # Daily: Orphan file detection (December 2025)
@@ -325,7 +332,49 @@ class MaintenanceDaemon:
         if hours_since_orphan >= self.config.orphan_detection_interval_hours:
             if self.config.orphan_detection_enabled:
                 await self._detect_orphan_files()
+                tasks_run.append("orphan_detection")
             self._stats.last_orphan_detection = now
+
+        # December 2025: Emit event if any maintenance tasks ran
+        if tasks_run:
+            await self._emit_cleanup_event(tasks_run, cycle_start)
+
+    async def _emit_cleanup_event(self, tasks_run: list[str], cycle_start: float) -> None:
+        """Emit DISK_CLEANUP_TRIGGERED event after maintenance cycle.
+
+        December 2025: Added to enable downstream coordination with sync daemons
+        and disk space managers. The event signals that cleanup completed and
+        disk space may have been freed.
+
+        Args:
+            tasks_run: List of maintenance tasks that were executed
+            cycle_start: Timestamp when the maintenance cycle started
+        """
+        try:
+            from app.coordination.event_router import publish
+
+            duration = time.time() - cycle_start
+            await publish(
+                event_type="DISK_CLEANUP_TRIGGERED",
+                payload={
+                    "tasks": tasks_run,
+                    "duration_seconds": duration,
+                    "bytes_reclaimed": self._stats.bytes_reclaimed,
+                    "logs_rotated": self._stats.logs_rotated,
+                    "databases_vacuumed": self._stats.databases_vacuumed,
+                    "games_archived": self._stats.games_archived,
+                    "dlq_entries_cleaned": self._stats.dlq_entries_cleaned,
+                    "queue_items_cleaned": self._stats.queue_items_cleaned,
+                    "orphan_dbs_recovered": self._stats.orphan_dbs_recovered,
+                },
+                source="maintenance_daemon",
+            )
+            logger.debug(
+                f"[Maintenance] Emitted DISK_CLEANUP_TRIGGERED: {tasks_run}, "
+                f"duration={duration:.1f}s"
+            )
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug(f"[Maintenance] Failed to emit cleanup event: {e}")
 
     async def _rotate_logs(self) -> None:
         """Rotate log files that exceed max size."""
