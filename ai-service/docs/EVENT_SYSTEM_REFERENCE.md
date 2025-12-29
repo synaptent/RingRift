@@ -3,7 +3,7 @@
 The RingRift coordination infrastructure uses an event-driven architecture with 140+ event types organized into 25+ categories. This document provides a comprehensive reference for the event system.
 
 **Created**: December 2025 (Wave 4 Phase 2)
-**Updated**: December 28, 2025 (Cross-process bridging documentation)
+**Updated**: December 29, 2025 (Event wiring + payload updates)
 
 ## Overview
 

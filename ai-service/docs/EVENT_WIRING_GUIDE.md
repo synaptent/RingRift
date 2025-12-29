@@ -299,4 +299,4 @@ dpo = get_data_pipeline_orchestrator()
 
 ---
 
-_Last updated: December 2025_
+_Last updated: December 29, 2025_

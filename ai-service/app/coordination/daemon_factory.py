@@ -626,7 +626,7 @@ class DaemonFactory:
 
         try:
             self._ensure_initialized()
-        except Exception as e:
+        except (RuntimeError, ValueError, KeyError, TypeError) as e:
             return HealthCheckResult(
                 healthy=False,
                 status=CoordinatorStatus.ERROR,
@@ -648,7 +648,7 @@ class DaemonFactory:
                 valid_specs += 1
             except (ModuleNotFoundError, ImportError) as e:
                 import_errors.append(f"{key}: {spec.import_path} - {e}")
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError) as e:
                 invalid_specs.append(f"{key}: {e}")
 
         # Check cached instances
