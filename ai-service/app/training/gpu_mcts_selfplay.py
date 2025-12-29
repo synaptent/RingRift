@@ -138,6 +138,17 @@ class GPUMCTSSelfplayRunner:
         from ..rules.default_engine import DefaultRulesEngine
         from .encoding import get_encoder_for_board_type
 
+        # Get config values with defaults (supports both GPUMCTSSelfplayConfig and SelfplayConfig)
+        self._num_sampled_actions = getattr(self.config, "num_sampled_actions", 16)
+        self._simulation_budget = getattr(self.config, "simulation_budget", 800)
+        self._max_nodes = getattr(self.config, "max_nodes", 10000)
+        self._sample_every = getattr(self.config, "sample_every", 1)
+        self._history_length = getattr(self.config, "history_length", 3)
+        self._max_moves_per_game = getattr(self.config, "max_moves_per_game", 300)
+        self._encoder_version = getattr(self.config, "encoder_version", 2)
+        self._feature_version = getattr(self.config, "feature_version", 2)
+        self._model_path = getattr(self.config, "model_path", None)
+
         # Parse board type
         board_type_str = self.config.board_type.lower()
         if board_type_str == "hex8":
@@ -160,9 +171,9 @@ class GPUMCTSSelfplayRunner:
 
         # Initialize MCTS
         mcts_config = MultiTreeMCTSConfig(
-            num_sampled_actions=self.config.num_sampled_actions,
-            simulation_budget=self.config.simulation_budget,
-            max_nodes=self.config.max_nodes,
+            num_sampled_actions=self._num_sampled_actions,
+            simulation_budget=self._simulation_budget,
+            max_nodes=self._max_nodes,
             max_actions=256,  # Max valid moves
             device=str(self.device),
         )
@@ -171,15 +182,15 @@ class GPUMCTSSelfplayRunner:
         # Initialize encoder
         self._encoder = get_encoder_for_board_type(
             board_type,
-            version=self.config.encoder_version,
-            feature_version=self.config.feature_version,
+            version=self._encoder_version,
+            feature_version=self._feature_version,
         )
 
         # Initialize engine
         self._engine = DefaultRulesEngine()
 
         # Load neural network if specified
-        if self.config.model_path and os.path.exists(self.config.model_path):
+        if self._model_path and os.path.exists(self._model_path):
             self._load_neural_net()
 
         logger.info(
@@ -195,9 +206,9 @@ class GPUMCTSSelfplayRunner:
             self._neural_net = NeuralNetAI(
                 board_type=self._board_type,
                 num_players=self.config.num_players,
-                model_path=self.config.model_path,
+                model_path=self._model_path,
             )
-            logger.info(f"Loaded neural network from {self.config.model_path}")
+            logger.info(f"Loaded neural network from {self._model_path}")
         except Exception as e:
             logger.warning(f"Failed to load neural network: {e}")
             self._neural_net = None
@@ -272,7 +283,7 @@ class GPUMCTSSelfplayRunner:
                 policy_dict = policies[batch_idx]
 
                 # Record sample if this is a sampling point
-                if move_counts[game_idx] % self.config.sample_every == 0:
+                if move_counts[game_idx] % self._sample_every == 0:
                     sample = self._create_sample(
                         state=state,
                         policy_dict=policy_dict,
@@ -293,7 +304,7 @@ class GPUMCTSSelfplayRunner:
                     if self._encoder is not None:
                         features, _ = self._encoder.encode_state(state)
                         state_histories[game_idx].append(features)
-                        if len(state_histories[game_idx]) > self.config.history_length:
+                        if len(state_histories[game_idx]) > self._history_length:
                             state_histories[game_idx].pop(0)
 
                     # Check termination (COMPLETED or not ACTIVE)
@@ -312,7 +323,7 @@ class GPUMCTSSelfplayRunner:
                         games[game_idx].termination_reason = str(new_state.game_status.value)
 
                     # Safety limit
-                    if move_counts[game_idx] >= self.config.max_moves_per_game:
+                    if move_counts[game_idx] >= self._max_moves_per_game:
                         active_mask[game_idx] = False
                         games[game_idx].total_moves = move_counts[game_idx]
                         games[game_idx].termination_reason = "move_limit"
@@ -418,8 +429,8 @@ class GPUMCTSSelfplayRunner:
             features, globals_vec = self._encoder.encode_state(state)
 
             # Stack with history
-            hist = list(state_history[-self.config.history_length:])
-            while len(hist) < self.config.history_length:
+            hist = list(state_history[-self._history_length:])
+            while len(hist) < self._history_length:
                 hist.insert(0, np.zeros_like(features))
             stacked_features = np.concatenate([features, *hist], axis=0)
 
@@ -553,7 +564,7 @@ class GPUMCTSSelfplayRunner:
             policy_values[i, :len(s.policy_values)] = s.policy_values
 
         # Metadata
-        effective_encoder = encoder_version or self.config.encoder_version
+        effective_encoder = encoder_version or self._encoder_version
 
         # Save
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -567,8 +578,8 @@ class GPUMCTSSelfplayRunner:
             # Metadata
             board_type=np.asarray(self.config.board_type),
             board_size=np.asarray(self._board_size),
-            history_length=np.asarray(self.config.history_length),
-            feature_version=np.asarray(self.config.feature_version),
+            history_length=np.asarray(self._history_length),
+            feature_version=np.asarray(self._feature_version),
             encoder_version=np.asarray(effective_encoder),
             in_channels=np.asarray(features.shape[1]),
             export_version=np.asarray("2.1"),
