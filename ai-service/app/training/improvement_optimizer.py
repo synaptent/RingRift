@@ -570,10 +570,34 @@ class ImprovementOptimizer(SingletonMixin):
     # Query Methods
     # =========================================================================
 
+    # December 29, 2025 (Phase 5): Board complexity factors
+    # Smaller/denser boards need fewer samples for adequate coverage
+    BOARD_COMPLEXITY_FACTORS: dict[str, float] = {
+        "hex8": 0.7,       # 61 cells, dense hexagonal
+        "square8": 1.0,    # 64 cells, baseline
+        "square19": 1.4,   # 361 cells, sparse (Go-sized)
+        "hexagonal": 1.3,  # 469 cells, large hexagonal
+    }
+
     def get_dynamic_threshold(self, config_key: str) -> int:
         """Get the dynamically adjusted training threshold for a config.
 
+        December 29, 2025 (Phase 5): Enhanced with board complexity factors
+        and momentum-based adjustments.
+
         Lower thresholds = faster training cycles = more iterations.
+
+        Factors applied:
+        1. Global threshold multiplier (from state)
+        2. Config-specific boost (from state)
+        3. Board complexity factor (hex8=0.7, square8=1.0, square19=1.4, hexagonal=1.3)
+        4. Momentum adjustment (promotion streak -> lower; failures -> higher)
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+
+        Returns:
+            Adjusted sample threshold for training trigger
         """
         base_threshold = self.BASELINE_TRAINING_THRESHOLD
 
@@ -583,6 +607,30 @@ class ImprovementOptimizer(SingletonMixin):
         # Apply config-specific boost
         config_boost = self._state.config_boosts.get(config_key, 1.0)
         threshold *= config_boost
+
+        # December 29, 2025 (Phase 5): Apply board complexity factor
+        # Extract board_type from config_key (e.g., "hex8_2p" -> "hex8")
+        board_type = config_key.split("_")[0] if "_" in config_key else config_key
+        complexity_factor = self.BOARD_COMPLEXITY_FACTORS.get(board_type, 1.0)
+        threshold *= complexity_factor
+
+        # December 29, 2025 (Phase 5): Apply momentum adjustment
+        # On a promotion streak: train faster (lower threshold)
+        # Struggling with failures: be more conservative (higher threshold)
+        if self._state.consecutive_promotions > 2:
+            # On a roll - reduce threshold for faster iteration
+            threshold *= 0.7
+            logger.debug(
+                f"[ImprovementOptimizer] {config_key}: Lowering threshold (promotion streak: "
+                f"{self._state.consecutive_promotions})"
+            )
+        elif self._state.consecutive_failures > 2:
+            # Struggling - increase threshold for more data
+            threshold *= 1.3
+            logger.debug(
+                f"[ImprovementOptimizer] {config_key}: Raising threshold (failure streak: "
+                f"{self._state.consecutive_failures})"
+            )
 
         # Ensure within bounds
         threshold = max(

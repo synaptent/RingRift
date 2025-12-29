@@ -283,6 +283,14 @@ class SelfplayScheduler(EventSubscriptionMixin):
         # Used to reduce selfplay allocation while training is active
         self._configs_in_training_pipeline: set[str] = set()
 
+        # Dec 2025: Curriculum weights per config (1.0 = normal)
+        # Updated by _on_evaluation_completed based on model performance
+        self._curriculum_weights: dict[str, float] = {}
+
+        # Dec 2025 Phase 2: Feedback states for data starvation tracking
+        # Maps config_key -> FeedbackState with games_since_last_training
+        self._feedback_states: dict[str, Any] = {}
+
     def get_elo_based_priority_boost(self, board_type: str, num_players: int) -> int:
         """Get priority boost based on ELO performance for this config.
 
@@ -328,6 +336,49 @@ class SelfplayScheduler(EventSubscriptionMixin):
             pass
 
         return min(5, boost)  # Cap at +5
+
+    def _get_data_starvation_boost(self, config_key: str) -> float:
+        """Get priority boost for configs that are data-starved for training.
+
+        December 2025 Phase 2: Boost selfplay allocation for configs that have
+        few recent games, ensuring training data availability across all configs.
+
+        Args:
+            config_key: Config key (e.g., "hex8_2p")
+
+        Returns:
+            Boost multiplier:
+            - 0.5: Config is actively training (reduce selfplay)
+            - 1.0: Normal priority (no boost)
+            - 1.5: Moderate data starvation (<50 games since training)
+            - 2.0: High data starvation (<25 games since training)
+        """
+        # If config is currently in training pipeline, reduce selfplay priority
+        # to avoid wasting resources on a config that's actively learning
+        if config_key in self._configs_in_training_pipeline:
+            return 0.5
+
+        # Check recent game count from feedback state
+        state = self._feedback_states.get(config_key)
+        if state is not None:
+            # Try to get games_since_last_training attribute
+            games = getattr(state, "games_since_last_training", None)
+            if games is not None:
+                if games < 25:
+                    # Very data-starved - high boost to generate more data
+                    return 2.0
+                elif games < 50:
+                    # Moderately data-starved
+                    return 1.5
+
+        # Also check if there's a training complete boost active
+        # (recently trained configs need more data for next cycle)
+        if config_key in self._training_complete_boosts:
+            expiry = self._training_complete_boosts[config_key]
+            if time.time() < expiry:
+                return 1.3  # Slight boost after training completes
+
+        return 1.0  # No boost
 
     # =========================================================================
     # GPU Capability Helpers (December 2025)
@@ -1069,12 +1120,20 @@ class SelfplayScheduler(EventSubscriptionMixin):
             rate_boost = int((rate_multiplier - 1.0) * 5)  # ±5 priority max
             rate_boost = max(-3, min(5, rate_boost))  # Clamp to -3..+5
 
+            # Dec 2025 Phase 2: Apply data starvation boost
+            # Configs with few recent games get priority boost to ensure training data
+            starvation_multiplier = self._get_data_starvation_boost(config_key)
+            # Convert multiplier (0.5-2.0) to additive boost (-3 to +5)
+            starvation_boost = int((starvation_multiplier - 1.0) * 5)
+            starvation_boost = max(-3, min(5, starvation_boost))  # Clamp to -3..+5
+
             cfg["effective_priority"] = (
                 cfg.get("priority", 1)
                 + elo_boost
                 + curriculum_boost
                 + board_priority_boost
                 + rate_boost
+                + starvation_boost
             )
 
         # Build weighted list by effective priority
