@@ -493,11 +493,281 @@ def singleton(cls: type[T]) -> type[T]:
     return cls
 
 
+# =============================================================================
+# Resilient Singleton (December 2025 - 48-Hour Autonomous Operation)
+# =============================================================================
+
+
+class ResilientSingletonMixin(SingletonMixin[T]):
+    """Singleton mixin with automatic recovery from failures.
+
+    Extends SingletonMixin with health checking and automatic recreation
+    when the singleton becomes unhealthy. Critical for 48-hour autonomous
+    operation where singletons like DaemonManager must self-heal.
+
+    Features:
+    - Health check support via health_check() method
+    - Automatic recreation on unhealthy check
+    - Configurable max recreation attempts
+    - Cooldown period between recreations
+    - Metrics tracking for failures
+
+    Usage:
+        class CriticalDaemon(BaseDaemon, ResilientSingletonMixin):
+            def __init__(self):
+                super().__init__("critical_daemon")
+                self._healthy = True
+
+            def health_check(self) -> bool:
+                '''Return True if healthy, False if needs recreation.'''
+                return self._healthy and self._running
+
+        # Get instance with automatic health check
+        daemon = CriticalDaemon.get_healthy_instance()
+
+        # Force recreation if stuck
+        CriticalDaemon.recreate_instance()
+    """
+
+    # Track recreation attempts and cooldowns per class
+    _recreation_attempts: ClassVar[dict[type, int]] = {}
+    _last_recreation: ClassVar[dict[type, float]] = {}
+    _recreation_cooldown: ClassVar[float] = 30.0  # Seconds between recreations
+    _max_recreations: ClassVar[int] = 5  # Max recreations before giving up
+
+    @classmethod
+    def get_healthy_instance(
+        cls: type[T],
+        *args: Any,
+        check_health: bool = True,
+        recreate_if_unhealthy: bool = True,
+        **kwargs: Any,
+    ) -> T:
+        """Get singleton instance, checking health first.
+
+        If the instance exists but is unhealthy, optionally recreate it.
+
+        Args:
+            *args: Positional arguments for initialization
+            check_health: Whether to check health before returning
+            recreate_if_unhealthy: Whether to recreate unhealthy instances
+            **kwargs: Keyword arguments for initialization
+
+        Returns:
+            The singleton instance (healthy or best-effort)
+
+        Raises:
+            RuntimeError: If max recreations exceeded and still unhealthy
+        """
+        import time
+
+        with cls._get_lock():
+            instance = SingletonMixin._instances.get(cls)
+
+            # If no instance exists, create one
+            if instance is None:
+                return cls.get_instance(*args, **kwargs)
+
+            # If not checking health, return existing instance
+            if not check_health:
+                return instance
+
+            # Check health
+            is_healthy = cls._check_instance_health(instance)
+
+            if is_healthy:
+                # Reset recreation counter on healthy check
+                cls._recreation_attempts[cls] = 0
+                return instance
+
+            # Instance is unhealthy
+            if not recreate_if_unhealthy:
+                logger.warning(f"[{cls.__name__}] Singleton unhealthy but recreation disabled")
+                return instance
+
+            # Check cooldown
+            now = time.time()
+            last_recreation = cls._last_recreation.get(cls, 0)
+            if now - last_recreation < cls._recreation_cooldown:
+                logger.debug(
+                    f"[{cls.__name__}] In recreation cooldown, returning existing instance"
+                )
+                return instance
+
+            # Check max recreations
+            attempts = cls._recreation_attempts.get(cls, 0)
+            if attempts >= cls._max_recreations:
+                logger.error(
+                    f"[{cls.__name__}] Max recreations ({cls._max_recreations}) exceeded"
+                )
+                # Reset counter after some time to allow future attempts
+                if now - last_recreation > 300:  # 5 minute reset
+                    cls._recreation_attempts[cls] = 0
+                return instance  # Return unhealthy rather than crash
+
+            # Recreate instance
+            logger.warning(
+                f"[{cls.__name__}] Unhealthy singleton, recreating (attempt {attempts + 1})"
+            )
+            return cls._recreate_instance(*args, **kwargs)
+
+    @classmethod
+    def _check_instance_health(cls, instance: T) -> bool:
+        """Check if an instance is healthy.
+
+        Looks for these methods in order:
+        1. health_check() -> bool | dict
+        2. is_healthy() -> bool
+        3. _running attribute
+        """
+        try:
+            # Try health_check method first
+            if hasattr(instance, "health_check"):
+                result = instance.health_check()
+                if isinstance(result, dict):
+                    return result.get("healthy", True)
+                if hasattr(result, "healthy"):
+                    return result.healthy
+                return bool(result)
+
+            # Try is_healthy method
+            if hasattr(instance, "is_healthy"):
+                return instance.is_healthy()
+
+            # Fall back to _running attribute
+            if hasattr(instance, "_running"):
+                return instance._running
+
+            # No health check available - assume healthy
+            return True
+
+        except Exception as e:
+            logger.warning(f"[{cls.__name__}] Health check failed with exception: {e}")
+            return False
+
+    @classmethod
+    def _recreate_instance(cls: type[T], *args: Any, **kwargs: Any) -> T:
+        """Recreate the singleton instance.
+
+        Attempts graceful cleanup of existing instance before recreation.
+        """
+        import time
+
+        # Update metrics
+        cls._recreation_attempts[cls] = cls._recreation_attempts.get(cls, 0) + 1
+        cls._last_recreation[cls] = time.time()
+
+        # Try to clean up existing instance
+        old_instance = SingletonMixin._instances.get(cls)
+        if old_instance is not None:
+            cls._cleanup_instance(old_instance)
+            del SingletonMixin._instances[cls]
+
+        # Create new instance
+        logger.info(f"[{cls.__name__}] Creating new singleton instance after failure")
+        try:
+            instance = cls(*args, **kwargs)
+            SingletonMixin._instances[cls] = instance
+            return instance
+        except Exception as e:
+            logger.error(f"[{cls.__name__}] Failed to recreate singleton: {e}")
+            raise
+
+    @classmethod
+    def _cleanup_instance(cls, instance: T) -> None:
+        """Attempt graceful cleanup of an instance before recreation."""
+        cleanup_methods = ["stop", "shutdown", "close", "cleanup", "_cleanup"]
+
+        for method_name in cleanup_methods:
+            if hasattr(instance, method_name):
+                try:
+                    method = getattr(instance, method_name)
+                    if callable(method):
+                        import asyncio
+                        import inspect
+
+                        if inspect.iscoroutinefunction(method):
+                            # Run async cleanup in sync context
+                            try:
+                                loop = asyncio.get_running_loop()
+                                loop.create_task(method())
+                            except RuntimeError:
+                                # No running loop - use asyncio.run
+                                try:
+                                    asyncio.run(method())
+                                except Exception:
+                                    pass  # Best effort
+                        else:
+                            method()
+
+                        logger.debug(f"[{cls.__name__}] Cleaned up via {method_name}()")
+                        return
+                except Exception as e:
+                    logger.debug(f"[{cls.__name__}] Cleanup via {method_name}() failed: {e}")
+
+    @classmethod
+    def recreate_instance(cls: type[T], *args: Any, **kwargs: Any) -> T:
+        """Force recreation of the singleton instance.
+
+        Public API for forcing recreation when needed.
+        """
+        with cls._get_lock():
+            return cls._recreate_instance(*args, **kwargs)
+
+    @classmethod
+    def get_recreation_stats(cls) -> dict[str, Any]:
+        """Get recreation statistics for this singleton class."""
+        import time
+
+        return {
+            "class": cls.__name__,
+            "recreation_attempts": cls._recreation_attempts.get(cls, 0),
+            "last_recreation": cls._last_recreation.get(cls, 0),
+            "time_since_recreation": time.time() - cls._last_recreation.get(cls, 0),
+            "max_recreations": cls._max_recreations,
+            "cooldown": cls._recreation_cooldown,
+        }
+
+
+def with_singleton_health_check(cls: type[T]) -> type[T]:
+    """Decorator to add health-checked singleton access to a class.
+
+    Adds get_healthy_instance() class method that checks health
+    before returning the singleton.
+
+    Example:
+        @with_singleton_health_check
+        class MyDaemon(BaseDaemon, SingletonMixin):
+            def health_check(self) -> bool:
+                return self._running
+
+        # Now you can use:
+        daemon = MyDaemon.get_healthy_instance()
+    """
+    # Add the health check methods from ResilientSingletonMixin
+    cls.get_healthy_instance = ResilientSingletonMixin.get_healthy_instance.__func__
+    cls._check_instance_health = ResilientSingletonMixin._check_instance_health.__func__
+    cls._recreate_instance = ResilientSingletonMixin._recreate_instance.__func__
+    cls._cleanup_instance = ResilientSingletonMixin._cleanup_instance.__func__
+    cls.recreate_instance = ResilientSingletonMixin.recreate_instance.__func__
+    cls.get_recreation_stats = ResilientSingletonMixin.get_recreation_stats.__func__
+
+    # Add class-level tracking
+    cls._recreation_attempts = {}
+    cls._last_recreation = {}
+    cls._recreation_cooldown = 30.0
+    cls._max_recreations = 5
+
+    return cls
+
+
 __all__ = [
     "SingletonMixin",
     "SingletonMeta",
     "ThreadSafeSingletonMixin",
     "LazySingletonMixin",
+    "ResilientSingletonMixin",
     "singleton",
     "create_singleton_accessors",
+    "with_singleton_health_check",
 ]

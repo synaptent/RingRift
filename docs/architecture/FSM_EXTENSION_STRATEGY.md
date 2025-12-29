@@ -214,7 +214,7 @@ This document tracks the FSM extension roadmap, now largely complete.
 
 **Outcome:**
 
-- Database schema v7 adds `fsm_valid` (INTEGER 0/1/NULL) and `fsm_error_code` (TEXT) to `game_history_entries`
+- Database schema v7 added `fsm_valid` (INTEGER 0/1/NULL) and `fsm_error_code` (TEXT) to `game_history_entries` (current schema v15)
 - Training environment already blocks on FSM validation (raises `FSMValidationError` in active mode)
 - `GameRecordMetadata.fsm_validated` field tracks per-game FSM validation status
 - `validate_move_fsm()` convenience function for recording FSM validation results

@@ -124,10 +124,11 @@ def get_gauntlet_games_per_opponent(num_players: int = 2) -> int:
 
 # Dec 29, 2025: Minimum games for export by player count
 # Higher player counts have higher variance and need more data
-# December 29, 2025: Reduced thresholds for faster pipeline iteration
-MIN_GAMES_FOR_EXPORT_2P = 200   # 2-player baseline (was 500)
-MIN_GAMES_FOR_EXPORT_3P = 300   # 3-player (was 600)
-MIN_GAMES_FOR_EXPORT_4P = 400   # 4-player (was 800)
+# December 29, 2025: Aggressive thresholds for faster pipeline iteration
+# Reduced from 200/300/400 to 50/75/100 per user request
+MIN_GAMES_FOR_EXPORT_2P = 50    # 2-player baseline (was 200, originally 500)
+MIN_GAMES_FOR_EXPORT_3P = 75    # 3-player (was 300, originally 600)
+MIN_GAMES_FOR_EXPORT_4P = 100   # 4-player (was 400, originally 800)
 
 
 def get_min_games_for_export(num_players: int = 2) -> int:
@@ -1234,7 +1235,8 @@ MIN_SELFPLAY_WIN_RATE_VS_HEURISTIC = 0.40
 DATA_STALENESS_WARNING_HOURS = 4.0
 
 # Critical staleness - data older than this blocks training
-DATA_STALENESS_CRITICAL_HOURS = 24.0
+# December 29, 2025: Increased from 24h to 48h per user request for autonomous operation
+DATA_STALENESS_CRITICAL_HOURS = 48.0
 
 
 def check_training_data_quality(

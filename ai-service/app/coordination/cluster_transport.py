@@ -427,10 +427,13 @@ class ClusterTransport:
             )
 
         try:
-            # Read and encode file
-            with open(local_path, "rb") as f:
-                file_data = f.read()
-            encoded_data = base64.b64encode(file_data).decode("ascii")
+            # Read and encode file (non-blocking to avoid event loop stall)
+            # Dec 29, 2025: Use asyncio.to_thread for large file reads
+            def _read_and_encode():
+                with open(local_path, "rb") as f:
+                    return base64.b64encode(f.read()).decode("ascii")
+
+            encoded_data = await asyncio.to_thread(_read_and_encode)
 
             # Ensure remote directory exists and decode file
             remote_dir = str(Path(remote_path).parent)
