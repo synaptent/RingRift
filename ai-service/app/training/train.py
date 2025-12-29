@@ -2115,12 +2115,23 @@ def train_model(
                     f"Use transfer_2p_to_4p.py to resize value head."
                 )
 
-        # Check value_fc2 output dimension (common in v2/v3/v4 architectures)
-        if hasattr(model, 'value_fc2'):
-            out_features = model.value_fc2.out_features
+        # Check value head output dimension
+        # v4/v5-heavy use 3-layer value head (fc1 → fc2 → fc3), others use 2-layer (fc1 → fc2)
+        # Check the final layer that outputs to num_players
+        final_value_layer = None
+        if hasattr(model, 'value_fc3'):
+            # v4/v5-heavy: value_fc3 is the final output layer
+            final_value_layer = model.value_fc3
+        elif hasattr(model, 'value_fc2'):
+            # v2/v3: value_fc2 is the final output layer
+            final_value_layer = model.value_fc2
+
+        if final_value_layer is not None:
+            out_features = final_value_layer.out_features
             if out_features != expected_players:
+                layer_name = 'value_fc3' if hasattr(model, 'value_fc3') else 'value_fc2'
                 raise ValueError(
-                    f"value_fc2 output mismatch{ctx}: out_features={out_features} "
+                    f"{layer_name} output mismatch{ctx}: out_features={out_features} "
                     f"but training expects {expected_players} players. "
                     f"Use transfer_2p_to_4p.py to resize value head."
                 )
