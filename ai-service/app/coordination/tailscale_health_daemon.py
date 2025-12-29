@@ -290,7 +290,8 @@ class TailscaleHealthDaemon(HandlerBase):
         # Get self info
         if "Self" in data:
             self_info = data["Self"]
-            self._state.tailscale_ip = self_info.get("TailscaleIPs", [None])[0]
+            tailscale_ips = self_info.get("TailscaleIPs", [])
+            self._state.tailscale_ip = tailscale_ips[0] if tailscale_ips else None
             self._state.hostname = self_info.get("HostName")
 
     async def _is_tailscaled_running(self) -> bool:
