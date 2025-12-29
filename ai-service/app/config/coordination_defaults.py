@@ -1403,6 +1403,27 @@ class DaemonHealthDefaults:
     # Dec 2025: Extended from 10s to 30s (matching SHUTDOWN_GRACE_PERIOD)
     SHUTDOWN_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_SHUTDOWN_TIMEOUT", 30.0)
 
+    # Dec 29, 2025: Health check parallelization settings
+    # Individual daemon health check timeout (seconds)
+    # Previously hardcoded as 5.0 in daemon_manager.py:2418
+    HEALTH_CHECK_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_HEALTH_CHECK_TIMEOUT", 5.0)
+
+    # Enable parallel health checks (run all daemon checks concurrently)
+    # Reduces health loop time from O(n*t) to O(t) where n=daemons, t=timeout
+    PARALLEL_HEALTH_CHECKS: bool = _env_bool("RINGRIFT_DAEMON_PARALLEL_HEALTH", True)
+
+    # Maximum concurrent health checks (to prevent overwhelming the system)
+    # Set to 0 for unlimited (all daemons checked in parallel)
+    MAX_PARALLEL_HEALTH_CHECKS: int = _env_int("RINGRIFT_DAEMON_MAX_PARALLEL_HEALTH", 20)
+
+    # Dependency poll interval (seconds) - how often to poll when waiting for dependency
+    # Previously hardcoded as 0.5 in daemon_manager.py:1218
+    DEPENDENCY_POLL_INTERVAL: float = _env_float("RINGRIFT_DAEMON_DEPENDENCY_POLL", 0.1)
+
+    # Dependency wait timeout (seconds) - max time to wait for a dependency
+    # Previously hardcoded as 30.0 in daemon_manager.py:1193
+    DEPENDENCY_WAIT_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_DEPENDENCY_TIMEOUT", 30.0)
+
 
 # =============================================================================
 # SQLite Database Defaults (December 2025)
@@ -1886,6 +1907,10 @@ class SyncIntegrityDefaults:
 
     # Large chunk size for big files (bytes)
     LARGE_CHUNK_SIZE: int = _env_int("RINGRIFT_SYNC_LARGE_CHUNK_SIZE", 65536)
+
+    # Dec 2025: Threshold for using fast integrity check instead of full scan (bytes)
+    # Databases larger than this will use fast check to avoid timeouts
+    LARGE_DB_THRESHOLD: int = _env_int("RINGRIFT_LARGE_DB_THRESHOLD", 100_000_000)  # 100MB
 
 
 # =============================================================================

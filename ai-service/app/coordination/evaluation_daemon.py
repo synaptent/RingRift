@@ -97,12 +97,13 @@ class EvaluationConfig:
     early_stopping_min_games: int = 10
 
     # Concurrency
-    # Dec 29: Increased from 4 to 8 for faster eval throughput
-    max_concurrent_evaluations: int = 8
+    # Dec 29: Increased from 8 to 12 for faster eval throughput
+    max_concurrent_evaluations: int = 12
 
     # Timeouts
-    # December 29, 2025: Increased from 600s to 1800s (30 min) for comprehensive gauntlet
-    evaluation_timeout_seconds: float = 1800.0  # 30 minutes
+    # December 29, 2025: Reduced to 600s (10 min) to speed up iteration cycle
+    # Full cycle time: 45h → 5h (12 configs × 10 min = 2h total evaluation time)
+    evaluation_timeout_seconds: float = 600.0  # 10 minutes
 
     # Deduplication settings (December 2025)
     dedup_cooldown_seconds: float = 300.0  # 5 minute cooldown per model

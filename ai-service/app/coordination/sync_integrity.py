@@ -63,6 +63,7 @@ from typing import Literal
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
     "LARGE_CHUNK_SIZE",
+    "LARGE_DB_THRESHOLD",
     "IntegrityCheckResult",
     "IntegrityReport",
     "check_sqlite_integrity",
@@ -79,6 +80,8 @@ from app.config.coordination_defaults import SyncIntegrityDefaults
 
 DEFAULT_CHUNK_SIZE = SyncIntegrityDefaults.DEFAULT_CHUNK_SIZE
 LARGE_CHUNK_SIZE = SyncIntegrityDefaults.LARGE_CHUNK_SIZE
+# Dec 2025: Threshold for using fast integrity check (bytes)
+LARGE_DB_THRESHOLD = SyncIntegrityDefaults.LARGE_DB_THRESHOLD
 
 # Supported hash algorithms
 HashAlgorithm = Literal["sha256", "sha1", "md5", "blake2b"]
@@ -341,15 +344,15 @@ def _run_fast_integrity_check(db_path: Path) -> tuple[bool, list[str]]:
             if table_count <= 0:
                 errors.append("No tables found in database")
 
-            # Check WAL status if WAL file exists
+            # Check WAL status if WAL file exists (skip checkpoint - readonly mode)
             wal_path = Path(str(db_path) + "-wal")
             if wal_path.exists():
-                cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
-                # Returns (busy, log, checkpointed) - log should equal checkpointed ideally
-                result = cursor.fetchone()
-                if result and result[0] != 0:
-                    # WAL is busy, not necessarily an error but worth noting
-                    logger.debug(f"[SyncIntegrity] WAL checkpoint busy for {db_path}")
+                # Just check WAL mode is consistent - don't try to checkpoint
+                cursor.execute("PRAGMA journal_mode")
+                journal_mode = cursor.fetchone()[0]
+                if journal_mode != "wal":
+                    # WAL file exists but journal mode isn't WAL - inconsistent
+                    logger.debug(f"[SyncIntegrity] WAL file exists but mode is {journal_mode}")
 
             # Check freelist count (corrupted DBs often have invalid freelist)
             cursor.execute("PRAGMA freelist_count")
@@ -603,8 +606,8 @@ def verify_sync_integrity(
     is_db_file = target.suffix.lower() == ".db"
     if check_db and is_db_file and target.exists():
         try:
-            # Dec 2025: Use fast check for large databases (>100MB) to prevent timeouts
-            use_fast = target_size > 100_000_000  # 100MB threshold
+            # Dec 2025: Use fast check for large databases to prevent timeouts
+            use_fast = target_size > LARGE_DB_THRESHOLD
             db_integrity_valid, db_errors = check_sqlite_integrity(
                 target, use_fast_check=use_fast
             )

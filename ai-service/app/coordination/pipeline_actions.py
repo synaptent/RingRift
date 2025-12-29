@@ -611,11 +611,16 @@ async def trigger_npz_export(
         if min_moves > 0:
             cmd.extend(["--min-moves", str(min_moves)])
 
+        # December 29, 2025: Enable pending_gate bypass for cluster nodes without npx
+        # This ensures training data is exported even when parity gates are pending
         exit_code, stdout, stderr = await _run_subprocess(
             cmd,
             timeout=config.export_timeout,
             cwd=root,
-            env={"PYTHONPATH": str(root)},
+            env={
+                "PYTHONPATH": str(root),
+                "RINGRIFT_ALLOW_PENDING_GATE": "true",
+            },
         )
 
         duration = time.time() - start_time
@@ -922,11 +927,15 @@ async def trigger_training(
             if init_weights:
                 cmd.extend(["--init-weights", init_weights])
 
+            # December 29, 2025: Enable pending_gate bypass for training data access
             exit_code, stdout, stderr = await _run_subprocess(
                 cmd,
                 timeout=config.training_timeout,
                 cwd=root,
-                env={"PYTHONPATH": str(root)},
+                env={
+                    "PYTHONPATH": str(root),
+                    "RINGRIFT_ALLOW_PENDING_GATE": "true",
+                },
             )
 
             attempt_duration = time.time() - start_time

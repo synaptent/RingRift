@@ -31,6 +31,7 @@ Used by:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -201,6 +202,61 @@ def _fetch_remote_checksum(
         return None
 
 
+async def _fetch_remote_checksum_async(
+    host: "HostConfig",
+    remote_path: str,
+    timeout: int = 30,
+) -> str | None:
+    """Fetch checksum of a remote file via SSH (async version).
+
+    Args:
+        host: HostConfig with SSH connection details
+        remote_path: Path to the file on remote host
+        timeout: SSH command timeout
+
+    Returns:
+        SHA256 checksum or None if failed
+    """
+    try:
+        ssh_parts = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes"]
+
+        if host.ssh_key:
+            key_path = os.path.expanduser(host.ssh_key)
+            ssh_parts.extend(["-i", key_path])
+
+        if host.ssh_port != 22:
+            ssh_parts.extend(["-p", str(host.ssh_port)])
+
+        ssh_parts.append(host.ssh_target)
+        ssh_parts.append(f"sha256sum '{remote_path}' 2>/dev/null | cut -d' ' -f1")
+
+        proc = await asyncio.create_subprocess_exec(
+            *ssh_parts,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return None
+
+        if proc.returncode == 0 and stdout:
+            checksum = stdout.decode("utf-8").strip()
+            if len(checksum) == 64:  # Valid SHA256 length
+                return checksum
+
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to fetch remote checksum for {host.name}:{remote_path}: {e}")
+        return None
+
+
 def build_ssh_command_for_rsync(host: "HostConfig") -> str:
     """Build SSH command string for use with rsync -e option.
 
@@ -263,6 +319,58 @@ def rsync_file(
     except subprocess.TimeoutExpired:
         logger.warning(f"Rsync timed out for {host.name}:{remote_path}")
         return False
+    except Exception as e:
+        logger.warning(f"Rsync failed for {host.name}:{remote_path}: {e}")
+        return False
+
+
+async def rsync_file_async(
+    host: "HostConfig",
+    remote_path: str,
+    local_path: Path,
+    timeout: int = 120,
+) -> bool:
+    """Rsync a single file from a remote host (async version).
+
+    Args:
+        host: HostConfig object with SSH connection details
+        remote_path: Path to the file on the remote host
+        local_path: Local path to save the file
+        timeout: Timeout in seconds for the rsync operation
+
+    Returns:
+        True if rsync succeeded, False otherwise
+    """
+    try:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+
+        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+
+        # Build SSH command using centralized helper
+        ssh_cmd = build_ssh_command_for_rsync(host)
+        rsync_args.extend(["-e", ssh_cmd])
+
+        # Build source path using host's ssh_target
+        rsync_args.extend([f"{host.ssh_target}:{remote_path}", str(local_path)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *rsync_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout + 30,  # Extra buffer for rsync
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            logger.warning(f"Rsync timed out for {host.name}:{remote_path}")
+            return False
+
+        return proc.returncode == 0
     except Exception as e:
         logger.warning(f"Rsync failed for {host.name}:{remote_path}: {e}")
         return False
@@ -333,6 +441,80 @@ def rsync_directory(
         return False
 
 
+async def rsync_directory_async(
+    host: "HostConfig",
+    remote_dir: str,
+    local_dir: Path,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    timeout: int = 300,
+    delete: bool = False,
+) -> bool:
+    """Rsync a directory from a remote host (async version).
+
+    Args:
+        host: HostConfig object with SSH connection details
+        remote_dir: Path to the directory on the remote host
+        local_dir: Local directory path
+        include_patterns: File patterns to include (e.g., ["*.db"])
+        exclude_patterns: File patterns to exclude (e.g., ["*.tmp"])
+        timeout: Timeout in seconds for the rsync operation
+        delete: Whether to delete files in local_dir not present on remote
+
+    Returns:
+        True if rsync succeeded, False otherwise
+    """
+    try:
+        local_dir.mkdir(parents=True, exist_ok=True)
+
+        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+
+        if delete:
+            rsync_args.append("--delete")
+
+        # Add include patterns
+        if include_patterns:
+            for pattern in include_patterns:
+                rsync_args.extend(["--include", pattern])
+
+        # Add exclude patterns
+        if exclude_patterns:
+            for pattern in exclude_patterns:
+                rsync_args.extend(["--exclude", pattern])
+
+        # Build SSH command using centralized helper
+        ssh_cmd = build_ssh_command_for_rsync(host)
+        rsync_args.extend(["-e", ssh_cmd])
+
+        # Ensure trailing slash for directory sync
+        remote_dir = remote_dir.rstrip("/") + "/"
+
+        # Build source path using host's ssh_target
+        rsync_args.extend([f"{host.ssh_target}:{remote_dir}", str(local_dir)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *rsync_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout + 30,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            logger.warning(f"Rsync directory timed out for {host.name}:{remote_dir}")
+            return False
+
+        return proc.returncode == 0
+    except Exception as e:
+        logger.warning(f"Rsync directory failed for {host.name}:{remote_dir}: {e}")
+        return False
+
+
 def rsync_push_file(
     host: "HostConfig",
     local_path: Path,
@@ -373,6 +555,60 @@ def rsync_push_file(
     except subprocess.TimeoutExpired:
         logger.warning(f"Rsync push timed out for {host.name}:{remote_path}")
         return False
+    except Exception as e:
+        logger.warning(f"Rsync push failed for {host.name}:{remote_path}: {e}")
+        return False
+
+
+async def rsync_push_file_async(
+    host: "HostConfig",
+    local_path: Path,
+    remote_path: str,
+    timeout: int = 120,
+) -> bool:
+    """Rsync a single file to a remote host (async version).
+
+    Args:
+        host: HostConfig object with SSH connection details
+        local_path: Local file path
+        remote_path: Path on the remote host
+        timeout: Timeout in seconds for the rsync operation
+
+    Returns:
+        True if rsync succeeded, False otherwise
+    """
+    try:
+        if not local_path.exists():
+            logger.warning(f"Local file not found: {local_path}")
+            return False
+
+        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+
+        # Build SSH command using centralized helper
+        ssh_cmd = build_ssh_command_for_rsync(host)
+        rsync_args.extend(["-e", ssh_cmd])
+
+        # Build destination path using host's ssh_target
+        rsync_args.extend([str(local_path), f"{host.ssh_target}:{remote_path}"])
+
+        proc = await asyncio.create_subprocess_exec(
+            *rsync_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout + 30,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            logger.warning(f"Rsync push timed out for {host.name}:{remote_path}")
+            return False
+
+        return proc.returncode == 0
     except Exception as e:
         logger.warning(f"Rsync push failed for {host.name}:{remote_path}: {e}")
         return False
@@ -499,6 +735,128 @@ def rsync_file_verified(
         return result
 
 
+async def rsync_file_verified_async(
+    host: "HostConfig",
+    remote_path: str,
+    local_path: Path,
+    expected_checksum: str | None = None,
+    timeout: int = 120,
+) -> TransferVerificationResult:
+    """Rsync a single file with mandatory post-transfer verification (async version).
+
+    This is the RECOMMENDED async function for production file transfers.
+    It adds:
+    1. rsync --checksum flag for transfer-level verification
+    2. Post-transfer SHA256 checksum verification
+    3. Automatic quarantine of corrupted files
+
+    Args:
+        host: HostConfig object with SSH connection details
+        remote_path: Path to the file on the remote host
+        local_path: Local path to save the file
+        expected_checksum: Optional SHA256 checksum to verify against.
+            If not provided, will fetch from remote before transfer.
+        timeout: Timeout in seconds for the rsync operation
+
+    Returns:
+        TransferVerificationResult with success/verification status
+    """
+    result = TransferVerificationResult(success=False)
+
+    try:
+        # 1. Get expected checksum if not provided
+        if not expected_checksum:
+            expected_checksum = await _fetch_remote_checksum_async(
+                host, remote_path, timeout=30
+            )
+            if not expected_checksum:
+                logger.warning(
+                    f"Could not fetch remote checksum for {host.name}:{remote_path}, "
+                    "proceeding without pre-transfer verification"
+                )
+
+        # 2. Create parent directory
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 3. Run rsync with --checksum flag
+        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+
+        ssh_cmd = build_ssh_command_for_rsync(host)
+        rsync_args.extend(["-e", ssh_cmd])
+        rsync_args.extend([f"{host.ssh_target}:{remote_path}", str(local_path)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *rsync_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout + 30,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            result.error = f"Rsync timed out after {timeout}s"
+            logger.warning(f"Rsync timed out for {host.name}:{remote_path}")
+            return result
+
+        if proc.returncode != 0:
+            stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
+            result.error = f"rsync failed: {stderr_str[:200]}"
+            return result
+
+        # 4. Verify file exists
+        if not local_path.exists():
+            result.error = "File not created after rsync"
+            return result
+
+        result.bytes_transferred = local_path.stat().st_size
+
+        # 5. Post-transfer checksum verification
+        if expected_checksum:
+            actual_checksum = _compute_checksum(local_path)
+            if actual_checksum == expected_checksum:
+                result.checksum_matched = True
+                result.verified = True
+                result.success = True
+                logger.debug(
+                    f"Verified transfer: {host.name}:{remote_path} "
+                    f"({result.bytes_transferred} bytes, checksum OK)"
+                )
+            else:
+                # Checksum mismatch - quarantine the file
+                result.error = (
+                    f"Checksum mismatch: expected {expected_checksum[:16]}..., "
+                    f"got {actual_checksum[:16]}..."
+                )
+                quarantine_path = _quarantine_file(local_path, "checksum_mismatch")
+                if quarantine_path:
+                    result.quarantined = True
+                    result.quarantine_path = quarantine_path
+                logger.error(
+                    f"Transfer verification FAILED for {host.name}:{remote_path}: "
+                    f"{result.error}"
+                )
+        else:
+            # No checksum to verify against - mark as success but unverified
+            result.success = True
+            result.verified = False
+            logger.warning(
+                f"Transfer completed but UNVERIFIED (no checksum): "
+                f"{host.name}:{remote_path}"
+            )
+
+        return result
+
+    except Exception as e:
+        result.error = str(e)
+        logger.warning(f"Rsync failed for {host.name}:{remote_path}: {e}")
+        return result
+
+
 def rsync_push_file_verified(
     host: "HostConfig",
     local_path: Path,
@@ -596,6 +954,113 @@ def rsync_push_file_verified(
         return result
 
 
+async def rsync_push_file_verified_async(
+    host: "HostConfig",
+    local_path: Path,
+    remote_path: str,
+    timeout: int = 120,
+) -> TransferVerificationResult:
+    """Rsync a single file to a remote host with verification (async version).
+
+    This is the RECOMMENDED async function for pushing files to remote hosts.
+    It adds:
+    1. Pre-transfer local checksum computation
+    2. rsync --checksum flag for transfer-level verification
+    3. Post-transfer remote checksum verification
+
+    Args:
+        host: HostConfig object with SSH connection details
+        local_path: Local file path
+        remote_path: Path on the remote host
+        timeout: Timeout in seconds for the rsync operation
+
+    Returns:
+        TransferVerificationResult with success/verification status
+    """
+    result = TransferVerificationResult(success=False)
+
+    try:
+        if not local_path.exists():
+            result.error = f"Local file not found: {local_path}"
+            return result
+
+        # 1. Compute local checksum before transfer
+        local_checksum = _compute_checksum(local_path)
+        if not local_checksum:
+            result.error = "Failed to compute local checksum"
+            return result
+
+        result.bytes_transferred = local_path.stat().st_size
+
+        # 2. Run rsync with --checksum flag
+        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+
+        ssh_cmd = build_ssh_command_for_rsync(host)
+        rsync_args.extend(["-e", ssh_cmd])
+        rsync_args.extend([str(local_path), f"{host.ssh_target}:{remote_path}"])
+
+        proc = await asyncio.create_subprocess_exec(
+            *rsync_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout + 30,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            result.error = f"Rsync push timed out after {timeout}s"
+            logger.warning(f"Rsync push timed out for {host.name}:{remote_path}")
+            return result
+
+        if proc.returncode != 0:
+            stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
+            result.error = f"rsync push failed: {stderr_str[:200]}"
+            return result
+
+        # 3. Verify remote checksum matches local
+        remote_checksum = await _fetch_remote_checksum_async(
+            host, remote_path, timeout=30
+        )
+        if remote_checksum:
+            if remote_checksum == local_checksum:
+                result.checksum_matched = True
+                result.verified = True
+                result.success = True
+                logger.debug(
+                    f"Verified push: {local_path} -> {host.name}:{remote_path} "
+                    f"({result.bytes_transferred} bytes, checksum OK)"
+                )
+            else:
+                result.error = (
+                    f"Remote checksum mismatch: expected {local_checksum[:16]}..., "
+                    f"got {remote_checksum[:16]}..."
+                )
+                logger.error(
+                    f"Push verification FAILED for {host.name}:{remote_path}: "
+                    f"{result.error}"
+                )
+        else:
+            # Could not verify remote - mark as success but unverified
+            result.success = True
+            result.verified = False
+            logger.warning(
+                f"Push completed but UNVERIFIED (could not fetch remote checksum): "
+                f"{host.name}:{remote_path}"
+            )
+
+        return result
+
+    except Exception as e:
+        result.error = str(e)
+        logger.warning(f"Rsync push failed for {host.name}:{remote_path}: {e}")
+        return result
+
+
 def rsync_directory_verified(
     host: "HostConfig",
     remote_dir: str,
@@ -684,6 +1149,108 @@ def rsync_directory_verified(
         result.error = f"Rsync directory timed out after {timeout}s"
         logger.warning(f"Rsync directory timed out for {host.name}:{remote_dir}")
         return result
+    except Exception as e:
+        result.error = str(e)
+        logger.warning(f"Rsync directory failed for {host.name}:{remote_dir}: {e}")
+        return result
+
+
+async def rsync_directory_verified_async(
+    host: "HostConfig",
+    remote_dir: str,
+    local_dir: Path,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+    timeout: int = 300,
+    delete: bool = False,
+) -> TransferVerificationResult:
+    """Rsync a directory with post-transfer verification (async version).
+
+    This is the RECOMMENDED async function for directory transfers.
+    Note: Directory verification is more expensive as it computes checksums
+    for all transferred files.
+
+    Args:
+        host: HostConfig object with SSH connection details
+        remote_dir: Path to the directory on the remote host
+        local_dir: Local directory path
+        include_patterns: File patterns to include (e.g., ["*.db"])
+        exclude_patterns: File patterns to exclude (e.g., ["*.tmp"])
+        timeout: Timeout in seconds for the rsync operation
+        delete: Whether to delete files in local_dir not present on remote
+
+    Returns:
+        TransferVerificationResult with aggregated success/verification status
+    """
+    result = TransferVerificationResult(success=False)
+
+    try:
+        local_dir.mkdir(parents=True, exist_ok=True)
+
+        # Track files before sync for comparison
+        files_before = set(local_dir.rglob("*")) if local_dir.exists() else set()
+
+        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+
+        if delete:
+            rsync_args.append("--delete")
+
+        if include_patterns:
+            for pattern in include_patterns:
+                rsync_args.extend(["--include", pattern])
+
+        if exclude_patterns:
+            for pattern in exclude_patterns:
+                rsync_args.extend(["--exclude", pattern])
+
+        ssh_cmd = build_ssh_command_for_rsync(host)
+        rsync_args.extend(["-e", ssh_cmd])
+
+        remote_dir = remote_dir.rstrip("/") + "/"
+        rsync_args.extend([f"{host.ssh_target}:{remote_dir}", str(local_dir)])
+
+        proc = await asyncio.create_subprocess_exec(
+            *rsync_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout + 30,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            result.error = f"Rsync directory timed out after {timeout}s"
+            logger.warning(f"Rsync directory timed out for {host.name}:{remote_dir}")
+            return result
+
+        if proc.returncode != 0:
+            stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
+            result.error = f"rsync directory failed: {stderr_str[:200]}"
+            return result
+
+        # Find new/modified files
+        files_after = set(local_dir.rglob("*"))
+        new_files = [f for f in files_after - files_before if f.is_file()]
+
+        # Calculate total bytes transferred
+        result.bytes_transferred = sum(f.stat().st_size for f in new_files)
+
+        # For directory sync, we mark as success if rsync succeeded
+        # Full verification of each file would require remote checksums
+        result.success = True
+        result.verified = False  # Directory verification is best-effort
+
+        logger.info(
+            f"Directory sync completed: {host.name}:{remote_dir} -> {local_dir} "
+            f"({len(new_files)} files, {result.bytes_transferred} bytes)"
+        )
+
+        return result
+
     except Exception as e:
         result.error = str(e)
         logger.warning(f"Rsync directory failed for {host.name}:{remote_dir}: {e}")

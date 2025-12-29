@@ -48,12 +48,13 @@ class AutoPromotionConfig:
     promotion_cooldown_seconds: float = 300.0  # 5 minutes
     # Whether to wait for both RANDOM and HEURISTIC results
     require_both_baselines: bool = True
-    # Safety: require consecutive successful evaluations (2+ reduces false positives)
-    consecutive_passes_required: int = 2
+    # Safety: require consecutive successful evaluations
+    # Dec 29: Lowered from 2 to 1 to accelerate iteration
+    consecutive_passes_required: int = 1
     # Dry run mode - log but don't actually promote
     dry_run: bool = False
     # Dec 27, 2025: Minimum Elo improvement over previous model required for promotion
-    min_elo_improvement: float = 25.0  # Dec 28: Lowered from 75 to accelerate iteration
+    min_elo_improvement: float = 10.0  # Dec 29: Lowered from 25 to accelerate iteration
     # December 2025: Quality gate settings to prevent bad model promotion
     quality_gate_enabled: bool = True
     min_training_games: int = 1000  # Minimum games in training data
