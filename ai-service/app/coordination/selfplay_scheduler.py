@@ -52,6 +52,8 @@ __all__ = [
     "DATA_STARVATION_CRITICAL_THRESHOLD",
     "DATA_STARVATION_EMERGENCY_MULTIPLIER",
     "DATA_STARVATION_EMERGENCY_THRESHOLD",
+    "DATA_STARVATION_ULTRA_MULTIPLIER",
+    "DATA_STARVATION_ULTRA_THRESHOLD",
     "DEFAULT_GAMES_PER_CONFIG",
     "DEFAULT_TRAINING_SAMPLES_TARGET",
     "DYNAMIC_WEIGHT_BOUNDS",  # December 29, 2025: Now exported
@@ -203,11 +205,14 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
     3: 1.0,  # LOW: no boost (normal priority)
 }
 
-# Dec 29, 2025: Data starvation emergency threshold (now env-configurable)
-# Configs with fewer games than this get a massive priority boost
+# Dec 29, 2025: Data starvation thresholds (now env-configurable)
+# Configs with fewer games than these thresholds get priority boosts
 # Especially critical for 4-player configs which have near-zero games
+# ULTRA tier added Dec 29, 2025 for critically starved configs (< 20 games)
+DATA_STARVATION_ULTRA_THRESHOLD = _priority_weight_defaults.DATA_STARVATION_ULTRA_THRESHOLD
 DATA_STARVATION_EMERGENCY_THRESHOLD = _priority_weight_defaults.DATA_STARVATION_EMERGENCY_THRESHOLD
 DATA_STARVATION_CRITICAL_THRESHOLD = _priority_weight_defaults.DATA_STARVATION_CRITICAL_THRESHOLD
+DATA_STARVATION_ULTRA_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_ULTRA_MULTIPLIER
 DATA_STARVATION_EMERGENCY_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_EMERGENCY_MULTIPLIER
 DATA_STARVATION_CRITICAL_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_CRITICAL_MULTIPLIER
 
@@ -1132,13 +1137,21 @@ class SelfplayScheduler:
         cascade_boost = self._get_cascade_priority(priority.config_key)
         score *= cascade_boost
 
-        # Dec 29, 2025: Data starvation emergency multiplier
+        # Dec 29, 2025: Data starvation tiered multipliers
         # Configs with very few games get massive priority boost
         # This addresses the critical data starvation for 4-player configs
-        # (e.g., square19_4p: 1 game, hexagonal_4p: 400 games)
+        # ULTRA tier (< 20 games): 25x boost (hexagonal_4p: 4 games, square19_4p: 3 games)
         starvation_multiplier = 1.0
         game_count = priority.game_count
-        if game_count < DATA_STARVATION_EMERGENCY_THRESHOLD:
+        if game_count < DATA_STARVATION_ULTRA_THRESHOLD:
+            # ULTRA: Critically starved (< 20 games) - maximum priority boost
+            starvation_multiplier = DATA_STARVATION_ULTRA_MULTIPLIER
+            logger.warning(
+                f"[SelfplayScheduler] ULTRA STARVATION: {priority.config_key} has only "
+                f"{game_count} games (<{DATA_STARVATION_ULTRA_THRESHOLD}). "
+                f"Applying {starvation_multiplier}x priority boost. URGENT DATA NEEDED!"
+            )
+        elif game_count < DATA_STARVATION_EMERGENCY_THRESHOLD:
             starvation_multiplier = DATA_STARVATION_EMERGENCY_MULTIPLIER
             logger.warning(
                 f"[SelfplayScheduler] EMERGENCY: {priority.config_key} has only "
@@ -1797,7 +1810,12 @@ class SelfplayScheduler:
             )
 
             # Determine minimum floor based on starvation level
-            if game_count < DATA_STARVATION_EMERGENCY_THRESHOLD:
+            # Dec 29, 2025: Added ULTRA tier for critically starved configs
+            if game_count < DATA_STARVATION_ULTRA_THRESHOLD:
+                # ULTRA: <20 games - must get 3x allocation (highest priority)
+                min_floor = int(games_per_config * 3.0)
+                level = "ULTRA"
+            elif game_count < DATA_STARVATION_EMERGENCY_THRESHOLD:
                 # EMERGENCY: <100 games - must get 2x allocation
                 min_floor = int(games_per_config * 2.0)
                 level = "EMERGENCY"

@@ -1851,11 +1851,18 @@ class SelfplayPriorityWeightDefaults:
     ELO_MEDIUM_THRESHOLD: int = _env_int("RINGRIFT_ELO_MEDIUM_THRESHOLD", 1500)
 
     # Data starvation emergency thresholds
+    # Dec 29, 2025: Added ULTRA tier for critically starved configs (< 20 games)
+    DATA_STARVATION_ULTRA_THRESHOLD: int = _env_int(
+        "RINGRIFT_DATA_STARVATION_ULTRA_THRESHOLD", 20
+    )
     DATA_STARVATION_EMERGENCY_THRESHOLD: int = _env_int(
         "RINGRIFT_DATA_STARVATION_EMERGENCY_THRESHOLD", 100
     )
     DATA_STARVATION_CRITICAL_THRESHOLD: int = _env_int(
         "RINGRIFT_DATA_STARVATION_CRITICAL_THRESHOLD", 1000
+    )
+    DATA_STARVATION_ULTRA_MULTIPLIER: float = _env_float(
+        "RINGRIFT_DATA_STARVATION_ULTRA_MULTIPLIER", 25.0  # Massive boost for < 20 games
     )
     DATA_STARVATION_EMERGENCY_MULTIPLIER: float = _env_float(
         "RINGRIFT_DATA_STARVATION_EMERGENCY_MULTIPLIER", 10.0
