@@ -151,10 +151,11 @@ def _check_disk_space_for_export(output_path: str, save_kwargs: dict) -> tuple[b
 logger = logging.getLogger(__name__)
 
 
-# Database lock retry configuration
-DB_LOCK_MAX_RETRIES = 5
-DB_LOCK_INITIAL_WAIT = 1.0  # seconds
-DB_LOCK_MAX_WAIT = 30.0  # seconds
+# Database lock retry configuration (Dec 2025: configurable via env vars)
+# Increased defaults for better handling during cluster sync activity
+DB_LOCK_MAX_RETRIES = int(os.getenv("RINGRIFT_DB_LOCK_MAX_RETRIES", "15"))
+DB_LOCK_INITIAL_WAIT = float(os.getenv("RINGRIFT_DB_LOCK_INITIAL_WAIT", "0.5"))  # seconds
+DB_LOCK_MAX_WAIT = float(os.getenv("RINGRIFT_DB_LOCK_MAX_WAIT", "120.0"))  # seconds
 
 
 def _is_db_locked_error(e: Exception) -> bool:
