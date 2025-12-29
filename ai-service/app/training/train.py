@@ -5956,10 +5956,11 @@ def train_with_config(full_config: FullTrainingConfig) -> dict[str, Any]:
         print(f"Best validation loss: {result['best_val_loss']:.4f}")
     """
     # Create TrainConfig from full_config core settings
+    # Note: TrainConfig uses epochs_per_iter instead of epochs
     train_cfg = TrainConfig(
         board_type=full_config.board_type,
         num_players=full_config.num_players,
-        epochs=full_config.epochs,
+        epochs_per_iter=full_config.epochs,
         batch_size=full_config.batch_size,
         learning_rate=full_config.learning_rate,
     )
