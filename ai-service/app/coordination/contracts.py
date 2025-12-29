@@ -38,7 +38,11 @@ __all__ = [
     "CoordinatorProtocol",
     "DaemonProtocol",
     "EventDrivenProtocol",
+    "HealthCheckable",
     "SyncManagerProtocol",
+    # Health check helpers (December 29, 2025)
+    "invoke_health_check",
+    "is_health_checkable",
     # Registry functions
     "get_coordinator",
     "get_registered_coordinators",
@@ -301,6 +305,122 @@ class CoordinatorMetrics:
             "last_activity_time": self.last_activity_time,
             **self.custom_metrics,
         }
+
+
+# =============================================================================
+# Health Check Protocol and Helpers
+# =============================================================================
+
+
+@runtime_checkable
+class HealthCheckable(Protocol):
+    """Protocol for components that support health checking.
+
+    December 29, 2025: Added to unify health check signatures across 51+ coordinators.
+
+    Supports both sync and async health_check() methods. Use invoke_health_check()
+    helper to call health_check() regardless of whether it's sync or async.
+
+    Example:
+        class MyDaemon(HealthCheckable):
+            def health_check(self) -> HealthCheckResult:
+                return HealthCheckResult(healthy=True)
+
+        # Works with both sync and async implementations:
+        result = await invoke_health_check(my_daemon)
+    """
+
+    def health_check(self) -> HealthCheckResult:
+        """Return current health status.
+
+        Returns:
+            HealthCheckResult with healthy, status, message, and details.
+        """
+        ...
+
+
+async def invoke_health_check(
+    component: Any,
+    default_on_error: bool = False,
+) -> HealthCheckResult:
+    """Invoke health_check() on a component, handling both sync and async.
+
+    December 29, 2025: Added to handle the mix of sync (30+) and async (5)
+    health_check implementations across the coordination infrastructure.
+
+    Args:
+        component: Object with a health_check() method (sync or async)
+        default_on_error: If True, return unhealthy result on error instead of raising
+
+    Returns:
+        HealthCheckResult from the component
+
+    Raises:
+        AttributeError: If component has no health_check method (and default_on_error=False)
+        Exception: Any exception from health_check (and default_on_error=False)
+
+    Example:
+        # Works with sync implementations:
+        result = await invoke_health_check(sync_daemon)
+
+        # Works with async implementations:
+        result = await invoke_health_check(async_daemon)
+
+        # Safe mode returns unhealthy on errors:
+        result = await invoke_health_check(unknown_component, default_on_error=True)
+    """
+    import asyncio
+    import inspect
+
+    try:
+        if not hasattr(component, "health_check"):
+            if default_on_error:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message="Component has no health_check method",
+                    details={"component_type": type(component).__name__},
+                )
+            raise AttributeError(f"{type(component).__name__} has no health_check method")
+
+        method = component.health_check
+
+        # Check if it's a coroutine function (async def)
+        if asyncio.iscoroutinefunction(method):
+            return await method()
+
+        # Check if calling it returns a coroutine (e.g., decorated async)
+        result = method()
+        if asyncio.iscoroutine(result):
+            return await result
+
+        # It's a sync method, result is already the HealthCheckResult
+        return result
+
+    except Exception as e:
+        if default_on_error:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Health check failed: {e}",
+                details={
+                    "component_type": type(component).__name__,
+                    "error_type": type(e).__name__,
+                },
+            )
+        raise
+
+
+def is_health_checkable(component: Any) -> bool:
+    """Check if a component has a health_check method.
+
+    Args:
+        component: Object to check
+
+    Returns:
+        True if component has a health_check method
+    """
+    return hasattr(component, "health_check") and callable(getattr(component, "health_check"))
 
 
 # =============================================================================

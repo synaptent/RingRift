@@ -492,18 +492,17 @@ class AutoPromotionDaemon:
 
             # Check parity_gate status in database using context manager
             with GameReplayDB(str(db_path)) as db:
-                conn = db._connection
-
-                # Count games by parity status
-                cursor = conn.execute(
-                    """
-                    SELECT parity_gate, COUNT(*) as count
-                    FROM games
-                    WHERE game_status = 'completed'
-                    GROUP BY parity_gate
-                    """
-                )
-                status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+                with db._get_conn() as conn:
+                    # Count games by parity status
+                    cursor = conn.execute(
+                        """
+                        SELECT parity_gate, COUNT(*) as count
+                        FROM games
+                        WHERE game_status = 'completed'
+                        GROUP BY parity_gate
+                        """
+                    )
+                    status_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
             total_games = sum(status_counts.values())
             passed_games = status_counts.get("passed", 0)
@@ -675,16 +674,15 @@ class AutoPromotionDaemon:
 
             # Check game count using context manager
             with GameReplayDB(str(db_path)) as db:
-                conn = db._connection
-
-                cursor = conn.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM games
-                    WHERE game_status = 'completed'
-                    """
-                )
-                game_count = cursor.fetchone()[0]
+                with db._get_conn() as conn:
+                    cursor = conn.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM games
+                        WHERE game_status = 'completed'
+                        """
+                    )
+                    game_count = cursor.fetchone()[0]
 
             if game_count < self.config.min_training_games:
                 return False, (

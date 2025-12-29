@@ -665,13 +665,203 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
         }
 
 
+@dataclass
+class ProviderIpUpdateConfig:
+    """Configuration for provider IP update loops.
+
+    December 2025: Extracted from p2p_orchestrator inline loops.
+    """
+
+    update_interval_seconds: float = 300.0  # 5 minutes
+    error_retry_seconds: float = 60.0  # Retry faster on error
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.update_interval_seconds <= 0:
+            raise ValueError("update_interval_seconds must be > 0")
+        if self.error_retry_seconds <= 0:
+            raise ValueError("error_retry_seconds must be > 0")
+
+
+class VastIpUpdateLoop(BaseLoop):
+    """Background loop to periodically refresh Vast.ai instance connection info.
+
+    Uses VAST_API_KEY when available, otherwise falls back to the `vastai`
+    CLI if installed (see DynamicHostRegistry.update_vast_ips).
+
+    December 2025: Extracted from p2p_orchestrator._vast_ip_update_loop
+    """
+
+    def __init__(
+        self,
+        get_registry: Callable[[], Any],
+        has_registry: bool = True,
+        config: ProviderIpUpdateConfig | None = None,
+    ):
+        """Initialize Vast IP update loop.
+
+        Args:
+            get_registry: Callback returning DynamicHostRegistry instance
+            has_registry: Whether the registry module is available
+            config: Update configuration
+        """
+        self.config = config or ProviderIpUpdateConfig()
+        super().__init__(
+            name="vast_ip_update",
+            interval=self.config.update_interval_seconds,
+        )
+        self._get_registry = get_registry
+        self._has_registry = has_registry
+        self._updates_count = 0
+
+    async def _run_once(self) -> None:
+        """Refresh Vast instance IPs from API."""
+        if not self._has_registry:
+            return
+
+        try:
+            registry = self._get_registry()
+            updated = await registry.update_vast_ips()
+            if updated > 0:
+                self._updates_count += updated
+                logger.info(f"[VastIpUpdate] Updated {updated} Vast instance IPs from API")
+        except Exception as e:
+            logger.debug(f"[VastIpUpdate] Error: {e}")
+            # Sleep briefly before next attempt on error
+            await asyncio.sleep(self.config.error_retry_seconds)
+
+    def get_update_stats(self) -> dict[str, Any]:
+        """Get update statistics."""
+        return {
+            "total_updates": self._updates_count,
+            **self.stats.to_dict(),
+        }
+
+
+class AwsIpUpdateLoop(BaseLoop):
+    """Background loop to periodically refresh AWS instance connection info.
+
+    Uses the `aws` CLI (see DynamicHostRegistry.update_aws_ips). No-op when
+    no AWS instances are configured in distributed_hosts.yaml properties.
+
+    December 2025: Extracted from p2p_orchestrator._aws_ip_update_loop
+    """
+
+    def __init__(
+        self,
+        get_registry: Callable[[], Any],
+        has_registry: bool = True,
+        config: ProviderIpUpdateConfig | None = None,
+    ):
+        """Initialize AWS IP update loop.
+
+        Args:
+            get_registry: Callback returning DynamicHostRegistry instance
+            has_registry: Whether the registry module is available
+            config: Update configuration
+        """
+        self.config = config or ProviderIpUpdateConfig()
+        super().__init__(
+            name="aws_ip_update",
+            interval=self.config.update_interval_seconds,
+        )
+        self._get_registry = get_registry
+        self._has_registry = has_registry
+        self._updates_count = 0
+
+    async def _run_once(self) -> None:
+        """Refresh AWS instance IPs via CLI."""
+        if not self._has_registry:
+            return
+
+        try:
+            registry = self._get_registry()
+            updated = await registry.update_aws_ips()
+            if updated > 0:
+                self._updates_count += updated
+                logger.info(f"[AwsIpUpdate] Updated {updated} AWS instance IPs via CLI")
+        except Exception as e:
+            logger.debug(f"[AwsIpUpdate] Error: {e}")
+            await asyncio.sleep(self.config.error_retry_seconds)
+
+    def get_update_stats(self) -> dict[str, Any]:
+        """Get update statistics."""
+        return {
+            "total_updates": self._updates_count,
+            **self.stats.to_dict(),
+        }
+
+
+class TailscaleIpUpdateLoop(BaseLoop):
+    """Background loop to discover and update Tailscale IPs for cluster nodes.
+
+    Uses `tailscale status --json` to discover mesh network peers.
+    Tailscale provides reliable connectivity even when public IPs change.
+
+    December 2025: Extracted from p2p_orchestrator._tailscale_ip_update_loop
+    """
+
+    def __init__(
+        self,
+        get_registry: Callable[[], Any],
+        has_registry: bool = True,
+        config: ProviderIpUpdateConfig | None = None,
+    ):
+        """Initialize Tailscale IP update loop.
+
+        Args:
+            get_registry: Callback returning DynamicHostRegistry instance
+            has_registry: Whether the registry module is available
+            config: Update configuration (default 2 min interval for Tailscale)
+        """
+        self.config = config or ProviderIpUpdateConfig(update_interval_seconds=120.0)
+        super().__init__(
+            name="tailscale_ip_update",
+            interval=self.config.update_interval_seconds,
+        )
+        self._get_registry = get_registry
+        self._has_registry = has_registry
+        self._updates_count = 0
+
+    async def _run_once(self) -> None:
+        """Refresh Tailscale IPs from mesh status."""
+        if not self._has_registry:
+            return
+
+        try:
+            registry = self._get_registry()
+            updated = await registry.update_tailscale_ips()
+            if updated > 0:
+                self._updates_count += updated
+                logger.info(f"[TailscaleIpUpdate] Updated {updated} node Tailscale IPs")
+        except Exception as e:
+            logger.debug(f"[TailscaleIpUpdate] Error: {e}")
+            await asyncio.sleep(self.config.error_retry_seconds)
+
+    def get_update_stats(self) -> dict[str, Any]:
+        """Get update statistics."""
+        return {
+            "total_updates": self._updates_count,
+            **self.stats.to_dict(),
+        }
+
+
 __all__ = [
+    # IP Discovery
     "IpDiscoveryConfig",
     "IpDiscoveryLoop",
+    # NAT Management
     "NATManagementConfig",
     "NATManagementLoop",
+    # Tailscale Peer Discovery
     "TailscalePeerDiscoveryConfig",
     "TailscalePeerDiscoveryLoop",
+    # Tailscale Recovery
     "TailscaleRecoveryConfig",
     "TailscaleRecoveryLoop",
+    # Provider IP Updates (December 2025)
+    "ProviderIpUpdateConfig",
+    "VastIpUpdateLoop",
+    "AwsIpUpdateLoop",
+    "TailscaleIpUpdateLoop",
 ]

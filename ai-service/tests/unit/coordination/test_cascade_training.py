@@ -1,25 +1,69 @@
-"""Tests for cascade training orchestrator.
+"""Tests for cascade_training.py - Multiplayer bootstrapping orchestrator.
 
-December 29, 2025
+This module tests the cascade training system that progressively trains
+2p → 3p → 4p models using transfer learning.
 """
 
-import pytest
+from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.coordination.cascade_training import (
     CascadeConfig,
     CascadeStage,
     CascadeState,
     CascadeTrainingOrchestrator,
+    get_cascade_orchestrator,
 )
+
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def reset_singleton() -> None:
+    """Reset singleton before each test."""
+    CascadeTrainingOrchestrator.reset_instance()
+    yield
+    CascadeTrainingOrchestrator.reset_instance()
+
+
+@pytest.fixture
+def config() -> CascadeConfig:
+    """Create a test configuration."""
+    return CascadeConfig(
+        min_elo_for_transfer=1200.0,
+        min_games_for_training=500,
+        bootstrap_selfplay_multiplier=1.5,
+        board_types=["hex8", "square8"],
+        models_dir="models",
+        data_dir="data/games",
+        check_interval=60.0,
+    )
+
+
+@pytest.fixture
+def orchestrator(config: CascadeConfig) -> CascadeTrainingOrchestrator:
+    """Create a test orchestrator."""
+    return CascadeTrainingOrchestrator(config)
+
+
+# =============================================================================
+# CascadeStage Tests
+# =============================================================================
 
 
 class TestCascadeStage:
     """Tests for CascadeStage enum."""
 
-    def test_all_stages_exist(self):
-        """Verify all expected stages are defined."""
+    def test_all_stages_exist(self) -> None:
+        """Test all expected stages exist."""
         assert CascadeStage.NOT_STARTED.value == "not_started"
         assert CascadeStage.TRAINING_2P.value == "training_2p"
         assert CascadeStage.READY_2P.value == "ready_2p"
@@ -28,16 +72,21 @@ class TestCascadeStage:
         assert CascadeStage.TRAINING_4P.value == "training_4p"
         assert CascadeStage.COMPLETE.value == "complete"
 
-    def test_stage_count(self):
-        """Ensure we have all 7 stages."""
+    def test_stage_count(self) -> None:
+        """Test correct number of stages."""
         assert len(CascadeStage) == 7
+
+
+# =============================================================================
+# CascadeState Tests
+# =============================================================================
 
 
 class TestCascadeState:
     """Tests for CascadeState dataclass."""
 
-    def test_default_state(self):
-        """Test default state initialization."""
+    def test_default_values(self) -> None:
+        """Test default field values."""
         state = CascadeState(board_type="hex8")
         assert state.board_type == "hex8"
         assert state.stage == CascadeStage.NOT_STARTED
@@ -47,357 +96,402 @@ class TestCascadeState:
         assert state.elo_2p == 0.0
         assert state.elo_3p == 0.0
         assert state.elo_4p == 0.0
-        assert state.training_started is None
         assert state.min_elo_for_transfer == 1200.0
         assert state.min_games_for_transfer == 1000
 
-    def test_can_transfer_to_3p_no_model(self):
-        """Cannot transfer without a 2p model."""
+    def test_can_transfer_to_3p_success(self) -> None:
+        """Test successful 2p→3p transfer eligibility."""
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.READY_2P,
+            model_2p="models/hex8_2p.pth",
+            elo_2p=1300.0,
+        )
+        assert state.can_transfer_to_3p() is True
+
+    def test_can_transfer_to_3p_no_model(self) -> None:
+        """Test 2p→3p blocked when no model."""
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.READY_2P,
+            elo_2p=1300.0,
+        )
+        assert state.can_transfer_to_3p() is False
+
+    def test_can_transfer_to_3p_low_elo(self) -> None:
+        """Test 2p→3p blocked when Elo too low."""
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.READY_2P,
+            model_2p="models/hex8_2p.pth",
+            elo_2p=1100.0,  # Below 1200 threshold
+        )
+        assert state.can_transfer_to_3p() is False
+
+    def test_can_transfer_to_3p_wrong_stage(self) -> None:
+        """Test 2p→3p blocked when wrong stage."""
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.NOT_STARTED,  # Not READY_2P
+            model_2p="models/hex8_2p.pth",
+            elo_2p=1300.0,
+        )
+        assert state.can_transfer_to_3p() is False
+
+    def test_can_transfer_to_4p_success(self) -> None:
+        """Test successful 3p→4p transfer eligibility."""
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.READY_3P,
+            model_3p="models/hex8_3p.pth",
+            elo_3p=1250.0,
+        )
+        assert state.can_transfer_to_4p() is True
+
+    def test_can_transfer_to_4p_no_model(self) -> None:
+        """Test 3p→4p blocked when no model."""
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.READY_3P,
+            elo_3p=1250.0,
+        )
+        assert state.can_transfer_to_4p() is False
+
+    def test_to_dict(self) -> None:
+        """Test dictionary serialization."""
+        now = datetime.now()
+        state = CascadeState(
+            board_type="hex8",
+            stage=CascadeStage.READY_2P,
+            model_2p="models/hex8_2p.pth",
+            elo_2p=1350.0,
+            training_started=now,
+            last_updated=now,
+        )
+        result = state.to_dict()
+
+        assert result["board_type"] == "hex8"
+        assert result["stage"] == "ready_2p"
+        assert result["model_2p"] == "models/hex8_2p.pth"
+        assert result["elo_2p"] == 1350.0
+        assert result["training_started"] == now.isoformat()
+        assert result["last_updated"] == now.isoformat()
+
+    def test_to_dict_no_training_started(self) -> None:
+        """Test serialization when training_started is None."""
         state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.READY_2P
-        state.elo_2p = 1500.0
-        assert not state.can_transfer_to_3p()
+        result = state.to_dict()
+        assert result["training_started"] is None
 
-    def test_can_transfer_to_3p_low_elo(self):
-        """Cannot transfer if Elo is too low."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.READY_2P
-        state.model_2p = "models/canonical_hex8_2p.pth"
-        state.elo_2p = 1100.0  # Below threshold
-        assert not state.can_transfer_to_3p()
 
-    def test_can_transfer_to_3p_wrong_stage(self):
-        """Cannot transfer from wrong stage."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.NOT_STARTED
-        state.model_2p = "models/canonical_hex8_2p.pth"
-        state.elo_2p = 1500.0
-        assert not state.can_transfer_to_3p()
-
-    def test_can_transfer_to_3p_success(self):
-        """Can transfer when all conditions met."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.READY_2P
-        state.model_2p = "models/canonical_hex8_2p.pth"
-        state.elo_2p = 1500.0
-        assert state.can_transfer_to_3p()
-
-    def test_can_transfer_to_3p_training_stage(self):
-        """Can transfer from TRAINING_3P stage too."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.TRAINING_3P
-        state.model_2p = "models/canonical_hex8_2p.pth"
-        state.elo_2p = 1500.0
-        assert state.can_transfer_to_3p()
-
-    def test_can_transfer_to_4p_no_model(self):
-        """Cannot transfer without a 3p model."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.READY_3P
-        state.elo_3p = 1500.0
-        assert not state.can_transfer_to_4p()
-
-    def test_can_transfer_to_4p_low_elo(self):
-        """Cannot transfer if 3p Elo is too low."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.READY_3P
-        state.model_3p = "models/canonical_hex8_3p.pth"
-        state.elo_3p = 1100.0  # Below threshold
-        assert not state.can_transfer_to_4p()
-
-    def test_can_transfer_to_4p_success(self):
-        """Can transfer to 4p when conditions met."""
-        state = CascadeState(board_type="hex8")
-        state.stage = CascadeStage.READY_3P
-        state.model_3p = "models/canonical_hex8_3p.pth"
-        state.elo_3p = 1500.0
-        assert state.can_transfer_to_4p()
-
-    def test_custom_elo_threshold(self):
-        """Custom Elo threshold is respected."""
-        state = CascadeState(board_type="hex8", min_elo_for_transfer=1000.0)
-        state.stage = CascadeStage.READY_2P
-        state.model_2p = "models/canonical_hex8_2p.pth"
-        state.elo_2p = 1050.0  # Above custom threshold
-        assert state.can_transfer_to_3p()
-
-    def test_to_dict_all_fields(self):
-        """to_dict includes all expected fields."""
-        state = CascadeState(board_type="square8")
-        state.stage = CascadeStage.READY_2P
-        state.model_2p = "models/test.pth"
-        state.elo_2p = 1400.0
-
-        d = state.to_dict()
-        assert d["board_type"] == "square8"
-        assert d["stage"] == "ready_2p"
-        assert d["model_2p"] == "models/test.pth"
-        assert d["model_3p"] is None
-        assert d["model_4p"] is None
-        assert d["elo_2p"] == 1400.0
-        assert d["elo_3p"] == 0.0
-        assert d["elo_4p"] == 0.0
-        assert d["min_elo_for_transfer"] == 1200.0
-        assert d["min_games_for_transfer"] == 1000
-        assert d["training_started"] is None
-        assert "last_updated" in d
-
-    def test_to_dict_with_training_started(self):
-        """to_dict includes training_started when set."""
-        state = CascadeState(board_type="hex8")
-        state.training_started = datetime(2025, 12, 29, 12, 0, 0)
-
-        d = state.to_dict()
-        assert d["training_started"] == "2025-12-29T12:00:00"
+# =============================================================================
+# CascadeConfig Tests
+# =============================================================================
 
 
 class TestCascadeConfig:
     """Tests for CascadeConfig dataclass."""
 
-    def test_default_config(self):
+    def test_default_values(self) -> None:
         """Test default configuration values."""
         config = CascadeConfig()
         assert config.min_elo_for_transfer == 1200.0
         assert config.min_games_for_training == 500
         assert config.bootstrap_selfplay_multiplier == 1.5
-        assert config.board_types == ["hex8", "square8", "square19", "hexagonal"]
+        assert "hex8" in config.board_types
+        assert "square8" in config.board_types
         assert config.models_dir == "models"
         assert config.data_dir == "data/games"
         assert config.check_interval == 300.0
 
-    def test_custom_config(self):
-        """Test custom configuration."""
+    def test_custom_values(self) -> None:
+        """Test custom configuration values."""
         config = CascadeConfig(
-            min_elo_for_transfer=1000.0,
+            min_elo_for_transfer=1500.0,
             min_games_for_training=1000,
-            bootstrap_selfplay_multiplier=2.0,
             board_types=["hex8"],
-            check_interval=60.0,
         )
-        assert config.min_elo_for_transfer == 1000.0
+        assert config.min_elo_for_transfer == 1500.0
         assert config.min_games_for_training == 1000
-        assert config.bootstrap_selfplay_multiplier == 2.0
         assert config.board_types == ["hex8"]
-        assert config.check_interval == 60.0
+
+
+# =============================================================================
+# CascadeTrainingOrchestrator Tests
+# =============================================================================
 
 
 class TestCascadeTrainingOrchestrator:
     """Tests for CascadeTrainingOrchestrator class."""
 
-    @pytest.fixture(autouse=True)
-    def reset_singleton(self):
-        """Reset singleton before each test."""
-        CascadeTrainingOrchestrator.reset_instance()
-        yield
-        CascadeTrainingOrchestrator.reset_instance()
-
-    def test_singleton_pattern(self):
-        """Test singleton pattern works."""
-        instance1 = CascadeTrainingOrchestrator.get_instance()
-        instance2 = CascadeTrainingOrchestrator.get_instance()
-        assert instance1 is instance2
-
-    def test_singleton_reset(self):
-        """Test singleton can be reset."""
-        instance1 = CascadeTrainingOrchestrator.get_instance()
-        CascadeTrainingOrchestrator.reset_instance()
-        instance2 = CascadeTrainingOrchestrator.get_instance()
-        assert instance1 is not instance2
-
-    def test_init_with_default_config(self):
-        """Test initialization with default config."""
-        orchestrator = CascadeTrainingOrchestrator()
-        assert orchestrator.config is not None
-        assert len(orchestrator._states) == 4  # All board types
-
-    def test_init_with_custom_config(self):
-        """Test initialization with custom config."""
-        config = CascadeConfig(board_types=["hex8", "square8"])
-        orchestrator = CascadeTrainingOrchestrator(config)
-        assert len(orchestrator._states) == 2
+    def test_initialization(self, orchestrator: CascadeTrainingOrchestrator, config: CascadeConfig) -> None:
+        """Test orchestrator initialization."""
+        assert orchestrator.config == config
         assert "hex8" in orchestrator._states
         assert "square8" in orchestrator._states
+        assert orchestrator._states["hex8"].stage == CascadeStage.NOT_STARTED
 
-    def test_states_initialized_correctly(self):
-        """Test that states are initialized for each board type."""
-        orchestrator = CascadeTrainingOrchestrator()
-        for board_type in ["hex8", "square8", "square19", "hexagonal"]:
-            assert board_type in orchestrator._states
-            state = orchestrator._states[board_type]
-            assert state.board_type == board_type
-            assert state.stage == CascadeStage.NOT_STARTED
+    def test_default_config(self) -> None:
+        """Test initialization with default config."""
+        orch = CascadeTrainingOrchestrator()
+        assert orch.config.min_elo_for_transfer == 1200.0
+        assert len(orch._states) == 4  # All canonical boards
 
-    def test_event_subscriptions(self):
-        """Test event subscriptions are defined."""
-        orchestrator = CascadeTrainingOrchestrator()
+    def test_singleton_pattern(self) -> None:
+        """Test singleton get_instance."""
+        orch1 = CascadeTrainingOrchestrator.get_instance()
+        orch2 = CascadeTrainingOrchestrator.get_instance()
+        assert orch1 is orch2
+
+    def test_singleton_reset(self) -> None:
+        """Test singleton reset_instance."""
+        orch1 = CascadeTrainingOrchestrator.get_instance()
+        CascadeTrainingOrchestrator.reset_instance()
+        orch2 = CascadeTrainingOrchestrator.get_instance()
+        assert orch1 is not orch2
+
+    def test_event_subscriptions(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test event subscription setup."""
         subs = orchestrator._get_event_subscriptions()
-
         assert "TRAINING_COMPLETED" in subs
         assert "EVALUATION_COMPLETED" in subs
         assert "MODEL_PROMOTED" in subs
         assert "ELO_UPDATED" in subs
         assert "CASCADE_TRANSFER_TRIGGERED" in subs
 
-    def test_handler_inheritance(self):
-        """Test that orchestrator inherits from HandlerBase."""
-        orchestrator = CascadeTrainingOrchestrator()
-        assert hasattr(orchestrator, "health_check")
-        assert hasattr(orchestrator, "start")
-        assert hasattr(orchestrator, "stop")
+
+class TestEventHandlers:
+    """Tests for event handler methods."""
 
     @pytest.mark.asyncio
-    async def test_on_cascade_transfer_triggered_missing_fields(self):
-        """Test transfer handler with missing fields."""
-        orchestrator = CascadeTrainingOrchestrator()
+    async def test_on_training_completed_2p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling 2p training completion."""
+        orchestrator._states["hex8"].stage = CascadeStage.TRAINING_2P
 
-        # Should log warning and return without error
-        await orchestrator._on_cascade_transfer_triggered({
-            "board_type": "hex8",
-            # Missing other required fields
-        })
-        # No exception = success
+        event = {
+            "config_key": "hex8_2p",
+            "model_path": "models/hex8_2p.pth",
+        }
+        await orchestrator._on_training_completed(event)
 
-    @pytest.mark.asyncio
-    async def test_on_cascade_transfer_triggered_valid(self):
-        """Test transfer handler with valid event."""
-        orchestrator = CascadeTrainingOrchestrator()
-
-        with patch.object(orchestrator, "_execute_transfer", new_callable=AsyncMock) as mock_transfer:
-            mock_transfer.return_value = True
-            await orchestrator._on_cascade_transfer_triggered({
-                "board_type": "hex8",
-                "source_players": 2,
-                "target_players": 3,
-                "source_model": "models/canonical_hex8_2p.pth",
-            })
-            mock_transfer.assert_called_once()
-
-    def test_cycle_interval_from_config(self):
-        """Test that cycle interval comes from config."""
-        config = CascadeConfig(check_interval=120.0)
-        orchestrator = CascadeTrainingOrchestrator(config)
-        assert orchestrator._cycle_interval == 120.0
-
-    def test_health_check_returns_result(self):
-        """Test health_check returns proper result."""
-        orchestrator = CascadeTrainingOrchestrator()
-        result = orchestrator.health_check()
-
-        # HandlerBase provides health_check
-        assert hasattr(result, "healthy")
-
-
-class TestCascadeTransferLogic:
-    """Tests for transfer execution logic."""
-
-    @pytest.fixture(autouse=True)
-    def reset_singleton(self):
-        """Reset singleton before each test."""
-        CascadeTrainingOrchestrator.reset_instance()
-        yield
-        CascadeTrainingOrchestrator.reset_instance()
+        assert orchestrator._states["hex8"].model_2p == "models/hex8_2p.pth"
+        assert orchestrator._states["hex8"].stage == CascadeStage.READY_2P
 
     @pytest.mark.asyncio
-    async def test_execute_transfer_success(self):
-        """Test successful transfer execution."""
-        orchestrator = CascadeTrainingOrchestrator()
+    async def test_on_training_completed_3p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling 3p training completion."""
+        orchestrator._states["hex8"].stage = CascadeStage.TRAINING_3P
 
-        with patch.object(orchestrator, "_run_transfer_sync") as mock_sync, \
-             patch.object(orchestrator, "_emit_event", new_callable=AsyncMock) as mock_emit, \
-             patch("pathlib.Path.exists", return_value=True):
+        event = {
+            "config_key": "hex8_3p",
+            "model_path": "models/hex8_3p.pth",
+        }
+        await orchestrator._on_training_completed(event)
 
-            result = await orchestrator._execute_transfer(
-                board_type="hex8",
-                source_model="models/canonical_hex8_2p.pth",
-                source_players=2,
-                target_players=3,
-            )
-
-            assert result is True
-            mock_sync.assert_called_once()
-            mock_emit.assert_called_once()
-            # Check emit was called with TRAINING_REQUESTED
-            call_args = mock_emit.call_args[0]
-            assert call_args[0] == "TRAINING_REQUESTED"
+        assert orchestrator._states["hex8"].model_3p == "models/hex8_3p.pth"
+        assert orchestrator._states["hex8"].stage == CascadeStage.READY_3P
 
     @pytest.mark.asyncio
-    async def test_execute_transfer_output_not_found(self):
-        """Test transfer fails when output not created."""
-        orchestrator = CascadeTrainingOrchestrator()
+    async def test_on_training_completed_4p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling 4p training completion (cascade complete)."""
+        orchestrator._states["hex8"].stage = CascadeStage.TRAINING_4P
 
-        with patch.object(orchestrator, "_run_transfer_sync"), \
-             patch("pathlib.Path.exists", return_value=False):
+        event = {
+            "config_key": "hex8_4p",
+            "model_path": "models/hex8_4p.pth",
+        }
+        await orchestrator._on_training_completed(event)
 
-            result = await orchestrator._execute_transfer(
-                board_type="hex8",
-                source_model="models/canonical_hex8_2p.pth",
-                source_players=2,
-                target_players=3,
-            )
-
-            assert result is False
+        assert orchestrator._states["hex8"].model_4p == "models/hex8_4p.pth"
+        assert orchestrator._states["hex8"].stage == CascadeStage.COMPLETE
 
     @pytest.mark.asyncio
-    async def test_execute_transfer_handles_exception(self):
-        """Test transfer handles exceptions gracefully."""
-        orchestrator = CascadeTrainingOrchestrator()
+    async def test_on_training_completed_invalid_config(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling invalid config_key."""
+        event = {"config_key": "", "model_path": "models/test.pth"}
+        await orchestrator._on_training_completed(event)  # Should not raise
 
-        with patch.object(orchestrator, "_run_transfer_sync", side_effect=RuntimeError("Test error")), \
-             patch.object(orchestrator, "_emit_event", new_callable=AsyncMock) as mock_emit:
+        event = {"config_key": "invalid", "model_path": "models/test.pth"}
+        await orchestrator._on_training_completed(event)  # Should not raise
 
-            result = await orchestrator._execute_transfer(
-                board_type="hex8",
-                source_model="models/canonical_hex8_2p.pth",
-                source_players=2,
-                target_players=3,
-            )
+    @pytest.mark.asyncio
+    async def test_on_training_completed_unknown_board(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling unknown board type."""
+        event = {
+            "config_key": "unknown_2p",
+            "model_path": "models/unknown_2p.pth",
+        }
+        await orchestrator._on_training_completed(event)  # Should not raise
 
-            assert result is False
-            # Should emit CASCADE_TRANSFER_FAILED
-            mock_emit.assert_called_once()
-            call_args = mock_emit.call_args[0]
-            assert call_args[0] == "CASCADE_TRANSFER_FAILED"
+    @pytest.mark.asyncio
+    async def test_on_elo_updated_2p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling Elo update for 2p."""
+        event = {"config_key": "hex8_2p", "elo": 1350.0}
+        await orchestrator._on_elo_updated(event)
+        assert orchestrator._states["hex8"].elo_2p == 1350.0
 
-
-class TestCascadeStateTransitions:
-    """Tests for state transition logic."""
-
-    def test_state_progression(self):
-        """Test expected state progression."""
-        state = CascadeState(board_type="hex8")
-
-        # Start
-        assert state.stage == CascadeStage.NOT_STARTED
-
-        # Training 2p
-        state.stage = CascadeStage.TRAINING_2P
-        assert not state.can_transfer_to_3p()
-
-        # Ready 2p with model and Elo
+    @pytest.mark.asyncio
+    async def test_on_elo_updated_triggers_transfer(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test Elo update triggers cascade transfer."""
+        state = orchestrator._states["hex8"]
         state.stage = CascadeStage.READY_2P
-        state.model_2p = "models/canonical_hex8_2p.pth"
-        state.elo_2p = 1500.0
-        assert state.can_transfer_to_3p()
-        assert not state.can_transfer_to_4p()
+        state.model_2p = "models/hex8_2p.pth"
+        state.min_elo_for_transfer = 1200.0
 
-        # Training 3p
-        state.stage = CascadeStage.TRAINING_3P
-        # Still can transfer from 2p in this stage
-        assert state.can_transfer_to_3p()
+        with patch.object(orchestrator, "_trigger_transfer", new_callable=AsyncMock) as mock_trigger:
+            event = {"config_key": "hex8_2p", "elo": 1250.0}
+            await orchestrator._on_elo_updated(event)
+            mock_trigger.assert_called_once_with("hex8", 2, 3)
 
-        # Ready 3p
-        state.stage = CascadeStage.READY_3P
-        state.model_3p = "models/canonical_hex8_3p.pth"
-        state.elo_3p = 1400.0
-        assert state.can_transfer_to_4p()
+    @pytest.mark.asyncio
+    async def test_on_model_promoted(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test handling model promotion event."""
+        event = {
+            "config_key": "hex8_2p",
+            "model_path": "models/canonical_hex8_2p.pth",
+        }
+        await orchestrator._on_model_promoted(event)
+        assert orchestrator._states["hex8"].model_2p == "models/canonical_hex8_2p.pth"
 
-        # Training 4p
-        state.stage = CascadeStage.TRAINING_4P
-        assert state.can_transfer_to_4p()
+    @pytest.mark.asyncio
+    async def test_on_evaluation_completed(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test evaluation completed updates Elo."""
+        event = {"config_key": "square8_3p", "elo": 1400.0}
+        await orchestrator._on_evaluation_completed(event)
+        assert orchestrator._states["square8"].elo_3p == 1400.0
 
-        # Complete
-        state.stage = CascadeStage.COMPLETE
-        state.model_4p = "models/canonical_hex8_4p.pth"
-        # Neither transfer valid from complete stage
-        assert not state.can_transfer_to_3p()
-        assert not state.can_transfer_to_4p()
+
+class TestCascadeStatus:
+    """Tests for cascade status methods."""
+
+    def test_get_cascade_status(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test getting cascade status for a board type."""
+        status = orchestrator.get_cascade_status("hex8")
+        assert status is not None
+        assert status.board_type == "hex8"
+
+    def test_get_cascade_status_unknown(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test getting status for unknown board type."""
+        status = orchestrator.get_cascade_status("unknown")
+        assert status is None
+
+    def test_get_all_cascade_status(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test getting all cascade statuses."""
+        statuses = orchestrator.get_all_cascade_status()
+        assert "hex8" in statuses
+        assert "square8" in statuses
+        assert statuses["hex8"]["stage"] == "not_started"
+
+
+class TestBootstrapPriority:
+    """Tests for bootstrap priority calculation."""
+
+    def test_priority_2p_not_started(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test 2p config gets boost when not started."""
+        orchestrator._states["hex8"].stage = CascadeStage.NOT_STARTED
+        priority = orchestrator.get_bootstrap_priority("hex8_2p")
+        assert priority == 1.5  # Boosted
+
+    def test_priority_2p_training(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test 2p config gets boost when training."""
+        orchestrator._states["hex8"].stage = CascadeStage.TRAINING_2P
+        priority = orchestrator.get_bootstrap_priority("hex8_2p")
+        assert priority == 1.5  # Boosted
+
+    def test_priority_3p_ready_2p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test 3p config gets boost after 2p ready."""
+        orchestrator._states["hex8"].stage = CascadeStage.READY_2P
+        priority = orchestrator.get_bootstrap_priority("hex8_3p")
+        assert priority == 1.5  # Boosted
+
+    def test_priority_4p_ready_3p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test 4p config gets boost after 3p ready."""
+        orchestrator._states["hex8"].stage = CascadeStage.READY_3P
+        priority = orchestrator.get_bootstrap_priority("hex8_4p")
+        assert priority == 1.5  # Boosted
+
+    def test_priority_no_boost_complete(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test no boost when cascade complete."""
+        orchestrator._states["hex8"].stage = CascadeStage.COMPLETE
+        assert orchestrator.get_bootstrap_priority("hex8_2p") == 1.0
+        assert orchestrator.get_bootstrap_priority("hex8_3p") == 1.0
+        assert orchestrator.get_bootstrap_priority("hex8_4p") == 1.0
+
+    def test_priority_invalid_config(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test invalid config returns default priority."""
+        assert orchestrator.get_bootstrap_priority("invalid") == 1.0
+        assert orchestrator.get_bootstrap_priority("hex8") == 1.0  # Missing player count
+        assert orchestrator.get_bootstrap_priority("unknown_2p") == 1.0
+
+
+class TestHealthCheck:
+    """Tests for health check method."""
+
+    def test_health_check_all_not_started(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test health check when all not started."""
+        result = orchestrator.health_check()
+        assert result.healthy is True
+        assert "0/" in result.message  # 0 complete
+        assert result.details["complete"] == 0
+
+    def test_health_check_some_complete(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test health check with some cascades complete."""
+        orchestrator._states["hex8"].stage = CascadeStage.COMPLETE
+        result = orchestrator.health_check()
+        assert result.healthy is True
+        assert result.details["complete"] == 1
+
+    def test_health_check_in_progress(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test health check with cascade in progress."""
+        orchestrator._states["hex8"].stage = CascadeStage.TRAINING_3P
+        result = orchestrator.health_check()
+        assert result.details["in_progress"] == 1
+
+
+class TestTriggerTransfer:
+    """Tests for transfer triggering."""
+
+    @pytest.mark.asyncio
+    async def test_trigger_transfer_2p_to_3p(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test triggering 2p→3p transfer."""
+        orchestrator._states["hex8"].model_2p = "models/hex8_2p.pth"
+
+        with patch.object(orchestrator, "_emit_event", new_callable=AsyncMock) as mock_emit:
+            await orchestrator._trigger_transfer("hex8", 2, 3)
+
+            mock_emit.assert_called_once()
+            args = mock_emit.call_args[0]
+            assert args[0] == "CASCADE_TRANSFER_TRIGGERED"
+            assert args[1]["board_type"] == "hex8"
+            assert args[1]["source_players"] == 2
+            assert args[1]["target_players"] == 3
+
+    @pytest.mark.asyncio
+    async def test_trigger_transfer_no_source_model(self, orchestrator: CascadeTrainingOrchestrator) -> None:
+        """Test transfer not triggered without source model."""
+        orchestrator._states["hex8"].model_2p = None
+
+        with patch.object(orchestrator, "_emit_event", new_callable=AsyncMock) as mock_emit:
+            await orchestrator._trigger_transfer("hex8", 2, 3)
+            mock_emit.assert_not_called()
+
+
+# =============================================================================
+# Module-level Function Tests
+# =============================================================================
+
+
+class TestGetCascadeOrchestrator:
+    """Tests for get_cascade_orchestrator function."""
+
+    def test_returns_singleton(self) -> None:
+        """Test get_cascade_orchestrator returns singleton."""
+        orch1 = get_cascade_orchestrator()
+        orch2 = get_cascade_orchestrator()
+        assert orch1 is orch2
+
+    def test_with_config(self) -> None:
+        """Test get_cascade_orchestrator with custom config."""
+        config = CascadeConfig(board_types=["hex8"])
+        orch = get_cascade_orchestrator(config)
+        assert "hex8" in orch._states

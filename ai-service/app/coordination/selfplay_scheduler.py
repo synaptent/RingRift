@@ -47,6 +47,10 @@ __all__ = [
     "ALL_CONFIGS",
     "CURRICULUM_WEIGHT",
     "DATA_DEFICIT_WEIGHT",
+    "DATA_STARVATION_CRITICAL_MULTIPLIER",
+    "DATA_STARVATION_CRITICAL_THRESHOLD",
+    "DATA_STARVATION_EMERGENCY_MULTIPLIER",
+    "DATA_STARVATION_EMERGENCY_THRESHOLD",
     "DEFAULT_GAMES_PER_CONFIG",
     "DEFAULT_TRAINING_SAMPLES_TARGET",
     "ELO_VELOCITY_WEIGHT",
@@ -184,6 +188,14 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
     2: 1.25,  # MEDIUM: 25% boost
     3: 1.0,  # LOW: no boost (normal priority)
 }
+
+# Dec 29, 2025: Data starvation emergency threshold
+# Configs with fewer games than this get a massive priority boost
+# Especially critical for 4-player configs which have near-zero games
+DATA_STARVATION_EMERGENCY_THRESHOLD = 100  # Less than 100 games = emergency
+DATA_STARVATION_CRITICAL_THRESHOLD = 1000  # Less than 1000 games = critical
+DATA_STARVATION_EMERGENCY_MULTIPLIER = 10.0  # 10x boost for <100 games
+DATA_STARVATION_CRITICAL_MULTIPLIER = 5.0   # 5x boost for <1000 games
 
 # Dec 29, 2025: Samples-per-game estimates by board type and player count
 # Used for game count normalization - ensures selfplay generates enough games
@@ -1103,6 +1115,28 @@ class SelfplayScheduler:
         cascade_boost = self._get_cascade_priority(priority.config_key)
         score *= cascade_boost
 
+        # Dec 29, 2025: Data starvation emergency multiplier
+        # Configs with very few games get massive priority boost
+        # This addresses the critical data starvation for 4-player configs
+        # (e.g., square19_4p: 1 game, hexagonal_4p: 400 games)
+        starvation_multiplier = 1.0
+        game_count = priority.game_count
+        if game_count < DATA_STARVATION_EMERGENCY_THRESHOLD:
+            starvation_multiplier = DATA_STARVATION_EMERGENCY_MULTIPLIER
+            logger.warning(
+                f"[SelfplayScheduler] EMERGENCY: {priority.config_key} has only "
+                f"{game_count} games (<{DATA_STARVATION_EMERGENCY_THRESHOLD}). "
+                f"Applying {starvation_multiplier}x priority boost."
+            )
+        elif game_count < DATA_STARVATION_CRITICAL_THRESHOLD:
+            starvation_multiplier = DATA_STARVATION_CRITICAL_MULTIPLIER
+            logger.info(
+                f"[SelfplayScheduler] CRITICAL: {priority.config_key} has only "
+                f"{game_count} games (<{DATA_STARVATION_CRITICAL_THRESHOLD}). "
+                f"Applying {starvation_multiplier}x priority boost."
+            )
+        score *= starvation_multiplier
+
         return score
 
     async def _get_data_freshness(self) -> dict[str, float]:
@@ -1607,6 +1641,10 @@ class SelfplayScheduler:
                 priority = self._config_priorities[config_key]
                 priority.games_allocated = sum(node_allocation.values())
                 priority.nodes_allocated = list(node_allocation.keys())
+
+        # Dec 29, 2025 - Phase 5: Enforce starvation floor allocations
+        # Configs with <100 games MUST get allocation even if priority was low
+        allocation = self._enforce_starvation_floor(allocation, games_per_config)
 
         # Dec 29, 2025 - Phase 4: Enforce 4p allocation minimums
         # If 4p configs are under-allocated, steal from 2p configs

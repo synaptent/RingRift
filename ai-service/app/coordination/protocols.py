@@ -60,13 +60,16 @@ from app.coordination.contracts import (
     CoordinatorStatus,
     DaemonProtocol,
     EventDrivenProtocol,
+    HealthCheckable,
     HealthCheckResult,
     SyncManagerProtocol,
     get_coordinator,
     get_registered_coordinators,
+    invoke_health_check,
     is_coordinator,
     is_daemon,
     is_event_driven,
+    is_health_checkable,
     register_coordinator,
     unregister_coordinator,
 )
@@ -83,7 +86,11 @@ __all__ = [
     "CoordinatorProtocol",
     "DaemonProtocol",
     "EventDrivenProtocol",
+    "HealthCheckable",
     "SyncManagerProtocol",
+    # Health check helpers (December 29, 2025)
+    "invoke_health_check",
+    "is_health_checkable",
     # Base classes
     "BaseCoordinator",
     "BaseDaemon",
