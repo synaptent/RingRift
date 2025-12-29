@@ -1027,9 +1027,17 @@ class UnifiedDistributionDaemon:
         """Run distribution with smart transport selection.
 
         Priority: BitTorrent (for large files) > HTTP > rsync
+
+        December 29, 2025: Refactored for parallel distribution to all nodes.
+        Uses asyncio.gather with semaphore to limit concurrent uploads.
+        Expected 5-10x speedup for multi-node clusters.
         """
         success_count = 0
         total_count = len(files) * len(targets)
+
+        # Semaphore to limit concurrent uploads (default 5, configurable)
+        max_concurrent = self.config.http_concurrent_uploads
+        semaphore = asyncio.Semaphore(max_concurrent)
 
         for file_path in files:
             if not file_path.exists():
@@ -1041,96 +1049,130 @@ class UnifiedDistributionDaemon:
                 and file_size > self.config.bittorrent_threshold_bytes
             )
 
-            # Compute source checksum
+            # Compute source checksum once per file (not per target)
             source_checksum = None
             if self.config.verify_checksums:
                 source_checksum = await self._compute_checksum(file_path)
 
-            for target in targets:
-                node_host = target if isinstance(target, str) else target.get("host", "")
-                node_id = target if isinstance(target, str) else target.get("node_id", node_host)
-                start_time = time.time()
-
-                # December 29, 2025: Circuit breaker check - skip nodes that are failing
-                if CIRCUIT_BREAKER_AVAILABLE and CircuitBreakerRegistry:
-                    try:
-                        registry = CircuitBreakerRegistry.get_instance()
-                        breaker = registry.get_breaker(f"distribution:{node_id}")
-                        if not breaker.can_execute(f"distribution:{node_id}"):
-                            logger.debug(
-                                f"Skipping distribution to {node_id}: circuit breaker open"
-                            )
-                            self._record_delivery(
-                                node_id, node_host, str(file_path), data_type,
-                                False, False, 0.0, "skipped", "Circuit breaker open"
-                            )
-                            continue
-                    except Exception as cb_err:
-                        logger.debug(f"Circuit breaker check failed: {cb_err}")
-
-                # Try BitTorrent for large files
-                if use_bittorrent and await self._distribute_via_bittorrent(file_path, target):
-                    success_count += 1
-                    self._record_delivery(
-                        node_id, node_host, str(file_path), data_type,
-                        True, True, time.time() - start_time, "bittorrent"
+            # December 29, 2025: Parallel distribution to all targets
+            async def distribute_to_target(target: dict[str, Any] | str) -> bool:
+                async with semaphore:
+                    return await self._distribute_file_to_target(
+                        file_path, target, data_type, use_bittorrent, source_checksum
                     )
-                    self._record_circuit_breaker_success(node_id)
-                    continue
 
-                # Try HTTP
-                if self.config.use_http_distribution and await self._distribute_via_http(
-                    file_path, target, data_type
-                ):
-                    # Verify checksum
-                    checksum_ok = True
-                    if source_checksum:
-                        checksum_ok = await self._verify_remote_checksum(
-                            target, file_path, source_checksum, data_type
-                        )
-                    if checksum_ok:
-                        success_count += 1
-                        self._record_delivery(
-                            node_id, node_host, str(file_path), data_type,
-                            True, checksum_ok, time.time() - start_time, "http"
-                        )
-                        self._record_circuit_breaker_success(node_id)
-                        continue
+            # Run distributions in parallel
+            results = await asyncio.gather(
+                *[distribute_to_target(target) for target in targets],
+                return_exceptions=True
+            )
 
-                # Fallback to rsync
-                if self.config.fallback_to_rsync and await self._distribute_via_rsync(
-                    file_path, target, data_type
-                ):
-                    checksum_ok = True
-                    if source_checksum:
-                        checksum_ok = await self._verify_remote_checksum(
-                            target, file_path, source_checksum, data_type
-                        )
-                    if checksum_ok:
-                        success_count += 1
-                        self._record_delivery(
-                            node_id, node_host, str(file_path), data_type,
-                            True, checksum_ok, time.time() - start_time, "rsync"
-                        )
-                        self._record_circuit_breaker_success(node_id)
-                        continue
-
-                # All methods failed
-                self._record_delivery(
-                    node_id, node_host, str(file_path), data_type,
-                    False, False, time.time() - start_time, "none", "All transport methods failed"
-                )
-
-                # December 29, 2025: Record failure in circuit breaker
-                if CIRCUIT_BREAKER_AVAILABLE and CircuitBreakerRegistry:
-                    try:
-                        registry = CircuitBreakerRegistry.get_instance()
-                        breaker = registry.get_breaker(f"distribution:{node_id}")
-                        breaker.record_failure(f"distribution:{node_id}")
-                    except Exception as cb_err:
-                        logger.debug(f"Circuit breaker failure recording failed: {cb_err}")
+            # Count successes
+            for result in results:
+                if result is True:
+                    success_count += 1
+                elif isinstance(result, Exception):
+                    logger.warning(f"Distribution failed with exception: {result}")
 
         return success_count > total_count * 0.5
+
+    async def _distribute_file_to_target(
+        self,
+        file_path: Path,
+        target: dict[str, Any] | str,
+        data_type: DataType,
+        use_bittorrent: bool,
+        source_checksum: str | None,
+    ) -> bool:
+        """Distribute a single file to a single target node.
+
+        December 29, 2025: Extracted from _run_smart_distribution for parallel execution.
+        Tries transport methods in order: BitTorrent > HTTP > rsync
+
+        Returns:
+            True if distribution succeeded, False otherwise.
+        """
+        node_host = target if isinstance(target, str) else target.get("host", "")
+        node_id = target if isinstance(target, str) else target.get("node_id", node_host)
+        start_time = time.time()
+
+        # December 29, 2025: Circuit breaker check - skip nodes that are failing
+        if CIRCUIT_BREAKER_AVAILABLE and CircuitBreakerRegistry:
+            try:
+                registry = CircuitBreakerRegistry.get_instance()
+                breaker = registry.get_breaker(f"distribution:{node_id}")
+                if not breaker.can_execute(f"distribution:{node_id}"):
+                    logger.debug(
+                        f"Skipping distribution to {node_id}: circuit breaker open"
+                    )
+                    self._record_delivery(
+                        node_id, node_host, str(file_path), data_type,
+                        False, False, 0.0, "skipped", "Circuit breaker open"
+                    )
+                    return False
+            except Exception as cb_err:
+                logger.debug(f"Circuit breaker check failed: {cb_err}")
+
+        # Try BitTorrent for large files
+        if use_bittorrent and await self._distribute_via_bittorrent(file_path, target):
+            self._record_delivery(
+                node_id, node_host, str(file_path), data_type,
+                True, True, time.time() - start_time, "bittorrent"
+            )
+            self._record_circuit_breaker_success(node_id)
+            return True
+
+        # Try HTTP
+        if self.config.use_http_distribution and await self._distribute_via_http(
+            file_path, target, data_type
+        ):
+            # Verify checksum
+            checksum_ok = True
+            if source_checksum:
+                checksum_ok = await self._verify_remote_checksum(
+                    target, file_path, source_checksum, data_type
+                )
+            if checksum_ok:
+                self._record_delivery(
+                    node_id, node_host, str(file_path), data_type,
+                    True, checksum_ok, time.time() - start_time, "http"
+                )
+                self._record_circuit_breaker_success(node_id)
+                return True
+
+        # Fallback to rsync
+        if self.config.fallback_to_rsync and await self._distribute_via_rsync(
+            file_path, target, data_type
+        ):
+            checksum_ok = True
+            if source_checksum:
+                checksum_ok = await self._verify_remote_checksum(
+                    target, file_path, source_checksum, data_type
+                )
+            if checksum_ok:
+                self._record_delivery(
+                    node_id, node_host, str(file_path), data_type,
+                    True, checksum_ok, time.time() - start_time, "rsync"
+                )
+                self._record_circuit_breaker_success(node_id)
+                return True
+
+        # All methods failed
+        self._record_delivery(
+            node_id, node_host, str(file_path), data_type,
+            False, False, time.time() - start_time, "none", "All transport methods failed"
+        )
+
+        # December 29, 2025: Record failure in circuit breaker
+        if CIRCUIT_BREAKER_AVAILABLE and CircuitBreakerRegistry:
+            try:
+                registry = CircuitBreakerRegistry.get_instance()
+                breaker = registry.get_breaker(f"distribution:{node_id}")
+                breaker.record_failure(f"distribution:{node_id}")
+            except Exception as cb_err:
+                logger.debug(f"Circuit breaker failure recording failed: {cb_err}")
+
+        return False
 
     # =========================================================================
     # Transport Methods
