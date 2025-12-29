@@ -191,7 +191,8 @@ class P2PEloTournament:
         self.games_per_pairing = games_per_pairing
         self.nodes: list[P2PNode] = []
         self.state: TournamentState | None = None
-        self.elo_db_path = elo_db_path or (AI_SERVICE_ROOT / "data" / "elo_leaderboard.db")
+        # December 29, 2025: Use unified Elo database (consolidated from elo_leaderboard.db)
+        self.elo_db_path = elo_db_path or (AI_SERVICE_ROOT / "data" / "unified_elo.db")
         self._elo_service = None
 
     def _get_elo_service(self):
@@ -764,7 +765,8 @@ async def main():
             games_per_pairing=args.games,
             leader_host=args.leader_host,
             leader_port=args.leader_port,
-            elo_db_path=AI_SERVICE_ROOT / "data" / "elo" / f"model_elo_{args.board}_{args.players}p.db",
+            # December 29, 2025: Use unified Elo database
+            elo_db_path=AI_SERVICE_ROOT / "data" / "unified_elo.db",
         )
 
         # Inject model configs into the global config dict for match execution
