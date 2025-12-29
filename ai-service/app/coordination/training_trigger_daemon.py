@@ -95,8 +95,9 @@ class TrainingTriggerConfig:
     # December 29, 2025: Reduced from 1.0 to 0.083 (5 min) for faster iteration cycles
     training_cooldown_hours: float = 0.083
     # Maximum concurrent training jobs
-    # December 29, 2025: Increased from 2 to 10 for better cluster utilization
-    max_concurrent_training: int = 10
+    # December 29, 2025: Increased from 10 to 20 for better multi-GPU cluster utilization
+    # Cluster has ~36 nodes with GPUs; allowing more concurrent training maximizes throughput
+    max_concurrent_training: int = 20
     # GPU utilization threshold for "idle"
     gpu_idle_threshold_percent: float = 20.0
     # Timeout for training subprocess (24 hours)

@@ -1693,6 +1693,20 @@ GUMBEL_BUDGET_ULTIMATE = 1600    # Maximum quality for final benchmarks
 GUMBEL_BUDGET_MASTER = 3200      # 2000+ Elo training (Dec 2025: for breaking Elo plateau)
 GUMBEL_DEFAULT_BUDGET = GUMBEL_BUDGET_STANDARD
 
+# December 29, 2025: Bootstrap budget tiers for data-starved configs
+# When a config has very few games, prioritize game generation speed over quality.
+# This enables faster bootstrapping of new/starved configurations.
+# Thresholds: game_count < threshold uses the corresponding budget
+GUMBEL_BUDGET_BOOTSTRAP_TIER1 = 64   # For <100 games: maximum throughput
+GUMBEL_BUDGET_BOOTSTRAP_TIER2 = 150  # For <500 games: medium speed
+GUMBEL_BUDGET_BOOTSTRAP_TIER3 = 200  # For <1000 games: balanced
+# Above 1000 games: use Elo-based adaptive budget (STANDARD/QUALITY/ULTIMATE/MASTER)
+
+# Game count thresholds for bootstrap budget tiers
+BOOTSTRAP_TIER1_GAME_THRESHOLD = 100   # Very starved
+BOOTSTRAP_TIER2_GAME_THRESHOLD = 500   # Moderately starved
+BOOTSTRAP_TIER3_GAME_THRESHOLD = 1000  # Somewhat starved
+
 
 # =============================================================================
 # GPU Thresholds (December 2025)

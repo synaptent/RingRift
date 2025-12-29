@@ -262,7 +262,7 @@ Always log legacy usage at DEBUG level for tracking.
 
 ## References
 
-- RR-CANON Specification: `docs/specs/RULES_CANONICAL_SPEC.md`
-- 7-Phase State Machine: `docs/specs/GAME_NOTATION_SPEC.md`
+- RR-CANON Specification: `../../../RULES_CANONICAL_SPEC.md`
+- 7-Phase State Machine: `GAME_NOTATION_SPEC.md`
 - FSM Implementation: `app/rules/fsm.py`
 - Phase Machine: `app/rules/phase_machine.py`

@@ -62,9 +62,9 @@ app/ai/
 
 Shared type definitions used across all GPU modules:
 
-- `GamePhase` enum: RING_PLACEMENT, MOVEMENT, LINE_PROCESSING, TERRITORY_PROCESSING, END_TURN
-- `GameStatus` enum: ACTIVE, COMPLETED, DRAW, MAX_MOVES
-- `MoveType` enum: PLACEMENT, MOVEMENT, CAPTURE, LINE_FORMATION, TERRITORY_CLAIM, SKIP, NO_ACTION, RECOVERY_SLIDE
+- `GamePhase` enum: legacy GPU phases (RING_PLACEMENT, MOVEMENT, LINE_PROCESSING, TERRITORY_PROCESSING, END_TURN) plus canonical phases for parity (CAPTURE, CHAIN_CAPTURE, RECOVERY [GPU-internal], FORCED_ELIMINATION, GAME_OVER).
+- `GameStatus` enum: ACTIVE, COMPLETED, DRAW, MAX_MOVES.
+- `MoveType` enum: legacy GPU types (PLACEMENT, MOVEMENT, CAPTURE, LINE*FORMATION, TERRITORY_CLAIM, SKIP, NO_ACTION, RECOVERY_SLIDE) plus canonical phase-specific types (NO*\*\_ACTION, OVERTAKING_CAPTURE, CONTINUE_CAPTURE_SEGMENT, SKIP_CAPTURE, SKIP_RECOVERY, FORCED_ELIMINATION, CHOOSE_LINE_OPTION, CHOOSE_TERRITORY_OPTION, SKIP_PLACEMENT, ELIMINATE_RINGS_FROM_STACK). See `ai-service/app/ai/gpu_game_types.py` for the full list and numeric values.
 - `DetectedLine` dataclass: Line detection results
 - Utility functions: `get_int_dtype()`, `get_required_line_length()`
 

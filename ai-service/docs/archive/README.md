@@ -4,15 +4,15 @@ Historical documents and archived materials from the RingRift AI service.
 
 ## Contents
 
-| Directory/File                        | Purpose                                                         |
-| ------------------------------------- | --------------------------------------------------------------- |
-| `AUTO_NPZ_EXPORT_SUMMARY.md`          | Summary of automatic NPZ export pipeline                        |
-| `CODEBASE_QUALITY_ASSESSMENT.md`      | Historical quality assessment (superseded)                      |
-| `GPU_CPU_PHASE_DIFFERENCES.md`        | GPU vs CPU phase transition analysis                            |
-| `coordination_consolidation_2025_12/` | Dec 2025 coordination module consolidation                      |
-| `historical/`                         | Older historical documents + migrated root reports              |
-| `lambda/`                             | Lambda Labs GPU cluster documentation                           |
-| `status_reports/`                     | Historical status reports (migrated from `ai-service/reports/`) |
+| Directory/File                        | Purpose                                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------------- |
+| `AUTO_NPZ_EXPORT_SUMMARY.md`          | Summary of automatic NPZ export pipeline                                           |
+| `CODEBASE_QUALITY_ASSESSMENT.md`      | Historical quality assessment (superseded)                                         |
+| `GPU_CPU_PHASE_DIFFERENCES.md`        | GPU vs CPU phase transition analysis                                               |
+| `coordination_consolidation_2025_12/` | Dec 2025 coordination module consolidation                                         |
+| `historical/`                         | Older historical documents + migrated root reports                                 |
+| `lambda/`                             | Lambda Labs GPU cluster documentation                                              |
+| `status_reports/`                     | Historical status reports (migrated from `ai-service/reports/` and root snapshots) |
 
 ## Current Documentation
 

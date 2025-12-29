@@ -92,7 +92,7 @@ class TriggerConfig:
 
     # Global constraints
     min_interval_minutes: float = DEFAULT_MIN_INTERVAL_MINUTES
-    max_concurrent_training: int = 3
+    max_concurrent_training: int = 20  # Dec 29, 2025: Increased for multi-GPU cluster
 
     # Bootstrap (new configs with no models)
     bootstrap_threshold: int = DEFAULT_BOOTSTRAP_THRESHOLD

@@ -382,7 +382,7 @@ class TrainingScheduler:
         # Per-config training coordination (allows parallel training of different configs)
         self._training_locks: dict[str, int] = {}  # config_key -> fd
         self._training_lock_paths: dict[str, Path] = {}
-        self._max_concurrent_training = 3  # Allow up to 3 parallel training runs
+        self._max_concurrent_training = 20  # Dec 29, 2025: Increased for multi-GPU cluster
         # Calibration tracking (per config)
         self._calibration_trackers: dict[str, Any] = {}
         if HAS_VALUE_CALIBRATION:

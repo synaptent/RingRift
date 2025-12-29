@@ -97,6 +97,13 @@ from app.config.thresholds import (
     GUMBEL_BUDGET_QUALITY,
     GUMBEL_BUDGET_ULTIMATE,
     GUMBEL_BUDGET_MASTER,
+    # Dec 29, 2025: Bootstrap budget tiers for starved configs
+    GUMBEL_BUDGET_BOOTSTRAP_TIER1,
+    GUMBEL_BUDGET_BOOTSTRAP_TIER2,
+    GUMBEL_BUDGET_BOOTSTRAP_TIER3,
+    BOOTSTRAP_TIER1_GAME_THRESHOLD,
+    BOOTSTRAP_TIER2_GAME_THRESHOLD,
+    BOOTSTRAP_TIER3_GAME_THRESHOLD,
 )
 from app.coordination.protocols import HealthCheckResult
 
@@ -822,18 +829,21 @@ class SelfplayScheduler:
             # Mark large boards for higher data deficit weight
             priority.is_large_board = config_key.startswith("square19") or config_key.startswith("hexagonal")
 
-            # Update current Elo and search budget based on Elo tier (Dec 29, 2025)
-            # Higher Elo models benefit from deeper Gumbel MCTS search
+            # Update current Elo and search budget (Dec 29, 2025)
+            # Budget now considers BOTH game count AND Elo:
+            # - Low game count (<1000): Use bootstrap budgets for faster data generation
+            # - High game count (>=1000): Use Elo-based budgets for quality
             if config_key in elo_current_data:
                 current_elo = elo_current_data[config_key]
                 priority.current_elo = current_elo  # Store for dynamic weight calculation
-                new_budget = self._get_adaptive_budget_for_elo(current_elo)
+                game_count = priority.game_count
+                new_budget = self._get_adaptive_budget_for_games(game_count, current_elo)
                 old_budget = priority.search_budget
                 if new_budget != old_budget:
                     priority.search_budget = new_budget
                     logger.info(
                         f"[SelfplayScheduler] Adaptive budget for {config_key}: "
-                        f"{old_budget}→{new_budget} (Elo={current_elo:.0f})"
+                        f"{old_budget}→{new_budget} (games={game_count}, Elo={current_elo:.0f})"
                     )
 
             # Dec 29, 2025: Update Elo uncertainty for VOI calculation
@@ -1297,6 +1307,43 @@ class SelfplayScheduler:
             return GUMBEL_BUDGET_QUALITY  # 800 - quality tier
         else:
             return GUMBEL_BUDGET_STANDARD  # 800 - standard tier
+
+    def _get_adaptive_budget_for_games(self, game_count: int, elo: float) -> int:
+        """Get Gumbel MCTS budget based on game count (prioritizes bootstrapping).
+
+        December 29, 2025: Added for accelerating AI self-improvement.
+        When a config has very few games, prioritize QUANTITY over QUALITY
+        to rapidly bootstrap the training dataset. As game count grows,
+        transition to Elo-based quality budgets.
+
+        Bootstrap tiers (game_count < threshold):
+        - <100 games:  64 budget (THROUGHPUT - max speed for rapid bootstrap)
+        - <500 games:  150 budget (faster iteration, acceptable quality)
+        - <1000 games: 200 budget (balanced speed/quality)
+        - >=1000 games: Use Elo-based adaptive budget (STANDARD/QUALITY/ULTIMATE/MASTER)
+
+        Args:
+            game_count: Number of games in the database for this config
+            elo: Current Elo rating for the config (used when game_count >= 1000)
+
+        Returns:
+            Gumbel budget for selfplay
+        """
+        # Bootstrap phase: prioritize game generation speed
+        if game_count < BOOTSTRAP_TIER1_GAME_THRESHOLD:
+            # Very starved (<100 games): maximum throughput
+            return GUMBEL_BUDGET_BOOTSTRAP_TIER1  # 64
+
+        if game_count < BOOTSTRAP_TIER2_GAME_THRESHOLD:
+            # Moderately starved (<500 games): fast iteration
+            return GUMBEL_BUDGET_BOOTSTRAP_TIER2  # 150
+
+        if game_count < BOOTSTRAP_TIER3_GAME_THRESHOLD:
+            # Somewhat starved (<1000 games): balanced
+            return GUMBEL_BUDGET_BOOTSTRAP_TIER3  # 200
+
+        # Mature phase (>=1000 games): use Elo-based quality budget
+        return self._get_adaptive_budget_for_elo(elo)
 
     def _compute_target_games(self, config: str, current_elo: float) -> int:
         """Compute dynamic target games needed based on Elo gap and board difficulty.

@@ -227,17 +227,18 @@ Production monitoring tooling for the distributed training cluster. For tracked 
 - Slack webhook integration for real-time alerts
 - Cron jobs on `aws-staging` (5-min health, 2-min throughput, 10-min training)
 
-### Archived Cluster Snapshots (Root)
+### Archived Cluster Snapshots (ai-service/docs/archive/status_reports)
 
-These root-level status snapshots are historical and superseded by the
-consolidated report in
+These status snapshots are historical and superseded by the consolidated
+report in
 `ai-service/docs/infrastructure/reports/2025-12-26_p2p_cluster_status.md`.
+Legacy stubs remain at the repo root for backward compatibility.
 
-- `cluster_status_report.md`
-- `CLUSTER_STATUS_CRITICAL.txt`
-- `P2P_STATUS_TABLE.md`
-- `P2P_INVESTIGATION_SUMMARY.md`
-- `P2P_STATUS_SUMMARY.txt`
+- `ai-service/docs/archive/status_reports/cluster_status_report.md`
+- `ai-service/docs/archive/status_reports/CLUSTER_STATUS_CRITICAL.txt`
+- `ai-service/docs/archive/status_reports/P2P_STATUS_TABLE.md`
+- `ai-service/docs/archive/status_reports/P2P_INVESTIGATION_SUMMARY.md`
+- `ai-service/docs/archive/status_reports/P2P_STATUS_SUMMARY.txt`
 
 ### Archived Roadmaps (Historical)
 

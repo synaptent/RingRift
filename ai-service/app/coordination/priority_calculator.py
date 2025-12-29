@@ -1,0 +1,549 @@
+"""Priority calculation engine for selfplay scheduling.
+
+December 2025: Extracted from selfplay_scheduler.py to improve modularity.
+
+This module provides pure functions for computing selfplay priority scores,
+isolating the complex priority math from the scheduling orchestration logic.
+
+Usage:
+    from app.coordination.priority_calculator import (
+        PriorityCalculator,
+        compute_staleness_factor,
+        compute_velocity_factor,
+        compute_data_deficit_factor,
+        compute_voi_score,
+    )
+
+    calculator = PriorityCalculator(
+        config_priorities=config_priorities,
+        dynamic_weights=dynamic_weights,
+    )
+    score = calculator.compute_priority_score(priority)
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, Optional
+
+from app.config.coordination_defaults import SelfplayPriorityWeightDefaults
+
+logger = logging.getLogger(__name__)
+
+# Get default weights from centralized config
+_priority_weight_defaults = SelfplayPriorityWeightDefaults()
+
+# Weight bounds for dynamic adjustment
+DYNAMIC_WEIGHT_BOUNDS = _priority_weight_defaults.get_weight_bounds()
+
+# Threshold constants (sourced from coordination_defaults)
+FRESH_DATA_THRESHOLD = _priority_weight_defaults.FRESH_DATA_THRESHOLD
+STALE_DATA_THRESHOLD = _priority_weight_defaults.STALE_DATA_THRESHOLD
+MAX_STALENESS_HOURS = _priority_weight_defaults.MAX_STALENESS_HOURS
+TARGET_GAMES_FOR_2000_ELO = _priority_weight_defaults.TARGET_GAMES_FOR_2000_ELO
+LARGE_BOARD_TARGET_MULTIPLIER = _priority_weight_defaults.LARGE_BOARD_TARGET_MULTIPLIER
+
+# Priority override multipliers
+PRIORITY_OVERRIDE_MULTIPLIERS = {
+    0: 3.0,  # CRITICAL: 3x boost
+    1: 2.0,  # HIGH: 2x boost
+    2: 1.25,  # MEDIUM: 25% boost
+    3: 1.0,  # LOW: no boost (normal)
+}
+
+# Player count allocation multipliers
+PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
+    2: 1.0,  # Baseline
+    3: 3.0,  # 3x priority for 3p
+    4: 4.0,  # 4x priority for 4p
+}
+
+
+# =============================================================================
+# Pure Calculation Functions
+# =============================================================================
+
+
+def compute_staleness_factor(
+    staleness_hours: float,
+    fresh_threshold: float = FRESH_DATA_THRESHOLD,
+    stale_threshold: float = STALE_DATA_THRESHOLD,
+    max_staleness: float = MAX_STALENESS_HOURS,
+) -> float:
+    """Compute staleness factor (0-1, higher = more stale).
+
+    Args:
+        staleness_hours: Hours since last data update
+        fresh_threshold: Hours below which data is considered fresh
+        stale_threshold: Hours above which data is considered stale
+        max_staleness: Maximum staleness hours (caps at 1.0)
+
+    Returns:
+        Staleness factor between 0.0 and 1.0
+    """
+    if staleness_hours < fresh_threshold:
+        return 0.0
+    if staleness_hours > max_staleness:
+        return 1.0
+    # Linear interpolation between fresh and stale thresholds
+    return min(1.0, (staleness_hours - fresh_threshold) /
+               (stale_threshold - fresh_threshold))
+
+
+def compute_velocity_factor(elo_velocity: float, max_velocity: float = 100.0) -> float:
+    """Compute velocity factor (0-1, higher = faster improvement).
+
+    Args:
+        elo_velocity: ELO points per day (positive = improvement)
+        max_velocity: Maximum velocity for factor calculation
+
+    Returns:
+        Velocity factor between 0.0 and 1.0
+    """
+    if elo_velocity <= 0:
+        return 0.0
+    return min(1.0, elo_velocity / max_velocity)
+
+
+def compute_data_deficit_factor(
+    game_count: int,
+    is_large_board: bool,
+    target_games: int = TARGET_GAMES_FOR_2000_ELO,
+    large_board_multiplier: float = LARGE_BOARD_TARGET_MULTIPLIER,
+) -> float:
+    """Compute data deficit factor (0-1, higher = more data needed).
+
+    Args:
+        game_count: Current number of games for this config
+        is_large_board: True for square19, hexagonal boards
+        target_games: Base target game count
+        large_board_multiplier: Multiplier for large boards
+
+    Returns:
+        Data deficit factor between 0.0 and 1.0
+    """
+    target = target_games
+    if is_large_board:
+        target = int(target * large_board_multiplier)
+
+    if game_count >= target:
+        return 0.0  # No deficit
+
+    deficit_ratio = 1.0 - (game_count / target)
+    return min(1.0, deficit_ratio)
+
+
+def compute_voi_score(
+    elo_uncertainty: float,
+    elo_gap: float,
+    info_gain_per_game: float,
+    max_uncertainty: float = 300.0,
+    max_gap: float = 500.0,
+    max_info_gain: float = 10.0,
+) -> float:
+    """Compute Value of Information score for a config.
+
+    VOI prioritizes configs where more games yield the highest expected Elo gain.
+    Combines uncertainty, Elo gap, and information gain efficiency.
+
+    Args:
+        elo_uncertainty: Confidence interval width in Elo points
+        elo_gap: Distance from target Elo
+        info_gain_per_game: Expected uncertainty reduction per game
+        max_uncertainty: Max uncertainty for normalization
+        max_gap: Max Elo gap for normalization
+        max_info_gain: Max info gain for normalization
+
+    Returns:
+        VOI score between 0.0 and 1.0
+    """
+    # Normalize components to 0-1 range
+    uncertainty_factor = min(1.0, elo_uncertainty / max_uncertainty)
+    gap_factor = min(1.0, elo_gap / max_gap)
+    info_factor = min(1.0, info_gain_per_game / max_info_gain)
+
+    # Combined VOI: weighted sum
+    return (
+        uncertainty_factor * 0.4 +  # 40% weight on uncertainty
+        gap_factor * 0.3 +          # 30% weight on improvement potential
+        info_factor * 0.3           # 30% weight on learning efficiency
+    )
+
+
+def compute_info_gain_per_game(
+    elo_uncertainty: float,
+    game_count: int,
+) -> float:
+    """Compute expected information gain per new game.
+
+    Uses 1/sqrt(n) rule from statistical sampling theory.
+    Each new game reduces Elo CI width by approximately this amount.
+
+    Args:
+        elo_uncertainty: Current Elo uncertainty (CI width)
+        game_count: Current number of games
+
+    Returns:
+        Expected Elo uncertainty reduction per game
+    """
+    if game_count <= 0:
+        return elo_uncertainty  # First game has max info gain
+    return elo_uncertainty / math.sqrt(game_count)
+
+
+def clamp_weight(name: str, value: float, bounds: dict[str, tuple[float, float]] | None = None) -> float:
+    """Clamp a weight value within its defined bounds.
+
+    Args:
+        name: Weight name for bounds lookup
+        value: Weight value to clamp
+        bounds: Optional custom bounds dict (defaults to DYNAMIC_WEIGHT_BOUNDS)
+
+    Returns:
+        Clamped weight value
+    """
+    if bounds is None:
+        bounds = DYNAMIC_WEIGHT_BOUNDS
+    min_w, max_w = bounds.get(name, (0.05, 0.50))
+    return max(min_w, min(max_w, value))
+
+
+def extract_player_count(config_key: str) -> int:
+    """Extract player count from config_key (e.g., 'hex8_2p' -> 2).
+
+    Args:
+        config_key: Configuration key like 'hex8_2p'
+
+    Returns:
+        Player count (2, 3, or 4). Defaults to 2 on parse error.
+    """
+    try:
+        suffix = config_key.split("_")[-1]  # "2p", "3p", "4p"
+        return int(suffix.rstrip("p"))
+    except (ValueError, IndexError):
+        return 2
+
+
+def compute_games_needed(
+    game_count: int,
+    samples_per_game: float,
+    target_samples: int,
+) -> int:
+    """Calculate games needed to reach training sample target.
+
+    Args:
+        game_count: Current number of games
+        samples_per_game: Historical average samples per game
+        target_samples: Target training sample count
+
+    Returns:
+        Number of additional games needed (0 if target met)
+    """
+    if samples_per_game <= 0:
+        return 0
+    current_samples = int(game_count * samples_per_game)
+    remaining_samples = max(0, target_samples - current_samples)
+    return int(remaining_samples / samples_per_game)
+
+
+# =============================================================================
+# Dynamic Weight Computation
+# =============================================================================
+
+
+@dataclass
+class ClusterState:
+    """Current cluster state for dynamic weight calculation."""
+    idle_gpu_fraction: float = 0.0
+    training_queue_depth: int = 0
+    configs_at_target_fraction: float = 0.0
+    average_elo: float = 1500.0
+
+
+@dataclass
+class DynamicWeights:
+    """Dynamically computed priority weights based on cluster state.
+
+    Weights are adjusted based on cluster conditions to optimize resource allocation.
+    All weights are bounded to prevent any single factor from dominating.
+    """
+    staleness: float = 0.30
+    velocity: float = 0.10
+    training: float = 0.15
+    exploration: float = 0.10
+    curriculum: float = 0.10
+    improvement: float = 0.08
+    data_deficit: float = 0.10
+    quality: float = 0.05
+    voi: float = 0.02
+
+    # Cluster state that drove these weights (for debugging)
+    idle_gpu_fraction: float = 0.0
+    training_queue_depth: int = 0
+    configs_at_target_fraction: float = 0.0
+    average_elo: float = 1500.0
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert to dict for logging."""
+        return {
+            "staleness": self.staleness,
+            "velocity": self.velocity,
+            "training": self.training,
+            "exploration": self.exploration,
+            "curriculum": self.curriculum,
+            "improvement": self.improvement,
+            "data_deficit": self.data_deficit,
+            "quality": self.quality,
+            "voi": self.voi,
+            "idle_gpu_fraction": self.idle_gpu_fraction,
+            "training_queue_depth": self.training_queue_depth,
+            "configs_at_target_fraction": self.configs_at_target_fraction,
+            "average_elo": self.average_elo,
+        }
+
+
+def compute_dynamic_weights(
+    cluster_state: ClusterState,
+    base_weights: DynamicWeights | None = None,
+    idle_gpu_high_threshold: float = 0.5,
+    idle_gpu_low_threshold: float = 0.1,
+    training_queue_high_threshold: int = 10,
+    configs_at_target_threshold: float = 0.7,
+    elo_high_threshold: float = 1800.0,
+    elo_medium_threshold: float = 1500.0,
+) -> DynamicWeights:
+    """Compute dynamic priority weights based on current cluster state.
+
+    Weight adjustment logic:
+    - High idle GPU fraction → Boost staleness weight (generate more data)
+    - Large training queue → Reduce staleness weight (don't flood queue)
+    - Many configs at Elo target → Reduce velocity weight (focus on struggling configs)
+    - High average Elo → Boost curriculum weight (need harder positions)
+
+    Args:
+        cluster_state: Current cluster state
+        base_weights: Starting weights (defaults to DynamicWeights defaults)
+        idle_gpu_high_threshold: Fraction above which GPUs are considered very idle
+        idle_gpu_low_threshold: Fraction below which GPUs are considered busy
+        training_queue_high_threshold: Queue depth above which to reduce generation
+        configs_at_target_threshold: Fraction above which to reduce velocity focus
+        elo_high_threshold: Elo above which to boost curriculum
+        elo_medium_threshold: Elo above which to moderately boost curriculum
+
+    Returns:
+        DynamicWeights with adjusted values
+    """
+    if base_weights is None:
+        base_weights = DynamicWeights()
+
+    weights = DynamicWeights()
+
+    # Copy cluster state for tracking
+    weights.idle_gpu_fraction = cluster_state.idle_gpu_fraction
+    weights.training_queue_depth = cluster_state.training_queue_depth
+    weights.configs_at_target_fraction = cluster_state.configs_at_target_fraction
+    weights.average_elo = cluster_state.average_elo
+
+    # 1. Staleness weight adjustment
+    staleness_adj = base_weights.staleness
+    if cluster_state.idle_gpu_fraction > idle_gpu_high_threshold:
+        staleness_adj = base_weights.staleness * 1.5
+    elif cluster_state.idle_gpu_fraction < idle_gpu_low_threshold:
+        staleness_adj = base_weights.staleness * 0.7
+    if cluster_state.training_queue_depth > training_queue_high_threshold:
+        staleness_adj *= 0.6
+    weights.staleness = clamp_weight("staleness", staleness_adj)
+
+    # 2. Velocity weight adjustment
+    velocity_adj = base_weights.velocity
+    if cluster_state.configs_at_target_fraction > configs_at_target_threshold:
+        velocity_adj = base_weights.velocity * 0.6
+    weights.velocity = clamp_weight("velocity", velocity_adj)
+
+    # 3. Curriculum weight adjustment
+    curriculum_adj = base_weights.curriculum
+    if cluster_state.average_elo > elo_high_threshold:
+        curriculum_adj = base_weights.curriculum * 1.8
+    elif cluster_state.average_elo > elo_medium_threshold:
+        curriculum_adj = base_weights.curriculum * 1.3
+    weights.curriculum = clamp_weight("curriculum", curriculum_adj)
+
+    # 4. Data deficit weight adjustment
+    data_deficit_adj = base_weights.data_deficit
+    if cluster_state.idle_gpu_fraction > idle_gpu_high_threshold:
+        data_deficit_adj = base_weights.data_deficit * 1.4
+    weights.data_deficit = clamp_weight("data_deficit", data_deficit_adj)
+
+    # Keep other weights clamped at base values
+    weights.exploration = clamp_weight("exploration", base_weights.exploration)
+    weights.training = clamp_weight("training", base_weights.training)
+    weights.improvement = clamp_weight("improvement", base_weights.improvement)
+    weights.quality = clamp_weight("quality", base_weights.quality)
+    weights.voi = clamp_weight("voi", base_weights.voi)
+
+    return weights
+
+
+# =============================================================================
+# Priority Calculator Class
+# =============================================================================
+
+
+@dataclass
+class PriorityInputs:
+    """Input data for priority score calculation.
+
+    Simplified representation of ConfigPriority for pure calculation.
+    """
+    config_key: str
+    staleness_hours: float = 0.0
+    elo_velocity: float = 0.0
+    training_pending: bool = False
+    exploration_boost: float = 1.0
+    curriculum_weight: float = 1.0
+    improvement_boost: float = 0.0
+    quality_penalty: float = 0.0
+    momentum_multiplier: float = 1.0
+    game_count: int = 0
+    is_large_board: bool = False
+    priority_override: int = 3
+    current_elo: float = 1500.0
+    elo_uncertainty: float = 200.0
+    target_elo: float = 2000.0
+
+
+class PriorityCalculator:
+    """Calculator for selfplay priority scores.
+
+    Encapsulates the priority calculation logic, separating it from
+    the scheduling orchestration in SelfplayScheduler.
+    """
+
+    def __init__(
+        self,
+        dynamic_weights: DynamicWeights | None = None,
+        get_quality_score_fn: Callable[[str], float] | None = None,
+        get_elo_velocity_fn: Callable[[str], float] | None = None,
+        get_cascade_priority_fn: Callable[[str], float] | None = None,
+        data_starvation_emergency_threshold: int = 50,
+        data_starvation_critical_threshold: int = 200,
+        data_starvation_emergency_multiplier: float = 5.0,
+        data_starvation_critical_multiplier: float = 2.0,
+    ):
+        """Initialize priority calculator.
+
+        Args:
+            dynamic_weights: Pre-computed dynamic weights (or defaults)
+            get_quality_score_fn: Callback to get quality score for config
+            get_elo_velocity_fn: Callback to get Elo velocity for config
+            get_cascade_priority_fn: Callback to get cascade priority boost
+            data_starvation_emergency_threshold: Games below which is emergency
+            data_starvation_critical_threshold: Games below which is critical
+            data_starvation_emergency_multiplier: Multiplier for emergency
+            data_starvation_critical_multiplier: Multiplier for critical
+        """
+        self._weights = dynamic_weights or DynamicWeights()
+        self._get_quality_score_fn = get_quality_score_fn
+        self._get_elo_velocity_fn = get_elo_velocity_fn
+        self._get_cascade_priority_fn = get_cascade_priority_fn
+        self._starvation_emergency = data_starvation_emergency_threshold
+        self._starvation_critical = data_starvation_critical_threshold
+        self._starvation_emergency_mult = data_starvation_emergency_multiplier
+        self._starvation_critical_mult = data_starvation_critical_multiplier
+
+    def compute_priority_score(self, inputs: PriorityInputs) -> float:
+        """Compute overall priority score for a configuration.
+
+        Higher score = higher priority for selfplay allocation.
+
+        Args:
+            inputs: Priority input data
+
+        Returns:
+            Priority score (higher = higher priority)
+        """
+        w = self._weights
+
+        # Compute base factors
+        staleness = compute_staleness_factor(inputs.staleness_hours) * w.staleness
+        velocity = compute_velocity_factor(inputs.elo_velocity) * w.velocity
+        training = (1.0 if inputs.training_pending else 0.0) * w.training
+        exploration = (inputs.exploration_boost - 1.0) * w.exploration
+
+        # Curriculum factor (normalized around 1.0)
+        curriculum = (inputs.curriculum_weight - 1.0) * w.curriculum
+
+        # Improvement boost
+        improvement = inputs.improvement_boost * w.improvement
+
+        # Quality factor
+        quality_score = 0.7  # Default
+        if self._get_quality_score_fn:
+            try:
+                quality_score = self._get_quality_score_fn(inputs.config_key)
+            except Exception:
+                pass
+        quality = (quality_score - 0.7) * w.quality + inputs.quality_penalty
+
+        # Data deficit factor
+        data_deficit = compute_data_deficit_factor(
+            inputs.game_count, inputs.is_large_board
+        ) * w.data_deficit
+
+        # VOI factor
+        info_gain = compute_info_gain_per_game(inputs.elo_uncertainty, inputs.game_count)
+        elo_gap = max(0.0, inputs.target_elo - inputs.current_elo)
+        voi = compute_voi_score(inputs.elo_uncertainty, elo_gap, info_gain) * w.voi
+
+        # Combine factors
+        score = staleness + velocity + training + exploration + curriculum + improvement + quality + data_deficit + voi
+
+        # Apply exploration boost as multiplier
+        score *= inputs.exploration_boost
+
+        # Apply momentum multiplier
+        score *= inputs.momentum_multiplier
+
+        # Apply Elo velocity multiplier
+        elo_velocity = inputs.elo_velocity
+        if self._get_elo_velocity_fn:
+            try:
+                elo_velocity = self._get_elo_velocity_fn(inputs.config_key)
+            except Exception:
+                pass
+        if elo_velocity < 0.5:
+            score *= 0.7  # Reduce for stagnant configs
+        elif elo_velocity > 5.0:
+            score *= 1.2  # Boost for fast improvers
+
+        # Apply priority override
+        override_multiplier = PRIORITY_OVERRIDE_MULTIPLIERS.get(inputs.priority_override, 1.0)
+        score *= override_multiplier
+
+        # Apply player count multiplier
+        player_count = extract_player_count(inputs.config_key)
+        player_multiplier = PLAYER_COUNT_ALLOCATION_MULTIPLIER.get(player_count, 1.0)
+        score *= player_multiplier
+
+        # Apply cascade priority boost
+        cascade_boost = 1.0
+        if self._get_cascade_priority_fn:
+            try:
+                cascade_boost = self._get_cascade_priority_fn(inputs.config_key)
+            except Exception:
+                pass
+        score *= cascade_boost
+
+        # Apply data starvation multiplier
+        if inputs.game_count < self._starvation_emergency:
+            score *= self._starvation_emergency_mult
+        elif inputs.game_count < self._starvation_critical:
+            score *= self._starvation_critical_mult
+
+        return score
+
+    def update_weights(self, weights: DynamicWeights) -> None:
+        """Update the dynamic weights used for calculation."""
+        self._weights = weights

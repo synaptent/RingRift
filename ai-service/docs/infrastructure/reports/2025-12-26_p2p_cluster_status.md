@@ -152,10 +152,10 @@ http://208.167.249.164:8770 # vultr-a100-20gb
 
 This report consolidates data from:
 
-1. `P2P_INVESTIGATION_SUMMARY.md` (Dec 26, 20:40) - Initial investigation
-2. `P2P_STATUS_TABLE.md` (Dec 26, 20:45) - Detailed node status
-3. `P2P_STATUS_SUMMARY.txt` (Dec 26) - Quick reference
-4. `P2P_DEPLOYMENT_REPORT.md` (Dec 26) - Deployment results
+1. `../../archive/status_reports/P2P_INVESTIGATION_SUMMARY.md` (Dec 26, 20:40) - Initial investigation
+2. `../../archive/status_reports/P2P_STATUS_TABLE.md` (Dec 26, 20:45) - Detailed node status
+3. `../../archive/status_reports/P2P_STATUS_SUMMARY.txt` (Dec 26) - Quick reference
+4. `../../archive/status_reports/P2P_DEPLOYMENT_REPORT.md` (Dec 26) - Deployment results
 
 The original investigation used a different voter list. The Dec 27 config update
 (replacing runpod-h100 with hetzner-cpu2) is now reflected in this consolidated report.

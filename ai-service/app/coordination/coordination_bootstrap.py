@@ -1351,20 +1351,24 @@ def _restore_event_subscriptions() -> dict[str, Any]:
                 router.restore_subscriptions()
             )
 
-        # Replay stale DLQ events
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                fire_and_forget(router.replay_stale_dlq_events(), name="replay_stale_dlq")
-                logger.debug("[Bootstrap] DLQ replay scheduled (async context)")
-            else:
-                results["dlq_events_replayed"] = loop.run_until_complete(
+        # Replay stale DLQ events (skip in test mode to avoid timeouts)
+        if os.environ.get("RINGRIFT_DISABLE_DLQ_REPLAY", "").lower() in ("1", "true", "yes"):
+            logger.debug("[Bootstrap] DLQ replay disabled via RINGRIFT_DISABLE_DLQ_REPLAY")
+            results["dlq_events_replayed"] = 0
+        else:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    fire_and_forget(router.replay_stale_dlq_events(), name="replay_stale_dlq")
+                    logger.debug("[Bootstrap] DLQ replay scheduled (async context)")
+                else:
+                    results["dlq_events_replayed"] = loop.run_until_complete(
+                        router.replay_stale_dlq_events()
+                    )
+            except RuntimeError:
+                results["dlq_events_replayed"] = asyncio.run(
                     router.replay_stale_dlq_events()
                 )
-        except RuntimeError:
-            results["dlq_events_replayed"] = asyncio.run(
-                router.replay_stale_dlq_events()
-            )
 
         # Emit alerts for stale DLQ events
         try:
