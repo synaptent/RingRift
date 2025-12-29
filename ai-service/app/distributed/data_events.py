@@ -258,6 +258,7 @@ class DataEventType(Enum):
     HEALTH_CHECK_FAILED = "health_check_failed"
     HEALTH_ALERT = "health_alert"  # General health warning
     RESOURCE_CONSTRAINT = "resource_constraint"  # CPU/GPU/Memory/Disk pressure
+    MEMORY_PRESSURE = "memory_pressure"  # Dec 29, 2025: GPU VRAM or process RSS critical - pause spawning
     NODE_OVERLOADED = "node_overloaded"  # Node resource overload (job redistribution)
     RECOVERY_INITIATED = "recovery_initiated"  # Auto-recovery started
     RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished

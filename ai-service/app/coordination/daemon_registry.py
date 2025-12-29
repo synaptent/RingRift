@@ -563,6 +563,24 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="pipeline",
         health_check_interval=60.0,  # Monitor PER buffer health
     ),
+    # =========================================================================
+    # 48-Hour Autonomous Operation (December 29, 2025)
+    # These daemons enable the system to run unattended for 48+ hours
+    # =========================================================================
+    DaemonType.PROGRESS_WATCHDOG: DaemonSpec(
+        runner_name="create_progress_watchdog",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.SELFPLAY_COORDINATOR),
+        category="health",
+        health_check_interval=1800.0,  # 30 min - long-running watchdog
+    ),
+    DaemonType.P2P_RECOVERY: DaemonSpec(
+        runner_name="create_p2p_recovery",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="health",
+        health_check_interval=300.0,  # 5 min - monitor P2P health
+        auto_restart=True,
+        max_restarts=10,  # More restarts allowed for critical recovery daemon
+    ),
 }
 
 

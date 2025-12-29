@@ -1014,50 +1014,81 @@ def train_model(
                             f"--board-type {config.board_type.value} --num-players {num_players}"
                         )
                     else:
-                        # P1.1 (Dec 2025): Emit TRAINING_BLOCKED_BY_QUALITY to trigger selfplay acceleration
-                        # This closes the critical feedback loop: stale data → more selfplay → fresh data
-                        try:
-                            # Use globally imported DataEventType - local import would shadow it and cause UnboundLocalError
-                            from app.coordination.event_router import get_event_bus
+                        # December 2025: Check stale fallback controller before blocking
+                        # Part of 48-hour autonomous operation plan
+                        fallback_allowed = False
+                        fallback_reason = ""
 
-                            bus = get_event_bus()
-                            if bus and DataEventType is not None:
-                                bus.emit(DataEventType.TRAINING_BLOCKED_BY_QUALITY, {
-                                    "config_key": config_key,
-                                    "reason": "stale_data",
-                                    "data_age_hours": freshness_result.data_age_hours,
-                                    "threshold_hours": max_data_age_hours,
-                                    "games_available": freshness_result.games_available,
-                                })
-                                logger.info(
-                                    f"[DataFreshness] Emitted TRAINING_BLOCKED_BY_QUALITY for {config_key} "
-                                    f"(age={freshness_result.data_age_hours:.1f}h)"
+                        if not disable_stale_fallback and HAS_STALE_FALLBACK:
+                            try:
+                                fallback_allowed, fallback_reason = should_allow_stale_training(
+                                    config_key=config_key,
+                                    data_age_hours=freshness_result.data_age_hours,
+                                    sync_failures=max_sync_failures,
+                                    elapsed_sync_time=max_sync_duration,
+                                    games_available=freshness_result.games_available,
                                 )
-                        except (ImportError, AttributeError, RuntimeError) as emit_err:
-                            # ImportError: event_router module not available
-                            # AttributeError: missing event bus methods
-                            # RuntimeError: event system errors
-                            logger.debug(f"[DataFreshness] Failed to emit training blocked event: {emit_err}")
+                            except (RuntimeError, ValueError, AttributeError) as fb_err:
+                                logger.debug(f"[DataFreshness] Fallback check failed: {fb_err}")
 
-                        # Default: fail on stale data to prevent training on outdated samples
-                        error_msg = (
-                            f"\n{'='*70}\n"
-                            f"TRAINING BLOCKED: {stale_msg}\n"
-                            f"{'='*70}\n\n"
-                            f"Training blocked to prevent learning from stale data.\n\n"
-                            f"OPTIONS TO PROCEED:\n\n"
-                            f"  1. Get fresh data (RECOMMENDED):\n"
-                            f"     python scripts/run_training_loop.py --sync-only \\\n"
-                            f"       --board-type {config.board_type.value} --num-players {num_players}\n\n"
-                            f"  2. Allow stale data (NOT RECOMMENDED - may degrade model quality):\n"
-                            f"     Add --allow-stale-data flag to your training command\n\n"
-                            f"  3. Skip freshness check (DANGEROUS - only for debugging):\n"
-                            f"     Add --skip-freshness-check flag to your training command\n\n"
-                            f"  4. Adjust freshness threshold:\n"
-                            f"     Add --max-data-age-hours <hours> to allow older data\n"
-                            f"{'='*70}\n"
-                        )
-                        raise ValueError(error_msg)
+                        if fallback_allowed:
+                            # Fallback triggered - proceed with stale data
+                            logger.warning(f"[DataFreshness] {stale_msg}")
+                            logger.warning(
+                                f"[StaleFallback] Proceeding with stale data due to fallback: {fallback_reason}\n"
+                                f"  This is part of 48-hour autonomous operation. Training will continue\n"
+                                f"  but may produce suboptimal results. Sync should recover in background."
+                            )
+                            logger.info(
+                                f"To get fresh data manually, run:\n"
+                                f"  python scripts/run_training_loop.py --sync-only "
+                                f"--board-type {config.board_type.value} --num-players {num_players}"
+                            )
+                        else:
+                            # P1.1 (Dec 2025): Emit TRAINING_BLOCKED_BY_QUALITY to trigger selfplay acceleration
+                            # This closes the critical feedback loop: stale data → more selfplay → fresh data
+                            try:
+                                # Use globally imported DataEventType - local import would shadow it and cause UnboundLocalError
+                                from app.coordination.event_router import get_event_bus
+
+                                bus = get_event_bus()
+                                if bus and DataEventType is not None:
+                                    bus.emit(DataEventType.TRAINING_BLOCKED_BY_QUALITY, {
+                                        "config_key": config_key,
+                                        "reason": "stale_data",
+                                        "data_age_hours": freshness_result.data_age_hours,
+                                        "threshold_hours": max_data_age_hours,
+                                        "games_available": freshness_result.games_available,
+                                    })
+                                    logger.info(
+                                        f"[DataFreshness] Emitted TRAINING_BLOCKED_BY_QUALITY for {config_key} "
+                                        f"(age={freshness_result.data_age_hours:.1f}h)"
+                                    )
+                            except (ImportError, AttributeError, RuntimeError) as emit_err:
+                                # ImportError: event_router module not available
+                                # AttributeError: missing event bus methods
+                                # RuntimeError: event system errors
+                                logger.debug(f"[DataFreshness] Failed to emit training blocked event: {emit_err}")
+
+                            # Default: fail on stale data to prevent training on outdated samples
+                            error_msg = (
+                                f"\n{'='*70}\n"
+                                f"TRAINING BLOCKED: {stale_msg}\n"
+                                f"{'='*70}\n\n"
+                                f"Training blocked to prevent learning from stale data.\n\n"
+                                f"OPTIONS TO PROCEED:\n\n"
+                                f"  1. Get fresh data (RECOMMENDED):\n"
+                                f"     python scripts/run_training_loop.py --sync-only \\\n"
+                                f"       --board-type {config.board_type.value} --num-players {num_players}\n\n"
+                                f"  2. Allow stale data (NOT RECOMMENDED - may degrade model quality):\n"
+                                f"     Add --allow-stale-data flag to your training command\n\n"
+                                f"  3. Skip freshness check (DANGEROUS - only for debugging):\n"
+                                f"     Add --skip-freshness-check flag to your training command\n\n"
+                                f"  4. Adjust freshness threshold:\n"
+                                f"     Add --max-data-age-hours <hours> to allow older data\n"
+                                f"{'='*70}\n"
+                            )
+                            raise ValueError(error_msg)
             except ValueError:
                 raise  # Re-raise stale data errors
             except (OSError, ImportError, AttributeError, RuntimeError) as e:

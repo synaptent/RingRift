@@ -1024,6 +1024,10 @@ def main() -> None:
         skip_freshness_check=getattr(args, 'skip_freshness_check', False),
         max_data_age_hours=getattr(args, 'max_data_age_hours', 1.0),
         allow_stale_data=getattr(args, 'allow_stale_data', False) or getattr(args, 'autonomous', False),
+        # Stale fallback for 48-hour autonomous operation (December 2025)
+        disable_stale_fallback=getattr(args, 'disable_stale_fallback', False),
+        max_sync_failures=getattr(args, 'max_sync_failures', 5),
+        max_sync_duration=getattr(args, 'max_sync_duration', 2700.0),
         # Quality-aware sample filtering (December 2025)
         min_quality_score=getattr(args, 'min_quality_score', 0.0),
         # Hard example mining for curriculum learning (2025-12)
