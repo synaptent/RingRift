@@ -5470,7 +5470,26 @@ class P2POrchestrator(
 
         # Detect capabilities based on hardware
         # Dec 2025: RINGRIFT_IS_COORDINATOR=true restricts to coordinator-only
+        # Dec 29, 2025: Also check distributed_hosts.yaml for role/enabled flags
         is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+
+        # Check YAML config for this node's settings
+        if not is_coordinator:
+            try:
+                from app.config.cluster_config import load_cluster_config
+                config = load_cluster_config()
+                nodes = config.get("nodes", {})
+                node_cfg = nodes.get(self.node_id, {})
+                # Check role or explicit enabled flags
+                if node_cfg.get("role") == "coordinator":
+                    is_coordinator = True
+                    logger.info(f"[P2P] Node {self.node_id} is coordinator (from YAML)")
+                elif node_cfg.get("selfplay_enabled") is False and node_cfg.get("training_enabled") is False:
+                    is_coordinator = True
+                    logger.info(f"[P2P] Node {self.node_id} has selfplay/training disabled (from YAML)")
+            except Exception as e:
+                logger.debug(f"[P2P] Could not load cluster config: {e}")
+
         if is_coordinator:
             capabilities = []  # Coordinator nodes don't run compute tasks
             logger.info("[P2P] Coordinator-only mode: no selfplay/training/cmaes capabilities")

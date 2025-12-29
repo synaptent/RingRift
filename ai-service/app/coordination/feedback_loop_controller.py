@@ -920,6 +920,15 @@ class FeedbackLoopController:
                 if trend_duration_epochs >= TREND_DURATION_SEVERE:
                     self._boost_exploration_for_stall(config_key, trend_duration_epochs)
 
+            elif trend == "plateau":
+                # Dec 29, 2025: Plateau detected - boost exploration to escape
+                # The PLATEAU_DETECTED event handler provides more detailed response
+                self._boost_exploration_for_stall(config_key, trend_duration_epochs or 10)
+                logger.info(
+                    f"[FeedbackLoopController] Plateau trend for {config_key}, "
+                    f"boosting exploration"
+                )
+
             elif trend == "degrading":
                 # Loss is getting worse - check data quality, consider rollback
                 self._trigger_quality_check(config_key, reason="training_loss_degrading")

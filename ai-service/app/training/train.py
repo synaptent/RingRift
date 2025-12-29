@@ -5133,13 +5133,30 @@ def train_model(
 
                                 # Plateau: < 0.1% improvement over 10 epochs
                                 if abs(long_term_improvement) < 0.001:
+                                    # Dec 29, 2025: Plateau type analysis (overfitting vs data limitation)
+                                    # Train/val gap indicates overfitting, small gap indicates data limitation
+                                    last_10_train = [e.get('avg_train_loss', 0.0) for e in epoch_losses[-10:] if e]
+                                    last_10_train_avg = sum(last_10_train) / len(last_10_train) if last_10_train else 0.0
+                                    train_val_gap = last_10_avg - last_10_train_avg  # val - train
+
+                                    if train_val_gap > 0.05:
+                                        plateau_type = "overfitting"
+                                        recommendation = "reduce_epochs"
+                                        exploration_boost = 1.5  # Higher boost to diversify data
+                                    else:
+                                        plateau_type = "data_limitation"
+                                        recommendation = "more_games"
+                                        exploration_boost = 1.3  # Moderate boost
+
                                     logger.warning(
                                         f"[TRAINING PLATEAU] Detected at epoch {epoch+1}: "
                                         f"<0.1% improvement over 10 epochs "
-                                        f"(last_10={last_10_avg:.5f}, prev_10={prev_10_avg:.5f})"
+                                        f"(last_10={last_10_avg:.5f}, prev_10={prev_10_avg:.5f}, "
+                                        f"type={plateau_type}, gap={train_val_gap:.4f})"
                                     )
                                     try:
                                         loop = asyncio.get_running_loop()
+                                        # Emit TRAINING_LOSS_TREND for backward compatibility
                                         asyncio.ensure_future(emit_training_loss_trend(
                                             config_key=config_key,
                                             trend="plateau",
@@ -5149,6 +5166,22 @@ def train_model(
                                             improvement_rate=long_term_improvement,
                                             source="train.py",
                                             window_size=10,
+                                        ))
+                                        # Dec 29, 2025: Emit PLATEAU_DETECTED with type analysis
+                                        from app.coordination.event_emitters import emit_plateau_detected
+                                        asyncio.ensure_future(emit_plateau_detected(
+                                            metric_name="validation_loss",
+                                            current_value=last_10_avg,
+                                            best_value=prev_10_avg,
+                                            epochs_since_improvement=10,
+                                            plateau_type=plateau_type,  # "overfitting" or "data_limitation"
+                                            # Additional metadata for handlers
+                                            config_key=config_key,
+                                            epoch=epoch + 1,
+                                            recommendation=recommendation,
+                                            exploration_boost=exploration_boost,
+                                            train_val_gap=train_val_gap,
+                                            source="train.py",
                                         ))
                                     except RuntimeError:
                                         pass
