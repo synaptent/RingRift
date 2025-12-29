@@ -423,11 +423,99 @@ class EvaluationDaemon(BaseEventHandler):
                 logger.error(f"[EvaluationDaemon] Worker error: {e}")
                 await asyncio.sleep(1.0)
 
+    async def _check_model_availability(
+        self,
+        model_path: str,
+    ) -> tuple[bool, int]:
+        """Check if model is available on sufficient nodes for fair evaluation.
+
+        December 2025 - Phase 3B: Pre-evaluation distribution check.
+        Ensures models are properly distributed before evaluation to prevent
+        unfair Elo ratings from models only available on 1-2 nodes.
+
+        Args:
+            model_path: Path to the model file
+
+        Returns:
+            Tuple of (available, node_count)
+        """
+        try:
+            from app.config.coordination_defaults import DistributionDefaults
+            from app.coordination.unified_distribution_daemon import (
+                verify_model_distribution,
+                wait_for_model_availability,
+            )
+
+            min_nodes = DistributionDefaults.MIN_NODES_FOR_EVALUATION
+            timeout = 120.0  # 2 minutes for pre-eval check
+
+            # First quick check
+            success, count = await verify_model_distribution(model_path, min_nodes)
+            if success:
+                logger.debug(
+                    f"[EvaluationDaemon] Model {model_path} available on {count} nodes"
+                )
+                return (True, count)
+
+            # If not enough, trigger priority distribution and wait
+            logger.info(
+                f"[EvaluationDaemon] Model {model_path} only on {count}/{min_nodes} nodes, "
+                f"waiting for distribution (timeout: {timeout}s)"
+            )
+
+            success, count = await wait_for_model_availability(
+                model_path, min_nodes=min_nodes, timeout=timeout
+            )
+
+            if not success:
+                logger.warning(
+                    f"[EvaluationDaemon] Model {model_path} distribution incomplete: "
+                    f"{count}/{min_nodes} nodes"
+                )
+                # Emit MODEL_EVALUATION_BLOCKED event
+                try:
+                    from app.coordination.event_router import emit
+
+                    await emit(
+                        event_type="MODEL_EVALUATION_BLOCKED",
+                        data={
+                            "model_path": model_path,
+                            "required_nodes": min_nodes,
+                            "actual_nodes": count,
+                            "reason": "insufficient_distribution",
+                        },
+                    )
+                except ImportError:
+                    pass
+
+            return (success, count)
+
+        except ImportError as e:
+            logger.debug(f"[EvaluationDaemon] Distribution check unavailable: {e}")
+            return (True, 0)  # Allow evaluation if check unavailable
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.error(f"[EvaluationDaemon] Distribution check error: {e}")
+            return (True, 0)  # Allow evaluation on error
+
     async def _run_evaluation(self, request: dict) -> None:
         """Run gauntlet evaluation for a model."""
         model_path = request["model_path"]
         board_type = request["board_type"]
         num_players = request["num_players"]
+
+        # December 2025 - Phase 3B: Pre-evaluation distribution check
+        available, node_count = await self._check_model_availability(model_path)
+        if not available:
+            logger.warning(
+                f"[EvaluationDaemon] Skipping evaluation: {model_path} "
+                f"not available on sufficient nodes ({node_count} nodes)"
+            )
+            self._eval_stats.evaluations_failed += 1
+            await self._emit_evaluation_failed(
+                model_path, board_type, num_players,
+                f"Distribution incomplete: only {node_count} nodes"
+            )
+            return
 
         start_time = time.time()
         logger.info(f"[EvaluationDaemon] Starting evaluation: {model_path}")

@@ -117,6 +117,7 @@ class DataEventType(Enum):
     EVALUATION_PROGRESS = "evaluation_progress"
     EVALUATION_COMPLETED = "evaluation_completed"
     EVALUATION_FAILED = "evaluation_failed"
+    MODEL_EVALUATION_BLOCKED = "model_evaluation_blocked"  # Dec 2025 Phase 3: Model not distributed for eval
     ELO_UPDATED = "elo_updated"
 
     # Promotion events

@@ -2,8 +2,8 @@
 """Clean up phantom Elo entries - models that exist in the database but not as files.
 
 This script identifies and optionally removes Elo entries for models that:
-1. Have a model_path in the database
-2. But the actual model file doesn't exist
+1. Have a model_path in the database but the actual model file doesn't exist
+2. Have player count mismatch (e.g., 4-player model registered as 2-player)
 
 Usage:
     # Dry run (default) - show phantom entries without deleting
@@ -17,6 +17,12 @@ Usage:
 
     # Check cluster nodes too (slower but more thorough)
     python scripts/cleanup_phantom_elo_entries.py --cluster-check
+
+    # Check OWC backup drive on mac-studio (requires SSH access)
+    python scripts/cleanup_phantom_elo_entries.py --owc-check
+
+    # Validate player count in model files
+    python scripts/cleanup_phantom_elo_entries.py --validate-players
 """
 
 import argparse
@@ -62,9 +68,23 @@ BASELINE_PREFIXES = [
 MODEL_DIRS = [
     Path("models"),
     Path("models_essential"),
+    Path("models/recovered_high_elo"),
     Path("backups/models"),
     Path("data/models"),
 ]
+
+# OWC backup configuration (mac-studio)
+OWC_CONFIG = {
+    "host": "100.107.168.125",
+    "user": "armand",
+    "base_path": "/Volumes/RingRift-Data",
+    "model_dirs": [
+        "canonical_models",
+        "model_checkpoints",
+        "trained_models",
+        "model_registry",
+    ],
+}
 
 
 def is_baseline(participant_id: str) -> bool:
@@ -174,29 +194,166 @@ def find_model_by_participant_id(participant_id: str) -> bool:
     return False
 
 
+def check_model_on_owc(model_path: str, participant_id: str) -> tuple[bool, str | None]:
+    """Check if model exists on OWC backup drive.
+
+    Returns (found, path) tuple.
+    """
+    if not model_path:
+        return False, None
+
+    path = Path(model_path)
+    patterns_to_check = [
+        path.name,
+        f"{participant_id}.pth",
+        f"*{participant_id}*.pth",
+    ]
+
+    for owc_dir in OWC_CONFIG["model_dirs"]:
+        for pattern in patterns_to_check:
+            remote_path = f"{OWC_CONFIG['base_path']}/{owc_dir}/{pattern}"
+            try:
+                # Use find for glob patterns, test -f for exact paths
+                if "*" in pattern:
+                    cmd = f"find {OWC_CONFIG['base_path']}/{owc_dir} -name '{pattern}' -type f | head -1"
+                else:
+                    cmd = f"test -f '{remote_path}' && echo '{remote_path}'"
+
+                result = subprocess.run(
+                    ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+                     f"{OWC_CONFIG['user']}@{OWC_CONFIG['host']}", cmd],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return True, result.stdout.strip()
+            except (subprocess.TimeoutExpired, Exception) as e:
+                logger.debug(f"OWC check failed for {pattern}: {e}")
+                continue
+
+    return False, None
+
+
+def validate_model_player_count(model_path: str, expected_players: int) -> tuple[bool, int | None]:
+    """Validate that a model file has the expected player count.
+
+    Returns (is_valid, actual_players) tuple.
+    """
+    try:
+        import torch
+        path = Path(model_path)
+
+        if not path.exists():
+            return True, None  # Can't validate non-existent files
+
+        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+
+        # Try to get num_players from metadata
+        actual_players = checkpoint.get("num_players")
+
+        if actual_players is None:
+            # Infer from value head shape
+            state_dict = checkpoint.get("model_state_dict", checkpoint.get("state_dict", checkpoint))
+            if isinstance(state_dict, dict):
+                for key in ["value_fc2.weight", "value_head.fc2.weight"]:
+                    if key in state_dict:
+                        actual_players = state_dict[key].shape[0]
+                        break
+
+        if actual_players is None:
+            logger.debug(f"Could not determine player count for {model_path}")
+            return True, None  # Can't determine, assume valid
+
+        return actual_players == expected_players, actual_players
+
+    except Exception as e:
+        logger.debug(f"Could not validate player count for {model_path}: {e}")
+        return True, None  # Assume valid on error
+
+
+def validate_remote_model_player_count(
+    remote_path: str, expected_players: int, host: str, user: str
+) -> tuple[bool, int | None]:
+    """Validate player count of a remote model via SSH.
+
+    Returns (is_valid, actual_players) tuple.
+    """
+    try:
+        # Use Python on remote host to extract player count
+        python_cmd = f"""
+import torch
+import sys
+try:
+    cp = torch.load('{remote_path}', map_location='cpu', weights_only=False)
+    np = cp.get('num_players')
+    if np is None:
+        sd = cp.get('model_state_dict', cp.get('state_dict', cp))
+        if isinstance(sd, dict):
+            for k in ['value_fc2.weight', 'value_head.fc2.weight']:
+                if k in sd:
+                    np = sd[k].shape[0]
+                    break
+    print(np if np else 'unknown')
+except Exception as e:
+    print(f'error: {{e}}')
+"""
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
+             f"{user}@{host}", f"python3 -c \"{python_cmd}\""],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            if output.isdigit():
+                actual = int(output)
+                return actual == expected_players, actual
+            elif output == "unknown":
+                return True, None
+
+        return True, None  # Assume valid on error
+
+    except (subprocess.TimeoutExpired, Exception) as e:
+        logger.debug(f"Remote player count validation failed: {e}")
+        return True, None
+
+
 def get_phantom_entries(
     db_path: Path,
     config_filter: str | None = None,
-    cluster_check: bool = False
+    cluster_check: bool = False,
+    owc_check: bool = False,
+    validate_players: bool = False,
 ) -> list[dict]:
-    """Find all phantom Elo entries (in DB but file doesn't exist).
+    """Find all phantom Elo entries (in DB but file doesn't exist or has wrong player count).
 
-    Checks both:
+    Checks:
     1. Participants with model_path set but file doesn't exist
     2. Elo ratings for participants that don't exist in participants table
        AND don't correspond to any actual model file
+    3. (Optional) Models on OWC backup drive
+    4. (Optional) Player count mismatches in model files
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
     phantoms = []
+    recovered = []  # Models found on OWC that could be recovered
+    mismatches = []  # Player count mismatches
     cluster_nodes = []
+
     if cluster_check:
         try:
             cluster_nodes = list(get_cluster_nodes().values())
             logger.info(f"Will check {len(cluster_nodes)} cluster nodes")
         except Exception as e:
             logger.warning(f"Could not load cluster nodes: {e}")
+
+    if owc_check:
+        logger.info(f"Will check OWC backup at {OWC_CONFIG['host']}:{OWC_CONFIG['base_path']}")
 
     # Query 1: Participants with model_path but file doesn't exist
     query1 = """
@@ -222,11 +379,69 @@ def get_phantom_entries(
             continue
 
         model_path = row["model_path"]
-        if find_model_locally(model_path, participant_id):
+        num_players = row["num_players"]
+        found_locally = find_model_locally(model_path, participant_id)
+
+        # Check player count if found locally and validation requested
+        if found_locally and validate_players and num_players:
+            is_valid, actual_players = validate_model_player_count(model_path, num_players)
+            if not is_valid:
+                mismatches.append({
+                    "participant_id": participant_id,
+                    "model_path": model_path,
+                    "board_type": row["board_type"],
+                    "num_players": num_players,
+                    "actual_players": actual_players,
+                    "rating": row["rating"],
+                    "games_played": row["games_played"],
+                    "ai_type": row["ai_type"],
+                    "source": "player_count_mismatch",
+                    "reason": f"Expected {num_players} players, model has {actual_players}",
+                })
+                continue
+
+        if found_locally:
             continue
 
         if cluster_check and cluster_nodes:
             if check_model_on_cluster(model_path, cluster_nodes):
+                continue
+
+        # Check OWC backup
+        if owc_check:
+            found_on_owc, owc_path = check_model_on_owc(model_path, participant_id)
+            if found_on_owc:
+                # Validate player count on OWC
+                if validate_players and num_players:
+                    is_valid, actual = validate_remote_model_player_count(
+                        owc_path, num_players, OWC_CONFIG["host"], OWC_CONFIG["user"]
+                    )
+                    if not is_valid:
+                        mismatches.append({
+                            "participant_id": participant_id,
+                            "model_path": model_path,
+                            "owc_path": owc_path,
+                            "board_type": row["board_type"],
+                            "num_players": num_players,
+                            "actual_players": actual,
+                            "rating": row["rating"],
+                            "games_played": row["games_played"],
+                            "ai_type": row["ai_type"],
+                            "source": "owc_player_mismatch",
+                            "reason": f"OWC model has {actual} players, registered as {num_players}",
+                        })
+                        continue
+
+                recovered.append({
+                    "participant_id": participant_id,
+                    "model_path": model_path,
+                    "owc_path": owc_path,
+                    "board_type": row["board_type"],
+                    "num_players": num_players,
+                    "rating": row["rating"],
+                    "games_played": row["games_played"],
+                    "ai_type": row["ai_type"],
+                })
                 continue
 
         phantoms.append({
@@ -274,6 +489,43 @@ def get_phantom_entries(
             if check_model_on_cluster(f"{participant_id}.pth", cluster_nodes):
                 continue
 
+        # Check OWC backup for orphaned entries
+        if owc_check:
+            found_on_owc, owc_path = check_model_on_owc(None, participant_id)
+            if found_on_owc:
+                num_players = row["num_players"]
+                if validate_players and num_players:
+                    is_valid, actual = validate_remote_model_player_count(
+                        owc_path, num_players, OWC_CONFIG["host"], OWC_CONFIG["user"]
+                    )
+                    if not is_valid:
+                        mismatches.append({
+                            "participant_id": participant_id,
+                            "model_path": None,
+                            "owc_path": owc_path,
+                            "board_type": row["board_type"],
+                            "num_players": num_players,
+                            "actual_players": actual,
+                            "rating": row["rating"],
+                            "games_played": row["games_played"],
+                            "ai_type": None,
+                            "source": "owc_orphan_player_mismatch",
+                            "reason": f"OWC model has {actual} players, registered as {num_players}",
+                        })
+                        continue
+
+                recovered.append({
+                    "participant_id": participant_id,
+                    "model_path": None,
+                    "owc_path": owc_path,
+                    "board_type": row["board_type"],
+                    "num_players": num_players,
+                    "rating": row["rating"],
+                    "games_played": row["games_played"],
+                    "ai_type": None,
+                })
+                continue
+
         phantoms.append({
             "participant_id": participant_id,
             "model_path": None,
@@ -286,7 +538,18 @@ def get_phantom_entries(
         })
 
     conn.close()
-    return phantoms
+
+    # Log summary
+    if recovered:
+        logger.info(f"Found {len(recovered)} models recoverable from OWC backup")
+    if mismatches:
+        logger.warning(f"Found {len(mismatches)} player count mismatches")
+
+    return {
+        "phantoms": phantoms,
+        "recovered": recovered,
+        "mismatches": mismatches,
+    }
 
 
 def delete_phantom_entries(db_path: Path, phantoms: list[dict]) -> dict:

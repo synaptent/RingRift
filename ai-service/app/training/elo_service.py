@@ -480,6 +480,61 @@ class EloService:
                 json.dumps(metadata) if metadata else None
             ))
 
+    def _validate_model_player_count(
+        self, model_path: str, expected_num_players: int
+    ) -> tuple[bool, int | None]:
+        """Validate that a model's player count matches expected value.
+
+        Args:
+            model_path: Path to model checkpoint file
+            expected_num_players: Expected number of players (2, 3, or 4)
+
+        Returns:
+            Tuple of (is_valid, actual_num_players). actual_num_players is None
+            if it couldn't be determined from the checkpoint.
+        """
+        try:
+            import torch
+            path = Path(model_path)
+            if not path.exists():
+                # Check common directories
+                for model_dir in [Path("models"), Path("models_essential")]:
+                    candidate = model_dir / path
+                    if candidate.exists():
+                        path = candidate
+                        break
+                    candidate = model_dir / path.name
+                    if candidate.exists():
+                        path = candidate
+                        break
+
+            if not path.exists():
+                return True, None  # Can't validate, assume OK
+
+            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+
+            # Try to get num_players from checkpoint metadata
+            actual_num_players = checkpoint.get("num_players")
+
+            # If not in metadata, infer from value head shape
+            if actual_num_players is None:
+                state_dict = checkpoint.get("model_state_dict", checkpoint.get("state_dict", checkpoint))
+                if isinstance(state_dict, dict):
+                    # Check value_fc2 shape - first dim is num_players
+                    for key in ["value_fc2.weight", "value_head.fc2.weight"]:
+                        if key in state_dict:
+                            actual_num_players = state_dict[key].shape[0]
+                            break
+
+            if actual_num_players is None:
+                return True, None  # Can't determine, assume OK
+
+            return actual_num_players == expected_num_players, actual_num_players
+
+        except Exception as e:
+            logger.debug(f"Could not validate player count for {model_path}: {e}")
+            return True, None  # On error, don't block registration
+
     def _validate_model_path(self, model_path: str | None) -> bool:
         """Validate that a model file exists.
 
@@ -541,6 +596,19 @@ class EloService:
                 f"(model_id={model_id}). Use validate_file=False to override."
             )
             return
+
+        # Validate player count matches (prevent player count mismatch - Dec 2025)
+        if validate_file and model_path:
+            is_valid, actual_players = self._validate_model_player_count(
+                model_path, num_players
+            )
+            if not is_valid:
+                logger.error(
+                    f"Player count mismatch! Model {model_path} has {actual_players} "
+                    f"players but trying to register for {num_players}-player config. "
+                    f"Skipping registration to prevent invalid Elo entries."
+                )
+                return
 
         # Register as participant
         self.register_participant(
