@@ -1115,7 +1115,8 @@ class UnifiedEventRouter:
                 "[EventRouter] Subscription persistence unavailable - "
                 "subscription_store not importable"
             )
-        except Exception as e:
+        except (RuntimeError, OSError, ValueError, TypeError) as e:
+            # Dec 29: Narrowed from Exception to specific store errors
             logger.warning(
                 f"[EventRouter] Failed to persist subscription: {e}"
             )
@@ -1172,7 +1173,8 @@ class UnifiedEventRouter:
             store.deactivate_subscription(subscriber_name, event_type)
         except ImportError:
             pass  # Subscription store not available
-        except Exception as e:
+        except (RuntimeError, OSError, ValueError, TypeError) as e:
+            # Dec 29: Narrowed from Exception to specific store errors
             logger.warning(
                 f"[EventRouter] Failed to deactivate persisted subscription: {e}"
             )

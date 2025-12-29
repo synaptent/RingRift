@@ -176,11 +176,12 @@ See `docs/runbooks/` for 25+ specific runbooks covering:
 
 Superseded or historical documents are in `docs/archive/`:
 
-| Directory                   | Contents                               |
-| --------------------------- | -------------------------------------- |
-| `docs/archive/assessments/` | Historical pass assessments (PASS1-22) |
-| `docs/archive/plans/`       | Old planning documents                 |
-| `docs/archive/historical/`  | Historical snapshots and assessments   |
+| Directory                                   | Contents                               |
+| ------------------------------------------- | -------------------------------------- |
+| `docs/archive/assessments/`                 | Historical pass assessments (PASS1-22) |
+| `docs/archive/plans/`                       | Old planning documents                 |
+| `docs/archive/historical/`                  | Historical snapshots and assessments   |
+| `docs/archive/historical/ROADMAP_2025Q1.md` | Historical roadmap snapshot            |
 
 ---
 

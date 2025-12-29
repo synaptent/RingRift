@@ -629,19 +629,18 @@ class TestAutoRollbackHandlerOnRegression:
         rollback_manager.rollback_model.assert_not_called()
 
     def test_minor_not_acted_upon(self, auto_handler):
-        """MINOR regressions are not acted upon (by default, min_severity is MODERATE)."""
-        from unittest.mock import MagicMock
+        """MINOR regressions are not acted upon."""
+        # The handler only acts on SEVERE (if require_approval_for_severe=False)
+        # or CRITICAL severity. By default require_approval_for_severe=True,
+        # so only CRITICAL triggers auto-rollback.
 
-        # Auto-handler should only act on MODERATE+ by default
         # Verify initial state doesn't have any pending rollbacks
         initial_pending = len(auto_handler._pending_rollbacks)
 
-        # Create mock regression event - the handler checks severity internally
-        # Since we can't easily mock the severity comparison, we verify the
-        # handler's minimum severity threshold is set correctly
-        assert auto_handler.min_severity == "MODERATE"  # Default threshold
+        # Verify default safety setting - only CRITICAL auto-rolls back
+        assert auto_handler.require_approval_for_severe is True
 
-        # Also verify that pending_rollbacks didn't change (no rollback triggered)
+        # Also verify that pending_rollbacks hasn't changed
         assert len(auto_handler._pending_rollbacks) == initial_pending
 
 

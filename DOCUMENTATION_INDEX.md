@@ -19,6 +19,7 @@ This index catalogs all project documentation organized by topic and location. F
 | [PRIVACY_POLICY.md](PRIVACY_POLICY.md)     | Privacy Policy                     |
 | [TODO.md](TODO.md)                         | Active task tracker                |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md)         | Current bugs and gaps              |
+| [CHANGELOG.md](CHANGELOG.md)               | Release history                    |
 
 ### Getting Started (New Players)
 
@@ -29,6 +30,18 @@ This index catalogs all project documentation organized by topic and location. F
 | [Audience](docs/getting-started/AUDIENCE.md)                            | Who RingRift is for     |
 
 ---
+
+## Automation & Agent Instructions
+
+| Document                                                 | Purpose                                    |
+| -------------------------------------------------------- | ------------------------------------------ |
+| [AGENTS.md](AGENTS.md)                                   | Root agent instructions (repo-wide)        |
+| [src/AGENTS.md](src/AGENTS.md)                           | Agent instructions for `src/**`            |
+| [ai-service/AGENTS.md](ai-service/AGENTS.md)             | Agent instructions for `ai-service/**`     |
+| [CLAUDE.md](CLAUDE.md)                                   | Internal LLM notes (legacy Claude prompts) |
+| [CLAUDE.local.md](CLAUDE.local.md)                       | Local-only LLM notes (do not share)        |
+| [ai-service/CLAUDE.md](ai-service/CLAUDE.md)             | AI-service LLM notes (legacy)              |
+| [ai-service/CLAUDE.local.md](ai-service/CLAUDE.local.md) | AI-service local LLM notes                 |
 
 ## Core Documentation (Root)
 
