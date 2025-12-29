@@ -175,13 +175,13 @@ from app.coordination.health_check_orchestrator import HealthCheckOrchestrator
 
 # NEW
 from app.coordination.unified_health_manager import (
-    UnifiedHealthManager,
+    get_health_manager,
     get_system_health_score,
     get_system_health_level,
     should_pause_pipeline,
 )
 
-manager = UnifiedHealthManager.get_instance()
+manager = get_health_manager()
 score = get_system_health_score()  # SystemHealthScore dataclass
 level = get_system_health_level()  # HEALTHY, DEGRADED, CRITICAL, etc.
 ```

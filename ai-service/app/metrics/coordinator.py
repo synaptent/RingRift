@@ -309,8 +309,8 @@ async def collect_all_coordinator_metrics() -> dict[str, Any]:
 
     # Try to get UnifiedHealthManager stats (consolidates RecoveryManager + ErrorRecoveryCoordinator)
     try:
-        from app.coordination.unified_health_manager import UnifiedHealthManager
-        uhm = UnifiedHealthManager.get_instance()
+        from app.coordination.unified_health_manager import get_health_manager
+        uhm = get_health_manager()
         stats = await uhm.get_stats()
         metrics["coordinators"]["UnifiedHealthManager"] = {
             "status": stats.get("status", "unknown"),
@@ -372,8 +372,8 @@ def _collect_sync() -> dict[str, Any]:
 
     try:
         # Use UnifiedHealthManager (consolidates RecoveryManager + ErrorRecoveryCoordinator)
-        from app.coordination.unified_health_manager import UnifiedHealthManager
-        uhm = UnifiedHealthManager.get_instance()
+        from app.coordination.unified_health_manager import get_health_manager
+        uhm = get_health_manager()
         stats = uhm.get_status()
         metrics["coordinators"]["UnifiedHealthManager"] = {
             "status": stats.get("status", "unknown"),

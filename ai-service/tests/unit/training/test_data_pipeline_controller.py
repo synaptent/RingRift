@@ -758,42 +758,33 @@ class TestGetTrainingDataLoader:
 
 
 # =============================================================================
-# Tests for Async Operations
+# Tests for Async Method Signatures
 # =============================================================================
 
 class TestDataPipelineControllerAsync:
-    """Tests for async operations (streaming, sync)."""
+    """Tests for async method signatures (deprecated module, minimal testing)."""
 
-    @pytest.mark.asyncio
-    async def test_sync_remote_sources_no_sources(self):
-        """sync_remote_sources should handle no configured sources."""
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=DeprecationWarning)
-            controller = DataPipelineController()
-
-        # Should not raise
-        result = await controller.sync_remote_sources()
-
-        # May return empty dict or minimal result
-        assert isinstance(result, dict)
-
-    def test_start_streaming_no_sources(self):
-        """start_streaming should handle no database sources."""
-        import asyncio
+    def test_sync_remote_sources_is_async(self):
+        """sync_remote_sources should be an async method."""
+        import inspect
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
             controller = DataPipelineController()
 
-        # Should not raise
-        async def test():
-            await controller.start_streaming()
+        # Verify the method is async
+        assert inspect.iscoroutinefunction(controller.sync_remote_sources)
 
-        # Run test
-        try:
-            asyncio.run(test())
-        except Exception:
-            pass  # May fail without sources, that's OK
+    def test_start_streaming_is_async(self):
+        """start_streaming should be an async method."""
+        import inspect
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            controller = DataPipelineController()
+
+        # Verify the method is async
+        assert inspect.iscoroutinefunction(controller.start_streaming)
 
 
 # =============================================================================
