@@ -1685,9 +1685,9 @@ class UnifiedHealthManager(CoordinatorBase):
     def _on_component_failure(self, component: str) -> None:
         """Record a failure for circuit breaker tracking."""
         cb = self._get_circuit_breaker(component)
-        cb.record_failure()
+        cb.record_failure(component)  # Per-target CB requires target arg
 
-        if cb.state == CircuitState.OPEN:
+        if cb.get_state(component) == CircuitState.OPEN:
             # Notify callbacks
             for callback in self._circuit_breaker_callbacks:
                 try:
@@ -1703,11 +1703,11 @@ class UnifiedHealthManager(CoordinatorBase):
             return
 
         cb = self._circuit_breakers[component]
-        was_open = cb.state == CircuitState.OPEN
+        was_open = cb.get_state(component) == CircuitState.OPEN
 
-        cb.record_success()
+        cb.record_success(component)  # Per-target CB requires target arg
 
-        if was_open and cb.state == CircuitState.CLOSED:
+        if was_open and cb.get_state(component) == CircuitState.CLOSED:
             # Notify callbacks
             for callback in self._circuit_breaker_callbacks:
                 try:
@@ -1730,7 +1730,7 @@ class UnifiedHealthManager(CoordinatorBase):
             return False
 
         cb = self._circuit_breakers[component]
-        return cb.state == CircuitState.OPEN
+        return cb.get_state(component) == CircuitState.OPEN
 
     # =========================================================================
     # Recovery Operations (from RecoveryManager)
@@ -2182,7 +2182,7 @@ class UnifiedHealthManager(CoordinatorBase):
     def get_circuit_breaker_states(self) -> dict[str, CircuitState]:
         """Get all circuit breaker states."""
         return {
-            component: cb.state for component, cb in self._circuit_breakers.items()
+            component: cb.get_state(component) for component, cb in self._circuit_breakers.items()
         }
 
     def get_online_nodes(self) -> set[str]:
@@ -2247,7 +2247,7 @@ class UnifiedHealthManager(CoordinatorBase):
 
         # Circuit breaker stats
         open_circuits = [
-            comp for comp, cb in self._circuit_breakers.items() if cb.state == CircuitState.OPEN
+            comp for comp, cb in self._circuit_breakers.items() if cb.get_state(comp) == CircuitState.OPEN
         ]
 
         # Node stats
@@ -2476,8 +2476,8 @@ class UnifiedHealthManager(CoordinatorBase):
 
         open_circuits = sum(
             1
-            for cb in self._circuit_breakers.values()
-            if cb.state == CircuitState.OPEN
+            for comp, cb in self._circuit_breakers.items()
+            if cb.get_state(comp) == CircuitState.OPEN
         )
 
         # Circuits closed percentage
@@ -2488,7 +2488,7 @@ class UnifiedHealthManager(CoordinatorBase):
             c
             for c in cfg.critical_circuits
             if c in self._circuit_breakers
-            and self._circuit_breakers[c].state == CircuitState.OPEN
+            and self._circuit_breakers[c].get_state(c) == CircuitState.OPEN
         ]
 
         if critical_open:
@@ -2549,7 +2549,7 @@ class UnifiedHealthManager(CoordinatorBase):
         for circuit_name in cfg.critical_circuits:
             if circuit_name in self._circuit_breakers:
                 cb = self._circuit_breakers[circuit_name]
-                if cb.state == CircuitState.OPEN:
+                if cb.get_state(circuit_name) == CircuitState.OPEN:
                     triggers.append(f"critical_circuit_open:{circuit_name}")
 
         # Error burst
