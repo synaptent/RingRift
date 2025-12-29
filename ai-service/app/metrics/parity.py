@@ -103,6 +103,73 @@ def update_parity_pass_rate(suite: str, pass_rate: float) -> None:
         logger.warning(f"Failed to update parity pass rate metric: {e}")
 
 
+# Track previous rates for change detection (December 29, 2025)
+_previous_rates: dict[str, float] = {}
+_SIGNIFICANT_RATE_CHANGE = 0.05  # 5% change triggers event
+
+
+def update_parity_pass_rate_with_event(
+    suite: str,
+    pass_rate: float,
+    board_type: str = "",
+    num_players: int = 0,
+    total_checked: int = 0,
+) -> None:
+    """Update parity pass rate and emit event if rate changed significantly.
+
+    December 29, 2025: This function wires the previously orphaned
+    PARITY_FAILURE_RATE_CHANGED event. Call this instead of update_parity_pass_rate
+    when you want event emission.
+
+    Args:
+        suite: Suite name (contract_vectors, plateau_snapshots)
+        pass_rate: Pass rate between 0 and 1
+        board_type: Board type being validated (optional)
+        num_players: Number of players (optional)
+        total_checked: Total games checked in this batch (optional)
+    """
+    # Update the gauge
+    update_parity_pass_rate(suite, pass_rate)
+
+    # Check for significant rate change and emit event
+    key = f"{suite}:{board_type}:{num_players}"
+    old_rate = _previous_rates.get(key, pass_rate)
+    failure_rate = 1.0 - pass_rate
+    old_failure_rate = 1.0 - old_rate
+
+    if abs(failure_rate - old_failure_rate) >= _SIGNIFICANT_RATE_CHANGE:
+        try:
+            import asyncio
+            from app.distributed.data_events import emit_parity_failure_rate_changed
+            from app.core.async_context import fire_and_forget
+
+            try:
+                asyncio.get_running_loop()
+                fire_and_forget(
+                    emit_parity_failure_rate_changed(
+                        new_rate=failure_rate,
+                        old_rate=old_failure_rate,
+                        board_type=board_type,
+                        num_players=num_players,
+                        total_checked=total_checked,
+                        source="ParityMetrics",
+                    ),
+                    name="emit_parity_failure_rate_changed",
+                )
+            except RuntimeError:
+                # No event loop - skip event emission in sync context
+                pass
+
+            logger.info(
+                f"[ParityMetrics] PARITY_FAILURE_RATE_CHANGED: "
+                f"{old_failure_rate:.1%} -> {failure_rate:.1%} for {key}"
+            )
+        except ImportError:
+            pass
+
+    _previous_rates[key] = pass_rate
+
+
 # =============================================================================
 # Semantic Divergence Metrics (December 2025)
 # =============================================================================
@@ -318,9 +385,15 @@ def emit_parity_summary_metrics(summary: dict) -> None:
             overall_pass_rate = 1.0 - (total_mismatches / total_cases)
             update_parity_pass_rate("all", overall_pass_rate)
 
-        # Per-suite pass rates if available
+        # Per-suite pass rates if available - use event-emitting version
         for suite, pass_rate in summary.get("pass_rate_by_suite", {}).items():
-            update_parity_pass_rate(suite, pass_rate)
+            update_parity_pass_rate_with_event(
+                suite=suite,
+                pass_rate=pass_rate,
+                board_type=summary.get("board_type", ""),
+                num_players=summary.get("num_players", 0),
+                total_checked=summary.get("total_games_checked", total_cases),
+            )
 
     except Exception as e:
         logger.warning(f"Failed to emit parity summary metrics: {e}")
@@ -348,4 +421,5 @@ __all__ = [
     "record_semantic_divergence",
     "record_structural_issue",
     "update_parity_pass_rate",
+    "update_parity_pass_rate_with_event",
 ]
