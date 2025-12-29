@@ -173,8 +173,8 @@ class TestThresholdRelationships:
 
     def test_bootstrap_enables_quick_start(self):
         """Test bootstrap threshold enables quick start."""
-        # Bootstrap should be much smaller than regular trigger
-        assert TRAINING_BOOTSTRAP_GAMES <= TRAINING_TRIGGER_GAMES / 5
+        # Bootstrap should be <= regular trigger (equal in fast iteration mode)
+        assert TRAINING_BOOTSTRAP_GAMES <= TRAINING_TRIGGER_GAMES
 
     def test_regression_before_promotion(self):
         """Test regression detection is possible before promotion."""

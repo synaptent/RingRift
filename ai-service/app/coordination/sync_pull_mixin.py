@@ -526,10 +526,87 @@ class SyncPullMixin(SyncMixinBase):
                 return None
 
         except asyncio.TimeoutError:
-            logger.warning(f"[AutoSyncDaemon] Rsync pull timeout for {db_name}")
+            logger.warning(f"[AutoSyncDaemon] Rsync pull timeout for {db_name}, trying fallback")
+            # December 2025: Use robust_pull fallback on timeout
+            fallback_path = await self._robust_pull_fallback(
+                ssh_host, ssh_user, ssh_key, remote_path, db_name, local_dir
+            )
+            return fallback_path
+        except Exception as e:
+            logger.warning(f"[AutoSyncDaemon] Rsync pull error: {e}, trying fallback")
+            # December 2025: Use robust_pull fallback on error
+            fallback_path = await self._robust_pull_fallback(
+                ssh_host, ssh_user, ssh_key, remote_path, db_name, local_dir
+            )
+            return fallback_path
+
+    async def _robust_pull_fallback(
+        self,
+        ssh_host: str,
+        ssh_user: str,
+        ssh_key: str,
+        remote_path: str,
+        db_name: str,
+        local_dir: Path,
+    ) -> Path | None:
+        """Fallback to robust_pull when rsync fails.
+
+        December 2025: Added for improved sync reliability.
+        Uses multi-transport fallback: rsync → scp → base64 → http
+
+        Args:
+            ssh_host: Remote host IP/hostname
+            ssh_user: SSH username
+            ssh_key: Path to SSH private key
+            remote_path: Remote directory path
+            db_name: Database filename
+            local_dir: Local directory to save to
+
+        Returns:
+            Local path to the pulled file, or None if failed.
+        """
+        try:
+            from scripts.lib.transfer import robust_pull, TransferConfig
+
+            config = TransferConfig(
+                ssh_key=ssh_key,
+                ssh_user=ssh_user,
+                ssh_port=22,
+                connect_timeout=10,
+                transfer_timeout=300,
+                max_retries=2,
+                compress=True,
+                verify_checksum=True,
+            )
+
+            local_path = local_dir / db_name
+            remote_file = f"{remote_path}/{db_name}"
+
+            # Run in thread pool since robust_pull is synchronous
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: robust_pull(ssh_host, 22, remote_file, local_path, config),
+            )
+
+            if result.success and local_path.exists():
+                logger.info(
+                    f"[AutoSyncDaemon] Fallback pull succeeded via {result.method}: "
+                    f"{db_name} from {ssh_host}"
+                )
+                return local_path
+            else:
+                logger.warning(
+                    f"[AutoSyncDaemon] All fallback transports failed for {db_name}: "
+                    f"{result.error}"
+                )
+                return None
+
+        except ImportError:
+            logger.debug("[AutoSyncDaemon] robust_pull not available")
             return None
         except Exception as e:
-            logger.debug(f"[AutoSyncDaemon] Rsync pull error: {e}")
+            logger.warning(f"[AutoSyncDaemon] Fallback pull error for {db_name}: {e}")
             return None
 
     async def _merge_into_canonical(self, pulled_db: Path, source_node: str) -> None:
