@@ -36,6 +36,8 @@ Usage:
 December 2025: Created for comprehensive OWC backup.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
@@ -47,7 +49,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logging.basicConfig(
     level=logging.INFO,
