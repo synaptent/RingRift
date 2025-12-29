@@ -84,11 +84,12 @@ else:
 
 
 # AlertSeverity is kept for backwards compatibility but maps to AlertLevel
+# December 29, 2025: For new coordination code, prefer app.coordination.alert_types.AlertSeverity
 class AlertSeverity(Enum):
-    """Alert severity levels.
+    """Alert severity levels (str-based for backwards compatibility).
 
-    Note: For new code, prefer using AlertLevel from app.monitoring.thresholds.
-    This enum is maintained for backwards compatibility.
+    Note: For new code, prefer using app.coordination.alert_types.AlertSeverity (IntEnum).
+    This str-based enum is maintained for backwards compatibility with training_health.
     """
     INFO = "info"
     WARNING = "warning"

@@ -22,28 +22,27 @@ import json
 import logging
 import os
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import IntEnum
 from pathlib import Path
 from typing import Any, Optional
 from urllib.request import Request, urlopen
 
+# December 29, 2025: Import from canonical alert_types module
+from app.coordination.alert_types import AlertSeverity
+
 logger = logging.getLogger(__name__)
-
-
-class AlertSeverity(IntEnum):
-    """Alert severity levels."""
-    DEBUG = 0
-    INFO = 1
-    WARNING = 2
-    ERROR = 3
-    CRITICAL = 4
 
 
 @dataclass
 class Alert:
-    """An alert to be routed."""
+    """An alert to be routed.
+
+    Note: For new code, prefer using app.coordination.alert_types.Alert
+    which has additional fields like category, state, and config_key.
+    This class is maintained for backwards compatibility with AlertRouter.
+    """
     severity: AlertSeverity
     alert_type: str
     message: str

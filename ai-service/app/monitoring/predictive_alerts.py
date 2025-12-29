@@ -3,6 +3,10 @@ Proactive monitoring with predictive alerts.
 
 This module provides early warning alerts by predicting issues before they occur,
 rather than alerting after problems have already happened.
+
+Note (December 29, 2025): This module uses a local AlertSeverity enum for backwards
+compatibility with existing code that expects str values ("info", "warning", "critical").
+For new code, prefer using app.coordination.alert_types.AlertSeverity (IntEnum: 0-4).
 """
 
 import logging
@@ -16,7 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 class AlertSeverity(str, Enum):
-    """Alert severity levels."""
+    """Alert severity levels (str-based for backwards compatibility).
+
+    Note: For new code, prefer app.coordination.alert_types.AlertSeverity (IntEnum).
+    This str-based enum is maintained for backwards compatibility with code that
+    expects lowercase string values.
+    """
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"

@@ -180,7 +180,11 @@ class SelfPlayMetrics:
 
 @dataclass
 class Alert:
-    """An alert/notification."""
+    """An alert/notification for the training dashboard.
+
+    Note (December 29, 2025): This is a dashboard-specific Alert dataclass.
+    For coordination/daemon code, prefer app.coordination.alert_types.Alert.
+    """
     timestamp: str
     severity: str  # "info", "warning", "error", "critical"
     category: str  # "training", "cluster", "model", "selfplay"

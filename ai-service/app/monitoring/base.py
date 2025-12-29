@@ -11,6 +11,9 @@ Usage:
             ...
         def should_alert(self) -> Optional[Alert]:
             ...
+
+Note (December 29, 2025): This module uses AlertLevel from app.config.thresholds.
+For new coordination/daemon code, prefer app.coordination.alert_types.AlertSeverity.
 """
 
 from abc import ABC, abstractmethod
