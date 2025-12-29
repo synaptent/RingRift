@@ -289,6 +289,8 @@ class DaemonHealthState:
     is_running: bool = False
     restart_count: int = 0
     last_stop_reason: str = ""
+    consecutive_failures: int = 0
+    last_error: str | None = None
 
 
 @dataclass
@@ -1158,7 +1160,7 @@ class UnifiedHealthManager(CoordinatorBase):
             node_state.failure_count = 0
 
             # Record recovery
-            recovery = RecoveryRecord(
+            recovery = RecoveryAttempt(
                 recovery_id=self._generate_recovery_id(),
                 error_id=f"shutdown_{node_id}",
                 component=f"coordinator:{coordinator_name}",

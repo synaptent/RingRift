@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.coordination.unified_health_manager import (
+    DaemonHealthState,
     ErrorRecord,
     ErrorSeverity,
     HealthStats,
@@ -28,6 +29,7 @@ from app.coordination.unified_health_manager import (
     RecoveryEvent,
     RecoveryResult,
     RecoveryStatus,
+    SystemHealthLevel,
     UnifiedHealthManager,
     get_health_manager,
     is_component_healthy,
@@ -1341,10 +1343,16 @@ class TestSystemHealthScoring:
     """Tests for system health scoring functionality (December 2025)."""
 
     def test_calculate_system_health_score_healthy(self, manager):
-        """Should calculate healthy score with no issues."""
+        """Should calculate healthy score with all nodes online."""
         from app.coordination.unified_health_manager import SystemHealthConfig
 
-        score = manager.calculate_system_health_score()
+        # Create healthy nodes
+        for i in range(5):
+            state = manager._get_node_state(f"node-{i}")
+            state.is_online = True
+
+        cfg = SystemHealthConfig(expected_nodes=5)
+        score = manager.calculate_system_health_score(cfg)
 
         assert score.score >= 80
         assert score.level == SystemHealthLevel.HEALTHY
@@ -1391,9 +1399,13 @@ class TestSystemHealthScoring:
         """Should determine correct health level based on score."""
         from app.coordination.unified_health_manager import SystemHealthConfig
 
-        # Force different scores by manipulating internal state
-        # Empty state = healthy
-        score = manager.calculate_system_health_score()
+        # Create healthy nodes for a healthy score
+        for i in range(5):
+            state = manager._get_node_state(f"node-{i}")
+            state.is_online = True
+
+        cfg = SystemHealthConfig(expected_nodes=5)
+        score = manager.calculate_system_health_score(cfg)
         assert score.level == SystemHealthLevel.HEALTHY
 
     def test_pause_triggers_health_threshold(self, manager):

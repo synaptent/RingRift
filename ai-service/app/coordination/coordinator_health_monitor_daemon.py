@@ -341,22 +341,15 @@ class CoordinatorHealthMonitorDaemon(MonitorBase[CoordinatorHealthMonitorConfig]
         except Exception as e:
             logger.debug(f"[CoordinatorHealthMonitor] Failed to emit cluster health event: {e}")
 
-    async def _monitoring_loop(self) -> None:
-        """Background loop for periodic health checks."""
-        while self._running:
-            try:
-                await self._check_stale_heartbeats()
-                await asyncio.sleep(60)  # Check every minute
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"[CoordinatorHealthMonitor] Monitoring loop error: {e}")
-                await asyncio.sleep(60)
+    # =========================================================================
+    # Monitoring Logic (called by MonitorBase._run_cycle)
+    # =========================================================================
 
     async def _check_stale_heartbeats(self) -> None:
         """Check for coordinators with stale heartbeats."""
         now = time.time()
         stale_coordinators: list[str] = []
+        threshold = self.config.heartbeat_stale_threshold_seconds
 
         async with self._lock:
             for name, info in self._coordinators.items():
@@ -367,20 +360,22 @@ class CoordinatorHealthMonitorDaemon(MonitorBase[CoordinatorHealthMonitorConfig]
                 # Check heartbeat freshness
                 if info.last_heartbeat_at > 0:
                     stale_duration = now - info.last_heartbeat_at
-                    if stale_duration > HEARTBEAT_STALE_THRESHOLD_SECONDS:
+                    if stale_duration > threshold:
                         stale_coordinators.append(name)
 
         # Log stale coordinators (outside lock)
         for name in stale_coordinators:
             logger.warning(
                 f"[CoordinatorHealthMonitor] Stale heartbeat for {name} "
-                f"(no heartbeat for {HEARTBEAT_STALE_THRESHOLD_SECONDS}s)"
+                f"(no heartbeat for {threshold}s)"
             )
 
     def get_health_summary(self) -> CoordinatorHealthSummary:
         """Get summary of all coordinator health states."""
         now = time.time()
         summary = CoordinatorHealthSummary()
+        heartbeat_threshold = self.config.heartbeat_stale_threshold_seconds
+        cluster_unhealthy_threshold = self.config.cluster_unhealthy_threshold_pct
 
         for name, info in self._coordinators.items():
             summary.total_count += 1
@@ -400,7 +395,7 @@ class CoordinatorHealthMonitorDaemon(MonitorBase[CoordinatorHealthMonitorConfig]
             # Check for stale heartbeat
             if info.last_heartbeat_at > 0:
                 stale_duration = now - info.last_heartbeat_at
-                if stale_duration > HEARTBEAT_STALE_THRESHOLD_SECONDS:
+                if stale_duration > heartbeat_threshold:
                     summary.stale_count += 1
 
             # Add coordinator details
@@ -419,9 +414,9 @@ class CoordinatorHealthMonitorDaemon(MonitorBase[CoordinatorHealthMonitorConfig]
             operational = summary.healthy_count + summary.degraded_count
             summary.cluster_health_pct = (operational / summary.total_count) * 100
 
-            # Cluster is unhealthy if >20% coordinators are down
+            # Cluster is unhealthy if >threshold% coordinators are down
             unhealthy_pct = (summary.unhealthy_count / summary.total_count) * 100
-            summary.cluster_healthy = unhealthy_pct < 20.0
+            summary.cluster_healthy = unhealthy_pct < cluster_unhealthy_threshold
         else:
             summary.cluster_healthy = True
             summary.cluster_health_pct = 100.0
@@ -429,11 +424,16 @@ class CoordinatorHealthMonitorDaemon(MonitorBase[CoordinatorHealthMonitorConfig]
         return summary
 
     def get_status(self) -> dict[str, Any]:
-        """Get daemon status for health checks."""
+        """Get daemon status for health checks.
+
+        Overrides MonitorBase.get_status() to add coordinator-specific data.
+        """
+        # Get base status from MonitorBase
+        status = super().get_status()
+
+        # Add coordinator-specific status
         summary = self.get_health_summary()
-        return {
-            "running": self._running,
-            "subscribed": self._subscribed,
+        status.update({
             "total_coordinators": summary.total_count,
             "healthy_count": summary.healthy_count,
             "unhealthy_count": summary.unhealthy_count,
@@ -449,55 +449,57 @@ class CoordinatorHealthMonitorDaemon(MonitorBase[CoordinatorHealthMonitorConfig]
                 "shutdowns": self._total_shutdowns,
                 "init_failures": self._total_init_failures,
             },
-        }
+        })
+        return status
 
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health status."""
-        try:
-            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health status.
 
-            if not self._running:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.STOPPED,
-                    message="Coordinator health monitor not running",
-                )
+        Overrides MonitorBase.health_check() to add coordinator-specific checks.
+        """
+        # First check base health (running, error rate, stale activity)
+        base_result = super().health_check()
 
-            if not self._subscribed:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.DEGRADED,
-                    message="Coordinator health monitor not subscribed to events",
-                )
+        # If base says not running or has critical errors, return that
+        if base_result.status == CoordinatorStatus.STOPPED:
+            return base_result
+        if base_result.status == CoordinatorStatus.ERROR:
+            return base_result
 
-            summary = self.get_health_summary()
-
-            # Check for cluster-level issues
-            if not summary.cluster_healthy:
-                return HealthCheckResult(
-                    healthy=False,
-                    status=CoordinatorStatus.DEGRADED,
-                    message=f"Cluster unhealthy: {summary.unhealthy_count}/{summary.total_count} coordinators down",
-                    details=self.get_status(),
-                )
-
-            if summary.stale_count > 0:
-                return HealthCheckResult(
-                    healthy=True,
-                    status=CoordinatorStatus.DEGRADED,
-                    message=f"{summary.stale_count} coordinators have stale heartbeats",
-                    details=self.get_status(),
-                )
-
+        # Check coordinator-specific health
+        if not self._event_subscribed:
             return HealthCheckResult(
-                healthy=True,
-                status=CoordinatorStatus.RUNNING,
-                message=f"Coordinator monitor running ({summary.healthy_count} healthy)",
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="Coordinator health monitor not subscribed to events",
                 details=self.get_status(),
             )
 
-        except ImportError:
-            return {"healthy": self._running and self._subscribed}
+        summary = self.get_health_summary()
+
+        # Check for cluster-level issues
+        if not summary.cluster_healthy:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Cluster unhealthy: {summary.unhealthy_count}/{summary.total_count} coordinators down",
+                details=self.get_status(),
+            )
+
+        if summary.stale_count > 0:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"{summary.stale_count} coordinators have stale heartbeats",
+                details=self.get_status(),
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Coordinator monitor running ({summary.healthy_count} healthy)",
+            details=self.get_status(),
+        )
 
 
 # Singleton instance
