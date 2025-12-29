@@ -142,6 +142,48 @@ class SyncDefaults:
 
 
 # =============================================================================
+# Model Distribution Defaults (December 2025 - Phase 3)
+# =============================================================================
+
+@dataclass(frozen=True)
+class DistributionDefaults:
+    """Default values for model distribution verification.
+
+    Used by: app/coordination/unified_distribution_daemon.py,
+             app/coordination/promotion_controller.py,
+             app/coordination/evaluation_daemon.py
+
+    These thresholds ensure models are adequately distributed before
+    promotion/evaluation to prevent "stuck" high-Elo models.
+    """
+    # Minimum nodes a model must be distributed to before promotion
+    MIN_NODES_FOR_PROMOTION: int = _env_int("RINGRIFT_MIN_NODES_FOR_PROMOTION", 10)
+
+    # Minimum nodes for fair evaluation (lower than promotion to allow testing)
+    MIN_NODES_FOR_EVALUATION: int = _env_int("RINGRIFT_MIN_NODES_FOR_EVALUATION", 5)
+
+    # Timeout waiting for distribution to complete (seconds)
+    DISTRIBUTION_TIMEOUT_SECONDS: float = _env_float(
+        "RINGRIFT_DISTRIBUTION_TIMEOUT", 300.0
+    )
+
+    # Retry interval when waiting for distribution (seconds)
+    DISTRIBUTION_RETRY_INTERVAL: float = _env_float(
+        "RINGRIFT_DISTRIBUTION_RETRY_INTERVAL", 15.0
+    )
+
+    # Minimum availability score (0-1) before allowing promotion
+    MIN_AVAILABILITY_SCORE: float = _env_float(
+        "RINGRIFT_MIN_AVAILABILITY_SCORE", 0.3
+    )
+
+    # Whether to block promotion on insufficient distribution
+    BLOCK_PROMOTION_ON_INCOMPLETE: bool = _env_bool(
+        "RINGRIFT_BLOCK_PROMOTION_INCOMPLETE", False
+    )
+
+
+# =============================================================================
 # Heartbeat Defaults
 # =============================================================================
 

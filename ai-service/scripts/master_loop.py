@@ -1549,6 +1549,25 @@ class MasterLoopController:
         if state.last_quality_score < 0.5:
             return False, f"Low quality: {state.last_quality_score:.2f}"
 
+        # Dec 29, 2025: Check data freshness before training
+        # Ensures we don't train on stale data
+        try:
+            from app.coordination.training_freshness import check_freshness_sync
+
+            parts = config_key.rsplit("_", 1)
+            board_type = parts[0]
+            num_players = int(parts[1].replace("p", ""))
+
+            freshness = check_freshness_sync(board_type, num_players, max_age_hours=2.0)
+            if not freshness.is_fresh:
+                # Trigger priority sync for stale data
+                await self._trigger_priority_sync(config_key, freshness.data_age_hours)
+                return False, f"Data stale ({freshness.data_age_hours:.1f}h old), sync triggered"
+        except ImportError:
+            logger.debug("[MasterLoop] TrainingFreshness not available, skipping freshness check")
+        except Exception as e:
+            logger.warning(f"[MasterLoop] Freshness check failed for {config_key}: {e}")
+
         # Check if circuit breaker is tripped
         try:
             if self._pipeline_orchestrator is not None:
@@ -1594,6 +1613,42 @@ class MasterLoopController:
 
         except Exception as e:
             logger.error(f"[MasterLoop] Failed to trigger training for {config_key}: {e}")
+
+    async def _trigger_priority_sync(self, config_key: str, data_age_hours: float) -> None:
+        """Trigger priority sync for stale training data.
+
+        Dec 29, 2025: Added as part of data freshness gate.
+        When training data is stale, trigger a priority sync to fetch
+        fresh data from cluster nodes before training.
+
+        Args:
+            config_key: Config to sync (e.g., "hex8_2p")
+            data_age_hours: Current data age in hours
+        """
+        if self.dry_run:
+            logger.info(
+                f"[MasterLoop] [DRY RUN] Would trigger priority sync for {config_key} "
+                f"(data age: {data_age_hours:.1f}h)"
+            )
+            return
+
+        try:
+            from app.coordination.sync_facade import get_sync_facade
+
+            facade = get_sync_facade()
+            await facade.trigger_priority_sync(
+                reason="stale_training_data",
+                config_key=config_key,
+                data_type="games",
+            )
+            logger.info(
+                f"[MasterLoop] Triggered priority sync for {config_key} "
+                f"(data was {data_age_hours:.1f}h old)"
+            )
+        except ImportError:
+            logger.debug("[MasterLoop] SyncFacade not available, skipping priority sync")
+        except Exception as e:
+            logger.warning(f"[MasterLoop] Failed to trigger priority sync for {config_key}: {e}")
 
     # =========================================================================
     # Allocation rebalancing
