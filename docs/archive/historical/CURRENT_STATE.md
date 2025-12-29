@@ -128,21 +128,12 @@
 
 ### Key Documents
 
-<<<<<<< Updated upstream
-| Document                                                               | Purpose                          | Status     |
-| ---------------------------------------------------------------------- | -------------------------------- | ---------- |
-| [RULES_CANONICAL_SPEC.md](../../../RULES_CANONICAL_SPEC.md)                  | Single source of truth for rules | ✅ Current |
-| [../../production/PRODUCTION_READINESS_CHECKLIST.md](../../production/PRODUCTION_READINESS_CHECKLIST.md) | Launch criteria (58/67 items)    | ✅ Current |
-| [MODULE_RESPONSIBILITIES.md](../../architecture/MODULE_RESPONSIBILITIES.md)  | Module breakdown                 | ✅ Current |
-| [GPU_PIPELINE_ROADMAP.md](../../../ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)  | GPU acceleration strategy        | ✅ Updated |
-=======
 | Document                                                                                                 | Purpose                          | Status     |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------- |
 | [RULES_CANONICAL_SPEC.md](../../../RULES_CANONICAL_SPEC.md)                                              | Single source of truth for rules | ✅ Current |
 | [../../production/PRODUCTION_READINESS_CHECKLIST.md](../../production/PRODUCTION_READINESS_CHECKLIST.md) | Launch criteria (58/67 items)    | ✅ Current |
 | [MODULE_RESPONSIBILITIES.md](../../architecture/MODULE_RESPONSIBILITIES.md)                              | Module breakdown                 | ✅ Current |
 | [GPU_PIPELINE_ROADMAP.md](../../../ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)                     | GPU acceleration strategy        | ✅ Updated |
->>>>>>> Stashed changes
 
 ### Recent Updates
 

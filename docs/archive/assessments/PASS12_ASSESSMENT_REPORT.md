@@ -207,64 +207,45 @@ Found only 3 React component test files:
 
 ### Pass 11 Claims
 
-<<<<<<< Updated upstream
-| Claim | Status | Evidence |
-| ------------------------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 73 API client tests in `tests/unit/api.client.test.ts` | ✅ VERIFIED | File exists, 1367 lines |
-=======
-| Claim | Status | Evidence |
-| ------------------------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claim                                                  | Status      | Evidence                |
+| ------------------------------------------------------ | ----------- | ----------------------- |
 | 73 API client tests in `tests/unit/api.client.test.ts` | ✅ VERIFIED | File exists, 1367 lines |
 
-> > > > > > > Stashed changes
-> > > > > > > | 11 chain capture parity tests | ✅ VERIFIED | [`ai-service/tests/parity/test_chain_capture_parity.py`](../../../ai-service/tests/parity/test_chain_capture_parity.py) (699 lines) with 3 test classes containing 11 test methods |
+| 11 chain capture parity tests | ✅ VERIFIED | [`ai-service/tests/parity/test_chain_capture_parity.py`](../../../ai-service/tests/parity/test_chain_capture_parity.py) (699 lines) with 3 test classes containing 11 test methods |
 
 ### Pass 10 Claims
 
-<<<<<<< Updated upstream
-| Claim | Status | Evidence |
-| ------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------- |
-| 63 RatingService tests in `tests/unit/RatingService.test.ts` | ✅ VERIFIED | File exists (781 lines) with 63+ test blocks |
-=======
-| Claim | Status | Evidence |
-| ------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Claim                                                        | Status      | Evidence                                     |
+| ------------------------------------------------------------ | ----------- | -------------------------------------------- |
 | 63 RatingService tests in `tests/unit/RatingService.test.ts` | ✅ VERIFIED | File exists (781 lines) with 63+ test blocks |
 
-> > > > > > > Stashed changes
-> > > > > > > | E2E blocking in CI | ✅ VERIFIED | [`../../../.github/workflows/ci.yml-433`](../../../.github/workflows/ci.yml) shows `e2e-tests` job with proper dependencies |
+| E2E blocking in CI | ✅ VERIFIED | [`../../../.github/workflows/ci.yml-433`](../../../.github/workflows/ci.yml) shows `e2e-tests` job with proper dependencies |
 
 ### Pass 8 Claims
 
-<<<<<<< Updated upstream
-| Claim | Status | Evidence |
-| ------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OrchestratorRolloutService (51 tests) | ✅ VERIFIED | [`tests/unit/OrchestratorRolloutService.test.ts`](../../../tests/unit/OrchestratorRolloutService.test.ts) - exactly 51 `it()` blocks found |
-| ShadowModeComparator (44 tests) | ✅ VERIFIED | Tests removed; see `tests/TEST_LAYERS.md` for the canonical note on ShadowMode removal |
-=======
-| Claim | Status | Evidence |
+| Claim                                 | Status      | Evidence                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OrchestratorRolloutService (51 tests) | ✅ VERIFIED | [`tests/unit/OrchestratorRolloutService.test.ts`](../../../tests/unit/OrchestratorRolloutService.test.ts) - exactly 51 `it()` blocks found |
-| ShadowModeComparator (44 tests) | ✅ VERIFIED | Tests removed; see `tests/TEST_LAYERS.md` for the canonical note on ShadowMode removal |
+| OrchestratorRolloutService (51 tests) | ✅ VERIFIED | [`tests/unit/OrchestratorRolloutService.test.ts`](../../../tests/unit/OrchestratorRolloutService.test.ts) - exactly 51 `it()` blocks found                                                                                                                                                                      |
+| ShadowModeComparator (44 tests)       | ✅ VERIFIED | Tests removed; see `tests/TEST_LAYERS.md` for the canonical note on ShadowMode removal                                                                                                                                                                                                                          |
+| Claim                                 | Status      | Evidence                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OrchestratorRolloutService (51 tests) | ✅ VERIFIED | [`tests/unit/OrchestratorRolloutService.test.ts`](../../../tests/unit/OrchestratorRolloutService.test.ts) - exactly 51 `it()` blocks found                                                                                                                                                                      |
+| ShadowModeComparator (44 tests)       | ✅ VERIFIED | Tests removed; see `tests/TEST_LAYERS.md` for the canonical note on ShadowMode removal                                                                                                                                                                                                                          |
 
-> > > > > > > Stashed changes
-> > > > > > > | 9 feature flags | ✅ VERIFIED | [`src/server/config/unified.ts:224-237`](../../../src/server/config/unified.ts): `adapterEnabled`, `rolloutPercentage`, `shadowModeEnabled`, `allowlistUsers`, `denylistUsers`, `circuitBreaker.enabled`, `circuitBreaker.errorThresholdPercent`, `circuitBreaker.errorWindowSeconds`, `latencyThresholdMs` |
+| 9 feature flags | ✅ VERIFIED | [`src/server/config/unified.ts:224-237`](../../../src/server/config/unified.ts): `adapterEnabled`, `rolloutPercentage`, `shadowModeEnabled`, `allowlistUsers`, `denylistUsers`, `circuitBreaker.enabled`, `circuitBreaker.errorThresholdPercent`, `circuitBreaker.errorWindowSeconds`, `latencyThresholdMs` |
 
 ### Pass 9 Claims
 
-<<<<<<< Updated upstream
-| Claim | Status | Evidence |
-| ---------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Code splitting in `vite.config.ts` | ✅ VERIFIED | [`vite.config.ts`](../../../vite.config.ts) contains `manualChunks` with 4 vendor bundles |
-| 22 validators in `validators.ts` | ⚠️ RENAMED | Validators are in [`src/shared/validation/schemas.ts`](../../../src/shared/validation/schemas.ts) (545 lines) with 28+ Zod schemas exported |
-| 68 validation tests | ⚠️ NOT VERIFIED | No `websocketSchemas.test.ts` found; validation tests may be distributed across other files |
-=======
-| Claim | Status | Evidence |
+| Claim                              | Status          | Evidence                                                                                                                                    |
 | ---------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Code splitting in `vite.config.ts` | ✅ VERIFIED | [`vite.config.ts`](../../../vite.config.ts) contains `manualChunks` with 4 vendor bundles |
-| 22 validators in `validators.ts` | ⚠️ RENAMED | Validators are in [`src/shared/validation/schemas.ts`](../../../src/shared/validation/schemas.ts) (545 lines) with 28+ Zod schemas exported |
-| 68 validation tests | ⚠️ NOT VERIFIED | No `websocketSchemas.test.ts` found; validation tests may be distributed across other files |
-
-> > > > > > > Stashed changes
+| Code splitting in `vite.config.ts` | ✅ VERIFIED     | [`vite.config.ts`](../../../vite.config.ts) contains `manualChunks` with 4 vendor bundles                                                   |
+| 22 validators in `validators.ts`   | ⚠️ RENAMED      | Validators are in [`src/shared/validation/schemas.ts`](../../../src/shared/validation/schemas.ts) (545 lines) with 28+ Zod schemas exported |
+| 68 validation tests                | ⚠️ NOT VERIFIED | No `websocketSchemas.test.ts` found; validation tests may be distributed across other files                                                 |
+| Claim                              | Status          | Evidence                                                                                                                                    |
+| ---------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code splitting in `vite.config.ts` | ✅ VERIFIED     | [`vite.config.ts`](../../../vite.config.ts) contains `manualChunks` with 4 vendor bundles                                                   |
+| 22 validators in `validators.ts`   | ⚠️ RENAMED      | Validators are in [`src/shared/validation/schemas.ts`](../../../src/shared/validation/schemas.ts) (545 lines) with 28+ Zod schemas exported |
+| 68 validation tests                | ⚠️ NOT VERIFIED | No `websocketSchemas.test.ts` found; validation tests may be distributed across other files                                                 |
 
 ---
 

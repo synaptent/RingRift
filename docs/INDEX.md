@@ -110,6 +110,8 @@ This index provides navigation and status tracking for all project documentation
 | `docs/production/PRODUCTION_READINESS_CHECKLIST.md` | Go-live checklist           | Active |
 | `docs/operations/CLUSTER_OPERATIONS.md`             | Cluster management          | Active |
 | `docs/operations/STAGING_ENVIRONMENT.md`            | Staging setup               | Active |
+| `docs/operations/ENVIRONMENT_VARIABLES.md`          | Environment configuration   | Active |
+| `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md` | Internal env flags appendix | Active |
 
 ### Incident Response
 
@@ -132,26 +134,29 @@ See `docs/runbooks/` for 25+ specific runbooks covering:
 
 ## Testing
 
-| Document                               | Purpose               | Status |
-| -------------------------------------- | --------------------- | ------ |
-| `tests/README.md`                      | Test suite overview   | Active |
-| `docs/testing/TEST_CATEGORIES.md`      | Test categorization   | Active |
-| `docs/testing/LOAD_TEST_BASELINE.md`   | Load test baselines   | Active |
-| `docs/testing/GOLDEN_REPLAYS.md`       | Golden replay testing | Active |
-| `docs/testing/SKIPPED_TESTS_TRIAGE.md` | Skipped test triage   | Active |
+| Document                               | Purpose                | Status |
+| -------------------------------------- | ---------------------- | ------ |
+| `tests/README.md`                      | Test suite overview    | Active |
+| `docs/testing/TEST_CATEGORIES.md`      | Test categorization    | Active |
+| `docs/testing/LOAD_TEST_BASELINE.md`   | Load test baselines    | Active |
+| `docs/testing/GOLDEN_REPLAYS.md`       | Golden replay testing  | Active |
+| `docs/testing/SKIPPED_TESTS_TRIAGE.md` | Skipped test triage    | Active |
+| `docs/testing/CLIENT_TEST_PLAN.md`     | Frontend coverage plan | Active |
 
 ---
 
 ## Planning & Status
 
-| Document                                              | Purpose               | Status     |
-| ----------------------------------------------------- | --------------------- | ---------- |
-| `docs/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md`        | Current action plan   | **Active** |
-| `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md` | Project state summary | Reference  |
-| `PROJECT_GOALS.md`                                    | High-level goals      | Active     |
-| `TODO.md`                                             | Active TODO list      | Active     |
-| `KNOWN_ISSUES.md`                                     | Known issues tracker  | Active     |
-| `docs/production/RELEASE_NOTES_v0.1.0-beta.md`        | Release notes draft   | Active     |
+| Document                                              | Purpose                   | Status     |
+| ----------------------------------------------------- | ------------------------- | ---------- |
+| `docs/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md`        | Current action plan       | **Active** |
+| `docs/archive/historical/CURRENT_STATE_ASSESSMENT.md` | Project state summary     | Reference  |
+| `docs/planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md`     | NN self-play loop plan    | Active     |
+| `docs/planning/SELFPLAY_LOOP_CLOSURE_PLAN.md`         | Self-play bottleneck plan | Active     |
+| `PROJECT_GOALS.md`                                    | High-level goals          | Active     |
+| `TODO.md`                                             | Active TODO list          | Active     |
+| `KNOWN_ISSUES.md`                                     | Known issues tracker      | Active     |
+| `docs/production/RELEASE_NOTES_v0.1.0-beta.md`        | Release notes draft       | Active     |
 
 ---
 

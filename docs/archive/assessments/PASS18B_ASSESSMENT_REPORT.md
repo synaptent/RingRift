@@ -262,17 +262,13 @@ With the orchestrator at 100% rollout, the challenge is now maintenance and clea
 | `TODO.md`                                                                                | Wave 5.3 tasks marked complete           |
 | [`../historical/CURRENT_STATE_ASSESSMENT.md`](../historical/CURRENT_STATE_ASSESSMENT.md) | Orchestrator status, test counts updated |
 
-<<<<<<< Updated upstream
-| `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md` | Phase 4 completion banner |
-=======
 | `docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md` | Phase 4 completion banner |
 
-> > > > > > > Stashed changes
-> > > > > > > | `CONTRIBUTING.md` | Simplified, historical phases collapsed |
-> > > > > > > | `docs/MODULE_RESPONSIBILITIES.md` | Host adapters, new modules added |
-> > > > > > > | `RULES_SCENARIO_MATRIX.md` | Archived test paths fixed |
-> > > > > > > | 10 PASS reports | Historical banners added |
-> > > > > > > | 4 docs/drafts/ documents | Historical/completed markers |
+| `CONTRIBUTING.md` | Simplified, historical phases collapsed |
+| `docs/MODULE_RESPONSIBILITIES.md` | Host adapters, new modules added |
+| `RULES_SCENARIO_MATRIX.md` | Archived test paths fixed |
+| 10 PASS reports | Historical banners added |
+| 4 docs/drafts/ documents | Historical/completed markers |
 
 ### 6.2 Remaining Documentation Gaps
 

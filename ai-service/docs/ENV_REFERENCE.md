@@ -1,6 +1,6 @@
 # RingRift Environment Variables Reference
 
-This document provides a curated reference for commonly used `RINGRIFT_*` environment variables in the RingRift AI training infrastructure. For a full listing, see `ENV_REFERENCE_COMPREHENSIVE.md`.
+This document provides a curated reference for commonly used `RINGRIFT_*` environment variables in the RingRift AI training infrastructure. For the stable/curated full listing, see `ENV_REFERENCE_COMPREHENSIVE.md`. For internal/experimental flags, see `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
 
 **Created**: December 28, 2025
 **Primary Source**: `app/config/env.py` (some coordination flags are read directly by their modules)

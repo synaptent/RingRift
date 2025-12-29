@@ -5,8 +5,8 @@ This document covers environment variables specific to the Python AI service clu
 For internal/experimental AI-service flags discovered in code but not yet fully described,
 see `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
 
-For the curated high-impact coordination/P2P knobs (with defaults), see the
-"Advanced AI Service Flags (Curated)" section in `docs/operations/ENVIRONMENT_VARIABLES.md`.
+For the curated cross-service overview (with defaults), see the "AI Service" and
+"Python Training Flags" sections in `docs/operations/ENVIRONMENT_VARIABLES.md`.
 
 ## Table of Contents
 

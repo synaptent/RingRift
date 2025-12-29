@@ -302,20 +302,11 @@ As of PASS22, **only the game-creation scenario has been executed**; additional 
 
 ### Documentation Files
 
-<<<<<<< Updated upstream
-| File | Lines | Status | Purpose |
-| :------------------------------------------------------------------ | :-------- | :----- | :---------------------------------------- |
-| [`docs/PASS22_ASSESSMENT_REPORT.md`](PASS22_ASSESSMENT_REPORT.md) | 740 | ✅ NEW | Comprehensive assessment identifying gaps |
-| [`docs/../../../DOCUMENTATION_INDEX.md`](../../../DOCUMENTATION_INDEX.md) | 891 | ✅ NEW | Complete documentation catalog |
-| [`docs/PASS22_COMPLETION_SUMMARY.md`](PASS22_COMPLETION_SUMMARY.md) | This file | ✅ NEW | This completion summary |
-=======
-| File | Lines | Status | Purpose |
+| File                                                                      | Lines     | Status | Purpose                                   |
 | :------------------------------------------------------------------------ | :-------- | :----- | :---------------------------------------- |
-| [`docs/PASS22_ASSESSMENT_REPORT.md`](PASS22_ASSESSMENT_REPORT.md) | 740 | ✅ NEW | Comprehensive assessment identifying gaps |
-| [`docs/../../../DOCUMENTATION_INDEX.md`](../../../DOCUMENTATION_INDEX.md) | 891 | ✅ NEW | Complete documentation catalog |
-| [`docs/PASS22_COMPLETION_SUMMARY.md`](PASS22_COMPLETION_SUMMARY.md) | This file | ✅ NEW | This completion summary |
-
-> > > > > > > Stashed changes
+| [`docs/PASS22_ASSESSMENT_REPORT.md`](PASS22_ASSESSMENT_REPORT.md)         | 740       | ✅ NEW | Comprehensive assessment identifying gaps |
+| [`docs/../../../DOCUMENTATION_INDEX.md`](../../../DOCUMENTATION_INDEX.md) | 891       | ✅ NEW | Complete documentation catalog            |
+| [`docs/PASS22_COMPLETION_SUMMARY.md`](PASS22_COMPLETION_SUMMARY.md)       | This file | ✅ NEW | This completion summary                   |
 
 ### Test Files
 
@@ -325,18 +316,10 @@ As of PASS22, **only the game-creation scenario has been executed**; additional 
 
 ### Code Changes
 
-<<<<<<< Updated upstream
-| File | Change | Impact |
-| :---------------------------------------------------------------------------------- | :------------ | :--------------------- |
-| [`src/server/services/MetricsService.ts`](../../../src/server/services/MetricsService.ts) | +7 metrics | Dashboard completeness |
-| [`docs/operations/../../operations/ENVIRONMENT_VARIABLES.md`](../../operations/ENVIRONMENT_VARIABLES.md) | +5 vars, sync | Configuration accuracy |
-=======
-| File | Change | Impact |
+| File                                                                                                     | Change        | Impact                 |
 | :------------------------------------------------------------------------------------------------------- | :------------ | :--------------------- |
-| [`src/server/services/MetricsService.ts`](../../../src/server/services/MetricsService.ts) | +7 metrics | Dashboard completeness |
+| [`src/server/services/MetricsService.ts`](../../../src/server/services/MetricsService.ts)                | +7 metrics    | Dashboard completeness |
 | [`docs/operations/../../operations/ENVIRONMENT_VARIABLES.md`](../../operations/ENVIRONMENT_VARIABLES.md) | +5 vars, sync | Configuration accuracy |
-
-> > > > > > > Stashed changes
 
 ### Documentation Updates
 

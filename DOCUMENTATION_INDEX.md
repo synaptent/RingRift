@@ -37,6 +37,8 @@ This index catalogs all project documentation organized by topic and location. F
 - [PROJECT_GOALS.md](PROJECT_GOALS.md) - Canonical project goals, v1.0 success criteria, and scope boundaries
 - [STRATEGIC_ROADMAP.md](docs/planning/STRATEGIC_ROADMAP.md) - Phased roadmap & SLOs
 - [NEXT_AREAS_EXECUTION_PLAN.md](docs/planning/NEXT_AREAS_EXECUTION_PLAN.md) - Sequenced execution lanes for next work
+- [NN_SELFPLAY_TRAINING_LOOP_PLAN.md](docs/planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md) - NN self-play throughput and loop-closure plan
+- [SELFPLAY_LOOP_CLOSURE_PLAN.md](docs/planning/SELFPLAY_LOOP_CLOSURE_PLAN.md) - Bottleneck analysis + loop-closure plan
 
 ### Rules & Game Design
 
@@ -155,6 +157,7 @@ Test infrastructure and QA documentation.
 | [LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md](docs/testing/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md)                                 | WebSocket load testing design                                        |
 | [HUD_QA_CHECKLIST.md](docs/testing/HUD_QA_CHECKLIST.md)                                                                   | UI/UX manual QA checklist                                            |
 | [GOLDEN_REPLAYS.md](docs/testing/GOLDEN_REPLAYS.md)                                                                       | Golden replay test system                                            |
+| [CLIENT_TEST_PLAN.md](docs/testing/CLIENT_TEST_PLAN.md)                                                                   | Frontend coverage plan                                               |
 
 ### /docs/runbooks/
 
@@ -185,14 +188,15 @@ Incident response and post-mortems.
 
 Operational configuration and infrastructure documentation.
 
-| Document                                                             | Purpose                     |
-| -------------------------------------------------------------------- | --------------------------- |
-| [ALERTING_THRESHOLDS.md](docs/operations/ALERTING_THRESHOLDS.md)     | Monitoring alert thresholds |
-| [ENVIRONMENT_VARIABLES.md](docs/operations/ENVIRONMENT_VARIABLES.md) | Environment configuration   |
-| [OPERATIONS_DB.md](docs/operations/OPERATIONS_DB.md)                 | Database operations         |
-| [SECRETS_MANAGEMENT.md](docs/operations/SECRETS_MANAGEMENT.md)       | Secrets and credentials     |
-| [STAGING_ENVIRONMENT.md](docs/operations/STAGING_ENVIRONMENT.md)     | Staging environment setup   |
-| [SLO_VERIFICATION.md](docs/operations/SLO_VERIFICATION.md)           | SLO verification framework  |
+| Document                                                                               | Purpose                     |
+| -------------------------------------------------------------------------------------- | --------------------------- |
+| [ALERTING_THRESHOLDS.md](docs/operations/ALERTING_THRESHOLDS.md)                       | Monitoring alert thresholds |
+| [ENVIRONMENT_VARIABLES.md](docs/operations/ENVIRONMENT_VARIABLES.md)                   | Environment configuration   |
+| [ENVIRONMENT_VARIABLES_INTERNAL.md](docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md) | Internal env flags appendix |
+| [OPERATIONS_DB.md](docs/operations/OPERATIONS_DB.md)                                   | Database operations         |
+| [SECRETS_MANAGEMENT.md](docs/operations/SECRETS_MANAGEMENT.md)                         | Secrets and credentials     |
+| [STAGING_ENVIRONMENT.md](docs/operations/STAGING_ENVIRONMENT.md)                       | Staging environment setup   |
+| [SLO_VERIFICATION.md](docs/operations/SLO_VERIFICATION.md)                             | SLO verification framework  |
 
 ### Cluster Monitoring Infrastructure
 
@@ -222,6 +226,10 @@ consolidated report in
 - `P2P_INVESTIGATION_SUMMARY.md`
 - `P2P_STATUS_SUMMARY.txt`
 
+### Archived Roadmaps (Historical)
+
+- `docs/archive/historical/ROADMAP_2025Q1.md`
+
 ### /docs/security/
 
 Security documentation and threat modeling.
@@ -236,11 +244,13 @@ Security documentation and threat modeling.
 
 Active planning and roadmap documents.
 
-| Document                                                                                       | Purpose                 |
-| ---------------------------------------------------------------------------------------------- | ----------------------- |
-| [DEPLOYMENT_REQUIREMENTS.md](docs/planning/DEPLOYMENT_REQUIREMENTS.md)                         | Production requirements |
-| [ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md](docs/planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md) | Parity research roadmap |
-| [WAVE_2025_12.md](docs/planning/WAVE_2025_12.md)                                               | December 2025 wave plan |
+| Document                                                                                       | Purpose                                     |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| [DEPLOYMENT_REQUIREMENTS.md](docs/planning/DEPLOYMENT_REQUIREMENTS.md)                         | Production requirements                     |
+| [ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md](docs/planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md) | Parity research roadmap                     |
+| [WAVE_2025_12.md](docs/planning/WAVE_2025_12.md)                                               | December 2025 wave plan                     |
+| [NN_SELFPLAY_TRAINING_LOOP_PLAN.md](docs/planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md)           | NN self-play throughput + loop-closure plan |
+| [SELFPLAY_LOOP_CLOSURE_PLAN.md](docs/planning/SELFPLAY_LOOP_CLOSURE_PLAN.md)                   | Bottleneck analysis + loop-closure plan     |
 
 ### /docs/ux/
 

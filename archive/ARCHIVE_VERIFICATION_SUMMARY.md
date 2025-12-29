@@ -44,24 +44,13 @@ This document listed 31 tasks across P0/P1/P2 priorities. Cross-referencing with
 
 #### P0 Tasks (5 total)
 
-<<<<<<< Updated upstream
-| Task | Archive Status | Current Status | Verdict |
-| ----------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| FAQ Test Matrix | Listed as P0 | ✅ Completed - [`RULES_SCENARIO_MATRIX.md`](../docs/rules/RULES_SCENARIO_MATRIX.md) exists | COMPLETE |
-| Sandbox Parity Hardening | Listed as P0 | ⚠️ Partial - Major divergences resolved per [`KNOWN_ISSUES.md:113-165`](../KNOWN_ISSUES.md) | PARTIAL |
-| Python Contract Tests | Listed as P0 | ✅ Completed - Phase 4 achieves 100% parity | COMPLETE |
-| React Testing Library Setup | Listed as P0 | ❌ Missing - [`PASS9_ASSESSMENT_REPORT.md:151-152`](../docs/archive/assessments/PASS9_ASSESSMENT_REPORT.md) notes WebSocket/Socket.IO mocks missing | NEEDS ATTENTION |
-| Production Environment Config | Listed as P0 | ⚠️ Partial - Docker/staging configs exist but no production validation docs | PARTIAL |
-=======
-| Task | Archive Status | Current Status | Verdict |
-| ----------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| FAQ Test Matrix | Listed as P0 | ✅ Completed - [`RULES_SCENARIO_MATRIX.md`](../docs/rules/RULES_SCENARIO_MATRIX.md) exists | COMPLETE |
-| Sandbox Parity Hardening | Listed as P0 | ⚠️ Partial - Major divergences resolved per [`KNOWN_ISSUES.md:113-165`](../KNOWN_ISSUES.md) | PARTIAL |
-| Python Contract Tests | Listed as P0 | ✅ Completed - Phase 4 achieves 100% parity | COMPLETE |
-| React Testing Library Setup | Listed as P0 | ❌ Missing - [`PASS9_ASSESSMENT_REPORT.md:151-152`](../docs/archive/assessments/PASS9_ASSESSMENT_REPORT.md) notes WebSocket/Socket.IO mocks missing | NEEDS ATTENTION |
-| Production Environment Config | Listed as P0 | ⚠️ Partial - Docker/staging configs exist but no production validation docs | PARTIAL |
-
-> > > > > > > Stashed changes
+| Task                          | Archive Status | Current Status                                                                                                                                      | Verdict         |
+| ----------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| FAQ Test Matrix               | Listed as P0   | ✅ Completed - [`RULES_SCENARIO_MATRIX.md`](../docs/rules/RULES_SCENARIO_MATRIX.md) exists                                                          | COMPLETE        |
+| Sandbox Parity Hardening      | Listed as P0   | ⚠️ Partial - Major divergences resolved per [`KNOWN_ISSUES.md:113-165`](../KNOWN_ISSUES.md)                                                         | PARTIAL         |
+| Python Contract Tests         | Listed as P0   | ✅ Completed - Phase 4 achieves 100% parity                                                                                                         | COMPLETE        |
+| React Testing Library Setup   | Listed as P0   | ❌ Missing - [`PASS9_ASSESSMENT_REPORT.md:151-152`](../docs/archive/assessments/PASS9_ASSESSMENT_REPORT.md) notes WebSocket/Socket.IO mocks missing | NEEDS ATTENTION |
+| Production Environment Config | Listed as P0   | ⚠️ Partial - Docker/staging configs exist but no production validation docs                                                                         | PARTIAL         |
 
 #### P1 Tasks (14 total) - Sample Verification
 

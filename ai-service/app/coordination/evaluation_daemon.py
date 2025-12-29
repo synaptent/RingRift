@@ -101,9 +101,9 @@ class EvaluationConfig:
     max_concurrent_evaluations: int = 12
 
     # Timeouts
-    # December 29, 2025: Reduced to 600s (10 min) to speed up iteration cycle
-    # Full cycle time: 45h → 5h (12 configs × 10 min = 2h total evaluation time)
-    evaluation_timeout_seconds: float = 600.0  # 10 minutes
+    # Dec 29: Reduced from 600s to 300s for faster iteration (5 min per eval)
+    # Full cycle time: 2h → 1h (12 configs × 5 min = 1h total evaluation time)
+    evaluation_timeout_seconds: float = 300.0  # 5 minutes
 
     # Deduplication settings (December 2025)
     dedup_cooldown_seconds: float = 300.0  # 5 minute cooldown per model
@@ -112,10 +112,10 @@ class EvaluationConfig:
     # December 29, 2025 (Phase 4): Backpressure settings
     # When evaluation queue depth exceeds backpressure_threshold, emit EVALUATION_BACKPRESSURE
     # to signal training should pause. Resume when queue drains below backpressure_release.
-    # Dec 29: Increased thresholds for higher training throughput (40-60% improvement)
-    max_queue_depth: int = 60  # Maximum pending evaluations
-    backpressure_threshold: int = 40  # Emit backpressure at this depth
-    backpressure_release_threshold: int = 20  # Release backpressure at this depth
+    # Dec 29: Increased thresholds for higher training throughput
+    max_queue_depth: int = 100  # Maximum pending evaluations (increased from 60)
+    backpressure_threshold: int = 70  # Emit backpressure at this depth (increased from 40)
+    backpressure_release_threshold: int = 35  # Release backpressure at this depth (increased from 20)
 
 
 class EvaluationDaemon(BaseEventHandler):

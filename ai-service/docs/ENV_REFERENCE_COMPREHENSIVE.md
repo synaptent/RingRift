@@ -1,10 +1,13 @@
 # Comprehensive Environment Variable Reference
 
-All 280+ `RINGRIFT_*` environment variables used in the RingRift AI service.
+This document enumerates the stable and high-impact `RINGRIFT_*` environment variables
+for the RingRift AI service. It is not an exhaustive list of every internal or
+experimental flag. For the auto-extracted appendix of internal flags, see
+`docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
 
 **Created**: December 28, 2025
-**Canonical Source**: `app/config/env.py`
-**Extraction Method**: Automated grep of all Python files
+**Canonical Sources**: `app/config/env.py` (typed accessors) and module-level config defaults
+**Coverage**: Stable + curated (not exhaustive)
 
 ---
 

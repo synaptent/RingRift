@@ -58,18 +58,13 @@ The [`gameEndExplanation.ts`](../../../src/shared/engine/gameEndExplanation.ts) 
 
 Four new specification documents created:
 
-<<<<<<< Updated upstream
 | Document | Lines | Purpose |
-| ------------------------------------------------------------------------------------- | ----- | ----------------------------------------- |
-=======
-| Document | Lines | Purpose |
-| ----------------------------------------------------------------------------------------- | ----- | ----------------------------------------- |
+| -------- | ----- | ------- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`AI_CALIBRATION_RUNBOOK.md`](../../ai/AI_CALIBRATION_RUNBOOK.md) | 475 | Operational procedures for AI calibration |
-> > > > > > > | [`AI_LADDER_HEALTH_MONITORING_SPEC.md`](../../ai/AI_LADDER_HEALTH_MONITORING_SPEC.md) | 865 | Health metrics and alerting |
-> > > > > > > | [`AI_LADDER_CHANGE_GUARDRAILS.md`](../../ai/AI_LADDER_CHANGE_GUARDRAILS.md) | 617 | Change management controls |
-> > > > > > > | [`AI_HUMAN_CALIBRATION_STUDY_DESIGN.md`](../../ai/AI_HUMAN_CALIBRATION_STUDY_DESIGN.md) | 926 | Human study protocol |
+| [`AI_CALIBRATION_RUNBOOK.md`](../../ai/AI_CALIBRATION_RUNBOOK.md) | 475 | Operational procedures for AI calibration |
+| [`AI_LADDER_HEALTH_MONITORING_SPEC.md`](../../ai/AI_LADDER_HEALTH_MONITORING_SPEC.md) | 865 | Health metrics and alerting |
+| [`AI_LADDER_CHANGE_GUARDRAILS.md`](../../ai/AI_LADDER_CHANGE_GUARDRAILS.md) | 617 | Change management controls |
+| [`AI_HUMAN_CALIBRATION_STUDY_DESIGN.md`](../../ai/AI_HUMAN_CALIBRATION_STUDY_DESIGN.md) | 926 | Human study protocol |
 
 ### 2.4 LPS Two-Round Requirement (PROPAGATED)
 

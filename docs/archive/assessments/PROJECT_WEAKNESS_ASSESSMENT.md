@@ -307,17 +307,6 @@ This assessment was conducted by:
 
 ## Appendix B: Document Cross-References
 
-<<<<<<< Updated upstream
-| Document                        | Relevance                          |
-| ------------------------------- | ---------------------------------- |
-| PROJECT_GOALS.md                | v1.0 success criteria (§4)         |
-| STRATEGIC_ROADMAP.md            | Performance section (P-01), Wave 7 |
-| CURRENT_STATE_ASSESSMENT.md     | Current implementation status      |
-| KNOWN_ISSUES.md                 | P0/P1/P2 issue tracking            |
-| SKIPPED_TESTS_TRIAGE.md         | Test hygiene status                |
-| WAVE2_ASSESSMENT_REPORT.md      | Prior comprehensive assessment     |
-| AI_ARCHITECTURE.md              | AI service status                  |
-=======
 | Document                                 | Relevance                          |
 | ---------------------------------------- | ---------------------------------- |
 | PROJECT_GOALS.md                         | v1.0 success criteria (§4)         |
@@ -327,7 +316,6 @@ This assessment was conducted by:
 | SKIPPED_TESTS_TRIAGE.md                  | Test hygiene status                |
 | WAVE2_ASSESSMENT_REPORT.md               | Prior comprehensive assessment     |
 | AI_ARCHITECTURE.md                       | AI service status                  |
->>>>>>> Stashed changes
 | docs/planning/DEPLOYMENT_REQUIREMENTS.md | Infrastructure topology            |
 
 ---

@@ -227,16 +227,6 @@ All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and re
 | Document | Role | Status |
 | -------- | ---- | ------ |
 
-<<<<<<< Updated upstream
-| [`ringrift_complete_rules.md`](../ringrift_complete_rules.md) | Authoritative rulebook | ✅ Current |
-| [`ringrift_compact_rules.md`](../ringrift_compact_rules.md) | Implementation spec | ✅ Current |
-| [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) | Factual implementation status | ✅ Updated Nov 22 |
-| [`ARCHITECTURE_ASSESSMENT.md`](../docs/archive/plans/ARCHITECTURE_ASSESSMENT.md) | System architecture & design | ✅ Current |
-| [`STRATEGIC_ROADMAP.md`](../docs/planning/STRATEGIC_ROADMAP.md) | Phased development plan | ✅ Updated Nov 22 |
-| [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) | P0/P1/P2 issue tracker | ✅ Updated Nov 22 |
-| [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md) | AI system design & plans | ✅ Updated Nov 22 |
-| [`QUICKSTART.md`](../QUICKSTART.md) | Getting started guide | ✅ Updated Nov 22 |
-=======
 | [`ringrift_complete_rules.md`](../ringrift_complete_rules.md) | Authoritative rulebook | ✅ Current |
 | [`ringrift_compact_rules.md`](../ringrift_compact_rules.md) | Implementation spec | ✅ Current |
 | [[`../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md`](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md)](../docs/archive/historical/CURRENT_STATE_ASSESSMENT.md) | Factual implementation status | ✅ Updated Nov 22 |
@@ -246,8 +236,7 @@ All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and re
 | [`AI_ARCHITECTURE.md`](../docs/architecture/AI_ARCHITECTURE.md) | AI system design & plans | ✅ Updated Nov 22 |
 | [`QUICKSTART.md`](../QUICKSTART.md) | Getting started guide | ✅ Updated Nov 22 |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution guidelines | ✅ Current |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution guidelines | ✅ Current |
 
 ### 2.2 Documentation Changes Made
 

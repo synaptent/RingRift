@@ -27,7 +27,6 @@ tests/contracts/test_contract_vectors.py::test_contract_vector[line.diagonal.no_
 tests/contracts/test_contract_vectors.py::test_contract_vector[territory.movement.no_disconnection] PASSED
 tests/contracts/test_contract_vectors.py::test_contract_vector[territory.initial_state.empty] PASSED
 
-======================= 15 passed in 1.82s ========================
 ```
 
 ## Deliverables

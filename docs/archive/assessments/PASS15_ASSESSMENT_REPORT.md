@@ -82,72 +82,55 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### docs/drafts/ Status (removed)
 
-<<<<<<< Updated upstream
 | Document | Lines | Status | Last Updated | Notes |
-| -------------------------------------------------------------------------------------------- | ----- | --------- | ------------ | ----------------------------------------- |
-=======
-| Document | Lines | Status | Last Updated | Notes |
-| ----------------------------------------------------------------------------------- | ----- | --------- | ------------ | ----------------------------------------- |
+| -------- | ----- | ------ | ------------ | ----- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`LEGACY_CODE_ELIMINATION_PLAN.md`](../LEGACY_CODE_ELIMINATION_PLAN.md) | ~400 | ✅ Active | 2025-11-26 | Phase 6.1 complete, ~3,793 lines targeted |
-> > > > > > > | [`ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md`](../ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md) | 834 | ✅ Active | 2025-11-27 | 6-phase rollout, circuit breaker design |
-> > > > > > > | [`RULES_ENGINE_CONSOLIDATION_DESIGN.md`](../RULES_ENGINE_CONSOLIDATION_DESIGN.md) | 1,129 | ✅ Active | 2025-11 | 5-phase migration, 8-10 weeks |
+| [`LEGACY_CODE_ELIMINATION_PLAN.md`](../LEGACY_CODE_ELIMINATION_PLAN.md) | ~400 | ✅ Active | 2025-11-26 | Phase 6.1 complete, ~3,793 lines targeted |
+| [`ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md`](../ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md) | 834 | ✅ Active | 2025-11-27 | 6-phase rollout, circuit breaker design |
+| [`RULES_ENGINE_CONSOLIDATION_DESIGN.md`](../RULES_ENGINE_CONSOLIDATION_DESIGN.md) | 1,129 | ✅ Active | 2025-11 | 5-phase migration, 8-10 weeks |
 
 **Assessment:** All drafts are current, comprehensive, and represent active work in progress.
 
 ### docs/supplementary/ Status
 
-<<<<<<< Updated upstream
 | Document | Lines | Status | Notes |
-| --------------------------------------------------------------------------------------- | ----- | ---------- | ------------------------------------------------------- |
-=======
-| Document | Lines | Status | Notes |
-| ---------------------------------------------------------------------------------------- | ----- | ---------- | ------------------------------------------------------- |
+| -------- | ----- | ------ | ----- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`AI_IMPROVEMENT_BACKLOG.md`](../../supplementary/AI_IMPROVEMENT_BACKLOG.md) | 450 | ✅ Current | 8 sections, difficulty ladder, RNG, search optimization |
-> > > > > > > | [`RULES_CONSISTENCY_EDGE_CASES.md`](../../supplementary/RULES_CONSISTENCY_EDGE_CASES.md) | 498 | ✅ Current | CCE-001 through CCE-008 catalog |
-> > > > > > > | [`RULES_DOCS_UX_AUDIT.md`](../../supplementary/RULES_DOCS_UX_AUDIT.md) | - | ✅ Current | Documentation UX analysis |
-> > > > > > > | [`RULES_RULESET_CLARIFICATIONS.md`](../../supplementary/RULES_RULESET_CLARIFICATIONS.md) | - | ✅ Current | Edge case clarifications |
-> > > > > > > | [`RULES_TERMINATION_ANALYSIS.md`](../../supplementary/RULES_TERMINATION_ANALYSIS.md) | - | ✅ Current | Game termination proofs |
+| [`AI_IMPROVEMENT_BACKLOG.md`](../../supplementary/AI_IMPROVEMENT_BACKLOG.md) | 450 | ✅ Current | 8 sections, difficulty ladder, RNG, search optimization |
+| [`RULES_CONSISTENCY_EDGE_CASES.md`](../../supplementary/RULES_CONSISTENCY_EDGE_CASES.md) | 498 | ✅ Current | CCE-001 through CCE-008 catalog |
+| [`RULES_DOCS_UX_AUDIT.md`](../../supplementary/RULES_DOCS_UX_AUDIT.md) | - | ✅ Current | Documentation UX analysis |
+| [`RULES_RULESET_CLARIFICATIONS.md`](../../supplementary/RULES_RULESET_CLARIFICATIONS.md) | - | ✅ Current | Edge case clarifications |
+| [`RULES_TERMINATION_ANALYSIS.md`](../../supplementary/RULES_TERMINATION_ANALYSIS.md) | - | ✅ Current | Game termination proofs |
 
 **Assessment:** Supplementary documentation is comprehensive and addresses edge cases, AI improvements, and rules clarifications.
 
 ### docs/incidents/ Status
 
-<<<<<<< Updated upstream
-| Document | Lines | Status | Notes |
-| --------------------------------------------------- | ----- | ---------- | ------------------------------------------- |
-=======
-| Document | Lines | Status | Notes |
+| Document                                             | Lines | Status     | Notes                                       |
+| ---------------------------------------------------- | ----- | ---------- | ------------------------------------------- |
+| Document                                             | Lines | Status     | Notes                                       |
 | ---------------------------------------------------- | ----- | ---------- | ------------------------------------------- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`INDEX.md`](../../incidents/INDEX.md) | ~100 | ✅ Current | Alert-to-runbook mapping, 4 severity levels |
-> > > > > > > | [`TRIAGE_GUIDE.md`](../../incidents/TRIAGE_GUIDE.md) | 301 | ✅ Current | 6-step procedure, quick severity matrix |
-> > > > > > > | [`AI_SERVICE.md`](../../incidents/AI_SERVICE.md) | - | ✅ Current | AI service incident runbook |
-> > > > > > > | [`AVAILABILITY.md`](../../incidents/AVAILABILITY.md) | - | ✅ Current | Availability incident runbook |
-> > > > > > > | [`LATENCY.md`](../../incidents/LATENCY.md) | - | ✅ Current | Latency incident runbook |
-> > > > > > > | [`RESOURCES.md`](../../incidents/RESOURCES.md) | - | ✅ Current | Resource exhaustion runbook |
-> > > > > > > | [`SECURITY.md`](../../incidents/SECURITY.md) | - | ✅ Current | Security incident runbook |
+| [`INDEX.md`](../../incidents/INDEX.md) | ~100 | ✅ Current | Alert-to-runbook mapping, 4 severity levels |
+| [`TRIAGE_GUIDE.md`](../../incidents/TRIAGE_GUIDE.md) | 301 | ✅ Current | 6-step procedure, quick severity matrix |
+| [`AI_SERVICE.md`](../../incidents/AI_SERVICE.md) | - | ✅ Current | AI service incident runbook |
+| [`AVAILABILITY.md`](../../incidents/AVAILABILITY.md) | - | ✅ Current | Availability incident runbook |
+| [`LATENCY.md`](../../incidents/LATENCY.md) | - | ✅ Current | Latency incident runbook |
+| [`RESOURCES.md`](../../incidents/RESOURCES.md) | - | ✅ Current | Resource exhaustion runbook |
+| [`SECURITY.md`](../../incidents/SECURITY.md) | - | ✅ Current | Security incident runbook |
 
 **Assessment:** Incident response documentation is operationally complete with clear escalation paths.
 
 ### Core Document Accuracy
 
-<<<<<<< Updated upstream
-| Document | Status | Issues |
-| ---------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`../../architecture/AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md) | ✅ Verified | 1008 lines, Nov 23-26 2025. Minor path reference discrepancy (mentions `helpers/` subfolder that doesn't exist - files are at `src/shared/engine/` root) |
-| [`../../../RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md) | ✅ Verified | 615 lines, Nov 26 2025 Active. 37 RR-CANON rules (R001-R191). Properly references shared engine as SSoT |
-=======
-| Document | Status | Issues |
+| Document                                                                         | Status      | Issues                                                                                                                                                   |
 | -------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`../../architecture/AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md) | ✅ Verified | 1008 lines, Nov 23-26 2025. Minor path reference discrepancy (mentions `helpers/` subfolder that doesn't exist - files are at `src/shared/engine/` root) |
-| [`../../../RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md) | ✅ Verified | 615 lines, Nov 26 2025 Active. 37 RR-CANON rules (R001-R191). Properly references shared engine as SSoT |
-
-> > > > > > > Stashed changes
+| [`../../../RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md)           | ✅ Verified | 615 lines, Nov 26 2025 Active. 37 RR-CANON rules (R001-R191). Properly references shared engine as SSoT                                                  |
+| Document                                                                         | Status      | Issues                                                                                                                                                   |
+| -------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`../../architecture/AI_ARCHITECTURE.md`](../../architecture/AI_ARCHITECTURE.md) | ✅ Verified | 1008 lines, Nov 23-26 2025. Minor path reference discrepancy (mentions `helpers/` subfolder that doesn't exist - files are at `src/shared/engine/` root) |
+| [`../../../RULES_CANONICAL_SPEC.md`](../../../RULES_CANONICAL_SPEC.md)           | ✅ Verified | 615 lines, Nov 26 2025 Active. 37 RR-CANON rules (R001-R191). Properly references shared engine as SSoT                                                  |
 
 ---
 
@@ -155,19 +138,16 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 ### Tested/Coverage Status
 
-<<<<<<< Updated upstream
-| Area | Files | Test Coverage | Priority | Notes |
-| -------------------------------------------------------------- | --------------------- | ---------------- | -------- | --------------------------------------------- |
-=======
-| Area | Files | Test Coverage | Priority | Notes |
+| Area                                                                           | Files                 | Test Coverage    | Priority | Notes                                         |
+| ------------------------------------------------------------------------------ | --------------------- | ---------------- | -------- | --------------------------------------------- |
+| Area                                                                           | Files                 | Test Coverage    | Priority | Notes                                         |
 | ------------------------------------------------------------------------------ | --------------------- | ---------------- | -------- | --------------------------------------------- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`../../../src/client/adapters`](../../../src/client/adapters) | 1 (1051 lines) | None | Medium | Pure data transformation, view model adapters |
-> > > > > > > | [`../../../src/server/middleware`](../../../src/server/middleware) | 8 files | Partial | High | auth.ts, rateLimiter.ts are security-critical |
-> > > > > > > | [`../../../src/shared/engine/contracts`](../../../src/shared/engine/contracts) | 5 files | Via parity tests | Low | Test vector generation, schemas |
-> > > > > > > | [`../../../prisma`](../../../prisma) | 1 schema + migrations | Via integration | Low | Schema verified, migrations applied |
-> > > > > > > | [`../../../ai-service/app/utils`](../../../ai-service/app/utils) | 2 files | 1 tested | Low | memory_config.py has unit test |
+| [`../../../src/client/adapters`](../../../src/client/adapters) | 1 (1051 lines) | None | Medium | Pure data transformation, view model adapters |
+| [`../../../src/server/middleware`](../../../src/server/middleware) | 8 files | Partial | High | auth.ts, rateLimiter.ts are security-critical |
+| [`../../../src/shared/engine/contracts`](../../../src/shared/engine/contracts) | 5 files | Via parity tests | Low | Test vector generation, schemas |
+| [`../../../prisma`](../../../prisma) | 1 schema + migrations | Via integration | Low | Schema verified, migrations applied |
+| [`../../../ai-service/app/utils`](../../../ai-service/app/utils) | 2 files | 1 tested | Low | memory_config.py has unit test |
 
 ### Detailed Findings
 
@@ -180,22 +160,19 @@ Pass 15 confirms significant improvements across previously weak areas. **DevOps
 
 #### Server Middleware
 
-<<<<<<< Updated upstream
-| File | Lines | Coverage | Notes |
-| ---------------------------------------------------------------------- | ----- | --------------- | ------------------------------------------------------------ |
-=======
-| File | Lines | Coverage | Notes |
+| File                                                                            | Lines | Coverage        | Notes                                                        |
+| ------------------------------------------------------------------------------- | ----- | --------------- | ------------------------------------------------------------ |
+| File                                                                            | Lines | Coverage        | Notes                                                        |
 | ------------------------------------------------------------------------------- | ----- | --------------- | ------------------------------------------------------------ |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`auth.ts`](../../../src/server/middleware/auth.ts) | 308 | Partial | JWT verification, tokenVersion revocation, refresh tokens |
-> > > > > > > | [`rateLimiter.ts`](../../../src/server/middleware/rateLimiter.ts) | 663 | Partial | 12 limiter types, Redis/memory fallback, X-RateLimit headers |
-> > > > > > > | [`errorHandler.ts`](../../../src/server/middleware/errorHandler.ts) | 250 | Via integration | Standardized ApiError format, Zod integration |
-> > > > > > > | [`securityHeaders.ts`](../../../src/server/middleware/securityHeaders.ts) | - | Via integration | Helmet configuration |
-> > > > > > > | [`metricsMiddleware.ts`](../../../src/server/middleware/metricsMiddleware.ts) | - | Via integration | Prometheus metrics |
-> > > > > > > | [`requestContext.ts`](../../../src/server/middleware/requestContext.ts) | - | Via integration | AsyncLocalStorage context |
-> > > > > > > | [`requestLogger.ts`](../../../src/server/middleware/requestLogger.ts) | - | Via integration | Request logging |
-> > > > > > > | [`degradationHeaders.ts`](../../../src/server/middleware/degradationHeaders.ts) | - | Via integration | Service degradation headers |
+| [`auth.ts`](../../../src/server/middleware/auth.ts) | 308 | Partial | JWT verification, tokenVersion revocation, refresh tokens |
+| [`rateLimiter.ts`](../../../src/server/middleware/rateLimiter.ts) | 663 | Partial | 12 limiter types, Redis/memory fallback, X-RateLimit headers |
+| [`errorHandler.ts`](../../../src/server/middleware/errorHandler.ts) | 250 | Via integration | Standardized ApiError format, Zod integration |
+| [`securityHeaders.ts`](../../../src/server/middleware/securityHeaders.ts) | - | Via integration | Helmet configuration |
+| [`metricsMiddleware.ts`](../../../src/server/middleware/metricsMiddleware.ts) | - | Via integration | Prometheus metrics |
+| [`requestContext.ts`](../../../src/server/middleware/requestContext.ts) | - | Via integration | AsyncLocalStorage context |
+| [`requestLogger.ts`](../../../src/server/middleware/requestLogger.ts) | - | Via integration | Request logging |
+| [`degradationHeaders.ts`](../../../src/server/middleware/degradationHeaders.ts) | - | Via integration | Service degradation headers |
 
 #### Shared Engine Structure
 
@@ -253,39 +230,33 @@ The [`../../../src/shared/engine`](../../../src/shared/engine) directory contain
 
 ### Components Without Unit Tests
 
-<<<<<<< Updated upstream
-| Component | Lines | Priority | Notes |
-| -------------------------------------------------------------------- | ----- | -------- | --------------------------- |
-=======
-| Component | Lines | Priority | Notes |
+| Component                                                                     | Lines | Priority | Notes                       |
+| ----------------------------------------------------------------------------- | ----- | -------- | --------------------------- |
+| Component                                                                     | Lines | Priority | Notes                       |
 | ----------------------------------------------------------------------------- | ----- | -------- | --------------------------- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`AIDebugView.tsx`](../../../src/client/components/AIDebugView.tsx) | ~200 | Medium | Debug/dev component |
-> > > > > > > | [`GameEventLog.tsx`](../../../src/client/components/GameEventLog.tsx) | ~150 | Medium | Display component |
-> > > > > > > | [`Badge.tsx`](../../../src/client/components/ui/Badge.tsx) | ~50 | Low | Simple UI component |
-> > > > > > > | [`GameHUD.tsx`](../../../src/client/components/GameHUD.tsx) | ~250 | Medium | Complex state display |
-> > > > > > > | [`GameHistoryPanel.tsx`](../../../src/client/components/GameHistoryPanel.tsx) | ~150 | Medium | History display |
-> > > > > > > | [`LoadingSpinner.tsx`](../../../src/client/components/LoadingSpinner.tsx) | ~30 | Low | Simple UI component |
-> > > > > > > | [`gameViewModels.ts`](../../../src/client/adapters/gameViewModels.ts) | 1051 | **High** | Pure logic, highly testable |
+| [`AIDebugView.tsx`](../../../src/client/components/AIDebugView.tsx) | ~200 | Medium | Debug/dev component |
+| [`GameEventLog.tsx`](../../../src/client/components/GameEventLog.tsx) | ~150 | Medium | Display component |
+| [`Badge.tsx`](../../../src/client/components/ui/Badge.tsx) | ~50 | Low | Simple UI component |
+| [`GameHUD.tsx`](../../../src/client/components/GameHUD.tsx) | ~250 | Medium | Complex state display |
+| [`GameHistoryPanel.tsx`](../../../src/client/components/GameHistoryPanel.tsx) | ~150 | Medium | History display |
+| [`LoadingSpinner.tsx`](../../../src/client/components/LoadingSpinner.tsx) | ~30 | Low | Simple UI component |
+| [`gameViewModels.ts`](../../../src/client/adapters/gameViewModels.ts) | 1051 | **High** | Pure logic, highly testable |
 
 ### Pages Without Unit Tests
 
-<<<<<<< Updated upstream
-| Page | Lines | Priority | Notes |
-| ------------------------------------------------------------- | ----- | -------- | -------------------- |
-=======
-| Page | Lines | Priority | Notes |
+| Page                                                                   | Lines | Priority | Notes                |
+| ---------------------------------------------------------------------- | ----- | -------- | -------------------- |
+| Page                                                                   | Lines | Priority | Notes                |
 | ---------------------------------------------------------------------- | ----- | -------- | -------------------- |
 
-> > > > > > > Stashed changes
-> > > > > > > | [`HomePage.tsx`](../../../src/client/pages/HomePage.tsx) | ~150 | Low | E2E coverage via POM |
-> > > > > > > | [`LobbyPage.tsx`](../../../src/client/pages/LobbyPage.tsx) | ~300 | Medium | Complex form state |
-> > > > > > > | [`LoginPage.tsx`](../../../src/client/pages/LoginPage.tsx) | ~150 | Low | E2E coverage via POM |
-> > > > > > > | [`RegisterPage.tsx`](../../../src/client/pages/RegisterPage.tsx) | ~200 | Low | E2E coverage via POM |
-> > > > > > > | [`ProfilePage.tsx`](../../../src/client/pages/ProfilePage.tsx) | ~200 | Low | User profile display |
-> > > > > > > | [`LeaderboardPage.tsx`](../../../src/client/pages/LeaderboardPage.tsx) | ~150 | Low | Display component |
-> > > > > > > | [`GamePage.tsx`](../../../src/client/pages/GamePage.tsx) | ~400 | Medium | E2E coverage via POM |
+| [`HomePage.tsx`](../../../src/client/pages/HomePage.tsx) | ~150 | Low | E2E coverage via POM |
+| [`LobbyPage.tsx`](../../../src/client/pages/LobbyPage.tsx) | ~300 | Medium | Complex form state |
+| [`LoginPage.tsx`](../../../src/client/pages/LoginPage.tsx) | ~150 | Low | E2E coverage via POM |
+| [`RegisterPage.tsx`](../../../src/client/pages/RegisterPage.tsx) | ~200 | Low | E2E coverage via POM |
+| [`ProfilePage.tsx`](../../../src/client/pages/ProfilePage.tsx) | ~200 | Low | User profile display |
+| [`LeaderboardPage.tsx`](../../../src/client/pages/LeaderboardPage.tsx) | ~150 | Low | Display component |
+| [`GamePage.tsx`](../../../src/client/pages/GamePage.tsx) | ~400 | Medium | E2E coverage via POM |
 
 **Note:** All pages have E2E test coverage via Page Object Models in [`../../../tests/e2e/pages`](../../../tests/e2e/pages).
 
@@ -315,24 +286,20 @@ The [`../../../src/shared/engine`](../../../src/shared/engine) directory contain
 
 ## Verification of Pass 13 Work
 
-<<<<<<< Updated upstream
-| Item | Status | Evidence |
-| -------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
-| [`movementApplication.ts`](../../../src/shared/engine/movementApplication.ts) | ✅ VERIFIED | 462 lines, `applySimpleMovement()`, `applyCaptureSegment()` |
-| [`placementHelpers.ts`](../../../src/shared/engine/placementHelpers.ts) | ✅ VERIFIED | 354 lines, `applyPlacementMove()`, `evaluateSkipPlacementEligibility()` |
-| Hook tests (98) | ✅ VERIFIED | Per Pass 13 report |
-| Context tests (51) | ✅ VERIFIED | Per Pass 13 report |
-| ChoiceDialog tests (49) | ✅ VERIFIED | Per Pass 13 report |
-=======
-| Item | Status | Evidence |
+| Item                                                                          | Status      | Evidence                                                                |
 | ----------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
-| [`movementApplication.ts`](../../../src/shared/engine/movementApplication.ts) | ✅ VERIFIED | 462 lines, `applySimpleMovement()`, `applyCaptureSegment()` |
-| [`placementHelpers.ts`](../../../src/shared/engine/placementHelpers.ts) | ✅ VERIFIED | 354 lines, `applyPlacementMove()`, `evaluateSkipPlacementEligibility()` |
-| Hook tests (98) | ✅ VERIFIED | Per Pass 13 report |
-| Context tests (51) | ✅ VERIFIED | Per Pass 13 report |
-| ChoiceDialog tests (49) | ✅ VERIFIED | Per Pass 13 report |
-
-> > > > > > > Stashed changes
+| [`movementApplication.ts`](../../../src/shared/engine/movementApplication.ts) | ✅ VERIFIED | 462 lines, `applySimpleMovement()`, `applyCaptureSegment()`             |
+| [`placementHelpers.ts`](../../../src/shared/engine/placementHelpers.ts)       | ✅ VERIFIED | 354 lines, `applyPlacementMove()`, `evaluateSkipPlacementEligibility()` |
+| Hook tests (98)                                                               | ✅ VERIFIED | Per Pass 13 report                                                      |
+| Context tests (51)                                                            | ✅ VERIFIED | Per Pass 13 report                                                      |
+| ChoiceDialog tests (49)                                                       | ✅ VERIFIED | Per Pass 13 report                                                      |
+| Item                                                                          | Status      | Evidence                                                                |
+| ----------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
+| [`movementApplication.ts`](../../../src/shared/engine/movementApplication.ts) | ✅ VERIFIED | 462 lines, `applySimpleMovement()`, `applyCaptureSegment()`             |
+| [`placementHelpers.ts`](../../../src/shared/engine/placementHelpers.ts)       | ✅ VERIFIED | 354 lines, `applyPlacementMove()`, `evaluateSkipPlacementEligibility()` |
+| Hook tests (98)                                                               | ✅ VERIFIED | Per Pass 13 report                                                      |
+| Context tests (51)                                                            | ✅ VERIFIED | Per Pass 13 report                                                      |
+| ChoiceDialog tests (49)                                                       | ✅ VERIFIED | Per Pass 13 report                                                      |
 
 ---
 

@@ -531,9 +531,7 @@ orchestratorShadowAvgOrchestratorLatencyMs: Gauge<string>;
 Add to `monitoring/prometheus/alerts.yml`:
 
 ```yaml
-# ===========================================================================
 # ORCHESTRATOR ROLLOUT ALERTS
-# ===========================================================================
 - name: orchestrator-rollout
   interval: 30s
   rules:
@@ -756,13 +754,8 @@ Before increasing rollout percentage:
 
 ### 13.1 Existing Infrastructure
 
-<<<<<<< Updated upstream
-| Component      | File                                                                             | Status    |
-| -------------- | -------------------------------------------------------------------------------- | --------- |
-=======
 | Component      | File                                                                                         | Status    |
 | -------------- | -------------------------------------------------------------------------------------------- | --------- |
->>>>>>> Stashed changes
 | Env Schema     | [`../../src/server/config/env.ts`](../../src/server/config/env.ts)                           | ✅ Extend |
 | Unified Config | [`../../src/server/config/unified.ts`](../../src/server/config/unified.ts)                   | ✅ Extend |
 | GameEngine     | [`../../src/server/game/GameEngine.ts`](../../src/server/game/GameEngine.ts)                 | ✅ Extend |
