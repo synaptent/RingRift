@@ -635,8 +635,8 @@ URLOPEN_SHORT_TIMEOUT = 5
 # URL open timeout for data operations (seconds)
 URLOPEN_TIMEOUT = 10
 
-# Rsync transfer timeout (seconds)
-RSYNC_TIMEOUT = 30
+# Rsync transfer timeout (seconds) - increased for large DB transfers
+RSYNC_TIMEOUT = 300
 
 # Async subprocess wait timeout (seconds)
 ASYNC_SUBPROCESS_TIMEOUT = 180
@@ -800,9 +800,9 @@ MAX_BATCH_TIMEOUT = 1800  # 30 minutes
 MAX_PER_FILE_TIMEOUT = 120  # 2 minutes
 
 # Rsync operation timeouts (December 2025 - consolidated)
-RSYNC_TIMEOUT = 30  # Per-file I/O timeout (seconds)
-RSYNC_BATCH_TIMEOUT = 60  # Batch rsync timeout (seconds)
-RSYNC_MAX_TIMEOUT = 600  # Maximum transfer time (seconds)
+RSYNC_TIMEOUT = 300  # Per-file I/O timeout (seconds) - increased for large DBs
+RSYNC_BATCH_TIMEOUT = 600  # Batch rsync timeout (seconds)
+RSYNC_MAX_TIMEOUT = 1200  # Maximum transfer time (seconds)
 
 # Ephemeral sync configuration
 EPHEMERAL_SYNC_TIMEOUT = 30  # Quick sync timeout for volatile hosts
