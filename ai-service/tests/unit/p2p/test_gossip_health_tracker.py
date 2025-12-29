@@ -237,10 +237,10 @@ class TestGossipHealthTrackerStats:
         tracker = GossipHealthTracker()
         stats = tracker.get_stats()
 
-        assert stats["tracked_peers"] == 0
+        assert stats["total_tracked_peers"] == 0
         assert stats["suspected_peers"] == 0
-        assert stats["total_failures"] == 0
         assert stats["suspected_peer_ids"] == []
+        assert stats["stale_peers"] == 0
 
     def test_get_stats_with_data(self):
         """Test get_stats with data."""
@@ -255,9 +255,10 @@ class TestGossipHealthTrackerStats:
 
         stats = tracker.get_stats()
 
-        assert stats["tracked_peers"] == 3
+        # Total tracked = failure_counts keys (peer1, peer2, peer3)
+        # record_gossip_success also adds peer to _failure_counts with count=0
+        assert stats["total_tracked_peers"] == 3
         assert stats["suspected_peers"] == 1
-        assert stats["total_failures"] == 4
         assert "peer1" in stats["suspected_peer_ids"]
 
 

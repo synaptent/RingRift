@@ -1436,7 +1436,7 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
             job_id: Tournament job ID
         """
         # Dec 28, 2025: Added early logging to debug silent task failures
-        logger.info(f"Tournament coordinator ENTERED for job {job_id}")
+        logger.info(f"Tournament coordinator ENTERED for job {job_id}, dict id={id(self.distributed_tournament_state)}, keys={list(self.distributed_tournament_state.keys())}")
         try:
             state = self.distributed_tournament_state.get(job_id)
             if not state:

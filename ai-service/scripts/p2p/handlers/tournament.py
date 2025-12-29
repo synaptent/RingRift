@@ -151,6 +151,8 @@ class TournamentHandlersMixin(BaseP2PHandler):
 
             self.distributed_tournament_state[job_id] = state
 
+            # Dec 28, 2025: Debug logging to trace dict reference issue
+            logger.info(f"Tournament handler stored state in dict id={id(self.distributed_tournament_state)}, job_manager dict id={id(self.job_manager.distributed_tournament_state)}")
             logger.info(f"Started tournament {job_id}: {len(agent_ids)} agents, {len(pairings)} matches, {len(workers)} workers")
 
             # Launch coordinator task via JobManager

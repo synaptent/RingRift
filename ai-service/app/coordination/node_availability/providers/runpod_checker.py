@@ -64,8 +64,8 @@ query {
       }
       machine {
         gpuDisplayName
-        gpuCount
-        memoryInGb
+        cpuCount
+        memoryTotal
       }
     }
   }

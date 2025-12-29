@@ -612,7 +612,7 @@ class NodeMonitor(BaseDaemon):
             "details": {
                 "nodes_monitored": len(self._nodes),
                 "unhealthy_count": unhealthy_count,
-                "cycles_completed": self._stats.get("cycles_completed", 0),
+                "cycles_completed": self._cycles_completed,
             },
         }
 
