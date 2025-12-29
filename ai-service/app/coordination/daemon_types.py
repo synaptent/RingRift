@@ -694,6 +694,10 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
         DaemonType.EVENT_ROUTER,
         DaemonType.AVAILABILITY_CAPACITY_PLANNER,
     },
+
+    # Tailscale health monitoring (December 29, 2025)
+    # Runs independently on each node to monitor and auto-recover Tailscale
+    DaemonType.TAILSCALE_HEALTH: set(),  # No dependencies - runs independently
 }
 
 

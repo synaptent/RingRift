@@ -116,14 +116,9 @@ class RetryDefaults:
     HIGH_JITTER: Final[float] = 0.25
 
 
-@dataclass(frozen=True)
-class CircuitBreakerDefaults:
-    """Circuit breaker thresholds."""
-
-    FAILURE_THRESHOLD: Final[int] = 5
-    HALF_OPEN_CALLS: Final[int] = 3
-    RECOVERY_TIMEOUT: Final[float] = 300.0  # 5 minutes
-    QUICK_RECOVERY: Final[float] = 60.0
+# CircuitBreakerDefaults moved to app/config/coordination_defaults.py
+# to have a single source of truth for circuit breaker configuration.
+# See coordination_defaults.CircuitBreakerDefaults for the canonical implementation.
 
 
 # =============================================================================

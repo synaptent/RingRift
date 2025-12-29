@@ -97,7 +97,7 @@ class TestDiskSpaceConfig:
     def test_default_values(self) -> None:
         """Test default configuration values."""
         config = DiskSpaceConfig()
-        assert config.check_interval_seconds == 1800
+        assert config.check_interval_seconds == 300  # 5 minutes
         assert config.proactive_cleanup_threshold == 60
         assert config.warning_threshold == 65
         assert config.critical_threshold == 70

@@ -581,6 +581,18 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         auto_restart=True,
         max_restarts=10,  # More restarts allowed for critical recovery daemon
     ),
+    # =========================================================================
+    # Tailscale Health Monitoring (December 29, 2025)
+    # Monitors and auto-recovers Tailscale connectivity on each cluster node
+    # =========================================================================
+    DaemonType.TAILSCALE_HEALTH: DaemonSpec(
+        runner_name="create_tailscale_health",
+        depends_on=(),  # Runs independently on each node
+        category="health",
+        health_check_interval=60.0,  # 1 min - check Tailscale every minute
+        auto_restart=True,
+        max_restarts=20,  # Critical for connectivity - allow many restarts
+    ),
 }
 
 

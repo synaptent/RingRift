@@ -1622,6 +1622,30 @@ async def create_p2p_recovery() -> None:
         raise
 
 
+async def create_tailscale_health() -> None:
+    """Create and run TailscaleHealthDaemon.
+
+    December 29, 2025: Monitors and auto-recovers Tailscale connectivity.
+
+    Runs on each cluster node to ensure P2P mesh stability:
+    - Checks Tailscale status every 30s (configurable)
+    - Detects disconnected/expired states
+    - Auto-recovers via tailscale up or tailscaled restart
+    - Supports userspace networking for containers
+
+    Emits: TAILSCALE_DISCONNECTED, TAILSCALE_RECOVERED, TAILSCALE_RECOVERY_FAILED
+    """
+    try:
+        from app.coordination.tailscale_health_daemon import get_tailscale_health_daemon
+
+        daemon = get_tailscale_health_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"TailscaleHealthDaemon not available: {e}")
+        raise
+
+
 # =============================================================================
 # Runner Registry
 # =============================================================================
@@ -1721,6 +1745,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         # 48-Hour Autonomous Operation (December 29, 2025)
         DaemonType.PROGRESS_WATCHDOG.name: create_progress_watchdog,
         DaemonType.P2P_RECOVERY.name: create_p2p_recovery,
+        # Tailscale health monitoring (December 29, 2025)
+        DaemonType.TAILSCALE_HEALTH.name: create_tailscale_health,
     }
 
 
