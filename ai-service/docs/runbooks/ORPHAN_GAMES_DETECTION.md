@@ -248,11 +248,14 @@ curl -X POST http://localhost:8770/register_termination_hook \
 
 ### 3. Gossip Replication
 
-Enable P2P gossip for faster data distribution:
+Enable P2P gossip for faster data distribution via AutoSync config:
 
-```bash
-export RINGRIFT_GOSSIP_REPLICATION=true
-export RINGRIFT_GOSSIP_INTERVAL=15
+```yaml
+# config/distributed_hosts.yaml
+auto_sync:
+  enabled: true
+  strategy: hybrid
+  gossip_interval_seconds: 15
 ```
 
 ---

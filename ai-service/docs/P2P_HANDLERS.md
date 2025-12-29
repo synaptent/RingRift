@@ -332,8 +332,10 @@ Handler behavior is configured via environment variables and `config/distributed
 | Variable                      | Default | Description               |
 | ----------------------------- | ------- | ------------------------- |
 | `RINGRIFT_ELECTION_TIMEOUT`   | 30      | Election timeout seconds  |
-| `RINGRIFT_GOSSIP_INTERVAL`    | 15      | Gossip interval seconds   |
 | `RINGRIFT_WORK_CLAIM_TIMEOUT` | 300     | Work claim expiry seconds |
+
+Gossip interval is configured in `config/distributed_hosts.yaml` via
+`auto_sync.gossip_interval_seconds`.
 
 ## See Also
 

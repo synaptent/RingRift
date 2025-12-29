@@ -131,6 +131,10 @@ class ConfigTrainingState:
     # Quality tracking
     last_elo: float = 1500.0
     elo_trend: float = 0.0  # positive = improving
+    # December 29, 2025: Elo velocity tracking for training decisions
+    elo_velocity: float = 0.0  # Elo/hour rate of change
+    elo_velocity_trend: str = "stable"  # accelerating, stable, decelerating, plateauing
+    last_elo_velocity_update: float = 0.0
     # Training intensity (set by master_loop or FeedbackLoopController)
     training_intensity: str = "normal"  # hot_path, accelerated, normal, reduced, paused
     consecutive_failures: int = 0
@@ -196,11 +200,27 @@ class TrainingTriggerDaemon(HandlerBase):
                         npz_path TEXT DEFAULT '',
                         last_elo REAL DEFAULT 1500.0,
                         elo_trend REAL DEFAULT 0.0,
+                        elo_velocity REAL DEFAULT 0.0,
+                        elo_velocity_trend TEXT DEFAULT 'stable',
+                        last_elo_velocity_update REAL DEFAULT 0.0,
                         training_intensity TEXT DEFAULT 'normal',
                         consecutive_failures INTEGER DEFAULT 0,
                         updated_at REAL DEFAULT 0.0
                     )
                 """)
+                # December 29, 2025: Add velocity columns if upgrading from earlier schema
+                try:
+                    conn.execute("ALTER TABLE config_state ADD COLUMN elo_velocity REAL DEFAULT 0.0")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                try:
+                    conn.execute("ALTER TABLE config_state ADD COLUMN elo_velocity_trend TEXT DEFAULT 'stable'")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                try:
+                    conn.execute("ALTER TABLE config_state ADD COLUMN last_elo_velocity_update REAL DEFAULT 0.0")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
                 conn.commit()
             logger.debug(f"[TrainingTriggerDaemon] State DB initialized: {self._state_db_path}")
         except (sqlite3.Error, OSError) as e:
@@ -223,6 +243,10 @@ class TrainingTriggerDaemon(HandlerBase):
                     config_key = row["config_key"]
                     # Don't overwrite state if already exists (e.g., from event handling)
                     if config_key not in self._training_states:
+                        # December 29, 2025: Load velocity fields with fallback for older DBs
+                        elo_velocity = row["elo_velocity"] if "elo_velocity" in row.keys() else 0.0
+                        elo_velocity_trend = row["elo_velocity_trend"] if "elo_velocity_trend" in row.keys() else "stable"
+                        last_elo_velocity_update = row["last_elo_velocity_update"] if "last_elo_velocity_update" in row.keys() else 0.0
                         state = ConfigTrainingState(
                             config_key=config_key,
                             board_type=row["board_type"],
@@ -234,6 +258,9 @@ class TrainingTriggerDaemon(HandlerBase):
                             npz_path=row["npz_path"],
                             last_elo=row["last_elo"],
                             elo_trend=row["elo_trend"],
+                            elo_velocity=elo_velocity,
+                            elo_velocity_trend=elo_velocity_trend,
+                            last_elo_velocity_update=last_elo_velocity_update,
                             training_intensity=row["training_intensity"],
                             consecutive_failures=row["consecutive_failures"],
                         )
@@ -373,6 +400,8 @@ class TrainingTriggerDaemon(HandlerBase):
             # December 29, 2025 (Phase 4): Evaluation backpressure events
             "EVALUATION_BACKPRESSURE": self._on_evaluation_backpressure,
             "EVALUATION_BACKPRESSURE_RELEASED": self._on_evaluation_backpressure_released,
+            # December 29, 2025: Elo velocity-based training decisions
+            "elo_velocity_changed": self._on_elo_velocity_changed,
         }
 
     async def _on_start(self) -> None:
@@ -965,6 +994,120 @@ class TrainingTriggerDaemon(HandlerBase):
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling EVALUATION_BACKPRESSURE_RELEASED: {e}")
 
+    async def _on_elo_velocity_changed(self, event: Any) -> None:
+        """Handle ELO_VELOCITY_CHANGED event for velocity-based training decisions.
+
+        December 29, 2025: Wires Elo velocity to training trigger decisions.
+        This closes the feedback loop: Elo velocity → training cooldown adjustment.
+
+        Velocity trends influence training decisions:
+        - accelerating: Shorten training cooldown (capitalize on momentum)
+        - stable: Use default cooldown
+        - decelerating: Lengthen cooldown (avoid wasteful training)
+        - plateauing: May trigger exploration boost or hyperparameter adjustment
+
+        Args:
+            event: Event with payload containing config_key, velocity, trend, etc.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = payload.get("config_key", "")
+            velocity = payload.get("velocity", 0.0)
+            trend = payload.get("trend", "stable")
+            previous_velocity = payload.get("previous_velocity", 0.0)
+
+            if not config_key:
+                return
+
+            # Parse board_type and num_players from config_key
+            board_type = config_key.rsplit("_", 1)[0] if "_" in config_key else ""
+            try:
+                num_players = int(config_key.rsplit("_", 1)[1].rstrip("p"))
+            except (ValueError, IndexError):
+                num_players = 2
+
+            state = self._get_or_create_state(config_key, board_type, num_players)
+
+            # Update state with velocity info
+            old_velocity = state.elo_velocity
+            old_trend = state.elo_velocity_trend
+            state.elo_velocity = velocity
+            state.elo_velocity_trend = trend
+            state.last_elo_velocity_update = time.time()
+
+            # Log significant changes
+            if trend != old_trend or abs(velocity - old_velocity) > 5.0:
+                logger.info(
+                    f"[TrainingTriggerDaemon] Elo velocity changed for {config_key}: "
+                    f"velocity={velocity:.1f}/hr (was {old_velocity:.1f}/hr), "
+                    f"trend={trend} (was {old_trend})"
+                )
+
+            # Adjust training intensity based on velocity trend
+            # This influences training parameters and cooldown
+            if trend == "accelerating":
+                # Config is improving rapidly - prioritize training
+                if state.training_intensity in ("normal", "reduced"):
+                    state.training_intensity = "accelerated"
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Upgraded {config_key} to 'accelerated' "
+                        f"due to positive Elo velocity ({velocity:.1f}/hr)"
+                    )
+            elif trend == "plateauing":
+                # Config has plateaued - may need exploration boost
+                if state.training_intensity == "hot_path":
+                    state.training_intensity = "normal"
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Downgraded {config_key} from 'hot_path' to 'normal' "
+                        f"due to Elo plateau"
+                    )
+            elif trend == "decelerating" and velocity < -5.0:
+                # Config is regressing - reduce training intensity to avoid waste
+                if state.training_intensity == "accelerated":
+                    state.training_intensity = "normal"
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Downgraded {config_key} to 'normal' "
+                        f"due to negative Elo velocity ({velocity:.1f}/hr)"
+                    )
+
+            # Mark state as needing persistence
+            self._save_state()
+
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            logger.debug(f"[TrainingTriggerDaemon] Error handling ELO_VELOCITY_CHANGED: {e}")
+
+    def _get_velocity_adjusted_cooldown(self, state: ConfigTrainingState) -> float:
+        """Get training cooldown adjusted for Elo velocity.
+
+        December 29, 2025: Implements velocity-based cooldown modulation.
+        Configs with positive velocity get shorter cooldowns to capitalize on momentum.
+        Configs with negative velocity get longer cooldowns to avoid wasteful training.
+
+        Returns:
+            Adjusted cooldown in seconds
+        """
+        base_cooldown = self.config.training_cooldown_hours * 3600
+
+        # Velocity-based multipliers
+        velocity_multipliers = {
+            "accelerating": 0.5,    # 50% cooldown - train faster
+            "stable": 1.0,          # Normal cooldown
+            "decelerating": 1.5,    # 150% cooldown - train slower
+            "plateauing": 1.25,     # 125% cooldown - slightly slower
+        }
+
+        multiplier = velocity_multipliers.get(state.elo_velocity_trend, 1.0)
+
+        # Additional adjustment based on actual velocity value
+        if state.elo_velocity > 20.0:
+            # Very rapid improvement - train even faster
+            multiplier *= 0.7
+        elif state.elo_velocity < -10.0:
+            # Significant regression - slow down more
+            multiplier *= 1.3
+
+        return base_cooldown * multiplier
+
     async def _trigger_priority_sync(
         self, config_key: str, board_type: str, num_players: int
     ) -> bool:
@@ -1173,12 +1316,14 @@ class TrainingTriggerDaemon(HandlerBase):
             if not breaker.can_execute(config_key):
                 return False, f"circuit open for {config_key}"
 
-        # 2. Check training cooldown
+        # 2. Check training cooldown (December 29, 2025: velocity-adjusted)
         time_since_training = time.time() - state.last_training_time
-        cooldown_seconds = self.config.training_cooldown_hours * 3600
+        # Use velocity-adjusted cooldown instead of fixed cooldown
+        cooldown_seconds = self._get_velocity_adjusted_cooldown(state)
         if time_since_training < cooldown_seconds:
             remaining = (cooldown_seconds - time_since_training) / 3600
-            return False, f"cooldown active ({remaining:.1f}h remaining)"
+            trend_info = f", velocity_trend={state.elo_velocity_trend}" if state.elo_velocity_trend != "stable" else ""
+            return False, f"cooldown active ({remaining:.1f}h remaining{trend_info})"
 
         # 3. Check data freshness (December 2025: use training_freshness for sync)
         data_age_hours = (time.time() - state.last_npz_update) / 3600

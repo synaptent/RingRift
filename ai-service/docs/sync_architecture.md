@@ -408,9 +408,9 @@ Note: `ephemeral_sync.py` was removed in Dec 2025; the ephemeral strategy lives 
 
 ### "Sync taking too long"
 
-1. Reduce batch size: `RINGRIFT_SYNC_BATCH_SIZE=5`
-2. Check bandwidth limits in distributed_hosts.yaml
-3. Enable parallel transfers: `RINGRIFT_SYNC_PARALLEL=4`
+1. Increase concurrency: `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT=8`
+2. Check `auto_sync.bandwidth_limit_mbps` and host overrides in distributed_hosts.yaml
+3. Reduce interval: `RINGRIFT_FAST_SYNC_INTERVAL=30` or lower `auto_sync.interval_seconds`
 
 ### "Missing data on training node"
 
