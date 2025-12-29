@@ -1,5 +1,10 @@
 """GMO-Gumbel MCTS Hybrid - Use GMO value network with Gumbel MCTS search.
 
+.. deprecated:: December 2025
+    This experimental module will be removed in Q2 2026. GMO-based approaches
+    underperformed CNN + Gumbel MCTS in production evaluation. For new code,
+    use ``app.ai.gumbel_mcts_ai.GumbelMCTSAI`` or ``app.ai.gumbel_search_engine``.
+
 This module integrates GMO's value network with Gumbel MCTS's efficient tree search.
 Unlike the regular GMO-MCTS hybrid, this uses Gumbel sampling + Sequential Halving
 for more sample-efficient search.
@@ -26,6 +31,15 @@ Usage:
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "app.ai.gmo_gumbel_hybrid is deprecated and will be removed in Q2 2026. "
+    "Use app.ai.gumbel_mcts_ai.GumbelMCTSAI for production code.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import logging
 import math

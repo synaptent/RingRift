@@ -35,9 +35,23 @@ Integration with MCTSAI:
             if self.use_gmo_policy:
                 return self.gmo_policy.compute_priors(state, moves)
             return self._compute_nnue_policy(moves, state)
+
+.. deprecated:: December 2025
+    This experimental module will be removed in Q2 2026. GMO-based policy
+    providers underperformed neural network policies in production. For new
+    code, use ``app.ai.nnue_policy`` or the trained policy networks.
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "app.ai.gmo_policy_provider is deprecated and will be removed in Q2 2026. "
+    "Use app.ai.nnue_policy or neural network policies instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import logging
 import math

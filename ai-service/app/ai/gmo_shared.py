@@ -1,5 +1,11 @@
 """GMO Shared Components - Base classes and utilities for GMO variants.
 
+.. note:: Supporting Deprecated Code (December 2025)
+    This module provides shared utilities for the deprecated GMO family.
+    The GMO AI variants (gmo_ai, gmo_v2, ig_gmo) are deprecated and will be
+    removed in Q2 2026. This shared module remains to support existing code
+    during the deprecation period.
+
 This module provides shared abstractions for the GMO AI family:
 - gmo_ai.py (GMO v1): Foundation with entropy-guided optimization
 - gmo_v2.py (GMO v2): Enhanced with attention and ensemble voting

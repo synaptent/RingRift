@@ -1,5 +1,10 @@
 """GMO-MCTS Hybrid - Use GMO for move ordering in MCTS.
 
+.. deprecated:: December 2025
+    This experimental module will be removed in Q2 2026. GMO-based approaches
+    underperformed production MCTS variants. For new code, use
+    ``app.ai.mcts_ai.MCTSAI`` or ``app.ai.gumbel_mcts_ai.GumbelMCTSAI``.
+
 This module combines GMO's gradient-based move scoring with MCTS tree search.
 GMO provides informed prior probabilities for MCTS, potentially improving search
 efficiency by guiding exploration toward promising moves.
@@ -11,6 +16,15 @@ Key features:
 """
 
 from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "app.ai.gmo_mcts_hybrid is deprecated and will be removed in Q2 2026. "
+    "Use app.ai.mcts_ai.MCTSAI or app.ai.gumbel_mcts_ai.GumbelMCTSAI instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import logging
 import math
