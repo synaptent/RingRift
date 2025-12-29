@@ -134,8 +134,11 @@ class TestCurriculumFeedbackInit:
         assert feedback.target_win_rate == DEFAULT_TARGET_WIN_RATE
         assert feedback._game_history == {}
         assert feedback._config_metrics == {}
-        assert feedback._current_weights == {}
-        assert feedback._curriculum_stages == {}
+        # December 29, 2025: ALL_CANONICAL_CONFIGS are now pre-initialized
+        assert len(feedback._current_weights) == 12  # All canonical configs initialized
+        assert len(feedback._curriculum_stages) == 12  # All canonical configs initialized
+        assert all(w == 1.0 for w in feedback._current_weights.values())  # Default weight
+        assert all(s == 0 for s in feedback._curriculum_stages.values())  # Default stage
 
     @patch("app.training.curriculum_feedback.CurriculumFeedback._auto_wire_curriculum_advanced")
     def test_custom_initialization(self, mock_wire):
