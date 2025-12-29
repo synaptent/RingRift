@@ -62,7 +62,7 @@ import socket
 import sqlite3
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -84,7 +84,7 @@ except ImportError:
     DataCatalog = None
     CatalogStats = None
 
-    def get_data_catalog():
+    def get_data_catalog() -> None:
         return None
 
 # Import centralized quality thresholds
@@ -418,7 +418,7 @@ class OrchestratorRegistry(SingletonMixin):
         logger.info(f"Acquired orchestrator role: {role.value} (id={self._my_id})")
         return True
 
-    def release_role(self):
+    def release_role(self) -> None:
         """Release the currently held role."""
         if not self._my_role:
             return
@@ -442,7 +442,7 @@ class OrchestratorRegistry(SingletonMixin):
         self._my_id = None
         self._my_role = None
 
-    def heartbeat(self, metadata_update: dict[str, Any] | None = None):
+    def heartbeat(self, metadata_update: dict[str, Any] | None = None) -> None:
         """Update heartbeat timestamp. Call periodically to stay registered."""
         if not self._my_id:
             return
@@ -1059,7 +1059,7 @@ def acquire_orchestrator_role(role: OrchestratorRole, **kwargs) -> bool:
     return get_registry().acquire_role(role, **kwargs)
 
 
-def release_orchestrator_role():
+def release_orchestrator_role() -> None:
     """Convenience function to release current role."""
     get_registry().release_role()
 
@@ -1070,7 +1070,7 @@ def is_orchestrator_role_available(role: OrchestratorRole) -> bool:
 
 
 @contextmanager
-def orchestrator_role(role: OrchestratorRole, **kwargs):
+def orchestrator_role(role: OrchestratorRole, **kwargs) -> Generator["OrchestratorRegistry", None, None]:
     """Context manager for holding an orchestrator role."""
     registry = get_registry()
     if not registry.acquire_role(role, **kwargs):

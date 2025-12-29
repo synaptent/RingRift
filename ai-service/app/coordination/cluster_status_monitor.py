@@ -930,7 +930,7 @@ class ClusterMonitor:
             logger.debug(f"Failed to get local db mtime: {e}")
         return 0.0
 
-    def print_dashboard(self, status: ClusterStatus | None = None):
+    def print_dashboard(self, status: ClusterStatus | None = None) -> None:
         """Print formatted dashboard output.
 
         Args:
@@ -1006,7 +1006,7 @@ class ClusterMonitor:
 
         print("=" * 100 + "\n")
 
-    def watch(self, interval: int = 10, clear_screen: bool = True):
+    def watch(self, interval: int = 10, clear_screen: bool = True) -> None:
         """Continuously monitor cluster with periodic updates.
 
         Args:
@@ -1129,7 +1129,7 @@ class ClusterMonitor:
             for node, state in self._stall_states.items()
         }
 
-    async def run_forever(self, interval: int = 30):
+    async def run_forever(self, interval: int = 30) -> None:
         """Run cluster monitoring forever (for DaemonManager compatibility).
 
         Collects cluster status periodically without printing.
@@ -1165,7 +1165,7 @@ class ClusterMonitor:
 
             await asyncio.sleep(interval)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the background monitoring loop."""
         self._running = False
 

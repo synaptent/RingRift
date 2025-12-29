@@ -123,6 +123,7 @@ CURRICULUM_WEIGHT = 0.10  # Curriculum-based priority (Phase 2C.3)
 IMPROVEMENT_BOOST_WEIGHT = 0.15  # Phase 5: ImprovementOptimizer boost
 DATA_DEFICIT_WEIGHT = 0.25  # Dec 2025: Boost configs with low game counts
 QUALITY_WEIGHT = 0.15  # Dec 29, 2025: Data quality importance from QualityMonitorDaemon
+VOI_WEIGHT = 0.20  # Dec 29, 2025: Value of Information weight for uncertainty-based prioritization
 
 # =============================================================================
 # Dynamic Weight Bounds (Dec 29, 2025)
@@ -138,6 +139,25 @@ DYNAMIC_WEIGHT_BOUNDS = {
     "improvement": (0.10, 0.25),     # Range: 10-25%
     "data_deficit": (0.15, 0.40),    # Range: 15-40%
     "quality": (0.05, 0.25),         # Range: 5-25% (boost high-quality data generators)
+    "voi": (0.10, 0.35),             # Range: 10-35% (boost high VOI configs)
+}
+
+# =============================================================================
+# VOI (Value of Information) Constants (Dec 29, 2025)
+# =============================================================================
+# VOI prioritizes configs where more games yield the highest expected Elo gain.
+# Formula: VOI = (Elo_gap * uncertainty_factor) / sample_cost
+# - Elo_gap: distance from target Elo (farther = higher VOI)
+# - uncertainty_factor: based on Elo confidence interval (higher uncertainty = more value in data)
+# - sample_cost: relative cost per game (large boards cost more)
+VOI_ELO_TARGET = 2000.0  # Global Elo target for all configs
+VOI_SAMPLE_COST_BY_BOARD = {
+    # Relative cost per game (compute time * complexity)
+    # Small boards are baseline (1.0), large boards cost more
+    "hex8": {"2p": 1.0, "3p": 1.3, "4p": 1.5},
+    "square8": {"2p": 1.0, "3p": 1.3, "4p": 1.5},
+    "square19": {"2p": 5.0, "3p": 7.0, "4p": 9.0},
+    "hexagonal": {"2p": 8.0, "3p": 11.0, "4p": 14.0},
 }
 
 # Thresholds for dynamic weight adjustment triggers
@@ -226,6 +246,7 @@ class DynamicWeights:
     improvement: float = IMPROVEMENT_BOOST_WEIGHT
     data_deficit: float = DATA_DEFICIT_WEIGHT
     quality: float = QUALITY_WEIGHT  # Dec 29, 2025: Data quality weight
+    voi: float = VOI_WEIGHT  # Dec 29, 2025: Value of Information weight
 
     # Cluster state that drove these weights (for debugging/logging)
     idle_gpu_fraction: float = 0.0
@@ -244,6 +265,7 @@ class DynamicWeights:
             "improvement": self.improvement,
             "data_deficit": self.data_deficit,
             "quality": self.quality,
+            "voi": self.voi,
             "idle_gpu_fraction": self.idle_gpu_fraction,
             "training_queue_depth": self.training_queue_depth,
             "configs_at_target_fraction": self.configs_at_target_fraction,
@@ -356,6 +378,55 @@ class ConfigPriority:
         current_samples = int(self.game_count * self.samples_per_game_estimate)
         remaining_samples = max(0, self.target_training_samples - current_samples)
         return int(remaining_samples / self.samples_per_game_estimate)
+
+    @property
+    def elo_gap(self) -> float:
+        """Gap between current Elo and target Elo.
+
+        Dec 29, 2025: Added for VOI-based prioritization.
+        """
+        return max(0.0, self.target_elo - self.current_elo)
+
+    @property
+    def info_gain_per_game(self) -> float:
+        """Estimated information gain (uncertainty reduction) per new game.
+
+        Dec 29, 2025: Added for VOI-based prioritization.
+        Uses 1/sqrt(n) rule from statistical sampling theory.
+        Each new game reduces Elo CI width by approximately this amount.
+        """
+        import math
+        if self.game_count <= 0:
+            return self.elo_uncertainty  # First game has max info gain
+        # Standard error reduces with sqrt(n)
+        return self.elo_uncertainty / math.sqrt(self.game_count)
+
+    @property
+    def voi_score(self) -> float:
+        """Value of Information score for this config.
+
+        Dec 29, 2025: Added for VOI-based prioritization.
+        Combines:
+        - Uncertainty (high uncertainty = high value of new data)
+        - Elo gap (far from target = higher value)
+        - Info gain efficiency (how much each game reduces uncertainty)
+
+        Higher score = higher priority for resource allocation.
+        """
+        # Normalize components to 0-1 range
+        uncertainty_factor = min(1.0, self.elo_uncertainty / 300.0)  # 300 Elo = max uncertainty
+        gap_factor = min(1.0, self.elo_gap / 500.0)  # 500 Elo gap = max
+
+        # Info gain normalized by reference (10 Elo/game is high)
+        info_factor = min(1.0, self.info_gain_per_game / 10.0)
+
+        # Combined VOI: weighted sum of factors
+        # High uncertainty + high gap + high info gain = high VOI
+        return (
+            uncertainty_factor * 0.4 +  # 40% weight on uncertainty
+            gap_factor * 0.3 +          # 30% weight on improvement potential
+            info_factor * 0.3           # 30% weight on learning efficiency
+        )
 
 
 @dataclass

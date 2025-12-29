@@ -613,6 +613,44 @@ class ModelRetentionManager:
 
         return status
 
+    def health_check(self) -> dict:
+        """Return health check status for DaemonManager integration.
+
+        Returns:
+            Dict with healthy status, message, and details
+        """
+        try:
+            # Count models across all configs
+            total_models = 0
+            total_archived = 0
+            needs_culling = 0
+
+            for config_key in CANONICAL_CONFIG_KEYS:
+                models = self.get_models_for_config(config_key)
+                archived = self.get_archived_models(config_key)
+                total_models += len(models)
+                total_archived += len(archived)
+                if len(models) > self.policy.max_models_per_config:
+                    needs_culling += 1
+
+            return {
+                "healthy": True,
+                "message": f"Managing {total_models} models, {total_archived} archived",
+                "details": {
+                    "total_models": total_models,
+                    "total_archived": total_archived,
+                    "configs_needing_culling": needs_culling,
+                    "maintenance_count": self._maintenance_count,
+                    "last_maintenance": max(self._last_maintenance.values()) if self._last_maintenance else None,
+                },
+            }
+        except Exception as e:
+            return {
+                "healthy": False,
+                "message": f"Health check failed: {e}",
+                "details": {"error": str(e)},
+            }
+
 
 # Convenience function for scripts
 def run_model_maintenance(

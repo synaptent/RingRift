@@ -584,7 +584,7 @@ class WorkQueueMonitorDaemon(MonitorBase[WorkQueueMonitorConfig]):
         })
         return base_status
 
-    def health_check(self):
+    def health_check(self) -> "HealthCheckResult":
         """Return health status with work-queue specific metrics.
 
         Overrides MonitorBase.health_check() to include queue-specific details
