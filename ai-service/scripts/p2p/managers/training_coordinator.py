@@ -891,6 +891,10 @@ class TrainingCoordinator(EventSubscriptionMixin):
             from app.training.game_gauntlet import play_single_game, GameResult
             from app.ai.universal_ai import UniversalAI
             from app.models import BoardType
+            from app.training.elo_service import get_elo_service
+
+            # Get EloService for recording matches
+            elo_service = get_elo_service()
 
             # Parse board type
             board_type_map = {
@@ -948,6 +952,27 @@ class TrainingCoordinator(EventSubscriptionMixin):
                             wins += 1
                         elif result.winner == 0:
                             wins += 0.5  # Draw counts as half win
+
+                        # Record match to EloService for unified Elo tracking
+                        try:
+                            # Determine winner model ID
+                            if result.winner == candidate_player:
+                                winner_id = model_id
+                            elif result.winner == 0:
+                                winner_id = None  # Draw
+                            else:
+                                winner_id = median_model_id
+
+                            elo_service.record_match(
+                                participant_a=model_id,
+                                participant_b=median_model_id,
+                                winner=winner_id,
+                                board_type=job.board_type,
+                                num_players=num_players,
+                                tournament_id=f"post_training_gauntlet_{config_key}",
+                            )
+                        except Exception as elo_err:
+                            logger.debug(f"Failed to record match to Elo: {elo_err}")
 
                     except Exception as e:
                         logger.warning(f"Game {game_num} failed: {e}")
