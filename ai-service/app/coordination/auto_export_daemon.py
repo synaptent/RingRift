@@ -525,6 +525,7 @@ class AutoExportDaemon(HandlerBase):
                     "--board-type", state.board_type,
                     "--num-players", str(state.num_players),
                     "--output", str(output_path),
+                    "--allow-noncanonical",  # Allow any database, not just registry
                 ]
 
                 if self.config.use_incremental_export:
