@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from app.coordination.base_daemon import BaseDaemon
+from app.coordination.base_daemon import BaseDaemon, DaemonConfig
 
 if TYPE_CHECKING:
     from app.coordination.providers.base import GPUType, Instance
