@@ -1945,6 +1945,8 @@ def main():
     engine_mode = parsed.engine_mode
     if engine_mode == "random":
         engine_mode = "random-only"
+    elif engine_mode in ("policy_only", "policy-only"):
+        engine_mode = "policy_only"
     elif engine_mode not in ("random-only", "heuristic-only", "nnue-guided"):
         logger.warning(
             "Unsupported engine_mode '%s' for GPU selfplay; falling back to heuristic-only",
