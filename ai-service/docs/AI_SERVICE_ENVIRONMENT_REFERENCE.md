@@ -564,6 +564,14 @@ Interval between registry sync cycles in seconds.
 
 Minimum seconds between AutoSyncDaemon sync cycles when not set in config.
 
+### `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT`
+
+| Property | Default  | Description |
+| -------- | -------- | ----------- |
+| Type     | `number` | `6`         |
+
+Maximum concurrent AutoSyncDaemon transfers.
+
 ### `RINGRIFT_SYNC_TIMEOUT`
 
 | Property | Default  | Description |

@@ -147,15 +147,16 @@ class TestGameReplayDBQueryEmpty:
 class TestGameWriter:
     """Tests for GameWriter context manager."""
 
-    def test_game_writer_creates_game_id(
+    def test_game_writer_creates_game(
         self, db: GameReplayDB, sample_initial_state: GameState
     ) -> None:
-        """Test GameWriter generates a valid game_id."""
-        with GameWriter(db, sample_initial_state, source="test") as writer:
-            assert writer.game_id is not None
+        """Test GameWriter creates a game with the provided game_id."""
+        game_id = str(uuid.uuid4())
+        with GameWriter(db, game_id, sample_initial_state) as writer:
+            assert writer._game_id == game_id
             # UUID format check
             try:
-                uuid.UUID(writer.game_id)
+                uuid.UUID(writer._game_id)
             except ValueError:
                 pytest.fail("game_id is not a valid UUID")
 
@@ -163,9 +164,9 @@ class TestGameWriter:
         self, db: GameReplayDB, sample_initial_state: GameState
     ) -> None:
         """Test aborting a game via GameWriter removes it."""
-        writer = GameWriter(db, sample_initial_state, source="test")
+        game_id = str(uuid.uuid4())
+        writer = GameWriter(db, game_id, sample_initial_state)
         writer.__enter__()
-        game_id = writer.game_id
         writer.abort()
 
         # Game should be deleted
@@ -235,17 +236,18 @@ class TestSchemaMigrations:
     def test_fresh_database_has_latest_schema(self, temp_db_path: Path) -> None:
         """Test that fresh database has the latest schema version."""
         with GameReplayDB(str(temp_db_path)) as db:
-            version = db._get_schema_version(db._get_conn())
+            with db._get_conn() as conn:
+                version = db._get_schema_version(conn)
             assert version == SCHEMA_VERSION
 
     def test_schema_includes_required_tables(self, temp_db_path: Path) -> None:
         """Test that schema includes all required tables."""
         with GameReplayDB(str(temp_db_path)) as db:
-            conn = db._get_conn()
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-            tables = {row[0] for row in cursor.fetchall()}
+            with db._get_conn() as conn:
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+                tables = {row[0] for row in cursor.fetchall()}
 
             required_tables = {
                 "games",
@@ -266,9 +268,9 @@ class TestSchemaMigrations:
     def test_games_table_columns(self, temp_db_path: Path) -> None:
         """Test that games table has required columns."""
         with GameReplayDB(str(temp_db_path)) as db:
-            conn = db._get_conn()
-            cursor = conn.execute("PRAGMA table_info(games)")
-            columns = {row[1] for row in cursor.fetchall()}
+            with db._get_conn() as conn:
+                cursor = conn.execute("PRAGMA table_info(games)")
+                columns = {row[1] for row in cursor.fetchall()}
 
             required_columns = {
                 "game_id",
@@ -292,27 +294,30 @@ class TestSchemaMigrations:
 
 
 class TestConnectionManagement:
-    """Tests for connection pooling and management."""
+    """Tests for connection management."""
 
     def test_get_conn_returns_connection(self, db: GameReplayDB) -> None:
-        """Test that _get_conn returns a valid connection."""
-        conn = db._get_conn()
-        assert conn is not None
-        # Verify it's a valid SQLite connection
-        cursor = conn.execute("SELECT 1")
-        assert cursor.fetchone() == (1,)
+        """Test that _get_conn returns a valid connection via context manager."""
+        with db._get_conn() as conn:
+            assert conn is not None
+            # Verify it's a valid SQLite connection
+            cursor = conn.execute("SELECT 1")
+            row = cursor.fetchone()
+            # Row factory is sqlite3.Row, access by index
+            assert row[0] == 1
 
-    def test_connection_reuse(self, db: GameReplayDB) -> None:
-        """Test that connections are reused within a session."""
-        conn1 = db._get_conn()
-        conn2 = db._get_conn()
-        # Should be the same connection
-        assert conn1 is conn2
+    def test_connection_executes_queries(self, db: GameReplayDB) -> None:
+        """Test that connections can execute queries."""
+        with db._get_conn() as conn:
+            # Execute a simple query
+            cursor = conn.execute("SELECT COUNT(*) FROM games")
+            count = cursor.fetchone()[0]
+            assert count == 0
 
     def test_wal_mode_enabled(self, temp_db_path: Path) -> None:
         """Test that WAL mode is enabled by default."""
         with GameReplayDB(str(temp_db_path)) as db:
-            conn = db._get_conn()
-            cursor = conn.execute("PRAGMA journal_mode")
-            mode = cursor.fetchone()[0]
+            with db._get_conn() as conn:
+                cursor = conn.execute("PRAGMA journal_mode")
+                mode = cursor.fetchone()[0]
             assert mode.lower() == "wal"

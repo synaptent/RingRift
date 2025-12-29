@@ -407,13 +407,24 @@ value = env.get("CUSTOM_VAR", "default")
 
 ## Sync & Bandwidth
 
-| Variable                        | Type  | Default | In env.py | Description                     |
-| ------------------------------- | ----- | ------- | --------- | ------------------------------- |
-| `RINGRIFT_SYNC_STRATEGY`        | str   | None    |           | Sync strategy                   |
-| `RINGRIFT_SYNC_TARGET`          | str   | None    |           | Sync target node                |
-| `RINGRIFT_AUTO_SYNC`            | bool  | None    |           | Enable auto sync                |
-| `RINGRIFT_MIN_SYNC_INTERVAL`    | float | `2.0`   |           | Minimum sync interval (seconds) |
-| `RINGRIFT_ENABLE_VAST_ELO_SYNC` | bool  | None    |           | Enable Vast Elo sync            |
+| Variable                            | Type  | Default | In env.py | Description                          |
+| ----------------------------------- | ----- | ------- | --------- | ------------------------------------ |
+| `RINGRIFT_SYNC_STRATEGY`            | str   | None    |           | Sync strategy (script overrides)     |
+| `RINGRIFT_SYNC_TARGET`              | str   | None    |           | Sync target node (script overrides)  |
+| `RINGRIFT_AUTO_SYNC`                | bool  | None    |           | Enable auto sync (script hints)      |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | int   | `6`     |           | Max concurrent auto-sync transfers   |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | float | `2.0`   |           | Minimum auto-sync interval (seconds) |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | float | `120`   |           | Games sync interval (seconds)        |
+| `RINGRIFT_MODEL_SYNC_INTERVAL`      | float | `600`   |           | Model sync interval (seconds)        |
+| `RINGRIFT_ELO_SYNC_INTERVAL`        | float | `60`    |           | Elo sync interval (seconds)          |
+| `RINGRIFT_REGISTRY_SYNC_INTERVAL`   | float | `120`   |           | Registry sync interval (seconds)     |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | float | `30`    |           | Fast sync interval (seconds)         |
+| `RINGRIFT_SYNC_FULL_INTERVAL`       | int   | `3600`  |           | Full sync interval (seconds)         |
+| `RINGRIFT_SYNC_TIMEOUT`             | float | `300`   |           | Sync timeout (seconds)               |
+| `RINGRIFT_SYNC_LOCK_TIMEOUT`        | int   | `120`   |           | Sync lock timeout (seconds)          |
+| `RINGRIFT_MAX_SYNCS_PER_HOST`       | int   | `2`     |           | Max concurrent syncs per host        |
+| `RINGRIFT_MAX_SYNCS_CLUSTER`        | int   | `10`    |           | Max concurrent syncs cluster-wide    |
+| `RINGRIFT_ENABLE_VAST_ELO_SYNC`     | bool  | None    |           | Enable Vast Elo sync                 |
 
 ---
 

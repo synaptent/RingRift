@@ -284,15 +284,18 @@ class TrainingTriggerDaemon(HandlerBase):
         try:
             with sqlite3.connect(self._state_db_path) as conn:
                 for config_key, state in self._training_states.items():
+                    # December 29, 2025: Include velocity fields in state persistence
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO config_state (
                             config_key, board_type, num_players,
                             last_training_time, training_in_progress,
                             last_npz_update, npz_sample_count, npz_path,
-                            last_elo, elo_trend, training_intensity,
+                            last_elo, elo_trend,
+                            elo_velocity, elo_velocity_trend, last_elo_velocity_update,
+                            training_intensity,
                             consecutive_failures, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             config_key,
@@ -305,6 +308,9 @@ class TrainingTriggerDaemon(HandlerBase):
                             state.npz_path,
                             state.last_elo,
                             state.elo_trend,
+                            state.elo_velocity,
+                            state.elo_velocity_trend,
+                            state.last_elo_velocity_update,
                             state.training_intensity,
                             state.consecutive_failures,
                             now,
@@ -385,6 +391,9 @@ class TrainingTriggerDaemon(HandlerBase):
         - TRAINING_INTENSITY_CHANGED: Updates from unified_feedback orchestrator
         - DATA_STALE: React to stale data alerts (Dec 2025 - Phase 2A)
         - DATA_SYNC_COMPLETED: Retry training after fresh data arrives (Dec 2025 - Phase 2A)
+        - EVALUATION_BACKPRESSURE: Pause training when eval queue is full (Dec 2025 - Phase 4)
+        - EVALUATION_BACKPRESSURE_RELEASED: Resume training when eval queue drains (Dec 2025 - Phase 4)
+        - ELO_VELOCITY_CHANGED: Adjust cooldown and intensity based on Elo velocity (Dec 2025)
         """
         return {
             "npz_export_complete": self._on_npz_export_complete,

@@ -122,6 +122,8 @@ CREATE INDEX IF NOT EXISTS idx_games_board_engine ON games(board_type, engine_mo
 -- Parity status index for validation queries (v13)
 CREATE INDEX IF NOT EXISTS idx_games_parity_status ON games(parity_status);
 CREATE INDEX IF NOT EXISTS idx_games_board_parity ON games(board_type, parity_status);
+-- Compound index for time-bounded parity queries (Dec 2025)
+CREATE INDEX IF NOT EXISTS idx_games_parity_created ON games(parity_status, created_at);
 -- Performance indexes for common query patterns (v15)
 CREATE INDEX IF NOT EXISTS idx_games_config ON games(board_type, num_players, game_status);
 

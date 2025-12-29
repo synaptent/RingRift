@@ -426,19 +426,23 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 
 ##### Sync and heartbeat
 
-| Variable                          | Description                       | Default |
-| --------------------------------- | --------------------------------- | ------- |
-| `RINGRIFT_SYNC_LOCK_TIMEOUT`      | Sync lock timeout (seconds)       | `120`   |
-| `RINGRIFT_MAX_SYNCS_PER_HOST`     | Max concurrent syncs per host     | `1`     |
-| `RINGRIFT_MAX_SYNCS_CLUSTER`      | Max concurrent syncs cluster-wide | `5`     |
-| `RINGRIFT_DATA_SYNC_INTERVAL`     | Data sync interval (seconds)      | `300.0` |
-| `RINGRIFT_MODEL_SYNC_INTERVAL`    | Model sync interval (seconds)     | `600.0` |
-| `RINGRIFT_ELO_SYNC_INTERVAL`      | Elo sync interval (seconds)       | `60.0`  |
-| `RINGRIFT_REGISTRY_SYNC_INTERVAL` | Registry sync interval (seconds)  | `120.0` |
-| `RINGRIFT_HEARTBEAT_INTERVAL`     | Heartbeat interval (seconds)      | `30`    |
-| `RINGRIFT_HEARTBEAT_TIMEOUT`      | Heartbeat timeout (seconds)       | `90`    |
-| `RINGRIFT_STALE_CLEANUP_INTERVAL` | Stale cleanup interval (seconds)  | `60`    |
-| `RINGRIFT_MIN_SYNC_INTERVAL`      | Minimum sync interval (seconds)   | `2.0`   |
+| Variable                            | Description                       | Default |
+| ----------------------------------- | --------------------------------- | ------- |
+| `RINGRIFT_SYNC_LOCK_TIMEOUT`        | Sync lock timeout (seconds)       | `120`   |
+| `RINGRIFT_MAX_SYNCS_PER_HOST`       | Max concurrent syncs per host     | `2`     |
+| `RINGRIFT_MAX_SYNCS_CLUSTER`        | Max concurrent syncs cluster-wide | `10`    |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | Data sync interval (seconds)      | `120.0` |
+| `RINGRIFT_MODEL_SYNC_INTERVAL`      | Model sync interval (seconds)     | `600.0` |
+| `RINGRIFT_ELO_SYNC_INTERVAL`        | Elo sync interval (seconds)       | `60.0`  |
+| `RINGRIFT_REGISTRY_SYNC_INTERVAL`   | Registry sync interval (seconds)  | `120.0` |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | Fast sync interval (seconds)      | `30.0`  |
+| `RINGRIFT_SYNC_FULL_INTERVAL`       | Full sync interval (seconds)      | `3600`  |
+| `RINGRIFT_SYNC_TIMEOUT`             | Sync timeout (seconds)            | `300.0` |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | Max concurrent auto-sync tasks    | `6`     |
+| `RINGRIFT_HEARTBEAT_INTERVAL`       | Heartbeat interval (seconds)      | `30`    |
+| `RINGRIFT_HEARTBEAT_TIMEOUT`        | Heartbeat timeout (seconds)       | `90`    |
+| `RINGRIFT_STALE_CLEANUP_INTERVAL`   | Stale cleanup interval (seconds)  | `60`    |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | Minimum sync interval (seconds)   | `2.0`   |
 
 ##### P2P node circuit breaker
 
