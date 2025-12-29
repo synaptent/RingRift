@@ -2123,7 +2123,7 @@ def train_model(
                 hex_model_name = "HexNeuralNet_v4"
             elif use_hex_v3:
                 if model_version == 'v3-spatial':
-                    hex_model_name = "HexNeuralNet_v3 (spatial policy - DEPRECATED)"
+                    hex_model_name = "HexNeuralNet_v3 (spatial policy)"
                 else:
                     hex_model_name = "HexNeuralNet_v3_Flat"
             else:
@@ -2293,14 +2293,8 @@ def train_model(
         # where -1e9 masked values caused 11M+ loss explosion with log_softmax.
         # Use --model-version v3-spatial for original spatial policy heads.
         if model_version == 'v3-spatial':
-            # Original V3 with spatial policy heads (DEPRECATED for training)
-            import warnings
-            warnings.warn(
-                "HexNeuralNet_v3 with spatial policy heads may cause loss explosion. "
-                "Use --model-version v3 for flat policy heads instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            # V3 with spatial policy heads - position-aware learning with weight sharing
+            # Now stable with masked_log_softmax (Dec 2025 fix)
             model = HexNeuralNet_v3(
                 in_channels=hex_in_channels,
                 global_features=20,

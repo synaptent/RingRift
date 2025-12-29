@@ -47,7 +47,7 @@ class TestNodeConfig:
         config = NodeConfig(hostname="test-host")
         assert config.hostname == "test-host"
         assert config.ssh_port == 22
-        assert config.http_port == 8080
+        assert config.http_port == 8770  # P2P port for HTTP file sync
         assert config.http_scheme == "http"
 
     def test_http_base_url_without_tailscale(self):

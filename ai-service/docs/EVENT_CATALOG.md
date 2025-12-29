@@ -277,28 +277,28 @@ These events form the main training pipeline:
 
 ## System Events
 
-| Event                       | Emitter         | Subscribers                                                      | Purpose                |
-| --------------------------- | --------------- | ---------------------------------------------------------------- | ---------------------- |
-| `DAEMON_STARTED`            | DaemonManager   | MetricsAnalysisOrchestrator, DaemonManager, UnifiedHealthManager | Daemon started         |
-| `DAEMON_STOPPED`            | DaemonManager   | MetricsAnalysisOrchestrator, DaemonManager, UnifiedHealthManager | Daemon stopped         |
-| `DAEMON_STATUS_CHANGED`     | DaemonWatchdog  | AlertManager                                                     | Daemon status change   |
-| `DAEMON_PERMANENTLY_FAILED` | DaemonManager   | AlertManager                                                     | Exceeded restart limit |
-| `HOST_ONLINE`               | P2POrchestrator | UnifiedHealthManager                                             | Node came online       |
-| `HOST_OFFLINE`              | P2POrchestrator | UnifiedHealthManager                                             | Node went offline      |
-| `ERROR`                     | Various         | AlertManager                                                     | General error event    |
+| Event                       | Emitter         | Subscribers                         | Purpose                |
+| --------------------------- | --------------- | ----------------------------------- | ---------------------- |
+| `DAEMON_STARTED`            | DaemonManager   | DaemonManager, UnifiedHealthManager | Daemon started         |
+| `DAEMON_STOPPED`            | DaemonManager   | DaemonManager, UnifiedHealthManager | Daemon stopped         |
+| `DAEMON_STATUS_CHANGED`     | DaemonWatchdog  | AlertManager                        | Daemon status change   |
+| `DAEMON_PERMANENTLY_FAILED` | DaemonManager   | AlertManager                        | Exceeded restart limit |
+| `HOST_ONLINE`               | P2POrchestrator | UnifiedHealthManager                | Node came online       |
+| `HOST_OFFLINE`              | P2POrchestrator | UnifiedHealthManager                | Node went offline      |
+| `ERROR`                     | Various         | AlertManager                        | General error event    |
 
 ## Health & Recovery Events
 
-| Event                 | Emitter                 | Subscribers                                                                  | Purpose                      |
-| --------------------- | ----------------------- | ---------------------------------------------------------------------------- | ---------------------------- |
-| `HEALTH_CHECK_PASSED` | HealthCheckOrchestrator | MetricsAnalysisOrchestrator, HealthCheckOrchestrator, FeedbackLoopController | Node healthy                 |
-| `HEALTH_CHECK_FAILED` | HealthCheckOrchestrator | NodeRecoveryDaemon, HealthCheckOrchestrator, FeedbackLoopController          | Node unhealthy               |
-| `HEALTH_ALERT`        | HealthCheckOrchestrator | AlertManager                                                                 | General health warning       |
-| `RESOURCE_CONSTRAINT` | ResourceTargetManager   | IdleResourceDaemon                                                           | CPU/GPU/Memory/Disk pressure |
-| `NODE_OVERLOADED`     | ResourceTargetManager   | SelfplayScheduler                                                            | Node overloaded              |
-| `RECOVERY_INITIATED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator                                                  | Auto-recovery started        |
-| `RECOVERY_COMPLETED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator                                                  | Auto-recovery finished       |
-| `RECOVERY_FAILED`     | NodeRecoveryDaemon      | AlertManager                                                                 | Auto-recovery failed         |
+| Event                 | Emitter                 | Subscribers                                                             | Purpose                      |
+| --------------------- | ----------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `HEALTH_CHECK_PASSED` | ClusterWatchdogDaemon   | HealthCheckOrchestrator, FeedbackLoopController, NodeHealthOrchestrator | Node healthy                 |
+| `HEALTH_CHECK_FAILED` | ClusterWatchdogDaemon   | HealthCheckOrchestrator, FeedbackLoopController, NodeHealthOrchestrator | Node unhealthy               |
+| `HEALTH_ALERT`        | HealthCheckOrchestrator | AlertManager                                                            | General health warning       |
+| `RESOURCE_CONSTRAINT` | ResourceTargetManager   | IdleResourceDaemon                                                      | CPU/GPU/Memory/Disk pressure |
+| `NODE_OVERLOADED`     | ResourceTargetManager   | SelfplayScheduler                                                       | Node overloaded              |
+| `RECOVERY_INITIATED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator                                             | Auto-recovery started        |
+| `RECOVERY_COMPLETED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator                                             | Auto-recovery finished       |
+| `RECOVERY_FAILED`     | NodeRecoveryDaemon      | AlertManager                                                            | Auto-recovery failed         |
 
 ---
 
