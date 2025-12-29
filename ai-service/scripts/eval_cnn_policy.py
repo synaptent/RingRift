@@ -19,7 +19,7 @@ from app.training.train_cnn_policy import CNNPolicyNet
 from app.game_engine import GameEngine
 from app.models import BoardType, GameStatus, Position, AIConfig
 from app.training.train_gmo_selfplay import create_initial_state
-from app.ai._neural_net_legacy import encode_move_for_board, NeuralNetAI
+from app.ai.neural_net import encode_move_for_board, NeuralNetAI
 from app.rules.geometry import BoardGeometry
 
 

@@ -1115,7 +1115,8 @@ class SyncRouter:
                         reason=f"new_games:{game_count}",
                     )
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            # Event payload or routing errors
             logger.error(f"[SyncRouter] Error handling new games event: {e}")
 
     async def _on_training_started(self, event: Any) -> None:
@@ -1130,7 +1131,8 @@ class SyncRouter:
                 cap.is_priority_node = True
                 logger.info(f"[SyncRouter] Marked {node_id} as training priority")
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError) as e:
+            # Event payload access errors
             logger.error(f"[SyncRouter] Error handling training started: {e}")
 
     async def _on_host_online(self, event: Any) -> None:
@@ -1145,7 +1147,8 @@ class SyncRouter:
                 self._node_capabilities[node_id] = cap
                 logger.info(f"[SyncRouter] Added new node: {node_id}")
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError) as e:
+            # Event payload access errors
             logger.debug(f"[SyncRouter] Error handling host online: {e}")
 
     async def _on_host_offline(self, event: Any) -> None:
@@ -1162,7 +1165,8 @@ class SyncRouter:
                 cap.can_receive_npz = False
                 logger.info(f"[SyncRouter] Marked {node_id} as offline")
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError) as e:
+            # Event payload access errors
             logger.debug(f"[SyncRouter] Error handling host offline: {e}")
 
     async def _on_node_recovered(self, event: Any) -> None:
@@ -1191,7 +1195,8 @@ class SyncRouter:
                 self._node_capabilities[node_id] = cap
                 logger.info(f"[SyncRouter] Added recovered node: {node_id}")
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError) as e:
+            # Event payload or manifest access errors
             logger.debug(f"[SyncRouter] Error handling node recovered: {e}")
 
     async def _on_cluster_capacity_changed(self, event: Any) -> None:
@@ -1250,7 +1255,8 @@ class SyncRouter:
                 gpu_nodes=gpu_nodes,
             )
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            # Event payload or node capability update errors
             logger.warning(f"[SyncRouter] Error handling cluster capacity changed: {e}")
 
     async def _on_model_sync_requested(self, event: Any) -> None:
@@ -1323,10 +1329,12 @@ class SyncRouter:
                         "reason": reason,
                     },
                 )
-            except Exception as e:
+            except (ImportError, RuntimeError, OSError) as e:
+                # Event emission infrastructure errors
                 logger.debug(f"[SyncRouter] Could not emit MODEL_SYNC_STARTED: {e}")
 
-        except Exception as e:
+        except (KeyError, TypeError, AttributeError, ValueError) as e:
+            # Event payload or routing errors
             logger.error(f"[SyncRouter] Error handling model sync request: {e}")
 
     # Transport escalation order (Dec 28, 2025)
@@ -1554,7 +1562,8 @@ class SyncRouter:
                     "router": "SyncRouter",
                 },
             )
-        except Exception as e:
+        except (ImportError, RuntimeError, OSError, AttributeError) as e:
+            # Event emission infrastructure errors
             logger.debug(f"[SyncRouter] Could not emit capacity refresh: {e}")
 
     async def _emit_sync_routing_decision(
@@ -1587,7 +1596,8 @@ class SyncRouter:
                     source="SyncRouter",
                 ))
 
-        except Exception as e:
+        except (ImportError, RuntimeError, OSError, AttributeError) as e:
+            # Event emission infrastructure errors
             logger.warning(f"[SyncRouter] Could not emit routing decision: {e}")
             # Still log the decision for debugging even if event emission failed
             logger.info(

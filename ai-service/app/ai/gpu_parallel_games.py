@@ -38,10 +38,176 @@ import logging
 import os
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
+
+
+# =============================================================================
+# Configuration Dataclass (Dec 2025 - fix 25-param constructor)
+# =============================================================================
+
+
+@dataclass
+class GameRunnerConfig:
+    """Configuration for ParallelGameRunner.
+
+    Groups the 25+ parameters into logical categories for cleaner initialization.
+    All parameters have sensible defaults matching the original constructor.
+
+    Categories:
+        - Board: batch_size, board_size, num_players, board_type, device
+        - Validation: shadow_*, state_* parameters for GPU/CPU parity checking
+        - Rules: swap_enabled, lps_victory_rounds, rings_per_player
+        - Selection: use_heuristic_selection, weight_noise, temperature, noise_scale
+        - Training: random_opening_moves, record_policy
+        - Personas: persona_pool, per_player_personas
+
+    Example:
+        >>> config = GameRunnerConfig(
+        ...     batch_size=128,
+        ...     board_type="hex8",
+        ...     num_players=2,
+        ...     record_policy=True,
+        ... )
+        >>> runner = ParallelGameRunner(config=config)
+    """
+
+    # Board configuration
+    batch_size: int = 64
+    board_size: int = 8
+    num_players: int = 2
+    board_type: str | None = None
+    device: torch.device | None = None
+
+    # Shadow validation (move generation parity)
+    shadow_validation: bool = False
+    shadow_sample_rate: float = 0.05
+    shadow_threshold: float = 0.001
+    async_shadow_validation: bool = True
+
+    # State validation (CPU oracle mode)
+    state_validation: bool = False
+    state_sample_rate: float = 0.01
+    state_threshold: float = 0.001
+
+    # Game rules
+    swap_enabled: bool = False
+    lps_victory_rounds: int | None = None
+    rings_per_player: int | None = None
+
+    # AI/Selection parameters
+    use_heuristic_selection: bool = False
+    weight_noise: float = 0.0
+    temperature: float = 1.0
+    noise_scale: float = 0.1
+
+    # Training options
+    random_opening_moves: int = 0
+    record_policy: bool = False
+
+    # Persona configuration
+    persona_pool: list[str] | None = None
+    per_player_personas: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        if self.per_player_personas is not None:
+            if len(self.per_player_personas) != self.num_players:
+                raise ValueError(
+                    f"per_player_personas length ({len(self.per_player_personas)}) "
+                    f"must match num_players ({self.num_players})"
+                )
+
+    @classmethod
+    def for_selfplay(
+        cls,
+        board_type: str,
+        num_players: int,
+        batch_size: int = 64,
+        record_policy: bool = True,
+        **kwargs: Any,
+    ) -> "GameRunnerConfig":
+        """Create config optimized for selfplay data generation.
+
+        Args:
+            board_type: Board type ("hex8", "square8", etc.)
+            num_players: Number of players
+            batch_size: Games to run in parallel
+            record_policy: Whether to record policy distributions
+            **kwargs: Additional config overrides
+
+        Returns:
+            Config with selfplay-appropriate defaults
+        """
+        return cls(
+            board_type=board_type,
+            num_players=num_players,
+            batch_size=batch_size,
+            record_policy=record_policy,
+            use_heuristic_selection=True,
+            weight_noise=0.1,  # Some variety
+            **kwargs,
+        )
+
+    @classmethod
+    def for_evaluation(
+        cls,
+        board_type: str,
+        num_players: int,
+        batch_size: int = 32,
+        **kwargs: Any,
+    ) -> "GameRunnerConfig":
+        """Create config optimized for model evaluation/gauntlet.
+
+        Args:
+            board_type: Board type
+            num_players: Number of players
+            batch_size: Games to run in parallel
+            **kwargs: Additional config overrides
+
+        Returns:
+            Config with evaluation-appropriate defaults (no noise, deterministic)
+        """
+        return cls(
+            board_type=board_type,
+            num_players=num_players,
+            batch_size=batch_size,
+            record_policy=False,
+            weight_noise=0.0,
+            temperature=0.1,  # Near-deterministic
+            **kwargs,
+        )
+
+    @classmethod
+    def for_cmaes(
+        cls,
+        board_type: str,
+        num_players: int,
+        batch_size: int = 100,
+        **kwargs: Any,
+    ) -> "GameRunnerConfig":
+        """Create config optimized for CMA-ES fitness evaluation.
+
+        Args:
+            board_type: Board type
+            num_players: Number of players
+            batch_size: Games per fitness evaluation
+            **kwargs: Additional config overrides
+
+        Returns:
+            Config with CMA-ES-appropriate defaults
+        """
+        return cls(
+            board_type=board_type,
+            num_players=num_players,
+            batch_size=batch_size,
+            use_heuristic_selection=True,
+            record_policy=False,
+            **kwargs,
+        )
 
 # Resource checking before GPU operations (December 2025)
 from app.utils.resource_guard import check_gpu_memory, check_memory, clear_gpu_memory
@@ -208,7 +374,16 @@ class ParallelGameRunner:
     Runs multiple games simultaneously using batch operations on GPU.
     Supports different AI configurations per game for CMA-ES evaluation.
 
-    Example:
+    Example (new style with config):
+        config = GameRunnerConfig(
+            batch_size=128,
+            board_type="hex8",
+            num_players=2,
+            record_policy=True,
+        )
+        runner = ParallelGameRunner(config=config)
+
+    Example (legacy style with individual params - still supported):
         runner = ParallelGameRunner(batch_size=64, device="cuda")
 
         # Run games with specific heuristic weights
@@ -218,10 +393,17 @@ class ParallelGameRunner:
         )
 
         # Results contain win/loss/draw for each game
+
+    Example (factory methods):
+        config = GameRunnerConfig.for_selfplay("hex8", 2, batch_size=128)
+        runner = ParallelGameRunner(config=config)
     """
 
     def __init__(
         self,
+        # New config-based initialization (preferred)
+        config: GameRunnerConfig | None = None,
+        # Legacy individual parameters (for backward compatibility)
         batch_size: int = 64,
         board_size: int = 8,
         num_players: int = 2,
@@ -248,7 +430,14 @@ class ParallelGameRunner:
     ):
         """Initialize parallel game runner.
 
+        Accepts either a GameRunnerConfig object (preferred) or individual parameters
+        (legacy, for backward compatibility).
+
         Args:
+            config: Configuration object (preferred). If provided, individual params
+                   are ignored except for device which can override config.device.
+
+            # Legacy parameters (used if config is None):
             batch_size: Number of games to run in parallel
             board_size: Board dimension
             num_players: Number of players per game
@@ -296,6 +485,64 @@ class ParallelGameRunner:
                        and P2 defensive in all games. For variety, combine with weight_noise.
                        Example for 4-player: ["aggressive", "balanced", "territorial", "defensive"]
         """
+        # Handle config vs individual params
+        if config is not None:
+            # Use config object (preferred)
+            self.config = config
+            batch_size = config.batch_size
+            board_size = config.board_size
+            num_players = config.num_players
+            # Allow device override, but prefer config if device param not explicitly set
+            if device is None:
+                device = config.device
+            shadow_validation = config.shadow_validation
+            shadow_sample_rate = config.shadow_sample_rate
+            shadow_threshold = config.shadow_threshold
+            async_shadow_validation = config.async_shadow_validation
+            state_validation = config.state_validation
+            state_sample_rate = config.state_sample_rate
+            state_threshold = config.state_threshold
+            swap_enabled = config.swap_enabled
+            lps_victory_rounds = config.lps_victory_rounds
+            rings_per_player = config.rings_per_player
+            board_type = config.board_type
+            use_heuristic_selection = config.use_heuristic_selection
+            weight_noise = config.weight_noise
+            temperature = config.temperature
+            noise_scale = config.noise_scale
+            random_opening_moves = config.random_opening_moves
+            record_policy = config.record_policy
+            persona_pool = config.persona_pool
+            per_player_personas = config.per_player_personas
+        else:
+            # Create config from individual params (legacy mode)
+            self.config = GameRunnerConfig(
+                batch_size=batch_size,
+                board_size=board_size,
+                num_players=num_players,
+                device=device,
+                shadow_validation=shadow_validation,
+                shadow_sample_rate=shadow_sample_rate,
+                shadow_threshold=shadow_threshold,
+                async_shadow_validation=async_shadow_validation,
+                state_validation=state_validation,
+                state_sample_rate=state_sample_rate,
+                state_threshold=state_threshold,
+                swap_enabled=swap_enabled,
+                lps_victory_rounds=lps_victory_rounds,
+                rings_per_player=rings_per_player,
+                board_type=board_type,
+                use_heuristic_selection=use_heuristic_selection,
+                weight_noise=weight_noise,
+                temperature=temperature,
+                noise_scale=noise_scale,
+                random_opening_moves=random_opening_moves,
+                record_policy=record_policy,
+                persona_pool=persona_pool,
+                per_player_personas=per_player_personas,
+            )
+
+        # Store commonly accessed attributes directly for performance
         self.batch_size = batch_size
         self.board_size = board_size
         self.num_players = num_players
@@ -309,12 +556,7 @@ class ParallelGameRunner:
         self.record_policy = record_policy
         self.persona_pool = persona_pool
         self.per_player_personas = per_player_personas
-        # Validate per_player_personas length if provided
-        if per_player_personas is not None and len(per_player_personas) != num_players:
-            raise ValueError(
-                f"per_player_personas length ({len(per_player_personas)}) must match "
-                f"num_players ({num_players})"
-            )
+        # Validation already done in GameRunnerConfig.__post_init__
         self.use_policy_selection = False
         self.policy_model: RingRiftNNUEWithPolicy | None = None
         # Policy recording buffer: {game_idx: [(move_num, policy_dict), ...]}

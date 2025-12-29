@@ -35,9 +35,12 @@ class TestIdleResourceConfig:
         # Reduced from 60s to 15s for faster detection (Dec 2025)
         assert config.check_interval_seconds == 15
         assert config.idle_threshold_percent == 10.0
-        assert config.idle_duration_seconds == 120
-        assert config.max_concurrent_spawns == 4
-        assert config.max_spawns_cap == 40
+        # Dec 27 2025: Aggressive spawning - 15s idle before spawn (was 120)
+        assert config.idle_duration_seconds == 15
+        # Dec 27 2025: 10x increase for ML acceleration (was 4)
+        assert config.max_concurrent_spawns == 40
+        # Dec 27 2025: Scaled up for high-throughput selfplay (was 40)
+        assert config.max_spawns_cap == 200
         assert config.max_selfplay_processes_per_node == 50
 
     def test_gpu_memory_thresholds(self):
@@ -418,10 +421,14 @@ class TestIdleResourceDaemonAsync:
         """Test health check endpoint."""
         health = await daemon.health_check()
 
-        # Check keys match actual implementation
-        assert "healthy" in health
-        assert "status" in health
-        assert "stats" in health
+        # health_check() returns HealthCheckResult dataclass
+        assert hasattr(health, "healthy")
+        assert hasattr(health, "status")
+        assert hasattr(health, "message")
+        assert hasattr(health, "details")
+        # Details contains stats
+        assert isinstance(health.details, dict)
+        assert "running" in health.details
 
     @pytest.mark.asyncio
     async def test_get_queue_depth(self, daemon):

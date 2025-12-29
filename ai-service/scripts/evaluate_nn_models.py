@@ -139,7 +139,7 @@ def create_ai(
 
     elif model_type == "cnn":
         # Standalone CNN/NNUE neural network (no MCTS)
-        from app.ai._neural_net_legacy import NeuralNetAI
+        from app.ai.neural_net import NeuralNetAI
         config = AIConfig(difficulty=6, nn_model_id=checkpoint_path)
         return NeuralNetAI(
             player_number=player_number,
