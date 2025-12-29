@@ -234,10 +234,10 @@ for event in events:
 
 ## Event Deduplication
 
-The router uses SHA256-based content deduplication to prevent duplicate event processing:
+The router uses SHA256-based content deduplication with an LRU cap (`max_seen_events`, default 10,000) to prevent duplicate event processing:
 
 ```python
-# Same payload + event type = deduplicated (within 60s window)
+# Same payload + event type = deduplicated while cached
 await publish(DataEventType.MODEL_PROMOTED, {"model": "foo"})
 await publish(DataEventType.MODEL_PROMOTED, {"model": "foo"})  # Deduplicated
 await publish(DataEventType.MODEL_PROMOTED, {"model": "bar"})  # Different payload - emitted
@@ -263,41 +263,23 @@ class MyDaemon:
 
 ### Common Daemon Subscriptions
 
-<<<<<<< Updated upstream
-| Daemon | Events Subscribed |
-|--------|-------------------|
-| `FeedbackLoopController` | `TRAINING_LOSS_TREND`, `TRAINING_LOSS_ANOMALY`, `QUALITY_DEGRADED` |
-| `SelfplayScheduler` | `MODEL_PROMOTED`, `ELO_VELOCITY_CHANGED`, `CURRICULUM_ADVANCED` |
-| `AutoSyncDaemon` | `GAMES_GENERATED`, `NPZ_EXPORTED`, `DATA_SYNC_FAILED` |
-| `ModelDistributionDaemon` | `MODEL_PROMOTED`, `MODEL_REGISTERED` |
-| `OrphanDetectionDaemon` | `DATABASE_CREATED`, `SYNC_COMPLETED` |
-
-## Environment Variables
-
-| Variable                                  | Default | Description                  |
-| ----------------------------------------- | ------- | ---------------------------- |
-| `RINGRIFT_EVENT_LOG_LEVEL`                | `INFO`  | Event logging verbosity      |
-| `RINGRIFT_EVENT_DEDUP_WINDOW_SECS`        | `60`    | Deduplication time window    |
-| `COORDINATOR_CROSS_PROCESS_POLL_INTERVAL` | `5`     | Cross-process poll frequency |
-
-=======
-| Daemon | Events Subscribed |
+| Daemon                    | Events Subscribed                                                  |
 | ------------------------- | ------------------------------------------------------------------ |
-| `FeedbackLoopController` | `TRAINING_LOSS_TREND`, `TRAINING_LOSS_ANOMALY`, `QUALITY_DEGRADED` |
-| `SelfplayScheduler` | `MODEL_PROMOTED`, `ELO_VELOCITY_CHANGED`, `CURRICULUM_ADVANCED` |
-| `AutoSyncDaemon` | `GAMES_GENERATED`, `NPZ_EXPORTED`, `DATA_SYNC_FAILED` |
-| `ModelDistributionDaemon` | `MODEL_PROMOTED`, `MODEL_REGISTERED` |
-| `OrphanDetectionDaemon` | `DATABASE_CREATED`, `SYNC_COMPLETED` |
+| `FeedbackLoopController`  | `TRAINING_LOSS_TREND`, `TRAINING_LOSS_ANOMALY`, `QUALITY_DEGRADED` |
+| `SelfplayScheduler`       | `MODEL_PROMOTED`, `ELO_VELOCITY_CHANGED`, `CURRICULUM_ADVANCED`    |
+| `AutoSyncDaemon`          | `GAMES_GENERATED`, `NPZ_EXPORTED`, `DATA_SYNC_FAILED`              |
+| `ModelDistributionDaemon` | `MODEL_PROMOTED`, `MODEL_REGISTERED`                               |
+| `OrphanDetectionDaemon`   | `DATABASE_CREATED`, `SYNC_COMPLETED`                               |
 
 ## Environment Variables
 
-| Variable                                  | Default | Description                  |
-| ----------------------------------------- | ------- | ---------------------------- |
-| `RINGRIFT_EVENT_LOG_LEVEL`                | `INFO`  | Event logging verbosity      |
-| `RINGRIFT_EVENT_DEDUP_WINDOW_SECS`        | `60`    | Deduplication time window    |
-| `COORDINATOR_CROSS_PROCESS_POLL_INTERVAL` | `5`     | Cross-process poll frequency |
+| Variable                           | Default | Description                              |
+| ---------------------------------- | ------- | ---------------------------------------- |
+| `RINGRIFT_LOG_LEVEL`               | `INFO`  | Log verbosity (use DEBUG for event logs) |
+| `RINGRIFT_EVENT_HANDLER_TIMEOUT`   | `600`   | Event handler timeout (seconds)          |
+| `RINGRIFT_EVENT_VALIDATION_STRICT` | `false` | Reject unknown events                    |
 
-> > > > > > > Stashed changes
+Cross-process polling interval is configured via the event router (constructor `poll_interval`), not an env var.
 
 ## Best Practices
 
