@@ -115,7 +115,7 @@ async def deploy_to_node(
 
             add_cron_result = await client.run_async(
                 f'(crontab -l 2>/dev/null; echo "{cron_cmd}") | crontab -',
-                timeout=15
+                timeout=20
             )
             if add_cron_result.returncode != 0:
                 logger.warning(f"[{node_name}] Failed to add cron: {add_cron_result.stderr}")
@@ -127,7 +127,7 @@ async def deploy_to_node(
             f"nohup python scripts/p2p_supervisor.py --node-id {node_name} "
             f"> logs/p2p_supervisor.log 2>&1 &"
         )
-        start_result = await client.run_async(start_cmd, timeout=15)
+        start_result = await client.run_async(start_cmd, timeout=30)
 
         if start_result.returncode != 0:
             return (node_name, False, f"Failed to start supervisor: {start_result.stderr}")

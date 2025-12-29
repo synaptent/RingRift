@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1531,3 +1531,478 @@ class TestPriorityComputationDetails:
 
         # Never synced gets max time weight (+30)
         assert priority_never > priority_recent
+
+
+# =============================================================================
+# Tests for Training-Active Priority (December 2025)
+# =============================================================================
+
+
+class TestTrainingActivePriority:
+    """Tests for training-active node priority functionality."""
+
+    def test_is_node_training_active_no_attribute(self, router):
+        """Test _is_node_training_active returns False when attribute missing."""
+        if hasattr(router, "_training_active_nodes"):
+            delattr(router, "_training_active_nodes")
+
+        assert router._is_node_training_active("any-node") is False
+
+    def test_is_node_training_active_empty_set(self, router):
+        """Test _is_node_training_active returns False when set is empty."""
+        router._training_active_nodes = set()
+
+        assert router._is_node_training_active("any-node") is False
+
+    def test_is_node_training_active_node_in_set(self, router):
+        """Test _is_node_training_active returns True when node is active."""
+        router._training_active_nodes = {"training-1", "training-2"}
+
+        assert router._is_node_training_active("training-1") is True
+        assert router._is_node_training_active("training-2") is True
+
+    def test_is_node_training_active_node_not_in_set(self, router):
+        """Test _is_node_training_active returns False for inactive node."""
+        router._training_active_nodes = {"training-1"}
+
+        assert router._is_node_training_active("selfplay-1") is False
+
+    def test_update_training_active_nodes(self, router):
+        """Test update_training_active_nodes updates the set."""
+        active = {"node-a", "node-b", "node-c"}
+
+        router.update_training_active_nodes(active)
+
+        assert router._training_active_nodes == active
+
+    def test_update_training_active_nodes_empty(self, router):
+        """Test update_training_active_nodes handles empty set."""
+        router.update_training_active_nodes(set())
+
+        assert router._training_active_nodes == set()
+
+    def test_update_training_active_nodes_replaces(self, router):
+        """Test update_training_active_nodes replaces existing set."""
+        router._training_active_nodes = {"old-1", "old-2"}
+
+        router.update_training_active_nodes({"new-1"})
+
+        assert router._training_active_nodes == {"new-1"}
+        assert "old-1" not in router._training_active_nodes
+
+    def test_training_active_priority_boost(self, router):
+        """Test training-active nodes get +50 priority boost."""
+        router._training_active_nodes = {"active-training"}
+
+        cap_active = NodeSyncCapability(node_id="active-training")
+        cap_inactive = NodeSyncCapability(node_id="inactive")
+
+        priority_active = router._compute_target_priority(cap_active, DataType.GAME)
+        priority_inactive = router._compute_target_priority(cap_inactive, DataType.GAME)
+
+        # Active should be at least 50 points higher
+        assert priority_active >= priority_inactive + 50
+
+
+# =============================================================================
+# Tests for can_provide_data_type (December 2025)
+# =============================================================================
+
+
+class TestCanProvideDataType:
+    """Tests for _can_provide_data_type method."""
+
+    def test_can_provide_game_selfplay_enabled(self, router):
+        """Test selfplay-enabled nodes can provide game data."""
+        cap = NodeSyncCapability(node_id="selfplay", selfplay_enabled=True)
+
+        assert router._can_provide_data_type(cap, DataType.GAME) is True
+
+    def test_can_provide_game_selfplay_disabled(self, router):
+        """Test non-selfplay nodes cannot provide game data."""
+        cap = NodeSyncCapability(node_id="other", selfplay_enabled=False)
+
+        assert router._can_provide_data_type(cap, DataType.GAME) is False
+
+    def test_can_provide_model_any_node(self, router):
+        """Test any node can provide model data."""
+        cap = NodeSyncCapability(node_id="any")
+
+        assert router._can_provide_data_type(cap, DataType.MODEL) is True
+
+    def test_can_provide_npz_training_node(self, router):
+        """Test training nodes can provide NPZ data."""
+        cap = NodeSyncCapability(node_id="training", is_training_node=True)
+
+        assert router._can_provide_data_type(cap, DataType.NPZ) is True
+
+    def test_can_provide_npz_selfplay_node(self, router):
+        """Test selfplay nodes can provide NPZ data."""
+        cap = NodeSyncCapability(node_id="selfplay", selfplay_enabled=True)
+
+        assert router._can_provide_data_type(cap, DataType.NPZ) is True
+
+    def test_can_provide_npz_no_data(self, router):
+        """Test nodes without training/selfplay cannot provide NPZ."""
+        cap = NodeSyncCapability(node_id="storage")
+
+        assert router._can_provide_data_type(cap, DataType.NPZ) is False
+
+
+# =============================================================================
+# Tests for shares_storage_with (December 2025)
+# =============================================================================
+
+
+class TestSharesStorageWith:
+    """Tests for _shares_storage_with method."""
+
+    def test_both_lambda_share_nfs(self, router):
+        """Test two Lambda nodes share NFS storage."""
+        router._node_capabilities["lambda-1"] = NodeSyncCapability(
+            node_id="lambda-1", shares_nfs=True, provider="lambda"
+        )
+        router._node_capabilities["lambda-2"] = NodeSyncCapability(
+            node_id="lambda-2", shares_nfs=True, provider="lambda"
+        )
+        router.node_id = "lambda-1"
+
+        assert router._shares_storage_with("lambda-2") is True
+
+    def test_mixed_providers_no_share(self, router):
+        """Test different providers don't share storage."""
+        router._node_capabilities["lambda-1"] = NodeSyncCapability(
+            node_id="lambda-1", shares_nfs=True, provider="lambda"
+        )
+        router._node_capabilities["vast-1"] = NodeSyncCapability(
+            node_id="vast-1", shares_nfs=False, provider="vast"
+        )
+        router.node_id = "lambda-1"
+
+        assert router._shares_storage_with("vast-1") is False
+
+    def test_unknown_source_no_share(self, router):
+        """Test unknown source node doesn't share."""
+        router._node_capabilities["target"] = NodeSyncCapability(
+            node_id="target", shares_nfs=True
+        )
+        router.node_id = "unknown-source"
+
+        assert router._shares_storage_with("target") is False
+
+    def test_unknown_target_no_share(self, router):
+        """Test unknown target node doesn't share."""
+        router._node_capabilities["source"] = NodeSyncCapability(
+            node_id="source", shares_nfs=True
+        )
+        router.node_id = "source"
+
+        assert router._shares_storage_with("unknown-target") is False
+
+
+# =============================================================================
+# Tests for Event Emission (December 2025)
+# =============================================================================
+
+
+class TestEventEmission:
+    """Tests for event emission helper methods."""
+
+    @pytest.mark.asyncio
+    async def test_emit_capacity_refresh_success(self, router):
+        """Test _emit_capacity_refresh emits event successfully."""
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
+            mock_router_obj = MagicMock()
+            mock_get_router.return_value = mock_router_obj
+
+            await router._emit_capacity_refresh(
+                change_type="node_added",
+                node_id="test-node",
+                total_nodes=10,
+                gpu_nodes=8,
+            )
+
+            mock_router_obj.publish.assert_called_once()
+            call_args = mock_router_obj.publish.call_args
+            assert call_args[0][0] == "SYNC_CAPACITY_REFRESHED"
+            payload = call_args[0][1]
+            assert payload["change_type"] == "node_added"
+            assert payload["node_id"] == "test-node"
+
+    @pytest.mark.asyncio
+    async def test_emit_capacity_refresh_import_error(self, router):
+        """Test _emit_capacity_refresh handles import error gracefully."""
+        # Use a different approach - mock the router to raise on publish
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
+            mock_get_router.side_effect = ImportError("No event router")
+
+            # Should not raise
+            await router._emit_capacity_refresh(
+                change_type="node_removed",
+                node_id="test-node",
+                total_nodes=9,
+                gpu_nodes=7,
+            )
+
+    @pytest.mark.asyncio
+    async def test_emit_sync_routing_decision_success(self, router):
+        """Test _emit_sync_routing_decision emits event successfully."""
+        with patch("app.coordination.event_router.get_event_bus") as mock_get_bus:
+            mock_bus = AsyncMock()
+            mock_get_bus.return_value = mock_bus
+
+            await router._emit_sync_routing_decision(
+                source="source-node",
+                targets=["target-1", "target-2"],
+                data_type=DataType.GAME,
+                reason="test",
+            )
+
+            mock_bus.publish.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_emit_sync_routing_decision_no_bus(self, router):
+        """Test _emit_sync_routing_decision handles missing bus gracefully."""
+        with patch("app.coordination.event_router.get_event_bus", return_value=None):
+            # Should not raise
+            await router._emit_sync_routing_decision(
+                source="source-node",
+                targets=["target-1"],
+                data_type=DataType.MODEL,
+                reason="test",
+            )
+
+
+# =============================================================================
+# Tests for NodeSyncCapability Properties (December 2025)
+# =============================================================================
+
+
+class TestNodeSyncCapabilityProperties:
+    """Tests for NodeSyncCapability property aliases."""
+
+    def test_training_enabled_alias(self):
+        """Test training_enabled is alias for is_training_node."""
+        cap = NodeSyncCapability(node_id="test", is_training_node=True)
+        assert cap.training_enabled is True
+
+        cap2 = NodeSyncCapability(node_id="test2", is_training_node=False)
+        assert cap2.training_enabled is False
+
+    def test_disk_percent_alias(self):
+        """Test disk_percent is alias for disk_usage_percent."""
+        cap = NodeSyncCapability(node_id="test", disk_usage_percent=75.5)
+        assert cap.disk_percent == 75.5
+
+
+# =============================================================================
+# Tests for get_target_reason (December 2025)
+# =============================================================================
+
+
+class TestGetTargetReason:
+    """Tests for _get_target_reason method."""
+
+    def test_reason_training_only(self, router):
+        """Test reason for training-only node."""
+        cap = NodeSyncCapability(node_id="test", is_training_node=True)
+
+        reason = router._get_target_reason(cap)
+
+        assert reason == "training"
+
+    def test_reason_priority_only(self, router):
+        """Test reason for priority-only node."""
+        cap = NodeSyncCapability(node_id="test", is_priority_node=True)
+
+        reason = router._get_target_reason(cap)
+
+        assert reason == "priority"
+
+    def test_reason_ephemeral_only(self, router):
+        """Test reason for ephemeral-only node."""
+        cap = NodeSyncCapability(node_id="test", is_ephemeral=True)
+
+        reason = router._get_target_reason(cap)
+
+        assert reason == "ephemeral"
+
+    def test_reason_combined_training_priority(self, router):
+        """Test reason for node with multiple flags."""
+        cap = NodeSyncCapability(
+            node_id="test",
+            is_training_node=True,
+            is_priority_node=True,
+        )
+
+        reason = router._get_target_reason(cap)
+
+        assert "training" in reason
+        assert "priority" in reason
+
+    def test_reason_no_flags(self, router):
+        """Test reason for node with no special flags."""
+        cap = NodeSyncCapability(node_id="test")
+
+        reason = router._get_target_reason(cap)
+
+        assert reason == "available"
+
+
+# =============================================================================
+# Tests for maybe_refresh_capacity (December 2025)
+# =============================================================================
+
+
+class TestMaybeRefreshCapacity:
+    """Tests for _maybe_refresh_capacity method."""
+
+    def test_maybe_refresh_not_stale(self, router, mock_manifest):
+        """Test capacity is not refreshed when not stale."""
+        import time
+
+        router._last_capacity_refresh = time.time()
+
+        router._maybe_refresh_capacity()
+
+        mock_manifest.update_local_capacity.assert_not_called()
+
+    def test_maybe_refresh_stale(self, router, mock_manifest):
+        """Test capacity is refreshed when stale."""
+        import time
+
+        router._last_capacity_refresh = time.time() - 60  # 60s ago, > 30s interval
+
+        router._maybe_refresh_capacity()
+
+        mock_manifest.update_local_capacity.assert_called_once()
+
+    def test_maybe_refresh_updates_timestamp(self, router, mock_manifest):
+        """Test _maybe_refresh_capacity updates last refresh timestamp."""
+        import time
+
+        router._last_capacity_refresh = 0  # Very old
+
+        before = time.time()
+        router._maybe_refresh_capacity()
+        after = time.time()
+
+        assert before <= router._last_capacity_refresh <= after
+
+    def test_maybe_refresh_handles_manifest_error(self, router, mock_manifest):
+        """Test _maybe_refresh_capacity handles manifest errors."""
+        router._last_capacity_refresh = 0
+
+        mock_manifest.update_local_capacity.side_effect = RuntimeError("Error")
+
+        # Should not raise
+        router._maybe_refresh_capacity()
+
+
+# =============================================================================
+# Tests for _check_node_capacity (December 2025)
+# =============================================================================
+
+
+class TestCheckNodeCapacity:
+    """Tests for _check_node_capacity method."""
+
+    def test_check_capacity_returns_manifest_result(self, router, mock_manifest):
+        """Test _check_node_capacity returns manifest result."""
+        mock_manifest.can_receive_data.return_value = True
+
+        result = router._check_node_capacity("test-node")
+
+        assert result is True
+
+    def test_check_capacity_returns_false(self, router, mock_manifest):
+        """Test _check_node_capacity returns False when full."""
+        mock_manifest.can_receive_data.return_value = False
+
+        result = router._check_node_capacity("full-node")
+
+        assert result is False
+
+
+# =============================================================================
+# Tests for Integration Scenarios (December 2025)
+# =============================================================================
+
+
+class TestIntegrationScenarios:
+    """Integration tests for complex scenarios."""
+
+    def test_full_sync_workflow(self, router, mock_manifest):
+        """Test complete sync workflow from new games to routing."""
+        mock_manifest.can_receive_data.return_value = True
+        router.node_id = "coordinator"
+
+        # Get sync targets
+        targets = router.get_sync_targets(
+            data_type=DataType.GAME,
+            max_targets=3,
+        )
+
+        # Verify targets are sorted by priority
+        if len(targets) >= 2:
+            for i in range(len(targets) - 1):
+                assert targets[i].priority >= targets[i + 1].priority
+
+    def test_ephemeral_to_persistent_routing(self, router, mock_manifest):
+        """Test ephemeral nodes have lower receive priority than persistent."""
+        mock_manifest.can_receive_data.return_value = True
+        router.node_id = "coordinator"
+
+        # Add ephemeral and persistent nodes
+        router._node_capabilities["ephemeral-1"] = NodeSyncCapability(
+            node_id="ephemeral-1",
+            is_ephemeral=True,
+            can_receive_games=True,
+        )
+        router._node_capabilities["persistent-1"] = NodeSyncCapability(
+            node_id="persistent-1",
+            is_ephemeral=False,
+            can_receive_games=True,
+        )
+
+        targets = router.get_sync_targets(
+            data_type=DataType.GAME,
+            max_targets=10,
+        )
+
+        # Find priorities for each type
+        ephemeral_targets = [t for t in targets if "ephemeral" in t.node_id]
+        persistent_targets = [t for t in targets if "persistent" in t.node_id]
+
+        if ephemeral_targets and persistent_targets:
+            # Persistent should have higher priority
+            assert persistent_targets[0].priority > ephemeral_targets[0].priority
+
+    def test_training_node_priority_for_games(self, router, mock_manifest):
+        """Test training nodes get higher priority for game data."""
+        mock_manifest.can_receive_data.return_value = True
+        router.node_id = "coordinator"
+
+        # Add training and selfplay nodes
+        router._node_capabilities["training-1"] = NodeSyncCapability(
+            node_id="training-1",
+            is_training_node=True,
+            can_receive_games=True,
+        )
+        router._node_capabilities["selfplay-1"] = NodeSyncCapability(
+            node_id="selfplay-1",
+            is_training_node=False,
+            can_receive_games=True,
+        )
+
+        targets = router.get_sync_targets(
+            data_type=DataType.GAME,
+            max_targets=10,
+        )
+
+        training_targets = [t for t in targets if "training" in t.node_id]
+        selfplay_targets = [t for t in targets if "selfplay" in t.node_id and "training" not in t.node_id]
+
+        if training_targets and selfplay_targets:
+            # Training should have higher priority for game data
+            assert training_targets[0].priority > selfplay_targets[0].priority
