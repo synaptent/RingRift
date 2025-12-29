@@ -790,6 +790,74 @@ def _emit_gauntlet_result_event(
         logger.warning(f"[gauntlet] Failed to emit EVALUATION_COMPLETED: {e}")
 
 
+def _play_single_gauntlet_game(
+    game_num: int,
+    baseline: "BaselineOpponent",
+    model_path: str | Path | None,
+    board_type: Any,
+    num_players: int,
+    model_getter: Callable[[], Any] | None,
+    model_type: str,
+) -> dict[str, Any]:
+    """Play a single gauntlet game (for parallel execution).
+
+    Returns:
+        Dict with: game_num, candidate_won, winner, move_count, victory_reason, error
+    """
+    # Rotate which player the candidate plays as
+    candidate_player = (game_num % num_players) + 1
+    game_seed = random.randint(0, 0xFFFFFFFF)
+
+    try:
+        candidate_ai = create_neural_ai(
+            candidate_player, board_type,
+            model_path=model_path,
+            model_getter=model_getter,
+            game_seed=game_seed,
+            num_players=num_players,
+            model_type=model_type,
+        )
+
+        # Create baseline AIs for all other players
+        opponent_ais: dict[int, Any] = {}
+        for p in range(1, num_players + 1):
+            if p != candidate_player:
+                opponent_ais[p] = create_baseline_ai(
+                    baseline, p, board_type,
+                    game_seed=game_seed,
+                )
+
+        first_opponent = (candidate_player % num_players) + 1
+        opponent_ai = opponent_ais.get(first_opponent, list(opponent_ais.values())[0])
+
+        game_result = play_single_game(
+            candidate_ai=candidate_ai,
+            opponent_ai=opponent_ai,
+            board_type=board_type,
+            num_players=num_players,
+            candidate_player=candidate_player,
+            opponent_ais=opponent_ais,
+        )
+
+        return {
+            "game_num": game_num,
+            "candidate_won": game_result.candidate_won,
+            "winner": game_result.winner,
+            "move_count": game_result.move_count,
+            "victory_reason": game_result.victory_reason,
+            "error": None,
+        }
+    except (RuntimeError, ValueError, KeyError, OSError, AttributeError) as e:
+        return {
+            "game_num": game_num,
+            "candidate_won": False,
+            "winner": None,
+            "move_count": 0,
+            "victory_reason": "error",
+            "error": str(e),
+        }
+
+
 def _evaluate_single_opponent(
     baseline: "BaselineOpponent",
     model_path: str | Path | None,
@@ -803,8 +871,13 @@ def _evaluate_single_opponent(
     early_stopping_confidence: float,
     early_stopping_min_games: int,
     model_id: str | None = None,
+    parallel_games: int = 1,
 ) -> dict[str, Any]:
     """Evaluate a model against a single baseline opponent.
+
+    Args:
+        parallel_games: Number of games to run in parallel (default: 1 = sequential).
+            Phase 3 optimization: Set to 4-8 for ~3-6x speedup on multi-core systems.
 
     Returns:
         Dict with keys: baseline_name, wins, games, losses, draws, win_rate,
@@ -831,6 +904,91 @@ def _evaluate_single_opponent(
         "games_saved": 0,
     }
 
+    # December 2025 Phase 3: Parallel game execution for faster evaluation
+    if parallel_games > 1:
+        game_num = 0
+        while game_num < games_per_opponent:
+            # Determine batch size (don't exceed remaining games)
+            batch_size = min(parallel_games, games_per_opponent - game_num)
+            batch_games = list(range(game_num, game_num + batch_size))
+
+            # Run batch in parallel
+            with ThreadPoolExecutor(max_workers=batch_size) as executor:
+                futures = {
+                    executor.submit(
+                        _play_single_gauntlet_game,
+                        g,
+                        baseline,
+                        model_path,
+                        board_type,
+                        num_players,
+                        model_getter,
+                        model_type,
+                    ): g
+                    for g in batch_games
+                }
+
+                for future in as_completed(futures):
+                    try:
+                        game_result = future.result()
+                        result["games"] += 1
+
+                        if game_result["error"]:
+                            logger.debug(f"[gauntlet] Game error: {game_result['error']}")
+                            continue
+
+                        if game_result["candidate_won"]:
+                            result["wins"] += 1
+                        elif game_result["winner"] is not None:
+                            result["losses"] += 1
+                        else:
+                            result["draws"] += 1
+
+                        if verbose:
+                            outcome = "WIN" if game_result["candidate_won"] else "LOSS"
+                            logger.info(
+                                f"[gauntlet] Game {game_result['game_num']+1}/{games_per_opponent} "
+                                f"vs {baseline_name}: {outcome} ({game_result['move_count']} moves)"
+                            )
+                    except (RuntimeError, ValueError) as e:
+                        logger.error(f"[gauntlet] Parallel game error: {e}")
+                        result["games"] += 1
+
+            game_num += batch_size
+
+            # Check early stopping after each batch
+            if early_stopping and result["games"] >= early_stopping_min_games:
+                if baseline == BaselineOpponent.RANDOM:
+                    threshold = get_min_win_rate_vs_random(num_players)
+                elif baseline == BaselineOpponent.HEURISTIC:
+                    threshold = get_min_win_rate_vs_heuristic(num_players)
+                else:
+                    threshold = MIN_WIN_RATES.get(baseline, 0.5)
+
+                stop, reason = should_early_stop(
+                    wins=result["wins"],
+                    losses=result["losses"],
+                    threshold=threshold,
+                    confidence=early_stopping_confidence,
+                    min_games=early_stopping_min_games,
+                )
+
+                if stop:
+                    games_remaining = games_per_opponent - result["games"]
+                    result["early_stopped"] = True
+                    result["games_saved"] = games_remaining
+                    logger.info(
+                        f"[gauntlet] Early stopping vs {baseline_name} at game {result['games']}: "
+                        f"{reason} (saved {games_remaining} games)"
+                    )
+                    break
+
+        # Calculate win rate
+        if result["games"] > 0:
+            result["win_rate"] = result["wins"] / result["games"]
+        return result
+
+    # Sequential execution (original code path)
     for game_num in range(games_per_opponent):
         # Rotate which player the candidate plays as
         # NOTE: Players are 1-indexed (1, 2, ..., num_players) in game engine
@@ -1009,6 +1167,7 @@ def run_baseline_gauntlet(
     model_elo: float | None = None,
     parallel_opponents: bool = True,
     max_parallel_workers: int = 2,
+    parallel_games: int = 1,
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
@@ -1032,6 +1191,8 @@ def run_baseline_gauntlet(
         parallel_opponents: Run evaluations against different opponents in parallel (default: True)
             Phase 5 optimization: ~2x speedup when testing vs RANDOM + HEURISTIC concurrently
         max_parallel_workers: Maximum number of parallel opponent evaluations (default: 2)
+        parallel_games: Number of games to run in parallel per opponent (default: 1 = sequential).
+            Phase 3 optimization: Set to 4-8 for ~3-6x speedup on multi-core systems.
 
     Returns:
         GauntletResult with aggregated statistics
@@ -1097,6 +1258,7 @@ def run_baseline_gauntlet(
                     early_stopping_confidence,
                     early_stopping_min_games,
                     effective_model_id,
+                    parallel_games,
                 ): baseline
                 for baseline in opponents
             }
@@ -1135,6 +1297,7 @@ def run_baseline_gauntlet(
                 early_stopping_confidence,
                 early_stopping_min_games,
                 effective_model_id,
+                parallel_games,
             )
             opponent_eval_results.append(eval_result)
 
