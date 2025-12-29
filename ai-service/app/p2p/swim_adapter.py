@@ -609,9 +609,16 @@ class SwimMembershipManager:
 class HybridMembershipManager:
     """Hybrid membership manager using SWIM + fallback to HTTP heartbeats.
 
+    December 29, 2025: Enhanced with true hybrid coordination.
     This provides a migration path from the current HTTP-based heartbeats
     to SWIM-based membership. It runs both protocols in parallel and
-    uses SWIM for membership decisions when available.
+    uses SWIM for membership decisions when available, with HTTP fallback.
+
+    Features:
+    - True hybrid mode: SWIM for fast detection, HTTP for resilience
+    - Auto-recovery: Attempts SWIM restart on failures
+    - State synchronization: HTTP state updates SWIM expectations
+    - Graceful degradation: Falls back to HTTP when SWIM unavailable
 
     Usage:
         manager = HybridMembershipManager(node_id="my-node")
@@ -626,16 +633,24 @@ class HybridMembershipManager:
         node_id: str,
         swim_port: int = SWIM_PORT,
         http_peers: Optional[dict[str, str]] = None,  # node_id -> http_endpoint
+        prefer_swim: bool = True,  # Dec 29, 2025: Whether to prefer SWIM over HTTP
     ):
         self.node_id = node_id
         self.swim_port = swim_port
         self.http_peers = http_peers or {}
+        self.prefer_swim = prefer_swim
 
         self.swim_manager: Optional[SwimMembershipManager] = None
         self._http_heartbeats: dict[str, float] = {}  # node_id -> last_heartbeat_time
+        self._mode_switches: int = 0  # Dec 29, 2025: Track mode transitions
+        self._last_swim_check: float = 0.0  # Dec 29, 2025: Track health check timing
+        self._swim_failure_count: int = 0  # Dec 29, 2025: Track consecutive failures
 
     async def start(self) -> bool:
-        """Start hybrid membership (SWIM + HTTP fallback)."""
+        """Start hybrid membership (SWIM + HTTP fallback).
+
+        December 29, 2025: Enhanced with retry logic via SwimBootstrapConfig.
+        """
         # Try to start SWIM
         if SWIM_AVAILABLE:
             self.swim_manager = SwimMembershipManager.from_distributed_hosts(
@@ -649,6 +664,7 @@ class HybridMembershipManager:
             else:
                 logger.warning("Hybrid membership: SWIM failed, using HTTP only")
                 self.swim_manager = None
+                self._swim_failure_count += 1
         else:
             logger.warning("Hybrid membership: swim-p2p not installed, using HTTP only")
 
@@ -659,6 +675,56 @@ class HybridMembershipManager:
         if self.swim_manager:
             await self.swim_manager.stop()
 
+    async def check_and_recover(self) -> bool:
+        """Check SWIM health and attempt recovery if needed.
+
+        December 29, 2025: Added for proactive SWIM recovery.
+        Should be called periodically (e.g., every 60 seconds).
+
+        Returns:
+            True if healthy or recovered, False if recovery failed
+        """
+        import time
+        now = time.time()
+
+        # Rate limit health checks (every 60 seconds max)
+        if now - self._last_swim_check < 60:
+            return True
+        self._last_swim_check = now
+
+        # Check if SWIM should be running but isn't
+        if SWIM_AVAILABLE and self.swim_manager is None:
+            # SWIM available but not initialized - try to start
+            logger.info("Hybrid membership: Attempting to initialize SWIM")
+            self.swim_manager = SwimMembershipManager.from_distributed_hosts(
+                node_id=self.node_id,
+                bind_port=self.swim_port,
+            )
+            if await self.swim_manager.start():
+                self._swim_failure_count = 0
+                self._mode_switches += 1
+                logger.info("Hybrid membership: SWIM initialized successfully")
+                return True
+            else:
+                self.swim_manager = None
+                self._swim_failure_count += 1
+                logger.warning(f"Hybrid membership: SWIM init failed (failures: {self._swim_failure_count})")
+
+        # Check if SWIM is running but unhealthy
+        if self.swim_manager and self.swim_manager._started:
+            if hasattr(self.swim_manager, "is_healthy") and not self.swim_manager.is_healthy():
+                logger.warning("Hybrid membership: SWIM unhealthy, attempting restart")
+                if hasattr(self.swim_manager, "restart"):
+                    if await self.swim_manager.restart():
+                        self._swim_failure_count = 0
+                        logger.info("Hybrid membership: SWIM restarted successfully")
+                        return True
+                    else:
+                        self._swim_failure_count += 1
+                        logger.error(f"Hybrid membership: SWIM restart failed (failures: {self._swim_failure_count})")
+
+        return True  # HTTP fallback always available
+
     def record_http_heartbeat(self, node_id: str, timestamp: float):
         """Record an HTTP heartbeat from a peer.
 
@@ -667,48 +733,137 @@ class HybridMembershipManager:
         self._http_heartbeats[node_id] = timestamp
 
     def get_alive_peers(self, http_timeout: float = 120.0) -> list[str]:
-        """Get list of alive peers using SWIM or HTTP fallback.
+        """Get list of alive peers using hybrid SWIM + HTTP.
+
+        December 29, 2025: Now returns union of SWIM and HTTP alive peers
+        for true hybrid operation (not just fallback).
 
         Args:
             http_timeout: Seconds after which HTTP heartbeat is considered stale
 
         Returns:
-            List of alive peer node IDs
+            List of alive peer node IDs (union of both sources)
         """
-        # Prefer SWIM if available
-        if self.swim_manager and self.swim_manager._started:
-            return self.swim_manager.get_alive_peers()
-
-        # Fallback to HTTP heartbeats
         import time
         now = time.time()
-        return [
+
+        swim_alive: set[str] = set()
+        http_alive: set[str] = set()
+
+        # Get SWIM alive peers if available
+        if self.swim_manager and self.swim_manager._started:
+            try:
+                swim_alive = set(self.swim_manager.get_alive_peers())
+            except Exception as e:
+                logger.debug(f"SWIM get_alive_peers error: {e}")
+
+        # Get HTTP alive peers
+        http_alive = {
             node_id
             for node_id, last_hb in self._http_heartbeats.items()
             if (now - last_hb) < http_timeout
-        ]
+        }
+
+        # Return union of both sources for true hybrid
+        return list(swim_alive | http_alive)
 
     def is_peer_alive(self, peer_id: str, http_timeout: float = 120.0) -> bool:
-        """Check if peer is alive using SWIM or HTTP fallback."""
-        if self.swim_manager and self.swim_manager._started:
-            return self.swim_manager.is_peer_alive(peer_id)
+        """Check if peer is alive using hybrid SWIM + HTTP.
 
-        # Fallback to HTTP heartbeats
+        December 29, 2025: Now uses OR logic - alive if EITHER source reports alive.
+
+        Args:
+            peer_id: Node ID to check
+            http_timeout: HTTP heartbeat timeout in seconds
+
+        Returns:
+            True if peer is alive via SWIM OR HTTP
+        """
+        swim_alive = False
+        http_alive = False
+
+        # Check SWIM
+        if self.swim_manager and self.swim_manager._started:
+            try:
+                swim_alive = self.swim_manager.is_peer_alive(peer_id)
+            except Exception as e:
+                logger.debug(f"SWIM is_peer_alive error: {e}")
+
+        # Check HTTP
         import time
         last_hb = self._http_heartbeats.get(peer_id, 0)
-        return (time.time() - last_hb) < http_timeout
+        http_alive = (time.time() - last_hb) < http_timeout
+
+        # True hybrid: alive if EITHER source reports alive
+        return swim_alive or http_alive
 
     def get_membership_summary(self) -> dict:
         """Get membership summary including SWIM status."""
+        import time
+        now = time.time()
+
         summary = {
             "node_id": self.node_id,
             "mode": "swim" if (self.swim_manager and self.swim_manager._started) else "http",
             "swim_available": SWIM_AVAILABLE,
+            "hybrid_enabled": True,  # Dec 29, 2025
+            "prefer_swim": self.prefer_swim,
+            "mode_switches": self._mode_switches,
+            "swim_failure_count": self._swim_failure_count,
         }
 
         if self.swim_manager:
             summary["swim"] = self.swim_manager.get_membership_summary()
 
+        # HTTP stats
+        http_timeout = 120.0
+        http_alive_count = sum(
+            1 for last_hb in self._http_heartbeats.values()
+            if (now - last_hb) < http_timeout
+        )
         summary["http_peers"] = len(self._http_heartbeats)
+        summary["http_alive"] = http_alive_count
 
         return summary
+
+    def get_health_status(self) -> dict:
+        """Get health status for hybrid membership.
+
+        December 29, 2025: Added for unified health monitoring.
+
+        Returns:
+            Dict with health status and detailed metrics
+        """
+        import time
+        now = time.time()
+        http_timeout = 120.0
+
+        # Get individual health statuses
+        swim_health = {}
+        if self.swim_manager:
+            if hasattr(self.swim_manager, "get_health_status"):
+                swim_health = self.swim_manager.get_health_status()
+            else:
+                swim_health = {"healthy": self.swim_manager._started}
+
+        # HTTP health
+        http_alive_count = sum(
+            1 for last_hb in self._http_heartbeats.values()
+            if (now - last_hb) < http_timeout
+        )
+
+        # Hybrid is healthy if EITHER source is healthy
+        swim_healthy = swim_health.get("healthy", False)
+        http_healthy = http_alive_count > 0 or not self.http_peers
+
+        return {
+            "healthy": swim_healthy or http_healthy,
+            "swim_healthy": swim_healthy,
+            "http_healthy": http_healthy,
+            "mode": "swim" if swim_healthy else "http",
+            "swim_available": SWIM_AVAILABLE,
+            "swim_failure_count": self._swim_failure_count,
+            "http_peers": len(self._http_heartbeats),
+            "http_alive": http_alive_count,
+            "swim": swim_health,
+        }

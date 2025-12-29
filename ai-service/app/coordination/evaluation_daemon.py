@@ -97,7 +97,8 @@ class EvaluationConfig:
     early_stopping_min_games: int = 10
 
     # Concurrency
-    max_concurrent_evaluations: int = 4  # Dec 28: Increased from 1 to reduce bottleneck
+    # Dec 29: Increased from 4 to 8 for faster eval throughput
+    max_concurrent_evaluations: int = 8
 
     # Timeouts
     # December 29, 2025: Increased from 600s to 1800s (30 min) for comprehensive gauntlet
@@ -110,9 +111,10 @@ class EvaluationConfig:
     # December 29, 2025 (Phase 4): Backpressure settings
     # When evaluation queue depth exceeds backpressure_threshold, emit EVALUATION_BACKPRESSURE
     # to signal training should pause. Resume when queue drains below backpressure_release.
+    # Dec 29: Reduced thresholds for tighter feedback loop - allows training at higher queue depth
     max_queue_depth: int = 50  # Maximum pending evaluations
-    backpressure_threshold: int = 40  # Emit backpressure at this depth
-    backpressure_release_threshold: int = 20  # Release backpressure at this depth
+    backpressure_threshold: int = 25  # Emit backpressure at this depth (was 40)
+    backpressure_release_threshold: int = 15  # Release backpressure at this depth (was 20)
 
 
 class EvaluationDaemon(BaseEventHandler):
@@ -588,7 +590,8 @@ class EvaluationDaemon(BaseEventHandler):
             if b in baseline_map
         ]
 
-        # Run with timeout and early stopping
+        # Run with timeout, early stopping, and parallel game execution
+        # Dec 29: Enable parallel_games=4 for 4-6x faster gauntlet throughput
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 run_baseline_gauntlet,
@@ -601,6 +604,7 @@ class EvaluationDaemon(BaseEventHandler):
                 early_stopping=self.config.early_stopping_enabled,
                 early_stopping_confidence=self.config.early_stopping_confidence,
                 early_stopping_min_games=self.config.early_stopping_min_games,
+                parallel_games=4,  # Dec 29: Enable parallel game execution
             ),
             timeout=self.config.evaluation_timeout_seconds,
         )

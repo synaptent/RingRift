@@ -403,12 +403,13 @@ value = env.get("CUSTOM_VAR", "default")
 
 ## Sync & Bandwidth
 
-| Variable                        | Type | Default | In env.py | Description          |
-| ------------------------------- | ---- | ------- | --------- | -------------------- |
-| `RINGRIFT_SYNC_STRATEGY`        | str  | None    |           | Sync strategy        |
-| `RINGRIFT_SYNC_TARGET`          | str  | None    |           | Sync target node     |
-| `RINGRIFT_AUTO_SYNC`            | bool | None    |           | Enable auto sync     |
-| `RINGRIFT_ENABLE_VAST_ELO_SYNC` | bool | None    |           | Enable Vast Elo sync |
+| Variable                        | Type  | Default | In env.py | Description                     |
+| ------------------------------- | ----- | ------- | --------- | ------------------------------- |
+| `RINGRIFT_SYNC_STRATEGY`        | str   | None    |           | Sync strategy                   |
+| `RINGRIFT_SYNC_TARGET`          | str   | None    |           | Sync target node                |
+| `RINGRIFT_AUTO_SYNC`            | bool  | None    |           | Enable auto sync                |
+| `RINGRIFT_MIN_SYNC_INTERVAL`    | float | `2.0`   |           | Minimum sync interval (seconds) |
+| `RINGRIFT_ENABLE_VAST_ELO_SYNC` | bool  | None    |           | Enable Vast Elo sync            |
 
 ---
 

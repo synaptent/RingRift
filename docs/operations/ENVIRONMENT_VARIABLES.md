@@ -513,6 +513,17 @@ Explicit override for gauntlet/evaluation on this node. When unset, defaults are
 Explicit override for export jobs on this node. When unset, defaults are resolved from
 `distributed_hosts.yaml` (coordinator nodes default to disabled).
 
+### `RINGRIFT_MIN_SYNC_INTERVAL`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `2.0`    |
+| Required | No       |
+
+Minimum delay in seconds between AutoSyncDaemon sync cycles. Used when the
+AutoSync configuration does not specify `min_sync_interval_seconds`.
+
 ### `RINGRIFT_IDLE_RESOURCE_ENABLED`
 
 | Property | Value                     |
