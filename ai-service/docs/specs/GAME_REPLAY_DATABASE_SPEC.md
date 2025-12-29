@@ -19,6 +19,8 @@ The database supports:
 3. **Queryability**: Index on useful dimensions (board type, player count, outcome)
 4. **Extensibility**: Schema supports future metadata (AI profiles, evaluation scores)
 
+**Current schema version:** 15 (see `SCHEMA_VERSION` in `app/db/game_replay.py`).
+
 ## Storage Format
 
 ### Option 1: SQLite Database (Recommended for local development)
@@ -38,26 +40,35 @@ A single SQLite database with the following tables:
 
 Primary game metadata, one row per game.
 
-| Column               | Type             | Description                                                          |
-| -------------------- | ---------------- | -------------------------------------------------------------------- |
-| `game_id`            | TEXT PRIMARY KEY | Unique game identifier (UUID)                                        |
-| `board_type`         | TEXT NOT NULL    | 'square8', 'square19', 'hexagonal'                                   |
-| `num_players`        | INTEGER NOT NULL | 2, 3, or 4                                                           |
-| `rng_seed`           | INTEGER          | Seed used for any stochastic elements                                |
-| `created_at`         | TIMESTAMP        | When the game was created                                            |
-| `completed_at`       | TIMESTAMP        | When the game ended                                                  |
-| `game_status`        | TEXT NOT NULL    | 'finished', 'completed', 'abandoned'                                 |
-| `winner`             | INTEGER          | Player number of winner (NULL for draws)                             |
-| `termination_reason` | TEXT             | 'ring_elimination', 'territory', 'last_player_standing', 'stalemate' |
-| `total_moves`        | INTEGER NOT NULL | Number of moves in the game                                          |
-| `total_turns`        | INTEGER NOT NULL | Number of full turn cycles                                           |
-| `duration_ms`        | INTEGER          | Total game duration in milliseconds                                  |
-| `source`             | TEXT             | 'self_play', 'human', 'tournament', 'training', 'selfplay_soak', …   |
-| `schema_version`     | INTEGER NOT NULL | Schema version for forward compatibility                             |
-| `time_control_type`  | TEXT             | Time control mode ('none', 'standard', etc.)                         |
-| `initial_time_ms`    | INTEGER          | Initial clock time per player in milliseconds                        |
-| `time_increment_ms`  | INTEGER          | Increment added after each move in milliseconds                      |
-| `metadata_json`      | TEXT             | JSON-encoded recording metadata (engine_mode, rng_seed, versions, …) |
+| Column                   | Type             | Description                                                                                                      |
+| ------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `game_id`                | TEXT PRIMARY KEY | Unique game identifier (UUID)                                                                                    |
+| `board_type`             | TEXT NOT NULL    | 'square8', 'square19', 'hex8', 'hexagonal'                                                                       |
+| `num_players`            | INTEGER NOT NULL | 2, 3, or 4                                                                                                       |
+| `rng_seed`               | INTEGER          | Seed used for any stochastic elements                                                                            |
+| `created_at`             | TIMESTAMP        | When the game was created                                                                                        |
+| `completed_at`           | TIMESTAMP        | When the game ended                                                                                              |
+| `game_status`            | TEXT NOT NULL    | GameStatus enum (`waiting`, `active`, `paused`, `abandoned`, `completed`, `finished`)                            |
+| `winner`                 | INTEGER          | Player number of winner (NULL for draws)                                                                         |
+| `termination_reason`     | TEXT             | 'ring_elimination', 'territory_control', 'last_player_standing', 'timeout', 'resignation', 'draw', 'abandonment' |
+| `total_moves`            | INTEGER NOT NULL | Number of moves in the game                                                                                      |
+| `total_turns`            | INTEGER NOT NULL | Number of full turn cycles                                                                                       |
+| `duration_ms`            | INTEGER          | Total game duration in milliseconds                                                                              |
+| `source`                 | TEXT             | 'self_play', 'online_game', 'tournament', 'soak_test', 'manual_import', …                                        |
+| `schema_version`         | INTEGER NOT NULL | Schema version for forward compatibility (current: 15)                                                           |
+| `time_control_type`      | TEXT             | Time control mode ('none', 'blitz', 'rapid', 'classical', etc.)                                                  |
+| `initial_time_ms`        | INTEGER          | Initial clock time per player in milliseconds                                                                    |
+| `time_increment_ms`      | INTEGER          | Increment added after each move in milliseconds                                                                  |
+| `metadata_json`          | TEXT             | JSON-encoded recording metadata (engine versions, tags, etc.)                                                    |
+| `quality_score`          | REAL             | Training quality score (higher is better)                                                                        |
+| `quality_category`       | TEXT             | Quality tier label                                                                                               |
+| `engine_mode`            | TEXT             | AI/engine mode label (fast filtering)                                                                            |
+| `parity_status`          | TEXT             | 'passed', 'failed', 'error', 'pending', 'skipped'                                                                |
+| `parity_checked_at`      | TEXT             | Timestamp of last parity check                                                                                   |
+| `parity_divergence_move` | INTEGER          | Move index where parity first diverged                                                                           |
+
+Note: in-progress recordings may temporarily store `game_status = 'active'` as a placeholder
+until `finalize()` persists the terminal status.
 
 **Indexes:**
 
@@ -65,6 +76,12 @@ Primary game metadata, one row per game.
 - `idx_games_winner` on `winner`
 - `idx_games_termination` on `termination_reason`
 - `idx_games_created` on `created_at`
+- `idx_games_board_players` on (`board_type`, `num_players`)
+- `idx_games_config` on (`board_type`, `num_players`, `game_status`)
+- `idx_games_parity_status` on `parity_status`
+- `idx_games_quality_board` on (`board_type`, `quality_score` DESC)
+
+See `app/db/game_replay.py` for the full, current index list.
 
 ---
 
@@ -92,11 +109,11 @@ Per-player metadata for each game.
 
 Initial game state for reconstruction. Stored as JSON blob.
 
-| Column               | Type                  | Description                      |
-| -------------------- | --------------------- | -------------------------------- |
-| `game_id`            | TEXT PRIMARY KEY      | FK to games.game_id              |
-| `initial_state_json` | TEXT NOT NULL         | Full GameState as JSON           |
-| `compressed`         | BOOLEAN DEFAULT FALSE | If TRUE, JSON is gzip compressed |
+| Column               | Type              | Description                         |
+| -------------------- | ----------------- | ----------------------------------- |
+| `game_id`            | TEXT PRIMARY KEY  | FK to games.game_id                 |
+| `initial_state_json` | TEXT NOT NULL     | Full GameState as JSON              |
+| `compressed`         | INTEGER DEFAULT 0 | 0 = plain JSON, 1 = gzip-compressed |
 
 ---
 
@@ -104,23 +121,36 @@ Initial game state for reconstruction. Stored as JSON blob.
 
 Move history with full metadata for replay.
 
-| Column          | Type             | Description                          |
-| --------------- | ---------------- | ------------------------------------ |
-| `game_id`       | TEXT NOT NULL    | FK to games.game_id                  |
-| `move_number`   | INTEGER NOT NULL | 0-indexed move sequence              |
-| `turn_number`   | INTEGER NOT NULL | Which turn this move belongs to      |
-| `player`        | INTEGER NOT NULL | Player who made the move             |
-| `phase`         | TEXT NOT NULL    | Game phase when move was made        |
-| `move_type`     | TEXT NOT NULL    | MoveType enum value                  |
-| `move_json`     | TEXT NOT NULL    | Full Move object as JSON             |
-| `timestamp`     | TIMESTAMP        | When move was made                   |
-| `think_time_ms` | INTEGER          | AI think time or human decision time |
+| Column              | Type             | Description                                           |
+| ------------------- | ---------------- | ----------------------------------------------------- |
+| `game_id`           | TEXT NOT NULL    | FK to games.game_id                                   |
+| `move_number`       | INTEGER NOT NULL | 0-based move sequence (distinct from Move.moveNumber) |
+| `turn_number`       | INTEGER NOT NULL | Which turn this move belongs to                       |
+| `player`            | INTEGER NOT NULL | Player who made the move                              |
+| `phase`             | TEXT NOT NULL    | Game phase when move was made                         |
+| `move_type`         | TEXT NOT NULL    | MoveType enum value                                   |
+| `move_json`         | TEXT NOT NULL    | Full Move object as JSON                              |
+| `timestamp`         | TIMESTAMP        | When move was made                                    |
+| `think_time_ms`     | INTEGER          | AI think time or human decision time                  |
+| `time_remaining_ms` | INTEGER          | Time remaining for the player (optional)              |
+| `engine_eval`       | REAL             | Engine evaluation score (optional)                    |
+| `engine_eval_type`  | TEXT             | Evaluation type label (optional)                      |
+| `engine_depth`      | INTEGER          | Search depth (optional)                               |
+| `engine_nodes`      | INTEGER          | Nodes searched (optional)                             |
+| `engine_pv`         | TEXT             | Principal variation (optional)                        |
+| `engine_time_ms`    | INTEGER          | Engine time per move (optional)                       |
+| `move_probs`        | TEXT             | JSON soft policy targets (optional)                   |
+| `search_stats_json` | TEXT             | JSON search diagnostics (optional)                    |
 
 **Primary Key:** (`game_id`, `move_number`)
 
 **Indexes:**
 
 - `idx_moves_game_turn` on (`game_id`, `turn_number`)
+- `idx_moves_lookup` on (`game_id`, `move_number`)
+
+Note: `game_moves.move_number` is a 0-based storage index. The embedded
+`Move.moveNumber` in `move_json` remains the canonical 1-based move number.
 
 ---
 
@@ -128,12 +158,13 @@ Move history with full metadata for replay.
 
 Optional state snapshots at key points for fast seeking.
 
-| Column        | Type                  | Description                        |
-| ------------- | --------------------- | ---------------------------------- |
-| `game_id`     | TEXT NOT NULL         | FK to games.game_id                |
-| `move_number` | INTEGER NOT NULL      | Move number this snapshot is AFTER |
-| `state_json`  | TEXT NOT NULL         | Full GameState as JSON             |
-| `compressed`  | BOOLEAN DEFAULT FALSE | If TRUE, JSON is gzip compressed   |
+| Column        | Type              | Description                         |
+| ------------- | ----------------- | ----------------------------------- |
+| `game_id`     | TEXT NOT NULL     | FK to games.game_id                 |
+| `move_number` | INTEGER NOT NULL  | Move number this snapshot is AFTER  |
+| `state_json`  | TEXT NOT NULL     | Full GameState as JSON              |
+| `compressed`  | INTEGER DEFAULT 0 | 0 = plain JSON, 1 = gzip-compressed |
+| `state_hash`  | TEXT              | Optional hash of the snapshot state |
 
 **Primary Key:** (`game_id`, `move_number`)
 
@@ -146,15 +177,15 @@ seeking without replaying from the beginning.
 
 Player choices during decision phases (line reward, ring elimination, etc.).
 
-| Column                 | Type             | Description                                                                          |
-| ---------------------- | ---------------- | ------------------------------------------------------------------------------------ |
-| `game_id`              | TEXT NOT NULL    | FK to games.game_id                                                                  |
-| `move_number`          | INTEGER NOT NULL | Associated move number                                                               |
-| `choice_type`          | TEXT NOT NULL    | 'line_reward', 'ring_elimination', 'line_order', 'region_order', 'capture_direction' |
-| `player`               | INTEGER NOT NULL | Player who made the choice                                                           |
-| `options_json`         | TEXT NOT NULL    | Available options as JSON array                                                      |
-| `selected_option_json` | TEXT NOT NULL    | Selected option as JSON                                                              |
-| `ai_reasoning`         | TEXT             | Optional: AI reasoning for the choice                                                |
+| Column                 | Type             | Description                                                                                                               |
+| ---------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `game_id`              | TEXT NOT NULL    | FK to games.game_id                                                                                                       |
+| `move_number`          | INTEGER NOT NULL | Associated move number                                                                                                    |
+| `choice_type`          | TEXT NOT NULL    | 'line_reward_option', 'ring_elimination', 'line_order', 'region_order', 'capture_direction' (legacy alias: 'line_reward') |
+| `player`               | INTEGER NOT NULL | Player who made the choice                                                                                                |
+| `options_json`         | TEXT NOT NULL    | Available options as JSON array                                                                                           |
+| `selected_option_json` | TEXT NOT NULL    | Selected option as JSON                                                                                                   |
+| `ai_reasoning`         | TEXT             | Optional: AI reasoning for the choice                                                                                     |
 
 **Primary Key:** (`game_id`, `move_number`, `choice_type`)
 
@@ -185,8 +216,46 @@ replay, and TS↔Python parity debugging.
 | `compressed_states`         | INTEGER          | 0 = uncompressed JSON, 1 = base64+gzip-compressed JSON                   |
 | `available_moves_json`      | TEXT             | Optional JSON array of valid moves at `state_before` (v6+, parity debug) |
 | `available_moves_count`     | INTEGER          | Optional count of valid moves at `state_before` (v6+)                    |
+| `engine_eval`               | REAL             | Optional engine evaluation score at this step (v6+)                      |
+| `engine_depth`              | INTEGER          | Optional engine search depth (v6+)                                       |
+| `fsm_valid`                 | INTEGER          | 1 = valid, 0 = invalid, NULL = not checked (v7+)                         |
+| `fsm_error_code`            | TEXT             | Error code if `fsm_valid = 0` (v7+)                                      |
 
 **Primary Key:** (`game_id`, `move_number`)
+
+---
+
+### Table: `game_nnue_features`
+
+Pre-computed NNUE feature vectors for training (v8+). These eliminate the need
+to replay games during dataset generation.
+
+| Column               | Type             | Description                                 |
+| -------------------- | ---------------- | ------------------------------------------- |
+| `game_id`            | TEXT NOT NULL    | FK to games.game_id                         |
+| `move_number`        | INTEGER NOT NULL | Move number this feature vector is AFTER    |
+| `player_perspective` | INTEGER NOT NULL | Perspective player number for rotation      |
+| `features`           | BLOB NOT NULL    | Compressed float32 feature vector           |
+| `value`              | REAL NOT NULL    | Win/loss label (-1, 0, +1)                  |
+| `board_type`         | TEXT NOT NULL    | Board type for feature dimension validation |
+| `feature_dim`        | INTEGER NOT NULL | Feature dimension for validation            |
+
+**Primary Key:** (`game_id`, `move_number`, `player_perspective`)
+
+---
+
+### Table: `orphaned_games`
+
+Quarantine table for games detected without move data (v14+).
+
+| Column            | Type             | Description                        |
+| ----------------- | ---------------- | ---------------------------------- |
+| `game_id`         | TEXT PRIMARY KEY | Game ID flagged as orphaned        |
+| `detected_at`     | TEXT NOT NULL    | Timestamp of detection             |
+| `reason`          | TEXT             | Optional detection reason          |
+| `original_status` | TEXT             | Game status at time of detection   |
+| `board_type`      | TEXT             | Board type for the orphaned game   |
+| `num_players`     | INTEGER          | Player count for the orphaned game |
 
 ---
 
@@ -230,6 +299,8 @@ Matches the existing Pydantic `GameState` model serialization with these fields:
   "rulesOptions": { "swapRuleEnabled": false }
 }
 ```
+
+Note: `currentPlayer` uses the canonical playerNumber (1-based), not a 0-based index.
 
 ### Move JSON
 

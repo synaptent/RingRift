@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ringrift.master-loop-watchdog</string>
+
+    <key>Comment</key>
+    <string>RingRift Master Loop Watchdog - monitors and restarts master_loop.py</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/armand/Development/RingRift/ai-service/scripts/master_loop_watchdog.py</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/armand/Development/RingRift/ai-service</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>RINGRIFT_WATCHDOG_INTERVAL</key>
+        <string>30</string>
+        <key>RINGRIFT_HEARTBEAT_STALE_THRESHOLD</key>
+        <string>90</string>
+        <key>RINGRIFT_MAX_RESTARTS_PER_HOUR</key>
+        <string>3</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/armand/Development/RingRift/ai-service</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/armand/Development/RingRift/ai-service/logs/watchdog.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/armand/Development/RingRift/ai-service/logs/watchdog.error.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>

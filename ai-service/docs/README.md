@@ -95,7 +95,7 @@ Historical documentation and status reports.
 
 ### Historical Reports
 
-- `ai-service/docs/archive/status_reports/README.md` - Point-in-time operational reports (Dec 2025)
+- `ai-service/docs/archive/status_reports/README.md` - Point-in-time operational reports (Dec 2025, gitignored/local-only)
 
 ## Root Level Docs
 

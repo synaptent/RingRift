@@ -65,6 +65,12 @@ class AutoExportConfig:
     # State persistence (Phase 8 Dec 2025)
     state_db_path: Path = field(default_factory=lambda: Path("data/export_daemon_state.db"))
     persist_state: bool = True  # Enable state persistence to recover on crash
+    # Event-driven batch export settings (December 2025)
+    # Part of 48-hour autonomous operation optimization.
+    # Implements "N games OR M seconds, whichever first" semantics.
+    event_driven: bool = True  # Enable event-driven mode (vs pure timer)
+    batch_accumulation_timeout_seconds: int = 30  # Max wait before export
+    immediate_threshold_multiplier: float = 2.0  # Export immediately if games >= threshold * 2
 
 
 @dataclass
@@ -80,6 +86,28 @@ class ConfigExportState:
     total_exported_samples: int = 0
     export_in_progress: bool = False
     consecutive_failures: int = 0
+
+
+@dataclass
+class BatchAccumulator:
+    """Tracks accumulated games for batch export triggering.
+
+    December 2025: Part of event-driven export optimization.
+    Implements "N games OR M seconds, whichever first" semantics.
+    """
+
+    config_key: str
+    accumulated_games: int = 0
+    accumulation_started: float = 0.0  # Timestamp when accumulation began
+    timer_task: asyncio.Task | None = None
+
+    def reset(self) -> None:
+        """Reset accumulator after export."""
+        self.accumulated_games = 0
+        self.accumulation_started = 0.0
+        if self.timer_task and not self.timer_task.done():
+            self.timer_task.cancel()
+        self.timer_task = None
 
 
 class AutoExportDaemon(HandlerBase):

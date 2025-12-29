@@ -57,7 +57,7 @@ Each reconstructed move step is validated against six structural invariants (see
 
 ### INV-ACTIVE-PLAYER
 
-- When `gameStatus === 'active'`, `currentPlayer` is a valid **0‑based** index into `players` (`0 <= currentPlayer < players.length`).
+- When `gameStatus === 'active'`, `currentPlayer` is a **1‑based** playerNumber (match `players[].playerNumber`).
 
 ### INV-GAME-STATUS
 
@@ -120,7 +120,7 @@ At minimum, TS golden fixtures must provide:
   - `numPlayers`
   - `players[]` with `playerNumber`, `username`, `playerType`
 - Result fields:
-  - `winner` (0‑based index, optional for draws/abandonments)
+  - `winner` (playerNumber, optional for draws/abandonments)
   - `outcome` (`GameOutcome` union from `gameRecord.ts`)
   - `finalScore`
 - Move history:
@@ -141,7 +141,7 @@ Python parity tests (`ai-service/tests/parity/test_golden_replay_parity.py`) ope
 The underlying schema and recording helpers are documented in:
 
 - `docs/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md` (GameReplayDB overview and recording invariants).
-- `ai-service/docs/GAME_RECORD_SPEC.md` (cross‑language GameRecord / GameReplayDB spec).
+- `ai-service/docs/specs/GAME_RECORD_SPEC.md` (cross‑language GameRecord / GameReplayDB spec).
 
 ## Adding New Golden Games
 

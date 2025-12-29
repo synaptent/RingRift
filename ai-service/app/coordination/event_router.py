@@ -1272,7 +1272,15 @@ class UnifiedEventRouter:
 
         Returns:
             Number of events replayed
+
+        Environment:
+            RINGRIFT_DISABLE_DLQ_REPLAY: Set to "1" to disable DLQ replay (for tests)
         """
+        # Check for test mode to avoid blocking on sync operations
+        if os.environ.get("RINGRIFT_DISABLE_DLQ_REPLAY", "").lower() in ("1", "true", "yes"):
+            logger.debug("[EventRouter] DLQ replay disabled via environment variable")
+            return 0
+
         try:
             from app.coordination.subscription_store import get_subscription_store
 

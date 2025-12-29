@@ -399,6 +399,85 @@ class SingletonLock:
             "our_pid": os.getpid(),
         }
 
+    def is_holder_stale(
+        self,
+        heartbeat_path: Path | None = None,
+        heartbeat_table: str = "heartbeat",
+        max_heartbeat_age: float = 90.0,
+    ) -> tuple[bool, str]:
+        """Check if the lock holder is stale based on heartbeat.
+
+        A holder is considered stale if:
+        1. The holder process is dead (PID doesn't exist)
+        2. The heartbeat is older than max_heartbeat_age seconds
+
+        This is useful for watchdog processes to detect hung daemons
+        that are still "running" but not making progress.
+
+        Args:
+            heartbeat_path: Path to SQLite database with heartbeat table.
+                           Default: data/coordination/master_loop_state.db
+            heartbeat_table: Name of table containing heartbeat (default: "heartbeat")
+            max_heartbeat_age: Maximum age of heartbeat in seconds before
+                              considering holder stale (default: 90s)
+
+        Returns:
+            Tuple of (is_stale, reason_string)
+
+        Example:
+            lock = SingletonLock("master_loop")
+            is_stale, reason = lock.is_holder_stale(
+                heartbeat_path=Path("data/coordination/master_loop_state.db"),
+                max_heartbeat_age=60.0,
+            )
+            if is_stale:
+                logger.warning(f"Master loop is stale: {reason}")
+                lock.force_release(kill_holder=True)
+
+        December 2025: Added as part of 48-hour autonomous operation plan.
+        """
+        holder_pid = self.get_holder_pid()
+
+        # No holder - not stale (nothing to check)
+        if holder_pid is None:
+            return False, "No holder"
+
+        # Check if holder process is alive
+        if not self._is_holder_alive(holder_pid):
+            return True, f"Holder process {holder_pid} is dead"
+
+        # Process is alive - check heartbeat if path provided
+        if heartbeat_path is None:
+            # Use default path relative to this file
+            heartbeat_path = Path(__file__).parent.parent.parent / "data" / "coordination" / "master_loop_state.db"
+
+        if not heartbeat_path.exists():
+            # No heartbeat file - can't determine staleness from heartbeat
+            return False, "No heartbeat database"
+
+        try:
+            import sqlite3
+            conn = sqlite3.connect(heartbeat_path, timeout=5.0)
+            row = conn.execute(
+                f"SELECT last_beat FROM {heartbeat_table} WHERE id = 1"
+            ).fetchone()
+            conn.close()
+
+            if row is None:
+                return False, "No heartbeat record"
+
+            last_beat = row[0]
+            heartbeat_age = time.time() - last_beat
+
+            if heartbeat_age > max_heartbeat_age:
+                return True, f"Heartbeat stale ({heartbeat_age:.1f}s > {max_heartbeat_age}s threshold)"
+
+            return False, f"Heartbeat fresh ({heartbeat_age:.1f}s old)"
+
+        except Exception as e:
+            logger.warning(f"[SingletonLock] Failed to check heartbeat: {e}")
+            return False, f"Heartbeat check failed: {e}"
+
     def __enter__(self) -> SingletonLock:
         self.acquire()
         return self

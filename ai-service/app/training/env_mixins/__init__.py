@@ -10,10 +10,14 @@ Mixins:
     MoveGenerationMixin: Legal move surface with phase requirement handling
 """
 
+from app.training.env_mixins.bookkeeping_handler import BookkeepingMoveHandlerMixin
+from app.training.env_mixins.move_generation import MoveGenerationMixin
 from app.training.env_mixins.reward_calculator import RewardCalculatorMixin
 from app.training.env_mixins.termination_handler import TerminationHandlerMixin
 
 __all__ = [
+    "BookkeepingMoveHandlerMixin",
+    "MoveGenerationMixin",
     "RewardCalculatorMixin",
     "TerminationHandlerMixin",
 ]

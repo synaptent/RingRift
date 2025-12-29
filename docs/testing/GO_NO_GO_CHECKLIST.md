@@ -90,7 +90,7 @@ These gates ensure the orchestrator, shared rules engine, and cross‑language p
       - `ai-service/tests/parity/test_golden_replay_parity.py` green, or explicitly skipped due to lack of golden DB fixtures with a documented rationale in the release ticket.
   - **References**
     - Golden replay design and invariants: [`docs/testing/GOLDEN_REPLAYS.md`](GOLDEN_REPLAYS.md).
-    - Replay DB schema and golden promotion pipeline: [`ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md`](../planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md), [`ai-service/docs/GAME_RECORD_SPEC.md`](../../ai-service/docs/specs/GAME_RECORD_SPEC.md).
+    - Replay DB schema and golden promotion pipeline: [`ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md`](../planning/ENGINE_TOOLING_PARITY_RESEARCH_PLAN.md), [`ai-service/docs/specs/GAME_RECORD_SPEC.md`](../../ai-service/docs/specs/GAME_RECORD_SPEC.md).
 
 - [ ] **Rules health report shows no red regressions for the candidate build**
   - **Automation / commands**

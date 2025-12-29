@@ -458,7 +458,15 @@ class SubscriptionStore:
 
         Returns:
             Number of events replayed
+
+        Environment:
+            RINGRIFT_DISABLE_DLQ_REPLAY: Set to "1" to disable DLQ replay (for tests)
         """
+        # Check for test mode to avoid blocking on sync operations
+        import os
+        if os.environ.get("RINGRIFT_DISABLE_DLQ_REPLAY", "").lower() in ("1", "true", "yes"):
+            return 0
+
         if min_age_seconds is None:
             min_age_seconds = self.dlq_replay_min_age
 

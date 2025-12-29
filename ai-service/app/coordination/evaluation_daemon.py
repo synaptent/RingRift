@@ -162,6 +162,17 @@ class EvaluationDaemon(BaseEventHandler):
             "backpressure_releases": 0,
             "queue_full_rejections": 0,
         }
+        # December 29, 2025: Retry queue for failed evaluations
+        # Tuple: (model_path, board_type, num_players, attempts, next_retry_time)
+        from collections import deque
+        self._retry_queue: deque[tuple[str, str, int, int, float]] = deque()
+        self._max_retry_attempts = 3
+        self._base_retry_delay = 60.0  # seconds, exponential backoff
+        self._retry_stats = {
+            "retries_queued": 0,
+            "retries_succeeded": 0,
+            "retries_exhausted": 0,
+        }
 
     def _get_subscriptions(self) -> Dict[Any, Callable]:
         """Return event subscriptions for BaseEventHandler.
@@ -391,6 +402,9 @@ class EvaluationDaemon(BaseEventHandler):
         """Worker that processes evaluation requests from the queue."""
         while self._running:
             try:
+                # December 29, 2025: Process retry queue first
+                await self._process_retry_queue()
+
                 # Wait for an evaluation request
                 request = await asyncio.wait_for(
                     self._evaluation_queue.get(),
@@ -739,6 +753,107 @@ class EvaluationDaemon(BaseEventHandler):
             self._eval_stats.average_evaluation_time = (
                 alpha * elapsed +
                 (1 - alpha) * self._eval_stats.average_evaluation_time
+            )
+
+    def _queue_for_retry(
+        self,
+        model_path: str,
+        board_type: str,
+        num_players: int,
+        reason: str,
+        current_attempts: int = 0,
+    ) -> bool:
+        """Queue failed evaluation for retry with exponential backoff.
+
+        December 29, 2025: Implements automatic retry for transient failures
+        (GPU OOM, network issues, temporary resource constraints).
+
+        Args:
+            model_path: Path to the model that failed evaluation.
+            board_type: Board type for the evaluation.
+            num_players: Number of players for the evaluation.
+            reason: Failure reason (for logging).
+            current_attempts: Number of attempts already made (0 = first failure).
+
+        Returns:
+            True if queued for retry, False if max attempts exceeded.
+        """
+        attempts = current_attempts + 1
+
+        if attempts >= self._max_retry_attempts:
+            self._retry_stats["retries_exhausted"] += 1
+            logger.error(
+                f"[EvaluationDaemon] Max retries ({self._max_retry_attempts}) exceeded "
+                f"for {model_path}: {reason}"
+            )
+            return False
+
+        # Exponential backoff: 60s, 120s, 240s
+        delay = self._base_retry_delay * (2 ** current_attempts)
+        next_retry = time.time() + delay
+
+        self._retry_queue.append((model_path, board_type, num_players, attempts, next_retry))
+        self._retry_stats["retries_queued"] += 1
+
+        logger.info(
+            f"[EvaluationDaemon] Queued retry #{attempts} for {model_path} "
+            f"in {delay:.0f}s (reason: {reason})"
+        )
+        return True
+
+    async def _process_retry_queue(self) -> None:
+        """Process pending retries whose delay has elapsed.
+
+        December 29, 2025: Called at the start of each worker iteration
+        to re-attempt failed evaluations with exponential backoff.
+        """
+        if not self._retry_queue:
+            return
+
+        now = time.time()
+        ready_for_retry: list[tuple[str, str, int, int]] = []
+
+        # Collect items ready for retry (next_retry_time has passed)
+        # Use a temporary list to avoid modifying deque during iteration
+        remaining: list[tuple[str, str, int, int, float]] = []
+
+        while self._retry_queue:
+            item = self._retry_queue.popleft()
+            model_path, board_type, num_players, attempts, next_retry_time = item
+
+            if next_retry_time <= now:
+                ready_for_retry.append((model_path, board_type, num_players, attempts))
+            else:
+                remaining.append(item)
+
+        # Put back items not yet ready
+        for item in remaining:
+            self._retry_queue.append(item)
+
+        # Process ready items
+        for model_path, board_type, num_players, attempts in ready_for_retry:
+            # Skip if already evaluating
+            if model_path in self._active_evaluations:
+                logger.debug(
+                    f"[EvaluationDaemon] Retry deferred (already evaluating): {model_path}"
+                )
+                # Re-queue with same attempt count but short delay
+                self._retry_queue.append(
+                    (model_path, board_type, num_players, attempts, now + 30.0)
+                )
+                continue
+
+            # Re-queue the evaluation request
+            await self._evaluation_queue.put({
+                "model_path": model_path,
+                "board_type": board_type,
+                "num_players": num_players,
+                "timestamp": time.time(),
+                "_retry_attempt": attempts,  # Track retry count
+            })
+
+            logger.info(
+                f"[EvaluationDaemon] Re-queued retry #{attempts} for {model_path}"
             )
 
     def get_stats(self) -> dict:

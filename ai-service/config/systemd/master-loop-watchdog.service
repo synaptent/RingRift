@@ -1,0 +1,48 @@
+[Unit]
+Description=RingRift Master Loop Watchdog
+Documentation=https://github.com/ringrift/ai-service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Working directory
+WorkingDirectory=/root/ringrift/ai-service
+
+# Python path
+Environment="PYTHONPATH=/root/ringrift/ai-service"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+# Watchdog configuration
+Environment="RINGRIFT_WATCHDOG_INTERVAL=30"
+Environment="RINGRIFT_HEARTBEAT_STALE_THRESHOLD=90"
+Environment="RINGRIFT_MAX_RESTARTS_PER_HOUR=3"
+
+# Start the watchdog
+ExecStart=/usr/bin/python3 /root/ringrift/ai-service/scripts/master_loop_watchdog.py
+
+# Restart policy - restart if crashes
+Restart=always
+RestartSec=30
+
+# Logging
+StandardOutput=append:/root/ringrift/ai-service/logs/watchdog.log
+StandardError=append:/root/ringrift/ai-service/logs/watchdog.error.log
+
+# Resource limits
+Nice=5
+LimitNOFILE=65535
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/root/ringrift/ai-service/data
+ReadWritePaths=/root/ringrift/ai-service/logs
+
+[Install]
+WantedBy=multi-user.target

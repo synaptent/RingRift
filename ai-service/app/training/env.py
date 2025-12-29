@@ -40,20 +40,23 @@ import os
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from app.game_engine import GameEngine, PhaseRequirement, PhaseRequirementType
+from app.game_engine import GameEngine
 from app.models import (
     BoardType,
     GamePhase,
     GameState,
     GameStatus,
     Move,
-    MoveType,
 )
 from app.rules.default_engine import DefaultRulesEngine
 from app.rules.fsm import TurnFSM, get_fsm_mode
-from app.training.env_mixins import RewardCalculatorMixin, TerminationHandlerMixin
+from app.training.env_mixins import (
+    BookkeepingMoveHandlerMixin,
+    MoveGenerationMixin,
+    RewardCalculatorMixin,
+    TerminationHandlerMixin,
+)
 from app.training.seed_utils import seed_all
-from app.training.tournament import infer_victory_reason
 
 logger = logging.getLogger(__name__)
 
@@ -358,7 +361,12 @@ def make_env(config: TrainingEnvConfig | None = None) -> "RingRiftEnv":
     )
 
 
-class RingRiftEnv(RewardCalculatorMixin, TerminationHandlerMixin):
+class RingRiftEnv(
+    BookkeepingMoveHandlerMixin,
+    MoveGenerationMixin,
+    RewardCalculatorMixin,
+    TerminationHandlerMixin,
+):
     """Canonical training environment for RingRift AI (gym-like API).
 
     This environment wraps the Python rules engine and exposes a small,
@@ -570,86 +578,10 @@ class RingRiftEnv(RewardCalculatorMixin, TerminationHandlerMixin):
         The returned list contains fully-specified :class:`Move`
         instances and matches the behaviour of the TypeScript shared
         engine for the same state.
+
+        Delegated to MoveGenerationMixin for testability.
         """
-        # Get interactive moves from the core rules layer.
-        if self._rules_engine is not None:
-            moves = self._rules_engine.get_valid_moves(
-                self.state,
-                self.state.current_player,
-            )
-        else:
-            moves = GameEngine.get_valid_moves(
-                self.state,
-                self.state.current_player,
-            )
-
-        # Defensive decision-surface check: in LINE/TERRITORY processing, the
-        # interactive move surface must never be replaced by a bookkeeping
-        # no_* action when decisions exist. In rare cases, cache/metadata drift
-        # can cause get_valid_moves() to return an empty list even though the
-        # phase-local decision enumerators would surface interactive moves.
-        #
-        # When that happens, prefer the phase-local interactive moves and
-        # avoid synthesizing NO_LINE_ACTION / NO_TERRITORY_ACTION, which would
-        # violate RR-CANON bookkeeping semantics and be rejected by FSM guards.
-        if not moves and self.state.current_phase in (
-            GamePhase.LINE_PROCESSING,
-            GamePhase.TERRITORY_PROCESSING,
-        ):
-            if self.state.current_phase == GamePhase.LINE_PROCESSING:
-                moves = GameEngine._get_line_processing_moves(
-                    self.state, self.state.current_player
-                )
-            else:
-                moves = GameEngine._get_territory_processing_moves(
-                    self.state, self.state.current_player
-                )
-
-        # If no interactive moves, check for phase requirements (R076)
-        if not moves:
-            requirement = GameEngine.get_phase_requirement(
-                self.state,
-                self.state.current_player,
-            )
-            if requirement is not None:
-                # Host synthesizes the bookkeeping move
-                bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
-                    requirement,
-                    self.state,
-                )
-                moves = [bookkeeping_move]
-
-        # Defensive phase/move invariant: every move returned by this
-        # host-level surface must be legal for the current phase.
-        for move in moves:
-            GameEngine._assert_phase_move_invariant(self.state, move)
-
-        # Defensive phase-requirement consistency check: if the core
-        # engine reports a pending phase requirement, ensure we surfaced
-        # exactly one corresponding bookkeeping move.
-        requirement = GameEngine.get_phase_requirement(
-            self.state,
-            self.state.current_player,
-        )
-        if requirement is not None:
-            expected = GameEngine.synthesize_bookkeeping_move(
-                requirement,
-                self.state,
-            )
-            if not moves:
-                raise RuntimeError(
-                    "RingRiftEnv.legal_moves: phase requirement exists "
-                    f"({requirement.type.value}) but no legal moves were "
-                    "returned"
-                )
-            if len(moves) != 1 or moves[0].type != expected.type:
-                raise RuntimeError(
-                    "RingRiftEnv.legal_moves: inconsistent bookkeeping move "
-                    f"for requirement {requirement.type.value}: "
-                    f"got {moves[0].type.value}, expected {expected.type.value}"
-                )
-
-        return moves
+        return self._get_legal_moves()
 
     def step(
         self, move: Move
@@ -723,127 +655,9 @@ class RingRiftEnv(RewardCalculatorMixin, TerminationHandlerMixin):
 
         self._move_count += 1
 
-        # Auto-satisfy any pending phase requirements (no_*_action / FE /
-        # no_placement_action) the host must emit per RR-CANON-R075/R076.
-        # This mirrors the TS orchestrator, preventing the turn from rotating
-        # without recording the required bookkeeping move.
-        #
-        # CRITICAL FOR CANONICAL RECORDINGS: We continue generating bookkeeping
-        # moves even AFTER the player changes. This ensures that when a turn
-        # transitions to a new player who needs bookkeeping moves (e.g., they
-        # have 0 rings and need no_placement_action), those moves are recorded
-        # before the next agent action. This is essential for TS↔Python parity.
-        auto_generated_moves = []
-        while self._state.game_status == GameStatus.ACTIVE:
-            # RR-FIX-2025-12-20: Skip auto-bookkeeping during capture phases.
-            # CAPTURE and CHAIN_CAPTURE phases require player decisions (selecting
-            # captures or declining). Bookkeeping moves are only valid in phases
-            # where no interactive moves exist. Breaking here ensures the next
-            # player action is correctly recorded as a capture move.
-            if self._state.current_phase in (GamePhase.CAPTURE, GamePhase.CHAIN_CAPTURE):
-                break
-
-            current_player = self._state.current_player
-            requirement = GameEngine.get_phase_requirement(
-                self._state,
-                current_player,
-            )
-            if requirement is None:
-                # No bookkeeping requirement - check if we're in a bookkeeping
-                # phase that needs a forced no-op
-                if (
-                    self._force_bookkeeping_moves
-                    and self._state.current_phase
-                    in (GamePhase.LINE_PROCESSING, GamePhase.TERRITORY_PROCESSING)
-                ):
-                    # Check if the only legal move is a bookkeeping no-op
-                    forced_moves = GameEngine.get_valid_moves(
-                        self._state,
-                        current_player,
-                    )
-                    if not forced_moves:
-                        # No moves at all - synthesize the mandatory no-op
-                        req_type = (
-                            PhaseRequirementType.NO_LINE_ACTION_REQUIRED
-                            if self._state.current_phase == GamePhase.LINE_PROCESSING
-                            else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
-                        )
-                        requirement = PhaseRequirement(
-                            type=req_type,
-                            player=current_player,
-                            eligible_positions=[],
-                        )
-                    elif (
-                        len(forced_moves) == 1
-                        and forced_moves[0].type
-                        in (MoveType.NO_LINE_ACTION, MoveType.NO_TERRITORY_ACTION)
-                    ):
-                        # Single bookkeeping move available - use it directly
-                        auto_move = forced_moves[0]
-                        if self._fsm is not None:
-                            self._fsm.validate_and_send(
-                                self._state.current_phase, auto_move, self._state
-                            )
-                        self._state = (
-                            self._rules_engine.apply_move(
-                                self._state,
-                                auto_move,
-                                trace_mode=True,
-                            )
-                            if self._rules_engine is not None
-                            else GameEngine.apply_move(
-                                self._state, auto_move, trace_mode=True
-                            )
-                        )
-                        self._move_count += 1
-                        auto_generated_moves.append(auto_move)
-                        continue
-                    else:
-                        # Multiple moves or non-bookkeeping moves - stop
-                        break
-                else:
-                    break
-
-            # Generate the bookkeeping move from the requirement
-            auto_move = GameEngine.synthesize_bookkeeping_move(
-                requirement,
-                self._state,
-            )
-            # Defensive assertion: verify synthesized move is valid for the
-            # current phase BEFORE applying. This catches phase transition timing
-            # bugs early (e.g., AI-02c bug where _end_turn didn't set phase).
-            try:
-                GameEngine._assert_phase_move_invariant(self._state, auto_move)
-            except RuntimeError as e:
-                logger.error(
-                    "Phase/move invariant violation in bookkeeping loop: %s. "
-                    "State: phase=%s, player=%s, requirement=%s, move_type=%s",
-                    str(e),
-                    self._state.current_phase.value,
-                    self._state.current_player,
-                    requirement.type.value,
-                    auto_move.type.value,
-                )
-                raise
-            # FSM validation for auto-generated bookkeeping moves.
-            if self._fsm is not None:
-                self._fsm.validate_and_send(
-                    self._state.current_phase, auto_move, self._state
-                )
-            # Apply the synthesized move and continue checking for chained
-            # requirements (e.g., entering territory_processing, or the new
-            # player needing no_placement_action).
-            self._state = (
-                self._rules_engine.apply_move(
-                    self._state,
-                    auto_move,
-                    trace_mode=True,
-                )
-                if self._rules_engine is not None
-                else GameEngine.apply_move(self._state, auto_move, trace_mode=True)
-            )
-            self._move_count += 1
-            auto_generated_moves.append(auto_move)
+        # Auto-satisfy any pending phase requirements per RR-CANON-R075/R076.
+        # Delegated to BookkeepingMoveHandlerMixin for testability.
+        auto_generated_moves = self._apply_auto_bookkeeping_moves()
 
         # Evaluate termination conditions using mixin method
         (
