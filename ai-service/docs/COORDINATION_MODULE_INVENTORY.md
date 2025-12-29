@@ -31,23 +31,24 @@ This document catalogs all modules in `app/coordination/` organized by category.
 
 Essential modules for event system, types, and base classes.
 
-| Module                   | LOC  | Status | Purpose                                                           |
-| ------------------------ | ---- | ------ | ----------------------------------------------------------------- |
-| `enums.py`               | ~94  | Active | Central enum re-exports (LeadershipRole, DaemonType, etc.)        |
-| `types.py`               | ~350 | Active | Coordination types (BackpressureLevel, TaskType, BoardType, etc.) |
-| `daemon_types.py`        | 700  | Active | DaemonType enum, DaemonInfo, DaemonManagerConfig, startup order   |
-| `protocols.py`           | ~300 | Active | Protocol definitions (CoordinatorProtocol, DaemonProtocol)        |
-| `base_daemon.py`         | ~200 | Active | BaseDaemon base class with lifecycle hooks                        |
-| `coordinator_base.py`    | ~400 | Active | CoordinatorBase with SQLite persistence, singleton pattern        |
-| `event_router.py`        | ~800 | Active | Unified event bus with deduplication, DLQ                         |
-| `event_mappings.py`      | ~200 | Active | Event type mappings and conversions                               |
-| `event_normalization.py` | ~150 | Active | Canonical event name normalization                                |
-| `event_emitters.py`      | ~600 | Active | 70+ typed event emitter functions                                 |
-| `core_utils.py`          | ~100 | Active | Re-exports: tracing, locking, YAML utils                          |
-| `core_base.py`           | ~100 | Active | Re-exports: coordinator base classes                              |
-| `core_events.py`         | ~100 | Active | Re-exports: event router, mappings, emitters                      |
-| `alert_types.py`         | ~50  | Active | Alert dataclasses                                                 |
-| `node_status.py`         | ~300 | Active | NodeHealthState enum, NodeMonitoringStatus                        |
+| Module                           | LOC  | Status | Purpose                                                           |
+| -------------------------------- | ---- | ------ | ----------------------------------------------------------------- |
+| `enums.py`                       | ~94  | Active | Central enum re-exports (LeadershipRole, DaemonType, etc.)        |
+| `types.py`                       | ~350 | Active | Coordination types (BackpressureLevel, TaskType, BoardType, etc.) |
+| `daemon_types.py`                | 700  | Active | DaemonType enum, DaemonInfo, DaemonManagerConfig, startup order   |
+| `protocols.py`                   | ~300 | Active | Protocol definitions (CoordinatorProtocol, DaemonProtocol)        |
+| `base_daemon.py`                 | ~200 | Active | BaseDaemon base class with lifecycle hooks                        |
+| `coordinator_base.py`            | ~400 | Active | CoordinatorBase with SQLite persistence, singleton pattern        |
+| `event_router.py`                | ~800 | Active | Unified event bus with deduplication, DLQ                         |
+| `event_mappings.py`              | ~200 | Active | Event type mappings and conversions                               |
+| `event_normalization.py`         | ~150 | Active | Canonical event name normalization                                |
+| `event_emitters.py`              | ~600 | Active | 70+ typed event emitter functions                                 |
+| `event_subscription_registry.py` | ~416 | Active | Delegated event wiring (DELEGATION_REGISTRY)                      |
+| `core_utils.py`                  | ~100 | Active | Re-exports: tracing, locking, YAML utils                          |
+| `core_base.py`                   | ~100 | Active | Re-exports: coordinator base classes                              |
+| `core_events.py`                 | ~100 | Active | Re-exports: event router, mappings, emitters                      |
+| `alert_types.py`                 | ~50  | Active | Alert dataclasses                                                 |
+| `node_status.py`                 | ~300 | Active | NodeHealthState enum, NodeMonitoringStatus                        |
 
 ### Daemon Management
 
