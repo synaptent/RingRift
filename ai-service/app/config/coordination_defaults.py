@@ -1798,6 +1798,100 @@ class SelfplayAllocationDefaults:
 
 
 # =============================================================================
+# Selfplay Priority Weight Defaults (December 29, 2025)
+# =============================================================================
+
+@dataclass(frozen=True)
+class SelfplayPriorityWeightDefaults:
+    """Priority weight constants for selfplay allocation.
+
+    These weights control how selfplay jobs are prioritized across configs.
+    Environment variables allow runtime tuning without code changes.
+
+    Used by: selfplay_scheduler.py (DynamicWeights class)
+
+    Example:
+        # Boost staleness weight for faster data refresh
+        export RINGRIFT_STALENESS_WEIGHT=0.40
+
+        # Reduce velocity weight when most configs are at target Elo
+        export RINGRIFT_ELO_VELOCITY_WEIGHT=0.15
+    """
+    # Priority calculation weights (baseline values, adjusted dynamically)
+    STALENESS_WEIGHT: float = _env_float("RINGRIFT_STALENESS_WEIGHT", 0.30)
+    ELO_VELOCITY_WEIGHT: float = _env_float("RINGRIFT_ELO_VELOCITY_WEIGHT", 0.20)
+    TRAINING_NEED_WEIGHT: float = _env_float("RINGRIFT_TRAINING_NEED_WEIGHT", 0.10)
+    EXPLORATION_BOOST_WEIGHT: float = _env_float("RINGRIFT_EXPLORATION_BOOST_WEIGHT", 0.10)
+    CURRICULUM_WEIGHT: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT", 0.10)
+    IMPROVEMENT_BOOST_WEIGHT: float = _env_float("RINGRIFT_IMPROVEMENT_BOOST_WEIGHT", 0.15)
+    DATA_DEFICIT_WEIGHT: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT", 0.25)
+    QUALITY_WEIGHT: float = _env_float("RINGRIFT_QUALITY_WEIGHT", 0.15)
+    VOI_WEIGHT: float = _env_float("RINGRIFT_VOI_WEIGHT", 0.20)
+
+    # Dynamic weight bounds - prevent any single factor from dominating
+    STALENESS_WEIGHT_MIN: float = _env_float("RINGRIFT_STALENESS_WEIGHT_MIN", 0.15)
+    STALENESS_WEIGHT_MAX: float = _env_float("RINGRIFT_STALENESS_WEIGHT_MAX", 0.50)
+    VELOCITY_WEIGHT_MIN: float = _env_float("RINGRIFT_VELOCITY_WEIGHT_MIN", 0.10)
+    VELOCITY_WEIGHT_MAX: float = _env_float("RINGRIFT_VELOCITY_WEIGHT_MAX", 0.30)
+    CURRICULUM_WEIGHT_MIN: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT_MIN", 0.05)
+    CURRICULUM_WEIGHT_MAX: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT_MAX", 0.25)
+    DATA_DEFICIT_WEIGHT_MIN: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT_MIN", 0.15)
+    DATA_DEFICIT_WEIGHT_MAX: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT_MAX", 0.40)
+    QUALITY_WEIGHT_MIN: float = _env_float("RINGRIFT_QUALITY_WEIGHT_MIN", 0.05)
+    QUALITY_WEIGHT_MAX: float = _env_float("RINGRIFT_QUALITY_WEIGHT_MAX", 0.25)
+    VOI_WEIGHT_MIN: float = _env_float("RINGRIFT_VOI_WEIGHT_MIN", 0.10)
+    VOI_WEIGHT_MAX: float = _env_float("RINGRIFT_VOI_WEIGHT_MAX", 0.35)
+
+    # Cluster state thresholds for weight adjustment triggers
+    IDLE_GPU_HIGH_THRESHOLD: float = _env_float("RINGRIFT_IDLE_GPU_HIGH_THRESHOLD", 0.50)
+    IDLE_GPU_LOW_THRESHOLD: float = _env_float("RINGRIFT_IDLE_GPU_LOW_THRESHOLD", 0.10)
+    TRAINING_QUEUE_HIGH_THRESHOLD: int = _env_int("RINGRIFT_TRAINING_QUEUE_HIGH_THRESHOLD", 10)
+    CONFIGS_AT_TARGET_THRESHOLD: float = _env_float("RINGRIFT_CONFIGS_AT_TARGET_THRESHOLD", 0.50)
+    ELO_HIGH_THRESHOLD: int = _env_int("RINGRIFT_ELO_HIGH_THRESHOLD", 1800)
+    ELO_MEDIUM_THRESHOLD: int = _env_int("RINGRIFT_ELO_MEDIUM_THRESHOLD", 1500)
+
+    # Data starvation emergency thresholds
+    DATA_STARVATION_EMERGENCY_THRESHOLD: int = _env_int(
+        "RINGRIFT_DATA_STARVATION_EMERGENCY_THRESHOLD", 100
+    )
+    DATA_STARVATION_CRITICAL_THRESHOLD: int = _env_int(
+        "RINGRIFT_DATA_STARVATION_CRITICAL_THRESHOLD", 1000
+    )
+    DATA_STARVATION_EMERGENCY_MULTIPLIER: float = _env_float(
+        "RINGRIFT_DATA_STARVATION_EMERGENCY_MULTIPLIER", 10.0
+    )
+    DATA_STARVATION_CRITICAL_MULTIPLIER: float = _env_float(
+        "RINGRIFT_DATA_STARVATION_CRITICAL_MULTIPLIER", 5.0
+    )
+
+    # Staleness thresholds (hours)
+    FRESH_DATA_THRESHOLD: float = _env_float("RINGRIFT_FRESH_DATA_THRESHOLD", 1.0)
+    STALE_DATA_THRESHOLD: float = _env_float("RINGRIFT_STALE_DATA_THRESHOLD", 4.0)
+    MAX_STALENESS_HOURS: float = _env_float("RINGRIFT_MAX_STALENESS_HOURS", 24.0)
+
+    # VOI (Value of Information) target
+    VOI_ELO_TARGET: float = _env_float("RINGRIFT_VOI_ELO_TARGET", 2000.0)
+    TARGET_GAMES_FOR_2000_ELO: int = _env_int("RINGRIFT_TARGET_GAMES_FOR_2000_ELO", 100000)
+    LARGE_BOARD_TARGET_MULTIPLIER: float = _env_float(
+        "RINGRIFT_LARGE_BOARD_TARGET_MULTIPLIER", 1.5
+    )
+
+    def get_weight_bounds(self) -> dict[str, tuple[float, float]]:
+        """Get dynamic weight bounds as a dict (for backward compatibility)."""
+        return {
+            "staleness": (self.STALENESS_WEIGHT_MIN, self.STALENESS_WEIGHT_MAX),
+            "velocity": (self.VELOCITY_WEIGHT_MIN, self.VELOCITY_WEIGHT_MAX),
+            "training": (0.05, 0.20),  # Fixed bounds
+            "exploration": (0.05, 0.20),  # Fixed bounds
+            "curriculum": (self.CURRICULUM_WEIGHT_MIN, self.CURRICULUM_WEIGHT_MAX),
+            "improvement": (0.10, 0.25),  # Fixed bounds
+            "data_deficit": (self.DATA_DEFICIT_WEIGHT_MIN, self.DATA_DEFICIT_WEIGHT_MAX),
+            "quality": (self.QUALITY_WEIGHT_MIN, self.QUALITY_WEIGHT_MAX),
+            "voi": (self.VOI_WEIGHT_MIN, self.VOI_WEIGHT_MAX),
+        }
+
+
+# =============================================================================
 # Cross Process Defaults (December 27, 2025)
 # =============================================================================
 
@@ -2478,6 +2572,7 @@ __all__ = [
     "ScalingDefaults",
     "SchedulerDefaults",
     "SelfplayAllocationDefaults",
+    "SelfplayPriorityWeightDefaults",  # December 29, 2025
     "SQLiteDefaults",
     "SSHDefaults",  # December 28, 2025
     "SyncCoordinatorDefaults",

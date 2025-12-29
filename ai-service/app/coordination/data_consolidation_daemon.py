@@ -68,6 +68,9 @@ class ConsolidationConfig(DaemonConfig):
     deduplicate: bool = True  # Deduplicate by game_id
     validate_before_merge: bool = True  # Check game validity before merging
 
+    # Concurrency (December 2025: Parallelization optimization)
+    max_concurrent_consolidations: int = 3  # Max parallel config consolidations
+
     @classmethod
     def from_env(cls) -> "ConsolidationConfig":
         """Load configuration from environment variables."""
@@ -80,6 +83,7 @@ class ConsolidationConfig(DaemonConfig):
             data_dir=Path(os.getenv("RINGRIFT_DATA_DIR", "data/games")),
             canonical_dir=Path(os.getenv("RINGRIFT_CANONICAL_DIR", "data/games")),
             min_games_for_consolidation=int(os.getenv("RINGRIFT_CONSOLIDATION_MIN_GAMES", "50")),
+            max_concurrent_consolidations=int(os.getenv("RINGRIFT_CONSOLIDATION_MAX_CONCURRENT", "3")),
         )
 
 
@@ -143,6 +147,11 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
 
         # Lock for thread-safe operations
         self._lock = asyncio.Lock()
+
+        # Concurrency control (December 2025: Parallelization optimization)
+        self._consolidation_semaphore = asyncio.Semaphore(
+            self.config.max_concurrent_consolidations
+        )
 
     @staticmethod
     def _get_default_config() -> ConsolidationConfig:
@@ -270,7 +279,11 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             logger.debug(f"[DataConsolidationDaemon] Error handling SELFPLAY_COMPLETE: {e}")
 
     async def _process_pending_consolidations(self) -> None:
-        """Process all pending consolidations."""
+        """Process all pending consolidations in parallel.
+
+        December 2025: Parallelized for 2-3x speedup on multi-config consolidation.
+        Uses semaphore to limit concurrent consolidations (default: 3).
+        """
         async with self._lock:
             if not self._pending_configs:
                 return
@@ -279,45 +292,75 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             configs_to_process = list(self._pending_configs)
             self._pending_configs.clear()
 
+        # Filter configs that pass validation and cooldown check
+        valid_configs: list[tuple[str, str, int]] = []  # (config_key, board_type, num_players)
         for config_key in configs_to_process:
+            # Parse config key
+            parts = config_key.rsplit("_", 1)
+            if len(parts) != 2:
+                continue
+
+            board_type = parts[0]
             try:
-                # Parse config key
-                parts = config_key.rsplit("_", 1)
-                if len(parts) != 2:
-                    continue
-
-                board_type = parts[0]
                 num_players = int(parts[1].replace("p", ""))
+            except ValueError:
+                continue
 
-                # Check if enough time has passed since last consolidation
-                last_time = self._last_consolidation.get(config_key, 0)
-                if time.time() - last_time < 60.0:  # Minimum 1 minute between consolidations
-                    continue
+            # Check if enough time has passed since last consolidation
+            last_time = self._last_consolidation.get(config_key, 0)
+            if time.time() - last_time < 60.0:  # Minimum 1 minute between consolidations
+                continue
 
-                # Run consolidation
-                stats = await self._consolidate_config(board_type, num_players)
+            valid_configs.append((config_key, board_type, num_players))
 
-                if stats.success:
-                    self._last_consolidation[config_key] = time.time()
-                    self._stats_history.append(stats)
+        if not valid_configs:
+            return
 
-                    # Keep only recent history
-                    if len(self._stats_history) > 100:
-                        self._stats_history = self._stats_history[-100:]
+        # Process configs in parallel with semaphore limiting concurrency
+        async def consolidate_with_semaphore(
+            config_key: str, board_type: str, num_players: int
+        ) -> ConsolidationStats | None:
+            """Consolidate a single config with semaphore protection."""
+            async with self._consolidation_semaphore:
+                try:
+                    stats = await self._consolidate_config(board_type, num_players)
 
-                    logger.info(
-                        f"[DataConsolidationDaemon] Consolidated {config_key}: "
-                        f"{stats.games_merged} games merged, "
-                        f"{stats.games_duplicate} duplicates, "
-                        f"duration={stats.duration_seconds:.1f}s"
-                    )
-                else:
-                    logger.warning(
-                        f"[DataConsolidationDaemon] Failed to consolidate {config_key}: {stats.error}"
-                    )
+                    if stats.success:
+                        self._last_consolidation[config_key] = time.time()
+                        self._stats_history.append(stats)
 
-            except Exception as e:
-                logger.error(f"[DataConsolidationDaemon] Error consolidating {config_key}: {e}")
+                        # Keep only recent history
+                        if len(self._stats_history) > 100:
+                            self._stats_history = self._stats_history[-100:]
+
+                        logger.info(
+                            f"[DataConsolidationDaemon] Consolidated {config_key}: "
+                            f"{stats.games_merged} games merged, "
+                            f"{stats.games_duplicate} duplicates, "
+                            f"duration={stats.duration_seconds:.1f}s"
+                        )
+                    else:
+                        logger.warning(
+                            f"[DataConsolidationDaemon] Failed to consolidate {config_key}: {stats.error}"
+                        )
+                    return stats
+
+                except Exception as e:
+                    logger.error(f"[DataConsolidationDaemon] Error consolidating {config_key}: {e}")
+                    return None
+
+        # Run consolidations in parallel
+        tasks = [
+            consolidate_with_semaphore(config_key, board_type, num_players)
+            for config_key, board_type, num_players in valid_configs
+        ]
+
+        if tasks:
+            logger.debug(
+                f"[DataConsolidationDaemon] Processing {len(tasks)} configs in parallel "
+                f"(max concurrent: {self.config.max_concurrent_consolidations})"
+            )
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _consolidate_config(
         self,

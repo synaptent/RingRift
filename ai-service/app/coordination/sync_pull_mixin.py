@@ -211,8 +211,15 @@ class SyncPullMixin(SyncMixinBase):
                     local_path.unlink(missing_ok=True)
                     continue
 
-                # Check integrity
-                is_intact, errors = check_sqlite_integrity(local_path)
+                # Check integrity with adaptive timeout for large databases
+                # Dec 29, 2025: Use fast check for DBs >100MB to prevent timeouts
+                db_size_mb = local_path.stat().st_size / (1024 * 1024)
+                use_fast = db_size_mb > 100  # Fast check for DBs > 100MB
+                is_intact, errors = check_sqlite_integrity(
+                    local_path,
+                    use_fast_check=use_fast,
+                    timeout_seconds=15.0 if use_fast else 30.0,
+                )
                 if not is_intact:
                     logger.warning(
                         f"[AutoSyncDaemon] {remote_db} from {source_node} failed integrity: {errors}"

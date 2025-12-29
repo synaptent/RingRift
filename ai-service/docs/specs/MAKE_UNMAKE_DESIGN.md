@@ -284,7 +284,6 @@ class MutableGameState:
         self._zobrist_hash ^= self._zobrist.get_phase_hash(self._current_phase)
 
         return undo
-
     def unmake_move(self, undo: "MoveUndo") -> None:
         """Reverse a move using the undo token.
 
@@ -356,6 +355,10 @@ class MutableGameState:
         """Current game phase."""
         return self._current_phase
 ```
+
+Note: `MoveType.CHAIN_CAPTURE` is a legacy alias retained for replay
+compatibility. Canonical capture continuation uses
+`MoveType.CONTINUE_CAPTURE_SEGMENT`.
 
 ### 2.2 Move-Specific Make Methods
 

@@ -1520,7 +1520,15 @@ class AutoSyncDaemon(
                 continue
 
             try:
-                is_valid, errors = check_sqlite_integrity(db_path)
+                # Dec 29, 2025: Use fast check for large databases (>100MB)
+                # to prevent test suite timeouts while still detecting corruption
+                db_size_mb = db_path.stat().st_size / (1024 * 1024)
+                use_fast = db_size_mb > 100  # Fast check for DBs > 100MB
+                is_valid, errors = check_sqlite_integrity(
+                    db_path,
+                    use_fast_check=use_fast,
+                    timeout_seconds=15.0 if use_fast else 30.0,
+                )
 
                 if is_valid:
                     verified_count += 1

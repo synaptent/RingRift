@@ -23,7 +23,7 @@ class BoardType(str, Enum):
 
 
 class GamePhase(str, Enum):
-    """Game phase enumeration - 8 phases per RR-CANON-R070 + terminal phase."""
+    """Game phase enumeration - 7 canonical phases per RR-CANON-R070 + terminal phase."""
     RING_PLACEMENT = "ring_placement"
     MOVEMENT = "movement"
     CAPTURE = "capture"

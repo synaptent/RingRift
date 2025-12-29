@@ -41,9 +41,10 @@ from __future__ import annotations
 __all__ = [
     # Classes
     "ConfigPriority",
+    "DynamicWeights",  # December 29, 2025: Now exported
     "NodeCapability",
     "SelfplayScheduler",
-    # Constants
+    # Constants (also available via SelfplayPriorityWeightDefaults in coordination_defaults)
     "ALL_CONFIGS",
     "CURRICULUM_WEIGHT",
     "DATA_DEFICIT_WEIGHT",
@@ -53,6 +54,7 @@ __all__ = [
     "DATA_STARVATION_EMERGENCY_THRESHOLD",
     "DEFAULT_GAMES_PER_CONFIG",
     "DEFAULT_TRAINING_SAMPLES_TARGET",
+    "DYNAMIC_WEIGHT_BOUNDS",  # December 29, 2025: Now exported
     "ELO_VELOCITY_WEIGHT",
     "EXPLORATION_BOOST_WEIGHT",
     "FRESH_DATA_THRESHOLD",
@@ -61,6 +63,7 @@ __all__ = [
     "MAX_STALENESS_HOURS",
     "MIN_GAMES_PER_ALLOCATION",
     "PRIORITY_OVERRIDE_MULTIPLIERS",
+    "QUALITY_WEIGHT",  # December 29, 2025: Now exported
     "SAMPLES_PER_GAME_BY_BOARD",
     "STALE_DATA_THRESHOLD",
     "STALENESS_WEIGHT",
@@ -120,34 +123,38 @@ ALL_CONFIGS = [
 ]
 
 # Priority calculation weights (BASE values - adjusted dynamically)
-# Dec 29, 2025: These are now baseline weights that get adjusted based on cluster state
-# See _compute_dynamic_weights() for adaptive reweighting logic
-STALENESS_WEIGHT = 0.30  # Data freshness importance
-ELO_VELOCITY_WEIGHT = 0.20  # ELO improvement velocity
-TRAINING_NEED_WEIGHT = 0.10  # Waiting for training
-EXPLORATION_BOOST_WEIGHT = 0.10  # Feedback loop exploration signal
-CURRICULUM_WEIGHT = 0.10  # Curriculum-based priority (Phase 2C.3)
-IMPROVEMENT_BOOST_WEIGHT = 0.15  # Phase 5: ImprovementOptimizer boost
-DATA_DEFICIT_WEIGHT = 0.25  # Dec 2025: Boost configs with low game counts
-QUALITY_WEIGHT = 0.15  # Dec 29, 2025: Data quality importance from QualityMonitorDaemon
-VOI_WEIGHT = 0.20  # Dec 29, 2025: Value of Information weight for uncertainty-based prioritization
+# Dec 29, 2025: These are now baseline weights that get adjusted based on cluster state.
+# See _compute_dynamic_weights() for adaptive reweighting logic.
+#
+# IMPORTANT: For runtime tuning via environment variables, use SelfplayPriorityWeightDefaults
+# from app.config.coordination_defaults. Example:
+#   export RINGRIFT_STALENESS_WEIGHT=0.40  # Boost data freshness priority
+#   export RINGRIFT_ELO_VELOCITY_WEIGHT=0.15  # Reduce velocity priority
+#
+# The module-level constants below are for backward compatibility and internal use.
+# New code should import from coordination_defaults for env var support.
+from app.config.coordination_defaults import SelfplayPriorityWeightDefaults
+
+# Create singleton instance for env var resolution
+_priority_weight_defaults = SelfplayPriorityWeightDefaults()
+
+STALENESS_WEIGHT = _priority_weight_defaults.STALENESS_WEIGHT
+ELO_VELOCITY_WEIGHT = _priority_weight_defaults.ELO_VELOCITY_WEIGHT
+TRAINING_NEED_WEIGHT = _priority_weight_defaults.TRAINING_NEED_WEIGHT
+EXPLORATION_BOOST_WEIGHT = _priority_weight_defaults.EXPLORATION_BOOST_WEIGHT
+CURRICULUM_WEIGHT = _priority_weight_defaults.CURRICULUM_WEIGHT
+IMPROVEMENT_BOOST_WEIGHT = _priority_weight_defaults.IMPROVEMENT_BOOST_WEIGHT
+DATA_DEFICIT_WEIGHT = _priority_weight_defaults.DATA_DEFICIT_WEIGHT
+QUALITY_WEIGHT = _priority_weight_defaults.QUALITY_WEIGHT
+VOI_WEIGHT = _priority_weight_defaults.VOI_WEIGHT
 
 # =============================================================================
 # Dynamic Weight Bounds (Dec 29, 2025)
 # =============================================================================
 # Min/max bounds for dynamic weight adjustment based on cluster state
 # These prevent any single factor from dominating allocation decisions
-DYNAMIC_WEIGHT_BOUNDS = {
-    "staleness": (0.15, 0.50),      # Range: 15-50% (boost when GPUs idle)
-    "velocity": (0.10, 0.30),        # Range: 10-30% (reduce if most at target)
-    "training": (0.05, 0.20),        # Range: 5-20%
-    "exploration": (0.05, 0.20),     # Range: 5-20%
-    "curriculum": (0.05, 0.25),      # Range: 5-25% (boost for higher Elo models)
-    "improvement": (0.10, 0.25),     # Range: 10-25%
-    "data_deficit": (0.15, 0.40),    # Range: 15-40%
-    "quality": (0.05, 0.25),         # Range: 5-25% (boost high-quality data generators)
-    "voi": (0.10, 0.35),             # Range: 10-35% (boost high VOI configs)
-}
+# Now sourced from centralized config with env var support
+DYNAMIC_WEIGHT_BOUNDS = _priority_weight_defaults.get_weight_bounds()
 
 # =============================================================================
 # VOI (Value of Information) Constants (Dec 29, 2025)
@@ -157,7 +164,7 @@ DYNAMIC_WEIGHT_BOUNDS = {
 # - Elo_gap: distance from target Elo (farther = higher VOI)
 # - uncertainty_factor: based on Elo confidence interval (higher uncertainty = more value in data)
 # - sample_cost: relative cost per game (large boards cost more)
-VOI_ELO_TARGET = 2000.0  # Global Elo target for all configs
+VOI_ELO_TARGET = _priority_weight_defaults.VOI_ELO_TARGET
 VOI_SAMPLE_COST_BY_BOARD = {
     # Relative cost per game (compute time * complexity)
     # Small boards are baseline (1.0), large boards cost more
@@ -167,17 +174,17 @@ VOI_SAMPLE_COST_BY_BOARD = {
     "hexagonal": {"2p": 8.0, "3p": 11.0, "4p": 14.0},
 }
 
-# Thresholds for dynamic weight adjustment triggers
-IDLE_GPU_HIGH_THRESHOLD = 0.5       # >50% idle GPUs = boost data generation
-IDLE_GPU_LOW_THRESHOLD = 0.1        # <10% idle GPUs = reduce data generation
-TRAINING_QUEUE_HIGH_THRESHOLD = 10  # >10 pending training jobs = high backlog
-CONFIGS_AT_TARGET_THRESHOLD = 0.5   # >50% configs at Elo target
-ELO_HIGH_THRESHOLD = 1800           # High Elo models need harder curriculum
-ELO_MEDIUM_THRESHOLD = 1500         # Medium Elo is baseline
+# Thresholds for dynamic weight adjustment triggers (now env-configurable)
+IDLE_GPU_HIGH_THRESHOLD = _priority_weight_defaults.IDLE_GPU_HIGH_THRESHOLD
+IDLE_GPU_LOW_THRESHOLD = _priority_weight_defaults.IDLE_GPU_LOW_THRESHOLD
+TRAINING_QUEUE_HIGH_THRESHOLD = _priority_weight_defaults.TRAINING_QUEUE_HIGH_THRESHOLD
+CONFIGS_AT_TARGET_THRESHOLD = _priority_weight_defaults.CONFIGS_AT_TARGET_THRESHOLD
+ELO_HIGH_THRESHOLD = _priority_weight_defaults.ELO_HIGH_THRESHOLD
+ELO_MEDIUM_THRESHOLD = _priority_weight_defaults.ELO_MEDIUM_THRESHOLD
 
 # Target games per config for data deficit calculation
-TARGET_GAMES_FOR_2000_ELO = 100000  # Need 100K games for strong AI
-LARGE_BOARD_TARGET_MULTIPLIER = 1.5  # Large boards need more data
+TARGET_GAMES_FOR_2000_ELO = _priority_weight_defaults.TARGET_GAMES_FOR_2000_ELO
+LARGE_BOARD_TARGET_MULTIPLIER = _priority_weight_defaults.LARGE_BOARD_TARGET_MULTIPLIER
 
 # Priority override multipliers (Dec 2025)
 # Maps priority level (0-3) to score multiplier
@@ -189,13 +196,13 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
     3: 1.0,  # LOW: no boost (normal priority)
 }
 
-# Dec 29, 2025: Data starvation emergency threshold
+# Dec 29, 2025: Data starvation emergency threshold (now env-configurable)
 # Configs with fewer games than this get a massive priority boost
 # Especially critical for 4-player configs which have near-zero games
-DATA_STARVATION_EMERGENCY_THRESHOLD = 100  # Less than 100 games = emergency
-DATA_STARVATION_CRITICAL_THRESHOLD = 1000  # Less than 1000 games = critical
-DATA_STARVATION_EMERGENCY_MULTIPLIER = 10.0  # 10x boost for <100 games
-DATA_STARVATION_CRITICAL_MULTIPLIER = 5.0   # 5x boost for <1000 games
+DATA_STARVATION_EMERGENCY_THRESHOLD = _priority_weight_defaults.DATA_STARVATION_EMERGENCY_THRESHOLD
+DATA_STARVATION_CRITICAL_THRESHOLD = _priority_weight_defaults.DATA_STARVATION_CRITICAL_THRESHOLD
+DATA_STARVATION_EMERGENCY_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_EMERGENCY_MULTIPLIER
+DATA_STARVATION_CRITICAL_MULTIPLIER = _priority_weight_defaults.DATA_STARVATION_CRITICAL_MULTIPLIER
 
 # Dec 29, 2025: Samples-per-game estimates by board type and player count
 # Used for game count normalization - ensures selfplay generates enough games
@@ -222,10 +229,10 @@ PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
     4: 4.0,  # 4x priority for 4p (critical data deficit: hex8_4p=45, square19_4p=0)
 }
 
-# Staleness thresholds (hours)
-FRESH_DATA_THRESHOLD = 1.0  # Data < 1hr old is fresh
-STALE_DATA_THRESHOLD = 4.0  # Data > 4hr old is stale
-MAX_STALENESS_HOURS = 24.0  # Cap staleness factor
+# Staleness thresholds (hours) - now env-configurable
+FRESH_DATA_THRESHOLD = _priority_weight_defaults.FRESH_DATA_THRESHOLD
+STALE_DATA_THRESHOLD = _priority_weight_defaults.STALE_DATA_THRESHOLD
+MAX_STALENESS_HOURS = _priority_weight_defaults.MAX_STALENESS_HOURS
 
 # Default allocation (December 27, 2025: Centralized in coordination_defaults.py)
 from app.config.coordination_defaults import SelfplayAllocationDefaults

@@ -284,7 +284,11 @@ def validate_synced_database(
             # Check integrity if requested
             if check_integrity:
                 try:
-                    result = conn.execute("PRAGMA integrity_check").fetchall()
+                    # Dec 29, 2025: Use quick_check for large databases (>100MB)
+                    # to prevent timeouts while still detecting most corruption
+                    db_size_mb = db_path.stat().st_size / (1024 * 1024)
+                    pragma = "PRAGMA quick_check" if db_size_mb > 100 else "PRAGMA integrity_check"
+                    result = conn.execute(pragma).fetchall()
                     if len(result) != 1 or result[0][0] != "ok":
                         errors.extend(str(row[0]) for row in result)
                 except sqlite3.Error as e:

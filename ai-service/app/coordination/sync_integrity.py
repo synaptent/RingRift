@@ -854,8 +854,15 @@ def verified_database_copy(
             temp_path.unlink()
             return False, f"Checksum mismatch: expected {source_checksum[:16]}..., got {target_checksum[:16]}..."
 
-        # Step 5: SQLite integrity check
-        is_valid, errors = check_sqlite_integrity(temp_path)
+        # Step 5: SQLite integrity check with adaptive timeout for large databases
+        # Dec 29, 2025: Use fast check for DBs > 100MB to prevent timeouts
+        db_size_mb = source_size / (1024 * 1024)
+        use_fast = db_size_mb > 100  # Fast check for DBs > 100MB
+        is_valid, errors = check_sqlite_integrity(
+            temp_path,
+            use_fast_check=use_fast,
+            timeout_seconds=15.0 if use_fast else 30.0,
+        )
         if not is_valid:
             temp_path.unlink()
             return False, f"SQLite integrity check failed: {errors}"

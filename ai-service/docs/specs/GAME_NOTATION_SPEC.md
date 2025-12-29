@@ -312,7 +312,7 @@ LR 2          # Choose line reward option 2
 #### Territory Processing Phase
 
 ```
-T 3           # Process territory region 3
+T 3           # Choose territory region 3
 ```
 
 #### Elimination Phase
@@ -400,7 +400,7 @@ E d4          # Eliminate rings from stack at d4 (forced)
 6. M c4-d4   M d5-c4
 7. M e4-d4+  L 1; LR 1
 8. M c5-d5   C d4-b4 xc4
-9. CC b4-b2 xb3  EC
+9. CC b4-b2 xb3
 ...
 47. M g7-h8  {P1 wins by ring elimination}
 ```
@@ -418,7 +418,7 @@ E d4          # Eliminate rings from stack at d4 (forced)
 1. P 0.0     P 1.0
 2. P -1.1    P 2.-1
 3. M 0.0-1.-1  M 1.0-0.1
-4. C 1.-1-3.-1 x2.-1  EC
+4. C 1.-1-3.-1 x2.-1
 ...
 ```
 
@@ -428,8 +428,11 @@ E d4          # Eliminate rings from stack at d4 (forced)
 
 ### 5.1 TypeScript Interface
 
+Note: There is no TypeScript notation module in the codebase today; the
+interface below is illustrative only.
+
 ```typescript
-// src/shared/notation/algebraic.ts
+// Proposed: src/shared/notation/algebraic.ts
 
 interface NotationOptions {
   boardType: BoardType;

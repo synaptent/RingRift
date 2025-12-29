@@ -438,7 +438,8 @@ class BackgroundEvaluator:
                     result = self._run_evaluation(step)
                     self._process_result(result)
                     self._record_success()
-                except Exception as e:
+                except (RuntimeError, ValueError, OSError, AttributeError, TimeoutError) as e:
+                    # Eval errors: CUDA/model, bad inputs, I/O, missing attrs, timeout
                     self._record_failure(e)
 
             time.sleep(5.0)  # Check interval

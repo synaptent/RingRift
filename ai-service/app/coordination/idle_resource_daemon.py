@@ -441,6 +441,7 @@ class IdleResourceDaemon:
 
         return scaled
 
+    @property
     def is_running(self) -> bool:
         """Check if the daemon is running."""
         return self._running

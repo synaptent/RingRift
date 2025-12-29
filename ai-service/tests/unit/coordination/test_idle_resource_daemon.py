@@ -155,7 +155,7 @@ class TestIdleResourceDaemon:
 
     def test_is_running_initially_false(self, daemon):
         """Test that daemon is not running initially."""
-        assert daemon.is_running() is False
+        assert daemon.is_running is False
 
     def test_calculate_backoff(self, daemon):
         """Test exponential backoff calculation."""
@@ -409,11 +409,11 @@ class TestIdleResourceDaemonAsync:
         daemon._coordinator_status = CoordinatorStatus.RUNNING
 
         # Verify running state
-        assert daemon.is_running() is True
+        assert daemon.is_running is True
 
         # Stop and verify stopped state
         await daemon.stop()
-        assert daemon.is_running() is False
+        assert daemon.is_running is False
         assert daemon._coordinator_status == CoordinatorStatus.STOPPED
 
     @pytest.mark.asyncio
