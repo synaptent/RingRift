@@ -317,14 +317,16 @@ result = await rsync.sync_with_checksum(
 
 ## Environment Variables
 
-| Variable                             | Default | Description                     |
-| ------------------------------------ | ------- | ------------------------------- |
-| `RINGRIFT_SYNC_INTERVAL`             | 60      | Default sync interval (seconds) |
-| `RINGRIFT_EPHEMERAL_SYNC_INTERVAL`   | 5       | Ephemeral sync interval         |
-| `RINGRIFT_MAX_CONCURRENT_SYNCS`      | 5       | Max parallel transfers          |
-| `RINGRIFT_SYNC_BANDWIDTH_LIMIT`      | 50      | Default bandwidth (MB/s)        |
-| `RINGRIFT_SYNC_STRATEGY`             | hybrid  | Default strategy                |
-| `RINGRIFT_SYNC_EXCLUDE_COORDINATORS` | true    | Exclude coordinator nodes       |
+| Variable                            | Default | Description                    |
+| ----------------------------------- | ------- | ------------------------------ |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | 120     | Games sync interval (seconds)  |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | 30      | Fast sync interval (seconds)   |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | 2.0     | Minimum auto-sync interval     |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | 6       | Max concurrent auto-sync tasks |
+| `RINGRIFT_SYNC_TIMEOUT`             | 300     | Sync timeout (seconds)         |
+
+Strategy selection is configured in `distributed_hosts.yaml` under `auto_sync.strategy`
+(AUTO/HYBRID/EPHEMERAL/BROADCAST).
 
 ## Troubleshooting
 

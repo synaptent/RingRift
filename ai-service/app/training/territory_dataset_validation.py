@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Lightweight validation helpers for territory / combined-margin datasets.
 
 These helpers perform **structural** and **metadata** validation for the
@@ -12,6 +10,8 @@ intended for:
 They deliberately avoid loading the entire dataset into memory; callers
 can stream over files and stop after a bounded number of errors.
 """
+
+from __future__ import annotations
 
 import json
 from collections.abc import Iterable

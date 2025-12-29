@@ -230,25 +230,24 @@ sync_routing:
 auto_sync:
   enabled: true
   interval_seconds: 60
-  strategy: push_from_generator
-
-bandwidth_limits:
-  default_mbps: 50
-  providers:
-    runpod: 100
-    nebius: 100
-    vast: 50
-    vultr: 50
+  strategy: hybrid
+  bandwidth_limit_mbps: 100
+  host_bandwidth_overrides:
+    runpod-*: 100
+    nebius-*: 100
+    vast-*: 50
+    vultr-*: 50
 ```
 
 ### Environment Variables
 
 | Variable                            | Default | Description                    |
 | ----------------------------------- | ------- | ------------------------------ |
-| `RINGRIFT_AUTO_SYNC_ENABLED`        | true    | Enable AutoSyncDaemon          |
-| `RINGRIFT_SYNC_INTERVAL`            | 60      | Sync check interval (seconds)  |
-| `RINGRIFT_SYNC_PUSH_THRESHOLD`      | 50      | Disk % to start pushing        |
-| `RINGRIFT_MIN_COPIES_BEFORE_DELETE` | 2       | Required copies before cleanup |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | 120     | Games sync interval (seconds)  |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | 30      | Fast sync interval (seconds)   |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | 2.0     | Minimum auto-sync interval     |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | 6       | Max concurrent auto-sync tasks |
+| `RINGRIFT_SYNC_TIMEOUT`             | 300     | Sync timeout (seconds)         |
 
 ## Event Integration
 

@@ -3300,6 +3300,12 @@ def reset_daemon_manager() -> None:
 def setup_signal_handlers() -> None:
     """Set up signal handlers for graceful shutdown."""
     def handle_signal(signum, frame):
+        """Handle SIGTERM/SIGINT for graceful daemon shutdown.
+
+        Args:
+            signum: Signal number (e.g., signal.SIGTERM, signal.SIGINT)
+            frame: Current stack frame (unused)
+        """
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         manager = get_daemon_manager()
         try:
