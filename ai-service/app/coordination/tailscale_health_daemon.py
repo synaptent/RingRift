@@ -165,6 +165,11 @@ class TailscaleHealthDaemon(HandlerBase):
             self._stats.last_activity = time.time()
 
         except Exception as e:
+            # Dec 29, 2025: Intentionally broad - daemon must keep running
+            # Individual methods have their own narrowed exception handlers;
+            # this catches any unexpected errors to maintain daemon continuity.
+            # Note: Exception (not BaseException) already excludes SystemExit,
+            # KeyboardInterrupt, and GeneratorExit.
             self._stats.errors_count += 1
             self._stats.last_error = str(e)
             self._stats.last_error_time = time.time()

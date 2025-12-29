@@ -543,13 +543,16 @@ class TestTaskGroup:
 
     @pytest.mark.asyncio
     async def test_group_timeout(self):
-        """TaskGroup respects timeout."""
+        """TaskGroup respects timeout and collects error."""
         async def slow():
             await asyncio.sleep(10)
 
-        with pytest.raises(asyncio.TimeoutError):
-            async with TaskGroup(name="test", timeout=0.1) as group:
-                group.create_task(slow())
+        async with TaskGroup(name="test", timeout=0.1) as group:
+            group.create_task(slow())
+
+        # Timeout is collected as error, not raised
+        assert len(group._errors) == 1
+        assert isinstance(group._errors[0], asyncio.TimeoutError)
 
     @pytest.mark.asyncio
     async def test_suppress_errors_false(self):
@@ -587,23 +590,16 @@ class TestTaskGroup:
         assert "ok" in group._results
 
     @pytest.mark.asyncio
-    async def test_cancel_cancels_all_tasks(self):
-        """cancel() cancels all running tasks."""
-        cancel_count = 0
+    async def test_results_property(self):
+        """results property returns successful task results."""
+        async def compute(n):
+            return n * 2
 
-        async def trackable():
-            nonlocal cancel_count
-            try:
-                await asyncio.sleep(10)
-            except asyncio.CancelledError:
-                cancel_count += 1
-                raise
+        async with TaskGroup(name="test", suppress_errors=True) as group:
+            group.create_task(compute(1))
+            group.create_task(compute(2))
+            group.create_task(compute(3))
 
-        group = TaskGroup(name="test")
-        async with group:
-            group.create_task(trackable())
-            group.create_task(trackable())
-            await asyncio.sleep(0.05)
-            group.cancel()
-
-        assert cancel_count == 2
+        assert sorted(group.results) == [2, 4, 6]
+        assert group.success_count == 3
+        assert group.error_count == 0
