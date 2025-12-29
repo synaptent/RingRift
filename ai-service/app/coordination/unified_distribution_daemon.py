@@ -1240,8 +1240,17 @@ class UnifiedDistributionDaemon:
 
                 nodes = []
                 for node_id, node in get_cluster_nodes().items():
-                    # Training and selfplay roles are eligible for NPZ distribution
-                    if node.role in ("training", "selfplay"):
+                    # Dec 28, 2025: Fixed critical bug - check training_enabled flag
+                    # instead of just role. GH200 nodes have role="gpu_training_primary"
+                    # but training_enabled=true, and were being silently excluded.
+                    is_training_node = getattr(node, "training_enabled", False)
+                    has_training_role = node.role in (
+                        "training",
+                        "selfplay",
+                        "gpu_training_primary",
+                        "nn_training_primary",
+                    )
+                    if is_training_node or has_training_role:
                         nodes.append({
                             "node_id": node_id,
                             "host": node.best_ip,
