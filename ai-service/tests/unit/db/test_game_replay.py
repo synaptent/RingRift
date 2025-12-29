@@ -104,7 +104,7 @@ class TestGameReplayDBInit:
 
     def test_init_sets_schema_version(self, db: GameReplayDB) -> None:
         """Test that schema version is set correctly."""
-        conn = sqlite3.connect(str(db.db_path))
+        conn = sqlite3.connect(str(db._db_path))
         cursor = conn.execute(
             "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
         )
@@ -596,31 +596,33 @@ class TestEdgeCases:
 class TestSchemaMigrations:
     """Tests for schema migrations."""
 
-    def test_fresh_database_has_latest_schema(self, db: GameReplayDB) -> None:
+    def test_fresh_database_has_latest_schema(self, temp_db_path: Path) -> None:
         """Test that fresh database has the latest schema version."""
-        version = db._get_schema_version(db._get_conn())
-        assert version == SCHEMA_VERSION
+        with GameReplayDB(str(temp_db_path)) as db:
+            version = db._get_schema_version(db._get_conn())
+            assert version == SCHEMA_VERSION
 
-    def test_schema_includes_required_tables(self, db: GameReplayDB) -> None:
+    def test_schema_includes_required_tables(self, temp_db_path: Path) -> None:
         """Test that schema includes all required tables."""
-        conn = db._get_conn()
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
-        tables = {row[0] for row in cursor.fetchall()}
+        with GameReplayDB(str(temp_db_path)) as db:
+            conn = db._get_conn()
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+            tables = {row[0] for row in cursor.fetchall()}
 
-        required_tables = {
-            "games",
-            "game_players",
-            "game_initial_state",
-            "game_moves",
-            "game_snapshots",
-            "game_player_choices",
-            "game_history_entries",
-            "game_nnue_features",
-            "orphaned_games",
-            "schema_metadata",
-        }
+            required_tables = {
+                "games",
+                "game_players",
+                "game_initial_state",
+                "game_moves",
+                "game_state_snapshots",
+                "game_choices",
+                "game_history_entries",
+                "game_nnue_features",
+                "orphaned_games",
+                "schema_metadata",
+            }
 
-        for table in required_tables:
-            assert table in tables, f"Missing required table: {table}"
+            for table in required_tables:
+                assert table in tables, f"Missing required table: {table}"

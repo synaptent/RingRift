@@ -314,27 +314,31 @@ curl http://localhost:8790/status | jq '.sync'
 
 ### Environment Variables
 
-| Variable                        | Default | Description              |
-| ------------------------------- | ------- | ------------------------ |
-| `RINGRIFT_SYNC_INTERVAL`        | 300     | Sync interval in seconds |
-| `RINGRIFT_SYNC_BATCH_SIZE`      | 10      | Files per batch          |
-| `RINGRIFT_SYNC_BANDWIDTH_LIMIT` | 100     | MB/s per node            |
-| `RINGRIFT_SYNC_RETRY_MAX`       | 3       | Max retry attempts       |
+| Variable                            | Default | Description                    |
+| ----------------------------------- | ------- | ------------------------------ |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | 120     | Games sync interval (seconds)  |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | 30      | Fast sync interval (seconds)   |
+| `RINGRIFT_SYNC_TIMEOUT`             | 300     | Sync timeout (seconds)         |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | 2.0     | Minimum auto-sync interval     |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | 6       | Max concurrent auto-sync tasks |
 
 ### distributed_hosts.yaml
 
 ```yaml
-sync:
+auto_sync:
   enabled: true
-  interval_seconds: 300
-  strategies:
-    ephemeral_interval: 30
-    broadcast_on_promotion: true
+  interval_seconds: 60
+  gossip_interval_seconds: 15
+  max_concurrent_syncs: 12
+  bandwidth_limit_mbps: 100
+  host_bandwidth_overrides:
+    runpod-*: 100
+    nebius-*: 100
 
-hosts:
-  runpod-h100:
-    bandwidth_mbps: 100
-    priority: high
+sync_routing:
+  priority_hosts:
+    - runpod-h100
+    - nebius-h100-1
 ```
 
 ---

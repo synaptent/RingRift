@@ -1,12 +1,11 @@
-from __future__ import annotations
-
-"""
-Canonical phase ↔ move contract shared by history validators and DB writers.
+"""Canonical phase ↔ move contract shared by history validators and DB writers.
 
 This module is intentionally free of GameReplayDB or engine imports so it can
 be used safely from both read‑side tooling (parity, offline validation) and
 write‑side paths (GameReplayDB._store_move_conn).
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal

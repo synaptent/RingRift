@@ -778,8 +778,9 @@ class GameReplayDB:
         try:
             if not getattr(self, "_closed", True):
                 self.close()
-        except Exception:
-            # Suppress errors during garbage collection
+        except (sqlite3.DatabaseError, OSError):
+            # Suppress database and I/O errors during garbage collection
+            # These can occur if the connection was already closed or file deleted
             pass
 
     @contextmanager

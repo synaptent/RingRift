@@ -1,7 +1,4 @@
-from __future__ import annotations
-
-"""
-Phase state machine for the Python GameEngine.
+"""Phase state machine for the Python GameEngine.
 
 Architecture Note (2025-12):
 ----------------------------
@@ -28,6 +25,8 @@ This module centralises phase and turn transitions:
 
 All logic here operates directly on a mutable GameState instance.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 

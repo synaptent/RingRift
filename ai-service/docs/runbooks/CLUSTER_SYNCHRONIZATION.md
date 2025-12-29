@@ -315,12 +315,13 @@ sync_routing:
 
 ### Environment Variables
 
-| Variable                   | Default | Description                  |
-| -------------------------- | ------- | ---------------------------- |
-| `RINGRIFT_SYNC_INTERVAL`   | 60      | Seconds between sync cycles  |
-| `RINGRIFT_SYNC_BATCH_SIZE` | 100     | Max files per sync batch     |
-| `RINGRIFT_SYNC_TIMEOUT`    | 300     | Sync operation timeout (sec) |
-| `RINGRIFT_SYNC_DRY_RUN`    | false   | Log without executing        |
+| Variable                            | Default | Description                        |
+| ----------------------------------- | ------- | ---------------------------------- |
+| `RINGRIFT_DATA_SYNC_INTERVAL`       | 120     | Games sync interval (seconds)      |
+| `RINGRIFT_FAST_SYNC_INTERVAL`       | 30      | Fast sync interval (seconds)       |
+| `RINGRIFT_MIN_SYNC_INTERVAL`        | 2.0     | Minimum auto-sync interval (sec)   |
+| `RINGRIFT_AUTO_SYNC_MAX_CONCURRENT` | 6       | Max concurrent auto-sync transfers |
+| `RINGRIFT_SYNC_TIMEOUT`             | 300     | Sync operation timeout (sec)       |
 
 ## Programmatic Access
 

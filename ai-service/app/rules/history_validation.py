@@ -1,7 +1,4 @@
-from __future__ import annotations
-
-"""
-Lightweight canonical history validator for GameReplayDB recordings.
+"""Lightweight canonical history validator for GameReplayDB recordings.
 
 Scope:
 - Enforces a minimal subset of RR-CANON-R075 at the recording level by
@@ -16,6 +13,8 @@ move as authoritative for:
 - phase: the GamePhase string stored in game_moves.phase.
 - moveType: the MoveType string stored in game_moves.move_type.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
