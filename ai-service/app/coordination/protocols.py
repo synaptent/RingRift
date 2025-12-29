@@ -61,6 +61,7 @@ from app.coordination.contracts import (
     DaemonProtocol,
     EventDrivenProtocol,
     HealthCheckResult,
+    SyncManagerProtocol,
     get_coordinator,
     get_registered_coordinators,
     is_coordinator,
@@ -82,6 +83,7 @@ __all__ = [
     "CoordinatorProtocol",
     "DaemonProtocol",
     "EventDrivenProtocol",
+    "SyncManagerProtocol",
     # Base classes
     "BaseCoordinator",
     "BaseDaemon",
