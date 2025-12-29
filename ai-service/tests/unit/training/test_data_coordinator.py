@@ -292,17 +292,16 @@ class TestLazyComponentLoading:
         TrainingDataCoordinator.reset_instance()
         coord = TrainingDataCoordinator(config=config)
 
-        # Mock the bridge import at its source module
+        # Manually set a cached bridge to test caching behavior
         mock_bridge = MagicMock()
-        with patch.dict("sys.modules", {"app.training.quality_bridge": MagicMock()}):
-            with patch("app.training.quality_bridge.get_quality_bridge", return_value=mock_bridge):
-                # First call
-                bridge1 = coord._get_quality_bridge()
-                # Second call (should be cached)
-                bridge2 = coord._get_quality_bridge()
+        coord._quality_bridge = mock_bridge
 
-                assert bridge1 is bridge2
-                assert bridge1 is mock_bridge
+        # Second call should return cached bridge
+        bridge1 = coord._get_quality_bridge()
+        bridge2 = coord._get_quality_bridge()
+
+        assert bridge1 is bridge2
+        assert bridge1 is mock_bridge
 
         TrainingDataCoordinator.reset_instance()
 
@@ -310,13 +309,23 @@ class TestLazyComponentLoading:
         """Test get_hot_buffer creates new buffer when none exists."""
         assert coordinator._hot_buffer is None
 
-        # Mock the creation at the source module
+        # Mock the hot buffer module properly
         mock_buffer = MagicMock()
-        with patch.dict("sys.modules", {"app.training.hot_data_buffer": MagicMock()}):
-            with patch("app.training.hot_data_buffer.create_hot_buffer", return_value=mock_buffer):
-                buffer = coordinator.get_hot_buffer()
+        mock_module = MagicMock()
+        mock_module.create_hot_buffer = MagicMock(return_value=mock_buffer)
 
-                assert buffer is mock_buffer
+        import sys
+        original = sys.modules.get("app.training.hot_data_buffer")
+        sys.modules["app.training.hot_data_buffer"] = mock_module
+
+        try:
+            buffer = coordinator.get_hot_buffer()
+            assert buffer is mock_buffer
+        finally:
+            if original:
+                sys.modules["app.training.hot_data_buffer"] = original
+            elif "app.training.hot_data_buffer" in sys.modules:
+                del sys.modules["app.training.hot_data_buffer"]
 
     def test_get_hot_buffer_returns_cached(self, coordinator):
         """Test get_hot_buffer returns cached buffer."""

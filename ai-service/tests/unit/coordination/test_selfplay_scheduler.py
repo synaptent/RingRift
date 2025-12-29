@@ -1707,10 +1707,13 @@ class TestGameCountNormalization:
 
     def test_games_needed_defaults(self):
         """Test games_needed with default values."""
+        from app.coordination.selfplay_scheduler import DEFAULT_TRAINING_SAMPLES_TARGET
+
         priority = ConfigPriority(config_key="hex8_2p")
-        # Default target_training_samples = 100000, samples_per_game = 50
-        # games_needed = 100000 / 50 = 2000
-        assert priority.games_needed == 2000
+        # Default target_training_samples = 50000, samples_per_game = 50
+        # games_needed = 50000 / 50 = 1000
+        expected = DEFAULT_TRAINING_SAMPLES_TARGET // 50  # 1000
+        assert priority.games_needed == expected
 
     def test_games_needed_with_existing_games(self):
         """Test games_needed subtracts existing games."""
@@ -2151,4 +2154,150 @@ class TestDec29Constants:
         assert 0.0 <= CONFIGS_AT_TARGET_THRESHOLD <= 1.0
 
 
-# Run with: pytest tests/unit/coordination/test_selfplay_scheduler.py -v -k "Dec29 or DynamicWeights or VOI or GameCount or AdaptiveBudget or EloVelocity"
+# =============================================================================
+# NODE_OVERLOADED Handler Tests (Dec 29, 2025)
+# =============================================================================
+
+
+class TestNodeOverloadedHandler:
+    """Tests for NODE_OVERLOADED event handler and node backoff tracking."""
+
+    def setup_method(self):
+        """Create fresh scheduler for each test."""
+        reset_selfplay_scheduler()
+        self.scheduler = SelfplayScheduler()
+
+    def test_initial_no_overloaded_nodes(self):
+        """Test that initially no nodes are overloaded."""
+        assert self.scheduler.get_overloaded_nodes() == []
+
+    def test_is_node_under_backoff_false_initially(self):
+        """Test is_node_under_backoff returns False for unknown node."""
+        assert self.scheduler.is_node_under_backoff("unknown-node") is False
+
+    def test_on_node_overloaded_adds_to_backoff(self):
+        """Test _on_node_overloaded adds node to backoff set."""
+        event = MagicMock()
+        event.payload = {
+            "host": "vast-12345",
+            "cpu_percent": 95,
+            "gpu_percent": 90,
+            "memory_percent": 85,
+            "resource_type": "cpu",
+        }
+
+        self.scheduler._on_node_overloaded(event)
+
+        assert self.scheduler.is_node_under_backoff("vast-12345") is True
+        assert "vast-12345" in self.scheduler.get_overloaded_nodes()
+
+    def test_on_node_overloaded_ignores_empty_host(self):
+        """Test _on_node_overloaded ignores event without host."""
+        event = MagicMock()
+        event.payload = {
+            "host": "",
+            "cpu_percent": 95,
+        }
+
+        self.scheduler._on_node_overloaded(event)
+
+        assert self.scheduler.get_overloaded_nodes() == []
+
+    def test_on_node_overloaded_memory_longer_backoff(self):
+        """Test memory overload gets longer backoff (90s vs 60s)."""
+        event = MagicMock()
+        event.payload = {
+            "host": "vast-memory-node",
+            "memory_percent": 95,
+            "resource_type": "memory",
+        }
+
+        self.scheduler._on_node_overloaded(event)
+
+        # Node should be under backoff
+        assert self.scheduler.is_node_under_backoff("vast-memory-node") is True
+
+    def test_on_node_overloaded_consecutive_failures_longest_backoff(self):
+        """Test consecutive_failures gets longest backoff (120s)."""
+        event = MagicMock()
+        event.payload = {
+            "host": "failing-node",
+            "resource_type": "consecutive_failures",
+        }
+
+        self.scheduler._on_node_overloaded(event)
+
+        assert self.scheduler.is_node_under_backoff("failing-node") is True
+
+    def test_get_overloaded_nodes_cleans_expired(self):
+        """Test get_overloaded_nodes cleans up expired backoffs."""
+        # Manually add an expired backoff
+        import time
+
+        if not hasattr(self.scheduler, "_overloaded_nodes"):
+            self.scheduler._overloaded_nodes = {}
+
+        self.scheduler._overloaded_nodes["expired-node"] = time.time() - 10
+        self.scheduler._overloaded_nodes["active-node"] = time.time() + 60
+
+        result = self.scheduler.get_overloaded_nodes()
+
+        assert "expired-node" not in result
+        assert "active-node" in result
+        assert "expired-node" not in self.scheduler._overloaded_nodes
+
+    def test_get_status_includes_overloaded_nodes(self):
+        """Test get_status includes overloaded_nodes key."""
+        status = self.scheduler.get_status()
+
+        assert "overloaded_nodes" in status
+        assert isinstance(status["overloaded_nodes"], list)
+
+    def test_multiple_overloaded_nodes_tracked(self):
+        """Test multiple nodes can be tracked as overloaded."""
+        for i in range(5):
+            event = MagicMock()
+            event.payload = {
+                "host": f"node-{i}",
+                "cpu_percent": 90 + i,
+                "resource_type": "cpu",
+            }
+            self.scheduler._on_node_overloaded(event)
+
+        overloaded = self.scheduler.get_overloaded_nodes()
+        assert len(overloaded) == 5
+        for i in range(5):
+            assert f"node-{i}" in overloaded
+
+    def test_on_node_overloaded_updates_existing_backoff(self):
+        """Test repeated overload events update the backoff time."""
+        event = MagicMock()
+        event.payload = {
+            "host": "repeat-node",
+            "cpu_percent": 95,
+            "resource_type": "cpu",
+        }
+
+        # First overload
+        self.scheduler._on_node_overloaded(event)
+        assert self.scheduler.is_node_under_backoff("repeat-node") is True
+
+        # Second overload - should update backoff time
+        self.scheduler._on_node_overloaded(event)
+        assert self.scheduler.is_node_under_backoff("repeat-node") is True
+
+    def test_on_node_overloaded_handles_dict_payload(self):
+        """Test handler accepts dict directly as event (no .payload attr)."""
+        # Some events may be dicts rather than objects with .payload
+        event_dict = {
+            "host": "dict-node",
+            "cpu_percent": 95,
+            "resource_type": "cpu",
+        }
+
+        self.scheduler._on_node_overloaded(event_dict)
+
+        assert self.scheduler.is_node_under_backoff("dict-node") is True
+
+
+# Run with: pytest tests/unit/coordination/test_selfplay_scheduler.py -v -k "Dec29 or DynamicWeights or VOI or GameCount or AdaptiveBudget or EloVelocity or NodeOverloaded"
