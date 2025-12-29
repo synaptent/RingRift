@@ -254,12 +254,37 @@ ai-service/
 | `queue_populator_daemon.py`    | `unified_queue_populator.py`           |
 | `model_distribution_daemon.py` | `unified_distribution_daemon.py`       |
 
+## 48-Hour Autonomous Operation (Dec 2025)
+
+The cluster can run unattended for 48+ hours with these daemons:
+
+| Daemon              | Purpose                               |
+| ------------------- | ------------------------------------- |
+| `PROGRESS_WATCHDOG` | Detects Elo stalls, triggers recovery |
+| `P2P_RECOVERY`      | Restarts unhealthy P2P orchestrator   |
+| `STALE_FALLBACK`    | Uses older models when data is stale  |
+
+**Key Events:**
+
+- `PROGRESS_STALL_DETECTED` - Config Elo stalled >24h
+- `PROGRESS_RECOVERED` - Config resumed progress
+- `MEMORY_PRESSURE` - GPU VRAM critical, pause spawning
+
+**Budget Tiers** (from `budget_calculator.py`):
+| Game Count | Budget | Purpose |
+|------------|--------|---------|
+| <100 | 64 | Bootstrap tier 1 - max throughput |
+| <500 | 150 | Bootstrap tier 2 - fast iteration |
+| <1000 | 200 | Bootstrap tier 3 - balanced |
+| ≥1000 | Elo-based | STANDARD/QUALITY/ULTIMATE/MASTER |
+
 ## Known Issues
 
 1. **Parity gates on cluster**: Nodes lack `npx`, so TS validation fails. Set `RINGRIFT_ALLOW_PENDING_GATE=1`.
 2. **Board conventions**: Hex boards use radius. hex8 = radius 4 = 61 cells.
 3. **GPU memory**: v2 models with batch_size=512 need ~8GB VRAM.
 4. **PYTHONPATH**: Set `PYTHONPATH=.` when running scripts from ai-service directory.
+5. **Container networking**: Vast.ai/RunPod need `container_tailscale_setup.py` for mesh connectivity.
 
 ## See Also
 
