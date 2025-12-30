@@ -41,6 +41,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from app.coordination.event_utils import parse_config_key
 from app.coordination.protocols import HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -1969,14 +1970,13 @@ class FeedbackLoopController:
         - Attempt 3: Maximum games, longer delay
         """
         try:
-            # Parse config key to get board_type and num_players
-            parts = config_key.rsplit("_", 1)
-            if len(parts) != 2 or not parts[1].endswith("p"):
+            # Parse config key using canonical utility
+            parsed = parse_config_key(config_key)
+            if not parsed:
                 logger.debug(f"[FeedbackLoopController] Invalid config_key format: {config_key}")
                 return
-
-            board_type = parts[0]
-            num_players = int(parts[1][:-1])
+            board_type = parsed.board_type
+            num_players = parsed.num_players
 
             # Adjust parameters based on attempt
             base_games = 100
@@ -2496,19 +2496,13 @@ class FeedbackLoopController:
         logger.info(f"[FeedbackLoopController] Triggering multi-harness evaluation for {config_key}")
 
         try:
-            # Parse config_key into board_type and num_players
-            # Format: "hex8_2p", "square8_4p", etc.
-            parts = config_key.rsplit("_", 1)
-            if len(parts) != 2:
+            # Parse config_key using canonical utility
+            parsed = parse_config_key(config_key)
+            if not parsed:
                 logger.warning(f"[FeedbackLoopController] Invalid config_key format: {config_key}")
                 return
-
-            board_type = parts[0]
-            try:
-                num_players = int(parts[1].replace("p", ""))
-            except ValueError:
-                logger.warning(f"[FeedbackLoopController] Cannot parse num_players from: {config_key}")
-                return
+            board_type = parsed.board_type
+            num_players = parsed.num_players
 
             # Launch multi-harness gauntlet evaluation asynchronously
             async def run_multi_harness_gauntlet():

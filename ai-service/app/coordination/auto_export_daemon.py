@@ -36,6 +36,7 @@ from typing import Any, Callable
 
 from app.core.async_context import safe_create_task
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -798,9 +799,10 @@ class AutoExportDaemon(HandlerBase):
                 get_stage_event_bus,
             )
 
-            parts = config_key.rsplit("_", 1)
-            board_type = parts[0] if len(parts) == 2 else config_key
-            num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
+            # Dec 30, 2025: Use consolidated parse_config_key utility
+            parsed = parse_config_key(config_key)
+            board_type = parsed.board_type if parsed else config_key
+            num_players = parsed.num_players if parsed else 2
 
             bus = get_stage_event_bus()
             await bus.emit(
@@ -834,9 +836,10 @@ class AutoExportDaemon(HandlerBase):
             )
 
             state = self._export_states.get(config_key)
-            parts = config_key.rsplit("_", 1)
-            board_type = parts[0] if len(parts) == 2 else config_key
-            num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
+            # Dec 30, 2025: Use consolidated parse_config_key utility
+            parsed = parse_config_key(config_key)
+            board_type = parsed.board_type if parsed else config_key
+            num_players = parsed.num_players if parsed else 2
 
             bus = get_stage_event_bus()
             await bus.emit(

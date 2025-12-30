@@ -4,6 +4,8 @@
 **Date**: December 2025
 **Author**: RingRift AI Team
 
+> **Note:** This ADR reflects Dec 2025 counts. Current `DataEventType` has 211 events; see `ai-service/docs/EVENT_SYSTEM_REFERENCE.md`.
+
 ## Context
 
 The RingRift AI training pipeline consists of multiple stages (selfplay, data sync, export, training, evaluation, promotion) that need to be coordinated across a distributed cluster of 20+ GPU nodes.
@@ -21,7 +23,7 @@ Adopt an **event-driven architecture** using a unified event bus with the follow
 
 ### Event Bus Design
 
-1. **DataEventType enum** (`app/distributed/data_events.py`): 151 event types covering all pipeline stages
+1. **DataEventType enum** (`app/distributed/data_events.py`): 151 event types covering all pipeline stages (Dec 2025 snapshot)
 2. **EventRouter** (`app/coordination/event_router.py`): Unified router bridging three underlying buses:
    - `DataEventBus`: In-memory async event bus
    - `StageEventBus`: Pipeline stage transitions

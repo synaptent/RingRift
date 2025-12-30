@@ -217,9 +217,39 @@ class ConfigValidator:
                 if ssh_host and not self._is_valid_host(ssh_host):
                     warnings.append(f"Host '{name}' has invalid ssh_host: {ssh_host}")
 
+                # Validate tailscale_ip format (Dec 30, 2025)
+                tailscale_ip = info.get("tailscale_ip")
+                if tailscale_ip and not self._is_valid_ip(tailscale_ip):
+                    warnings.append(f"Host '{name}' has invalid tailscale_ip format: {tailscale_ip}")
+
                 memory_gb = info.get("memory_gb", 0)
                 if memory_gb and memory_gb < 16:
                     warnings.append(f"Host '{name}' has low memory: {memory_gb}GB")
+
+                # Validate GPU VRAM bounds (Dec 30, 2025)
+                gpu = info.get("gpu", {})
+                if isinstance(gpu, dict):
+                    vram_gb = gpu.get("vram_gb", 0)
+                    if vram_gb:
+                        if vram_gb < 8:
+                            warnings.append(f"Host '{name}' has unusually low GPU VRAM: {vram_gb}GB")
+                        elif vram_gb > 200:
+                            warnings.append(f"Host '{name}' has unusually high GPU VRAM: {vram_gb}GB (check for typo)")
+
+                # Provider-specific validation (Dec 30, 2025)
+                provider = info.get("provider", "").lower()
+                if provider in ("vast", "vast.ai"):
+                    # Vast.ai hosts should have instance_id for API operations
+                    if not info.get("instance_id") and not info.get("vast_instance_id"):
+                        warnings.append(f"Host '{name}' (Vast.ai) missing instance_id")
+                elif provider == "runpod":
+                    # RunPod hosts should have pod_id
+                    if not info.get("pod_id") and not info.get("runpod_pod_id"):
+                        warnings.append(f"Host '{name}' (RunPod) missing pod_id")
+                elif provider == "lambda":
+                    # Lambda hosts should have instance_id
+                    if not info.get("instance_id") and not info.get("lambda_instance_id"):
+                        warnings.append(f"Host '{name}' (Lambda) missing instance_id")
 
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
@@ -463,6 +493,17 @@ class ConfigValidator:
         # Hostname pattern
         hostname_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$"
         return bool(re.match(hostname_pattern, host))
+
+    def _is_valid_ip(self, ip: str) -> bool:
+        """Check if string is a valid IPv4 address.
+
+        Dec 30, 2025: Added for Tailscale IP validation.
+        """
+        ip_pattern = r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"
+        if not re.match(ip_pattern, ip):
+            return False
+        parts = ip.split(".")
+        return all(0 <= int(p) <= 255 for p in parts)
 
 
 def validate_all_configs(base_path: Path | None = None) -> ValidationResult:

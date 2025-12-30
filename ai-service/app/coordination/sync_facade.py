@@ -57,6 +57,7 @@ from enum import Enum
 from typing import Any
 
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.coordination.event_utils import parse_config_key
 
 logger = logging.getLogger(__name__)
 
@@ -604,17 +605,14 @@ class SyncFacade:
             f"source={source_node}, config={config_key}"
         )
 
-        # Parse board_type and num_players from config_key if provided
+        # Parse board_type and num_players from config_key using canonical utility
         board_type = None
         num_players = None
-        if config_key and "_" in config_key:
-            parts = config_key.rsplit("_", 1)
-            if len(parts) == 2 and parts[1].endswith("p"):
-                board_type = parts[0]
-                try:
-                    num_players = int(parts[1][:-1])
-                except ValueError:
-                    pass
+        if config_key:
+            parsed = parse_config_key(config_key)
+            if parsed:
+                board_type = parsed.board_type
+                num_players = parsed.num_players
 
         # Build request with high priority
         request = SyncRequest(
@@ -669,17 +667,14 @@ class SyncFacade:
                 if reason == "orphan_games_recovery" and response.nodes_synced > 0:
                     from app.distributed.data_events import DataEventType, emit_data_event
 
-                    # Parse board_type and num_players from config_key
+                    # Parse board_type and num_players using canonical utility
                     board_type = None
                     num_players = None
-                    if config_key and "_" in config_key:
-                        parts = config_key.rsplit("_", 1)
-                        if len(parts) == 2 and parts[1].endswith("p"):
-                            board_type = parts[0]
-                            try:
-                                num_players = int(parts[1][:-1])
-                            except ValueError:
-                                pass
+                    if config_key:
+                        parsed = parse_config_key(config_key)
+                        if parsed:
+                            board_type = parsed.board_type
+                            num_players = parsed.num_players
 
                     await emit_data_event(
                         event_type=DataEventType.ORPHAN_GAMES_REGISTERED,

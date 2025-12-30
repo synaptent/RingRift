@@ -3,7 +3,7 @@
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
 **Last updated:** December 30, 2025 (availability + connectivity daemons)
-**Total Daemon Types:** 95 (89 async runners in `daemon_runners.py`, 6 deprecated as of Dec 30, 2025)
+**Total Daemon Types:** 89 (89 async runners in `daemon_runners.py`, 78 active, 11 deprecated as of Dec 30, 2025)
 **Startup Order:** 24 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
 **Dependencies:** Canonical dependencies live in `DAEMON_REGISTRY` (89 entries); `DAEMON_DEPENDENCIES` covers 85 legacy entries
 
@@ -34,7 +34,7 @@ This document provides a comprehensive reference for all daemons managed by the 
 
 ## Overview
 
-The `DaemonManager` coordinates the lifecycle of 95 background services across the RingRift cluster. Daemons are organized into profiles based on node roles (coordinator, training_node, ephemeral, selfplay).
+The `DaemonManager` coordinates the lifecycle of 89 daemon types across the RingRift cluster. Daemons are organized into profiles based on node roles (coordinator, training_node, ephemeral, selfplay).
 It also listens for backpressure events (`BACKPRESSURE_ACTIVATED`/`BACKPRESSURE_RELEASED`) and
 pauses or resumes non-essential daemons when supported to reduce cluster load.
 
@@ -1031,7 +1031,7 @@ Automated verification confirmed the following architecture is properly configur
 
 | Metric                         | Value | Status          |
 | ------------------------------ | ----- | --------------- |
-| Total DaemonType values        | 95    | ✓ All accounted |
+| Total DaemonType values        | 89    | ✓ All accounted |
 | Runners in `daemon_runners.py` | 89    | ✓ Complete      |
 | Inline runners                 | 0     | ✓ None          |
 | Missing runners                | 0     | ✓ None          |

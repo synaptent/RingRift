@@ -47,6 +47,7 @@ from typing import Any, Callable
 from app.config.coordination_defaults import DataFreshnessDefaults, SyncDefaults
 from app.config.env import env
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -1112,11 +1113,12 @@ class TrainingTriggerDaemon(HandlerBase):
                 return
 
             # Parse board_type and num_players from config_key
-            board_type = config_key.rsplit("_", 1)[0] if "_" in config_key else ""
-            try:
-                num_players = int(config_key.rsplit("_", 1)[1].rstrip("p"))
-            except (ValueError, IndexError):
-                num_players = 2
+            parsed = parse_config_key(config_key)
+            if not parsed:
+                logger.debug(f"[TrainingTriggerDaemon] Invalid config_key: {config_key}")
+                return
+            board_type = parsed.board_type
+            num_players = parsed.num_players
 
             state = self._get_or_create_state(config_key, board_type, num_players)
 
@@ -1191,11 +1193,12 @@ class TrainingTriggerDaemon(HandlerBase):
                 return
 
             # Parse board_type and num_players from config_key
-            board_type = config_key.rsplit("_", 1)[0] if "_" in config_key else ""
-            try:
-                num_players = int(config_key.rsplit("_", 1)[1].rstrip("p"))
-            except (ValueError, IndexError):
-                num_players = 2
+            parsed = parse_config_key(config_key)
+            if not parsed:
+                logger.debug(f"[TrainingTriggerDaemon] Invalid config_key: {config_key}")
+                return
+            board_type = parsed.board_type
+            num_players = parsed.num_players
 
             state = self._get_or_create_state(config_key, board_type, num_players)
 
@@ -1550,12 +1553,13 @@ class TrainingTriggerDaemon(HandlerBase):
                     board_type = parsed_board
                     num_players = parsed_players
                 else:
-                    # Fallback to legacy parsing
-                    parts = config_key.rsplit("_", 1)
-                    board_type = parts[0] if len(parts) == 2 else config_key
-                    try:
-                        num_players = int(parts[1].replace("p", "")) if len(parts) == 2 else 2
-                    except ValueError:
+                    # Use canonical parse_config_key utility
+                    parsed = parse_config_key(config_key)
+                    if parsed:
+                        board_type = parsed.board_type
+                        num_players = parsed.num_players
+                    else:
+                        board_type = config_key
                         num_players = 2
 
             self._training_states[config_key] = ConfigTrainingState(

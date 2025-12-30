@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.event_utils import parse_config_key
 from app.coordination.health_check_helper import HealthCheckHelper
 from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
 
@@ -295,16 +296,12 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         # Filter configs that pass validation and cooldown check
         valid_configs: list[tuple[str, str, int]] = []  # (config_key, board_type, num_players)
         for config_key in configs_to_process:
-            # Parse config key
-            parts = config_key.rsplit("_", 1)
-            if len(parts) != 2:
+            # Parse config key using canonical utility
+            parsed = parse_config_key(config_key)
+            if not parsed:
                 continue
-
-            board_type = parts[0]
-            try:
-                num_players = int(parts[1].replace("p", ""))
-            except ValueError:
-                continue
+            board_type = parsed.board_type
+            num_players = parsed.num_players
 
             # Check if enough time has passed since last consolidation
             last_time = self._last_consolidation.get(config_key, 0)
@@ -1004,14 +1001,11 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         Returns:
             ConsolidationStats if successful, None otherwise
         """
-        parts = config_key.rsplit("_", 1)
-        if len(parts) != 2:
+        parsed = parse_config_key(config_key)
+        if not parsed:
             return None
 
-        board_type = parts[0]
-        num_players = int(parts[1].replace("p", ""))
-
-        return await self._consolidate_config(board_type, num_players)
+        return await self._consolidate_config(parsed.board_type, parsed.num_players)
 
     async def trigger_all_consolidations(self) -> dict[str, ConsolidationStats]:
         """Trigger consolidation for all configs.

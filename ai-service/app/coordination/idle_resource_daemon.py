@@ -43,6 +43,7 @@ from typing import Any
 from app.config.cluster_config import get_host_provider
 from app.config.env import env
 from app.coordination.contracts import HealthCheckResult
+from app.coordination.event_utils import parse_config_key
 from app.coordination.protocols import (
     CoordinatorStatus,
     register_coordinator,
@@ -2307,10 +2308,10 @@ class IdleResourceDaemon:
                     try:
                         scheduler = get_scheduler()
                         if scheduler:
-                            # Parse config key for job config
-                            parts = config_key.rsplit("_", 1)
-                            board_type = parts[0] if parts else config_key
-                            num_players = int(parts[1].replace("p", "")) if len(parts) > 1 else 2
+                            # Parse config key for job config using canonical utility
+                            parsed = parse_config_key(config_key)
+                            board_type = parsed.board_type if parsed else config_key
+                            num_players = parsed.num_players if parsed else 2
 
                             job = ScheduledJob(
                                 job_type="selfplay",
@@ -2444,14 +2445,13 @@ class IdleResourceDaemon:
         Dec 2025: Added SSH fallback when P2P is unavailable. This allows
         spawning jobs on nodes even if their P2P daemon isn't running.
         """
-        # Parse config key first (needed for both methods)
-        parts = config_key.rsplit("_", 1)
-        if len(parts) != 2:
+        # Parse config key first (needed for both methods) using canonical utility
+        parsed = parse_config_key(config_key)
+        if not parsed:
             logger.warning(f"Invalid config key: {config_key}")
             return False
-
-        board_type = parts[0]
-        num_players = int(parts[1].replace("p", ""))
+        board_type = parsed.board_type
+        num_players = parsed.num_players
 
         # Phase 1: Try P2P first (preferred)
         p2p_success = await self._distribute_job_via_p2p(

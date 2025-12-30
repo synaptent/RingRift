@@ -245,6 +245,10 @@ class GossipProtocolMixin(P2PMixinBase):
     GOSSIP_STATE_TTL = 3600  # 1 hour TTL for stale states
     GOSSIP_ENDPOINT_TTL = 1800  # 30 min TTL for learned endpoints
 
+    # Dec 30, 2025: Message size limits for network stability
+    GOSSIP_MAX_MESSAGE_SIZE_BYTES = 1 * 1024 * 1024  # 1MB compressed limit
+    GOSSIP_MESSAGE_SIZE_WARNING_BYTES = 512 * 1024  # 512KB warning threshold
+
     def _init_gossip_protocol(self) -> None:
         """Initialize gossip protocol state and metrics.
 
@@ -901,6 +905,21 @@ class GossipProtocolMixin(P2PMixinBase):
 
             # Track compression metrics (method now in this class)
             self._record_gossip_compression(original_size, compressed_size)
+
+            # Dec 30, 2025: Validate message size before sending
+            if compressed_size > self.GOSSIP_MAX_MESSAGE_SIZE_BYTES:
+                self._log_error(
+                    f"Gossip message too large: {compressed_size / 1024:.1f}KB "
+                    f"(max {self.GOSSIP_MAX_MESSAGE_SIZE_BYTES / 1024:.0f}KB). "
+                    f"Peer: {peer.node_id}. Skipping gossip to prevent network issues."
+                )
+                return  # Skip this gossip exchange
+            elif compressed_size > self.GOSSIP_MESSAGE_SIZE_WARNING_BYTES:
+                self._log_warning(
+                    f"Large gossip message: {compressed_size / 1024:.1f}KB "
+                    f"(warning threshold: {self.GOSSIP_MESSAGE_SIZE_WARNING_BYTES / 1024:.0f}KB). "
+                    f"Peer: {peer.node_id}. Consider reducing state size."
+                )
 
             start_time = time.time()
 

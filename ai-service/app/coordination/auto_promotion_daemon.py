@@ -28,6 +28,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.coordination.event_utils import parse_config_key
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -433,17 +435,13 @@ class AutoPromotionDaemon:
 
         config_key = candidate.config_key
 
-        # Parse board_type and num_players from config_key (e.g., "hex8_2p")
-        parts = config_key.rsplit("_", 1)
-        if len(parts) != 2:
+        # Parse board_type and num_players using canonical utility
+        parsed = parse_config_key(config_key)
+        if not parsed:
             logger.warning(f"[AutoPromotion] Cannot parse config_key: {config_key}")
             return True, "config_key_unparseable"
-
-        board_type = parts[0]
-        try:
-            num_players = int(parts[1].rstrip("p"))
-        except ValueError:
-            return True, "num_players_unparseable"
+        board_type = parsed.board_type
+        num_players = parsed.num_players
 
         # Check parity validation status
         if self.config.require_parity_validation:
@@ -587,17 +585,13 @@ class AutoPromotionDaemon:
             if "mac-studio" not in hostname and "local-mac" not in hostname:
                 return True, "skipped_not_coordinator"
 
-        # Parse board_type and num_players from config_key
-        parts = config_key.rsplit("_", 1)
-        if len(parts) != 2:
+        # Parse board_type and num_players using canonical utility
+        parsed = parse_config_key(config_key)
+        if not parsed:
             logger.warning(f"[AutoPromotion] Cannot parse config_key: {config_key}")
             return True, "config_key_unparseable"
-
-        board_type = parts[0]
-        try:
-            num_players = int(parts[1].rstrip("p"))
-        except ValueError:
-            return True, "num_players_unparseable"
+        board_type = parsed.board_type
+        num_players = parsed.num_players
 
         # Find canonical database for this config
         db_path = Path(f"data/games/canonical_{board_type}_{num_players}p.db")
@@ -749,17 +743,13 @@ class AutoPromotionDaemon:
 
         config_key = candidate.config_key
 
-        # Parse board_type and num_players from config_key (e.g., "hex8_2p")
-        parts = config_key.rsplit("_", 1)
-        if len(parts) != 2:
+        # Parse board_type and num_players using canonical utility
+        parsed = parse_config_key(config_key)
+        if not parsed:
             logger.warning(f"[AutoPromotion] Cannot parse config_key: {config_key}")
             return True, "config_key_unparseable"
-
-        board_type = parts[0]
-        try:
-            num_players = int(parts[1].rstrip("p"))
-        except ValueError:
-            return True, "num_players_unparseable"
+        board_type = parsed.board_type
+        num_players = parsed.num_players
 
         try:
             from app.coordination.stability_heuristic import (
