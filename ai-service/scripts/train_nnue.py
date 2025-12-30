@@ -4585,11 +4585,20 @@ def train_nnue(
     if distillation and teacher_path:
         try:
             from app.utils.torch_utils import safe_load_checkpoint
-            teacher = RingRiftNNUE(
-                feature_dim=get_feature_dim(board_type),
-                hidden_dim=hidden_dim * 2,  # Assume larger teacher
-                num_hidden_layers=num_hidden_layers + 1,
-            ).to(device)
+            # December 2025: Use MultiPlayerNNUE for 3+ player teacher models
+            if num_players >= 3:
+                teacher = MultiPlayerNNUE(
+                    num_players=num_players,
+                    feature_dim=get_feature_dim(board_type),
+                    hidden_dim=hidden_dim * 2,  # Assume larger teacher
+                    num_hidden_layers=num_hidden_layers + 1,
+                ).to(device)
+            else:
+                teacher = RingRiftNNUE(
+                    feature_dim=get_feature_dim(board_type),
+                    hidden_dim=hidden_dim * 2,  # Assume larger teacher
+                    num_hidden_layers=num_hidden_layers + 1,
+                ).to(device)
             teacher.load_state_dict(safe_load_checkpoint(teacher_path, map_location=device))
             KnowledgeDistillation(
                 teacher_model=teacher,

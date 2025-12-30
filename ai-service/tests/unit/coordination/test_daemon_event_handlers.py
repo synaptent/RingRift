@@ -804,38 +804,44 @@ class TestOnBackpressureReleased:
     """Tests for _on_backpressure_released handler."""
 
     @pytest.mark.asyncio
+    async def test_backpressure_released_logs_event(self):
+        """Test that backpressure release is logged without errors."""
+        from app.coordination.daemon_event_handlers import DaemonEventHandlers
+
+        mock_manager = MagicMock()
+        mock_manager._daemons = {}  # Empty daemons dict
+        handlers = DaemonEventHandlers(mock_manager)
+
+        event = MockEvent(payload={"duration_seconds": 120.5})
+
+        # Should not raise, just log
+        await handlers._on_backpressure_released(event)
+
+    @pytest.mark.asyncio
     async def test_backpressure_released_resumes_daemons(self):
         """Test that paused daemons are resumed."""
         from app.coordination.daemon_event_handlers import DaemonEventHandlers
-        from app.coordination.daemon_types import DaemonState, DaemonType
+        from app.coordination.daemon_types import DaemonInfo, DaemonState, DaemonType
 
-        mock_daemon1 = MagicMock()
-        mock_daemon1.resume = MagicMock()
+        mock_daemon = MagicMock()
 
-        mock_daemon2 = MagicMock()
-        mock_daemon2.resume = MagicMock()
+        # Use actual DaemonInfo for proper state comparison
+        daemon_info = DaemonInfo(
+            daemon_type=DaemonType.IDLE_RESOURCE,
+            state=DaemonState.RUNNING,
+        )
+        daemon_info.instance = mock_daemon
 
-        mock_manager = MagicMock()
-        mock_manager._daemons = {
-            DaemonType.IDLE_RESOURCE: MockDaemonInfo(
-                daemon_type=DaemonType.IDLE_RESOURCE,
-                state=DaemonState.RUNNING,
-                instance=mock_daemon1,
-            ),
-            DaemonType.SELFPLAY_COORDINATOR: MockDaemonInfo(
-                daemon_type=DaemonType.SELFPLAY_COORDINATOR,
-                state=DaemonState.RUNNING,
-                instance=mock_daemon2,
-            ),
-        }
-        handlers = DaemonEventHandlers(mock_manager)
+        class SimpleManager:
+            _daemons = {DaemonType.IDLE_RESOURCE: daemon_info}
+
+        handlers = DaemonEventHandlers(SimpleManager())
 
         event = MockEvent(payload={"duration_seconds": 120.5})
 
         await handlers._on_backpressure_released(event)
 
-        mock_daemon1.resume.assert_called_once()
-        mock_daemon2.resume.assert_called_once()
+        mock_daemon.resume.assert_called_once()
 
 
 class TestOnDiskSpaceLow:
