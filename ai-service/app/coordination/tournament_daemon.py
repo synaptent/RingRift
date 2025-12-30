@@ -71,7 +71,25 @@ class TournamentDaemonConfig:
     # Evaluation settings
     games_per_evaluation: int = 20
     games_per_baseline: int = 10
-    baselines: list[str] = field(default_factory=lambda: ["random", "heuristic"])
+    # Extended baselines for diverse Elo population (Dec 2025)
+    # Includes random, heuristic variants, and MCTS at different strengths
+    baselines: list[str] = field(default_factory=lambda: [
+        "random",           # ~400 Elo - baseline anchor
+        "heuristic",        # ~1200 Elo - standard gate
+        "heuristic_strong", # ~1400 Elo - difficulty 8
+        "mcts_light",       # ~1500 Elo - 32 simulations
+        "mcts_medium",      # ~1700 Elo - 128 simulations
+    ])
+
+    # Calibration tournaments - validate Elo ladder (Dec 2025)
+    enable_calibration_tournaments: bool = True
+    calibration_interval_seconds: float = 3600.0 * 24  # Daily
+    calibration_games: int = 10  # Games per calibration matchup
+
+    # Cross-NN version tournaments - compare model versions (Dec 2025)
+    enable_cross_nn_tournaments: bool = True
+    cross_nn_interval_seconds: float = 3600.0 * 4  # Every 4 hours
+    cross_nn_games_per_pairing: int = 20
 
     # Concurrency
     max_concurrent_games: int = 4
