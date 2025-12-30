@@ -7,7 +7,7 @@ This runbook covers detection, diagnosis, and recovery procedures for daemon fai
 
 ## Overview
 
-The RingRift AI service runs 66 daemon types managed by `DaemonManager`. This runbook covers:
+The RingRift AI service runs 85 daemon types managed by `DaemonManager`. This runbook covers:
 
 1. How to detect daemon failures
 2. Common failure patterns and causes

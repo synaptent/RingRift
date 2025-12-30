@@ -542,3 +542,133 @@ def get_allocation_weights(
         num_players=num_players,
         temperature=temperature,
     )
+
+
+def extract_architecture_from_model_path(model_path: str) -> str:
+    """Extract architecture version from model path.
+
+    Examples:
+        "models/canonical_hex8_2p.pth" -> "v5" (default)
+        "models/canonical_hex8_2p_v5heavy.pth" -> "v5_heavy"
+        "models/nnue_sq8_2p.pth" -> "nnue_v1"
+
+    Args:
+        model_path: Path to model file
+
+    Returns:
+        Architecture version string
+    """
+    import os
+
+    filename = os.path.basename(model_path).lower()
+
+    # Check for NNUE models
+    if "nnue" in filename:
+        return "nnue_v1"
+
+    # Check for specific version tags in filename
+    if "_v5heavy" in filename or "_v5_heavy" in filename:
+        return "v5_heavy"
+    if "_v6" in filename:
+        return "v6"
+    if "_v5" in filename:
+        return "v5"
+    if "_v4" in filename:
+        return "v4"
+    if "_v3" in filename:
+        return "v3"
+    if "_v2" in filename:
+        return "v2"
+
+    # Default to v5 for canonical models without version tag
+    return "v5"
+
+
+async def _on_evaluation_completed(event: dict) -> None:
+    """Handle EVALUATION_COMPLETED event and record to ArchitectureTracker.
+
+    This event handler is wired by wire_architecture_tracker_to_events().
+
+    Args:
+        event: Event payload with model_id/model_path, elo, board_type, num_players, etc.
+    """
+    try:
+        # Extract data from event - handle different event formats
+        model_path = event.get("model_id") or event.get("model_path") or event.get("config", "")
+        elo = event.get("elo", 1000.0)
+        games_played = event.get("games_played", 0)
+
+        # Extract board_type and num_players from event or config key
+        board_type = event.get("board_type", "")
+        num_players = event.get("num_players", 2)
+
+        # If not directly available, try to parse from config key
+        if not board_type:
+            config = event.get("config", "")
+            if "_" in config:
+                parts = config.rsplit("_", 1)
+                board_type = parts[0]
+                if len(parts) > 1 and parts[1].endswith("p"):
+                    try:
+                        num_players = int(parts[1].rstrip("p"))
+                    except ValueError:
+                        pass
+
+        if not board_type:
+            logger.debug(f"ArchitectureTracker: Could not extract board_type from event: {event}")
+            return
+
+        # Extract architecture from model path
+        architecture = extract_architecture_from_model_path(model_path)
+
+        # Record the evaluation
+        record_evaluation(
+            architecture=architecture,
+            board_type=board_type,
+            num_players=num_players,
+            elo=elo,
+            games_evaluated=games_played,
+        )
+
+        logger.info(
+            f"ArchitectureTracker: Recorded {architecture} evaluation for "
+            f"{board_type}_{num_players}p: Elo={elo:.0f}, games={games_played}"
+        )
+
+    except (KeyError, TypeError, ValueError) as e:
+        logger.debug(f"ArchitectureTracker: Could not process event: {e}")
+
+
+def wire_architecture_tracker_to_events() -> bool:
+    """Wire ArchitectureTracker to EVALUATION_COMPLETED events.
+
+    Call this during system startup to enable automatic architecture
+    performance tracking from gauntlet evaluations.
+
+    Returns:
+        True if successfully wired, False otherwise.
+    """
+    try:
+        from app.coordination.event_router import subscribe, DataEventType
+
+        # Subscribe to EVALUATION_COMPLETED events
+        subscribe(DataEventType.EVALUATION_COMPLETED, _on_evaluation_completed)
+        logger.info("ArchitectureTracker: Wired to EVALUATION_COMPLETED events")
+        return True
+
+    except ImportError:
+        # Try alternate event bus
+        try:
+            from app.distributed.data_events import get_event_bus, DataEventType
+
+            bus = get_event_bus()
+            bus.subscribe(DataEventType.EVALUATION_COMPLETED, _on_evaluation_completed)
+            logger.info("ArchitectureTracker: Wired to EVALUATION_COMPLETED events (via data_events)")
+            return True
+
+        except ImportError:
+            logger.debug("ArchitectureTracker: Event system not available")
+            return False
+    except Exception as e:
+        logger.warning(f"ArchitectureTracker: Failed to wire events: {e}")
+        return False
