@@ -92,12 +92,13 @@ router.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
 
 ### Selfplay Events
 
-| Event                         | Value                         | Description          | Payload                    |
-| ----------------------------- | ----------------------------- | -------------------- | -------------------------- |
-| `SELFPLAY_COMPLETE`           | `selfplay_complete`           | Batch finished       | `{game_count, duration}`   |
-| `SELFPLAY_TARGET_UPDATED`     | `selfplay_target_updated`     | Target changed       | `{old_target, new_target}` |
-| `SELFPLAY_RATE_CHANGED`       | `selfplay_rate_changed`       | Rate multiplier >20% | `{rate, reason}`           |
-| `SELFPLAY_ALLOCATION_UPDATED` | `selfplay_allocation_updated` | Allocation changed   | `{config, allocation}`     |
+| Event                          | Value                          | Description                  | Payload                            |
+| ------------------------------ | ------------------------------ | ---------------------------- | ---------------------------------- |
+| `SELFPLAY_COMPLETE`            | `selfplay_complete`            | Batch finished               | `{game_count, duration}`           |
+| `SELFPLAY_TARGET_UPDATED`      | `selfplay_target_updated`      | Target changed               | `{old_target, new_target}`         |
+| `SELFPLAY_RATE_CHANGED`        | `selfplay_rate_changed`        | Rate multiplier >20%         | `{rate, reason}`                   |
+| `SELFPLAY_ALLOCATION_UPDATED`  | `selfplay_allocation_updated`  | Allocation changed           | `{config, allocation}`             |
+| `ARCHITECTURE_WEIGHTS_UPDATED` | `architecture_weights_updated` | Architecture weights updated | `{config_key, weights, timestamp}` |
 
 ### Quality Events
 

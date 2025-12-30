@@ -335,7 +335,7 @@ history = list(router._event_history)  # Last 1000 events
 | **Feedback**   | `ELO_VELOCITY_CHANGED`, `PLATEAU_DETECTED`    | Training feedback        |
 | **Health**     | `NODE_RECOVERED`, `HOST_OFFLINE`              | Cluster health           |
 
-See `docs/EVENT_SYSTEM_REFERENCE.md` for the complete event catalog (118 event types).
+See `docs/EVENT_SYSTEM_REFERENCE.md` for the complete event catalog (207 event types).
 
 ---
 
@@ -789,7 +789,7 @@ Key configuration via environment variables:
 ## 8. See Also
 
 - `docs/DAEMON_REGISTRY.md` - Complete daemon type reference
-- `docs/EVENT_SYSTEM_REFERENCE.md` - Full event catalog (118 types)
+- `docs/EVENT_SYSTEM_REFERENCE.md` - Full event catalog (207 types)
 - `docs/CLUSTER_INTEGRATION_GUIDE.md` - Cluster architecture integration
 - `docs/runbooks/DAEMON_FAILURE_RECOVERY.md` - Troubleshooting guide
 - `docs/runbooks/EVENT_WIRING_VERIFICATION.md` - Event wiring verification

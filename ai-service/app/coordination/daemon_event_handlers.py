@@ -499,7 +499,7 @@ class DaemonEventHandlers:
         - EVENT_ROUTER, DAEMON_WATCHDOG, QUEUE_MONITOR, CLUSTER_WATCHDOG
 
         Pausable daemons:
-        - IDLE_RESOURCE, SELFPLAY_COORDINATOR, TRAINING_ACTIVITY, AUTO_SYNC
+        - IDLE_RESOURCE, SELFPLAY_COORDINATOR, TRAINING_NODE_WATCHER, AUTO_SYNC
 
         Args:
             event: The BACKPRESSURE_ACTIVATED event
@@ -521,7 +521,7 @@ class DaemonEventHandlers:
             pausable_daemons = [
                 DaemonType.IDLE_RESOURCE,
                 DaemonType.SELFPLAY_COORDINATOR,
-                DaemonType.TRAINING_ACTIVITY,
+                DaemonType.TRAINING_NODE_WATCHER,
                 DaemonType.AUTO_SYNC,
             ]
 
@@ -573,7 +573,7 @@ class DaemonEventHandlers:
             resumable_daemons = [
                 DaemonType.IDLE_RESOURCE,
                 DaemonType.SELFPLAY_COORDINATOR,
-                DaemonType.TRAINING_ACTIVITY,
+                DaemonType.TRAINING_NODE_WATCHER,
                 DaemonType.AUTO_SYNC,
             ]
 
@@ -642,7 +642,7 @@ class DaemonEventHandlers:
                     DaemonType.SELFPLAY_COORDINATOR,
                     DaemonType.IDLE_RESOURCE,
                     DaemonType.AUTO_SYNC,
-                    DaemonType.TRAINING_ACTIVITY,
+                    DaemonType.TRAINING_NODE_WATCHER,
                 ]
 
                 paused_count = 0

@@ -2,7 +2,7 @@
 
 **Last Updated**: December 29, 2025
 
-This document provides a comprehensive matrix of all 118+ event types in the RingRift coordination layer,
+This document provides a comprehensive matrix of all 207 event types in the RingRift coordination layer,
 their emitters, and subscribers. This is the single source of truth for event integration.
 
 ## Quick Reference

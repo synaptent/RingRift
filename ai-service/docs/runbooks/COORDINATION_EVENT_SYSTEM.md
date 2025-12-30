@@ -9,7 +9,7 @@ The RingRift coordination event system provides an event-driven architecture for
 
 ## Event Types
 
-118 event types are defined in `app/distributed/data_events.py`. Key categories:
+207 event types are defined in `app/distributed/data_events.py`. Key categories:
 
 ### Training Pipeline Events
 

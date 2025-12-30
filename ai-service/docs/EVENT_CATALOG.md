@@ -2,11 +2,11 @@
 
 This document catalogs all events in the RingRift AI-Service event system.
 
-**Last Updated**: December 29, 2025
+**Last Updated**: December 30, 2025
 
 ## Overview
 
-Events are defined in `app/distributed/data_events.py` as `DataEventType` enum values (118 total).
+Events are defined in `app/distributed/data_events.py` as `DataEventType` enum values (207 total).
 The unified event router (`app/coordination/event_router.py`) handles publishing and subscribing.
 
 ## Critical Events (Pipeline Flow)
@@ -120,12 +120,13 @@ These events form the main training pipeline:
 
 ## Selfplay Feedback Events
 
-| Event                         | Emitter                | Subscribers              | Purpose                        |
-| ----------------------------- | ---------------------- | ------------------------ | ------------------------------ |
-| `SELFPLAY_COMPLETE`           | SelfplayRunner         | DataPipelineOrchestrator | Selfplay batch finished        |
-| `SELFPLAY_TARGET_UPDATED`     | FeedbackLoopController | SelfplayScheduler        | Request more/fewer games       |
-| `SELFPLAY_RATE_CHANGED`       | SelfplayScheduler      | IdleResourceDaemon       | Rate multiplier changed (>20%) |
-| `SELFPLAY_ALLOCATION_UPDATED` | SelfplayScheduler      | IdleResourceDaemon       | Allocation changed             |
+| Event                          | Emitter                        | Subscribers              | Purpose                                |
+| ------------------------------ | ------------------------------ | ------------------------ | -------------------------------------- |
+| `SELFPLAY_COMPLETE`            | SelfplayRunner                 | DataPipelineOrchestrator | Selfplay batch finished                |
+| `SELFPLAY_TARGET_UPDATED`      | FeedbackLoopController         | SelfplayScheduler        | Request more/fewer games               |
+| `SELFPLAY_RATE_CHANGED`        | SelfplayScheduler              | IdleResourceDaemon       | Rate multiplier changed (>20%)         |
+| `SELFPLAY_ALLOCATION_UPDATED`  | SelfplayScheduler              | IdleResourceDaemon       | Allocation changed                     |
+| `ARCHITECTURE_WEIGHTS_UPDATED` | ArchitectureFeedbackController | SelfplayScheduler        | Update architecture allocation weights |
 
 ## Batch Scheduling Events
 
@@ -518,40 +519,40 @@ emit_training_complete(
 
 ## Event Count Summary
 
-| Category                    | Count    |
-| --------------------------- | -------- |
-| Data Collection & Freshness | 9        |
-| Data Consolidation          | 2        |
-| Training                    | 8        |
-| Evaluation                  | 5        |
-| Promotion                   | 7        |
-| Curriculum                  | 4        |
-| Selfplay Feedback           | 4        |
-| Batch Scheduling            | 2        |
-| Optimization                | 6        |
-| PBT/NAS/PER                 | 10       |
-| Tier Gating & Parity        | 5        |
-| Data Quality                | 15       |
-| Training Loss               | 2        |
-| Registry & Metrics          | 3        |
-| Regression                  | 6        |
-| P2P/Model Sync              | 7        |
-| Orphan Detection & Repair   | 5        |
-| Database Lifecycle          | 1        |
-| System                      | 7        |
-| Health & Recovery           | 8        |
-| Work Queue                  | 9        |
-| Cluster Status              | 6        |
-| Lock/Checkpoint/Backup      | 5        |
-| CPU Pipeline                | 1        |
-| Task Lifecycle              | 7        |
-| Capacity/Resource           | 6        |
-| Leader Election             | 5        |
-| State Persistence           | 2        |
-| Error Recovery              | 9        |
-| Idle State                  | 2        |
-| Disk Space                  | 2        |
-| **Total**                   | **~118** |
+| Category                    | Count   |
+| --------------------------- | ------- |
+| Data Collection & Freshness | 9       |
+| Data Consolidation          | 2       |
+| Training                    | 8       |
+| Evaluation                  | 5       |
+| Promotion                   | 7       |
+| Curriculum                  | 4       |
+| Selfplay Feedback           | 4       |
+| Batch Scheduling            | 2       |
+| Optimization                | 6       |
+| PBT/NAS/PER                 | 10      |
+| Tier Gating & Parity        | 5       |
+| Data Quality                | 15      |
+| Training Loss               | 2       |
+| Registry & Metrics          | 3       |
+| Regression                  | 6       |
+| P2P/Model Sync              | 7       |
+| Orphan Detection & Repair   | 5       |
+| Database Lifecycle          | 1       |
+| System                      | 7       |
+| Health & Recovery           | 8       |
+| Work Queue                  | 9       |
+| Cluster Status              | 6       |
+| Lock/Checkpoint/Backup      | 5       |
+| CPU Pipeline                | 1       |
+| Task Lifecycle              | 7       |
+| Capacity/Resource           | 6       |
+| Leader Election             | 5       |
+| State Persistence           | 2       |
+| Error Recovery              | 9       |
+| Idle State                  | 2       |
+| Disk Space                  | 2       |
+| **Total**                   | **207** |
 
 ## See Also
 

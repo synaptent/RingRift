@@ -48,6 +48,9 @@ try:
 except ImportError:
     HAS_YAML = False
 
+# Dec 29, 2025: Use canonical SSH module for all SSH operations
+from app.core.ssh import SSHClient, SSHConfig, get_ssh_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -612,75 +615,49 @@ class ClusterMonitor:
         node_status.last_check = datetime.now()
         return node_status
 
+    def _get_ssh_client(self, host_name: str) -> SSHClient | None:
+        """Get or create SSHClient for a host.
+
+        Dec 29, 2025: Uses canonical get_ssh_client from app.core.ssh.
+        This provides connection pooling, circuit breakers, and metrics.
+        """
+        try:
+            return get_ssh_client(host_name)
+        except Exception as e:
+            logger.debug(f"Failed to get SSH client for {host_name}: {e}")
+            return None
+
     def _check_connectivity(self, host_name: str) -> bool:
-        """Quick connectivity check using SSH."""
-        host_info = self._hosts.get(host_name, {})
-        if not host_info:
+        """Quick connectivity check using SSH.
+
+        Dec 29, 2025: Migrated to use canonical SSHClient.
+        """
+        client = self._get_ssh_client(host_name)
+        if not client:
             return False
-
-        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
-        ssh_user = host_info.get("ssh_user", "ubuntu")
-        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
-        ssh_port = host_info.get("ssh_port", 22)
-
-        if not ssh_host:
-            return False
-
-        # Build SSH command
-        cmd = [
-            "ssh",
-            "-i", os.path.expanduser(ssh_key),
-            "-p", str(ssh_port),
-            "-o", f"ConnectTimeout={min(self.ssh_timeout, 5)}",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-o", "LogLevel=ERROR",
-            f"{ssh_user}@{ssh_host}",
-            "true",
-        ]
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=self.ssh_timeout,
-            )
-            return result.returncode == 0
+            return client.is_alive()
         except Exception as e:
             logger.warning(f"Connectivity check failed for {host_name}: {e}")
             return False
 
     def _check_training_status(self, host_name: str) -> dict[str, Any]:
-        """Check for active training processes on a node."""
-        host_info = self._hosts.get(host_name, {})
-        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
-        ssh_user = host_info.get("ssh_user", "ubuntu")
-        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
-        ssh_port = host_info.get("ssh_port", 22)
+        """Check for active training processes on a node.
+
+        Dec 29, 2025: Migrated to use canonical SSHClient.
+        """
+        client = self._get_ssh_client(host_name)
+        if not client:
+            return {"active": False, "processes": []}
 
         # Look for training processes (train.py, train_*.py, etc.)
-        # Also check for GPU utilization as indicator
-        cmd = [
-            "ssh",
-            "-i", os.path.expanduser(ssh_key),
-            "-p", str(ssh_port),
-            "-o", f"ConnectTimeout={self.ssh_timeout}",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-o", "LogLevel=ERROR",
-            f"{ssh_user}@{ssh_host}",
-            "ps aux | grep -E '(train\\.py|train_|training)' | grep -v grep || true",
-        ]
+        command = "ps aux | grep -E '(train\\.py|train_|training)' | grep -v grep || true"
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.ssh_timeout,
-            )
+            result = client.run(command, timeout=self.ssh_timeout)
 
-            if result.returncode != 0:
+            if not result.success:
                 return {"active": False, "processes": []}
 
             processes = []
@@ -706,36 +683,24 @@ class ClusterMonitor:
             return {"active": False, "processes": []}
 
     def _check_disk_usage(self, host_name: str) -> dict[str, float]:
-        """Check disk usage on a node."""
+        """Check disk usage on a node.
+
+        Dec 29, 2025: Migrated to use canonical SSHClient.
+        """
+        client = self._get_ssh_client(host_name)
+        if not client:
+            return {"percent": 0.0, "free_gb": 0.0, "total_gb": 0.0}
+
         host_info = self._hosts.get(host_name, {})
-        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
-        ssh_user = host_info.get("ssh_user", "ubuntu")
-        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
-        ssh_port = host_info.get("ssh_port", 22)
         ringrift_path = host_info.get("ringrift_path", "~/ringrift/ai-service")
 
         # Check disk usage of the ringrift directory's filesystem
-        cmd = [
-            "ssh",
-            "-i", os.path.expanduser(ssh_key),
-            "-p", str(ssh_port),
-            "-o", f"ConnectTimeout={self.ssh_timeout}",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-o", "LogLevel=ERROR",
-            f"{ssh_user}@{ssh_host}",
-            f"df -BG {ringrift_path} | tail -1",
-        ]
+        command = f"df -BG {ringrift_path} | tail -1"
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.ssh_timeout,
-            )
+            result = client.run(command, timeout=self.ssh_timeout)
 
-            if result.returncode != 0:
+            if not result.success:
                 return {"percent": 0.0, "free_gb": 0.0, "total_gb": 0.0}
 
             # Parse df output: Filesystem Size Used Avail Use% Mounted
@@ -769,37 +734,24 @@ class ClusterMonitor:
 
         Returns:
             Dict with utilization_percent, memory_used_gb, memory_total_gb
+
+        Dec 29, 2025: Migrated to use canonical SSHClient.
         """
-        host_info = self._hosts.get(host_name, {})
-        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
-        ssh_user = host_info.get("ssh_user", "ubuntu")
-        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
-        ssh_port = host_info.get("ssh_port", 22)
+        client = self._get_ssh_client(host_name)
+        if not client:
+            return {"utilization_percent": 0.0, "memory_used_gb": 0.0, "memory_total_gb": 0.0}
 
         # Query nvidia-smi for GPU metrics
         # Format: utilization.gpu [%], memory.used [MiB], memory.total [MiB]
-        cmd = [
-            "ssh",
-            "-i", os.path.expanduser(ssh_key),
-            "-p", str(ssh_port),
-            "-o", f"ConnectTimeout={self.ssh_timeout}",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-o", "LogLevel=ERROR",
-            f"{ssh_user}@{ssh_host}",
+        command = (
             "nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total "
-            "--format=csv,noheader,nounits 2>/dev/null | head -1",
-        ]
+            "--format=csv,noheader,nounits 2>/dev/null | head -1"
+        )
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.ssh_timeout,
-            )
+            result = client.run(command, timeout=self.ssh_timeout)
 
-            if result.returncode != 0 or not result.stdout.strip():
+            if not result.success or not result.stdout.strip():
                 return {"utilization_percent": 0.0, "memory_used_gb": 0.0, "memory_total_gb": 0.0}
 
             # Parse: "45, 8192, 81920" (util%, mem_used_mib, mem_total_mib)
@@ -829,12 +781,14 @@ class ClusterMonitor:
         - Last sync timestamp (from selfplay.db mtime)
         - Pending files in sync queue
         - Sync lag compared to coordinator (based on db mtime difference)
+
+        Dec 29, 2025: Migrated to use canonical SSHClient.
         """
+        client = self._get_ssh_client(host_name)
+        if not client:
+            return {"pending_files": 0, "lag_seconds": 0.0, "last_sync_time": None}
+
         host_info = self._hosts.get(host_name, {})
-        ssh_host = host_info.get("tailscale_ip") or host_info.get("ssh_host")
-        ssh_user = host_info.get("ssh_user", "ubuntu")
-        ssh_key = host_info.get("ssh_key", "~/.ssh/id_cluster")
-        ssh_port = host_info.get("ssh_port", 22)
         ringrift_path = host_info.get("ringrift_path", "~/ringrift/ai-service")
 
         # Get local coordinator's selfplay.db mtime for lag calculation
@@ -844,35 +798,22 @@ class ClusterMonitor:
         # 1. Pending sync files count
         # 2. selfplay.db mtime (for lag calculation)
         # 3. Last sync timestamp from sync state file (if exists)
-        cmd = [
-            "ssh",
-            "-i", os.path.expanduser(ssh_key),
-            "-p", str(ssh_port),
-            "-o", f"ConnectTimeout={self.ssh_timeout}",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "BatchMode=yes",
-            "-o", "LogLevel=ERROR",
-            f"{ssh_user}@{ssh_host}",
+        command = (
             f"cd {ringrift_path} && "
             f"echo PENDING:$(find data/sync -name '*.pending' 2>/dev/null | wc -l) && "
             f"echo DBMTIME:$(stat -c %Y data/games/selfplay.db 2>/dev/null || echo 0) && "
-            f"echo SYNCSTATE:$(cat data/sync/.last_sync_time 2>/dev/null || echo 0)",
-        ]
+            f"echo SYNCSTATE:$(cat data/sync/.last_sync_time 2>/dev/null || echo 0)"
+        )
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.ssh_timeout,
-            )
+            result = client.run(command, timeout=self.ssh_timeout)
 
             pending_files = 0
             remote_db_mtime = 0.0
             last_sync_time = None
             lag_seconds = 0.0
 
-            if result.returncode == 0:
+            if result.success:
                 for line in result.stdout.strip().split("\n"):
                     if line.startswith("PENDING:"):
                         try:

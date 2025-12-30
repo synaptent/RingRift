@@ -254,13 +254,14 @@ To bridge a new event type:
 
 ### Selfplay Events
 
-| Event                         | Value                         | Emitters               | Subscribers                 | Purpose                 |
-| ----------------------------- | ----------------------------- | ---------------------- | --------------------------- | ----------------------- |
-| `SELFPLAY_COMPLETE`           | `selfplay_complete`           | SelfplayRunner         | DataPipelineOrchestrator    | Process results         |
-| `SELFPLAY_TARGET_UPDATED`     | `selfplay_target_updated`     | QueuePopulator         | SelfplayScheduler           | Adjust game count       |
-| `SELFPLAY_RATE_CHANGED`       | `selfplay_rate_changed`       | FeedbackLoopController | SelfplayScheduler           | Adjust generation rate  |
-| `SELFPLAY_ALLOCATION_UPDATED` | `selfplay_allocation_updated` | CurriculumIntegration  | SelfplayScheduler           | Change config weights   |
-| `P2P_SELFPLAY_SCALED`         | `p2p_selfplay_scaled`         | SelfplayScheduler      | MetricsAnalysisOrchestrator | Selfplay scaled up/down |
+| Event                          | Value                          | Emitters                       | Subscribers                 | Purpose                                |
+| ------------------------------ | ------------------------------ | ------------------------------ | --------------------------- | -------------------------------------- |
+| `SELFPLAY_COMPLETE`            | `selfplay_complete`            | SelfplayRunner                 | DataPipelineOrchestrator    | Process results                        |
+| `SELFPLAY_TARGET_UPDATED`      | `selfplay_target_updated`      | QueuePopulator                 | SelfplayScheduler           | Adjust game count                      |
+| `SELFPLAY_RATE_CHANGED`        | `selfplay_rate_changed`        | FeedbackLoopController         | SelfplayScheduler           | Adjust generation rate                 |
+| `SELFPLAY_ALLOCATION_UPDATED`  | `selfplay_allocation_updated`  | CurriculumIntegration          | SelfplayScheduler           | Change config weights                  |
+| `ARCHITECTURE_WEIGHTS_UPDATED` | `architecture_weights_updated` | ArchitectureFeedbackController | SelfplayScheduler           | Update architecture allocation weights |
+| `P2P_SELFPLAY_SCALED`          | `p2p_selfplay_scaled`          | SelfplayScheduler              | MetricsAnalysisOrchestrator | Selfplay scaled up/down                |
 
 ### Optimization Events
 
