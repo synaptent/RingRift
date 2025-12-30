@@ -484,6 +484,8 @@ class SwimMembershipManager:
     def get_alive_peers(self) -> list[str]:
         """Get list of all alive peer node IDs.
 
+        December 30, 2025: Updated to use correct swim-p2p 1.2.x MemberList API.
+
         Returns:
             List of node IDs that are currently alive
         """
@@ -491,24 +493,18 @@ class SwimMembershipManager:
             return []
 
         try:
-            # Dec 28, 2025: swim-p2p 1.2.x MemberList is not directly iterable
-            # Use .all() or .list() method if available, otherwise try .values()
             members = self._swim.members
-            if hasattr(members, 'all'):
-                members_list = members.all()
-            elif hasattr(members, 'list'):
-                members_list = members.list()
-            elif hasattr(members, 'values'):
-                members_list = list(members.values())
-            elif hasattr(members, '__iter__'):
-                members_list = list(members)
-            else:
-                # Last resort: try to access via alive/suspect/faulty methods
-                alive = []
-                if hasattr(members, 'alive'):
-                    alive = list(members.alive()) if callable(members.alive) else list(members.alive)
-                return [m.id if hasattr(m, 'id') else str(m) for m in alive if str(m) != self.node_id]
+            # Dec 30, 2025: swim-p2p 1.2.x uses get_alive_members()
+            if hasattr(members, 'get_alive_members'):
+                alive_members = members.get_alive_members()
+                return [
+                    member.id if hasattr(member, 'id') else str(member)
+                    for member in alive_members
+                    if (member.id if hasattr(member, 'id') else str(member)) != self.node_id
+                ]
 
+            # Fallback: get all members and filter by state
+            members_list = self._get_members_list()
             return [
                 member.id if hasattr(member, 'id') else str(member)
                 for member in members_list
@@ -522,6 +518,9 @@ class SwimMembershipManager:
     def _get_members_list(self) -> list:
         """Get members as a list, handling swim-p2p API variations.
 
+        December 30, 2025: Updated to use correct swim-p2p 1.2.x MemberList API.
+        The MemberList class uses get_all_members() and get_alive_members().
+
         Returns:
             List of member objects
         """
@@ -529,7 +528,12 @@ class SwimMembershipManager:
             return []
 
         members = self._swim.members
-        if hasattr(members, 'all'):
+        # Dec 30, 2025: swim-p2p 1.2.x uses get_all_members() or get_alive_members()
+        if hasattr(members, 'get_all_members'):
+            return members.get_all_members()
+        elif hasattr(members, 'get_alive_members'):
+            return members.get_alive_members()
+        elif hasattr(members, 'all'):
             return members.all()
         elif hasattr(members, 'list'):
             return members.list()
