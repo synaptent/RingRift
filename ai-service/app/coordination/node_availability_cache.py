@@ -170,7 +170,11 @@ class NodeAvailabilityCache:
                 logger.info("[NodeAvailabilityCache] Subscribed to availability events")
             except ImportError as e:
                 logger.debug(f"[NodeAvailabilityCache] Event router not available: {e}")
-            except Exception as e:
+            except (RuntimeError, AttributeError, TypeError, KeyError) as e:
+                # RuntimeError: router in invalid state
+                # AttributeError: subscribe method missing
+                # TypeError: callback signature mismatch
+                # KeyError: DataEventType enum value missing
                 logger.warning(f"[NodeAvailabilityCache] Failed to subscribe to events: {e}")
 
     async def _on_node_dead_event(self, event) -> None:
