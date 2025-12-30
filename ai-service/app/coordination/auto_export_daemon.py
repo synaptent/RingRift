@@ -179,9 +179,11 @@ class AutoExportDaemon(HandlerBase):
             return
 
         # Initialize state persistence and load previous state (Phase 8)
+        # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
+        # to avoid blocking the event loop
         if self._daemon_config.persist_state:
-            self._init_state_db()
-            self._load_state()
+            await asyncio.to_thread(self._init_state_db)
+            await asyncio.to_thread(self._load_state)
 
     # ========== State Persistence (Phase 8 Dec 2025) ==========
 
@@ -595,7 +597,8 @@ class AutoExportDaemon(HandlerBase):
         state.games_since_last_export += games
 
         # Persist state to survive daemon restarts (Phase 8)
-        self._save_state(config_key)
+        # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
+        await asyncio.to_thread(self._save_state, config_key)
 
         logger.debug(
             f"[AutoExportDaemon] {config_key}: +{games} games, "
@@ -718,7 +721,8 @@ class AutoExportDaemon(HandlerBase):
                     process.kill()
                     logger.error(f"[AutoExportDaemon] Export timed out for {config_key}")
                     state.consecutive_failures += 1
-                    self._save_state(config_key)  # Persist failure count (Phase 8)
+                    # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
+                    await asyncio.to_thread(self._save_state, config_key)  # Persist failure count (Phase 8)
                     return False
 
                 duration = time.time() - start_time
@@ -767,7 +771,8 @@ class AutoExportDaemon(HandlerBase):
             finally:
                 state.export_in_progress = False
                 # Persist updated state (Phase 8)
-                self._save_state(config_key)
+                # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
+                await asyncio.to_thread(self._save_state, config_key)
 
     def _parse_sample_count(self, output: str) -> int | None:
         """Parse sample count from export script output."""

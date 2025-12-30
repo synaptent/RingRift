@@ -1407,7 +1407,10 @@ class AutoSyncDaemon(
                 continue
 
             # Quality check before registering
-            should_register, reason = self._should_sync_database(db_path)
+            # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
+            should_register, reason = await asyncio.to_thread(
+                self._should_sync_database, db_path
+            )
             if not should_register:
                 logger.info(f"Skipping registration for {db_path.name}: {reason}")
                 skipped_quality += 1
@@ -1476,7 +1479,10 @@ class AutoSyncDaemon(
                 continue
 
             # Quality filter - skip low quality databases
-            should_sync, reason = self._should_sync_database(db_path)
+            # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
+            should_sync, reason = await asyncio.to_thread(
+                self._should_sync_database, db_path
+            )
             if not should_sync:
                 logger.debug(f"Excluding {db_path.name} from pending count: {reason}")
                 skipped_dbs += 1
