@@ -189,7 +189,7 @@ curl -s http://localhost:3000/ready | jq
 curl -s http://localhost:3000/health | jq '.status' | grep -q "healthy" && echo "✅ Health OK" || echo "❌ Health FAILED"
 
 # Test API responsiveness
-curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api
 # Expected: 200
 
 # Test WebSocket connectivity

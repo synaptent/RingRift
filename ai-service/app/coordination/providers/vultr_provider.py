@@ -150,10 +150,8 @@ class VultrProvider(CloudProvider):
         cmd = [self._cli_path] + list(args) + ["--output", "json"]
 
         try:
-            result = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            )
+            # Use native async subprocess (Dec 30, 2025 - replaced run_in_executor)
+            result = await async_subprocess_run(cmd, timeout=60.0)
 
             # Check for API-level errors (non-zero exit code)
             if result.returncode != 0:
@@ -171,11 +169,11 @@ class VultrProvider(CloudProvider):
 
             return result.stdout, result.stderr, result.returncode
 
-        except subprocess.TimeoutExpired as e:
+        except SubprocessTimeoutError as e:
             logger.warning(f"Vultr CLI timeout: {e}")
             breaker.record_failure(target)
             raise
-        except (OSError, subprocess.SubprocessError) as e:
+        except OSError as e:
             logger.warning(f"Vultr CLI error: {e}")
             breaker.record_failure(target)
             raise

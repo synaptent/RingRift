@@ -85,10 +85,10 @@ When `ServiceOffline` is firing you should assume:
      - Response bodies (especially from `/ready`, which should include checks for **database**, **redis**, **aiService**, etc.).
 
 3. **Inspect degradation headers and offline behaviour**
-   - Call a normal API endpoint (e.g. `/api/health`):
+   - Call a normal API endpoint (e.g. `/api`):
 
      ```bash
-     curl -sD- -o /dev/null APP_BASE/api/health | grep -E 'HTTP/|X-Service-Status|X-Degraded-Services|Retry-After' || true
+     curl -sD- -o /dev/null APP_BASE/api | grep -E 'HTTP/|X-Service-Status|X-Degraded-Services|Retry-After' || true
      ```
 
    - Confirm:
@@ -237,7 +237,7 @@ While remediation is in progress:
 
 - [ ] `curl APP_BASE/health` returns 200 and indicates healthy state.
 - [ ] `curl APP_BASE/ready` returns 200 and all dependency checks show healthy.
-- [ ] A request to `/api/health` returns 2xx with **no** `X-Service-Status` offline indicator, and no `Retry-After` header from `offlineModeMiddleware`.
+- [ ] A request to `/api` returns 2xx with **no** `X-Service-Status` offline indicator, and no `Retry-After` header from `offlineModeMiddleware`.
 
 **User flows / end-to-end tests:**
 

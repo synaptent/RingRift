@@ -552,7 +552,7 @@ redis-cli -u $REDIS_URL ping
 grep RATE_LIMIT .env
 
 # Test rate limit response headers
-curl -i http://localhost:3000/api/health
+curl -i http://localhost:3000/api
 
 # Simulate rate limit exceeded
 for i in {1..100}; do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/games; done

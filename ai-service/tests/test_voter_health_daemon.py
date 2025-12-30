@@ -261,7 +261,11 @@ class TestTransportProbing:
             check_interval_seconds=30,
             startup_grace_seconds=0,  # Skip grace period for tests
         )
-        return VoterHealthMonitorDaemon(config=config)
+        daemon = VoterHealthMonitorDaemon(config=config)
+        daemon._voter_states = {}
+        daemon._voter_ips = {}
+        daemon._voter_ssh = {}
+        return daemon
 
     @pytest.mark.asyncio
     async def test_p2p_check_success(self, daemon):
@@ -279,11 +283,10 @@ class TestTransportProbing:
         with patch.object(daemon, "_check_p2p_reachable", new_callable=AsyncMock) as mock_p2p:
             mock_p2p.return_value = True
 
-            # Initialize voter state
-            daemon._voter_states["voter-1"] = VoterHealthState(
-                voter_id="voter-1",
-                tailscale_ip="100.64.0.1",
-            )
+            # Initialize voter state and IPs
+            daemon._voter_states["voter-1"] = VoterHealthState(voter_id="voter-1")
+            daemon._voter_ips = {"voter-1": "100.64.0.1"}
+            daemon._voter_ssh = {}
 
             is_reachable, transport = await daemon._probe_voter("voter-1")
 
@@ -298,15 +301,14 @@ class TestTransportProbing:
                 mock_p2p.return_value = False
                 mock_ts.return_value = True
 
-                daemon._voter_states["voter-1"] = VoterHealthState(
-                    voter_id="voter-1",
-                    tailscale_ip="100.64.0.1",
-                )
+                daemon._voter_states["voter-1"] = VoterHealthState(voter_id="voter-1")
+                daemon._voter_ips = {"voter-1": "100.64.0.1"}
+                daemon._voter_ssh = {}
 
                 is_reachable, transport = await daemon._probe_voter("voter-1")
 
                 assert is_reachable is True
-                assert transport == "tailscale"
+                assert transport == "tailscale_ping"
                 mock_p2p.assert_called_once()
                 mock_ts.assert_called_once()
 
@@ -320,11 +322,9 @@ class TestTransportProbing:
                     mock_ts.return_value = False
                     mock_ssh.return_value = True
 
-                    daemon._voter_states["voter-1"] = VoterHealthState(
-                        voter_id="voter-1",
-                        tailscale_ip="100.64.0.1",
-                        ssh_host="voter1.example.com",
-                    )
+                    daemon._voter_states["voter-1"] = VoterHealthState(voter_id="voter-1")
+                    daemon._voter_ips = {"voter-1": "100.64.0.1"}
+                    daemon._voter_ssh = {"voter-1": "voter1.example.com"}
 
                     is_reachable, transport = await daemon._probe_voter("voter-1")
 
@@ -342,16 +342,14 @@ class TestTransportProbing:
                     mock_ts.return_value = False
                     mock_ssh.return_value = False
 
-                    daemon._voter_states["voter-1"] = VoterHealthState(
-                        voter_id="voter-1",
-                        tailscale_ip="100.64.0.1",
-                        ssh_host="voter1.example.com",
-                    )
+                    daemon._voter_states["voter-1"] = VoterHealthState(voter_id="voter-1")
+                    daemon._voter_ips = {"voter-1": "100.64.0.1"}
+                    daemon._voter_ssh = {"voter-1": "voter1.example.com"}
 
                     is_reachable, transport = await daemon._probe_voter("voter-1")
 
                     assert is_reachable is False
-                    assert transport == "none"
+                    assert transport == "all_transports_failed"
 
 
 # =============================================================================

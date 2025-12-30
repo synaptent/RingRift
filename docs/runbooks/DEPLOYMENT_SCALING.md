@@ -564,7 +564,7 @@ curl -s $APP_BASE/health | jq
 curl -s $APP_BASE/ready | jq
 
 # 3. Load test (optional)
-# ab -n 1000 -c 50 http://localhost:3000/api/health
+# ab -n 1000 -c 50 http://localhost:3000/api
 
 # 4. Check error rates
 docker compose logs app --since 5m | grep -c ERROR

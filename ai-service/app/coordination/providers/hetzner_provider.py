@@ -12,12 +12,10 @@ December 30, 2025: Added circuit breaker protection for API resilience.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import shutil
-import subprocess
 from datetime import datetime
 
 from app.coordination.providers.base import (
@@ -31,6 +29,10 @@ from app.distributed.circuit_breaker import (
     CircuitBreaker,
     CircuitOpenError,
     CircuitState,
+)
+from app.utils.async_utils import (
+    async_subprocess_run,
+    SubprocessTimeoutError,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,12 +139,8 @@ class HetznerProvider(CloudProvider):
             env["HCLOUD_TOKEN"] = self._token
 
         try:
-            result = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60, env=env
-                )
-            )
+            # Use native async subprocess (Dec 30, 2025 - replaced run_in_executor)
+            result = await async_subprocess_run(cmd, timeout=60.0, env=env)
 
             # Check for API-level errors (non-zero exit code)
             if result.returncode != 0:
@@ -160,11 +158,11 @@ class HetznerProvider(CloudProvider):
 
             return result.stdout, result.stderr, result.returncode
 
-        except subprocess.TimeoutExpired as e:
+        except SubprocessTimeoutError as e:
             logger.warning(f"Hetzner CLI timeout: {e}")
             breaker.record_failure(target)
             raise
-        except (OSError, subprocess.SubprocessError) as e:
+        except OSError as e:
             logger.warning(f"Hetzner CLI error: {e}")
             breaker.record_failure(target)
             raise

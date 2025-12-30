@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -183,7 +184,11 @@ class ConsolidationEligibilityManager:
                 consolidation_config = full_config.get("consolidation", {})
                 if consolidation_config.get("enabled", True):
                     return ConsolidationConfig.from_yaml_config(consolidation_config)
-        except Exception as e:
+        except ImportError:
+            # yaml module not available
+            pass
+        except (OSError, yaml.YAMLError) as e:
+            # File I/O errors or malformed YAML
             logger.warning(f"[ConsolidationEligibility] Failed to load YAML config: {e}")
 
         return ConsolidationConfig()
@@ -198,7 +203,11 @@ class ConsolidationEligibilityManager:
                 with open(config_path) as f:
                     full_config = yaml.safe_load(f) or {}
                 self._host_configs = full_config.get("hosts", {})
-        except Exception as e:
+        except ImportError:
+            # yaml module not available
+            pass
+        except (OSError, yaml.YAMLError) as e:
+            # File I/O errors or malformed YAML
             logger.warning(f"[ConsolidationEligibility] Failed to load host configs: {e}")
 
     def get_eligible_nodes(self) -> list[str]:
@@ -321,7 +330,11 @@ class ConsolidationEligibilityManager:
 
             disk_usage = shutil.disk_usage(self.root_path)
             return disk_usage.free / (1024**3)
-        except Exception:
+        except ImportError:
+            # env module not available
+            return None
+        except OSError:
+            # Disk access error (permission, path not found, etc.)
             return None
 
     def get_best_consolidation_node(
@@ -417,7 +430,11 @@ class ConsolidationEligibilityManager:
                         counts[config_key] = row[1]
 
             return counts
-        except Exception as e:
+        except ImportError:
+            # cluster_manifest module not available
+            return {}
+        except sqlite3.Error as e:
+            # Database query error
             logger.debug(f"[ConsolidationEligibility] Error getting game counts for {node_id}: {e}")
             return {}
 

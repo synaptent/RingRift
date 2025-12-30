@@ -76,10 +76,10 @@ Work through these steps before changing anything:
    - If `/ready` fails or returns non-2xx, treat this as a strong signal of deeper dependency problems.
 
 3. **Inspect degradation headers on a normal API endpoint**
-   - Pick a simple JSON endpoint such as `/api/health` or `/health` and inspect only headers:
+   - Pick a simple JSON endpoint such as `/api` or `/health` and inspect only headers:
 
      ```bash
-     curl -sD- -o /dev/null APP_BASE/api/health | grep -E 'X-Service-Status|X-Degraded-Services' || true
+     curl -sD- -o /dev/null APP_BASE/api | grep -E 'X-Service-Status|X-Degraded-Services' || true
      ```
 
    - Confirm:
@@ -196,7 +196,7 @@ Before declaring the incident resolved:
 - **Health / readiness / headers:**
   - [ ] `curl APP_BASE/health` returns 200 with healthy status.
   - [ ] `curl APP_BASE/ready` returns 200 and all dependency checks show healthy.
-  - [ ] `curl -sD- -o /dev/null APP_BASE/api/health | grep X-Service-Status` shows **no** degradation headers (either header absent or status indicating `full`).
+  - [ ] `curl -sD- -o /dev/null APP_BASE/api | grep X-Service-Status` shows **no** degradation headers (either header absent or status indicating `full`).
 
 - **User flows / smoke tests:**
   - [ ] Basic authentication, lobby navigation, and game start flows succeed.

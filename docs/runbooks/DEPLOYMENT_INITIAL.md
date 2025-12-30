@@ -285,7 +285,7 @@ r.ping().then(console.log).catch(console.error);
 
 ```bash
 # Test API endpoint
-curl -s http://localhost:3000/api/health | jq
+curl -s http://localhost:3000/api | jq
 
 # Test user registration (creates test user)
 curl -X POST http://localhost:3000/api/auth/register \

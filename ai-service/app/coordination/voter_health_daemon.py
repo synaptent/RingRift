@@ -233,7 +233,11 @@ class VoterHealthMonitorDaemon(HandlerBase):
                 f"VoterHealthMonitor: Loaded {len(voters)} voters from config"
             )
 
-        except Exception as e:
+        except ImportError as e:
+            # cluster_config module not available
+            logger.error(f"VoterHealthMonitor: Failed to import cluster_config: {e}")
+        except (KeyError, AttributeError, TypeError, OSError) as e:
+            # Config structure issues or file access problems
             logger.error(f"VoterHealthMonitor: Failed to load voters: {e}")
 
     # =========================================================================
