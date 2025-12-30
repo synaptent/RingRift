@@ -1105,6 +1105,20 @@ class SelfplayScheduler:
             )
         score *= starvation_multiplier
 
+        # Dec 29, 2025: Log component breakdown for priority decisions at DEBUG level
+        # This helps diagnose why configs get different allocations
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"[SelfplayScheduler] Priority breakdown for {priority.config_key}: "
+                f"staleness={staleness:.3f}, velocity={velocity:.3f}, "
+                f"curriculum={curriculum:.3f}, quality={quality:.3f}, "
+                f"voi={voi:.3f}, data_deficit={data_deficit:.3f} | "
+                f"multipliers: momentum={priority.momentum_multiplier:.2f}x, "
+                f"override={override_multiplier:.2f}x, player={player_multiplier:.2f}x, "
+                f"cascade={cascade_boost:.2f}x, starvation={starvation_multiplier:.2f}x | "
+                f"final_score={score:.4f}"
+            )
+
         return score
 
     async def _get_data_freshness(self) -> dict[str, float]:
@@ -1578,8 +1592,12 @@ class SelfplayScheduler:
 
         allocation: dict[str, dict[str, int]] = {}
 
+        # Dec 29, 2025: Track configs skipped due to zero/negative priority for logging
+        skipped_configs = []
+
         for config_key, priority_score in priorities:
             if priority_score <= 0:
+                skipped_configs.append((config_key, priority_score))
                 continue
 
             # Allocate based on priority weight
@@ -1613,6 +1631,13 @@ class SelfplayScheduler:
             f"[SelfplayScheduler] Allocated {len(allocation)} configs: "
             f"{', '.join(f'{k}={sum(v.values())}' for k, v in allocation.items())}"
         )
+
+        # Dec 29, 2025: Log skipped configs for transparency
+        if skipped_configs:
+            logger.warning(
+                f"[SelfplayScheduler] {len(skipped_configs)} configs skipped (priority <= 0): "
+                f"{', '.join(f'{k}({s:.3f})' for k, s in skipped_configs)}"
+            )
 
         # Dec 2025: Emit SELFPLAY_ALLOCATION_UPDATED for downstream consumers
         # (IdleResourceDaemon, feedback loops, etc.)
@@ -1892,6 +1917,21 @@ class SelfplayScheduler:
             if node_games >= MIN_GAMES_PER_ALLOCATION:
                 allocation[node.node_id] = node_games
                 remaining -= node_games
+
+        # Dec 29, 2025: Log node allocation breakdown for this config
+        if allocation and logger.isEnabledFor(logging.DEBUG):
+            total_assigned = sum(allocation.values())
+            logger.debug(
+                f"[SelfplayScheduler] Node allocation for {config_key}: "
+                f"{total_assigned}/{total_games} games across {len(allocation)} nodes "
+                f"({', '.join(f'{n}={g}' for n, g in allocation.items())})"
+            )
+        elif not allocation:
+            logger.debug(
+                f"[SelfplayScheduler] No allocation for {config_key}: "
+                f"no nodes available (unhealthy={len(unhealthy_nodes)}, "
+                f"total_requested={total_games})"
+            )
 
         return allocation
 

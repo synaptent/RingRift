@@ -566,6 +566,7 @@ class TestEdgeCases:
         mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
         mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
         mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.MAX_SYNC_DURATION = 10000.0  # High, won't trigger
         mock_defaults.FALLBACK_COOLDOWN = 0.0
         mock_defaults.EMIT_FALLBACK_EVENTS = False
 
@@ -576,8 +577,9 @@ class TestEdgeCases:
             config_key="hex8_2p",
             data_age_hours=-1.0,  # Invalid but should not crash
             sync_failures=0,
+            games_available=1000,
         )
-        # Should not be allowed (negative age is not a valid trigger)
+        # Should not be allowed (no failures/timeout, sync in progress)
         assert decision.allowed is False
 
     @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
@@ -716,27 +718,26 @@ class TestEdgeCases:
         mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
         mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
         mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.MAX_SYNC_DURATION = 10000.0  # High, won't trigger
         mock_defaults.FALLBACK_COOLDOWN = 0.0
         mock_defaults.EMIT_FALLBACK_EVENTS = False
 
         controller = TrainingFallbackController()
 
-        # Record failures for hex8_2p but not square8_4p
-        for _ in range(5):
-            controller.record_sync_failure("hex8_2p")
-
-        # hex8_2p should allow fallback
+        # hex8_2p should allow fallback when failures passed
         decision_hex = controller.should_allow_training(
             config_key="hex8_2p",
             data_age_hours=1.0,
+            sync_failures=5,  # Meets threshold
             games_available=1000,
         )
         assert decision_hex.allowed is True
 
-        # square8_4p should not (no failures recorded)
+        # square8_4p should not (no failures)
         decision_sq = controller.should_allow_training(
             config_key="square8_4p",
             data_age_hours=1.0,
+            sync_failures=0,  # No failures
             games_available=1000,
         )
         assert decision_sq.allowed is False
@@ -765,13 +766,14 @@ class TestErrorHandling:
         mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
         mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
         mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.MAX_SYNC_DURATION = 10000.0
         mock_defaults.FALLBACK_COOLDOWN = 0.0
         mock_defaults.EMIT_FALLBACK_EVENTS = True
 
         controller = TrainingFallbackController()
 
-        # Patch get_router to raise ImportError
-        with patch("app.coordination.stale_fallback.get_router") as mock_get_router:
+        # Patch at the module level where get_router is imported
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
             mock_get_router.side_effect = ImportError("Module not found")
 
             # Should not crash, just skip event emission
@@ -790,12 +792,13 @@ class TestErrorHandling:
         mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
         mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
         mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.MAX_SYNC_DURATION = 10000.0
         mock_defaults.FALLBACK_COOLDOWN = 0.0
         mock_defaults.EMIT_FALLBACK_EVENTS = True
 
         controller = TrainingFallbackController()
 
-        with patch("app.coordination.stale_fallback.get_router") as mock_get_router:
+        with patch("app.coordination.event_router.get_router") as mock_get_router:
             mock_router = MagicMock()
             mock_router.publish_sync.side_effect = RuntimeError("Router error")
             mock_get_router.return_value = mock_router

@@ -1732,6 +1732,23 @@ class UnifiedDistributionDaemon:
             from app.core.ssh import get_ssh_client
 
             async def create_on_node(host: str) -> bool:
+                """Create symlinks for canonical models on a remote cluster node.
+
+                Creates ringrift_best_* symlinks pointing to canonical model files,
+                enabling standard model loading paths across all cluster nodes.
+
+                Args:
+                    host: Hostname or IP of target node (e.g., 'nebius-h100-1')
+
+                Returns:
+                    True if symlinks created successfully, False on any error
+
+                Raises:
+                    None - all exceptions are caught and return False
+
+                SSH Commands:
+                    cd {remote_path}/models && rm -f {symlink} && ln -sf {canonical} {symlink}
+                """
                 try:
                     # December 28, 2025: Discover remote path for this node
                     remote_path = await self._discover_remote_path(host)

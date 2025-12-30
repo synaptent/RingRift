@@ -650,3 +650,348 @@ class TestVoiSampleCostByBoard:
             cost_2p = VOI_SAMPLE_COST_BY_BOARD[board_type]["2p"]
             cost_4p = VOI_SAMPLE_COST_BY_BOARD[board_type]["4p"]
             assert cost_4p > cost_2p
+
+
+# =============================================================================
+# THREAD SAFETY TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestPriorityCalculatorThreadSafety:
+    """Tests for thread safety of PriorityCalculator."""
+
+    def test_concurrent_priority_calculation(self):
+        """Concurrent priority calculations should not corrupt state."""
+        import threading
+
+        calculator = PriorityCalculator()
+        results = []
+        errors = []
+
+        def calculate():
+            try:
+                for _ in range(50):
+                    inputs = PriorityInputs(
+                        config_key="hex8_2p",
+                        staleness_hours=2.0,
+                        game_count=500,
+                    )
+                    score = calculator.compute_priority_score(inputs)
+                    results.append(score)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=calculate) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        assert len(results) == 250
+        # All scores for same inputs should be equal (deterministic)
+        assert all(r == results[0] for r in results)
+
+    def test_concurrent_weight_updates(self):
+        """Concurrent weight updates should not corrupt calculator state."""
+        import threading
+
+        calculator = PriorityCalculator()
+        errors = []
+
+        def update_weights():
+            try:
+                for i in range(20):
+                    new_weights = DynamicWeights(
+                        staleness=0.2 + (i % 5) * 0.1,
+                        velocity=0.1 + (i % 3) * 0.05,
+                    )
+                    calculator.update_weights(new_weights)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=update_weights) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+# =============================================================================
+# EDGE CASES TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestPriorityCalculatorEdgeCases:
+    """Tests for edge cases in priority calculation."""
+
+    def test_zero_game_count(self):
+        """Zero game count should not cause division by zero."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="hex8_2p",
+            game_count=0,
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+        assert score >= 0
+
+    def test_very_large_staleness(self):
+        """Very large staleness hours should not overflow."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="hex8_2p",
+            staleness_hours=10000.0,  # Very stale
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+        assert score >= 0
+
+    def test_negative_elo_velocity(self):
+        """Negative Elo velocity should not cause issues."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="hex8_2p",
+            elo_velocity=-50.0,  # Regression
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+        assert score >= 0
+
+    def test_very_high_elo(self):
+        """Very high Elo should not cause overflow."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="hex8_2p",
+            current_elo=5000.0,  # Very high
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+        assert score >= 0
+
+    def test_all_configs_priority(self):
+        """All 12 canonical configs should produce valid priority scores."""
+        calculator = PriorityCalculator()
+
+        for config_key in ALL_CONFIGS:
+            inputs = PriorityInputs(
+                config_key=config_key,
+                staleness_hours=2.0,
+                game_count=500,
+            )
+            score = calculator.compute_priority_score(inputs)
+            assert isinstance(score, float), f"Invalid score for {config_key}"
+            assert score >= 0, f"Negative score for {config_key}"
+
+    def test_unknown_config_handled(self):
+        """Unknown config key should be handled gracefully."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="unknown_9p",  # Invalid config
+            staleness_hours=2.0,
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+        assert score >= 0
+
+    def test_empty_config_key(self):
+        """Empty config key should be handled."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="",  # Empty
+            staleness_hours=2.0,
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+
+    def test_extreme_multipliers(self):
+        """Extreme multiplier values should not cause overflow."""
+        calculator = PriorityCalculator()
+        inputs = PriorityInputs(
+            config_key="hex8_2p",
+            exploration_boost=100.0,  # Very high
+            momentum_multiplier=100.0,  # Very high
+            priority_override=0,  # Critical = 3x
+        )
+        score = calculator.compute_priority_score(inputs)
+        assert isinstance(score, float)
+        assert score >= 0
+
+
+# =============================================================================
+# DYNAMIC WEIGHTS EDGE CASES
+# =============================================================================
+
+
+class TestDynamicWeightsEdgeCases:
+    """Edge cases for dynamic weight computation."""
+
+    def test_extreme_idle_gpu_fraction(self):
+        """Extreme idle GPU fractions should be clamped."""
+        state = ClusterState(idle_gpu_fraction=1.5)  # > 1.0
+        weights = compute_dynamic_weights(state)
+        assert 0 <= weights.staleness <= 1.0
+
+        state = ClusterState(idle_gpu_fraction=-0.5)  # < 0
+        weights = compute_dynamic_weights(state)
+        assert 0 <= weights.staleness <= 1.0
+
+    def test_extreme_queue_depth(self):
+        """Extreme queue depths should not cause issues."""
+        state = ClusterState(training_queue_depth=1000)  # Very deep
+        weights = compute_dynamic_weights(state)
+        assert isinstance(weights, DynamicWeights)
+
+    def test_extreme_elo(self):
+        """Extreme Elo values should be handled."""
+        state = ClusterState(average_elo=5000.0)  # Very high
+        weights = compute_dynamic_weights(state)
+        assert isinstance(weights, DynamicWeights)
+
+        state = ClusterState(average_elo=0.0)  # Zero
+        weights = compute_dynamic_weights(state)
+        assert isinstance(weights, DynamicWeights)
+
+
+# =============================================================================
+# DATA STARVATION TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestDataStarvation:
+    """Tests for data starvation scenarios."""
+
+    def test_emergency_starvation_boosts_priority(self):
+        """Test emergency starvation gets significant boost."""
+        calculator = PriorityCalculator(
+            data_starvation_emergency_threshold=50,
+            data_starvation_emergency_multiplier=5.0,
+        )
+
+        emergency = PriorityInputs(config_key="hex8_2p", game_count=20)
+        normal = PriorityInputs(config_key="hex8_2p", game_count=1000)
+
+        emergency_score = calculator.compute_priority_score(emergency)
+        normal_score = calculator.compute_priority_score(normal)
+
+        # Emergency should have higher priority
+        assert emergency_score > normal_score * 3
+
+    def test_critical_starvation_threshold(self):
+        """Test critical starvation gets moderate boost."""
+        calculator = PriorityCalculator(
+            data_starvation_critical_threshold=200,
+            data_starvation_critical_multiplier=2.0,
+        )
+
+        critical = PriorityInputs(config_key="hex8_2p", game_count=100)
+        well_fed = PriorityInputs(config_key="hex8_2p", game_count=500)
+
+        critical_score = calculator.compute_priority_score(critical)
+        fed_score = calculator.compute_priority_score(well_fed)
+
+        # Critical should have higher priority
+        assert critical_score > fed_score
+
+    def test_very_low_game_count_priority(self):
+        """Very low game count should have highest priority."""
+        calculator = PriorityCalculator(
+            data_starvation_emergency_threshold=50,
+            data_starvation_emergency_multiplier=5.0,
+        )
+
+        starved = PriorityInputs(config_key="hex8_2p", game_count=5)
+        fed = PriorityInputs(config_key="hex8_2p", game_count=5000)
+
+        starved_score = calculator.compute_priority_score(starved)
+        fed_score = calculator.compute_priority_score(fed)
+
+        # Starved should have much higher priority
+        assert starved_score > fed_score * 4
+
+
+# =============================================================================
+# VOI (VALUE OF INFORMATION) TESTS
+# =============================================================================
+
+
+class TestVoiCalculation:
+    """Tests for Value of Information calculation."""
+
+    def test_high_uncertainty_high_voi(self):
+        """High Elo uncertainty should increase VOI."""
+        low = compute_voi_score(elo_uncertainty=50.0, elo_gap=0.0, info_gain_per_game=0.0)
+        high = compute_voi_score(elo_uncertainty=250.0, elo_gap=0.0, info_gain_per_game=0.0)
+        assert high > low
+
+    def test_high_elo_gap_high_voi(self):
+        """High Elo gap from target should increase VOI."""
+        small_gap = compute_voi_score(elo_uncertainty=0.0, elo_gap=100.0, info_gain_per_game=0.0)
+        large_gap = compute_voi_score(elo_uncertainty=0.0, elo_gap=400.0, info_gain_per_game=0.0)
+        assert large_gap > small_gap
+
+    def test_voi_capped_at_one(self):
+        """VOI should never exceed 1.0."""
+        result = compute_voi_score(
+            elo_uncertainty=1000.0,  # Way over max
+            elo_gap=1000.0,  # Way over max
+            info_gain_per_game=100.0,  # Way over max
+        )
+        assert result == 1.0
+
+    def test_voi_with_zero_inputs(self):
+        """VOI with all zero inputs should be zero."""
+        result = compute_voi_score(
+            elo_uncertainty=0.0,
+            elo_gap=0.0,
+            info_gain_per_game=0.0,
+        )
+        assert result == 0.0
+
+    def test_voi_handles_negative_inputs(self):
+        """VOI with negative inputs should not crash."""
+        # Function may not clamp negative inputs, but should not crash
+        result = compute_voi_score(
+            elo_uncertainty=-100.0,  # Negative (invalid)
+            elo_gap=-100.0,  # Negative (invalid)
+            info_gain_per_game=-10.0,  # Negative (invalid)
+        )
+        # Result may be negative due to unclamped inputs - that's OK for this test
+        assert isinstance(result, float)
+
+
+# =============================================================================
+# WEIGHT BOUNDS TESTS
+# =============================================================================
+
+
+class TestWeightBounds:
+    """Tests for weight clamping bounds."""
+
+    def test_all_weights_clamped_within_bounds(self):
+        """All computed weights should be within bounds."""
+        # Test various cluster states
+        states = [
+            ClusterState(),
+            ClusterState(idle_gpu_fraction=0.9),
+            ClusterState(training_queue_depth=50),
+            ClusterState(configs_at_target_fraction=0.9),
+            ClusterState(average_elo=2500.0),
+        ]
+
+        for state in states:
+            weights = compute_dynamic_weights(state)
+            # Check that all weights are reasonable (between 0 and 1)
+            assert 0 <= weights.staleness <= 1.0
+            assert 0 <= weights.velocity <= 1.0
+            assert 0 <= weights.training <= 1.0
+            assert 0 <= weights.curriculum <= 1.0
+            assert 0 <= weights.voi <= 1.0
+
+    def test_clamp_weight_with_missing_name(self):
+        """Clamping unknown weight name should use defaults."""
+        result = clamp_weight("nonexistent_weight", 0.001)
+        assert result >= 0.05  # Default minimum
+        assert result <= 0.50  # Default maximum

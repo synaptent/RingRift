@@ -721,7 +721,28 @@ async def _emit_coordinator_heartbeats(interval_seconds: float = 30.0) -> None:
 
 
 def start_coordinator_heartbeats(interval_seconds: float = 30.0) -> bool:
-    """Start the coordinator heartbeat background task."""
+    """Start the coordinator heartbeat background task.
+
+    Launches an async task that periodically emits COORDINATOR_HEARTBEAT events.
+    These events enable daemon health monitoring, cluster synchronization triggers,
+    and leader election participation.
+
+    Args:
+        interval_seconds: Time between heartbeat emissions (default: 30.0 seconds)
+
+    Returns:
+        True if heartbeat task was started successfully or already running,
+        False if no async event loop is available
+
+    Side Effects:
+        - Sets global _heartbeat_task reference
+        - Starts emitting COORDINATOR_HEARTBEAT events to event router
+        - Events include: node_id, uptime, resource_usage, daemon_health summary
+
+    Thread Safety:
+        Safe to call multiple times; returns True if already running.
+        Call stop_coordinator_heartbeats() to terminate.
+    """
     import asyncio
 
     from app.core.async_context import safe_create_task

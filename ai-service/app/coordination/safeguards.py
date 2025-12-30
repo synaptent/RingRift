@@ -638,6 +638,26 @@ def patch_p2p_start_job():
     safeguards = Safeguards.get_instance()
 
     def wrapped_start_job(original_func):
+        """Decorator that wraps P2P job start functions with safeguard checks.
+
+        Applies backpressure, rate limiting, and spawn blocking before allowing
+        a job to start. Records spawn success/failure for monitoring.
+
+        Args:
+            original_func: The async job start function to wrap
+
+        Returns:
+            Wrapped async function that applies safeguards before calling original
+
+        Safeguard Checks:
+            - allow_spawn(): Checks circuit breaker, rate limits, memory pressure
+            - get_delay(): Returns backpressure delay to slow down spawning
+            - record_spawn/record_failure(): Tracks outcomes for metrics
+
+        Usage:
+            @wrapped_start_job
+            async def start_selfplay_job(self, ...): ...
+        """
         async def wrapper(self, *args, **kwargs):
             # Extract job info
             job_type = kwargs.get("job_type", args[0] if args else "selfplay")

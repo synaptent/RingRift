@@ -397,6 +397,18 @@ def wire_sync_manager_events() -> None:
 
     # Wire model_promoted → registry sync
     def on_model_promoted_sync_registry(event: RouterEvent) -> None:
+        """Handle MODEL_PROMOTED events by triggering registry sync.
+
+        Synchronizes model metadata to RegistrySyncManager when a model is
+        promoted. This ensures all cluster nodes have up-to-date model
+        registry information for discovery and loading.
+
+        Args:
+            event: RouterEvent with payload containing 'model_id' or 'model'
+
+        Side Effects:
+            Triggers async RegistrySyncManager.sync_model_metadata() call
+        """
         if not isinstance(event.payload, dict):
             return
 
@@ -421,6 +433,18 @@ def wire_sync_manager_events() -> None:
 
     # Wire elo_updated → ELO sync
     def on_elo_updated_sync(event: RouterEvent) -> None:
+        """Handle ELO_UPDATED events by triggering cluster-wide Elo sync.
+
+        Synchronizes Elo ratings database across cluster nodes when ratings
+        change. This ensures consistent Elo data for selfplay priority
+        allocation and model evaluation decisions.
+
+        Args:
+            event: RouterEvent with payload containing 'config' key
+
+        Side Effects:
+            Triggers async EloSyncManager.sync_with_cluster() call
+        """
         if not isinstance(event.payload, dict):
             return
 
@@ -471,6 +495,22 @@ def wire_evaluation_curriculum_bridge() -> bool:
         bridge = EvaluationCurriculumBridge()
 
         def on_evaluation_complete(event: RouterEvent) -> None:
+            """Handle EVALUATION_COMPLETED events to update curriculum weights.
+
+            Processes evaluation results (Elo, win_rate) and feeds them to
+            EvaluationCurriculumBridge, which adjusts selfplay priority weights
+            based on performance trends. Configs with stagnant Elo receive
+            increased selfplay allocation.
+
+            Args:
+                event: RouterEvent with payload containing:
+                    - config_key: Board/player config identifier
+                    - metrics: Dict with optional 'elo' and 'win_rate' values
+
+            Side Effects:
+                - Updates curriculum weight tracking
+                - May emit CURRICULUM_WEIGHTS_UPDATED event
+            """
             if not isinstance(event.payload, dict):
                 return
 

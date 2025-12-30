@@ -219,6 +219,12 @@ Set via environment:
 export RINGRIFT_PARITY_VALIDATION=strict
 ```
 
+Additional parity controls:
+
+- `RINGRIFT_PARITY_BACKEND` selects `auto`, `ts`, `python_only`, `ts_hashes`, or `skip`.
+- `RINGRIFT_SKIP_PARITY` (`1`/`true`) disables parity validation entirely.
+- `RINGRIFT_PARITY_DUMP_DIR` overrides the failure bundle output directory.
+
 ### Database Integrity
 
 Tools for checking and repairing databases:
@@ -506,10 +512,13 @@ features = np.frombuffer(
 
 ### Environment Variables
 
-| Variable                     | Description                   | Default |
-| ---------------------------- | ----------------------------- | ------- |
-| `RINGRIFT_PARITY_VALIDATION` | Parity mode (off/warn/strict) | `off`   |
-| `RINGRIFT_SNAPSHOT_INTERVAL` | Moves between snapshots       | `20`    |
+| Variable                     | Description                   | Default           |
+| ---------------------------- | ----------------------------- | ----------------- |
+| `RINGRIFT_PARITY_VALIDATION` | Parity mode (off/warn/strict) | `off`             |
+| `RINGRIFT_PARITY_BACKEND`    | Parity backend selector       | `auto`            |
+| `RINGRIFT_PARITY_DUMP_DIR`   | Parity failure dump directory | `parity_failures` |
+| `RINGRIFT_SKIP_PARITY`       | Skip parity validation        | `false`           |
+| `RINGRIFT_SNAPSHOT_INTERVAL` | Moves between snapshots       | `20`              |
 
 SQLite timeout values are configured in `app/config/thresholds.py`
 (`SQLITE_TIMEOUT`, `SQLITE_BUSY_TIMEOUT_MS`).

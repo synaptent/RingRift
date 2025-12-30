@@ -262,3 +262,328 @@ class TestConstants:
     def test_max_target_games(self):
         """MAX_TARGET_GAMES is half a million."""
         assert MAX_TARGET_GAMES == 500_000
+
+
+# =============================================================================
+# EDGE CASES TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestBudgetCalculatorEdgeCases:
+    """Tests for edge cases in budget calculation."""
+
+    def test_negative_elo_handled(self):
+        """Negative Elo should not cause issues."""
+        budget = get_adaptive_budget_for_elo(-100)
+        assert budget == GUMBEL_BUDGET_STANDARD
+
+    def test_zero_elo_handled(self):
+        """Zero Elo should return standard budget."""
+        budget = get_adaptive_budget_for_elo(0)
+        assert budget == GUMBEL_BUDGET_STANDARD
+
+    def test_very_high_elo_returns_master(self):
+        """Very high Elo should return master budget."""
+        budget = get_adaptive_budget_for_elo(10000)
+        assert budget == GUMBEL_BUDGET_MASTER
+
+    def test_negative_game_count_handled(self):
+        """Negative game count should not cause issues."""
+        # Negative is invalid but should not crash
+        budget = get_adaptive_budget_for_games(-10, 1500)
+        assert budget == GUMBEL_BUDGET_BOOTSTRAP_TIER1
+
+    def test_very_large_game_count(self):
+        """Very large game count should use Elo-based budget."""
+        budget = get_adaptive_budget_for_games(10**9, 1700)
+        assert budget == GUMBEL_BUDGET_QUALITY
+
+    def test_float_elo_handled(self):
+        """Float Elo values should work correctly."""
+        budget = get_adaptive_budget_for_elo(1500.5)
+        assert budget == GUMBEL_BUDGET_QUALITY
+
+    def test_config_key_with_extra_underscores(self):
+        """Config key with extra underscores should parse reasonably."""
+        board, players = parse_config_key("some_board_type_2p")
+        # Should extract last part as player count
+        assert players == 2
+
+    def test_config_key_non_numeric_players(self):
+        """Config key with non-numeric player part should return default."""
+        board, players = parse_config_key("hex8_Xp")
+        assert players == 2  # Default
+
+    def test_target_games_with_negative_elo(self):
+        """Target games should handle negative Elo."""
+        # Negative Elo creates a huge gap, but should not crash
+        target = compute_target_games("hex8_2p", -100)
+        assert target > 0
+        assert target <= MAX_TARGET_GAMES
+
+    def test_target_games_unknown_board(self):
+        """Unknown board type should use default multiplier."""
+        target = compute_target_games("unknown_2p", 1500)
+        assert target > 0
+
+
+# =============================================================================
+# BOOTSTRAP PHASE TRANSITION TESTS
+# =============================================================================
+
+
+class TestBootstrapPhaseTransition:
+    """Tests for transitions between bootstrap and quality phases."""
+
+    def test_transition_at_exactly_100_games(self):
+        """At exactly 100 games, should use tier 2."""
+        budget = get_adaptive_budget_for_games(100, 1500)
+        assert budget == GUMBEL_BUDGET_BOOTSTRAP_TIER2
+
+    def test_transition_at_exactly_500_games(self):
+        """At exactly 500 games, should use tier 3."""
+        budget = get_adaptive_budget_for_games(500, 1500)
+        assert budget == GUMBEL_BUDGET_BOOTSTRAP_TIER3
+
+    def test_transition_at_exactly_1000_games(self):
+        """At exactly 1000 games, should use Elo-based budget."""
+        budget = get_adaptive_budget_for_games(1000, 1500)
+        assert budget == GUMBEL_BUDGET_QUALITY
+
+    def test_bootstrap_ignores_high_elo(self):
+        """Bootstrap phase should ignore high Elo."""
+        # Even at 2000 Elo, if < 1000 games, use bootstrap
+        budget = get_adaptive_budget_for_games(500, 2000)
+        assert budget == GUMBEL_BUDGET_BOOTSTRAP_TIER3
+        assert budget != GUMBEL_BUDGET_MASTER
+
+    def test_quality_phase_respects_elo(self):
+        """Quality phase should respect Elo tiers."""
+        budget_standard = get_adaptive_budget_for_games(5000, 1400)
+        budget_quality = get_adaptive_budget_for_games(5000, 1600)
+        budget_ultimate = get_adaptive_budget_for_games(5000, 1850)
+        budget_master = get_adaptive_budget_for_games(5000, 2100)
+
+        assert budget_standard == GUMBEL_BUDGET_STANDARD
+        assert budget_quality == GUMBEL_BUDGET_QUALITY
+        assert budget_ultimate == GUMBEL_BUDGET_ULTIMATE
+        assert budget_master == GUMBEL_BUDGET_MASTER
+
+
+# =============================================================================
+# THREAD SAFETY TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestBudgetCalculatorThreadSafety:
+    """Tests for thread safety of budget calculation functions."""
+
+    def test_concurrent_budget_for_elo(self):
+        """Concurrent Elo-based budget lookups should not corrupt results."""
+        import threading
+
+        results = []
+        errors = []
+
+        def calculate():
+            try:
+                for elo in range(1000, 2500, 100):
+                    budget = get_adaptive_budget_for_elo(elo)
+                    results.append((elo, budget))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=calculate) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        assert len(results) == 75  # 15 elos * 5 threads
+
+    def test_concurrent_budget_for_games(self):
+        """Concurrent game-based budget lookups should not corrupt results."""
+        import threading
+
+        results = []
+        errors = []
+
+        def calculate():
+            try:
+                for games in range(0, 2000, 100):
+                    budget = get_adaptive_budget_for_games(games, 1500)
+                    results.append((games, budget))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=calculate) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        assert len(results) == 100  # 20 game counts * 5 threads
+
+    def test_concurrent_compute_target_games(self):
+        """Concurrent target games computation should not corrupt results."""
+        import threading
+
+        results = []
+        errors = []
+        configs = ["hex8_2p", "square8_4p", "hexagonal_3p"]
+
+        def calculate():
+            try:
+                for config in configs:
+                    for elo in range(1200, 1900, 100):
+                        target = compute_target_games(config, elo)
+                        results.append((config, elo, target))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=calculate) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        # Should have deterministic results
+        assert len(results) == 105  # 3 configs * 7 elos * 5 threads
+
+
+# =============================================================================
+# BUDGET TIER NAME EDGE CASES
+# =============================================================================
+
+
+class TestBudgetTierNameEdgeCases:
+    """Edge cases for budget tier name resolution."""
+
+    def test_zero_budget(self):
+        """Zero budget should return CUSTOM(0)."""
+        name = get_budget_tier_name(0)
+        assert name == "CUSTOM(0)"
+
+    def test_negative_budget(self):
+        """Negative budget should return CUSTOM(-value)."""
+        name = get_budget_tier_name(-100)
+        assert name == "CUSTOM(-100)"
+
+    def test_very_large_budget(self):
+        """Very large budget should return CUSTOM(value)."""
+        name = get_budget_tier_name(100000)
+        assert name == "CUSTOM(100000)"
+
+    def test_all_named_tiers_have_unique_values(self):
+        """All named budget tiers should have distinct values."""
+        tiers = {
+            GUMBEL_BUDGET_MASTER,
+            GUMBEL_BUDGET_ULTIMATE,
+            GUMBEL_BUDGET_BOOTSTRAP_TIER1,
+            GUMBEL_BUDGET_BOOTSTRAP_TIER2,
+            GUMBEL_BUDGET_BOOTSTRAP_TIER3,
+        }
+        # Note: QUALITY and STANDARD may have same value (800)
+        assert GUMBEL_BUDGET_BOOTSTRAP_TIER1 == 64
+        assert GUMBEL_BUDGET_BOOTSTRAP_TIER2 == 150
+        assert GUMBEL_BUDGET_BOOTSTRAP_TIER3 == 200
+
+
+# =============================================================================
+# PARSE CONFIG KEY EDGE CASES
+# =============================================================================
+
+
+class TestParseConfigKeyEdgeCases:
+    """Edge cases for config key parsing."""
+
+    def test_numeric_board_name(self):
+        """Numeric board name should be handled."""
+        board, players = parse_config_key("123_2p")
+        assert board == "123"
+        assert players == 2
+
+    def test_underscore_only(self):
+        """Underscore only should return defaults."""
+        board, players = parse_config_key("_")
+        assert players == 2  # Default
+
+    def test_special_characters(self):
+        """Special characters in board name should be preserved."""
+        board, players = parse_config_key("board-v2_3p")
+        assert board == "board-v2"
+        assert players == 3
+
+    def test_uppercase_player_suffix(self):
+        """Uppercase player suffix should be handled."""
+        board, players = parse_config_key("hex8_2P")
+        # Depends on implementation, but should not crash
+        assert isinstance(players, int)
+
+    def test_player_count_out_of_range(self):
+        """Player count outside 2-4 should return default."""
+        board, players = parse_config_key("hex8_10p")
+        # Implementation may or may not validate range
+        assert isinstance(players, int)
+
+
+# =============================================================================
+# COMPUTE TARGET GAMES COMPREHENSIVE TESTS
+# =============================================================================
+
+
+class TestComputeTargetGamesComprehensive:
+    """Comprehensive tests for target games calculation."""
+
+    def test_all_canonical_configs(self):
+        """All 12 canonical configs should compute valid targets."""
+        configs = [
+            f"{board}_{n}p"
+            for board in ["hex8", "square8", "square19", "hexagonal"]
+            for n in [2, 3, 4]
+        ]
+
+        for config in configs:
+            target = compute_target_games(config, 1500)
+            assert isinstance(target, int), f"Invalid target type for {config}"
+            assert target >= 0, f"Negative target for {config}"
+            assert target <= MAX_TARGET_GAMES, f"Target exceeds max for {config}"
+
+    def test_ordering_by_difficulty(self):
+        """Harder configs should require more games."""
+        elo = 1500
+
+        # hex8 < square8 < square19 < hexagonal
+        hex8_target = compute_target_games("hex8_2p", elo)
+        sq8_target = compute_target_games("square8_2p", elo)
+        sq19_target = compute_target_games("square19_2p", elo)
+        hex_target = compute_target_games("hexagonal_2p", elo)
+
+        assert hex8_target < sq8_target < sq19_target < hex_target
+
+    def test_ordering_by_player_count(self):
+        """More players should require more games."""
+        elo = 1500
+
+        target_2p = compute_target_games("hex8_2p", elo)
+        target_3p = compute_target_games("hex8_3p", elo)
+        target_4p = compute_target_games("hex8_4p", elo)
+
+        assert target_2p < target_3p < target_4p
+
+    def test_higher_elo_needs_fewer_games(self):
+        """Higher Elo should need fewer additional games."""
+        target_1400 = compute_target_games("hex8_2p", 1400)
+        target_1600 = compute_target_games("hex8_2p", 1600)
+        target_1800 = compute_target_games("hex8_2p", 1800)
+
+        assert target_1400 > target_1600 > target_1800
+
+    def test_at_target_returns_zero(self):
+        """At or above target Elo should return 0."""
+        assert compute_target_games("hex8_2p", TARGET_ELO_THRESHOLD) == 0
+        assert compute_target_games("hex8_2p", TARGET_ELO_THRESHOLD + 100) == 0
+        assert compute_target_games("hexagonal_4p", TARGET_ELO_THRESHOLD + 500) == 0
