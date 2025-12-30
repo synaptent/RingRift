@@ -287,7 +287,7 @@ class TestNodeAvailabilityDaemonInit:
         daemon = NodeAvailabilityDaemon()
 
         assert daemon.config.dry_run is True
-        assert isinstance(daemon._stats, DaemonStats)
+        assert isinstance(daemon._daemon_stats, DaemonStats)
         assert daemon._pending_terminations == {}
 
     def test_custom_config_initialization(
@@ -434,8 +434,8 @@ class TestNodeAvailabilityDaemonHealthCheck:
                 daemon = NodeAvailabilityDaemon()
 
                 # Simulate high error rate
-                daemon._stats.provider_checks["vast"] = 10
-                daemon._stats.provider_errors["vast"] = 6
+                daemon._daemon_stats.provider_checks["vast"] = 10
+                daemon._daemon_stats.provider_errors["vast"] = 6
 
                 result = daemon.health_check()
 
@@ -447,9 +447,9 @@ class TestNodeAvailabilityDaemonHealthCheck:
     ) -> None:
         """Test health check includes correct details."""
         daemon = NodeAvailabilityDaemon()
-        daemon._stats.cycles_completed = 5
-        daemon._stats.total_updates = 10
-        daemon._stats.nodes_updated = 25
+        daemon._daemon_stats.cycles_completed = 5
+        daemon._daemon_stats.total_updates = 10
+        daemon._daemon_stats.nodes_updated = 25
 
         result = daemon.health_check()
 
@@ -485,9 +485,9 @@ class TestNodeAvailabilityDaemonStatus:
         daemon = NodeAvailabilityDaemon()
 
         # Simulate activity
-        daemon._stats.record_cycle(2.5)
-        daemon._stats.total_updates = 3
-        daemon._stats.nodes_updated = 7
+        daemon._daemon_stats.record_cycle(2.5)
+        daemon._daemon_stats.total_updates = 3
+        daemon._daemon_stats.nodes_updated = 7
         daemon._pending_terminations["node-001"] = time.time()
 
         status = daemon.get_status()
@@ -575,8 +575,8 @@ class TestNodeAvailabilityDaemonCycle:
 
                 await daemon._run_cycle()
 
-                assert daemon._stats.cycles_completed == 1
-                assert daemon._stats.provider_checks.get("vast", 0) == 1
+                assert daemon._daemon_stats.cycles_completed == 1
+                assert daemon._daemon_stats.provider_checks.get("vast", 0) == 1
 
     @pytest.mark.asyncio
     async def test_run_cycle_with_updates(
@@ -630,7 +630,7 @@ class TestNodeAvailabilityDaemonCycle:
                 ) as emit_mock:
                     await daemon._run_cycle()
 
-                    assert daemon._stats.total_updates == 1
+                    assert daemon._daemon_stats.total_updates == 1
                     emit_mock.assert_called_once_with(
                         "vast-12345", "ready", "offline"
                     )
@@ -661,8 +661,8 @@ class TestNodeAvailabilityDaemonCycle:
 
                 await daemon._run_cycle()
 
-                assert daemon._stats.cycles_completed == 1
-                assert daemon._stats.provider_errors.get("vast", 0) == 1
+                assert daemon._daemon_stats.cycles_completed == 1
+                assert daemon._daemon_stats.provider_errors.get("vast", 0) == 1
 
 
 # =============================================================================
