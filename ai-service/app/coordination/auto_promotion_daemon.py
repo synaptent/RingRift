@@ -45,27 +45,28 @@ class AutoPromotionConfig:
     """Configuration for auto-promotion."""
     enabled: bool = True
     # Minimum games required for promotion decision
-    # Dec 29: Reduced from 50 to 20 for faster iteration (20 games gives 95% CI ±10%)
-    min_games_vs_random: int = 20
-    min_games_vs_heuristic: int = 20
+    # Dec 30: REVERTED from 20 to 50 - 20 games gives 95% CI ±10% which is insufficient
+    # to distinguish quality. 50 games gives 95% CI ±6.4% which is acceptable.
+    min_games_vs_random: int = 50
+    min_games_vs_heuristic: int = 50
     # Cooldown between promotion attempts (seconds)
     promotion_cooldown_seconds: float = 300.0  # 5 minutes
     # Whether to wait for both RANDOM and HEURISTIC results
     require_both_baselines: bool = True
     # Safety: require consecutive successful evaluations
-    # Dec 29: Lowered from 2 to 1 to accelerate iteration
-    consecutive_passes_required: int = 1
+    # Dec 30: REVERTED from 1 to 2 - single pass is too noisy for promotion
+    consecutive_passes_required: int = 2
     # Dry run mode - log but don't actually promote
     dry_run: bool = False
     # Dec 27, 2025: Minimum Elo improvement over previous model required for promotion
-    # Dec 29: Lowered from 10 to 5 to allow incremental improvements
-    min_elo_improvement: float = 5.0
+    # Dec 30: REVERTED from 5 to 10 - require meaningful improvement
+    min_elo_improvement: float = 10.0
     # December 2025: Quality gate settings to prevent bad model promotion
     quality_gate_enabled: bool = True
-    # Dec 29: Reduced from 1000 to 500 for faster iteration
-    min_training_games: int = 500
-    # Dec 29: Reduced from 0.6 to 0.5 for less strict quality gate
-    min_quality_score: float = AUTO_PROMOTION_MIN_QUALITY  # From thresholds.py
+    # Dec 30: REVERTED from 500 to 1000 - require sufficient training data
+    min_training_games: int = 1000
+    # Dec 30: REVERTED to 0.55 - balance between quality and iteration speed
+    min_quality_score: float = 0.55
     require_parity_validation: bool = True  # Require TS parity validation passed
     # December 2025: Stability gate to prevent promoting volatile models
     stability_gate_enabled: bool = True
@@ -364,11 +365,15 @@ class AutoPromotionDaemon:
         # Dec 28, 2025: Use two-tier promotion system
         # - Aspirational: Model meets high thresholds for strong performance
         # - Relative: Model beats current best AND meets minimum floor
+        # Dec 30, 2025: Pass current_best_elo to enable safety check
+        # This prevents "race to the bottom" where weak models beat weaker models
+        current_best_elo = candidate.previous_elo if candidate.previous_elo > 0 else None
         should_promote, reason = should_promote_model(
             config_key=candidate.config_key,
             vs_random_rate=random_win_rate,
             vs_heuristic_rate=heuristic_win_rate,
             beats_current_best=candidate.beats_current_best,
+            current_best_elo=current_best_elo,
         )
 
         if should_promote:

@@ -1097,12 +1097,15 @@ def should_promote_model(
     vs_random_rate: float,
     vs_heuristic_rate: float,
     beats_current_best: bool = False,
+    current_best_elo: float | None = None,
 ) -> tuple[bool, str]:
     """Determine if a model should be promoted using two-tier system.
 
     Promotion criteria (in order of precedence):
     1. If model meets ASPIRATIONAL thresholds -> promote (strong model)
     2. If PROMOTION_RELATIVE_ENABLED and beats_current_best:
+       - Dec 30, 2025: SAFETY CHECK - If current best Elo < 1200, require aspirational
+         thresholds to prevent "race to the bottom" where weak models beat weaker models
        - If model meets MINIMUM floor -> promote (incremental improvement)
     3. Otherwise -> don't promote
 
@@ -1111,6 +1114,7 @@ def should_promote_model(
         vs_random_rate: Win rate against random opponent (0.0-1.0)
         vs_heuristic_rate: Win rate against heuristic opponent (0.0-1.0)
         beats_current_best: Whether this model beats the current best model
+        current_best_elo: Elo rating of current best model (for safety check)
 
     Returns:
         Tuple of (should_promote, reason)
@@ -1124,6 +1128,16 @@ def should_promote_model(
 
     # Check relative promotion
     if PROMOTION_RELATIVE_ENABLED and beats_current_best:
+        # Dec 30, 2025: Safety check - prevent "race to the bottom"
+        # If current best is weak (Elo < 1200), don't allow relative promotion
+        # This prevents weak models beating other weak models and getting promoted
+        RELATIVE_PROMOTION_ELO_FLOOR = 1200
+        if current_best_elo is not None and current_best_elo < RELATIVE_PROMOTION_ELO_FLOOR:
+            return False, (
+                f"Relative promotion blocked: current best Elo {current_best_elo:.0f} < {RELATIVE_PROMOTION_ELO_FLOOR} floor. "
+                f"Model must meet aspirational thresholds to escape weak baseline."
+            )
+
         if vs_random_rate >= minimum["vs_random"]:
             return True, f"Beats current best and meets minimum floor (vs_random={vs_random_rate:.1%} >= {minimum['vs_random']:.0%})"
         else:
