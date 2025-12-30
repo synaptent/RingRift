@@ -219,32 +219,59 @@ class TestPlacementValidator:
         )
         assert validator.validate(placement_state_square, move) is True
 
-    @pytest.mark.skip(reason="PlacementValidator hex coordinate validation not fully implemented")
     def test_valid_placement_empty_cell_hex(self, placement_state_hex):
-        """Test valid placement on empty cell (hex board)."""
+        """Test valid placement on empty cell (hex board).
+
+        Uses a valid hex position that satisfies cube coordinate constraints:
+        |x| <= radius, |y| <= radius, |z| <= radius, and x + y + z == 0.
+        For hex8 (radius=4), Position(2, -2, 0) is valid.
+        """
         validator = PlacementValidator()
         move = Move(
             id='test-move',
             player=1,
             type=MoveType.PLACE_RING,
-            to=Position(x=4, y=4, z=-8),
+            to=Position(x=2, y=-2, z=0),  # Valid hex coords: 2 + (-2) + 0 = 0
         )
         assert validator.validate(placement_state_hex, move) is True
 
-    @pytest.mark.skip(reason="PlacementValidator occupied cell check returns True - validator bug")
-    def test_invalid_placement_occupied_cell(self, placement_state_square):
-        """Test invalid placement on occupied cell.
+    def test_valid_placement_on_existing_stack(self, placement_state_square):
+        """Test that placement on an existing stack IS valid.
 
-        NOTE: This test exposes a bug in PlacementValidator - it should reject
-        placement on occupied cells but currently returns True.
+        In RingRift, during the placement phase, players can add rings to
+        existing stacks (up to 1 ring per action on an occupied cell).
+        This mirrors the TypeScript validatePlacementOnBoard semantics.
         """
-        # Add a stack at (3, 3)
+        # Add a stack at (3, 3) controlled by player 2
         placement_state_square.board.stacks["3,3"] = RingStack(
             position=Position(x=3, y=3),
             rings=[2],
             stackHeight=1,
             capHeight=1,
             controllingPlayer=2,
+        )
+
+        validator = PlacementValidator()
+        move = Move(
+            id='test-move',
+            player=1,
+            type=MoveType.PLACE_RING,
+            to=Position(x=3, y=3),
+        )
+        # Placement on existing stacks is VALID (adds ring to stack)
+        assert validator.validate(placement_state_square, move) is True
+
+    def test_invalid_placement_on_marker(self, placement_state_square):
+        """Test that placement on a marker is invalid.
+
+        The PlacementValidator should reject placement on markers per
+        the marker-stack exclusivity rule.
+        """
+        # Add a marker at (3, 3)
+        placement_state_square.board.markers["3,3"] = MarkerInfo(
+            player=2,
+            position=Position(x=3, y=3),
+            type="territory",
         )
 
         validator = PlacementValidator()
@@ -443,19 +470,16 @@ class TestMovementValidator:
         )
         assert validator.validate(movement_state_square, move) is False
 
-    @pytest.mark.skip(reason="MovementValidator collapsed space check not implemented - validator bug")
     def test_invalid_movement_collapsed_space(self, movement_state_square):
         """Test movement to collapsed space.
 
-        NOTE: This test exposes a bug in MovementValidator - it should reject
-        movement to collapsed spaces but currently returns True.
+        The MovementValidator checks board.collapsed_spaces (not board.markers)
+        via BoardManager.is_collapsed_space() at line 57. Collapsed spaces are
+        tracked as a dict mapping position key to the player who collapsed it.
         """
-        # Mark destination as collapsed
-        movement_state_square.board.markers["3,5"] = MarkerInfo(
-            player=1,
-            position=Position(x=3, y=5),
-            type="collapsed",
-        )
+        # Mark destination as collapsed - use collapsed_spaces dict, not markers
+        # The value is the player number who collapsed the space
+        movement_state_square.board.collapsed_spaces["3,5"] = 1
 
         validator = MovementValidator()
         move = Move(
