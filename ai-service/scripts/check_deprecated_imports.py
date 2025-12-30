@@ -120,42 +120,54 @@ DEPRECATED_MODULES: dict[str, tuple[str, str, str]] = {
 }
 
 # Specific class/function imports that are deprecated
-DEPRECATED_IMPORTS: dict[str, tuple[str, str, str]] = {
+# Format: (module_pattern, import_name) -> (replacement, removal_date, description)
+# Use None for module_pattern to match any module
+DEPRECATED_IMPORTS: dict[tuple[Optional[str], str], tuple[str, str, str]] = {
     # From queue_populator
-    "PopulatorConfig": (
+    (None, "PopulatorConfig"): (
         "QueuePopulatorConfig",
         "Q2 2026",
         "Renamed to QueuePopulatorConfig",
     ),
-    "QueuePopulator": (
+    ("app.coordination.queue_populator", "QueuePopulator"): (
         "UnifiedQueuePopulator",
         "Q2 2026",
         "Use UnifiedQueuePopulator from unified_queue_populator",
     ),
     # From distribution
-    "ModelDistributionDaemon": (
+    (None, "ModelDistributionDaemon"): (
         "UnifiedDistributionDaemon",
         "Q2 2026",
         "Use UnifiedDistributionDaemon with DataType.MODEL",
     ),
-    "NPZDistributionDaemon": (
+    (None, "NPZDistributionDaemon"): (
         "UnifiedDistributionDaemon",
         "Q2 2026",
         "Use UnifiedDistributionDaemon with DataType.NPZ",
     ),
-    # From event modules
-    "get_event_bus": (
-        "get_router",
+    # From deprecated event modules (NOT from event_router itself)
+    ("app.coordination.stage_events", "get_event_bus"): (
+        "get_router from event_router",
         "Q2 2026",
         "Use get_router() from event_router",
     ),
-    "get_stage_event_bus": (
-        "get_router",
+    ("app.coordination.data_events", "get_event_bus"): (
+        "get_router from event_router",
         "Q2 2026",
         "Use get_router() from event_router",
     ),
-    "get_data_event_bus": (
-        "get_router",
+    ("app.distributed.data_events", "get_event_bus"): (
+        "get_router from event_router",
+        "Q2 2026",
+        "Use get_router() from event_router",
+    ),
+    (None, "get_stage_event_bus"): (
+        "get_router from event_router",
+        "Q2 2026",
+        "Use get_router() from event_router",
+    ),
+    (None, "get_data_event_bus"): (
+        "get_router from event_router",
         "Q2 2026",
         "Use get_router() from event_router",
     ),
@@ -258,8 +270,23 @@ def scan_file(file_path: Path) -> ScanResult:
                 # Check for deprecated specific imports
                 for alias in node.names:
                     import_name = alias.name
-                    if import_name in DEPRECATED_IMPORTS:
-                        replacement, removal_date, desc = DEPRECATED_IMPORTS[import_name]
+                    # Check with specific module pattern
+                    key_with_module = (node.module, import_name)
+                    key_any_module = (None, import_name)
+
+                    if key_with_module in DEPRECATED_IMPORTS:
+                        replacement, removal_date, desc = DEPRECATED_IMPORTS[key_with_module]
+                        result.violations.append(Violation(
+                            file_path=str(file_path),
+                            line_number=node.lineno,
+                            import_name=f"{node.module}.{import_name}",
+                            replacement=replacement,
+                            removal_date=removal_date,
+                            description=desc,
+                            import_type="name",
+                        ))
+                    elif key_any_module in DEPRECATED_IMPORTS:
+                        replacement, removal_date, desc = DEPRECATED_IMPORTS[key_any_module]
                         result.violations.append(Violation(
                             file_path=str(file_path),
                             line_number=node.lineno,
@@ -376,8 +403,13 @@ Examples:
             print(f"  {desc}")
         print("\n\nDeprecated Imports:")
         print("=" * 60)
-        for name, (replacement, date, desc) in sorted(DEPRECATED_IMPORTS.items()):
-            print(f"\n{name}")
+        for (module_pattern, name), (replacement, date, desc) in sorted(
+            DEPRECATED_IMPORTS.items(), key=lambda x: (x[0][1], x[0][0] or "")
+        ):
+            if module_pattern:
+                print(f"\nfrom {module_pattern} import {name}")
+            else:
+                print(f"\n{name} (from any module)")
             print(f"  Replace with: {replacement}")
             print(f"  {desc}")
         return 0

@@ -379,8 +379,11 @@ class TestEventEmission:
     @pytest.mark.asyncio
     async def test_emit_voter_offline(self, daemon):
         """Test VOTER_OFFLINE event emission."""
+        # Set up voter state for the emit method to access
+        daemon._voter_states = {"voter-1": VoterHealthState("voter-1")}
+
         with patch("app.coordination.voter_health_daemon.emit_data_event") as mock_emit:
-            daemon._emit_voter_offline("voter-1", "Connection refused")
+            await daemon._emit_voter_offline("voter-1", "Connection refused")
 
             mock_emit.assert_called_once()
             call_args = mock_emit.call_args
@@ -391,13 +394,17 @@ class TestEventEmission:
     @pytest.mark.asyncio
     async def test_emit_voter_online(self, daemon):
         """Test VOTER_ONLINE event emission."""
+        # Set up voter state for the emit method to access
+        daemon._voter_states = {"voter-1": VoterHealthState("voter-1")}
+
         with patch("app.coordination.voter_health_daemon.emit_data_event") as mock_emit:
-            daemon._emit_voter_online("voter-1")
+            await daemon._emit_voter_online("voter-1", "p2p_http")
 
             mock_emit.assert_called_once()
             call_args = mock_emit.call_args
             assert call_args[0][0].value == "voter_online"
             assert call_args[1]["voter_id"] == "voter-1"
+            assert call_args[1]["transport"] == "p2p_http"
 
     @pytest.mark.asyncio
     async def test_emit_quorum_lost(self, daemon):
@@ -519,12 +526,12 @@ class TestQuorumState:
             "v5": VoterHealthState("v5", is_online=True),
             "v6": VoterHealthState("v6", is_online=False),
         }
-        daemon._quorum_met = True
+        daemon._had_quorum = True
 
         with patch.object(daemon, "_emit_quorum_at_risk") as mock_emit:
             daemon._check_quorum_status()
 
-            assert daemon._quorum_met is True  # Still have quorum
+            assert daemon._had_quorum is True  # Still have quorum
             mock_emit.assert_called_once()
 
 
@@ -558,32 +565,42 @@ class TestHealthCheck:
         """Test health check returns healthy when running."""
         daemon = VoterHealthMonitorDaemon()
         daemon._running = True
-        daemon._quorum_met = True
+        daemon._had_quorum = True
+        # Need enough voters online to meet quorum (4 by default)
         daemon._voter_states = {
             "v1": VoterHealthState("v1", is_online=True),
+            "v2": VoterHealthState("v2", is_online=True),
+            "v3": VoterHealthState("v3", is_online=True),
+            "v4": VoterHealthState("v4", is_online=True),
+            "v5": VoterHealthState("v5", is_online=True),
+            "v6": VoterHealthState("v6", is_online=True),
         }
 
         result = daemon.health_check()
 
         assert result.healthy is True
         assert result.status.value == "running"
-        assert "voters_online" in result.details
+        assert "online_voters" in result.details
 
     def test_health_check_quorum_lost(self):
         """Test health check reflects quorum lost."""
         daemon = VoterHealthMonitorDaemon()
         daemon._running = True
-        daemon._quorum_met = False
+        daemon._had_quorum = False
+        # Only 1 online voter (below quorum of 4)
         daemon._voter_states = {
             "v1": VoterHealthState("v1", is_online=True),
             "v2": VoterHealthState("v2", is_online=False),
+            "v3": VoterHealthState("v3", is_online=False),
+            "v4": VoterHealthState("v4", is_online=False),
         }
 
         result = daemon.health_check()
 
-        # Daemon is still healthy, but quorum is not
-        assert result.healthy is True
-        assert result.details.get("quorum_met") is False
+        # When quorum is lost, daemon reports unhealthy with DEGRADED status
+        assert result.healthy is False
+        assert result.status.value == "degraded"
+        assert result.details.get("has_quorum") is False
 
 
 # =============================================================================
@@ -693,18 +710,25 @@ class TestGetStatus:
 
         status = daemon.get_status()
 
-        assert "voter_status" in status
-        assert status["voter_status"]["total_voters"] == 2
-        assert status["voter_status"]["online_voters"] == 1
-        assert status["voter_status"]["offline_voters"] == 1
+        assert "voter_health" in status
+        # online_voters and offline_voters are lists of voter info dicts
+        assert len(status["voter_health"]["online_voters"]) == 1
+        assert len(status["voter_health"]["offline_voters"]) == 1
 
     def test_get_status_includes_quorum_info(self):
         """Test that get_status includes quorum information."""
         daemon = VoterHealthMonitorDaemon()
         daemon._running = True
-        daemon._quorum_met = True
+        daemon._had_quorum = True
+        # Need 4+ voters online for has_quorum=True (default quorum_size=4)
+        daemon._voter_states = {
+            "v1": VoterHealthState("v1", is_online=True),
+            "v2": VoterHealthState("v2", is_online=True),
+            "v3": VoterHealthState("v3", is_online=True),
+            "v4": VoterHealthState("v4", is_online=True),
+        }
 
         status = daemon.get_status()
 
-        assert "voter_status" in status
-        assert status["voter_status"]["quorum_met"] is True
+        assert "voter_health" in status
+        assert status["voter_health"]["has_quorum"] is True
