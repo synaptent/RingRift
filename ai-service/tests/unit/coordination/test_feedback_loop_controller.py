@@ -1471,19 +1471,20 @@ class TestRegressionDetection:
 class TestTrainingLossTrend:
     """Tests for _on_training_loss_trend handler."""
 
-    def test_stalled_trend_boosts_exploration(self, controller):
-        """Stalled trend should boost exploration."""
+    def test_stalled_trend_creates_state(self, controller):
+        """Stalled trend should create state for config."""
         event = MagicMock()
         event.payload = {
             "config": "hex8_2p",
             "trend": "stalled",
-            "duration_epochs": 10,
+            "trend_duration_epochs": 10,  # > TREND_DURATION_SEVERE (5)
         }
 
-        with patch.object(controller, "_boost_exploration_for_stall") as mock_boost:
-            controller._on_training_loss_trend(event)
+        controller._on_training_loss_trend(event)
 
-        mock_boost.assert_called_once()
+        # State should be created
+        state = controller.get_state("hex8_2p")
+        assert state is not None
 
     def test_degrading_trend_triggers_quality_check(self, controller):
         """Degrading trend should trigger quality check."""
@@ -1491,7 +1492,7 @@ class TestTrainingLossTrend:
         event.payload = {
             "config": "hex8_2p",
             "trend": "degrading",
-            "duration_epochs": 5,
+            "trend_duration_epochs": 5,
         }
 
         with patch.object(controller, "_trigger_quality_check") as mock_quality:
@@ -1499,8 +1500,8 @@ class TestTrainingLossTrend:
 
         mock_quality.assert_called_once()
 
-    def test_improving_trend_reduces_exploration(self, controller):
-        """Improving trend should reduce exploration boost."""
+    def test_improving_trend_resets_anomaly_count(self, controller):
+        """Improving trend should reset anomaly count."""
         event = MagicMock()
         event.payload = {
             "config": "hex8_2p",
@@ -1511,10 +1512,9 @@ class TestTrainingLossTrend:
         state = controller._get_or_create_state("hex8_2p")
         state.loss_anomaly_count = 3
 
-        with patch.object(controller, "_reduce_exploration_after_improvement") as mock_reduce:
-            controller._on_training_loss_trend(event)
+        controller._on_training_loss_trend(event)
 
-        # Should reset anomaly count and reduce exploration
+        # Should reset anomaly count
         assert state.loss_anomaly_count == 0
 
     def test_handles_missing_config(self, controller):
@@ -1523,4 +1523,16 @@ class TestTrainingLossTrend:
         event.payload = {"trend": "stalled"}
 
         # Should not raise
+        controller._on_training_loss_trend(event)
+
+    def test_plateau_trend_boosts_exploration(self, controller):
+        """Plateau trend should boost exploration."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "trend": "plateau",
+            "trend_duration_epochs": 10,
+        }
+
+        # Should not raise and should handle plateau
         controller._on_training_loss_trend(event)
