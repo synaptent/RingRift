@@ -1106,3 +1106,37 @@ Comprehensive exploration verified solid foundation with only 2 daemons needing 
 | `training_trigger_daemon.py` | ~120       | `RetryConfig(max_attempts=3, base_delay=300.0)` |
 
 **Estimated migration effort**: ~12-16 hours
+
+## Elo Analysis and Training Data Requirements (Dec 30, 2025)
+
+Comprehensive analysis revealed **training data volume** as the primary factor in NN vs heuristic performance:
+
+### Training Data vs Elo Performance
+
+| Config     | Games  | NN Elo | Heuristic Elo | Result                     |
+| ---------- | ------ | ------ | ------------- | -------------------------- |
+| square8_2p | 20,868 | 1674   | ~1400         | ✅ NN beats heuristic      |
+| hex8_2p    | 1,004  | 1244   | 1444          | ❌ NN underperforms (-200) |
+| hex8_4p    | 372    | 751    | 978           | ❌ NN underperforms (-227) |
+
+**Key Finding**: Configs with 5,000+ games produce NNs that beat heuristic. Configs with <2,000 games underperform.
+
+### Minimum Training Data Requirements
+
+| Game Count   | Expected Performance                    |
+| ------------ | --------------------------------------- |
+| <1,000       | NN significantly worse than heuristic   |
+| 1,000-5,000  | NN may match or slightly beat heuristic |
+| 5,000-20,000 | NN reliably beats heuristic             |
+| 20,000+      | NN significantly outperforms heuristic  |
+
+### Remediation Actions (Dec 30, 2025)
+
+Dispatched targeted selfplay via P2P cluster:
+
+- **hex8_2p**: 5,000 additional games (vultr-a100-20gb, runpod-a100-1, lambda-gh200-2)
+- **hex8_4p**: 3,000 additional games (vultr-a100-20gb, vast-29118472)
+
+Updated `config/distributed_hosts.yaml` underserved_configs to include hex8_2p.
+
+**Expected completion**: 4-8 hours for game generation, then export + retrain
