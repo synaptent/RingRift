@@ -508,8 +508,8 @@ class TestCapacityPlanner:
 
         health = planner.health_check()
 
-        assert health["healthy"] is True
-        assert "CapacityPlanner: Budget within limits" in health["message"]
+        assert health.healthy is True
+        assert "CapacityPlanner: Budget within limits" in health.message
 
     def test_health_check_unhealthy(self) -> None:
         """Test health_check when budget exceeded."""
@@ -519,8 +519,8 @@ class TestCapacityPlanner:
 
         health = planner.health_check()
 
-        assert health["healthy"] is False
-        assert "90%" in health["message"]
+        assert health.healthy is False
+        assert "90%" in health.message
 
     def test_health_check_details(self) -> None:
         """Test health_check returns expected details."""
@@ -530,9 +530,9 @@ class TestCapacityPlanner:
 
         health = planner.health_check()
 
-        assert "hourly_budget_percent" in health["details"]
-        assert "daily_budget_percent" in health["details"]
-        assert health["details"]["active_gpu_nodes"] == 5
+        assert "hourly_budget_percent" in health.details
+        assert "daily_budget_percent" in health.details
+        assert health.details["active_gpu_nodes"] == 5
 
 
 # =============================================================================

@@ -563,8 +563,8 @@ class TestCapacityPlannerHealth:
 
         health = planner.health_check()
 
-        assert health["healthy"] is True
-        assert "within limits" in health["message"]
+        assert health.healthy is True
+        assert "within limits" in health.message
 
     def test_health_check_unhealthy(self) -> None:
         """Test health check when budget exceeded."""
@@ -573,8 +573,8 @@ class TestCapacityPlannerHealth:
 
         health = planner.health_check()
 
-        assert health["healthy"] is False
-        assert "90%" in health["message"]
+        assert health.healthy is False
+        assert "90%" in health.message
 
     def test_health_check_includes_details(self) -> None:
         """Test health check includes utilization details."""
@@ -588,8 +588,8 @@ class TestCapacityPlannerHealth:
 
         health = planner.health_check()
 
-        assert "active_gpu_nodes" in health["details"]
-        assert health["details"]["active_gpu_nodes"] == 8
+        assert "active_gpu_nodes" in health.details
+        assert health.details["active_gpu_nodes"] == 8
 
 
 class TestCapacityPlannerSingleton:

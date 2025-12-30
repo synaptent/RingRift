@@ -50,6 +50,8 @@ from app.coordination.event_router import DataEventType, safe_emit_event
 
 # December 2025: Distribution defaults and utilities
 from app.config.coordination_defaults import DistributionDefaults
+# December 30, 2025: Use centralized retry utilities
+from app.utils.retry import RetryConfig
 from app.coordination.unified_distribution_daemon import (
     verify_model_distribution,
     wait_for_model_availability,
@@ -187,8 +189,13 @@ class EvaluationDaemon(BaseEventHandler):
         # December 29, 2025: Retry queue for failed evaluations
         # Tuple: (model_path, board_type, num_players, attempts, next_retry_time)
         self._retry_queue: deque[tuple[str, str, int, int, float]] = deque()
-        self._max_retry_attempts = 3
-        self._base_retry_delay = 60.0  # seconds, exponential backoff
+        # December 30, 2025: Use centralized RetryConfig for consistent retry behavior
+        self._retry_config = RetryConfig(
+            max_attempts=3,
+            base_delay=60.0,
+            max_delay=240.0,
+            jitter=0.1,  # Add slight jitter to avoid thundering herd
+        )
         self._retry_stats = {
             "retries_queued": 0,
             "retries_succeeded": 0,
@@ -964,16 +971,16 @@ class EvaluationDaemon(BaseEventHandler):
         """
         attempts = current_attempts + 1
 
-        if attempts >= self._max_retry_attempts:
+        if attempts >= self._retry_config.max_attempts:
             self._retry_stats["retries_exhausted"] += 1
             logger.error(
-                f"[EvaluationDaemon] Max retries ({self._max_retry_attempts}) exceeded "
+                f"[EvaluationDaemon] Max retries ({self._retry_config.max_attempts}) exceeded "
                 f"for {model_path}: {reason}"
             )
             return False
 
-        # Exponential backoff: 60s, 120s, 240s
-        delay = self._base_retry_delay * (2 ** current_attempts)
+        # December 30, 2025: Use RetryConfig for consistent delay calculation
+        delay = self._retry_config.get_delay(attempts)
         next_retry = time.time() + delay
 
         self._retry_queue.append((model_path, board_type, num_players, attempts, next_retry))
