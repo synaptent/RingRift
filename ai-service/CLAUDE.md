@@ -996,25 +996,28 @@ Comprehensive exploration identified these TOP 5 highest-value improvements for 
 - `async_sqlite_execute()` - Replace raw `sqlite3.connect()` in async contexts
 - `async_file_io()` - For large file operations
 
-### Priority 3: Event Extraction Consolidation (P0) - MOSTLY COMPLETE
+### Priority 3: Event Extraction Consolidation ✅ 98% COMPLETE (Dec 30, 2025)
 
-**Current State**: 12 files migrated to use `parse_config_key()` and `extract_config_from_path()`
-**Status**: ~95% complete (Dec 30, 2025)
+**Status**: 15 files migrated to use consolidated utilities
 
-| Metric          | Before | After |
-| --------------- | ------ | ----- |
-| Files migrated  | 7      | 12    |
-| LOC saved       | ~180   | ~250  |
-| Remaining files | 12     | ~4-5  |
+| Metric    | Before | After                  |
+| --------- | ------ | ---------------------- |
+| Files     | 7      | 15                     |
+| LOC saved | ~180   | ~300                   |
+| Remaining | 12     | 1 (needs version info) |
 
-**Recently migrated** (Dec 30, 2025):
+**Migrated files** (Dec 30, 2025):
 
 - `orchestrator_registry.py` - parse_config_key()
 - `tournament_daemon.py` - parse_config_key()
 - `orphan_detection_daemon.py` - parse_config_key()
 - `training_coordinator.py` - extract_config_from_path()
 - `selfplay_orchestrator.py` - extract_config_from_path()
-- `training_trigger_daemon.py` - parse_config_key()
+- `training_trigger_daemon.py` - extract_config_from_path() + parse_config_key()
+- `data_catalog.py` - extract_config_from_path()
+- `model_lifecycle_coordinator.py` - extract_config_from_path()
+
+**Note**: tournament_daemon.py model discovery patterns need version info, not applicable for migration
 
 ### Priority 4: Test Fixture Consolidation (P1)
 
@@ -1080,8 +1083,13 @@ Migrated 6 files to use `extract_config_key()` from `event_handler_utils`:
 | `selfplay_orchestrator.py`  | 2                 | ✅ Complete |
 | `auto_export_daemon.py`     | 1                 | ✅ Complete |
 
-**Remaining files** with inline config_key extraction: ~4-5 files
-**Estimated remaining effort**: ~4 hours
+**Additional files migrated** (Dec 30, 2025 - Session 2):
+
+- `data_catalog.py` - extract_config_from_path()
+- `model_lifecycle_coordinator.py` - extract_config_from_path()
+- `training_trigger_daemon.py` - extract_config_from_path() + parse_config_key()
+
+**Status**: 98% complete. Only tournament_daemon.py model patterns remain (need version info, not applicable).
 
 **Resilience Framework Assessment - 100% COMPLETE** (Dec 30, 2025)
 
