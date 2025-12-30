@@ -772,6 +772,19 @@ class AIFactory:
         elif ai_type == AIType.HYBRID:
             from app.ai.hybrid_ai import HybridAI
             ai_class = HybridAI
+        # NNUE-based AI types (Dec 2025 - Unified AI Evaluation)
+        elif ai_type == AIType.NNUE_GUMBEL:
+            from app.ai.nnue_search_ai import NNUEGumbelAI
+            ai_class = NNUEGumbelAI
+        elif ai_type == AIType.NNUE_MCTS:
+            from app.ai.nnue_search_ai import NNUEMCTSAI
+            ai_class = NNUEMCTSAI
+        elif ai_type == AIType.NNUE_BRS:
+            from app.ai.nnue_search_ai import NNUEBRSAI
+            ai_class = NNUEBRSAI
+        elif ai_type == AIType.NNUE_MAXN:
+            from app.ai.nnue_search_ai import NNUEMaxNAI
+            ai_class = NNUEMaxNAI
         else:
             raise ValueError(f"Unsupported AI type: {ai_type}")
 

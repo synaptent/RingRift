@@ -116,6 +116,7 @@ class TestModelInitResult:
         mock_model = MagicMock()
         result = ModelInitResult(
             model=mock_model,
+            model_version="v2",
             policy_size=3782,
             board_size=9,
             effective_blocks=6,
@@ -125,6 +126,7 @@ class TestModelInitResult:
             hex_radius=4,
         )
         assert result.model == mock_model
+        assert result.model_version == "v2"
         assert result.policy_size == 3782
         assert result.board_size == 9
         assert result.effective_blocks == 6
@@ -139,6 +141,7 @@ class TestModelInitResult:
 
         result = ModelInitResult(
             model=MagicMock(),
+            model_version="v2",
             policy_size=128,
             board_size=8,
             effective_blocks=4,
@@ -147,6 +150,7 @@ class TestModelInitResult:
         )
         assert result.is_hex_model is False
         assert result.hex_radius is None
+        assert result.errors == []
 
 
 class TestModelInitializer:

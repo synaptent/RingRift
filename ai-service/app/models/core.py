@@ -174,6 +174,12 @@ class AIType(str, Enum):
     GNN = "gnn"  # Graph Neural Network policy (message passing for territory connectivity)
     HYBRID = "hybrid"  # Hybrid CNN-GNN policy (CNN patterns + GNN connectivity)
 
+    # NNUE-based AI types (Dec 2025 - Unified AI Evaluation Architecture)
+    NNUE_GUMBEL = "nnue_gumbel"  # NNUE + Gumbel MCTS (native policy or value-derived)
+    NNUE_MCTS = "nnue_mcts"  # NNUE + standard MCTS
+    NNUE_BRS = "nnue_brs"  # NNUE + Best Reply Search (multiplayer)
+    NNUE_MAXN = "nnue_maxn"  # NNUE + MaxN search (multiplayer)
+
 
 class Position(BaseModel):
     """Board position (2D or 3D for hexagonal)"""

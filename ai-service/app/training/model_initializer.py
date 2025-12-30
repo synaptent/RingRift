@@ -87,6 +87,7 @@ class ModelInitResult:
     """Result of model initialization."""
 
     model: nn.Module
+    model_version: str
     policy_size: int
     board_size: int
     effective_blocks: int
@@ -94,6 +95,7 @@ class ModelInitResult:
     feature_version: int
     is_hex_model: bool = False
     hex_radius: int | None = None
+    errors: list[str] = field(default_factory=list)
 
 
 class ModelInitializer:
@@ -199,6 +201,7 @@ class ModelInitializer:
 
         return ModelInitResult(
             model=model,
+            model_version=self.config.model_version,
             policy_size=policy_size,
             board_size=board_size,
             effective_blocks=effective_blocks,
