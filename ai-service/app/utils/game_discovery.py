@@ -12,6 +12,8 @@ of where they're stored. It handles all known storage patterns:
 7. P2P selfplay: data/selfplay/p2p/{board_type}_{num_players}*/*/games.db
 8. P2P hybrid: data/selfplay/p2p_hybrid/{board_type}_{num_players}/*/games.db
 9. Harvested data: data/training/*/harvested_games.db
+10. OWC imports: data/games/owc_imports/*.db (Dec 30, 2025)
+11. Synced data: data/games/synced/**/*.db (Dec 30, 2025)
 
 Usage:
     from app.utils.game_discovery import GameDiscovery
@@ -138,6 +140,11 @@ class GameDiscovery:
         ("data/selfplay/p2p_hybrid/{board_type}_{num_players}/*/games.db", False),
         # Harvested training data
         ("data/training/*/harvested_games.db", True),
+        # OWC imports (Dec 30, 2025) - Data imported from OWC external drive
+        ("data/games/owc_imports/*.db", True),
+        # Synced data from other cluster nodes (Dec 30, 2025)
+        ("data/games/synced/*.db", True),
+        ("data/games/synced/**/*.db", True),
         # Legacy patterns
         ("data/games/hex8_*.db", False),
         ("data/games/canonical_*.db", True),

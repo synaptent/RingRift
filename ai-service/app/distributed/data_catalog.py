@@ -65,6 +65,7 @@ try:
 except ImportError:
     HAS_STORAGE_PROVIDER = False
 DEFAULT_SYNC_DIR = GAMES_DIR / "synced"
+DEFAULT_OWC_IMPORTS_DIR = GAMES_DIR / "owc_imports"  # Dec 30, 2025
 DEFAULT_MANIFEST_PATH = DATA_DIR / "data_manifest.db"
 
 # Try to import unified manifest
@@ -336,6 +337,15 @@ class DataCatalog:
                         source_type="synced",
                         host_origin=host_dir.name,
                     )
+
+        # Discover OWC imports (Dec 30, 2025)
+        owc_imports_dir = DEFAULT_OWC_IMPORTS_DIR
+        if owc_imports_dir.exists():
+            self._discover_directory(
+                owc_imports_dir,
+                source_type="owc_import",
+                host_origin="mac-studio",
+            )
 
     def _discover_directory(
         self,
