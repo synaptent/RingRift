@@ -177,10 +177,14 @@ class TestClusterWatchdogDaemonInit:
         assert daemon.config is not None
         assert isinstance(daemon.config, ClusterWatchdogConfig)
 
-    def test_get_default_config(self):
-        """_get_default_config returns config from env."""
+    def test_from_env_creates_config(self):
+        """ClusterWatchdogConfig.from_env() returns config from env.
+
+        Note: _get_default_config() doesn't exist. HandlerBase uses
+        ClusterWatchdogConfig.from_env() in __init__.
+        """
         with patch.dict(os.environ, {"RINGRIFT_WATCHDOG_INTERVAL": "60"}):
-            config = ClusterWatchdogDaemon._get_default_config()
+            config = ClusterWatchdogConfig.from_env()
             assert config.check_interval_seconds == 60
 
 
@@ -213,16 +217,18 @@ class TestEventHandlers:
         # Should not raise
         await daemon._on_host_offline(event)
 
-    @pytest.mark.asyncio
-    async def test_subscribe_to_events_handles_import_error(self, daemon):
-        """_subscribe_to_events handles ImportError gracefully."""
-        with patch(
-            'app.coordination.cluster_watchdog_daemon.get_event_router',
-            side_effect=ImportError("No event router"),
-            create=True
-        ):
-            # Should not raise
-            await daemon._subscribe_to_events()
+    def test_get_event_subscriptions_returns_dict(self, daemon):
+        """_get_event_subscriptions returns dict of event handlers.
+
+        Note: HandlerBase uses _get_event_subscriptions() which returns a dict,
+        not the async _subscribe_to_events() method.
+        """
+        subs = daemon._get_event_subscriptions()
+        assert isinstance(subs, dict)
+        assert "HOST_OFFLINE" in subs
+        assert "HOST_ONLINE" in subs
+        assert "P2P_CLUSTER_UNHEALTHY" in subs
+        assert "P2P_CLUSTER_HEALTHY" in subs
 
 
 # =============================================================================
@@ -555,8 +561,14 @@ class TestHealthCheck:
     def test_health_check_when_running(self, daemon):
         """Health check returns healthy=True when running."""
         daemon._running = True
-        daemon._cycles_completed = 5
-        daemon._errors_count = 0
+        daemon._stats.cycles_completed = 5
+        daemon._stats.errors_count = 0
+        # Set recent cycle stats to avoid stale data detection
+        daemon._last_cycle_stats = WatchdogCycleStats(
+            cycle_start=time.time() - 10,
+            cycle_end=time.time() - 5,
+            errors=[],
+        )
         result = daemon.health_check()
         assert result.healthy is True
 
@@ -585,7 +597,7 @@ class TestStatusRetrieval:
     def test_get_status_includes_all_fields(self, daemon):
         """get_status includes all expected fields."""
         daemon._running = True
-        daemon._cycles_completed = 10
+        daemon._stats.cycles_completed = 10
         daemon._last_cycle_stats = WatchdogCycleStats(
             nodes_discovered=5,
             nodes_activated=2,
@@ -594,7 +606,8 @@ class TestStatusRetrieval:
         status = daemon.get_status()
 
         assert "running" in status
-        assert "cycles_completed" in status or "stats" in status
+        assert "stats" in status
+        assert status["stats"]["cycles_completed"] == 10
 
 
 # =============================================================================
@@ -607,10 +620,15 @@ class TestLifecycle:
 
     @pytest.mark.asyncio
     async def test_on_start_logs_config(self, daemon):
-        """_on_start logs configuration."""
-        with patch.object(daemon, '_subscribe_to_events', new_callable=AsyncMock):
-            await daemon._on_start()
-        # Should complete without error
+        """_on_start logs configuration.
+
+        Note: HandlerBase doesn't use _subscribe_to_events(). It uses
+        _get_event_subscriptions() which returns a dict. The _on_start()
+        method is a hook for subclass-specific startup logic.
+        """
+        # _on_start() should complete without error
+        await daemon._on_start()
+        # Just verify it didn't crash
 
     @pytest.mark.asyncio
     async def test_start_and_stop(self, daemon):
@@ -991,7 +1009,7 @@ class TestOnStopHandler:
     async def test_on_stop_emits_shutdown_event(self, daemon):
         """_on_stop emits coordinator shutdown event."""
         daemon._running = True
-        daemon._cycles_completed = 5
+        daemon._stats.cycles_completed = 5
         daemon._cluster_healthy = True
 
         mock_emit = AsyncMock()
@@ -1003,7 +1021,8 @@ class TestOnStopHandler:
 
         mock_emit.assert_called_once()
         call_kwargs = mock_emit.call_args.kwargs
-        assert call_kwargs["coordinator_name"] == daemon._get_daemon_name()
+        # HandlerBase uses self.name instead of _get_daemon_name()
+        assert call_kwargs["coordinator_name"] == daemon.name
         assert call_kwargs["reason"] == "graceful"
 
     @pytest.mark.asyncio

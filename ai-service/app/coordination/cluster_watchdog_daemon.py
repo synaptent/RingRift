@@ -766,6 +766,13 @@ class ClusterWatchdogDaemon(HandlerBase):
 
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for monitoring."""
+        from datetime import datetime
+
+        # Convert last_activity timestamp to ISO string
+        last_activity_iso = None
+        if self._stats.last_activity > 0:
+            last_activity_iso = datetime.fromtimestamp(self._stats.last_activity).isoformat()
+
         return {
             "running": self._running,
             "config": {
@@ -776,9 +783,9 @@ class ClusterWatchdogDaemon(HandlerBase):
             },
             "stats": {
                 "cycles_completed": self._stats.cycles_completed,
-                "last_cycle_time": self._stats.last_cycle_time.isoformat() if self._stats.last_cycle_time else None,
-                "last_cycle_duration": self._stats.last_cycle_duration_seconds,
+                "last_activity": last_activity_iso,
                 "errors_count": self._stats.errors_count,
+                "events_processed": self._stats.events_processed,
             },
             "cluster_healthy": self._cluster_healthy,
             "tracked_nodes": len(self._nodes),

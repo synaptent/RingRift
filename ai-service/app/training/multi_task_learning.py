@@ -446,6 +446,10 @@ class MultiTaskLoss(nn.Module):
         Returns:
             Tuple of (total_loss, loss_dict)
         """
+        # Handle empty outputs early to avoid StopIteration
+        if not auxiliary_outputs:
+            return torch.tensor(0.0), {'total_auxiliary_loss': 0.0}
+
         device = next(iter(auxiliary_outputs.values())).device
         total_loss = torch.tensor(0.0, device=device)
         loss_dict = {}

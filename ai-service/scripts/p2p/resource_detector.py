@@ -324,9 +324,17 @@ class ResourceDetector:
 
         Tests common NFS mount points for accessibility.
 
+        Can be disabled via RINGRIFT_SKIP_NFS_CHECK=1 environment variable
+        for selfplay-only nodes that don't need NFS access.
+
         Returns:
             True if NFS is accessible, False otherwise
         """
+        # Allow disabling NFS check for selfplay-only nodes
+        skip_nfs = os.environ.get("RINGRIFT_SKIP_NFS_CHECK", "").lower()
+        if skip_nfs in ("1", "true", "yes"):
+            return True
+
         nfs_paths = [
             Path("/mnt/nfs/ringrift"),
             Path("/home/shared/ringrift"),
