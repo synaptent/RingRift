@@ -517,13 +517,18 @@ class TrainingDataManifest:
             )
 
             try:
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
+                # December 30, 2025: Wrap subprocess.run in asyncio.to_thread()
+                # to avoid blocking the event loop during SSH operations
+                def _run_owc_scan() -> subprocess.CompletedProcess[str]:
+                    return subprocess.run(
+                        cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+
+                result = await asyncio.to_thread(_run_owc_scan)
                 if result.returncode != 0:
                     logger.debug(f"OWC scan failed for {owc_dir}: {result.stderr}")
                     continue
@@ -577,13 +582,18 @@ class TrainingDataManifest:
         )
 
         try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            # December 30, 2025: Wrap subprocess.run in asyncio.to_thread()
+            # to avoid blocking the event loop during S3 operations
+            def _run_s3_scan() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+            result = await asyncio.to_thread(_run_s3_scan)
             if result.returncode != 0:
                 logger.warning(f"S3 scan failed: {result.stderr}")
                 return 0

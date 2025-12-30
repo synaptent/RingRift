@@ -2692,11 +2692,15 @@ class IdleResourceDaemon:
         is_healthy = self._running and self._coordinator_status == CoordinatorStatus.RUNNING
         message = f"Idle resource daemon: {self._coordinator_status.value}"
 
+        # December 30, 2025: Wrap get_stats() in asyncio.to_thread() to avoid
+        # blocking the event loop via subprocess.run() in _get_local_idle_state()
+        stats = await asyncio.to_thread(self.get_stats)
+
         return HealthCheckResult(
             healthy=is_healthy,
             status=self._coordinator_status,
             message=message,
-            details=self.get_stats(),
+            details=stats,
         )
 
     def get_status(self) -> CoordinatorStatus:

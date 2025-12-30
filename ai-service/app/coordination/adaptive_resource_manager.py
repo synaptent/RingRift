@@ -559,7 +559,9 @@ class AdaptiveResourceManager:
         results["nfs_status"] = nfs_status.to_dict()
 
         # Check local
-        local_status = self.get_local_status()
+        # December 30, 2025: Wrap in asyncio.to_thread() to avoid blocking
+        # the event loop via subprocess.run() in _get_gpu_memory()
+        local_status = await asyncio.to_thread(self.get_local_status)
         results["local_status"] = local_status.to_dict()
 
         # Trigger cleanup if needed and cooldown elapsed

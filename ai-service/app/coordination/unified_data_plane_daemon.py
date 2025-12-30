@@ -797,12 +797,16 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
                 # Build S3 path
                 s3_path = f"s3://{self._config.s3_bucket}/{self._config.s3_prefix}{entry.path}"
 
-                # Run aws s3 cp
-                result = subprocess.run(
-                    ["aws", "s3", "cp", str(local_path), s3_path],
-                    capture_output=True,
-                    timeout=300,
-                )
+                # December 30, 2025: Wrap subprocess.run in asyncio.to_thread()
+                # to avoid blocking the event loop during S3 upload
+                def _run_s3_upload() -> subprocess.CompletedProcess[bytes]:
+                    return subprocess.run(
+                        ["aws", "s3", "cp", str(local_path), s3_path],
+                        capture_output=True,
+                        timeout=300,
+                    )
+
+                result = await asyncio.to_thread(_run_s3_upload)
 
                 if result.returncode == 0:
                     self._stats.s3_backups += 1
