@@ -63,6 +63,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.distributed_lock import DistributedLock
+from app.coordination.event_handler_utils import extract_config_key
 from app.utils.paths import DATA_DIR
 
 # Use centralized event emitters (December 2025)
@@ -1238,7 +1239,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config_key") or payload.get("config", "")
+        config_key = extract_config_key(payload)
         game_count = payload.get("game_count", 0)
         source = payload.get("source", "unknown")
 
@@ -1270,7 +1271,7 @@ class TrainingCoordinator:
         payload = event.payload if hasattr(event, 'payload') else {}
 
         model_id = payload.get("model_id", "")
-        config_key = payload.get("config_key") or payload.get("config", "")
+        config_key = extract_config_key(payload)
         elo_gain = payload.get("elo_gain", 0.0)
         promotion_type = payload.get("promotion_type", "standard")
 
@@ -1303,7 +1304,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config_key") or payload.get("config", "")
+        config_key = extract_config_key(payload)
         actions = payload.get("actions_taken", [])
         reason = payload.get("reason", "unknown")
 

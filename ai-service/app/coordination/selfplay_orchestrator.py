@@ -51,6 +51,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.coordination.event_handler_utils import extract_config_key
+
 logger = logging.getLogger(__name__)
 
 # Use centralized event emitters (December 2025)
@@ -678,7 +680,7 @@ class SelfplayOrchestrator:
         """
         payload = event.payload
         new_weights = payload.get("new_weights") or payload.get("all_weights", {})
-        config_key = payload.get("config_key") or payload.get("config", "")
+        config_key = extract_config_key(payload)
         trigger = payload.get("trigger", "unknown")
 
         if new_weights:
@@ -737,7 +739,7 @@ class SelfplayOrchestrator:
         - quality > 0.7: 0.9x budget (already exploring well)
         """
         payload = event.payload
-        config_key = payload.get("config_key") or payload.get("config", "")
+        config_key = extract_config_key(payload)
         quality_score = payload.get("quality_score", 0.5)
 
         if not config_key:
