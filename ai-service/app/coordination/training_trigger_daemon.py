@@ -528,14 +528,11 @@ class TrainingTriggerDaemon(HandlerBase):
             4: 0.4,    # 4p: 40% threshold (2000 samples)
         }
 
-        # Extract player count from config_key (e.g., "hex8_4p" -> 4)
+        # Extract player count from config_key using utility (Dec 30, 2025)
         player_count = 2  # Default
-        try:
-            if "_" in config_key:
-                player_part = config_key.split("_")[1]  # "4p"
-                player_count = int(player_part[0])  # 4
-        except (IndexError, ValueError):
-            pass
+        parsed = parse_config_key(config_key)
+        if parsed:
+            player_count = parsed.num_players
 
         multiplier = player_count_multipliers.get(player_count, 1.0)
         base_threshold = self.config.min_samples_threshold
