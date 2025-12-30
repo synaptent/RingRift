@@ -358,3 +358,127 @@ python -c "from app.coordination import *"
 3. Test with `python -c "import my_module"`
 4. If circular import error, use lazy import pattern
 5. Document any intentional lazy imports with comments
+
+---
+
+## 11. Daemon Development Patterns
+
+The coordination layer has 89 daemon types (78 active, 11 deprecated). When creating new daemons, follow these patterns.
+
+### 11.1 Daemon Lifecycle
+
+Use `HandlerBase` as the base class for most daemons:
+
+```python
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
+
+class MyDaemon(HandlerBase):
+    def __init__(self):
+        super().__init__(name="my_daemon", cycle_interval=60.0)
+        self._counter = 0
+
+    async def _run_cycle(self) -> None:
+        """Main work loop - called every cycle_interval seconds."""
+        self._counter += 1
+        self.logger.info(f"Cycle {self._counter}")
+
+    def _get_event_subscriptions(self) -> dict:
+        """Return event types this daemon subscribes to."""
+        return {
+            "DATA_SYNC_COMPLETED": self._on_sync_completed,
+            "TRAINING_COMPLETED": self._on_training_done,
+        }
+
+    async def _on_sync_completed(self, event_data: dict) -> None:
+        """Handle DATA_SYNC_COMPLETED events."""
+        self.logger.info(f"Sync completed: {event_data}")
+
+    def health_check(self) -> HealthCheckResult:
+        """Required for DaemonManager integration."""
+        return HealthCheckResult(
+            healthy=self._running,
+            details={"cycles": self._counter},
+        )
+```
+
+### 11.2 Registration Steps
+
+1. **Add to `daemon_types.py`**:
+
+```python
+class DaemonType(Enum):
+    MY_DAEMON = "my_daemon"
+```
+
+2. **Add to `daemon_registry.py`**:
+
+```python
+DaemonType.MY_DAEMON: DaemonSpec(
+    runner_name="create_my_daemon",
+    depends_on=(DaemonType.EVENT_ROUTER,),
+    category="my_category",
+),
+```
+
+3. **Add runner to `daemon_runners.py`**:
+
+```python
+async def create_my_daemon(self) -> None:
+    from app.coordination.my_daemon import MyDaemon
+    from app.coordination.daemon_types import mark_daemon_ready, DaemonType
+
+    daemon = MyDaemon.get_instance()
+    await daemon.start()
+    mark_daemon_ready(DaemonType.MY_DAEMON)
+
+    # Keep running until cancelled
+    try:
+        while True:
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        await daemon.stop()
+```
+
+4. **Add to `DAEMON_DEPENDENCIES`** if ordering matters:
+
+```python
+DaemonType.MY_DAEMON: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+```
+
+5. **Add to `DAEMON_STARTUP_ORDER`** if it must start before/after specific daemons.
+
+### 11.3 Critical Daemon Requirements
+
+Add to `CRITICAL_DAEMONS` in `daemon_types.py` if:
+
+- Other daemons depend on it for events
+- Cluster operation fails without it
+- It needs faster health checks (15s vs 60s)
+
+### 11.4 Deprecating Daemons
+
+1. Add to `_DEPRECATED_DAEMON_TYPES` in `daemon_types.py`:
+
+```python
+_DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
+    "my_daemon": ("NEW_DAEMON", "Q2 2026"),
+}
+```
+
+2. Set `deprecated=True` in `DaemonSpec`:
+
+```python
+DaemonType.MY_DAEMON: DaemonSpec(
+    runner_name="create_my_daemon",
+    deprecated=True,
+    deprecated_message="Use NEW_DAEMON instead. Removal: Q2 2026.",
+),
+```
+
+### 11.5 Reference Documentation
+
+- **Full registry**: `docs/DAEMON_REGISTRY.md` (89 daemons, dependencies, categories)
+- **Types and state**: `app/coordination/daemon_types.py`
+- **Specifications**: `app/coordination/daemon_registry.py`
+- **Factory runners**: `app/coordination/daemon_runners.py`
+- **Base classes**: `app/coordination/handler_base.py` (550 LOC, 45 tests)
