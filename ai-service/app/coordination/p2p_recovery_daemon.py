@@ -585,6 +585,26 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         except Exception as e:
             logger.debug(f"Failed to emit NETWORK_ISOLATION_DETECTED: {e}")
 
+    async def _emit_leader_gap_event(self) -> None:
+        """Emit event when leader gap triggers an election.
+
+        Dec 29, 2025: New event for monitoring leader gap scenarios.
+        """
+        try:
+            from app.distributed.data_events import DataEventType, emit_data_event
+
+            leader_gap_seconds = time.time() - self._last_leader_seen_time
+            emit_data_event(
+                DataEventType.LEADER_ELECTION_TRIGGERED,
+                reason="leader_gap",
+                leader_gap_seconds=leader_gap_seconds,
+                threshold_seconds=self.config.max_leader_gap_seconds,
+                total_leader_gap_elections=self._leader_gap_elections_triggered,
+                source="P2PRecoveryDaemon",
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit LEADER_ELECTION_TRIGGERED: {e}")
+
     # =========================================================================
     # Health & Status
     # =========================================================================
@@ -640,6 +660,7 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
                 "cycles_completed": self._cycles_completed,
                 "total_restarts": self._total_restarts,
                 "isolation_triggered_restarts": self._isolation_triggered_restarts,
+                "leader_gap_elections_triggered": self._leader_gap_elections_triggered,
                 "last_status": self._last_status,
             },
         )
@@ -666,6 +687,16 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             "min_peer_ratio": self.config.min_peer_ratio,
             "last_tailscale_count": self._last_tailscale_count,
             "isolation_triggered_restarts": self._isolation_triggered_restarts,
+        }
+
+        # Dec 29, 2025: Leader gap detection status
+        leader_gap_seconds = time.time() - self._last_leader_seen_time
+        base_status["leader_gap_status"] = {
+            "last_leader_seen_time": self._last_leader_seen_time,
+            "current_leader_gap_seconds": leader_gap_seconds,
+            "max_leader_gap_seconds": self.config.max_leader_gap_seconds,
+            "elections_triggered": self._leader_gap_elections_triggered,
+            "quorum_recovery_attempts": self._quorum_recovery_attempts,
         }
 
         return base_status
