@@ -39,7 +39,8 @@ import torch
 import torch.nn as nn
 
 from app.config.thresholds import MIN_TRAINING_EPOCHS
-from app.training.checkpoint_unified import save_checkpoint, save_model_checkpoint
+from app.training.checkpoint_unified import save_checkpoint
+from app.training.model_versioning import save_model_checkpoint
 
 if TYPE_CHECKING:
     from app.training.train_context import TrainContext
