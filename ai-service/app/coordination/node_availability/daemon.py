@@ -36,8 +36,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
-from app.coordination.contracts import HealthCheckResult
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.protocols import CoordinatorStatus
 from app.coordination.node_availability.config_updater import (
     ConfigUpdater,
     ConfigUpdateResult,
@@ -55,16 +55,20 @@ from app.coordination.node_availability.providers.tailscale_checker import Tails
 
 logger = logging.getLogger(__name__)
 
-# Singleton instance
-_daemon_instance: Optional["NodeAvailabilityDaemon"] = None
-
 
 @dataclass
-class NodeAvailabilityConfig(DaemonConfig):
-    """Configuration for NodeAvailabilityDaemon."""
+class NodeAvailabilityConfig:
+    """Configuration for NodeAvailabilityDaemon.
 
-    # Override base config
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
+    """
+
+    # Check interval (passed to HandlerBase as cycle_interval)
     check_interval_seconds: float = 300.0  # 5 minutes
+
+    # Daemon control
+    enabled: bool = True
 
     # Daemon-specific settings
     dry_run: bool = True  # Log only, no YAML writes
@@ -111,54 +115,15 @@ class NodeAvailabilityConfig(DaemonConfig):
         return config
 
 
-@dataclass
-class DaemonStats:
-    """Statistics for the daemon."""
-
-    cycles_completed: int = 0
-    last_cycle_time: Optional[datetime] = None
-    last_cycle_duration_seconds: float = 0.0
-
-    # Per-provider stats
-    provider_checks: dict[str, int] = field(default_factory=dict)
-    provider_errors: dict[str, int] = field(default_factory=dict)
-
-    # Update stats
-    total_updates: int = 0
-    nodes_updated: int = 0
-    dry_run_updates: int = 0
-
-    def record_cycle(self, duration: float) -> None:
-        """Record a completed check cycle."""
-        self.cycles_completed += 1
-        self.last_cycle_time = datetime.now()
-        self.last_cycle_duration_seconds = duration
-
-    def record_provider_check(self, provider: str, success: bool) -> None:
-        """Record a provider check result."""
-        self.provider_checks[provider] = self.provider_checks.get(provider, 0) + 1
-        if not success:
-            self.provider_errors[provider] = self.provider_errors.get(provider, 0) + 1
-
-    def record_update(self, result: ConfigUpdateResult) -> None:
-        """Record an update result."""
-        self.total_updates += 1
-        self.nodes_updated += result.update_count
-        if result.dry_run:
-            self.dry_run_updates += 1
-
-
-class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
+class NodeAvailabilityDaemon(HandlerBase):
     """Daemon that synchronizes provider instance state with config.
 
     Periodically queries all cloud provider APIs and updates
     distributed_hosts.yaml when instances change state.
 
-    Inherits from BaseDaemon which provides:
-    - Lifecycle management (start/stop)
-    - Coordinator protocol registration
-    - Protected main loop with error handling
-    - Health check interface
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
     """
 
     def __init__(self, config: Optional[NodeAvailabilityConfig] = None):
@@ -167,8 +132,21 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
         Args:
             config: Optional configuration (uses env if None)
         """
-        super().__init__(config)
-        self._stats = DaemonStats()
+        self._daemon_config = config or NodeAvailabilityConfig.from_env()
+
+        super().__init__(
+            name="NodeAvailabilityDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
+        # Daemon-specific stats (supplement HandlerBase._stats)
+        self._provider_checks: dict[str, int] = {}
+        self._provider_errors: dict[str, int] = {}
+        self._total_updates = 0
+        self._nodes_updated = 0
+        self._dry_run_updates = 0
+
         self._config_updater = ConfigUpdater(dry_run=self.config.dry_run)
         self._checkers: dict[str, StateChecker] = {}
         self._pending_terminations: dict[str, float] = {}  # node -> first_seen_timestamp
@@ -187,10 +165,23 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                 "NodeAvailabilityDaemon started with config updates ENABLED"
             )
 
-    @staticmethod
-    def _get_default_config() -> NodeAvailabilityConfig:
-        """Return default configuration."""
-        return NodeAvailabilityConfig.from_env()
+    @property
+    def config(self) -> NodeAvailabilityConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
+
+    def _record_provider_check(self, provider: str, success: bool) -> None:
+        """Record a provider check result."""
+        self._provider_checks[provider] = self._provider_checks.get(provider, 0) + 1
+        if not success:
+            self._provider_errors[provider] = self._provider_errors.get(provider, 0) + 1
+
+    def _record_update(self, result: ConfigUpdateResult) -> None:
+        """Record an update result."""
+        self._total_updates += 1
+        self._nodes_updated += result.update_count
+        if result.dry_run:
+            self._dry_run_updates += 1
 
     def _init_checkers(self) -> None:
         """Initialize provider state checkers based on config."""
@@ -245,12 +236,12 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                 try:
                     updates = await self._check_provider(checker, hosts)
                     all_updates.update(updates)
-                    self._stats.record_provider_check(provider, success=True)
+                    self._record_provider_check(provider, success=True)
                 except (OSError, asyncio.TimeoutError, ValueError, KeyError) as e:
                     # OSError: network/file issues, TimeoutError: API timeout
                     # ValueError: JSON/data parsing, KeyError: missing response fields
                     logger.error(f"Error checking {provider}: {e}")
-                    self._stats.record_provider_check(provider, success=False)
+                    self._record_provider_check(provider, success=False)
 
             # Apply updates if any
             if all_updates:
@@ -258,7 +249,7 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                     all_updates,
                     reason="provider_sync",
                 )
-                self._stats.record_update(result)
+                self._record_update(result)
 
                 if result.success:
                     # Emit events for each state change
@@ -274,7 +265,7 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
 
         finally:
             duration = time.time() - start_time
-            self._stats.record_cycle(duration)
+            # HandlerBase tracks cycles automatically via _stats
             logger.debug(f"Check cycle completed in {duration:.2f}s")
 
     async def _check_provider(
@@ -397,7 +388,7 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
         Returns:
             HealthCheckResult with current status
         """
-        is_healthy = True
+        is_healthy = self._running
         messages = []
 
         # Check if any checkers are enabled
@@ -406,24 +397,26 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
             is_healthy = False
 
         # Check for recent errors
-        for provider, error_count in self._stats.provider_errors.items():
-            check_count = self._stats.provider_checks.get(provider, 0)
+        for provider, error_count in self._provider_errors.items():
+            check_count = self._provider_checks.get(provider, 0)
             if check_count > 0 and error_count / check_count > 0.5:
                 messages.append(f"{provider} has high error rate ({error_count}/{check_count})")
                 is_healthy = False
 
         return HealthCheckResult(
             healthy=is_healthy,
+            status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.STOPPED,
             message="; ".join(messages) if messages else "OK",
             details={
                 "enabled_providers": list(self._checkers.keys()),
                 "cycles_completed": self._stats.cycles_completed,
                 "last_cycle": self._stats.last_cycle_time.isoformat() if self._stats.last_cycle_time else None,
-                "total_updates": self._stats.total_updates,
-                "nodes_updated": self._stats.nodes_updated,
+                "total_updates": self._total_updates,
+                "nodes_updated": self._nodes_updated,
                 "dry_run": self.config.dry_run,
-                "provider_checks": self._stats.provider_checks,
-                "provider_errors": self._stats.provider_errors,
+                "provider_checks": self._provider_checks,
+                "provider_errors": self._provider_errors,
+                "error_count": self._stats.errors_count,
             },
         )
 
@@ -441,8 +434,8 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                 "cycles_completed": self._stats.cycles_completed,
                 "last_cycle_time": self._stats.last_cycle_time.isoformat() if self._stats.last_cycle_time else None,
                 "last_cycle_duration": self._stats.last_cycle_duration_seconds,
-                "total_updates": self._stats.total_updates,
-                "nodes_updated": self._stats.nodes_updated,
+                "total_updates": self._total_updates,
+                "nodes_updated": self._nodes_updated,
             },
             "providers": {
                 name: checker.get_status()
@@ -461,24 +454,17 @@ class NodeAvailabilityDaemon(BaseDaemon[NodeAvailabilityConfig]):
                 await checker.close()
 
 
-def get_node_availability_daemon(
-    config: Optional[NodeAvailabilityConfig] = None,
-) -> NodeAvailabilityDaemon:
+def get_node_availability_daemon() -> NodeAvailabilityDaemon:
     """Get or create the singleton NodeAvailabilityDaemon instance.
 
-    Args:
-        config: Optional configuration (only used on first call)
-
-    Returns:
-        The daemon instance
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
     """
-    global _daemon_instance
-    if _daemon_instance is None:
-        _daemon_instance = NodeAvailabilityDaemon(config)
-    return _daemon_instance
+    return NodeAvailabilityDaemon.get_instance()
 
 
 def reset_daemon_instance() -> None:
-    """Reset the singleton instance (for testing)."""
-    global _daemon_instance
-    _daemon_instance = None
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
+    NodeAvailabilityDaemon.reset_instance()

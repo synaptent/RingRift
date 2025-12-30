@@ -48,7 +48,10 @@ import signal
 import time
 from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aiohttp import web
 
 from app.config.coordination_defaults import DaemonHealthDefaults, DegradedModeDefaults
 from app.core.async_context import fire_and_forget, safe_create_task
@@ -2984,18 +2987,18 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
         port = int(os.environ.get("RINGRIFT_HEALTH_PORT", "8790"))
 
-        async def handle_health(request):
+        async def handle_health(request: web.Request) -> web.Response:
             """Liveness probe - returns 200 if alive."""
             probe = self.liveness_probe()
             return web.json_response(probe)
 
-        async def handle_ready(request):
+        async def handle_ready(request: web.Request) -> web.Response:
             """Readiness probe - returns 200 if ready to serve."""
             probe = self.readiness_probe()
             status = 200 if probe.get("ready", False) else 503
             return web.json_response(probe, status=status)
 
-        async def handle_metrics(request):
+        async def handle_metrics(request: web.Request) -> web.Response:
             """Prometheus-style metrics."""
             try:
                 from app.utils.optional_imports import (
@@ -3008,7 +3011,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 content_type = "text/plain"
             return web.Response(text=self.render_metrics(), content_type=content_type)
 
-        async def handle_status(request):
+        async def handle_status(request: web.Request) -> web.Response:
             """Detailed daemon status."""
             summary = self.health_summary()
             # Dec 2025: Fixed to use self._daemons instead of undefined _daemon_states

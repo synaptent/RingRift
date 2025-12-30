@@ -51,7 +51,27 @@ def normalize_event_payload(event: Any) -> dict[str, Any]:
 
 @dataclass
 class ParsedConfigKey:
-    """Result of parsing a config key like 'hex8_2p'."""
+    """Result of parsing a config key like 'hex8_2p'.
+
+    This dataclass holds the parsed components of a configuration key,
+    which identifies a board type and player count combination.
+
+    Example:
+        >>> parsed = parse_config_key("hex8_2p")
+        >>> parsed.board_type
+        'hex8'
+        >>> parsed.num_players
+        2
+        >>> parsed.raw
+        'hex8_2p'
+        >>> parsed.config_key  # Canonical format property
+        'hex8_2p'
+
+    Attributes:
+        board_type: Board type string (e.g., 'hex8', 'square8', 'square19', 'hexagonal')
+        num_players: Number of players (2, 3, or 4)
+        raw: Original config key string as provided
+    """
 
     board_type: str
     num_players: int
@@ -65,7 +85,41 @@ class ParsedConfigKey:
 
 @dataclass
 class EvaluationEventData:
-    """Extracted data from EVALUATION_COMPLETED or similar events."""
+    """Extracted data from EVALUATION_COMPLETED or similar events.
+
+    Contains all relevant fields from evaluation events, including optional
+    multi-harness gauntlet results. Use `extract_evaluation_data()` to create
+    instances from event payloads.
+
+    Example:
+        >>> event = {
+        ...     "config_key": "hex8_2p",
+        ...     "model_path": "models/canonical_hex8_2p.pth",
+        ...     "elo": 1450.5,
+        ...     "games_played": 100,
+        ...     "win_rate": 0.72,
+        ... }
+        >>> data = extract_evaluation_data(event)
+        >>> data.config_key
+        'hex8_2p'
+        >>> data.elo
+        1450.5
+        >>> data.is_valid
+        True
+
+    Attributes:
+        config_key: Config identifier (e.g., 'hex8_2p')
+        board_type: Board type extracted from config_key
+        num_players: Player count extracted from config_key
+        model_path: Path to the evaluated model
+        elo: Elo rating after evaluation
+        games_played: Number of games in evaluation
+        win_rate: Win rate (0.0 to 1.0)
+        harness_results: Per-harness results for multi-harness evaluations
+        best_harness: Best performing harness type
+        composite_participant_ids: Participant IDs for composite evaluations
+        is_multi_harness: Whether this was a multi-harness evaluation
+    """
 
     config_key: str
     board_type: str
@@ -89,7 +143,36 @@ class EvaluationEventData:
 
 @dataclass
 class TrainingEventData:
-    """Extracted data from TRAINING_COMPLETED or similar events."""
+    """Extracted data from TRAINING_COMPLETED or similar events.
+
+    Contains all relevant fields from training events. Use `extract_training_data()`
+    to create instances from event payloads.
+
+    Example:
+        >>> event = {
+        ...     "config_key": "square8_4p",
+        ...     "model_path": "models/canonical_square8_4p.pth",
+        ...     "epochs": 50,
+        ...     "final_loss": 0.0234,
+        ...     "samples_trained": 125000,
+        ... }
+        >>> data = extract_training_data(event)
+        >>> data.config_key
+        'square8_4p'
+        >>> data.epochs
+        50
+        >>> data.is_valid
+        True
+
+    Attributes:
+        config_key: Config identifier (e.g., 'square8_4p')
+        board_type: Board type extracted from config_key
+        num_players: Player count extracted from config_key
+        model_path: Path to the trained model
+        epochs: Number of training epochs completed
+        final_loss: Final training loss value
+        samples_trained: Total samples used in training
+    """
 
     config_key: str
     board_type: str

@@ -37,9 +37,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
 from app.coordination.event_utils import parse_config_key
-from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.protocols import CoordinatorStatus
 from app.core.ssh import SSHClient, SSHConfig, SSHResult
 
 logger = logging.getLogger(__name__)
@@ -78,11 +78,18 @@ OWC_SOURCE_DATABASES = [
 
 
 @dataclass
-class OWCImportConfig(DaemonConfig):
-    """Configuration for OWC Import daemon."""
+class OWCImportConfig:
+    """Configuration for OWC Import daemon.
 
-    # Check interval (default: 1 hour)
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
+    """
+
+    # Check interval (passed to HandlerBase as cycle_interval)
     check_interval_seconds: int = 3600
+
+    # Daemon control
+    enabled: bool = True
 
     # Minimum games on OWC to trigger import
     min_games_for_import: int = 50

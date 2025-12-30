@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 # Import dynamic gauntlet games threshold (December 2025)
@@ -203,7 +204,6 @@ async def main():
             logger.info("Shutting down...")
             break
         except Exception as e:
-            import traceback
             logger.error(f"Error in main loop: {e}")
             logger.error(f"Full traceback:\n{traceback.format_exc()}")
             await asyncio.sleep(60)

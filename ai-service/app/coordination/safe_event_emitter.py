@@ -42,6 +42,37 @@ class SafeEventEmitterMixin:
     - Use lazy imports to avoid circular dependencies
     - Track event source for debugging
 
+    Example - Sync coordinator:
+        >>> class MyCoordinator(SafeEventEmitterMixin):
+        ...     _event_source = "MyCoordinator"
+        ...
+        ...     def process_data(self, config_key: str):
+        ...         # Do processing...
+        ...         success = self._safe_emit_event(
+        ...             "DATA_PROCESSED",
+        ...             {"config_key": config_key, "status": "complete"},
+        ...         )
+        ...         if not success:
+        ...             logger.warning("Event emission failed, continuing anyway")
+
+    Example - Async daemon:
+        >>> class MyAsyncDaemon(SafeEventEmitterMixin):
+        ...     _event_source = "MyAsyncDaemon"
+        ...
+        ...     async def run_cycle(self):
+        ...         result = await self.do_work()
+        ...         await self._safe_emit_event_async(
+        ...             "CYCLE_COMPLETED",
+        ...             {"result": result, "timestamp": time.time()},
+        ...         )
+
+    Example - Check emission success:
+        >>> if self._safe_emit_event("CRITICAL_EVENT", payload):
+        ...     logger.info("Event emitted successfully")
+        ... else:
+        ...     logger.warning("Event bus unavailable, using fallback")
+        ...     self._queue_for_retry(payload)
+
     Attributes:
         _event_source: Class-level identifier for the event source.
                       Override in subclasses to set custom source name.

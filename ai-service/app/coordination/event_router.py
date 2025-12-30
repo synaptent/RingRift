@@ -1102,10 +1102,29 @@ class UnifiedEventRouter:
         """Subscribe to events.
 
         Args:
-            event_type: Event type to subscribe to (None for all events)
-            callback: Function to call when event occurs
+            event_type: Event type to subscribe to. Can be:
+                - String: "MODEL_PROMOTED", "TRAINING_COMPLETED"
+                - DataEventType enum: DataEventType.MODEL_PROMOTED
+                - StageEvent enum: StageEvent.SELFPLAY_COMPLETE
+                - None: Subscribe to ALL events (global subscriber)
+            callback: Async or sync function to call when event occurs
             subscriber_name: Optional name for persistence tracking (P0 Dec 2025)
             persist: Whether to persist subscription to SQLite (P0 Dec 2025)
+
+        Important - Subscription Timing:
+            Subscribers MUST be registered BEFORE emitters start to avoid
+            missing early events. The recommended startup order is:
+            1. EVENT_ROUTER starts first
+            2. FEEDBACK_LOOP and DATA_PIPELINE (subscribers)
+            3. AUTO_SYNC and other daemons (emitters)
+
+            Events emitted before subscribers are ready go to the dead-letter
+            queue and are retried by DLQ_RETRY daemon for eventual consistency.
+
+        Example:
+            router = get_router()
+            router.subscribe(DataEventType.MODEL_PROMOTED, on_model_promoted)
+            router.subscribe("TRAINING_COMPLETED", on_training_completed)
         """
         if event_type is None:
             self._global_subscribers.append(callback)

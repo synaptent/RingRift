@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 # Import HealthCheckResult for runtime use (not just type hints)
 from app.coordination.contracts import HealthCheckResult
+from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
 
@@ -434,15 +435,21 @@ class TransportBase(ABC):
         max_retries: int = 3,
         backoff_base: float = 1.0,
         timeout: float | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> Any:
         """Execute operation with retry logic.
+
+        December 30, 2025: Migrated to use centralized RetryConfig for consistency
+        with other coordination modules. Accepts optional retry_config parameter
+        for custom retry behavior, or falls back to max_retries/backoff_base params.
 
         Args:
             operation: Async callable to execute
             target: Target identifier for circuit breaker
-            max_retries: Maximum retry attempts
-            backoff_base: Base delay for exponential backoff
+            max_retries: Maximum retry attempts (deprecated, use retry_config)
+            backoff_base: Base delay for exponential backoff (deprecated, use retry_config)
             timeout: Timeout per attempt
+            retry_config: Optional RetryConfig for custom retry behavior
 
         Returns:
             Result of successful operation
@@ -450,9 +457,18 @@ class TransportBase(ABC):
         Raises:
             TransportError: If all retries fail
         """
+        # Use provided config or create one from legacy parameters
+        config = retry_config or RetryConfig(
+            max_attempts=max_retries + 1,  # max_retries is retries, config needs total attempts
+            base_delay=backoff_base,
+            max_delay=300.0,  # Use CircuitBreakerConfig default
+            exponential=True,
+            jitter=0.1,  # Add 10% jitter for distributed systems
+        )
+
         last_error: Exception | None = None
 
-        for attempt in range(max_retries + 1):
+        for attempt in config.attempts():
             if not self.can_attempt(target):
                 raise TransportError(
                     message="Circuit open",
@@ -472,16 +488,15 @@ class TransportBase(ABC):
                 last_error = e
                 self.record_failure(target, e)
 
-                if attempt < max_retries:
-                    delay = backoff_base * (2**attempt)
+                if attempt.should_retry:
                     logger.debug(
-                        f"[{self._name}] Retry {attempt + 1}/{max_retries} "
-                        f"for {target} in {delay}s"
+                        f"[{self._name}] Retry {attempt.number}/{config.max_attempts} "
+                        f"for {target} in {attempt.delay:.1f}s"
                     )
-                    await asyncio.sleep(delay)
+                    await attempt.wait_async()
 
         raise TransportError(
-            message=f"All {max_retries + 1} attempts failed",
+            message=f"All {config.max_attempts} attempts failed",
             transport=self._name,
             target=target,
             cause=last_error,

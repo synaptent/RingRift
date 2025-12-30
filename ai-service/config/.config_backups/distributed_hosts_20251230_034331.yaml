@@ -15,6 +15,8 @@ sync_routing:
         npz: canonical_data
         models: canonical_models
   priority_hosts:
+    - local-mac
+    - mac-studio
     - lambda-gh200-1
     - lambda-gh200-2
     - lambda-gh200-3
@@ -22,11 +24,14 @@ sync_routing:
     - lambda-gh200-5
     - lambda-gh200-training
     - lambda-gh200-7
+    - lambda-gh200-10
+    - lambda-gh200-11
     - nebius-h100-3
     - nebius-h100-1
     - runpod-a100-storage-1
   underserved_configs:
-    - hex8_4p
+    - hex8_2p # 1,004 games (Dec 30, 2025) - needs 5,000+
+    - hex8_4p # 372 games (Dec 30, 2025) - needs 5,000+
     - square19_2p
     - square19_4p
     - hexagonal_3p
@@ -57,8 +62,7 @@ elo_sync:
     - aria2
     - http
 p2p_voters:
-  # Only non-NAT-blocked nodes as voters (Dec 29, 2025)
-  # NAT-blocked nodes (lambda-gh200-*) removed - they can't receive inbound voter heartbeats
+  - local-mac
   - nebius-backbone-1
   - nebius-h100-3
   - hetzner-cpu1
@@ -121,7 +125,8 @@ hosts:
     export_enabled: false
     skip_sync_receive: true
     sync_to_mac_studio_owc: true
-    p2p_enabled: false
+    p2p_enabled: true
+    p2p_priority_boost: true
   lambda-gh200-1:
     ssh_host: 192.222.57.210
     tailscale_ip: 100.71.89.91
@@ -282,6 +287,36 @@ hosts:
     training_enabled: false
     p2p_enabled: false
     nat_blocked: true
+  lambda-gh200-10:
+    ssh_host: 192.222.50.177
+    tailscale_ip: 100.100.19.96
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    memory_gb: 432
+    cpus: 64
+    gpu: GH200 (96 GB)
+    gpu_vram_gb: 96
+    role: gpu_training_primary
+    status: ready
+    selfplay_enabled: true
+    training_enabled: true
+    p2p_enabled: true
+  lambda-gh200-11:
+    ssh_host: 192.222.50.48
+    tailscale_ip: 100.106.87.89
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    memory_gb: 432
+    cpus: 64
+    gpu: GH200 (96 GB)
+    gpu_vram_gb: 96
+    role: gpu_training_primary
+    status: ready
+    selfplay_enabled: true
+    training_enabled: true
+    p2p_enabled: true
     force_relay_mode: false
     note: RETIRED Dec 29 2025 - Not in Tailscale network
   vast-29129529:

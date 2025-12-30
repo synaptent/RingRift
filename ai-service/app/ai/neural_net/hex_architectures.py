@@ -1247,22 +1247,16 @@ class HexNeuralNet_v4(nn.Module):
         policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
 
         # Scatter placement logits: [B, 3, H, W] → [B, placement_span]
+        # NOTE: We scatter ALL indices (including padding cells) to ensure v3-encoded
+        # targets always have valid logits. The training loss will mask invalid moves.
+        # Filtering only valid_cells caused -1e9 logits for padding cell indices,
+        # breaking training with v3-encoded data (see hex8_2p v4 policy loss issue).
         pl_flat = placement_logits.view(B, self.num_ring_counts, -1)  # [B, 3, H*W]
         pl_idx = self.placement_idx.view(self.num_ring_counts, -1)  # [3, H*W]
 
-        # Apply hex mask to placement indices (only scatter valid cells)
-        if hex_mask is not None:
-            hex_flat = hex_mask.squeeze(0).squeeze(0).view(-1)  # [H*W]
-            valid_cells = hex_flat > 0.5  # Boolean mask for valid cells
-
         for r in range(self.num_ring_counts):
             for b in range(B):
-                if hex_mask is not None:
-                    valid_idx = pl_idx[r, valid_cells]
-                    valid_logits = pl_flat[b, r, valid_cells]
-                    policy[b].scatter_(0, valid_idx, valid_logits)
-                else:
-                    policy[b].scatter_(0, pl_idx[r], pl_flat[b, r])
+                policy[b].scatter_(0, pl_idx[r], pl_flat[b, r])
 
         # Scatter movement logits: [B, movement_channels, H, W] → [B, movement_span]
         mv_flat = movement_logits.view(B, self.movement_channels, -1)  # [B, C, H*W]
@@ -1270,12 +1264,7 @@ class HexNeuralNet_v4(nn.Module):
 
         for c in range(self.movement_channels):
             for b in range(B):
-                if hex_mask is not None:
-                    valid_idx = mv_idx[c, valid_cells]
-                    valid_logits = mv_flat[b, c, valid_cells]
-                    policy[b].scatter_(0, valid_idx, valid_logits)
-                else:
-                    policy[b].scatter_(0, mv_idx[c], mv_flat[b, c])
+                policy[b].scatter_(0, mv_idx[c], mv_flat[b, c])
 
         # Add special action logit at the computed special_base index
         policy[:, self.special_base] = special_logits.squeeze(-1)

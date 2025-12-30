@@ -48,6 +48,9 @@ except ImportError:
     PRODUCTION_MIN_WIN_RATE_VS_RANDOM = 0.90  # 90%
     PRODUCTION_MIN_WIN_RATE_VS_HEURISTIC = 0.60  # 60%
 
+# December 30, 2025: Centralized retry config for consistency
+from app.utils.retry import RetryConfig
+
 # Import event emitter for training triggered events (December 2025)
 try:
     from app.coordination.event_emitters import emit_training_triggered
@@ -936,17 +939,27 @@ async def trigger_training(
         model_filename = f"{board_type}_{num_players}p_iter{iteration}.pth"
     model_path = root / config.models_dir / model_filename
 
-    for attempt in range(max_retries):
-        # Reduce batch size on retry to handle OOM issues
-        retry_batch_size = batch_size // (2 ** attempt)
+    # December 30, 2025: Use centralized RetryConfig for consistency
+    retry_config = RetryConfig(
+        max_attempts=max_retries,
+        base_delay=retry_delay,
+        max_delay=retry_delay * 4,  # Allow up to 4x base delay
+        exponential=False,  # Use fixed delay for OOM recovery
+        jitter=0.1,  # Add 10% jitter
+    )
+
+    for attempt in retry_config.attempts():
+        # Reduce batch size on retry to handle OOM issues (0-indexed for calculation)
+        attempt_idx = attempt.number - 1
+        retry_batch_size = batch_size // (2 ** attempt_idx)
         retry_batch_size = max(64, retry_batch_size)  # Minimum batch size
 
-        if attempt > 0:
+        if not attempt.is_first:
             logger.info(
-                f"[PipelineActions] Training retry {attempt}/{max_retries - 1} "
+                f"[PipelineActions] Training retry {attempt.number}/{retry_config.max_attempts} "
                 f"with batch_size={retry_batch_size}"
             )
-            await asyncio.sleep(retry_delay)
+            await attempt.wait_async()
 
         try:
             cmd = [
@@ -1023,7 +1036,7 @@ async def trigger_training(
                     "policy_accuracy": policy_accuracy,
                     "epochs": epochs,
                     "batch_size": retry_batch_size,
-                    "attempt": attempt + 1,
+                    "attempt": attempt.number,
                 },
             )
 
@@ -1038,27 +1051,27 @@ async def trigger_training(
             else:
                 last_error = stderr[:500]
                 logger.warning(
-                    f"[PipelineActions] Training attempt {attempt + 1} failed: {last_error}"
+                    f"[PipelineActions] Training attempt {attempt.number} failed: {last_error}"
                 )
                 # Continue to next retry if not last attempt
-                if attempt < max_retries - 1:
+                if attempt.should_retry:
                     continue
                 # Last attempt - emit failure and return
-                logger.error(f"[PipelineActions] All {max_retries} training attempts failed")
+                logger.error(f"[PipelineActions] All {retry_config.max_attempts} training attempts failed")
                 record_action_failure(config_key, last_error)  # Phase 4.3: Track failure
                 await _emit_training_failed(result)
                 return result
 
         except Exception as e:
             last_error = str(e)
-            logger.warning(f"[PipelineActions] Training attempt {attempt + 1} error: {e}")
+            logger.warning(f"[PipelineActions] Training attempt {attempt.number} error: {e}")
             # Continue to next retry if not last attempt
-            if attempt < max_retries - 1:
+            if attempt.should_retry:
                 continue
 
     # All retries exhausted with exceptions
     duration = time.time() - start_time
-    logger.error(f"[PipelineActions] All {max_retries} training attempts failed with errors")
+    logger.error(f"[PipelineActions] All {retry_config.max_attempts} training attempts failed with errors")
     record_action_failure(config_key, last_error)  # Phase 4.3: Track failure
     result = StageCompletionResult(
         success=False,
@@ -1119,16 +1132,26 @@ async def trigger_evaluation(
             metadata={"circuit_blocked": True, "config_key": config_key},
         )
 
-    for attempt in range(max_retries):
-        # Increase games on retry to reduce variance
-        retry_games = int(num_games * (1 + 0.5 * attempt))
+    # December 30, 2025: Use centralized RetryConfig for consistency
+    retry_config = RetryConfig(
+        max_attempts=max_retries,
+        base_delay=retry_delay,
+        max_delay=retry_delay * 4,  # Allow up to 4x base delay
+        exponential=True,  # Use exponential backoff for transient failures
+        jitter=0.1,  # Add 10% jitter
+    )
 
-        if attempt > 0:
+    for attempt in retry_config.attempts():
+        # Increase games on retry to reduce variance (0-indexed for calculation)
+        attempt_idx = attempt.number - 1
+        retry_games = int(num_games * (1 + 0.5 * attempt_idx))
+
+        if not attempt.is_first:
             logger.info(
-                f"[PipelineActions] Evaluation retry {attempt}/{max_retries - 1} "
+                f"[PipelineActions] Evaluation retry {attempt.number}/{retry_config.max_attempts} "
                 f"with {retry_games} games per opponent"
             )
-            await asyncio.sleep(retry_delay)
+            await attempt.wait_async()
 
         try:
             cmd = [
@@ -1195,7 +1218,7 @@ async def trigger_evaluation(
                     "elo_delta": elo_delta,
                     "num_games": retry_games,
                     "promotion_eligible": eligible,
-                    "attempt": attempt + 1,
+                    "attempt": attempt.number,
                 },
             )
 
@@ -1210,26 +1233,26 @@ async def trigger_evaluation(
             else:
                 last_error = stderr[:500]
                 logger.warning(
-                    f"[PipelineActions] Evaluation attempt {attempt + 1} failed: {last_error}"
+                    f"[PipelineActions] Evaluation attempt {attempt.number} failed: {last_error}"
                 )
                 # Continue to next retry if not last attempt
-                if attempt < max_retries - 1:
+                if attempt.should_retry:
                     continue
                 # Last attempt - return failure result
-                logger.error(f"[PipelineActions] All {max_retries} evaluation attempts failed")
+                logger.error(f"[PipelineActions] All {retry_config.max_attempts} evaluation attempts failed")
                 record_action_failure(config_key, last_error)  # Phase 4.3: Track failure
                 return result
 
         except Exception as e:
             last_error = str(e)
-            logger.warning(f"[PipelineActions] Evaluation attempt {attempt + 1} error: {e}")
+            logger.warning(f"[PipelineActions] Evaluation attempt {attempt.number} error: {e}")
             # Continue to next retry if not last attempt
-            if attempt < max_retries - 1:
+            if attempt.should_retry:
                 continue
 
     # All retries exhausted with exceptions
     duration = time.time() - start_time
-    logger.error(f"[PipelineActions] All {max_retries} evaluation attempts failed with errors")
+    logger.error(f"[PipelineActions] All {retry_config.max_attempts} evaluation attempts failed with errors")
     record_action_failure(config_key, last_error)  # Phase 4.3: Track failure
     return StageCompletionResult(
         success=False,

@@ -7,6 +7,7 @@ periodically validates those databases and stores TS reference hashes.
 
 December 2025: Created to address cluster model training failures caused by
 unvalidated parity gates on cluster nodes.
+December 2025: Migrated from BaseDaemon to HandlerBase pattern.
 
 Features:
 - Periodic validation of canonical databases (every 30 minutes)
@@ -27,10 +28,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
 from app.coordination.contracts import CoordinatorStatus
-from app.coordination.protocols import HealthCheckResult
 from app.coordination.event_utils import parse_config_key
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,11 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ParityValidationConfig(DaemonConfig):
+class ParityValidationConfig:
     """Configuration for ParityValidationDaemon.
+
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
 
     Attributes:
         check_interval_seconds: How often to validate databases (default: 30 minutes)
@@ -63,11 +66,13 @@ class ParityValidationConfig(DaemonConfig):
         """Load configuration from environment variables."""
         config = cls()
 
-        # Call parent for common env vars
-        parent_config = super().from_env(prefix)
-        config.enabled = parent_config.enabled
-        config.check_interval_seconds = parent_config.check_interval_seconds
-        config.handle_signals = parent_config.handle_signals
+        # Check interval
+        interval_key = f"{prefix}_INTERVAL"
+        if os.environ.get(interval_key):
+            try:
+                config.check_interval_seconds = int(os.environ[interval_key])
+            except ValueError:
+                pass
 
         # Daemon-specific env vars
         if os.environ.get(f"{prefix}_DATA_DIR"):
@@ -123,14 +128,16 @@ class ParityValidationSummary:
 # =============================================================================
 
 
-class ParityValidationDaemon(BaseDaemon):
+class ParityValidationDaemon(HandlerBase):
     """Daemon that validates TS/Python parity for canonical databases.
 
     This daemon runs on the coordinator node (which has Node.js installed)
     and validates parity for databases synced from cluster nodes.
-    """
 
-    _instance: "ParityValidationDaemon | None" = None
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
+    """
 
     def __init__(
         self,
@@ -141,8 +148,13 @@ class ParityValidationDaemon(BaseDaemon):
         Args:
             config: Configuration for the daemon. Uses environment if None.
         """
-        # Pass config to parent - it will use _get_default_config if None
-        super().__init__(config=config)
+        self._daemon_config = config or ParityValidationConfig.from_env()
+
+        super().__init__(
+            name="ParityValidationDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
 
         # Stats
         self._total_validations = 0
@@ -152,22 +164,10 @@ class ParityValidationDaemon(BaseDaemon):
         self._last_result: ParityValidationSummary | None = None
         self._npx_available: bool | None = None
 
-    @classmethod
-    def get_instance(cls) -> "ParityValidationDaemon":
-        """Get or create singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset singleton instance (for testing)."""
-        cls._instance = None
-
-    @staticmethod
-    def _get_default_config() -> ParityValidationConfig:
-        """Return default configuration."""
-        return ParityValidationConfig.from_env()
+    @property
+    def config(self) -> ParityValidationConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
 
     # -------------------------------------------------------------------------
     # Core Daemon Methods
@@ -181,8 +181,7 @@ class ParityValidationDaemon(BaseDaemon):
                 "[ParityValidationDaemon] npx not available - skipping validation"
             )
             if self.config.fail_on_missing_npx:
-                self._errors_count += 1
-                self._last_error = "npx not available on this node"
+                self._record_error("npx not available on this node")
             return
 
         summary = await self._validate_all_databases()
@@ -217,7 +216,7 @@ class ParityValidationDaemon(BaseDaemon):
             "total_validations": self._total_validations,
             "total_passed": self._total_passed,
             "total_failed": self._total_failed,
-            "error_count": self._errors_count,
+            "error_count": self._stats.errors_count,
         }
 
         if self._last_validation_time:
@@ -229,6 +228,7 @@ class ParityValidationDaemon(BaseDaemon):
 
         return HealthCheckResult(
             healthy=is_healthy,
+            status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.STOPPED,
             message=message,
             details=details,
         )
@@ -465,24 +465,23 @@ class ParityValidationDaemon(BaseDaemon):
 
 
 # =============================================================================
-# Module-Level Helpers
+# Singleton Access (using HandlerBase class methods)
 # =============================================================================
-
-_daemon_instance: ParityValidationDaemon | None = None
 
 
 def get_parity_validation_daemon() -> ParityValidationDaemon:
-    """Get or create the singleton ParityValidationDaemon instance."""
-    global _daemon_instance
-    if _daemon_instance is None:
-        _daemon_instance = ParityValidationDaemon.get_instance()
-    return _daemon_instance
+    """Get or create the singleton ParityValidationDaemon instance.
+
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
+    """
+    return ParityValidationDaemon.get_instance()
 
 
 def reset_parity_validation_daemon() -> None:
-    """Reset the singleton instance (for testing)."""
-    global _daemon_instance
-    _daemon_instance = None
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
     ParityValidationDaemon.reset_instance()
 
 

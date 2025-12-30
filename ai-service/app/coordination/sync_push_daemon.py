@@ -48,8 +48,8 @@ from typing import Any
 
 import aiohttp
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
-from app.coordination.protocols import HealthCheckResult
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.protocols import CoordinatorStatus
 from app.coordination.sync_integrity import compute_file_checksum
 from app.distributed.cluster_manifest import (
     ClusterManifest,
@@ -95,8 +95,11 @@ MAX_INLINE_SIZE_MB = 50
 
 
 @dataclass
-class SyncPushConfig(DaemonConfig):
+class SyncPushConfig:
     """Configuration for push-based sync daemon.
+
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
 
     Thresholds control when push and cleanup actions occur:
     - push_threshold_percent: Start pushing at this disk usage (default: 50%)
@@ -108,6 +111,12 @@ class SyncPushConfig(DaemonConfig):
     - check_interval_seconds: How often to check disk and push (default: 300s)
     - max_files_per_cycle: Maximum files to push per cycle (default: 10)
     """
+
+    # Check interval (passed to HandlerBase as cycle_interval)
+    check_interval_seconds: int = 300
+
+    # Daemon control
+    enabled: bool = True
 
     # Disk thresholds (in percent)
     push_threshold_percent: float = 50.0
@@ -177,12 +186,16 @@ class SyncPushConfig(DaemonConfig):
 # =============================================================================
 
 
-class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
+class SyncPushDaemon(HandlerBase):
     """Push-based sync daemon for GPU training nodes.
 
     Runs on GPU nodes to proactively push selfplay data to coordinator
     before disk fills up. Only deletes local files after receiving
     verified sync receipts from N+ destinations.
+
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
 
     Key behaviors:
     1. At 50% disk: Start pushing completed games
@@ -197,7 +210,14 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         Args:
             config: Configuration. If None, loads from environment.
         """
-        super().__init__(config)
+        self._daemon_config = config or SyncPushConfig.from_env()
+
+        super().__init__(
+            name="SyncPushDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
         self._manifest: ClusterManifest | None = None
         self._session: aiohttp.ClientSession | None = None
 
@@ -212,14 +232,10 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         self._coordinator_url: str = ""
         self._last_coordinator_check: float = 0.0
 
-    @staticmethod
-    def _get_default_config() -> SyncPushConfig:
-        """Return default configuration from environment."""
-        return SyncPushConfig.from_env()
-
-    def _get_daemon_name(self) -> str:
-        """Return daemon name for logging."""
-        return "SyncPushDaemon"
+    @property
+    def config(self) -> SyncPushConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
 
     # =========================================================================
     # Lifecycle
@@ -239,7 +255,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         await self._discover_coordinator()
 
         logger.info(
-            f"[{self._get_daemon_name()}] Started with thresholds: "
+            f"[{self.name}] Started with thresholds: "
             f"push={self.config.push_threshold_percent}%, "
             f"urgent={self.config.urgent_threshold_percent}%, "
             f"cleanup={self.config.cleanup_threshold_percent}%"
@@ -252,7 +268,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             self._session = None
 
         logger.info(
-            f"[{self._get_daemon_name()}] Stats: "
+            f"[{self.name}] Stats: "
             f"pushed={self._files_pushed} files ({self._bytes_pushed / 1024 / 1024:.1f} MB), "
             f"cleaned={self._files_cleaned} files ({self._bytes_cleaned / 1024 / 1024:.1f} MB), "
             f"failures={self._push_failures}"
@@ -279,13 +295,13 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             bus = get_event_bus()
             await bus.publish(event_type, {
                 **payload,
-                "source": self._get_daemon_name(),
+                "source": self.name,
                 "node_id": self.node_id,
                 "timestamp": time.time(),
             })
         except (RuntimeError, OSError, ConnectionError, TimeoutError) as e:
             # Narrow to event bus errors (December 2025 exception narrowing)
-            logger.debug(f"[{self._get_daemon_name()}] Failed to emit {event_type}: {e}")
+            logger.debug(f"[{self.name}] Failed to emit {event_type}: {e}")
 
     # =========================================================================
     # Main Cycle
@@ -305,11 +321,11 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         # Get current disk usage
         disk_usage = self._get_disk_usage()
         if disk_usage < 0:
-            logger.warning(f"[{self._get_daemon_name()}] Could not determine disk usage")
+            logger.warning(f"[{self.name}] Could not determine disk usage")
             return
 
         logger.debug(
-            f"[{self._get_daemon_name()}] Disk usage: {disk_usage:.1f}% "
+            f"[{self.name}] Disk usage: {disk_usage:.1f}% "
             f"(push={self.config.push_threshold_percent}%, "
             f"cleanup={self.config.cleanup_threshold_percent}%)"
         )
@@ -323,7 +339,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             cleaned = await self._safe_cleanup()
             if cleaned > 0:
                 logger.info(
-                    f"[{self._get_daemon_name()}] Cleaned {cleaned} files "
+                    f"[{self.name}] Cleaned {cleaned} files "
                     f"(disk at {disk_usage:.1f}%)"
                 )
                 # Recheck disk after cleanup
@@ -336,7 +352,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             if pushed > 0:
                 level = "URGENT" if urgent else "normal"
                 logger.info(
-                    f"[{self._get_daemon_name()}] Pushed {pushed} files ({level})"
+                    f"[{self.name}] Pushed {pushed} files ({level})"
                 )
 
     # =========================================================================
@@ -365,7 +381,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             return (usage.used / usage.total) * 100
 
         except Exception as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error getting disk usage: {e}")
+            logger.warning(f"[{self.name}] Error getting disk usage: {e}")
             return -1.0
 
     def _get_data_dir(self) -> Path:
@@ -394,7 +410,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         """
         if not self._coordinator_url:
             logger.warning(
-                f"[{self._get_daemon_name()}] No coordinator URL - cannot push"
+                f"[{self.name}] No coordinator URL - cannot push"
             )
             return 0
 
@@ -410,7 +426,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
         )
 
         if not pending:
-            logger.debug(f"[{self._get_daemon_name()}] No pending files to push")
+            logger.debug(f"[{self.name}] No pending files to push")
             return 0
 
         # Limit files per cycle
@@ -436,7 +452,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 stat = file_path.stat()
                 if stat.st_size > self.config.max_file_size_mb * 1024 * 1024:
                     logger.debug(
-                        f"[{self._get_daemon_name()}] Skipping large file: {file_path}"
+                        f"[{self.name}] Skipping large file: {file_path}"
                     )
                     continue
 
@@ -452,7 +468,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
 
             except Exception as e:
                 logger.error(
-                    f"[{self._get_daemon_name()}] Error pushing {file_path}: {e}"
+                    f"[{self.name}] Error pushing {file_path}: {e}"
                 )
                 self._push_failures += 1
 
@@ -501,7 +517,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             checksum = compute_file_checksum(file_path)
         except (FileNotFoundError, PermissionError, OSError) as e:
             logger.warning(
-                f"[{self._get_daemon_name()}] Error computing checksum for {file_path}: {e}"
+                f"[{self.name}] Error computing checksum for {file_path}: {e}"
             )
             return False
 
@@ -541,7 +557,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 if resp.status != 200:
                     text = await resp.text()
                     logger.warning(
-                        f"[{self._get_daemon_name()}] Push failed for {file_path}: "
+                        f"[{self.name}] Push failed for {file_path}: "
                         f"{resp.status} - {text}"
                     )
                     return False
@@ -562,7 +578,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 self._manifest.register_sync_receipt(receipt)
 
                 logger.debug(
-                    f"[{self._get_daemon_name()}] Pushed and verified: {file_path}"
+                    f"[{self.name}] Pushed and verified: {file_path}"
                 )
                 return True
             else:
@@ -579,17 +595,17 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 self._manifest.register_sync_receipt(receipt)
 
                 logger.debug(
-                    f"[{self._get_daemon_name()}] Pushed (unverified): {file_path}"
+                    f"[{self.name}] Pushed (unverified): {file_path}"
                 )
                 return True
 
         except asyncio.TimeoutError:
             logger.warning(
-                f"[{self._get_daemon_name()}] Timeout pushing {file_path}"
+                f"[{self.name}] Timeout pushing {file_path}"
             )
             return False
         except Exception as e:
-            logger.error(f"[{self._get_daemon_name()}] Error pushing {file_path}: {e}")
+            logger.error(f"[{self.name}] Error pushing {file_path}: {e}")
             return False
 
     # =========================================================================
@@ -645,13 +661,13 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 except BlockingIOError:
                     # File is in use by another process - skip this cycle
                     logger.debug(
-                        f"[{self._get_daemon_name()}] Skipping {db_path}: file in use"
+                        f"[{self.name}] Skipping {db_path}: file in use"
                     )
                     continue
                 except (OSError, PermissionError) as e:
                     # Can't open for locking - skip
                     logger.debug(
-                        f"[{self._get_daemon_name()}] Skipping {db_path}: {e}"
+                        f"[{self.name}] Skipping {db_path}: {e}"
                     )
                     continue
 
@@ -677,13 +693,13 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                 self._bytes_cleaned += stat.st_size
 
                 logger.info(
-                    f"[{self._get_daemon_name()}] Safe delete: {db_path} "
+                    f"[{self.name}] Safe delete: {db_path} "
                     f"(verified {self.config.min_copies_before_delete}+ copies)"
                 )
 
             except Exception as e:
                 logger.error(
-                    f"[{self._get_daemon_name()}] Failed to delete {db_path}: {e}"
+                    f"[{self.name}] Failed to delete {db_path}: {e}"
                 )
 
         return deleted
@@ -731,20 +747,20 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
                                     self._coordinator_url = f"http://{host}:{p2p_port}"
                                     self.config.coordinator_node_id = leader_id
                                     logger.debug(
-                                        f"[{self._get_daemon_name()}] Discovered coordinator: "
+                                        f"[{self.name}] Discovered coordinator: "
                                         f"{self._coordinator_url} (leader={leader_id})"
                                     )
                                     return
 
         except Exception as e:
             logger.debug(
-                f"[{self._get_daemon_name()}] Could not discover coordinator: {e}"
+                f"[{self.name}] Could not discover coordinator: {e}"
             )
 
         # Fallback to localhost if no coordinator found
         if not self._coordinator_url:
             logger.warning(
-                f"[{self._get_daemon_name()}] No coordinator discovered - sync disabled"
+                f"[{self.name}] No coordinator discovered - sync disabled"
             )
 
     # =========================================================================
@@ -753,7 +769,7 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
 
     def health_check(self) -> HealthCheckResult:
         """Return health check result for DaemonManager integration."""
-        is_healthy = self._running and self._errors_count < 10
+        is_healthy = self._running and self._stats.errors_count < 10
 
         details = {
             "files_pushed": self._files_pushed,
@@ -762,33 +778,33 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
             "bytes_cleaned_mb": self._bytes_cleaned / 1024 / 1024,
             "push_failures": self._push_failures,
             "coordinator_url": self._coordinator_url,
-            "cycles_completed": self._cycles_completed,
+            "cycles_completed": self._stats.cycles_completed,
             "uptime_seconds": self.uptime_seconds,
+            "errors_count": self._stats.errors_count,
         }
 
         if is_healthy:
             return HealthCheckResult(
                 healthy=True,
-                status="healthy",
+                status=CoordinatorStatus.RUNNING,
                 details=details,
             )
         else:
             return HealthCheckResult(
                 healthy=False,
-                status="unhealthy",
-                message=self._last_error or "Too many errors",
+                status=CoordinatorStatus.STOPPED,
+                message="Too many errors",
                 details=details,
             )
 
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for monitoring."""
         return {
-            "daemon": self._get_daemon_name(),
+            "daemon": self.name,
             "running": self._running,
             "uptime_seconds": self.uptime_seconds,
-            "cycles_completed": self._cycles_completed,
-            "errors_count": self._errors_count,
-            "last_error": self._last_error,
+            "cycles_completed": self._stats.cycles_completed,
+            "errors_count": self._stats.errors_count,
             "coordinator_url": self._coordinator_url,
             "stats": {
                 "files_pushed": self._files_pushed,
@@ -807,24 +823,21 @@ class SyncPushDaemon(BaseDaemon[SyncPushConfig]):
 
 
 # =============================================================================
-# Module-level singleton
+# Singleton Access (using HandlerBase class methods)
 # =============================================================================
 
 
-_sync_push_daemon: SyncPushDaemon | None = None
-
-
 def get_sync_push_daemon() -> SyncPushDaemon:
-    """Get the singleton SyncPushDaemon instance."""
-    global _sync_push_daemon
-    if _sync_push_daemon is None:
-        _sync_push_daemon = SyncPushDaemon()
-    return _sync_push_daemon
+    """Get the singleton SyncPushDaemon instance.
+
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
+    """
+    return SyncPushDaemon.get_instance()
 
 
 def reset_sync_push_daemon() -> None:
-    """Reset the singleton (for testing)."""
-    global _sync_push_daemon
-    if _sync_push_daemon is not None:
-        # Note: should call stop() first if running
-        _sync_push_daemon = None
+    """Reset the singleton (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
+    SyncPushDaemon.reset_instance()

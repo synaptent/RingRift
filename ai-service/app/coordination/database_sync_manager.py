@@ -55,14 +55,29 @@ from app.coordination.wal_sync_utils import (
     checkpoint_database,
     validate_synced_database,
 )
+from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
 
 # Retry configuration for network operations
-HTTP_MAX_RETRIES = 3
-HTTP_INITIAL_BACKOFF = 1.0
-HTTP_BACKOFF_MULTIPLIER = 2.0
-HTTP_MAX_BACKOFF = 30.0
+# December 30, 2025: Migrated to centralized RetryConfig for consistency
+# HTTP sync retry configuration
+HTTP_RETRY_CONFIG = RetryConfig(
+    max_attempts=4,      # Was HTTP_MAX_RETRIES + 1 = 4
+    base_delay=1.0,      # Was HTTP_INITIAL_BACKOFF
+    max_delay=30.0,      # Was HTTP_MAX_BACKOFF
+    exponential=True,    # Was HTTP_BACKOFF_MULTIPLIER = 2.0
+    jitter=0.1,          # Add 10% jitter for distributed systems
+)
+
+# Push sync retry configuration (longer delays for rsync operations)
+PUSH_RETRY_CONFIG = RetryConfig(
+    max_attempts=3,      # Default max_retries in _push_with_retry
+    base_delay=10.0,     # Was 10 * (2 ** attempt)
+    max_delay=60.0,      # Was min(..., 60)
+    exponential=True,    # Exponential backoff
+    jitter=0.1,          # Was random.uniform(0, 5) / 10 ≈ 8%
+)
 
 
 # =============================================================================
@@ -408,6 +423,7 @@ class DatabaseSyncManager(SyncManagerBase):
     async def _sync_via_http(self, node: SyncNodeInfo) -> bool:
         """Sync via HTTP download with retry logic.
 
+        December 30, 2025: Migrated to use centralized RetryConfig.
         Uses exponential backoff for transient network failures.
         """
         if not node.http_url:
@@ -420,10 +436,9 @@ class DatabaseSyncManager(SyncManagerBase):
             return False
 
         url = f"{node.http_url.rstrip('/')}/data/{self.db_type}.db"
-        backoff = HTTP_INITIAL_BACKOFF
         last_error: Exception | None = None
 
-        for attempt in range(HTTP_MAX_RETRIES + 1):
+        for attempt in HTTP_RETRY_CONFIG.attempts():
             tmp_path: Path | None = None
             try:
                 async with aiohttp.ClientSession() as session:
@@ -434,13 +449,13 @@ class DatabaseSyncManager(SyncManagerBase):
                                 logger.debug(f"[{self.db_type}] HTTP {resp.status} for {url}")
                                 return False
                             # Retryable server errors (5xx)
-                            if resp.status >= 500 and attempt < HTTP_MAX_RETRIES:
+                            if resp.status >= 500 and attempt.should_retry:
+                                delay = attempt.delay
                                 logger.warning(
                                     f"[{self.db_type}] HTTP {resp.status} from {node.name}, "
-                                    f"retry {attempt + 1}/{HTTP_MAX_RETRIES + 1} in {backoff:.1f}s"
+                                    f"retry {attempt.attempt}/{HTTP_RETRY_CONFIG.max_attempts} in {delay:.1f}s"
                                 )
-                                await asyncio.sleep(backoff)
-                                backoff = min(backoff * HTTP_BACKOFF_MULTIPLIER, HTTP_MAX_BACKOFF)
+                                await attempt.wait_async()
                                 continue
                             return False
 
@@ -469,15 +484,17 @@ class DatabaseSyncManager(SyncManagerBase):
                 last_error = e
                 if tmp_path and tmp_path.exists():
                     tmp_path.unlink(missing_ok=True)
-                if attempt < HTTP_MAX_RETRIES:
+                if attempt.should_retry:
+                    delay = attempt.delay
                     logger.warning(
                         f"[{self.db_type}] HTTP sync to {node.name} failed: {e}. "
-                        f"Retry {attempt + 1}/{HTTP_MAX_RETRIES + 1} in {backoff:.1f}s"
+                        f"Retry {attempt.attempt}/{HTTP_RETRY_CONFIG.max_attempts} in {delay:.1f}s"
                     )
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * HTTP_BACKOFF_MULTIPLIER, HTTP_MAX_BACKOFF)
+                    await attempt.wait_async()
 
-        logger.warning(f"[{self.db_type}] HTTP sync failed after {HTTP_MAX_RETRIES + 1} attempts: {last_error}")
+        logger.warning(
+            f"[{self.db_type}] HTTP sync failed after {HTTP_RETRY_CONFIG.max_attempts} attempts: {last_error}"
+        )
         return False
 
     async def _rsync_pull(
@@ -811,21 +828,33 @@ class DatabaseSyncManager(SyncManagerBase):
         """Push local database with exponential backoff retry.
 
         Dec 29, 2025: Added for reliable transfers (Phase 1.4).
+        Dec 30, 2025: Migrated to centralized RetryConfig.
 
         Args:
             host: Remote hostname or IP
             remote_path: Path to database on remote host
             ssh_port: SSH port number
             timeout: Per-attempt timeout in seconds
-            max_retries: Maximum retry attempts
+            max_retries: Maximum retry attempts (uses PUSH_RETRY_CONFIG if default)
             verify: Whether to verify checksum after push
 
         Returns:
             True if push succeeded (and verified if verify=True)
         """
-        import random
+        # Use custom max_retries if provided, otherwise use default config
+        retry_config = (
+            PUSH_RETRY_CONFIG
+            if max_retries == 3
+            else RetryConfig(
+                max_attempts=max_retries,
+                base_delay=PUSH_RETRY_CONFIG.base_delay,
+                max_delay=PUSH_RETRY_CONFIG.max_delay,
+                exponential=True,
+                jitter=PUSH_RETRY_CONFIG.jitter,
+            )
+        )
 
-        for attempt in range(max_retries):
+        for attempt in retry_config.attempts():
             try:
                 success = await self._rsync_push(host, remote_path, ssh_port, timeout)
 
@@ -836,34 +865,34 @@ class DatabaseSyncManager(SyncManagerBase):
                         if not verified:
                             logger.warning(
                                 f"[{self.db_type}] Push to {host} succeeded but verification failed, "
-                                f"attempt {attempt + 1}/{max_retries}"
+                                f"attempt {attempt.attempt}/{retry_config.max_attempts}"
                             )
                             # Don't count verification failure as success
                             success = False
 
                 if success:
-                    if attempt > 0:
+                    if attempt.attempt > 1:
                         logger.info(
-                            f"[{self.db_type}] Push to {host} succeeded on attempt {attempt + 1}"
+                            f"[{self.db_type}] Push to {host} succeeded on attempt {attempt.attempt}"
                         )
                     return True
 
             except (OSError, asyncio.TimeoutError) as e:
                 logger.warning(
-                    f"[{self.db_type}] Push to {host} failed (attempt {attempt + 1}/{max_retries}): {e}"
+                    f"[{self.db_type}] Push to {host} failed "
+                    f"(attempt {attempt.attempt}/{retry_config.max_attempts}): {e}"
                 )
 
-            # Exponential backoff with jitter: 10s, 20s, 40s max 60s
-            if attempt < max_retries - 1:
-                wait = min(10 * (2 ** attempt), 60)
-                jitter = random.uniform(0, 5)
+            # Wait before retry using centralized backoff calculation
+            if attempt.should_retry:
+                delay = attempt.delay
                 logger.info(
-                    f"[{self.db_type}] Retrying push to {host} in {wait + jitter:.1f}s"
+                    f"[{self.db_type}] Retrying push to {host} in {delay:.1f}s"
                 )
-                await asyncio.sleep(wait + jitter)
+                await attempt.wait_async()
 
         logger.error(
-            f"[{self.db_type}] Push to {host} failed after {max_retries} attempts"
+            f"[{self.db_type}] Push to {host} failed after {retry_config.max_attempts} attempts"
         )
         return False
 

@@ -233,13 +233,16 @@ class SyncMixinBase(ABC):
         December 2025: Extracted from sync_push_mixin.py to consolidate
         retry logic across all sync mixins.
 
+        December 30, 2025: Migrated to use centralized RetryConfig for
+        consistency with other coordination modules.
+
         Args:
             async_func: Async function to execute
             *args: Positional arguments for the function
             max_retries: Max retry attempts (default from RetryDefaults)
             base_delay: Initial delay between retries in seconds
             max_delay: Maximum delay between retries
-            backoff_multiplier: Multiplier for exponential backoff
+            backoff_multiplier: Multiplier for exponential backoff (deprecated, use RetryConfig)
             non_retryable_errors: Error substrings that should not trigger retry
             operation_name: Name for logging purposes
             **kwargs: Keyword arguments for the function
@@ -247,33 +250,40 @@ class SyncMixinBase(ABC):
         Returns:
             Result dict from the function, or error dict on failure
         """
-        import asyncio
-        import random
-
-        # Get retry defaults
+        # Get retry defaults from centralized config
         try:
             from app.config.coordination_defaults import RetryDefaults
             max_retries = max_retries if max_retries is not None else RetryDefaults.SYNC_MAX_RETRIES
             base_delay = base_delay if base_delay is not None else RetryDefaults.SYNC_BASE_DELAY
             max_delay = max_delay if max_delay is not None else RetryDefaults.SYNC_MAX_DELAY
-            backoff_multiplier = backoff_multiplier if backoff_multiplier is not None else RetryDefaults.BACKOFF_MULTIPLIER
         except ImportError:
             max_retries = max_retries if max_retries is not None else 3
             base_delay = base_delay if base_delay is not None else 2.0
             max_delay = max_delay if max_delay is not None else 30.0
-            backoff_multiplier = backoff_multiplier if backoff_multiplier is not None else 2.0
+
+        # December 30, 2025: Use centralized RetryConfig for loop iteration
+        from app.utils.retry import RetryConfig
+
+        retry_config = RetryConfig(
+            max_attempts=max_retries,
+            base_delay=base_delay,
+            max_delay=max_delay,
+            exponential=True,
+            jitter=0.1,  # +/-10% jitter
+        )
 
         last_result: dict[str, Any] | None = None
+        error = ""
 
-        for attempt in range(max_retries):
+        for attempt in retry_config.attempts():
             try:
                 result = await async_func(*args, **kwargs)
 
                 # Check if result indicates success
                 if isinstance(result, dict):
                     if result.get("success"):
-                        if attempt > 0:
-                            self._log_info(f"{operation_name} succeeded on attempt {attempt + 1}")
+                        if not attempt.is_first:
+                            self._log_info(f"{operation_name} succeeded on attempt {attempt.number}")
                         return result
                     last_result = result
                     error = str(result.get("error", "Unknown"))
@@ -290,23 +300,17 @@ class SyncMixinBase(ABC):
                 self._log_debug(f"Not retrying {operation_name}: {error}")
                 break
 
-            if attempt < max_retries - 1:
-                # Calculate delay with exponential backoff
-                delay = min(base_delay * (backoff_multiplier ** attempt), max_delay)
-                # Add jitter (+/-10%)
-                jitter = delay * 0.1 * (random.random() * 2 - 1)
-                delay = delay + jitter
-
+            if attempt.should_retry:
                 self._log_debug(
-                    f"{operation_name} failed (attempt {attempt + 1}), "
-                    f"retrying in {delay:.1f}s: {error}"
+                    f"{operation_name} failed (attempt {attempt.number}), "
+                    f"retrying in {attempt.delay:.1f}s: {error}"
                 )
-                await asyncio.sleep(delay)
+                await attempt.wait_async()
 
         # All retries exhausted
-        if last_result and max_retries > 1:
+        if last_result and retry_config.max_attempts > 1:
             self._log_warning(
-                f"{operation_name} failed after {max_retries} attempts: "
+                f"{operation_name} failed after {retry_config.max_attempts} attempts: "
                 f"{last_result.get('error', 'Unknown')}"
             )
 
