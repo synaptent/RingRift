@@ -1266,8 +1266,8 @@ class IdleResourceDaemon:
 
             router = get_router()
 
-            # Get local node's current state
-            local_state = self._get_local_idle_state()
+            # Get local node's current state (via thread pool to avoid blocking)
+            local_state = await asyncio.to_thread(self._get_local_idle_state)
             if local_state is None:
                 return
 
