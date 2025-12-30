@@ -3,7 +3,10 @@
 This document catalogs features that are **implemented but not fully utilized or integrated**.
 These represent potential Elo gains or code quality improvements that can be activated with minimal additional work.
 
-Last updated: 2025-12-21
+> **Note (Dec 30, 2025)**: Many features previously marked as "Integration Gap" have been resolved.
+> See CLAUDE.md for current integration status.
+
+Last updated: 2025-12-30
 
 ## Status Legend
 

@@ -6,6 +6,7 @@ Uses GraphQL API for pod management.
 API Documentation: https://docs.runpod.io/api/graphql
 
 Created: Dec 28, 2025
+December 30, 2025: Added circuit breaker protection for API resilience.
 """
 
 from __future__ import annotations
@@ -24,8 +25,41 @@ from .base import (
     InstanceStatus,
     ProviderType,
 )
+from app.distributed.circuit_breaker import (
+    CircuitBreaker,
+    CircuitOpenError,
+    CircuitState,
+)
 
 logger = logging.getLogger(__name__)
+
+# Circuit breaker for RunPod API calls (December 30, 2025)
+# RunPod handles a large portion of our cluster, so we use slightly
+# more tolerant thresholds than Vast.ai
+_runpod_circuit_breaker: CircuitBreaker | None = None
+
+
+def get_runpod_circuit_breaker() -> CircuitBreaker:
+    """Get the RunPod API circuit breaker singleton."""
+    global _runpod_circuit_breaker
+    if _runpod_circuit_breaker is None:
+        _runpod_circuit_breaker = CircuitBreaker(
+            failure_threshold=4,  # Open after 4 consecutive failures
+            recovery_timeout=60.0,  # Wait 60s before testing recovery
+            half_open_max_calls=1,  # Single test call in half-open
+            success_threshold=1,
+            operation_type="runpod_api",
+            max_backoff=300.0,  # Cap at 5 minutes
+        )
+    return _runpod_circuit_breaker
+
+
+def reset_runpod_circuit_breaker() -> None:
+    """Reset the circuit breaker (for testing)."""
+    global _runpod_circuit_breaker
+    if _runpod_circuit_breaker is not None:
+        _runpod_circuit_breaker.reset_all()
+    _runpod_circuit_breaker = None
 
 # RunPod GraphQL API endpoint
 RUNPOD_API_URL = "https://api.runpod.io/graphql"
@@ -261,9 +295,29 @@ class RunPodProvider(CloudProvider):
         query: str,
         variables: dict | None = None,
     ) -> dict[str, Any]:
-        """Make a GraphQL API request."""
+        """Make a GraphQL API request with circuit breaker protection.
+
+        December 30, 2025: Added circuit breaker to prevent cascading failures
+        when RunPod API is experiencing issues.
+
+        Raises:
+            ValueError: If API key or session not configured
+            CircuitOpenError: If circuit is open due to recent failures
+        """
         if not self.config.api_key:
             raise ValueError("RunPod API key not configured")
+
+        breaker = get_runpod_circuit_breaker()
+        target = "runpod_api"
+
+        # Check circuit state before attempting call
+        if not breaker.can_execute(target):
+            state = breaker.get_status(target)
+            logger.warning(
+                f"RunPod circuit breaker is {state.state.value}, "
+                f"skipping API call (failures={state.failure_count})"
+            )
+            raise CircuitOpenError(f"RunPod API circuit is {state.state.value}")
 
         session = await self._get_session()
         if not session:
@@ -279,15 +333,30 @@ class RunPodProvider(CloudProvider):
 
                 if resp.status != 200:
                     error_text = data.get("errors", str(data))
+                    breaker.record_failure(target)
                     raise Exception(f"RunPod API error ({resp.status}): {error_text}")
 
                 if "errors" in data:
+                    # GraphQL errors may be transient or permanent
+                    # Record failure but let caller handle
+                    breaker.record_failure(target)
                     raise Exception(f"RunPod GraphQL error: {data['errors']}")
 
+                # Success - record it
+                breaker.record_success(target)
                 return data
 
+        except asyncio.TimeoutError as e:
+            logger.warning(f"RunPod API timeout: {e}")
+            breaker.record_failure(target)
+            raise
+        except (ConnectionError, OSError) as e:
+            logger.warning(f"RunPod API connection error: {e}")
+            breaker.record_failure(target)
+            raise
         except Exception as e:
             if "aiohttp" in str(type(e).__module__):
+                breaker.record_failure(target)
                 raise Exception(f"RunPod API request failed: {e}")
             raise
 
@@ -586,6 +655,56 @@ class RunPodProvider(CloudProvider):
         if self._session is not None:
             await self._session.close()
             self._session = None
+
+    def health_check(self) -> "HealthCheckResult":
+        """Check provider health for CoordinatorProtocol compliance.
+
+        December 30, 2025: Added for daemon health monitoring integration.
+        """
+        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+
+        configured = self.is_configured()
+
+        # Get circuit breaker status
+        breaker = get_runpod_circuit_breaker()
+        circuit_status = breaker.get_status("runpod_api")
+        circuit_state = circuit_status.state
+
+        if not configured:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message="RunPodProvider: API key not configured",
+                details={
+                    "configured": False,
+                    "circuit_state": circuit_state.value,
+                },
+            )
+
+        # Check if circuit breaker is open
+        if circuit_state == CircuitState.OPEN:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"RunPodProvider: API circuit open (failures={circuit_status.failure_count})",
+                details={
+                    "configured": True,
+                    "circuit_state": circuit_state.value,
+                    "circuit_failures": circuit_status.failure_count,
+                    "circuit_opened_at": circuit_status.opened_at,
+                },
+            )
+
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="RunPodProvider: API configured and operational",
+            details={
+                "configured": True,
+                "circuit_state": circuit_state.value,
+                "circuit_failures": circuit_status.failure_count,
+            },
+        )
 
 
 # Singleton instance
