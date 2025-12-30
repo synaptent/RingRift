@@ -51,9 +51,6 @@ __all__ = [
     "reset_owc_import_daemon",
 ]
 
-# Singleton
-_owc_import_daemon: "OWCImportDaemon | None" = None
-
 
 # ============================================================================
 # Configuration
@@ -146,17 +143,26 @@ class ImportStats:
 # ============================================================================
 
 
-class OWCImportDaemon(BaseDaemon[OWCImportConfig]):
+class OWCImportDaemon(HandlerBase):
     """Daemon that imports training data from OWC external drive.
 
     This daemon runs on the coordinator and periodically checks the OWC drive
     for databases containing games for underserved configurations.
+
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
     """
 
-    _instance: "OWCImportDaemon | None" = None
-
     def __init__(self, config: OWCImportConfig | None = None):
-        super().__init__(config)
+        self._daemon_config = config or OWCImportConfig.from_env()
+
+        super().__init__(
+            name="OWCImportDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
         self._last_import: dict[str, float] = {}  # config_key -> last import time
         self._import_history: list[ImportStats] = []
         self._total_games_imported = 0
@@ -170,22 +176,10 @@ class OWCImportDaemon(BaseDaemon[OWCImportConfig]):
             command_timeout=self.config.ssh_timeout,
         ))
 
-    @staticmethod
-    def _get_default_config() -> OWCImportConfig:
-        return OWCImportConfig.from_env()
-
-    def _get_daemon_name(self) -> str:
-        return "OWCImport"
-
-    @classmethod
-    def get_instance(cls) -> "OWCImportDaemon":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        cls._instance = None
+    @property
+    def config(self) -> OWCImportConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
 
     # =========================================================================
     # OWC Operations (Dec 29, 2025: Uses canonical SSHClient from app/core/ssh)
@@ -512,16 +506,28 @@ class OWCImportDaemon(BaseDaemon[OWCImportConfig]):
             status=CoordinatorStatus.RUNNING,
             message=f"OWC import active, {self._total_games_imported} games imported",
             details={
-                "cycles_completed": self._cycles_completed,
+                "cycles_completed": self._stats.cycles_completed,
                 "total_games_imported": self._total_games_imported,
                 "owc_available": self._owc_available,
+                "errors_count": self._stats.errors_count,
             },
         )
 
     def get_status(self) -> dict[str, Any]:
         """Return detailed status."""
-        base = super().get_status()
-        base.update({
+        return {
+            "running": self._running,
+            "config": {
+                "enabled": self.config.enabled,
+                "check_interval_seconds": self.config.check_interval_seconds,
+                "min_games_for_import": self.config.min_games_for_import,
+            },
+            "stats": {
+                "cycles_completed": self._stats.cycles_completed,
+                "last_activity": self._stats.last_activity,
+                "started_at": self._stats.started_at,
+                "errors_count": self._stats.errors_count,
+            },
             "owc_host": self.config.owc_host,
             "owc_available": self._owc_available,
             "total_games_imported": self._total_games_imported,
@@ -533,20 +539,25 @@ class OWCImportDaemon(BaseDaemon[OWCImportConfig]):
                 }
                 for s in self._import_history[-5:]
             ],
-        })
-        return base
+        }
 
 
 # ============================================================================
-# Singleton Accessors
+# Singleton Accessors (using HandlerBase class methods)
 # ============================================================================
 
 
 def get_owc_import_daemon() -> OWCImportDaemon:
-    """Get the singleton OWC import daemon."""
+    """Get or create the singleton OWCImportDaemon instance.
+
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
+    """
     return OWCImportDaemon.get_instance()
 
 
 def reset_owc_import_daemon() -> None:
-    """Reset the singleton (for testing)."""
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
     OWCImportDaemon.reset_instance()
