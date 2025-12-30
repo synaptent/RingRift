@@ -324,10 +324,10 @@ def _generate_model_id(
 
 # Canonical player count restrictions for harnesses
 # Format: (min_players, max_players)
+# Note: HarnessType.MCTS does not exist - use GUMBEL_MCTS or GPU_GUMBEL instead
 HARNESS_PLAYER_RESTRICTIONS: dict[HarnessType, tuple[int, int]] = {
     HarnessType.GUMBEL_MCTS: (2, 4),
     HarnessType.GPU_GUMBEL: (2, 4),
-    HarnessType.MCTS: (2, 4),
     HarnessType.POLICY_ONLY: (2, 4),
     HarnessType.DESCENT: (2, 4),
     HarnessType.HEURISTIC: (2, 4),

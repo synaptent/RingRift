@@ -200,6 +200,54 @@ for harness, rating in results.ratings.items():
 - `nnue`: NNUE (2-player), uses minimax
 - `nnue_mp`: Multi-player NNUE, uses MaxN/BRS
 
+### Architecture Tracker (Dec 2025)
+
+Tracks performance metrics across neural network architectures (v2, v4, v5, etc.) to enable intelligent training compute allocation.
+
+**Key Metrics:**
+
+| Metric                  | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `avg_elo`               | Average Elo rating across evaluations        |
+| `best_elo`              | Best observed Elo rating                     |
+| `elo_per_training_hour` | Efficiency metric (Elo gain / training time) |
+| `games_evaluated`       | Total games used in evaluations              |
+
+**Usage:**
+
+```python
+from app.training.architecture_tracker import (
+    get_architecture_tracker,
+    record_evaluation,
+    get_best_architecture,
+)
+
+# Record evaluation result
+record_evaluation(
+    architecture="v5",
+    board_type="hex8",
+    num_players=2,
+    elo=1450,
+    training_hours=2.5,
+    games_evaluated=100,
+)
+
+# Get best architecture for allocation decisions
+best = get_best_architecture(board_type="hex8", num_players=2)
+print(f"Best: {best.architecture} with Elo {best.avg_elo:.0f}")
+
+# Get compute allocation weights
+tracker = get_architecture_tracker()
+weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
+# Returns: {"v4": 0.15, "v5": 0.35, "v5_heavy": 0.50}
+```
+
+**Integration with SelfplayScheduler:**
+
+- `ArchitectureFeedbackController` subscribes to `EVALUATION_COMPLETED` events
+- Automatically updates architecture weights based on gauntlet results
+- Higher-performing architectures receive more selfplay game allocation
+
 ### Base Classes
 
 | Class                  | Location                        | Purpose                                       |
