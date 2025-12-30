@@ -1060,200 +1060,60 @@ class TaskCoordinator(SingletonMixin):
         self.set_state(CoordinatorState.EMERGENCY)
 
     # ==========================================
-    # Gauntlet Worker Reservation
+    # Reservation Methods (Delegated to ReservationManager)
+    # Extracted Dec 30, 2025 as part of god class refactoring
     # ==========================================
 
     def reserve_for_gauntlet(self, node_ids: list[str]) -> list[str]:
-        """Reserve workers for gauntlet evaluation.
-
-        Reserved workers are excluded from selfplay task assignment
-        until released.
-
-        Args:
-            node_ids: List of node IDs to reserve
-
-        Returns:
-            List of successfully reserved node IDs
-        """
-        reserved = []
-        with self._gauntlet_lock:
-            for node_id in node_ids:
-                if node_id not in self._gauntlet_reserved:
-                    self._gauntlet_reserved.add(node_id)
-                    reserved.append(node_id)
-                    logger.info(f"[Gauntlet] Reserved worker: {node_id}")
-        return reserved
+        """Reserve workers for gauntlet evaluation."""
+        return self._reservation_manager.reserve_for_gauntlet(node_ids)
 
     def release_from_gauntlet(self, node_ids: list[str]) -> None:
-        """Release workers from gauntlet reservation.
-
-        Args:
-            node_ids: List of node IDs to release
-        """
-        with self._gauntlet_lock:
-            for node_id in node_ids:
-                if node_id in self._gauntlet_reserved:
-                    self._gauntlet_reserved.discard(node_id)
-                    logger.info(f"[Gauntlet] Released worker: {node_id}")
+        """Release workers from gauntlet reservation."""
+        self._reservation_manager.release_from_gauntlet(node_ids)
 
     def release_all_gauntlet(self) -> int:
-        """Release all workers from gauntlet reservation.
-
-        Returns:
-            Number of workers released
-        """
-        with self._gauntlet_lock:
-            count = len(self._gauntlet_reserved)
-            self._gauntlet_reserved.clear()
-            if count > 0:
-                logger.info(f"[Gauntlet] Released all {count} workers")
-            return count
+        """Release all workers from gauntlet reservation."""
+        return self._reservation_manager.release_all_gauntlet()
 
     def is_reserved_for_gauntlet(self, node_id: str) -> bool:
-        """Check if a worker is reserved for gauntlet.
-
-        Args:
-            node_id: Node ID to check
-
-        Returns:
-            True if reserved
-        """
-        with self._gauntlet_lock:
-            return node_id in self._gauntlet_reserved
+        """Check if a worker is reserved for gauntlet."""
+        return self._reservation_manager.is_reserved_for_gauntlet(node_id)
 
     def get_gauntlet_reserved(self) -> set[str]:
         """Get set of all workers reserved for gauntlet."""
-        with self._gauntlet_lock:
-            return self._gauntlet_reserved.copy()
+        return self._reservation_manager.get_gauntlet_reserved()
 
     def get_available_for_gauntlet(self, all_nodes: list[str], count: int = 2) -> list[str]:
-        """Get available nodes that can be reserved for gauntlet.
-
-        Prefers CPU-only nodes over GPU nodes for gauntlet evaluation.
-
-        Args:
-            all_nodes: List of all known node IDs
-            count: Number of nodes to reserve
-
-        Returns:
-            List of node IDs to reserve
-        """
-        with self._gauntlet_lock:
-            # Filter out already reserved nodes
-            available = [n for n in all_nodes if n not in self._gauntlet_reserved]
-
-            # Prefer nodes with "cpu" in their ID
-            cpu_nodes = [n for n in available if "cpu" in n.lower()]
-            other_nodes = [n for n in available if "cpu" not in n.lower()]
-
-            # Take from CPU nodes first, then others
-            candidates = cpu_nodes + other_nodes
-            return candidates[:count]
-
-    # ==========================================
-    # Training Reservation (December 2025)
-    # ==========================================
+        """Get available nodes that can be reserved for gauntlet."""
+        return self._reservation_manager.get_available_for_gauntlet(all_nodes, count)
 
     def reserve_for_training(
         self,
         node_ids: list[str],
-        duration_seconds: float = 7200.0,  # Default 2 hours
+        duration_seconds: float = 7200.0,
         config_key: str = "",
     ) -> list[str]:
-        """Reserve GPU nodes for training jobs.
-
-        Reserved nodes are excluded from selfplay task assignment
-        until released or the reservation expires. This ensures training
-        jobs get priority access to GPU resources.
-
-        December 2025: Implements Phase 4 of the Training Loop Improvement Plan
-        to ensure training jobs get dedicated GPU access.
-
-        Args:
-            node_ids: List of node IDs to reserve
-            duration_seconds: How long to reserve (default 2 hours)
-            config_key: Optional config key for logging
-
-        Returns:
-            List of successfully reserved node IDs
-        """
-        reserved = []
-        expiry = time.time() + duration_seconds
-        with self._training_lock:
-            for node_id in node_ids:
-                if node_id not in self._training_reserved:
-                    self._training_reserved.add(node_id)
-                    self._training_reservation_expiry[node_id] = expiry
-                    reserved.append(node_id)
-                    logger.info(
-                        f"[Training] Reserved node {node_id} for training "
-                        f"(config={config_key or 'any'}, expires in {duration_seconds/60:.0f}min)"
-                    )
-        return reserved
+        """Reserve GPU nodes for training jobs."""
+        return self._reservation_manager.reserve_for_training(
+            node_ids, duration_seconds, config_key
+        )
 
     def release_from_training(self, node_ids: list[str]) -> None:
-        """Release nodes from training reservation.
-
-        Args:
-            node_ids: List of node IDs to release
-        """
-        with self._training_lock:
-            for node_id in node_ids:
-                if node_id in self._training_reserved:
-                    self._training_reserved.discard(node_id)
-                    self._training_reservation_expiry.pop(node_id, None)
-                    logger.info(f"[Training] Released node: {node_id}")
+        """Release nodes from training reservation."""
+        self._reservation_manager.release_from_training(node_ids)
 
     def release_all_training(self) -> int:
-        """Release all nodes from training reservation.
-
-        Returns:
-            Number of nodes released
-        """
-        with self._training_lock:
-            count = len(self._training_reserved)
-            self._training_reserved.clear()
-            self._training_reservation_expiry.clear()
-            if count > 0:
-                logger.info(f"[Training] Released all {count} reserved nodes")
-            return count
+        """Release all nodes from training reservation."""
+        return self._reservation_manager.release_all_training()
 
     def is_reserved_for_training(self, node_id: str) -> bool:
-        """Check if a node is reserved for training.
-
-        Also cleans up expired reservations.
-
-        Args:
-            node_id: Node ID to check
-
-        Returns:
-            True if reserved and not expired
-        """
-        with self._training_lock:
-            self._cleanup_expired_training_reservations()
-            return node_id in self._training_reserved
+        """Check if a node is reserved for training."""
+        return self._reservation_manager.is_reserved_for_training(node_id)
 
     def get_training_reserved(self) -> set[str]:
         """Get set of all nodes reserved for training."""
-        with self._training_lock:
-            self._cleanup_expired_training_reservations()
-            return self._training_reserved.copy()
-
-    def _cleanup_expired_training_reservations(self) -> None:
-        """Remove expired training reservations (internal helper).
-
-        Called internally when checking reservations.
-        Must be called with _training_lock held.
-        """
-        now = time.time()
-        expired = [
-            node_id for node_id, expiry in self._training_reservation_expiry.items()
-            if expiry < now
-        ]
-        for node_id in expired:
-            self._training_reserved.discard(node_id)
-            self._training_reservation_expiry.pop(node_id, None)
-            logger.debug(f"[Training] Reservation expired for node: {node_id}")
+        return self._reservation_manager.get_training_reserved()
 
     def get_available_for_training(
         self,
@@ -1261,46 +1121,14 @@ class TaskCoordinator(SingletonMixin):
         gpu_nodes_only: bool = True,
         exclude_gauntlet: bool = True,
     ) -> list[str]:
-        """Get available nodes that can be reserved for training.
-
-        Prefers GPU nodes and excludes already reserved nodes.
-
-        Args:
-            all_nodes: List of all known node IDs
-            gpu_nodes_only: Whether to filter for GPU nodes only
-            exclude_gauntlet: Whether to exclude gauntlet-reserved nodes
-
-        Returns:
-            List of available node IDs for training
-        """
-        with self._training_lock:
-            self._cleanup_expired_training_reservations()
-            available = [n for n in all_nodes if n not in self._training_reserved]
-
-        if exclude_gauntlet:
-            with self._gauntlet_lock:
-                available = [n for n in available if n not in self._gauntlet_reserved]
-
-        if gpu_nodes_only:
-            # Filter for nodes with GPU indicators in their ID
-            gpu_indicators = ["gpu", "cuda", "h100", "a100", "l40", "4090", "3090", "gh200"]
-            available = [
-                n for n in available
-                if any(ind in n.lower() for ind in gpu_indicators)
-            ]
-
-        return available
+        """Get available nodes that can be reserved for training."""
+        return self._reservation_manager.get_available_for_training(
+            all_nodes, gpu_nodes_only, exclude_gauntlet
+        )
 
     def is_any_node_reserved(self, node_id: str) -> bool:
-        """Check if a node is reserved for any purpose (training or gauntlet).
-
-        Args:
-            node_id: Node ID to check
-
-        Returns:
-            True if reserved for training or gauntlet
-        """
-        return self.is_reserved_for_training(node_id) or self.is_reserved_for_gauntlet(node_id)
+        """Check if a node is reserved for any purpose."""
+        return self._reservation_manager.is_any_reserved(node_id)
 
     # ==========================================
     # Admission Control
