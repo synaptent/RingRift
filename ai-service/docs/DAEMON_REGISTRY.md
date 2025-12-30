@@ -568,7 +568,7 @@ Just event routing (for debugging).
 
 ## Dependency Graph
 
-This graph is a simplified snapshot. For canonical dependencies, see `app/coordination/daemon_registry.py`.
+This graph is a historical snapshot and is not kept in sync. For canonical dependencies, see `app/coordination/daemon_registry.py`.
 
 ```
 EVENT_ROUTER (CRITICAL - no dependencies)
@@ -1074,7 +1074,7 @@ print('✓ Valid' if valid else f'✗ Errors: {errors}')
 ## See Also
 
 - `daemon_manager.py` - Main daemon lifecycle management
-- `daemon_runners.py` - 65 async runner functions for daemon types
+- `daemon_runners.py` - 85 async runner functions for daemon types
 - `daemon_types.py` - Type definitions and enums
 - `daemon_factory.py` - Centralized daemon creation factory
 - `daemon_adapters.py` - Daemon wrappers for legacy code

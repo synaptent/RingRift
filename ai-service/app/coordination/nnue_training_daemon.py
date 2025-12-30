@@ -205,6 +205,8 @@ class NNUETrainingDaemon(HandlerBase):
             "NEW_GAMES_AVAILABLE": self._on_new_games,
             "CONSOLIDATION_COMPLETE": self._on_consolidation_complete,
             "DATA_SYNC_COMPLETED": self._on_data_sync_completed,
+            # Dec 2025: Phase 4 - Trigger NNUE training after NN training completes
+            "TRAINING_COMPLETED": self._on_nn_training_completed,
         }
 
     async def _on_new_games(self, event: dict[str, Any]) -> None:
@@ -227,6 +229,69 @@ class NNUETrainingDaemon(HandlerBase):
         """Handle data sync completed event."""
         # Data may have changed, refresh counts
         await self._refresh_game_counts()
+
+    async def _on_nn_training_completed(self, event: dict[str, Any]) -> None:
+        """Handle NN training completed event - trigger NNUE training if appropriate.
+
+        This is the key integration point for Phase 4: when NN training completes,
+        we check if NNUE training should be triggered for that config.
+
+        Decision factors:
+        1. Do we have enough games since last NNUE training?
+        2. Did NN training succeed?
+        3. Are we under the concurrent training limit?
+        4. Has enough time passed since last NNUE training?
+
+        Args:
+            event: Training completed event with config_key, success, model_path
+        """
+        config_key = event.get("config_key")
+        success = event.get("success", False)
+        model_path = event.get("model_path")
+
+        if not config_key:
+            return
+
+        if not success:
+            logger.debug(
+                f"NNUETrainingDaemon: NN training failed for {config_key}, skipping NNUE trigger"
+            )
+            return
+
+        logger.info(
+            f"NNUETrainingDaemon: NN training completed for {config_key}, "
+            f"checking if NNUE training needed"
+        )
+
+        # Refresh game counts to get current state
+        await self._refresh_game_counts()
+
+        # Get current game count for this config
+        current_count = self._current_game_counts.get(config_key, 0)
+
+        # Check if NNUE training should be triggered
+        if self._should_train(config_key, current_count):
+            # Check concurrent limit
+            available_slots = (
+                self._nnue_config.max_concurrent_trainings
+                - len(self._state.active_trainings)
+            )
+            if available_slots > 0:
+                logger.info(
+                    f"NNUETrainingDaemon: Triggering NNUE training for {config_key} "
+                    f"after NN training (model: {model_path})"
+                )
+                await self._trigger_training(config_key, current_count)
+            else:
+                logger.info(
+                    f"NNUETrainingDaemon: NNUE training needed for {config_key} "
+                    f"but no slots available ({len(self._state.active_trainings)} active)"
+                )
+        else:
+            logger.debug(
+                f"NNUETrainingDaemon: NNUE training not needed yet for {config_key} "
+                f"(games: {current_count})"
+            )
 
     async def _run_cycle(self) -> None:
         """Main daemon cycle - check for training opportunities."""

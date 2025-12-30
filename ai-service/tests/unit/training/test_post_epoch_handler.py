@@ -15,6 +15,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from app.models import BoardType
 from app.training.post_epoch_handler import (
     PostEpochConfig,
     EpochMetrics,
@@ -36,9 +37,9 @@ def mock_context():
     context.is_main_process = True
     context.device = torch.device("cpu")
 
-    # Config
+    # Config - use real BoardType to avoid validation errors
     context.config = MagicMock()
-    context.config.board_type = MagicMock(value="hex8")
+    context.config.board_type = BoardType.HEX8
     context.config.epochs = 50
     context.config.batch_size = 32
 
@@ -462,6 +463,8 @@ class TestHandleEpochEnd:
     def test_basic_epoch_handling(self, mock_context, sample_metrics):
         """Test basic epoch handling returns result."""
         handler = PostEpochHandler()
+        # Prevent best model saving which triggers model validation
+        handler._best_val_loss = 0.0  # Lower than sample_metrics.avg_val_loss
         result = handler.handle_epoch_end(mock_context, sample_metrics)
 
         assert isinstance(result, PostEpochResult)
@@ -491,6 +494,7 @@ class TestHandleEpochEnd:
     def test_heartbeat_monitor_beat(self, mock_context, sample_metrics):
         """Test heartbeat monitor is called."""
         handler = PostEpochHandler()
+        handler._best_val_loss = 0.0  # Prevent best model save
         mock_context.heartbeat_monitor = MagicMock()
 
         handler.handle_epoch_end(mock_context, sample_metrics)
@@ -499,6 +503,7 @@ class TestHandleEpochEnd:
     def test_training_breaker_success(self, mock_context, sample_metrics):
         """Test circuit breaker success is recorded."""
         handler = PostEpochHandler()
+        handler._best_val_loss = 0.0  # Prevent best model save
         mock_context.training_breaker = MagicMock()
 
         handler.handle_epoch_end(mock_context, sample_metrics)
@@ -813,15 +818,17 @@ class TestPostEpochHandlerIntegration:
             enable_regression_detection=False,
         ))
 
-        # Run multiple epochs
-        for epoch in range(10):
-            sample_metrics.epoch = epoch
-            sample_metrics.avg_val_loss = 0.5 - (epoch * 0.05)
-            result = handler.handle_epoch_end(mock_context, sample_metrics)
-            assert result.should_stop is False
+        # Mock save_model_checkpoint to avoid model validation
+        with patch("app.training.post_epoch_handler.save_model_checkpoint"):
+            # Run multiple epochs
+            for epoch in range(10):
+                sample_metrics.epoch = epoch
+                sample_metrics.avg_val_loss = 0.5 - (epoch * 0.05)
+                result = handler.handle_epoch_end(mock_context, sample_metrics)
+                assert result.should_stop is False
 
-        # Best val loss should be tracked
-        assert handler._best_val_loss < 0.5
+            # Best val loss should be tracked
+            assert handler._best_val_loss < 0.5
 
     def test_checkpoint_and_best_model_flow(self, mock_context, sample_metrics):
         """Test checkpoint and best model saving flow."""

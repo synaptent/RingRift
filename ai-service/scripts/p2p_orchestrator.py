@@ -4567,50 +4567,64 @@ class P2POrchestrator(
             # STABILITY FIX: Use 15s timeout for voter lease operations (was 5s).
             # Cross-geographic Tailscale connections can have latency spikes.
             timeout = ClientTimeout(total=15)
+
+            # Dec 29, 2025: Parallel lease acquisition for faster leadership transitions
+            # Instead of sequential requests, we fire all lease requests in parallel
+            async def _request_lease_from_voter(
+                session: aiohttp.ClientSession,
+                voter_id: str,
+                voter: NodeInfo,
+            ) -> tuple[bool, float | None]:
+                """Request lease from a single voter. Returns (success, ttl)."""
+                payload = {
+                    "leader_id": self.node_id,
+                    "lease_id": lease_id,
+                    "lease_duration": duration,
+                    "lease_epoch": self._lease_epoch + 1,
+                }
+                for url in self._tailscale_urls_for_voter(voter, "/election/lease"):
+                    try:
+                        async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                            if resp.status != 200:
+                                continue
+                            data, json_error = await safe_json_response(resp, default={}, log_errors=False)
+                            if json_error or not data.get("granted"):
+                                return False, None
+                            ttl_raw = data.get("lease_ttl_seconds") or data.get("ttl_seconds")
+                            if ttl_raw is not None:
+                                try:
+                                    return True, float(ttl_raw)
+                                except (ValueError, TypeError):
+                                    pass
+                            return True, float(duration)
+                    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, AttributeError, OSError):
+                        continue
+                return False, None
+
             async with get_client_session(timeout) as session:
+                # Build list of voters to request from (excluding self and dead peers)
+                voter_tasks = []
                 for voter_id in voter_ids:
-                    if acks >= quorum:
-                        break
                     if voter_id == self.node_id:
                         continue
                     voter = peers_by_id.get(voter_id)
                     if not voter or not voter.is_alive():
                         continue
+                    voter_tasks.append(_request_lease_from_voter(session, voter_id, voter))
 
-                    payload = {
-                        "leader_id": self.node_id,
-                        "lease_id": lease_id,
-                        "lease_duration": duration,
-                        # Phase 15.1.1: Include epoch for split-brain protection
-                        "lease_epoch": self._lease_epoch + 1,  # Proposed new epoch
-                    }
-
-                    # Use Tailscale-exclusive URLs for voter communication to avoid NAT issues
-                    for url in self._tailscale_urls_for_voter(voter, "/election/lease"):
-                        try:
-                            async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
-                                if resp.status != 200:
-                                    continue
-                                data = await resp.json()
-                                if not data.get("granted"):
-                                    break
-                                ttl_raw = data.get("lease_ttl_seconds")
-                                if ttl_raw is None:
-                                    ttl_raw = data.get("ttl_seconds")
-                                ttl_val: float | None = None
-                                if ttl_raw is not None:
-                                    try:
-                                        ttl_val = float(ttl_raw)
-                                    except (ValueError):
-                                        ttl_val = None
-                                if ttl_val is not None and ttl_val > 0:
-                                    lease_ttls.append(ttl_val)
-                                else:
-                                    lease_ttls.append(float(duration))
-                                acks += 1
-                                break
-                        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, AttributeError, OSError):
+                # Fire all requests in parallel
+                if voter_tasks:
+                    results = await asyncio.gather(*voter_tasks, return_exceptions=True)
+                    for result in results:
+                        if isinstance(result, Exception):
                             continue
+                        success, ttl = result
+                        if success:
+                            acks += 1
+                            if ttl is not None and ttl > 0:
+                                lease_ttls.append(ttl)
+                            else:
+                                lease_ttls.append(float(duration))
 
             if acks >= quorum:
                 # Use a relative TTL (computed by each voter on its own clock) to avoid
