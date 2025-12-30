@@ -7,6 +7,8 @@
 > **Owner:** TBD  
 > **Scope:** Staging or perf stacks only (no production runs)
 >
+> **Update (2025-12-30):** The backend now exposes `/metrics` (when `ENABLE_METRICS=true`, the default). Any PV-11 notes about missing `/metrics` or missing Prometheus instrumentation should be treated as historical and verified against current staging.
+>
 > **References:**
 >
 > - [`docs/production/PRODUCTION_READINESS_CHECKLIST.md`](../production/PRODUCTION_READINESS_CHECKLIST.md) - Launch requirements

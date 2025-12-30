@@ -49,10 +49,14 @@ from app.coordination.event_emitters import (
 
 # Import centralized defaults (December 2025)
 try:
-    from app.config.coordination_defaults import ClusterWatchdogDefaults
+    from app.config.coordination_defaults import (
+        ClusterWatchdogDefaults,
+        build_ssh_options,  # Dec 30, 2025: Centralized SSH config
+    )
     HAS_CENTRALIZED_DEFAULTS = True
 except ImportError:
     HAS_CENTRALIZED_DEFAULTS = False
+    build_ssh_options = None  # type: ignore
 
 
 # =============================================================================
@@ -436,7 +440,17 @@ class ClusterWatchdogDaemon(HandlerBase):
                 elif "4060" in gpu_name or "3060" in gpu_name:
                     gpu_memory = 8
 
-                ssh_cmd = f"ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -p {ssh_port} -i ~/.ssh/id_cluster root@{ssh_host}"
+                # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+                if build_ssh_options:
+                    ssh_cmd = build_ssh_options(
+                        key_path="~/.ssh/id_cluster",
+                        provider="vast",
+                        port=ssh_port,
+                        include_keepalive=True,
+                    )
+                    ssh_cmd = f"{ssh_cmd} root@{ssh_host}"
+                else:
+                    ssh_cmd = f"ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -p {ssh_port} -i ~/.ssh/id_cluster root@{ssh_host}"
 
                 nodes.append(WatchdogNodeStatus(
                     node_id=f"vast-{inst_id}",
@@ -539,7 +553,16 @@ class ClusterWatchdogDaemon(HandlerBase):
                 if "a100" not in label.lower() and "gpu" not in label.lower():
                     continue
 
-                ssh_cmd = f"ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@{main_ip}"
+                # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+                if build_ssh_options:
+                    ssh_cmd = build_ssh_options(
+                        key_path="~/.ssh/id_ed25519",
+                        provider="vultr",
+                        include_keepalive=True,
+                    )
+                    ssh_cmd = f"{ssh_cmd} root@{main_ip}"
+                else:
+                    ssh_cmd = f"ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@{main_ip}"
 
                 nodes.append(WatchdogNodeStatus(
                     node_id=f"vultr-{label or inst_id}",

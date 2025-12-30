@@ -380,9 +380,17 @@ class TrainingDataManifest:
                 logger.info(f"Syncing from OWC: {entry.path}")
                 ssh_key = os.path.expanduser(OWC_SSH_KEY)
                 remote_path = f"{OWC_USER}@{OWC_HOST}:{entry.path}"
+                # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+                if SSH_CONFIG_AVAILABLE and build_ssh_options:
+                    ssh_opts = build_ssh_options(
+                        key_path=ssh_key,
+                        include_keepalive=False,  # rsync has its own timeout
+                    )
+                else:
+                    ssh_opts = f"ssh -i {ssh_key} -o StrictHostKeyChecking=no"
                 cmd = [
                     "rsync", "-avz",
-                    "-e", f"ssh -i {ssh_key} -o StrictHostKeyChecking=no",
+                    "-e", ssh_opts,
                     remote_path,
                     str(local_path),
                 ]

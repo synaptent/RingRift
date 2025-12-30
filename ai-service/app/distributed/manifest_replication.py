@@ -46,6 +46,14 @@ except ImportError:
     HAS_BANDWIDTH_CONFIG = False
     get_node_bandwidth_kbs = None
 
+# Dec 30, 2025: Centralized SSH configuration
+try:
+    from app.config.coordination_defaults import build_ssh_options
+    HAS_SSH_CONFIG = True
+except ImportError:
+    HAS_SSH_CONFIG = False
+    build_ssh_options = None  # type: ignore
+
 
 @dataclass
 class ReplicaHost:

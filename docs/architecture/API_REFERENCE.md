@@ -213,7 +213,13 @@ Notes:
 | Method | Endpoint         | Description                         | Auth Required |
 | ------ | ---------------- | ----------------------------------- | ------------- |
 | GET    | `/`              | API info and available endpoints    | ❌            |
+| GET    | `/health`        | Liveness probe (`/healthz` alias)   | ❌            |
+| GET    | `/ready`         | Readiness probe (`/readyz` alias)   | ❌            |
 | POST   | `/client-errors` | Report client-side errors (for SPA) | ❌            |
+
+> Health and readiness probes are root-level (not under `/api`) and are only
+> registered when `ENABLE_HEALTH_CHECKS=true` (default). When disabled, these
+> endpoints return 404.
 
 ### Internal / Test harness APIs
 
