@@ -5,10 +5,20 @@ cascade_training.py, architecture_tracker.py, architecture_feedback_controller.p
 nnue_training_daemon.py, reactive_dispatcher.py, and other coordination modules.
 
 Common pattern: Extract config_key, parse to board_type/num_players, extract elo/model_path.
+
+Note: ParsedConfigKey and parse_config_key are now imported from the canonical
+app.coordination.config_key module. Local definitions kept for backward compatibility
+but should be considered deprecated.
 """
 
 from dataclasses import dataclass
 from typing import Any
+
+# Import canonical implementation
+from app.coordination.config_key import (
+    ConfigKey,
+    parse_config_key as _canonical_parse_config_key,
+)
 
 
 def normalize_event_payload(event: Any) -> dict[str, Any]:
@@ -49,38 +59,9 @@ def normalize_event_payload(event: Any) -> dict[str, Any]:
     return {}
 
 
-@dataclass
-class ParsedConfigKey:
-    """Result of parsing a config key like 'hex8_2p'.
-
-    This dataclass holds the parsed components of a configuration key,
-    which identifies a board type and player count combination.
-
-    Example:
-        >>> parsed = parse_config_key("hex8_2p")
-        >>> parsed.board_type
-        'hex8'
-        >>> parsed.num_players
-        2
-        >>> parsed.raw
-        'hex8_2p'
-        >>> parsed.config_key  # Canonical format property
-        'hex8_2p'
-
-    Attributes:
-        board_type: Board type string (e.g., 'hex8', 'square8', 'square19', 'hexagonal')
-        num_players: Number of players (2, 3, or 4)
-        raw: Original config key string as provided
-    """
-
-    board_type: str
-    num_players: int
-    raw: str
-
-    @property
-    def config_key(self) -> str:
-        """Return the canonical config key format."""
-        return f"{self.board_type}_{self.num_players}p"
+# Backward compatibility: ParsedConfigKey is now an alias for ConfigKey
+# from the canonical config_key module
+ParsedConfigKey = ConfigKey
 
 
 @dataclass
@@ -191,41 +172,22 @@ class TrainingEventData:
 def parse_config_key(config_key: str) -> ParsedConfigKey | None:
     """Parse a config key like 'hex8_2p' into board_type and num_players.
 
+    Note: This function now delegates to the canonical implementation in
+    app.coordination.config_key. Use that module directly for new code.
+
     Args:
         config_key: Config key string (e.g., 'hex8_2p', 'square19_4p')
 
     Returns:
-        ParsedConfigKey if valid, None if parsing fails.
+        ParsedConfigKey (ConfigKey) if valid, None if parsing fails.
 
     Examples:
         >>> parse_config_key('hex8_2p')
-        ParsedConfigKey(board_type='hex8', num_players=2, raw='hex8_2p')
+        ConfigKey(board_type='hex8', num_players=2, raw='hex8_2p')
         >>> parse_config_key('invalid')
         None
     """
-    if not config_key:
-        return None
-
-    parts = config_key.rsplit("_", 1)
-    if len(parts) != 2:
-        return None
-
-    board_type = parts[0]
-    player_str = parts[1]
-
-    # Handle both "2p" and "2" formats
-    if player_str.endswith("p"):
-        player_str = player_str[:-1]
-
-    try:
-        num_players = int(player_str)
-    except ValueError:
-        return None
-
-    if num_players < 2 or num_players > 4:
-        return None
-
-    return ParsedConfigKey(board_type=board_type, num_players=num_players, raw=config_key)
+    return _canonical_parse_config_key(config_key)
 
 
 def extract_config_key(event: dict[str, Any]) -> str:

@@ -3,7 +3,7 @@
 **Date:** December 27, 2025
 **Status:** Phase 11 Complete (P0 Critical Event System Fixes + P2P Feedback Loop Wiring)
 
-> Status: Historical snapshot (Dec 2025). Kept for reference; consult `ai-service/docs/README.md` for current docs.
+> Status: Historical snapshot (Dec 2025). Kept for reference; consult `README.md` for current docs.
 
 ---
 

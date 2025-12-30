@@ -717,7 +717,7 @@ The backend GameEngine and sandbox must agree on the **effective order** in whic
 
 - Current backend implementation (TS):
   - `GameEngine.processAutomaticConsequences` calls into Territory processing and line processing in a carefully chosen order so that:
-    - Territory disconnection tests (`BoardManager.territoryDisconnection.*.test.ts`) match sandbox expectations for square8, square19, and hex.
+    - Territory disconnection tests (`BoardManager.territoryDisconnection.*.test.ts`) match sandbox expectations for square8, square19, and hexagonal.
     - Parity suites (`archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`, Seed 17 parity tests) remain green.
 
 Any future changes to this ordering **must**:

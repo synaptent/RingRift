@@ -247,7 +247,7 @@ When adding a new workaround:
 1. Document it in this file with the pattern number
 2. Add a comment at the workaround location pointing here:
    ```python
-   # Lazy import to break circular dep - see ai-service/docs/coordination/CIRCULAR_DEPENDENCIES.md
+   # Lazy import to break circular dep - see docs/coordination/CIRCULAR_DEPENDENCIES.md
    ```
 3. Consider if the dependency should be broken differently (e.g., moving code)
 

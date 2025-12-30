@@ -245,6 +245,14 @@ archive directory is gitignored because it contains cluster IPs.
 
 - `docs/archive/historical/ROADMAP_2025Q1.md`
 
+### Legacy Root Archive (Deprecated)
+
+The root-level `archive/` directory contains legacy artifacts retained for
+historical reference. It is not actively maintained; prefer `docs/archive/`
+and `ai-service/docs/archive/` for current archival material.
+
+- `archive/README.md`
+
 ### /docs/security/
 
 Security documentation and threat modeling.
@@ -286,11 +294,11 @@ UX and rules teaching documentation.
 
 Reference documentation kept at docs/ root.
 
-| Document                                                                                                                  | Purpose                                               |
-| ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| [ACCESSIBILITY.md](docs/ACCESSIBILITY.md)                                                                                 | Accessibility guide (keyboard, screen reader, visual) |
-| [INDEX.md](docs/INDEX.md)                                                                                                 | Quick navigation index                                |
-| [archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md](docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md) | GameReplayDB ↔ /sandbox replay integration            |
+| Document                                                                                                                       | Purpose                                               |
+| ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| [ACCESSIBILITY.md](docs/ACCESSIBILITY.md)                                                                                      | Accessibility guide (keyboard, screen reader, visual) |
+| [INDEX.md](docs/INDEX.md)                                                                                                      | Quick navigation index                                |
+| [docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md](docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md) | GameReplayDB ↔ /sandbox replay integration            |
 
 ### /docs/supplementary/
 

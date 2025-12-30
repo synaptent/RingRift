@@ -1,9 +1,9 @@
 # Internal Environment Flags (Auto-Extracted)
 
 This appendix lists environment variables referenced in code but not yet described in
-`docs/operations/ENVIRONMENT_VARIABLES.md`, `ai-service/docs/ENV_REFERENCE.md`,
-`ai-service/docs/ENV_REFERENCE_COMPREHENSIVE.md`, or
-`ai-service/docs/AI_SERVICE_ENVIRONMENT_REFERENCE.md`. Entries are auto-extracted and
+`ENVIRONMENT_VARIABLES.md`, `../../ai-service/docs/ENV_REFERENCE.md`,
+`../../ai-service/docs/ENV_REFERENCE_COMPREHENSIVE.md`, or
+`../../ai-service/docs/AI_SERVICE_ENVIRONMENT_REFERENCE.md`. Entries are auto-extracted and
 may be experimental or internal.
 
 Generated: 2025-12-30

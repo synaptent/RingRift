@@ -6,7 +6,7 @@ to consolidate duplicated rsync command building logic.
 This module provides:
 - RsyncCommandBuilder: Unified rsync command construction
 - TimeoutCalculator: Unified timeout calculation by strategy
-- SSHOptionsBuilder: Standard SSH connection options
+- SSHOptions: Wrapper around centralized SSH config (coordination_defaults)
 """
 
 from __future__ import annotations
@@ -18,27 +18,38 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from app.config.coordination_defaults import (
+    build_ssh_options as centralized_build_ssh_options,
+)
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class SSHOptions:
-    """SSH connection options for rsync."""
+    """SSH connection options for rsync.
+
+    Dec 30, 2025: Now wraps the centralized SSH config from coordination_defaults.py
+    to ensure consistent timeouts across all sync operations.
+    """
 
     key_path: str
-    connect_timeout: int = 10
+    connect_timeout: int = 10  # Default, may be overridden by provider
     strict_host_key_checking: bool = False
     tcp_keepalive: bool = True
+    provider: str = "default"  # For provider-aware timeouts
 
     def to_string(self) -> str:
-        """Build SSH options string for rsync -e flag."""
-        opts = [f"ssh -i {self.key_path}"]
-        if not self.strict_host_key_checking:
-            opts.append("-o StrictHostKeyChecking=no")
-        opts.append(f"-o ConnectTimeout={self.connect_timeout}")
-        if self.tcp_keepalive:
-            opts.append("-o TCPKeepAlive=yes")
-        return " ".join(opts)
+        """Build SSH options string for rsync -e flag.
+
+        Uses centralized SSH config for consistent provider-aware timeouts.
+        """
+        # Use centralized config for consistency
+        return centralized_build_ssh_options(
+            key_path=self.key_path,
+            provider=self.provider,
+            include_keepalive=self.tcp_keepalive,
+        )
 
 
 class TimeoutCalculator:
@@ -307,21 +318,26 @@ def build_ssh_options(
     key_path: str,
     connect_timeout: int = 10,
     strict_host_key_checking: bool = False,
+    provider: str = "default",
 ) -> SSHOptions:
     """Convenience function to create SSHOptions.
 
+    Dec 30, 2025: Added provider parameter for provider-aware timeouts.
+
     Args:
         key_path: Path to SSH private key.
-        connect_timeout: Connection timeout in seconds.
+        connect_timeout: Connection timeout in seconds (may be overridden by provider).
         strict_host_key_checking: Enable strict host key checking.
+        provider: Provider name for timeout lookup (vast, nebius, runpod, etc.).
 
     Returns:
-        SSHOptions instance.
+        SSHOptions instance that uses centralized SSH config.
     """
     return SSHOptions(
         key_path=key_path,
         connect_timeout=connect_timeout,
         strict_host_key_checking=strict_host_key_checking,
+        provider=provider,
     )
 
 

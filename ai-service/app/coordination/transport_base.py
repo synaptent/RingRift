@@ -56,6 +56,166 @@ T = TypeVar("T")
 
 
 # =============================================================================
+# SSH Error Classifier (Dec 30, 2025)
+# =============================================================================
+
+
+class SSHErrorType:
+    """Classification of SSH error types for retry decisions."""
+
+    AUTH = "auth"  # Authentication failures - don't retry
+    NETWORK = "network"  # Network failures - safe to retry
+    UNKNOWN = "unknown"  # Unknown errors - default to retry
+
+
+class SSHErrorClassifier:
+    """Classifier for SSH/SCP/rsync errors to enable smart retry decisions.
+
+    Auth failures (Permission denied, Host key verification) should NOT be retried
+    as they will fail indefinitely. Network failures (Connection reset, timed out)
+    are transient and SHOULD be retried.
+
+    December 30, 2025: Added for 48-hour autonomous operation reliability.
+    Prevents wasted time retrying auth failures, enables faster recovery from
+    network issues.
+
+    Usage:
+        stderr = "Permission denied (publickey)"
+        if SSHErrorClassifier.should_retry(stderr):
+            await retry_transfer()
+        else:
+            logger.error(f"Auth failure, not retrying: {stderr}")
+    """
+
+    # Auth failure patterns - these won't succeed on retry
+    AUTH_PATTERNS: set[str] = {
+        "Permission denied",
+        "publickey",
+        "Host key verification failed",
+        "Host key verification",
+        "Too many authentication failures",
+        "Authentication failed",
+        "no mutual signature algorithm",
+        "Unable to negotiate",
+        "no matching key exchange method",
+        "no matching host key type",
+        "REMOTE HOST IDENTIFICATION HAS CHANGED",
+    }
+
+    # Network failure patterns - transient, safe to retry
+    NETWORK_PATTERNS: set[str] = {
+        "Connection reset",
+        "Connection refused",
+        "Connection timed out",
+        "timed out",
+        "Network is unreachable",
+        "unreachable",
+        "No route to host",
+        "Temporary failure in name resolution",
+        "Could not resolve hostname",
+        "Connection closed",
+        "unexpectedly closed",  # rsync-specific
+        "Broken pipe",
+        "Operation timed out",
+        "ssh_exchange_identification",
+        "kex_exchange_identification",
+        "read: Connection reset by peer",
+        "Write failed: Broken pipe",
+        "packet_write_wait",
+        "client_loop: send disconnect",
+    }
+
+    @classmethod
+    def classify(cls, stderr: str) -> str:
+        """Classify SSH error as auth, network, or unknown.
+
+        Args:
+            stderr: The stderr output from SSH/SCP/rsync command
+
+        Returns:
+            'auth' for authentication failures (don't retry)
+            'network' for network failures (safe to retry)
+            'unknown' for unclassified errors (default to retry)
+        """
+        if not stderr:
+            return SSHErrorType.UNKNOWN
+
+        stderr_lower = stderr.lower()
+        stderr_normalized = stderr  # Keep original for case-sensitive patterns
+
+        # Check auth patterns first (more specific)
+        for pattern in cls.AUTH_PATTERNS:
+            if pattern.lower() in stderr_lower:
+                return SSHErrorType.AUTH
+
+        # Check network patterns
+        for pattern in cls.NETWORK_PATTERNS:
+            if pattern.lower() in stderr_lower:
+                return SSHErrorType.NETWORK
+
+        # Unknown - log for future pattern collection
+        logger.debug(f"Unclassified SSH error: {stderr[:200]}")
+        return SSHErrorType.UNKNOWN
+
+    @classmethod
+    def should_retry(cls, stderr: str) -> bool:
+        """Determine if an SSH operation should be retried based on error.
+
+        Args:
+            stderr: The stderr output from SSH/SCP/rsync command
+
+        Returns:
+            True if the error is retryable (network/unknown)
+            False if the error is permanent (auth)
+        """
+        error_type = cls.classify(stderr)
+        return error_type != SSHErrorType.AUTH
+
+    @classmethod
+    def is_auth_failure(cls, stderr: str) -> bool:
+        """Check if error is specifically an authentication failure.
+
+        Args:
+            stderr: The stderr output from SSH/SCP/rsync command
+
+        Returns:
+            True if this is an auth failure
+        """
+        return cls.classify(stderr) == SSHErrorType.AUTH
+
+    @classmethod
+    def is_network_failure(cls, stderr: str) -> bool:
+        """Check if error is specifically a network failure.
+
+        Args:
+            stderr: The stderr output from SSH/SCP/rsync command
+
+        Returns:
+            True if this is a network failure
+        """
+        return cls.classify(stderr) == SSHErrorType.NETWORK
+
+    @classmethod
+    def get_retry_recommendation(cls, stderr: str) -> tuple[bool, str]:
+        """Get retry recommendation with human-readable reason.
+
+        Args:
+            stderr: The stderr output from SSH/SCP/rsync command
+
+        Returns:
+            Tuple of (should_retry, reason_message)
+        """
+        error_type = cls.classify(stderr)
+
+        if error_type == SSHErrorType.AUTH:
+            return False, "Authentication failure - check SSH keys/permissions"
+        elif error_type == SSHErrorType.NETWORK:
+            return True, "Network failure - transient, will retry"
+        else:
+            return True, "Unknown error - will retry (may be transient)"
+
+
+# =============================================================================
 # Data Classes
 # =============================================================================
 
@@ -668,4 +828,7 @@ __all__ = [
     # Configuration
     "TimeoutConfig",
     "CircuitBreakerConfig",
+    # SSH error classification (Dec 30, 2025)
+    "SSHErrorClassifier",
+    "SSHErrorType",
 ]

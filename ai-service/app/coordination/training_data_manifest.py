@@ -52,6 +52,14 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
+# Dec 30, 2025: Centralized SSH configuration
+try:
+    from app.config.coordination_defaults import build_ssh_options
+    SSH_CONFIG_AVAILABLE = True
+except ImportError:
+    SSH_CONFIG_AVAILABLE = False
+    build_ssh_options = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 

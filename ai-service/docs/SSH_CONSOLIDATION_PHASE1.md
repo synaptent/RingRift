@@ -227,4 +227,4 @@ New features are additive only.
 
 - `ai-service/app/core/ssh.py` - Extended with Phase 1 features
 - `ai-service/test_ssh_phase1.py` - Test suite
-- `ai-service/docs/SSH_CONSOLIDATION_PHASE1.md` - This document
+- `SSH_CONSOLIDATION_PHASE1.md` - This document

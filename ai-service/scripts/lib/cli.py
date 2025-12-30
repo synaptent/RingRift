@@ -434,6 +434,9 @@ def get_config_key(board: str, num_players: int) -> str:
 def parse_config_key(config_key: str) -> tuple[str, int]:
     """Parse config key into board and player count.
 
+    Note: Delegates to canonical app.coordination.config_key module.
+    Raises ValueError for CLI compatibility.
+
     Args:
         config_key: Config key like "square8_2p"
 
@@ -443,19 +446,12 @@ def parse_config_key(config_key: str) -> tuple[str, int]:
     Raises:
         ValueError: If config key format is invalid
     """
-    if "_" not in config_key or not config_key.endswith("p"):
+    from app.coordination.config_key import ConfigKey
+
+    result = ConfigKey.parse(config_key)
+    if result is None:
         raise ValueError(f"Invalid config key format: {config_key}")
-
-    parts = config_key.rsplit("_", 1)
-    board = parts[0]
-    players_str = parts[1].rstrip("p")
-
-    try:
-        num_players = int(players_str)
-    except ValueError:
-        raise ValueError(f"Invalid player count in config key: {config_key}")
-
-    return board, num_players
+    return result.to_tuple()
 
 
 def validate_path_arg(

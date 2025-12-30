@@ -468,12 +468,12 @@ Data source: `ai-service/results/statistical_analysis_report.json` (generated ar
 
 ### Generated Artifacts
 
-| File                                                                                            | Size    | Description                           |
-| ----------------------------------------------------------------------------------------------- | ------- | ------------------------------------- |
-| `ai-service/checkpoints/checkpoint_epoch_5.pth` (local-only artifact)                 | ~283 MB | Trained neural network                |
-| [`heuristic_weights_optimized.json`](../../ai-service/heuristic_weights_optimized.json)         | 1 KB    | CMA-ES optimized weights (18 weights) |
-| `ai-service/results/statistical_analysis_report.json` (generated artifact, local-only) | 8 KB    | Full statistical analysis             |
-| `results/*.json`                                                                                | Various | All evaluation game logs              |
+| File                                                                                    | Size    | Description                           |
+| --------------------------------------------------------------------------------------- | ------- | ------------------------------------- |
+| `ai-service/checkpoints/checkpoint_epoch_5.pth` (local-only artifact)                   | ~283 MB | Trained neural network                |
+| [`heuristic_weights_optimized.json`](../../ai-service/heuristic_weights_optimized.json) | 1 KB    | CMA-ES optimized weights (18 weights) |
+| `ai-service/results/statistical_analysis_report.json` (generated artifact, local-only)  | 8 KB    | Full statistical analysis             |
+| `results/*.json`                                                                        | Various | All evaluation game logs              |
 
 ---
 
@@ -510,23 +510,23 @@ This run applied the extended CMA-ES tooling to the cleaned-up balanced heuristi
 
 **Training configuration (CMA-ES Run #1):**
 
-| Parameter                         | Value                                                                                                                               |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Board                             | `square8`                                                                                                                           |
-| Baseline profile id               | `heuristic_v1_balanced` (Python registry in [`heuristic_weights.py`](../../ai-service/app/ai/heuristic_weights.py))                 |
-| Run id                            | `v1_balanced_longrun_01` (dir `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/` (local-only))                                   |
-| Generations `G`                   | **6**                                                                                                                               |
-| Population size `λ`               | **12**                                                                                                                              |
-| Games per candidate `K`           | **16** (total ≈ 6 × 12 × 16 = **1152** self-play games)                                                                             |
-| Max moves per game                | **200**                                                                                                                             |
-| Opponent mode                     | `baseline-plus-incumbent`                                                                                                           |
-| Initial sigma                     | `0.5`                                                                                                                               |
-| CMA-ES seed                       | `12345`                                                                                                                             |
-| Baseline weights snapshot         | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/baseline_weights.json` (local-only)                                              |
-| Final best weights                | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/best_weights.json` (local-only)                                                  |
-| Run metadata                      | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/run_meta.json` (local-only)                                                      |
-| Generation summaries              | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/generations` (local-only)                                                        |
-| Checkpoints (per-generation best) | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/checkpoints` (local-only)                                                        |
+| Parameter                         | Value                                                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Board                             | `square8`                                                                                                           |
+| Baseline profile id               | `heuristic_v1_balanced` (Python registry in [`heuristic_weights.py`](../../ai-service/app/ai/heuristic_weights.py)) |
+| Run id                            | `v1_balanced_longrun_01` (dir `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/` (local-only))                    |
+| Generations `G`                   | **6**                                                                                                               |
+| Population size `λ`               | **12**                                                                                                              |
+| Games per candidate `K`           | **16** (total ≈ 6 × 12 × 16 = **1152** self-play games)                                                             |
+| Max moves per game                | **200**                                                                                                             |
+| Opponent mode                     | `baseline-plus-incumbent`                                                                                           |
+| Initial sigma                     | `0.5`                                                                                                               |
+| CMA-ES seed                       | `12345`                                                                                                             |
+| Baseline weights snapshot         | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/baseline_weights.json` (local-only)                              |
+| Final best weights                | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/best_weights.json` (local-only)                                  |
+| Run metadata                      | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/run_meta.json` (local-only)                                      |
+| Generation summaries              | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/generations` (local-only)                                        |
+| Checkpoints (per-generation best) | `ai-service/logs/cmaes/runs/v1_balanced_longrun_01/checkpoints` (local-only)                                        |
 
 Key implementation details:
 
@@ -863,7 +863,7 @@ Before launching a long CMA-ES run with the preset, the recommended workflow is:
      ```bash
      cd ai-service
      python scripts/probe_plateau_diagnostics.py \
-       --boards square8,square19,hex \
+       --boards square8,square19,hexagonal \
        --games-per-eval 16 \
        --eval-mode multi-start \
        --state-pool-id v1 \
@@ -1000,10 +1000,10 @@ python scripts/run_cmaes_optimization.py \
   --population-size 8 \
   --games-per-eval 4 \
   --sigma 0.5 \
-  --output logs/cmaes/multiplayer_hex_4p_smoke_01/best_weights.json \  # legacy example; hex pools removed
+  --output logs/cmaes/multiplayer_hex_4p_smoke_01/best_weights.json \  # legacy example; hexagonal pools removed
   --baseline logs/cmaes/runs/v2_balanced_preset_smoke_02/baseline_weights.json \
-  --board hex \
-  --eval-boards hex \
+  --board hexagonal \
+  --eval-boards hexagonal \
   --eval-mode multi-start \
   --state-pool-id 4p_v1 \  # requires regenerated radius-12 hex pool
   --num-players 4 \
@@ -1041,7 +1041,7 @@ python scripts/probe_plateau_diagnostics.py \
 ```bash
 cd ai-service
 # python scripts/probe_plateau_diagnostics.py \
-#   --boards hex \
+#   --boards hexagonal \
 #   --games-per-eval 8 \
 #   --eval-mode multi-start \
 #   --state-pool-id 4p_v1 \

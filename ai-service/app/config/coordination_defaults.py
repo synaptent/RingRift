@@ -90,7 +90,9 @@ class TransportDefaults:
     HTTP_TIMEOUT: int = _env_int("RINGRIFT_HTTP_TIMEOUT", 15)
 
     # Circuit breaker recovery timeout (seconds)
-    CIRCUIT_BREAKER_RECOVERY: int = _env_int("RINGRIFT_CIRCUIT_BREAKER_RECOVERY", 300)
+    # Dec 30, 2025: Reduced from 300 to 60 for faster recovery during 48h autonomous ops
+    # Matches CircuitBreakerDefaults.RECOVERY_TIMEOUT for consistency
+    CIRCUIT_BREAKER_RECOVERY: int = _env_int("RINGRIFT_CIRCUIT_BREAKER_RECOVERY", 60)
 
     # SSH timeout for remote operations
     # Dec 2025: Increased from 30 to 60 for Tailscale userland stability
@@ -982,10 +984,16 @@ class P2PDefaults:
     GOSSIP_INTERVAL: int = _env_int("RINGRIFT_P2P_GOSSIP_INTERVAL", 15)
 
     # Heartbeat interval (seconds) - liveness detection
-    HEARTBEAT_INTERVAL: int = _env_int("RINGRIFT_P2P_HEARTBEAT_INTERVAL", 15)
+    # Dec 30, 2025: Reduced from 15 to 10 for faster partition detection (45s → 20s)
+    HEARTBEAT_INTERVAL: int = _env_int("RINGRIFT_P2P_HEARTBEAT_INTERVAL", 10)
+
+    # Voter heartbeat interval (seconds) - faster heartbeats for voter nodes
+    # Dec 30, 2025: Added for quorum-critical voter nodes to detect failures faster
+    VOTER_HEARTBEAT_INTERVAL: int = _env_int("RINGRIFT_P2P_VOTER_HEARTBEAT_INTERVAL", 5)
 
     # Peer timeout (seconds) - consider dead after no heartbeat
-    PEER_TIMEOUT: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT", 60)
+    # Dec 30, 2025: Reduced from 60 to 30 for faster partition detection
+    PEER_TIMEOUT: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT", 30)
 
     # Leader election timeout (seconds)
     ELECTION_TIMEOUT: int = _env_int("RINGRIFT_P2P_ELECTION_TIMEOUT", 30)

@@ -202,6 +202,6 @@ result = await client.run_async_with_retry(
 
 ## See Also
 
-- `ai-service/docs/SSH_CONSOLIDATION_PHASE1.md` - Phase 1 features
+- `SSH_CONSOLIDATION_PHASE1.md` - Phase 1 features
 - `ai-service/app/core/ssh.py` - Implementation
 - `config/distributed_hosts.template.yaml` - Configuration reference

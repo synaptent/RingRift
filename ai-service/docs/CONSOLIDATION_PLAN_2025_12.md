@@ -4,7 +4,7 @@
 **Status**: Active
 **Focus**: Code quality, module consolidation, exception handling, test coverage
 
-> Status: Historical plan (Dec 2025). Kept for reference; current consolidation status lives in `ai-service/docs/COORDINATION_MODULE_INVENTORY.md` and `ai-service/docs/README.md`.
+> Status: Historical plan (Dec 2025). Kept for reference; current consolidation status lives in `COORDINATION_MODULE_INVENTORY.md` and `README.md`.
 
 ---
 

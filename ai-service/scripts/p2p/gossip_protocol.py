@@ -377,6 +377,162 @@ class GossipProtocolMixin(P2PMixinBase):
             )
 
     # =========================================================================
+    # Endpoint Validation (Dec 30, 2025)
+    # Proactive validation of stale peer endpoints to prevent partition isolation
+    # =========================================================================
+
+    async def _validate_stale_endpoints(self) -> int:
+        """Validate and refresh stale peer endpoints.
+
+        December 30, 2025: Added for P2P partition recovery.
+
+        When a peer's endpoint hasn't been validated for endpoint_ttl_seconds,
+        we probe alternate IPs (Tailscale, public IP) to check if the primary
+        IP is stale. If we find a working alternate, update the peer's host.
+
+        This prevents network partitions caused by:
+        - Private IPs that became unreachable after network changes
+        - Container IPs that changed after restart
+        - VPN IPs that changed after reconnection
+
+        Returns:
+            Number of endpoints that were refreshed with better IPs
+        """
+        try:
+            from app.config.coordination_defaults import EndpointValidationDefaults
+        except ImportError:
+            return 0  # Defaults not available
+
+        if not EndpointValidationDefaults.ENABLED:
+            return 0
+
+        now = time.time()
+
+        # Rate limit: run every VALIDATION_INTERVAL seconds
+        last_validation = getattr(self, "_last_endpoint_validation", 0)
+        if now - last_validation < EndpointValidationDefaults.VALIDATION_INTERVAL:
+            return 0
+        self._last_endpoint_validation = now
+
+        # Find peers with stale endpoints
+        with self.peers_lock:
+            stale_peers = [
+                peer for peer in list(self.peers.values())
+                if not getattr(peer, "retired", False)
+                and peer.is_endpoint_stale()
+            ]
+
+        if not stale_peers:
+            return 0
+
+        # Limit validations per cycle to avoid thundering herd
+        stale_peers = stale_peers[:EndpointValidationDefaults.MAX_VALIDATIONS_PER_CYCLE]
+
+        refreshed = 0
+        for peer in stale_peers:
+            try:
+                new_host = await self._probe_best_endpoint(peer)
+                if new_host:
+                    with self.peers_lock:
+                        if peer.node_id in self.peers:
+                            old_host = self.peers[peer.node_id].host
+                            if new_host != old_host:
+                                self.peers[peer.node_id].host = new_host
+                                refreshed += 1
+                                self._log_info(
+                                    f"Endpoint refresh: {peer.node_id} "
+                                    f"{old_host} -> {new_host}"
+                                )
+                            self.peers[peer.node_id].mark_endpoint_validated()
+            except Exception as e:
+                if self.verbose:
+                    self._log_debug(
+                        f"Failed to validate endpoint for {peer.node_id}: {e}"
+                    )
+
+        if refreshed > 0:
+            self._log_info(f"Endpoint validation: refreshed {refreshed} stale endpoints")
+
+        return refreshed
+
+    async def _probe_best_endpoint(self, peer: "NodeInfo") -> str | None:
+        """Probe multiple IPs for a peer and return the first working one.
+
+        Tries in order:
+        1. Current host (validate it still works)
+        2. Tailscale IP (from learned endpoints or reported_host if 100.x.x.x)
+        3. Alternate IPs (from alternate_ips set)
+
+        Args:
+            peer: The NodeInfo to probe
+
+        Returns:
+            The first working IP address, or None if all probes fail
+        """
+        if aiohttp is None:
+            return None
+
+        try:
+            from app.config.coordination_defaults import EndpointValidationDefaults
+            timeout_seconds = EndpointValidationDefaults.PROBE_TIMEOUT
+        except ImportError:
+            timeout_seconds = 5.0
+
+        # Build list of IPs to probe, in priority order
+        ips_to_probe: list[str] = []
+
+        # 1. Current host
+        if peer.host:
+            ips_to_probe.append(peer.host)
+
+        # 2. Tailscale IP (100.x.x.x range)
+        if peer.reported_host and peer.reported_host.startswith("100."):
+            if peer.reported_host not in ips_to_probe:
+                ips_to_probe.append(peer.reported_host)
+
+        # 3. Check learned endpoints for Tailscale IP
+        learned = self._gossip_learned_endpoints.get(peer.node_id, {})
+        tailscale_ip = learned.get("tailscale_ip")
+        if tailscale_ip and tailscale_ip not in ips_to_probe:
+            ips_to_probe.append(tailscale_ip)
+
+        # 4. Alternate IPs
+        for alt_ip in getattr(peer, "alternate_ips", set()) or set():
+            if alt_ip and alt_ip not in ips_to_probe:
+                ips_to_probe.append(alt_ip)
+
+        if not ips_to_probe:
+            return None
+
+        # Probe each IP until one works
+        timeout = ClientTimeout(total=timeout_seconds)
+        for ip in ips_to_probe:
+            try:
+                url = f"http://{ip}:{peer.port}/status"
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            # Verify it's the right node
+                            if data.get("node_id") == peer.node_id:
+                                return ip
+            except (asyncio.TimeoutError, OSError):
+                continue
+            except Exception:
+                continue
+
+        return None
+
+    def _on_heartbeat_success(self, peer_id: str) -> None:
+        """Called when heartbeat to a peer succeeds.
+
+        Updates endpoint validation timestamp to prevent unnecessary probing.
+        """
+        with self.peers_lock:
+            if peer_id in self.peers:
+                self.peers[peer_id].mark_endpoint_validated()
+
+    # =========================================================================
     # SQLite Persistence for Gossip State (Dec 29, 2025)
     # =========================================================================
 
@@ -757,6 +913,10 @@ class GossipProtocolMixin(P2PMixinBase):
         # Enables fast cluster state recovery after P2P restart
         self._save_gossip_state_periodic()
 
+        # Dec 30, 2025: Validate stale endpoints to prevent partition isolation
+        # Probes alternate IPs when peers haven't responded for endpoint_ttl_seconds
+        await self._validate_stale_endpoints()
+
         now = time.time()
 
         # Rate limit: gossip every 30 seconds
@@ -962,6 +1122,10 @@ class GossipProtocolMixin(P2PMixinBase):
         if success:
             # Record success - check if peer was previously suspected
             was_suspected = tracker.record_gossip_success(peer_id)
+
+            # Dec 30, 2025: Mark endpoint as validated to prevent stale IP probing
+            self._on_heartbeat_success(peer_id)
+
             if was_suspected:
                 # Peer recovered from suspect state
                 self._log_info(f"Peer {peer_id} recovered from gossip failures")

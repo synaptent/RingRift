@@ -5,7 +5,7 @@
 
 ## Overview
 
-The `DaemonManager` coordinates 89 daemon types (78 active, 11 deprecated) in the RingRift training pipeline. It handles lifecycle management, health monitoring, and auto-restart with exponential backoff. For the full list, see `ai-service/docs/DAEMON_REGISTRY.md`.
+The `DaemonManager` coordinates 89 daemon types (78 active, 11 deprecated) in the RingRift training pipeline. It handles lifecycle management, health monitoring, and auto-restart with exponential backoff. For the full list, see `../DAEMON_REGISTRY.md`.
 
 ## Daemon Types
 

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.async_context import fire_and_forget
 from app.coordination.sync_mixin_base import SyncMixinBase
+from app.config.coordination_defaults import build_ssh_options
 
 if TYPE_CHECKING:
     from app.coordination.sync_strategies import AutoSyncConfig, SyncStats
@@ -813,6 +814,11 @@ class SyncEphemeralMixin(SyncMixinBase):
             wal_include_args = get_rsync_include_args_for_db(db_name)
             parent_dir = str(Path(db_path).parent) + "/"
 
+            # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+            ssh_opts = build_ssh_options(
+                key_path=ssh_key,
+                include_keepalive=False,  # Short-lived ephemeral sync
+            )
             rsync_cmd = [
                 "rsync",
                 "-avz",
@@ -820,7 +826,7 @@ class SyncEphemeralMixin(SyncMixinBase):
                 *bwlimit_args,
                 *wal_include_args,
                 "--exclude=*",  # Exclude other files in directory
-                "-e", f"ssh -i {ssh_key} -o StrictHostKeyChecking=no -o ConnectTimeout=10",
+                "-e", ssh_opts,
                 parent_dir,
                 remote_full,
             ]

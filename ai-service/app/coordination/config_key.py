@@ -124,8 +124,8 @@ class ConfigKey:
         if not board_type:
             return None
 
-        # Handle both "2p" and "2" formats
-        if player_str.endswith("p"):
+        # Handle both "2p"/"2P" and "2" formats
+        if player_str.lower().endswith("p"):
             player_str = player_str[:-1]
 
         try:

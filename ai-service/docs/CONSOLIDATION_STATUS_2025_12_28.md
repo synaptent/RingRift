@@ -3,7 +3,7 @@
 **Date:** December 28, 2025
 **Auditor:** Infrastructure Reliability Session
 
-> Status: Historical snapshot (Dec 2025). Kept for reference; current sync design is in `ai-service/docs/sync_architecture.md`.
+> Status: Historical snapshot (Dec 2025). Kept for reference; current sync design is in `sync_architecture.md`.
 
 ## Executive Summary
 

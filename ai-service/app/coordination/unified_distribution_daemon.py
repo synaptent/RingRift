@@ -83,6 +83,14 @@ except ImportError:
     CircuitBreakerRegistry = None  # type: ignore
     CircuitState = None  # type: ignore
 
+# December 30, 2025: Centralized SSH configuration
+try:
+    from app.config.coordination_defaults import build_ssh_options
+    SSH_CONFIG_AVAILABLE = True
+except ImportError:
+    SSH_CONFIG_AVAILABLE = False
+    build_ssh_options = None  # type: ignore
+
 # Add parent to path for imports
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -1248,10 +1256,18 @@ class UnifiedDistributionDaemon:
         else:
             remote_dest = f"{user}@{host}:{remote_path}/data/training/"
 
-        ssh_opts = f"-i {ssh_key}" if ssh_key else ""
+        # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+        if SSH_CONFIG_AVAILABLE and build_ssh_options:
+            ssh_opts_str = build_ssh_options(
+                key_path=ssh_key,
+                include_keepalive=False,  # rsync has its own timeout
+            )
+        else:
+            ssh_opts = f"-i {ssh_key}" if ssh_key else ""
+            ssh_opts_str = f"ssh {ssh_opts} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
         cmd = [
             "rsync", "-avz",
-            "-e", f"ssh {ssh_opts} -o StrictHostKeyChecking=no -o ConnectTimeout=10",
+            "-e", ssh_opts_str,
             str(file_path),
             remote_dest,
         ]

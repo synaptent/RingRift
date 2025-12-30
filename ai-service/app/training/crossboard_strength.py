@@ -164,13 +164,17 @@ def config_key(board: str, num_players: int) -> str:
 
 
 def parse_config_key(key: str) -> tuple[str, int]:
-    """Parse a config key like ``"square8_2p"`` into (board, num_players)."""
-    parts = key.rsplit("_", 1)
-    if len(parts) != 2 or not parts[1].endswith("p"):
+    """Parse a config key like ``"square8_2p"`` into (board, num_players).
+
+    Note: Delegates to canonical app.coordination.config_key module.
+    Raises ValueError for compatibility with existing callers.
+    """
+    from app.coordination.config_key import ConfigKey
+
+    result = ConfigKey.parse(key)
+    if result is None:
         raise ValueError(f"Invalid config key: {key!r}")
-    board = parts[0]
-    num_players = int(parts[1][:-1])
-    return board, num_players
+    return result.to_tuple()
 
 
 def aggregate_cross_board_elos(

@@ -3,7 +3,7 @@
 **Date:** December 19, 2025
 **Status:** Phase 7 Complete (Safe Loading + Load Test Enhancements)
 
-> Status: Historical snapshot (Dec 2025). Kept for reference; consult `ai-service/docs/README.md` for current docs.
+> Status: Historical snapshot (Dec 2025). Kept for reference; consult `README.md` for current docs.
 
 ---
 

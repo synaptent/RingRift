@@ -41,6 +41,7 @@ from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 from app.core.ssh import SSHClient, SSHConfig, SSHResult
+from app.config.coordination_defaults import build_ssh_options
 
 logger = logging.getLogger(__name__)
 
@@ -281,9 +282,14 @@ class OWCImportDaemon(HandlerBase):
 
         remote_path = f"{self.config.owc_user}@{self.config.owc_host}:{self.config.owc_base_path}/{rel_path}"
 
+        # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+        ssh_opts = build_ssh_options(
+            key_path=self.config.owc_ssh_key,
+            include_keepalive=False,  # rsync has its own timeout
+        )
         rsync_cmd = [
             "rsync", "-avz",
-            "-e", f"ssh -i {self.config.owc_ssh_key} -o StrictHostKeyChecking=no",
+            "-e", ssh_opts,
             remote_path,
             str(local_path),
         ]

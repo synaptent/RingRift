@@ -5,7 +5,7 @@
 **Scope**: RingRift AI Service (`ai-service/`)
 **Analysis Coverage**: 350+ Python files, 1.3M lines of code
 
-> **Note:** This report is a Dec 2025 snapshot. Daemon counts and registry status may have changed; see `ai-service/docs/DAEMON_REGISTRY.md` for current numbers.
+> **Note:** This report is a Dec 2025 snapshot. Daemon counts and registry status may have changed; see `DAEMON_REGISTRY.md` for current numbers.
 
 ---
 
@@ -64,7 +64,7 @@ Migration: Use `app/core/ssh` for new code, SSHTransport for P2P.
 - `ephemeral`/`selfplay`: ✅ OK (all daemons registered)
 - `minimal`: ✅ OK (only EVENT_ROUTER)
 
-As of the Dec 2025 snapshot, all 66 daemon types had factory implementations in `daemon_runners.py` (current count: 89; see `ai-service/docs/DAEMON_REGISTRY.md`).
+As of the Dec 2025 snapshot, all 66 daemon types had factory implementations in `daemon_runners.py` (current count: 89; see `DAEMON_REGISTRY.md`).
 
 ### Quick Wins
 

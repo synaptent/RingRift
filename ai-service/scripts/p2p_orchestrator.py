@@ -18088,11 +18088,17 @@ print(json.dumps({{
         3. Hardcoded BOOTSTRAP_SEEDS
         4. Tailscale network scan (fallback)
         """
-        # Dec 30, 2025: Increased startup grace period from 60s to STARTUP_GRACE_PERIOD (180s)
-        # During coordinated cluster restarts via update_all_nodes.py --restart-p2p,
-        # all nodes restart simultaneously and need time to initialize before they
-        # can respond to bootstrap requests. 180s gives ample time for slow nodes.
-        await asyncio.sleep(STARTUP_GRACE_PERIOD)
+        # Dec 30, 2025: Conditional startup grace period
+        # - If --peers provided: Wait STARTUP_GRACE_PERIOD for other nodes to restart
+        # - If no --peers: Start immediately (we're already isolated, no point waiting)
+        # This enables fast mesh join when nodes start without explicit peer list.
+        if self.known_peers:
+            logger.debug(f"[ContinuousBootstrap] Waiting {STARTUP_GRACE_PERIOD}s grace period (have known peers)")
+            await asyncio.sleep(STARTUP_GRACE_PERIOD)
+        else:
+            # No peers configured - skip grace period but wait briefly for HTTP server
+            logger.info("[ContinuousBootstrap] No known peers, skipping startup grace period")
+            await asyncio.sleep(5)
 
         while self.running:
             try:
@@ -18274,6 +18280,72 @@ print(json.dumps({{
                     continue
 
         return success
+
+    def _load_bootstrap_seeds_from_config(self) -> list[str]:
+        """Load bootstrap seed peers from distributed_hosts.yaml.
+
+        Selects stable coordinator and voter nodes as default seeds when no --peers provided.
+        This enables automatic peer discovery via Tailscale even when CLI args are missing.
+
+        Returns:
+            List of seed peer URLs (e.g., ["http://100.x.x.x:8770", ...])
+
+        December 30, 2025: Added for automatic P2P peer discovery.
+        """
+        try:
+            from app.config.cluster_config import get_cluster_nodes, get_coordinator_node
+
+            seeds: list[str] = []
+            seen_ips: set[str] = set()
+
+            # Primary: coordinator node (most stable)
+            coord = get_coordinator_node()
+            if coord and getattr(coord, "tailscale_ip", None):
+                ip = str(coord.tailscale_ip)
+                if ip and ip not in seen_ips:
+                    seeds.append(f"http://{ip}:{DEFAULT_PORT}")
+                    seen_ips.add(ip)
+
+            # Secondary: voter nodes (stable, always online)
+            try:
+                nodes = get_cluster_nodes()
+                for node in nodes.values():
+                    if getattr(node, "role", "") == "voter" and getattr(node, "tailscale_ip", None):
+                        ip = str(node.tailscale_ip)
+                        if ip and ip not in seen_ips:
+                            seeds.append(f"http://{ip}:{DEFAULT_PORT}")
+                            seen_ips.add(ip)
+                            if len(seeds) >= 5:
+                                break
+            except Exception:  # noqa: BLE001
+                pass
+
+            # Fallback: any active nodes with Tailscale IPs
+            if len(seeds) < 3:
+                try:
+                    nodes = get_cluster_nodes()
+                    for node in nodes.values():
+                        if getattr(node, "tailscale_ip", None) and getattr(node, "is_active", True):
+                            ip = str(node.tailscale_ip)
+                            if ip and ip not in seen_ips:
+                                seeds.append(f"http://{ip}:{DEFAULT_PORT}")
+                                seen_ips.add(ip)
+                                if len(seeds) >= 5:
+                                    break
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if seeds:
+                logger.debug(f"Loaded {len(seeds)} bootstrap seeds from config: {seeds[:3]}...")
+
+            return seeds
+
+        except ImportError:
+            logger.debug("cluster_config not available for bootstrap seeds")
+            return []
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Could not load bootstrap seeds from config: {e}")
+            return []
 
     # NOTE: _follower_discovery_loop() removed Dec 2025 (75 LOC).
     # Now runs via LoopManager as FollowerDiscoveryLoop.
@@ -26257,6 +26329,33 @@ print(json.dumps({{
         # helps newly started cloud nodes quickly learn about the full cluster.
         with contextlib.suppress(Exception):
             await self._bootstrap_from_known_peers()
+
+        # December 30, 2025: Immediate Tailscale discovery when no --peers provided
+        # This fixes the bootstrap problem where nodes started without --peers
+        # couldn't join the mesh because continuous_bootstrap_loop has a 30s delay.
+        if not self.known_peers:
+            logger.info("[Bootstrap] No --peers provided, running immediate Tailscale discovery...")
+            with self.peers_lock:
+                peers_before = len(self.peers)
+
+            # Try direct Tailscale peer discovery first
+            with contextlib.suppress(Exception):
+                await self._discover_tailscale_peers()
+
+            with self.peers_lock:
+                peers_after = len(self.peers)
+
+            if peers_after > peers_before:
+                logger.info(f"[Bootstrap] Tailscale discovery found {peers_after - peers_before} new peer(s)")
+            else:
+                # Tailscale discovery didn't find peers - try config-based seeds
+                logger.info("[Bootstrap] Tailscale discovery found no peers, trying config-based seeds...")
+                config_seeds = self._load_bootstrap_seeds_from_config()
+                if config_seeds:
+                    logger.info(f"[Bootstrap] Loaded {len(config_seeds)} seed(s) from config")
+                    self.known_peers = config_seeds
+                    with contextlib.suppress(Exception):
+                        await self._bootstrap_from_known_peers()
 
         # December 29, 2025: Extended startup election with retry mechanism
         # If no leader known, start election after allowing time for peer discovery.

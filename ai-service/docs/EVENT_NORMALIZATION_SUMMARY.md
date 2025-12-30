@@ -57,7 +57,7 @@ async def publish(self, event_type, payload, source):
 
 ### 3. Comprehensive Documentation
 
-Created `ai-service/docs/EVENT_NAMING_CONVENTION.md`:
+Created `EVENT_NAMING_CONVENTION.md`:
 
 - Canonical format rules: `{SUBJECT}_{ACTION}_{MODIFIER}`
 - Tense rules for different event types
@@ -197,12 +197,12 @@ for rec in audit['recommendations']:
    - 450 lines of canonical mapping and normalization logic
    - Comprehensive docstrings and type hints
 
-2. `ai-service/docs/EVENT_NAMING_CONVENTION.md`
+2. `EVENT_NAMING_CONVENTION.md`
    - Complete naming convention documentation
    - Migration guide and best practices
    - Reference table of all canonical event types
 
-3. `ai-service/docs/EVENT_NORMALIZATION_SUMMARY.md`
+3. `EVENT_NORMALIZATION_SUMMARY.md`
    - This file: implementation summary
 
 4. `ai-service/tests/unit/coordination/test_event_normalization.py`
@@ -451,7 +451,7 @@ check-event-names = true
 ## References
 
 - **Implementation**: `ai-service/app/coordination/event_normalization.py`
-- **Documentation**: `ai-service/docs/EVENT_NAMING_CONVENTION.md`
+- **Documentation**: `EVENT_NAMING_CONVENTION.md`
 - **Tests**: `ai-service/tests/unit/coordination/test_event_normalization.py`
 - **Router Integration**: `ai-service/app/coordination/event_router.py`
 

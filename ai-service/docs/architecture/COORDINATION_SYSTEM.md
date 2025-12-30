@@ -718,7 +718,7 @@ All 8 critical AI training events fully wired:
 
 - **89 DaemonType** enum values defined (78 active, 11 deprecated)
 - **89 runner functions** implemented in `daemon_runners.py`
-- **Daemon categories**: See `ai-service/docs/DAEMON_REGISTRY.md` for the current list
+- **Daemon categories**: See `../DAEMON_REGISTRY.md` for the current list
 
 ### Cluster Infrastructure
 

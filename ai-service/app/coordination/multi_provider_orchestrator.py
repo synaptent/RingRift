@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.cluster_config import get_cluster_nodes, get_host_provider
+from app.config.coordination_defaults import build_ssh_options, build_ssh_options_list
 
 logger = logging.getLogger(__name__)
 
@@ -108,23 +109,36 @@ class ClusterNode:
     current_job: str | None = None
 
     def ssh_command(self, cmd: str) -> str:
-        """Generate SSH command for this node (deprecated, use ssh_command_list)."""
+        """Generate SSH command for this node (deprecated, use ssh_command_list).
+
+        Dec 30, 2025: Now uses centralized SSH config for consistent timeouts.
+        """
         host = self.tailscale_ip or self.public_ip or self.ssh_host
         port = self.ssh_port if not self.tailscale_ip else 22
-        return f"ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -p {port} {self.ssh_user}@{host} '{cmd}'"
+        ssh_opts = build_ssh_options(
+            key_path=None,  # Use default key
+            provider=self.provider.value if self.provider else "default",
+            port=port,
+            include_keepalive=True,
+        )
+        return f"{ssh_opts} {self.ssh_user}@{host} '{cmd}'"
 
     def ssh_command_list(self, cmd: str) -> list[str]:
-        """Generate SSH command as a list for subprocess (no shell=True needed)."""
+        """Generate SSH command as a list for subprocess (no shell=True needed).
+
+        Dec 30, 2025: Now uses centralized SSH config for consistent timeouts.
+        """
         host = self.tailscale_ip or self.public_ip or self.ssh_host
         port = self.ssh_port if not self.tailscale_ip else 22
-        return [
-            "ssh",
-            "-o", "ConnectTimeout=10",
-            "-o", "StrictHostKeyChecking=no",
-            "-p", str(port),
-            f"{self.ssh_user}@{host}",
-            cmd,
-        ]
+        ssh_list = build_ssh_options_list(
+            key_path=None,  # Use default key
+            provider=self.provider.value if self.provider else "default",
+            port=port,
+            include_keepalive=True,
+        )
+        ssh_list.append(f"{self.ssh_user}@{host}")
+        ssh_list.append(cmd)
+        return ssh_list
 
 
 class MultiProviderOrchestrator:

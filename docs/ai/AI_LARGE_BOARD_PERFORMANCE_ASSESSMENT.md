@@ -51,7 +51,7 @@ reasonable time. Use this for rapid iteration on heuristic weight profiles.
 ```bash
 # Fewer games = faster iteration at cost of statistical significance
 python scripts/probe_plateau_diagnostics.py \
-  --boards square8,square19,hex \
+  --boards square8,square19,hexagonal \
   --games-per-eval 2 \
   --max-moves 50 \
   --export-dir logs/plateau_probe/reduced_load

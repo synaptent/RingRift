@@ -101,6 +101,14 @@ except ImportError:
     HAS_BANDWIDTH_CONFIG = False
     get_node_bandwidth_kbs = None
 
+# Import centralized SSH config (December 30, 2025)
+try:
+    from app.config.coordination_defaults import build_ssh_options
+    HAS_SSH_CONFIG = True
+except ImportError:
+    HAS_SSH_CONFIG = False
+    build_ssh_options = None
+
 # Import centralized port configuration (December 2025)
 try:
     from app.config.ports import P2P_DEFAULT_PORT
@@ -118,6 +126,9 @@ from app.coordination.transport_base import (
     RetryableTransportError,
     PermanentTransportError,
     TransportResult as _CanonicalTransportResult,
+    # Dec 30, 2025: SSH error classification for smart retry decisions
+    SSHErrorClassifier,
+    SSHErrorType,
 )
 
 # Backward-compatible wrapper for TransportError (different __init__ signature)
@@ -467,17 +478,44 @@ class ClusterTransport:
                     bytes_transferred=file_size,
                 )
             else:
+                # Dec 30, 2025: Classify SSH errors for smarter retry decisions
+                error_msg = stderr.decode()[:200] if stderr else "base64 push failed"
+                error_type = SSHErrorClassifier.classify(error_msg)
+
+                if error_type == SSHErrorType.AUTH:
+                    logger.warning(f"base64 push auth failure: {error_msg}")
+
                 return TransportResult(
                     success=False,
-                    error=stderr.decode()[:200] if stderr else "base64 push failed",
+                    error=error_msg,
+                    metadata={
+                        "error_type": error_type,
+                        "retryable": SSHErrorClassifier.should_retry(error_msg),
+                    },
                 )
 
         except asyncio.TimeoutError:
-            return TransportResult(success=False, error="Base64 transfer timeout")
+            return TransportResult(
+                success=False,
+                error="Base64 transfer timeout",
+                metadata={"error_type": SSHErrorType.NETWORK, "retryable": True},
+            )
         except MemoryError:
-            return TransportResult(success=False, error="File too large for base64 in memory")
+            return TransportResult(
+                success=False,
+                error="File too large for base64 in memory",
+                metadata={"error_type": SSHErrorType.UNKNOWN, "retryable": False},
+            )
         except (OSError, IOError) as e:
-            return TransportResult(success=False, error=str(e))
+            error_msg = str(e)
+            return TransportResult(
+                success=False,
+                error=error_msg,
+                metadata={
+                    "error_type": SSHErrorClassifier.classify(error_msg),
+                    "retryable": SSHErrorClassifier.should_retry(error_msg),
+                },
+            )
 
     async def _base64_pull(
         self,
@@ -522,17 +560,44 @@ class ClusterTransport:
                     bytes_transferred=len(file_data),
                 )
             else:
+                # Dec 30, 2025: Classify SSH errors for smarter retry decisions
+                error_msg = stderr.decode()[:200] if stderr else "base64 pull failed"
+                error_type = SSHErrorClassifier.classify(error_msg)
+
+                if error_type == SSHErrorType.AUTH:
+                    logger.warning(f"base64 pull auth failure: {error_msg}")
+
                 return TransportResult(
                     success=False,
-                    error=stderr.decode()[:200] if stderr else "base64 pull failed",
+                    error=error_msg,
+                    metadata={
+                        "error_type": error_type,
+                        "retryable": SSHErrorClassifier.should_retry(error_msg),
+                    },
                 )
 
         except asyncio.TimeoutError:
-            return TransportResult(success=False, error="Base64 transfer timeout")
+            return TransportResult(
+                success=False,
+                error="Base64 transfer timeout",
+                metadata={"error_type": SSHErrorType.NETWORK, "retryable": True},
+            )
         except base64.binascii.Error as e:
-            return TransportResult(success=False, error=f"Base64 decode error: {e}")
+            return TransportResult(
+                success=False,
+                error=f"Base64 decode error: {e}",
+                metadata={"error_type": SSHErrorType.UNKNOWN, "retryable": False},
+            )
         except (OSError, IOError) as e:
-            return TransportResult(success=False, error=str(e))
+            error_msg = str(e)
+            return TransportResult(
+                success=False,
+                error=error_msg,
+                metadata={
+                    "error_type": SSHErrorClassifier.classify(error_msg),
+                    "retryable": SSHErrorClassifier.should_retry(error_msg),
+                },
+            )
 
     async def _transfer_via_http(
         self,
@@ -660,10 +725,19 @@ class ClusterTransport:
             except (IndexError, ValueError):
                 pass  # Use no bandwidth limit on parse error
 
+        # Dec 30, 2025: Use centralized SSH config for consistent provider-aware timeouts
+        if HAS_SSH_CONFIG and build_ssh_options:
+            ssh_opts = build_ssh_options(
+                key_path=None,  # Use default key
+                port=ssh_port,
+                include_keepalive=False,  # rsync has its own timeout
+            )
+        else:
+            # Fallback for standalone use
+            ssh_opts = f"ssh -p {ssh_port} -o StrictHostKeyChecking=no -o ConnectTimeout={self.connect_timeout}"
         cmd = [
             "rsync", "-az", f"--timeout={self.operation_timeout}",
-            "-e", f"ssh -p {ssh_port} -o StrictHostKeyChecking=no "
-                  f"-o ConnectTimeout={self.connect_timeout}",
+            "-e", ssh_opts,
         ]
         if bwlimit_arg:
             cmd.append(bwlimit_arg)
@@ -687,18 +761,48 @@ class ClusterTransport:
                     bytes_transferred=bytes_transferred,
                 )
             else:
+                # Dec 30, 2025: Classify SSH/rsync errors for smarter retry decisions
+                error_msg = stderr.decode()[:200] if stderr else "rsync failed"
+                error_type = SSHErrorClassifier.classify(error_msg)
+
+                # Log differently based on error type
+                if error_type == SSHErrorType.AUTH:
+                    logger.warning(
+                        f"rsync auth failure (not retryable): {error_msg}"
+                    )
+                elif error_type == SSHErrorType.NETWORK:
+                    logger.debug(
+                        f"rsync network failure (retryable): {error_msg}"
+                    )
+
                 return TransportResult(
                     success=False,
-                    error=stderr.decode()[:200] if stderr else "rsync failed",
+                    error=error_msg,
+                    metadata={
+                        "error_type": error_type,
+                        "retryable": SSHErrorClassifier.should_retry(error_msg),
+                    },
                 )
 
         except asyncio.TimeoutError:
-            return TransportResult(success=False, error="Transfer timeout")
+            return TransportResult(
+                success=False,
+                error="Transfer timeout",
+                metadata={"error_type": SSHErrorType.NETWORK, "retryable": True},
+            )
         except (OSError, FileNotFoundError, PermissionError) as e:
             # OSError: subprocess/network errors
             # FileNotFoundError: rsync or file not found
             # PermissionError: insufficient permissions
-            return TransportResult(success=False, error=str(e))
+            error_msg = str(e)
+            return TransportResult(
+                success=False,
+                error=error_msg,
+                metadata={
+                    "error_type": SSHErrorClassifier.classify(error_msg),
+                    "retryable": SSHErrorClassifier.should_retry(error_msg),
+                },
+            )
 
     async def http_request(
         self,
@@ -950,6 +1054,9 @@ __all__ = [
     "TransportError",
     "RetryableTransportError",
     "PermanentTransportError",
+    # SSH error classification (Dec 30, 2025)
+    "SSHErrorClassifier",
+    "SSHErrorType",
     # Functions
     "get_cluster_transport",
 ]

@@ -4,11 +4,11 @@
 >
 > **Role:** Canonical reference for stable environment variables used by RingRift across development, staging, and production, including defaults, ranges, and security considerations. Intended for operators and developers wiring config into Docker, Kubernetes, and CI.
 >
-> **Not a semantics SSoT:** This document does not define game rules or lifecycle semantics. Rules semantics are owned by the shared TypeScript rules engine under `src/shared/engine/**` plus contracts and vectors (see `RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/rules/RULES_ENGINE_SURFACE_AUDIT.md`). Lifecycle semantics are owned by `docs/architecture/CANONICAL_ENGINE_API.md` together with shared types/schemas in `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+> **Not a semantics SSoT:** This document does not define game rules or lifecycle semantics. Rules semantics are owned by the shared TypeScript rules engine under `src/shared/engine/**` plus contracts and vectors (see `../../RULES_CANONICAL_SPEC.md`, `../architecture/RULES_ENGINE_ARCHITECTURE.md`, `../rules/RULES_IMPLEMENTATION_MAPPING.md`, `../rules/RULES_ENGINE_SURFACE_AUDIT.md`). Lifecycle semantics are owned by `../architecture/CANONICAL_ENGINE_API.md` together with shared types/schemas in `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
 >
-> **Related docs:** `docs/operations/SECRETS_MANAGEMENT.md`, `docs/planning/DEPLOYMENT_REQUIREMENTS.md`, `docs/operations/OPERATIONS_DB.md`, `docs/security/SECURITY_THREAT_MODEL.md`, `docs/security/SUPPLY_CHAIN_AND_CI_SECURITY.md`, `ai-service/docs/ENV_REFERENCE.md`, `ai-service/docs/ENV_REFERENCE_COMPREHENSIVE.md`, `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`, and `DOCUMENTATION_INDEX.md`.
+> **Related docs:** `SECRETS_MANAGEMENT.md`, `../planning/DEPLOYMENT_REQUIREMENTS.md`, `OPERATIONS_DB.md`, `../security/SECURITY_THREAT_MODEL.md`, `../security/SUPPLY_CHAIN_AND_CI_SECURITY.md`, `../../ai-service/docs/ENV_REFERENCE.md`, `../../ai-service/docs/ENV_REFERENCE_COMPREHENSIVE.md`, `ENVIRONMENT_VARIABLES_INTERNAL.md`, and `../../DOCUMENTATION_INDEX.md`.
 
-This document provides comprehensive documentation for the stable, supported environment variables across RingRift's server/client stack plus curated AI-service settings. Internal, experimental, or module-specific flags are listed in `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md` and module READMEs.
+This document provides comprehensive documentation for the stable, supported environment variables across RingRift's server/client stack plus curated AI-service settings. Internal, experimental, or module-specific flags are listed in `ENVIRONMENT_VARIABLES_INTERNAL.md` and module READMEs.
 
 ## Quick Start
 
@@ -861,7 +861,7 @@ On the TS backend, this value is surfaced as `config.aiService.requestTimeoutMs`
 and used by `GameSession` as the **hard host-level budget** for per-move AI
 service calls via `runWithTimeout` (see
 `GameSession.getAIMoveWithTimeout()` in `src/server/game/GameSession.ts` and
-`docs/archive/assessments/P18.3-1_DECISION_LIFECYCLE_SPEC.md` §3.2.1.2). It bounds AI _search
+`../archive/assessments/P18.3-1_DECISION_LIFECYCLE_SPEC.md` §3.2.1.2). It bounds AI _search
 time_ only; there is no additional artificial “thinking delay” layered on
 top of this timeout.
 
@@ -1321,7 +1321,7 @@ When set, requests to `/metrics` must include the key in either the
 | Default  | `30000`  |
 | Required | No       |
 
-Maximum duration (in milliseconds) that a disconnected WebSocket client is allowed to reconnect to an active game before its pending choices are cleared and abandonment handling may apply. This controls the reconnection window described in the WebSocket lifecycle sections of [`docs/architecture/CANONICAL_ENGINE_API.md`](../architecture/CANONICAL_ENGINE_API.md).
+Maximum duration (in milliseconds) that a disconnected WebSocket client is allowed to reconnect to an active game before its pending choices are cleared and abandonment handling may apply. This controls the reconnection window described in the WebSocket lifecycle sections of [`architecture/CANONICAL_ENGINE_API.md`](../architecture/CANONICAL_ENGINE_API.md).
 
 In production, this should typically remain at the default `30000` (30 seconds) unless coordinated changes are made to the documented lifecycle and associated tests. Shorter windows may be appropriate for load tests or CI harnesses; longer windows increase server-side resource retention and the risk of stale sessions.
 
@@ -1487,7 +1487,7 @@ still uses them to label engine-selection reasons in metrics and the
 For recommended combinations of `NODE_ENV`, `RINGRIFT_APP_TOPOLOGY`,
 `RINGRIFT_RULES_MODE`, and the orchestrator flags across CI, staging, and
 production phases, see the env/phase presets table in
-[`docs/archive/ORCHESTRATOR_ROLLOUT_PHASES.md` §8.1.1](../archive/ORCHESTRATOR_ROLLOUT_PHASES.md#811-environment-and-flag-presets-by-phase).
+[`archive/ORCHESTRATOR_ROLLOUT_PHASES.md` §8.1.1](../archive/ORCHESTRATOR_ROLLOUT_PHASES.md#811-environment-and-flag-presets-by-phase).
 
 #### `ORCHESTRATOR_SHADOW_MODE_ENABLED` (REMOVED)
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.coordination.sync_mixin_base import SyncMixinBase
+from app.config.coordination_defaults import build_ssh_options, build_ssh_options_list
 
 # Threshold for using ResilientTransfer vs simple rsync
 LARGE_FILE_THRESHOLD_BYTES = 50_000_000  # 50MB
@@ -262,14 +263,12 @@ class SyncPullMixin(SyncMixinBase):
         Returns:
             List of database filenames (not full paths).
         """
-        cmd = [
-            "ssh",
-            "-i", ssh_key,
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "ConnectTimeout=10",
-            f"{ssh_user}@{ssh_host}",
-            f"ls -1 {remote_path}/*.db 2>/dev/null || echo ''"
-        ]
+        # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+        cmd = build_ssh_options_list(
+            key_path=ssh_key,
+            include_keepalive=False,  # Quick listing, no keepalive needed
+        )
+        cmd.extend([f"{ssh_user}@{ssh_host}", f"ls -1 {remote_path}/*.db 2>/dev/null || echo ''"])
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -401,14 +400,15 @@ class SyncPullMixin(SyncMixinBase):
         if source_node:
             try:
                 # Try to get remote file size
-                size_cmd = [
-                    "ssh",
-                    "-i", ssh_key,
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "ConnectTimeout=10",
+                # Dec 30, 2025: Use centralized SSH config for consistent timeouts
+                size_cmd = build_ssh_options_list(
+                    key_path=ssh_key,
+                    include_keepalive=False,  # Quick size check, no keepalive needed
+                )
+                size_cmd.extend([
                     f"{ssh_user}@{ssh_host}",
                     f"stat -c%s '{remote_path}/{db_name}' 2>/dev/null || echo 0"
-                ]
+                ])
                 proc = await asyncio.create_subprocess_exec(
                     *size_cmd,
                     stdout=asyncio.subprocess.PIPE,
@@ -439,11 +439,16 @@ class SyncPullMixin(SyncMixinBase):
         local_path = local_dir / db_name
         remote_full = f"{ssh_user}@{ssh_host}:{remote_path}/{db_name}"
 
+        # Dec 30, 2025: Use centralized SSH config for rsync
+        ssh_options = build_ssh_options(
+            key_path=ssh_key,
+            include_keepalive=False,  # rsync has its own timeout
+        )
         cmd = [
             "rsync",
             "-az",
             "--timeout=60",
-            "-e", f"ssh -i {ssh_key} -o StrictHostKeyChecking=no -o ConnectTimeout=10",
+            "-e", ssh_options,
             remote_full,
             str(local_path),
         ]
