@@ -34,8 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
-from app.coordination.contracts import HealthCheckResult
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 
 logger = logging.getLogger(__name__)
@@ -62,12 +61,18 @@ except ImportError:
 
 
 @dataclass
-class ClusterWatchdogConfig(DaemonConfig):
+class ClusterWatchdogConfig:
     """Configuration for cluster watchdog daemon.
 
-    Extends DaemonConfig with watchdog-specific settings.
-    December 2025: Now uses centralized defaults from coordination_defaults.py.
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
     """
+
+    # Check interval (passed to HandlerBase as cycle_interval)
+    check_interval_seconds: int = 300  # 5 minutes
+
+    # Daemon control
+    enabled: bool = True
 
     # Watchdog-specific settings (from centralized defaults)
     # Minimum GPU utilization threshold - below this, spawn selfplay
@@ -106,11 +111,9 @@ class ClusterWatchdogConfig(DaemonConfig):
     def from_env(cls, prefix: str = "RINGRIFT_WATCHDOG") -> "ClusterWatchdogConfig":
         """Load configuration from environment variables."""
         config = cls()
-        # Load base config
         config.enabled = os.environ.get(f"{prefix}_ENABLED", "1") == "1"
         if os.environ.get(f"{prefix}_INTERVAL"):
             config.check_interval_seconds = int(os.environ.get(f"{prefix}_INTERVAL", "300"))
-        # Load watchdog-specific
         if os.environ.get(f"{prefix}_MIN_GPU"):
             config.min_gpu_utilization = float(os.environ.get(f"{prefix}_MIN_GPU", "20.0"))
         return config
@@ -155,20 +158,26 @@ class WatchdogCycleStats:
 # =============================================================================
 
 
-class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
+class ClusterWatchdogDaemon(HandlerBase):
     """Self-healing daemon for cluster utilization.
 
     Monitors all provider nodes and auto-spawns selfplay on idle GPUs.
 
-    Inherits from BaseDaemon which provides:
-    - Lifecycle management (start/stop)
-    - Coordinator protocol registration
-    - Protected main loop with error handling
-    - Health check interface
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
+    - Uses _get_event_subscriptions() for event wiring
     """
 
     def __init__(self, config: ClusterWatchdogConfig | None = None):
-        super().__init__(config)
+        self._daemon_config = config or ClusterWatchdogConfig.from_env()
+
+        super().__init__(
+            name="ClusterWatchdogDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
         self._nodes: dict[str, WatchdogNodeStatus] = {}
         self._config_index = 0  # Cycle through selfplay configs
         self._last_cycle_stats: WatchdogCycleStats | None = None
@@ -178,73 +187,66 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
         # Path to cluster_activator.py for node discovery
         self._activator_path = Path(__file__).parent.parent.parent / "scripts" / "cluster_activator.py"
 
-    @staticmethod
-    def _get_default_config() -> ClusterWatchdogConfig:
-        """Return default configuration."""
-        return ClusterWatchdogConfig.from_env()
+    @property
+    def config(self) -> ClusterWatchdogConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
+
+    def _get_event_subscriptions(self) -> dict:
+        """Return event subscriptions for HandlerBase.
+
+        December 2025: Migrated from _subscribe_to_events() to dict-based pattern.
+        """
+        return {
+            "HOST_OFFLINE": self._on_host_offline,
+            "HOST_ONLINE": self._on_host_online,
+            "P2P_CLUSTER_UNHEALTHY": self._on_cluster_unhealthy,
+            "P2P_CLUSTER_HEALTHY": self._on_cluster_healthy,
+        }
 
     async def _on_start(self) -> None:
         """Log watchdog-specific startup info."""
         logger.info(
-            f"[{self._get_daemon_name()}] Config: "
+            f"[{self.name}] Config: "
             f"interval={self.config.check_interval_seconds}s, "
             f"min_gpu={self.config.min_gpu_utilization}%"
         )
-        # Subscribe to cluster events (December 2025)
-        await self._subscribe_to_events()
-
-    async def _subscribe_to_events(self) -> None:
-        """Subscribe to relevant cluster events."""
-        try:
-            from app.coordination.event_router import DataEventType, get_event_router
-
-            router = get_event_router()
-            router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-            router.subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
-            # December 2025: Subscribe to cluster health for spawn pause
-            router.subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY, self._on_cluster_unhealthy)
-            router.subscribe(DataEventType.P2P_CLUSTER_HEALTHY, self._on_cluster_healthy)
-            logger.info(f"[{self._get_daemon_name()}] Subscribed to cluster events")
-        except ImportError:
-            logger.debug(f"[{self._get_daemon_name()}] Event router not available")
-        except Exception as e:
-            logger.warning(f"[{self._get_daemon_name()}] Failed to subscribe: {e}")
 
     async def _on_host_offline(self, event) -> None:
         """Handle host going offline."""
         try:
             payload = event.payload if hasattr(event, 'payload') else event
             host = payload.get("host", "unknown")
-            logger.info(f"[{self._get_daemon_name()}] Host offline: {host}")
+            logger.info(f"[{self.name}] Host offline: {host}")
         except (KeyError, AttributeError, TypeError) as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error handling host offline: {e}")
+            logger.warning(f"[{self.name}] Error handling host offline: {e}")
 
     async def _on_host_online(self, event) -> None:
         """Handle host coming online."""
         try:
             payload = event.payload if hasattr(event, 'payload') else event
             host = payload.get("host", "unknown")
-            logger.info(f"[{self._get_daemon_name()}] Host online: {host}")
+            logger.info(f"[{self.name}] Host online: {host}")
         except (KeyError, AttributeError, TypeError) as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error handling host online: {e}")
+            logger.warning(f"[{self.name}] Error handling host online: {e}")
 
     async def _on_cluster_unhealthy(self, event) -> None:
         """Handle cluster becoming unhealthy - pause spawning."""
         try:
             payload = event.payload if hasattr(event, 'payload') else event
             reason = payload.get("reason", "unknown")
-            logger.warning(f"[{self._get_daemon_name()}] Cluster unhealthy: {reason} - pausing spawning")
+            logger.warning(f"[{self.name}] Cluster unhealthy: {reason} - pausing spawning")
             self._cluster_healthy = False
         except (KeyError, AttributeError, TypeError) as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error handling cluster unhealthy: {e}")
+            logger.warning(f"[{self.name}] Error handling cluster unhealthy: {e}")
 
     async def _on_cluster_healthy(self, event) -> None:
         """Handle cluster becoming healthy - resume spawning."""
         try:
-            logger.info(f"[{self._get_daemon_name()}] Cluster healthy - resuming spawning")
+            logger.info(f"[{self.name}] Cluster healthy - resuming spawning")
             self._cluster_healthy = True
         except (KeyError, AttributeError, TypeError) as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error handling cluster healthy: {e}")
+            logger.warning(f"[{self.name}] Error handling cluster healthy: {e}")
 
     async def _on_stop(self) -> None:
         """Graceful shutdown handler.
@@ -256,7 +258,7 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             from app.coordination.event_emitters import emit_coordinator_shutdown
 
             await emit_coordinator_shutdown(
-                coordinator_name=self._get_daemon_name(),
+                coordinator_name=self.name,
                 reason="graceful",
                 remaining_tasks=0,
                 state_snapshot={
@@ -265,11 +267,11 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
                     "cluster_healthy": self._cluster_healthy,
                 },
             )
-            logger.info(f"[{self._get_daemon_name()}] Graceful shutdown complete")
+            logger.info(f"[{self.name}] Graceful shutdown complete")
         except ImportError:
-            logger.debug(f"[{self._get_daemon_name()}] Event emitters not available for shutdown")
+            logger.debug(f"[{self.name}] Event emitters not available for shutdown")
         except Exception as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error during shutdown: {e}")
+            logger.warning(f"[{self.name}] Error during shutdown: {e}")
 
     async def _run_cycle(self) -> None:
         """Run a single watchdog cycle."""
@@ -732,21 +734,21 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
                 is_healthy = False
                 status = CoordinatorStatus.DEGRADED
                 message = f"Stale cycle data (age={age:.0f}s, max={max_age}s)"
-                logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
+                logger.warning(f"[{self.name}] Health check: {message}")
 
             # Check for excessive errors in last cycle
             elif len(self._last_cycle_stats.errors) > 5:
                 is_healthy = False
                 status = CoordinatorStatus.DEGRADED
                 message = f"Too many errors ({len(self._last_cycle_stats.errors)})"
-                logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
+                logger.warning(f"[{self.name}] Health check: {message}")
 
         cycle_stats = {}
         if self._last_cycle_stats:
             cycle_stats = {
                 "nodes_discovered": self._last_cycle_stats.nodes_discovered,
                 "nodes_activated": self._last_cycle_stats.nodes_activated,
-                "errors_count": len(self._last_cycle_stats.errors),
+                "cycle_errors": len(self._last_cycle_stats.errors),
             }
 
         return HealthCheckResult(
@@ -755,63 +757,68 @@ class ClusterWatchdogDaemon(BaseDaemon[ClusterWatchdogConfig]):
             message=message,
             details={
                 "running": self._running,
+                "cycles_completed": self._stats.cycles_completed,
+                "errors_count": self._stats.errors_count,
+                "cluster_healthy": self._cluster_healthy,
                 **cycle_stats,
             },
         )
 
     def get_status(self) -> dict[str, Any]:
-        """Get daemon status for monitoring.
-
-        Extends base class status with watchdog-specific fields.
-        """
-        status = super().get_status()
-
-        # Add watchdog-specific config
-        status["config"]["min_gpu_utilization"] = self.config.min_gpu_utilization
-
-        # Add watchdog-specific stats
-        status["tracked_nodes"] = len(self._nodes)
-        status["last_cycle"] = {
-            "discovered": self._last_cycle_stats.nodes_discovered if self._last_cycle_stats else 0,
-            "reachable": self._last_cycle_stats.nodes_reachable if self._last_cycle_stats else 0,
-            "idle": self._last_cycle_stats.nodes_idle if self._last_cycle_stats else 0,
-            "activated": self._last_cycle_stats.nodes_activated if self._last_cycle_stats else 0,
-            "failed": self._last_cycle_stats.nodes_failed if self._last_cycle_stats else 0,
-        } if self._last_cycle_stats else None
-        status["nodes"] = [
-            {
-                "id": n.node_id,
-                "provider": n.provider,
-                "gpu_util": n.gpu_utilization,
-                "processes": n.python_processes,
-                "reachable": n.is_reachable,
-                "failures": n.consecutive_failures,
-            }
-            for n in self._nodes.values()
-        ]
-
-        return status
+        """Get daemon status for monitoring."""
+        return {
+            "running": self._running,
+            "config": {
+                "enabled": self.config.enabled,
+                "check_interval_seconds": self.config.check_interval_seconds,
+                "min_gpu_utilization": self.config.min_gpu_utilization,
+                "max_activations_per_cycle": self.config.max_activations_per_cycle,
+            },
+            "stats": {
+                "cycles_completed": self._stats.cycles_completed,
+                "last_cycle_time": self._stats.last_cycle_time.isoformat() if self._stats.last_cycle_time else None,
+                "last_cycle_duration": self._stats.last_cycle_duration_seconds,
+                "errors_count": self._stats.errors_count,
+            },
+            "cluster_healthy": self._cluster_healthy,
+            "tracked_nodes": len(self._nodes),
+            "last_cycle": {
+                "discovered": self._last_cycle_stats.nodes_discovered if self._last_cycle_stats else 0,
+                "reachable": self._last_cycle_stats.nodes_reachable if self._last_cycle_stats else 0,
+                "idle": self._last_cycle_stats.nodes_idle if self._last_cycle_stats else 0,
+                "activated": self._last_cycle_stats.nodes_activated if self._last_cycle_stats else 0,
+                "failed": self._last_cycle_stats.nodes_failed if self._last_cycle_stats else 0,
+            } if self._last_cycle_stats else None,
+            "nodes": [
+                {
+                    "id": n.node_id,
+                    "provider": n.provider,
+                    "gpu_util": n.gpu_utilization,
+                    "processes": n.python_processes,
+                    "reachable": n.is_reachable,
+                    "failures": n.consecutive_failures,
+                }
+                for n in self._nodes.values()
+            ],
+        }
 
 
 # =============================================================================
-# Module-level Singleton Factory (December 2025)
+# Singleton Accessors (using HandlerBase class methods)
 # =============================================================================
-
-_cluster_watchdog_daemon: ClusterWatchdogDaemon | None = None
 
 
 def get_cluster_watchdog_daemon() -> ClusterWatchdogDaemon:
-    """Get the singleton ClusterWatchdogDaemon instance.
+    """Get or create the singleton ClusterWatchdogDaemon instance.
 
-    December 2025: Added for consistency with other daemon factories.
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
     """
-    global _cluster_watchdog_daemon
-    if _cluster_watchdog_daemon is None:
-        _cluster_watchdog_daemon = ClusterWatchdogDaemon()
-    return _cluster_watchdog_daemon
+    return ClusterWatchdogDaemon.get_instance()
 
 
 def reset_cluster_watchdog_daemon() -> None:
-    """Reset the singleton (for testing)."""
-    global _cluster_watchdog_daemon
-    _cluster_watchdog_daemon = None
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
+    ClusterWatchdogDaemon.reset_instance()

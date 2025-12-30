@@ -309,8 +309,14 @@ class TestDetermineRecoveryAction:
         action = daemon._determine_recovery_action(node)
         assert action == NodeRecoveryAction.NOTIFY
 
-    def test_restart_for_many_failures(self, daemon):
-        """Should restart when failures exceed threshold."""
+    def test_soft_restart_for_moderate_failures(self, daemon):
+        """Should soft restart when failures at tier 1 (3+ failures).
+
+        December 2025: Escalation tiers:
+        - 3+ failures: SOFT_RESTART
+        - 6+ failures: RESTART (hard restart)
+        - 10+ failures: FAILOVER
+        """
         node = NodeInfo(
             node_id="test",
             host="1.1.1.1",
@@ -318,15 +324,37 @@ class TestDetermineRecoveryAction:
             consecutive_failures=3,
         )
         action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.SOFT_RESTART
+
+    def test_restart_for_many_failures(self, daemon):
+        """Should hard restart when failures at tier 2 (6+ failures)."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            status="unreachable",
+            consecutive_failures=6,
+        )
+        action = daemon._determine_recovery_action(node)
         assert action == NodeRecoveryAction.RESTART
 
-    def test_restart_for_terminated_node(self, daemon):
-        """Should restart terminated node with many failures."""
+    def test_soft_restart_for_terminated_node(self, daemon):
+        """Should soft restart terminated node at tier 1 (3+ failures)."""
         node = NodeInfo(
             node_id="test",
             host="1.1.1.1",
             status="terminated",
             consecutive_failures=3,
+        )
+        action = daemon._determine_recovery_action(node)
+        assert action == NodeRecoveryAction.SOFT_RESTART
+
+    def test_restart_for_terminated_node(self, daemon):
+        """Should hard restart terminated node at tier 2 (6+ failures)."""
+        node = NodeInfo(
+            node_id="test",
+            host="1.1.1.1",
+            status="terminated",
+            consecutive_failures=6,
         )
         action = daemon._determine_recovery_action(node)
         assert action == NodeRecoveryAction.RESTART
@@ -456,7 +484,12 @@ class TestNodeStateUpdate:
 
 
 class TestHealthCheck:
-    """Tests for daemon health check."""
+    """Tests for daemon health check.
+
+    December 2025: Updated for HandlerBase migration.
+    - health_check() is now sync (no await)
+    - Recovery stats are on _recovery_stats, not _stats
+    """
 
     @pytest.fixture
     def daemon(self):
@@ -465,43 +498,39 @@ class TestHealthCheck:
         daemon._running = True
         return daemon
 
-    @pytest.mark.asyncio
-    async def test_health_check_not_running(self, daemon):
+    def test_health_check_not_running(self, daemon):
         """Should report unhealthy when not running."""
         daemon._running = False
-        result = await daemon.health_check()
+        result = daemon.health_check()
         assert result.healthy is False
 
-    @pytest.mark.asyncio
-    async def test_health_check_running_healthy(self, daemon):
+    def test_health_check_running_healthy(self, daemon):
         """Should report healthy when running normally."""
-        daemon._stats.last_job_time = time.time()
-        result = await daemon.health_check()
+        # Use _recovery_stats.last_job_time for recovery-specific timing
+        daemon._recovery_stats.last_job_time = time.time()
+        result = daemon.health_check()
         assert result.healthy is True
 
-    @pytest.mark.asyncio
-    async def test_health_check_stale_data(self, daemon):
+    def test_health_check_stale_data(self, daemon):
         """Should report unhealthy with stale check data."""
-        daemon._stats.last_job_time = time.time() - 3600  # 1 hour ago
-        result = await daemon.health_check()
+        daemon._recovery_stats.last_job_time = time.time() - 3600  # 1 hour ago
+        result = daemon.health_check()
         assert result.healthy is False
 
-    @pytest.mark.asyncio
-    async def test_health_check_all_failures(self, daemon):
+    def test_health_check_all_failures(self, daemon):
         """Should report unhealthy with only failures."""
-        daemon._stats.last_job_time = time.time()
-        daemon._stats.jobs_failed = 15
-        daemon._stats.jobs_succeeded = 0
-        result = await daemon.health_check()
+        daemon._recovery_stats.last_job_time = time.time()
+        daemon._recovery_stats.jobs_failed = 15
+        daemon._recovery_stats.jobs_succeeded = 0
+        result = daemon.health_check()
         assert result.healthy is False
 
-    @pytest.mark.asyncio
-    async def test_health_check_some_failures_ok(self, daemon):
+    def test_health_check_some_failures_ok(self, daemon):
         """Should be healthy with some failures if also successes."""
-        daemon._stats.last_job_time = time.time()
-        daemon._stats.jobs_failed = 15
-        daemon._stats.jobs_succeeded = 10  # Some successes
-        result = await daemon.health_check()
+        daemon._recovery_stats.last_job_time = time.time()
+        daemon._recovery_stats.jobs_failed = 15
+        daemon._recovery_stats.jobs_succeeded = 10  # Some successes
+        result = daemon.health_check()
         assert result.healthy is True
 
 
@@ -515,13 +544,23 @@ class TestGetStatus:
 
     @pytest.fixture
     def daemon(self):
-        """Create daemon for testing."""
+        """Create daemon for testing.
+
+        December 2025: Uses _recovery_stats (RecoveryStats) for recovery-specific metrics.
+        HandlerBase._stats is for generic handler stats.
+
+        RecoveryStats aliases:
+        - total_checks -> jobs_processed
+        - nodes_recovered -> jobs_succeeded
+        - recovery_failures -> jobs_failed
+        """
         daemon = NodeRecoveryDaemon()
         daemon._running = True
-        daemon._stats.jobs_processed = 100
-        daemon._stats.jobs_succeeded = 5
-        daemon._stats.jobs_failed = 2
-        daemon._stats.preemptive_recoveries = 1
+        # Set the underlying attributes (aliases are read-only properties)
+        daemon._recovery_stats.jobs_processed = 100  # total_checks
+        daemon._recovery_stats.jobs_succeeded = 5    # nodes_recovered
+        daemon._recovery_stats.jobs_failed = 2       # recovery_failures
+        daemon._recovery_stats.preemptive_recoveries = 1
         return daemon
 
     def test_get_status_includes_recovery_stats(self, daemon):
@@ -682,30 +721,41 @@ class TestRecoveryExecution:
 
 
 class TestDaemonLifecycle:
-    """Tests for daemon lifecycle methods."""
+    """Tests for daemon lifecycle methods.
+
+    December 2025: Updated for HandlerBase migration.
+    - Uses stop() instead of _on_stop()
+    - _subscribe_to_events is now _get_event_subscriptions()
+    """
 
     @pytest.fixture
     def daemon(self):
         """Create daemon for testing."""
         return NodeRecoveryDaemon()
 
-    @pytest.mark.asyncio
-    async def test_on_start_logs_config(self, daemon):
-        """Should log configuration on start."""
-        with patch.object(daemon, "_subscribe_to_events"):
-            await daemon._on_start()
-        # Just verify no exception raised
+    def test_get_event_subscriptions(self, daemon):
+        """Should define event subscriptions.
+
+        December 2025: Replaced _subscribe_to_events test.
+        HandlerBase uses _get_event_subscriptions() returning a dict.
+        """
+        subs = daemon._get_event_subscriptions()
+        assert isinstance(subs, dict)
+        # NodeRecoveryDaemon subscribes to P2P_NODES_DEAD and P2P_NODE_DEAD
+        assert "P2P_NODES_DEAD" in subs
+        assert "P2P_NODE_DEAD" in subs
 
     @pytest.mark.asyncio
-    async def test_on_stop_closes_http_session(self, daemon):
+    async def test_stop_closes_http_session(self, daemon):
         """Should close HTTP session on stop."""
         mock_session = AsyncMock()
         daemon._http_session = mock_session
+        daemon._running = True
 
         with patch(
             "app.coordination.event_emitters.emit_coordinator_shutdown",
             new_callable=AsyncMock,
         ):
-            await daemon._on_stop()
+            await daemon.stop()
 
         mock_session.close.assert_called_once()

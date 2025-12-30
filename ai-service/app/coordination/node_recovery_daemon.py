@@ -34,8 +34,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
-from app.coordination.contracts import HealthCheckResult
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import JobDaemonStats
@@ -85,13 +84,18 @@ class NodeProvider(Enum):
 
 
 @dataclass
-class NodeRecoveryConfig(DaemonConfig):
+class NodeRecoveryConfig:
     """Configuration for node recovery.
 
-    Extends DaemonConfig with recovery-specific settings.
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
 
-    December 2025: Added escalation tiers for graduated recovery responses.
+    Added escalation tiers for graduated recovery responses.
     """
+
+    # Daemon control
+    check_interval_seconds: int = 300  # 5 minutes
+    enabled: bool = True
 
     # Provider-specific settings
     lambda_api_key: str = ""
@@ -198,22 +202,28 @@ class RecoveryStats(JobDaemonStats):
         self.record_job_failure(error)
 
 
-class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
+class NodeRecoveryDaemon(HandlerBase):
     """Daemon that monitors nodes and triggers recovery actions.
 
     Continuously monitors cluster for terminated or failing nodes
     and automatically triggers recovery when possible.
 
-    Inherits from BaseDaemon which provides:
-    - Lifecycle management (start/stop)
-    - Coordinator protocol registration
-    - Protected main loop with error handling
-    - Health check interface
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _get_event_subscriptions() for event registration
     """
 
     def __init__(self, config: NodeRecoveryConfig | None = None):
-        super().__init__(config)
-        self._stats = RecoveryStats()
+        self._daemon_config = config or NodeRecoveryConfig.from_env()
+
+        super().__init__(
+            name="NodeRecoveryDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
+        # Recovery-specific stats (supplement HandlerBase._stats)
+        self._recovery_stats = RecoveryStats()
 
         # Track node states
         self._node_states: dict[str, NodeInfo] = {}
@@ -221,48 +231,27 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
         # HTTP session for API calls
         self._http_session = None
 
-    @staticmethod
-    def _get_default_config() -> NodeRecoveryConfig:
-        """Return default configuration."""
-        return NodeRecoveryConfig.from_env()
-
-    async def _on_start(self) -> None:
-        """Initialize on startup."""
+        # Log startup configuration
         logger.info(
-            f"[{self._get_daemon_name()}] Config: "
-            f"interval={self.config.check_interval_seconds}s, "
-            f"lambda_api={'set' if self.config.lambda_api_key else 'not set'}"
+            f"[{self.name}] Config: "
+            f"interval={self._daemon_config.check_interval_seconds}s, "
+            f"lambda_api={'set' if self._daemon_config.lambda_api_key else 'not set'}"
         )
-        # Subscribe to P2P node death events
-        self._subscribe_to_events()
 
-    def _subscribe_to_events(self) -> None:
-        """Subscribe to cluster health events."""
-        try:
-            from app.coordination.event_router import get_router, DataEventType
+    @property
+    def config(self) -> NodeRecoveryConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
 
-            router = get_router()
+    def _get_event_subscriptions(self) -> dict:
+        """Return event subscriptions for HandlerBase.
 
-            # Subscribe to node death events (batch)
-            router.subscribe(
-                DataEventType.P2P_NODES_DEAD.value,
-                self._on_nodes_dead
-            )
-
-            # Subscribe to single node death events (Dec 2025 fix)
-            if hasattr(DataEventType, 'P2P_NODE_DEAD'):
-                router.subscribe(
-                    DataEventType.P2P_NODE_DEAD.value,
-                    self._on_single_node_dead
-                )
-                logger.info("[NodeRecoveryDaemon] Subscribed to P2P_NODE_DEAD events")
-
-            logger.info("[NodeRecoveryDaemon] Subscribed to P2P_NODES_DEAD events")
-
-        except ImportError:
-            logger.debug("Event router not available")
-        except Exception as e:
-            logger.warning(f"Failed to subscribe to events: {e}")
+        December 2025: Converted from _subscribe_to_events() for HandlerBase pattern.
+        """
+        return {
+            "P2P_NODES_DEAD": self._on_nodes_dead,
+            "P2P_NODE_DEAD": self._on_single_node_dead,
+        }
 
     def _on_nodes_dead(self, event) -> None:
         """Handle P2P_NODES_DEAD event (batch of dead nodes)."""
@@ -310,10 +299,10 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
                 f"will track on next cluster scan"
             )
 
-    async def _on_stop(self) -> None:
+    async def stop(self) -> None:
         """Graceful shutdown handler.
 
-        December 2025: Added for clean daemon shutdown with event emission.
+        December 2025: Override HandlerBase.stop() for clean daemon shutdown.
         """
         # Close HTTP session
         if self._http_session:
@@ -321,9 +310,9 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
 
         # Log stats
         logger.info(
-            f"[{self._get_daemon_name()}] Stats: "
-            f"{self._stats.nodes_recovered} recovered, "
-            f"{self._stats.recovery_failures} failures"
+            f"[{self.name}] Stats: "
+            f"{self._recovery_stats.nodes_recovered} recovered, "
+            f"{self._recovery_stats.recovery_failures} failures"
         )
 
         try:
@@ -331,30 +320,32 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             from app.coordination.event_emitters import emit_coordinator_shutdown
 
             await emit_coordinator_shutdown(
-                coordinator_name=self._get_daemon_name(),
+                coordinator_name=self.name,
                 reason="graceful",
                 remaining_tasks=0,
                 state_snapshot={
-                    "uptime_seconds": self.uptime_seconds,
-                    "total_checks": self._stats.total_checks,
-                    "nodes_recovered": self._stats.nodes_recovered,
-                    "recovery_failures": self._stats.recovery_failures,
+                    "total_checks": self._recovery_stats.total_checks,
+                    "nodes_recovered": self._recovery_stats.nodes_recovered,
+                    "recovery_failures": self._recovery_stats.recovery_failures,
                     "tracked_nodes": len(self._node_states),
                 },
             )
-            logger.info(f"[{self._get_daemon_name()}] Graceful shutdown complete")
+            logger.info(f"[{self.name}] Graceful shutdown complete")
         except ImportError:
-            logger.debug(f"[{self._get_daemon_name()}] Event emitters not available for shutdown")
+            logger.debug(f"[{self.name}] Event emitters not available for shutdown")
         except Exception as e:
-            logger.warning(f"[{self._get_daemon_name()}] Error during shutdown: {e}")
+            logger.warning(f"[{self.name}] Error during shutdown: {e}")
+
+        # Call parent stop
+        await super().stop()
 
     async def _run_cycle(self) -> None:
         """Run one recovery cycle.
 
-        Called by BaseDaemon's protected main loop.
+        Called by HandlerBase's main loop.
         """
         await self._check_nodes()
-        self._stats.record_check()  # Updates jobs_processed and last_job_time
+        self._recovery_stats.record_check()  # Updates jobs_processed and last_job_time
 
     async def _check_nodes(self) -> None:
         """Check all known nodes and trigger recovery if needed."""
@@ -636,18 +627,18 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
                 # P0.5 Dec 2025: Verify node actually came back up
                 verified = await self._verify_node_health_after_restart(node)
                 if verified:
-                    self._stats.record_recovery_success()
+                    self._recovery_stats.record_recovery_success()
                     self._emit_recovery_event(node, action, success=True)
                     return True
                 else:
                     # API succeeded but node didn't come back up
-                    self._stats.record_recovery_failure(
+                    self._recovery_stats.record_recovery_failure(
                         f"verification_failed:{node.node_id}"
                     )
                     self._emit_recovery_event(node, action, success=False)
                     return False
             else:
-                self._stats.record_recovery_failure(f"restart_failed:{node.node_id}")
+                self._recovery_stats.record_recovery_failure(f"restart_failed:{node.node_id}")
                 self._emit_recovery_event(node, action, success=False)
                 return False
 
@@ -657,18 +648,18 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
                 # P0.5 Dec 2025: Verify node actually came back up
                 verified = await self._verify_node_health_after_restart(node)
                 if verified:
-                    self._stats.record_recovery_success(preemptive=True)
+                    self._recovery_stats.record_recovery_success(preemptive=True)
                     self._emit_recovery_event(node, action, success=True)
                     return True
                 else:
                     # API succeeded but node didn't come back up
-                    self._stats.record_recovery_failure(
+                    self._recovery_stats.record_recovery_failure(
                         f"preemptive_verification_failed:{node.node_id}"
                     )
                     self._emit_recovery_event(node, action, success=False)
                     return False
             else:
-                self._stats.record_recovery_failure(
+                self._recovery_stats.record_recovery_failure(
                     f"preemptive_restart_failed:{node.node_id}"
                 )
                 self._emit_recovery_event(node, action, success=False)
@@ -1128,13 +1119,13 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             except (OSError, IOError) as e:
                 logger.debug(f"Failed to emit recovery event (I/O error): {e}")
 
-    async def health_check(self) -> HealthCheckResult:
+    def health_check(self) -> HealthCheckResult:
         """Check if the daemon is healthy.
 
         Returns HealthCheckResult for protocol compliance.
         Used by DaemonManager for crash detection and auto-restart.
 
-        Dec 2025: Fixed to return HealthCheckResult instead of bool.
+        December 2025: Sync method for HandlerBase pattern.
         """
         is_healthy = True
         message = "Node recovery daemon running"
@@ -1150,30 +1141,30 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             )
 
         # Check if we have recent check data (within 2x check interval)
-        if self._stats.last_job_time > 0:
+        if self._recovery_stats.last_job_time > 0:
             max_age = self.config.check_interval_seconds * 2
-            age = time.time() - self._stats.last_job_time
+            age = time.time() - self._recovery_stats.last_job_time
             if age > max_age:
                 is_healthy = False
                 status = CoordinatorStatus.DEGRADED
                 message = f"Stale check data (age={age:.0f}s, max={max_age}s)"
-                logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
+                logger.warning(f"[{self.name}] Health check: {message}")
 
         # Check for excessive failures
-        if is_healthy and self._stats.recovery_failures > 10:
+        if is_healthy and self._recovery_stats.recovery_failures > 10:
             # Allow if we also have successes (not just all failures)
-            if self._stats.nodes_recovered == 0:
+            if self._recovery_stats.nodes_recovered == 0:
                 is_healthy = False
                 status = CoordinatorStatus.DEGRADED
-                message = f"Only failures, no recoveries (failures={self._stats.recovery_failures})"
-                logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
+                message = f"Only failures, no recoveries (failures={self._recovery_stats.recovery_failures})"
+                logger.warning(f"[{self.name}] Health check: {message}")
 
         # Check HTTP session health if used
         if is_healthy and self._http_session is not None and self._http_session.closed:
             is_healthy = False
             status = CoordinatorStatus.DEGRADED
             message = "HTTP session closed unexpectedly"
-            logger.warning(f"[{self._get_daemon_name()}] Health check: {message}")
+            logger.warning(f"[{self.name}] Health check: {message}")
 
         return HealthCheckResult(
             healthy=is_healthy,
@@ -1181,9 +1172,11 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
             message=message,
             details={
                 "running": self._running,
-                "nodes_recovered": self._stats.nodes_recovered,
-                "recovery_failures": self._stats.recovery_failures,
-                "last_job_time": self._stats.last_job_time,
+                "cycles_completed": self._stats.cycles_completed,
+                "nodes_recovered": self._recovery_stats.nodes_recovered,
+                "recovery_failures": self._recovery_stats.recovery_failures,
+                "last_job_time": self._recovery_stats.last_job_time,
+                "error_count": self._stats.errors_count,
             },
         )
 
@@ -1204,44 +1197,58 @@ class NodeRecoveryDaemon(BaseDaemon[NodeRecoveryConfig]):
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for monitoring.
 
-        Extends base class status with recovery-specific fields.
+        December 2025: Updated for HandlerBase pattern.
+        Uses HandlerStats attributes (last_activity, errors_count).
         """
-        status = super().get_status()
+        from datetime import datetime
 
-        # Add recovery-specific stats
-        status["recovery_stats"] = {
-            "total_checks": self._stats.total_checks,
-            "nodes_recovered": self._stats.nodes_recovered,
-            "recovery_failures": self._stats.recovery_failures,
-            "preemptive_recoveries": self._stats.preemptive_recoveries,
-            "last_check_time": self._stats.last_job_time,  # Use underlying field
-            "last_error": self._stats.last_error,
+        # Convert last_activity timestamp to ISO string if set
+        last_activity_iso = None
+        if self._stats.last_activity > 0:
+            last_activity_iso = datetime.fromtimestamp(self._stats.last_activity).isoformat()
+
+        return {
+            "running": self._running,
+            "config": {
+                "enabled": self.config.enabled,
+                "check_interval_seconds": self.config.check_interval_seconds,
+                "preemptive_recovery_enabled": self.config.preemptive_recovery_enabled,
+            },
+            "stats": {
+                "cycles_completed": self._stats.cycles_completed,
+                "last_activity": last_activity_iso,
+                "error_count": self._stats.errors_count,
+                "events_processed": self._stats.events_processed,
+            },
+            "recovery_stats": {
+                "total_checks": self._recovery_stats.total_checks,
+                "nodes_recovered": self._recovery_stats.nodes_recovered,
+                "recovery_failures": self._recovery_stats.recovery_failures,
+                "preemptive_recoveries": self._recovery_stats.preemptive_recoveries,
+                "last_check_time": self._recovery_stats.last_job_time,
+                "last_error": self._recovery_stats.last_error,
+            },
+            "tracked_nodes": len(self._node_states),
+            "nodes": self.get_node_states(),
         }
-        status["tracked_nodes"] = len(self._node_states)
-        status["nodes"] = self.get_node_states()
-
-        return status
 
 
 # =============================================================================
-# Module-level Singleton Factory (December 2025)
+# Singleton Access (using HandlerBase class methods)
 # =============================================================================
-
-_node_recovery_daemon: NodeRecoveryDaemon | None = None
 
 
 def get_node_recovery_daemon() -> NodeRecoveryDaemon:
-    """Get the singleton NodeRecoveryDaemon instance.
+    """Get or create the singleton NodeRecoveryDaemon instance.
 
-    December 2025: Added for consistency with other daemon factories.
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
     """
-    global _node_recovery_daemon
-    if _node_recovery_daemon is None:
-        _node_recovery_daemon = NodeRecoveryDaemon()
-    return _node_recovery_daemon
+    return NodeRecoveryDaemon.get_instance()
 
 
 def reset_node_recovery_daemon() -> None:
-    """Reset the singleton (for testing)."""
-    global _node_recovery_daemon
-    _node_recovery_daemon = None
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
+    NodeRecoveryDaemon.reset_instance()

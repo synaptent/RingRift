@@ -729,3 +729,163 @@ class TestNetworkIsolationDetection:
         assert status["isolation_status"]["enabled"] is True
         assert status["isolation_status"]["threshold"] == 3
         assert status["isolation_status"]["min_peer_ratio"] == 0.5
+
+
+class TestExponentialBackoff:
+    """Tests for exponential backoff restart logic (December 30, 2025)."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for backoff tests."""
+        P2PRecoveryDaemon.reset_instance()
+        config = P2PRecoveryConfig(
+            startup_grace_seconds=0,
+            restart_cooldown_seconds=300,  # 5 minutes base
+            restart_backoff_multiplier=2.0,
+            max_cooldown_seconds=1800,  # 30 minutes max
+        )
+        return P2PRecoveryDaemon(config=config)
+
+    def test_backoff_config_defaults(self):
+        """Test exponential backoff config defaults."""
+        config = P2PRecoveryConfig()
+        assert config.restart_backoff_multiplier == 2.0
+        assert config.max_cooldown_seconds == 1800
+
+    def test_backoff_config_custom(self):
+        """Test custom backoff config values."""
+        config = P2PRecoveryConfig(
+            restart_backoff_multiplier=1.5,
+            max_cooldown_seconds=3600,
+        )
+        assert config.restart_backoff_multiplier == 1.5
+        assert config.max_cooldown_seconds == 3600
+
+    def test_initial_cooldown_no_attempts(self, daemon):
+        """Test cooldown is base value with no restart attempts."""
+        assert daemon._restart_attempt_count == 0
+        assert daemon._get_current_cooldown() == 300.0
+
+    def test_cooldown_first_attempt(self, daemon):
+        """Test cooldown after first restart attempt (still base)."""
+        daemon._restart_attempt_count = 1
+        # 300 * 2^1 = 600
+        assert daemon._get_current_cooldown() == 600.0
+
+    def test_cooldown_second_attempt(self, daemon):
+        """Test cooldown after second restart attempt."""
+        daemon._restart_attempt_count = 2
+        # 300 * 2^2 = 1200
+        assert daemon._get_current_cooldown() == 1200.0
+
+    def test_cooldown_third_attempt(self, daemon):
+        """Test cooldown after third restart attempt."""
+        daemon._restart_attempt_count = 3
+        # 300 * 2^3 = 2400, but capped at 1800
+        assert daemon._get_current_cooldown() == 1800.0
+
+    def test_cooldown_capped_at_max(self, daemon):
+        """Test cooldown is capped at max_cooldown_seconds."""
+        daemon._restart_attempt_count = 10  # Would be 300 * 2^10 = 307200
+        assert daemon._get_current_cooldown() == 1800.0  # Capped
+
+    def test_can_restart_with_backoff(self, daemon):
+        """Test _can_restart respects exponential backoff."""
+        daemon._restart_attempt_count = 2
+        # Cooldown should be 1200 seconds
+        daemon._last_restart_time = time.time()
+
+        assert daemon._can_restart() is False
+
+        # Advance time past base cooldown but not backoff cooldown
+        daemon._last_restart_time = time.time() - 600  # 10 minutes ago
+        assert daemon._can_restart() is False
+
+        # Advance time past backoff cooldown
+        daemon._last_restart_time = time.time() - 1300  # > 1200 seconds
+        assert daemon._can_restart() is True
+
+    def test_get_cooldown_remaining_with_backoff(self, daemon):
+        """Test _get_cooldown_remaining with exponential backoff."""
+        daemon._restart_attempt_count = 1
+        daemon._last_restart_time = time.time()
+
+        remaining = daemon._get_cooldown_remaining()
+        # Should be close to 600 seconds (base * 2^1)
+        assert 590 < remaining <= 600
+
+    @pytest.mark.asyncio
+    async def test_restart_increments_attempt_count(self, daemon):
+        """Test that restart increments attempt counter."""
+        assert daemon._restart_attempt_count == 0
+
+        mock_proc = AsyncMock()
+        mock_proc.wait = AsyncMock(return_value=None)
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_create:
+            mock_create.return_value = mock_proc
+
+            with patch("subprocess.Popen") as mock_popen:
+                mock_popen.return_value = MagicMock(pid=12345)
+
+                await daemon._restart_p2p()
+
+        assert daemon._restart_attempt_count == 1
+
+        # Restart again
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_create:
+            mock_create.return_value = mock_proc
+
+            with patch("subprocess.Popen") as mock_popen:
+                mock_popen.return_value = MagicMock(pid=12346)
+
+                await daemon._restart_p2p()
+
+        assert daemon._restart_attempt_count == 2
+
+    @pytest.mark.asyncio
+    async def test_recovery_resets_attempt_count(self, daemon):
+        """Test that recovery resets the attempt counter."""
+        daemon._restart_attempt_count = 3
+        daemon._was_unhealthy = True
+        daemon._running = True
+
+        with patch.object(daemon, "_check_p2p_health", new_callable=AsyncMock) as mock_health:
+            mock_health.return_value = (True, {"alive_peers": 5, "leader_id": "node-1"})
+
+            with patch.object(daemon, "_check_network_isolation", new_callable=AsyncMock) as mock_isolation:
+                mock_isolation.return_value = (False, {"isolation_check": "healthy"})
+
+                with patch.object(daemon, "_emit_recovery_event", new_callable=AsyncMock):
+                    await daemon._run_cycle()
+
+        # Attempt count should be reset
+        assert daemon._restart_attempt_count == 0
+        assert daemon._was_unhealthy is False
+
+    def test_health_check_includes_backoff_info(self, daemon):
+        """Test health check includes backoff information."""
+        daemon._running = True
+        daemon._coordinator_status = CoordinatorStatus.RUNNING
+        daemon._restart_attempt_count = 2
+        daemon._last_restart_time = time.time() - 100
+
+        health = daemon.health_check()
+
+        assert health.healthy is True
+        assert health.details["restart_attempt_count"] == 2
+        assert health.details["current_cooldown_seconds"] == 1200.0  # 300 * 2^2
+        assert health.details["cooldown_remaining_seconds"] > 0
+
+    def test_health_check_backoff_info_when_unhealthy(self, daemon):
+        """Test health check includes backoff info when P2P is unhealthy."""
+        daemon._running = True
+        daemon._coordinator_status = CoordinatorStatus.RUNNING
+        daemon._consecutive_failures = daemon.config.max_consecutive_failures
+        daemon._restart_attempt_count = 1
+
+        health = daemon.health_check()
+
+        assert health.details["restart_attempt_count"] == 1
+        assert health.details["current_cooldown_seconds"] == 600.0

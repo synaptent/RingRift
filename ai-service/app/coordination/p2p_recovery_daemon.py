@@ -53,12 +53,17 @@ class P2PRecoveryConfig(DaemonConfig):
         max_leader_gap_seconds: Maximum seconds without a leader before forcing election (default: 120)
         quorum_recovery_enabled: Enable automatic quorum recovery (default: True)
         leader_election_endpoint: Endpoint to trigger leader election
+        # Dec 30, 2025: Exponential backoff for restart attempts
+        restart_backoff_multiplier: Multiplier for exponential backoff (default: 2.0)
+        max_cooldown_seconds: Maximum cooldown between restarts (default: 30 min)
     """
 
     check_interval_seconds: int = 60
     health_endpoint: str = "http://localhost:8770/status"
     max_consecutive_failures: int = 3
-    restart_cooldown_seconds: int = 300  # 5 minutes
+    restart_cooldown_seconds: int = 300  # 5 minutes (initial cooldown)
+    restart_backoff_multiplier: float = 2.0  # Double cooldown each attempt
+    max_cooldown_seconds: int = 1800  # 30 minutes max cooldown
     health_timeout_seconds: float = 10.0
     min_alive_peers: int = 3
     startup_grace_seconds: int = 30
@@ -179,6 +184,8 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         self._last_leader_seen_time = time.time()
         self._leader_gap_elections_triggered = 0
         self._quorum_recovery_attempts = 0
+        # Dec 30, 2025: Exponential backoff for restarts
+        self._restart_attempt_count = 0  # Consecutive restart attempts without recovery
 
     @staticmethod
     def _get_default_config() -> P2PRecoveryConfig:
@@ -239,6 +246,13 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             if self._was_unhealthy:
                 await self._emit_recovery_event(status)
                 self._was_unhealthy = False
+                # Dec 30, 2025: Reset exponential backoff on recovery
+                if self._restart_attempt_count > 0:
+                    logger.info(
+                        f"P2P recovered after {self._restart_attempt_count} restart attempts, "
+                        "resetting backoff"
+                    )
+                    self._restart_attempt_count = 0
 
         # Dec 29, 2025: Check for leader gap and trigger election if needed
         leader_gap_seconds = time.time() - self._last_leader_seen_time
@@ -413,26 +427,53 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
 
         return is_isolated, details
 
+    def _get_current_cooldown(self) -> float:
+        """Calculate current cooldown with exponential backoff.
+
+        Dec 30, 2025: Implements exponential backoff for consecutive restart
+        attempts. Cooldown doubles after each failed restart until max is reached.
+
+        Formula: base_cooldown * (multiplier ** attempt_count)
+        Capped at max_cooldown_seconds.
+        """
+        if self._restart_attempt_count == 0:
+            return float(self.config.restart_cooldown_seconds)
+
+        backoff_cooldown = (
+            self.config.restart_cooldown_seconds
+            * (self.config.restart_backoff_multiplier ** self._restart_attempt_count)
+        )
+        return min(backoff_cooldown, float(self.config.max_cooldown_seconds))
+
     def _can_restart(self) -> bool:
         """Check if we can restart (cooldown has passed)."""
         if self._last_restart_time == 0:
             return True
         elapsed = time.time() - self._last_restart_time
-        return elapsed >= self.config.restart_cooldown_seconds
+        current_cooldown = self._get_current_cooldown()
+        return elapsed >= current_cooldown
 
     def _get_cooldown_remaining(self) -> float:
-        """Get seconds remaining in cooldown period."""
+        """Get seconds remaining in cooldown period (with exponential backoff)."""
         if self._last_restart_time == 0:
             return 0
         elapsed = time.time() - self._last_restart_time
-        return max(0, self.config.restart_cooldown_seconds - elapsed)
+        current_cooldown = self._get_current_cooldown()
+        return max(0, current_cooldown - elapsed)
 
     async def _restart_p2p(self) -> None:
         """Restart the P2P orchestrator process.
 
         December 2025: Uses asyncio.create_subprocess_exec to avoid blocking the event loop.
+        Dec 30, 2025: Tracks restart attempts for exponential backoff.
         """
-        logger.warning("Initiating P2P orchestrator restart")
+        # Increment restart attempt counter for exponential backoff
+        self._restart_attempt_count += 1
+        current_cooldown = self._get_current_cooldown()
+        logger.warning(
+            f"Initiating P2P orchestrator restart (attempt {self._restart_attempt_count}, "
+            f"next cooldown: {current_cooldown:.0f}s)"
+        )
 
         # Update tracking
         self._last_restart_time = time.time()
@@ -635,6 +676,9 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
                     "last_status": self._last_status,
                     "total_restarts": self._total_restarts,
                     "isolation_checks": self._consecutive_isolation_checks,
+                    "restart_attempt_count": self._restart_attempt_count,
+                    "current_cooldown_seconds": self._get_current_cooldown(),
+                    "cooldown_remaining_seconds": self._get_cooldown_remaining(),
                 },
             )
 
@@ -665,6 +709,9 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
                 "total_restarts": self._total_restarts,
                 "isolation_triggered_restarts": self._isolation_triggered_restarts,
                 "leader_gap_elections_triggered": self._leader_gap_elections_triggered,
+                "restart_attempt_count": self._restart_attempt_count,
+                "current_cooldown_seconds": self._get_current_cooldown(),
+                "cooldown_remaining_seconds": self._get_cooldown_remaining(),
                 "last_status": self._last_status,
             },
         )

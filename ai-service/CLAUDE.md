@@ -59,13 +59,13 @@ python scripts/update_all_nodes.py --restart-p2p
 | `app/config/coordination_defaults.py` | Centralized timeouts, thresholds, priority weights             |
 | `app/config/thresholds.py`            | Centralized quality/training/budget thresholds (canonical)     |
 
-### Coordination Infrastructure (257 modules)
+### Coordination Infrastructure (260 modules)
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 89 daemon types (~2,000 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 99 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 89 async runner functions                         |
+| `daemon_runners.py`                    | 99 async runner functions                         |
 | `event_router.py`                      | Unified event bus (211 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
@@ -412,11 +412,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-89 daemon types (78 active, 11 deprecated). Three-layer architecture:
+99 daemon types (88 active, 11 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 89 async runner functions
+3. **`daemon_runners.py`** - 99 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -849,28 +849,28 @@ Exploration agents may report stale findings. Use `grep` and code inspection to 
 
 Test coverage has been expanded for training modules:
 
-| Module                     | LOC | Test File                       | Tests | Status     |
-| -------------------------- | --- | ------------------------------- | ----- | ---------- |
-| `data_validation.py`       | 749 | `test_data_validation.py`       | 57    | ✅ NEW     |
-| `adaptive_controller.py`   | 835 | `test_adaptive_controller.py`   | 56    | ✅ NEW     |
-| `architecture_tracker.py`  | 520 | `test_architecture_tracker.py`  | 62    | ✅ FIXED   |
-| `event_driven_selfplay.py` | 650 | `test_event_driven_selfplay.py` | 36    | ✅ Exists  |
-| `streaming_pipeline.py`    | 794 | -                               | 0     | ⚠️ Missing |
+| Module                     | LOC | Test File                       | Tests | Status    |
+| -------------------------- | --- | ------------------------------- | ----- | --------- |
+| `data_validation.py`       | 749 | `test_data_validation.py`       | 57    | ✅ NEW    |
+| `adaptive_controller.py`   | 835 | `test_adaptive_controller.py`   | 56    | ✅ NEW    |
+| `architecture_tracker.py`  | 520 | `test_architecture_tracker.py`  | 62    | ✅ FIXED  |
+| `event_driven_selfplay.py` | 650 | `test_event_driven_selfplay.py` | 36    | ✅ Exists |
+| `streaming_pipeline.py`    | 794 | `test_streaming_pipeline.py`    | 40    | ✅ Exists |
+| `reanalysis.py`            | 734 | `test_reanalysis.py`            | 24    | ✅ Exists |
 
-**Training Modules Without Tests (7,381 LOC total):**
+**Training Modules Without Tests (5,154 LOC total):**
 
 | Module                   | LOC | Purpose                                 |
 | ------------------------ | --- | --------------------------------------- |
-| `streaming_pipeline.py`  | 794 | Real-time game data streaming           |
-| `reanalysis.py`          | 734 | Re-evaluates games with current model   |
 | `training_facade.py`     | 725 | Unified training enhancements interface |
 | `multi_task_learning.py` | 720 | Auxiliary tasks: outcome prediction     |
 | `ebmo_dataset.py`        | 718 | EBMO training dataset loader            |
 | `tournament.py`          | 704 | Tournament evaluation system            |
 | `train_gmo_selfplay.py`  | 699 | Gumbel MCTS selfplay training           |
-| `env.py`                 | 699 | Game environment implementation         |
 | `ebmo_trainer.py`        | 696 | EBMO ensemble training orchestrator     |
 | `data_loader_factory.py` | 692 | Factory for specialized data loaders    |
+
+**Note**: `env.py` tests exist at `tests/unit/config/test_env.py` (33 tests) for `app/config/env.py`.
 
 **Recent Test Fixes (Dec 30, 2025):**
 
