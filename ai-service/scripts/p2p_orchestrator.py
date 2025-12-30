@@ -17100,6 +17100,114 @@ print(json.dumps({{
             except (ImportError, RuntimeError, AttributeError):
                 pass  # Event system not available or no event loop
 
+    async def _update_self_info_async(self):
+        """Async version of _update_self_info() to avoid blocking event loop.
+
+        Dec 30, 2025: Added to fix gossip latency issues on coordinator nodes.
+        The sync version calls subprocess for resource detection which blocks
+        the event loop. This async version uses asyncio.to_thread() for those
+        blocking operations.
+        """
+        import asyncio
+
+        # Run blocking operations in thread pool
+        usage = await self._get_resource_usage_async()
+        selfplay, training = await asyncio.to_thread(self._count_local_jobs)
+
+        # NAT/relay detection (fast, no subprocess)
+        now = time.time()
+        if self.known_peers or self.peers:
+            last_inbound = self.last_inbound_heartbeat or self.start_time
+            self.self_info.nat_blocked = (now - last_inbound) >= NAT_INBOUND_HEARTBEAT_STALE_SECONDS
+        else:
+            self.self_info.nat_blocked = False
+
+        if not self.self_info.nat_blocked:
+            self.self_info.relay_via = ""
+        elif self.leader_id and self.leader_id != self.node_id:
+            self.self_info.relay_via = self.leader_id
+
+        self.self_info.cpu_percent = usage["cpu_percent"]
+        self.self_info.memory_percent = usage["memory_percent"]
+        self.self_info.disk_percent = usage["disk_percent"]
+        self.self_info.gpu_percent = usage["gpu_percent"]
+        self.self_info.gpu_memory_percent = usage["gpu_memory_percent"]
+        self.self_info.selfplay_jobs = selfplay
+        self.self_info.training_jobs = training
+        self.self_info.role = self.role
+        self.self_info.last_heartbeat = time.time()
+        self.self_info.leader_id = self.leader_id or ""
+
+        # Run blocking external work detection in thread pool
+        external = await asyncio.to_thread(self._detect_local_external_work)
+        self.self_info.cmaes_running = external.get('cmaes_running', False)
+        self.self_info.gauntlet_running = external.get('gauntlet_running', False)
+        self.self_info.tournament_running = external.get('tournament_running', False)
+        self.self_info.data_merge_running = external.get('data_merge_running', False)
+
+        # Health metrics (NFS check in thread pool as it can block)
+        self.self_info.nfs_accessible = await asyncio.to_thread(self._check_nfs_accessible)
+        self.self_info.code_version = self.build_version
+        self.self_info.errors_last_hour = getattr(self, '_error_count_last_hour', 0)
+        self.self_info.disk_free_gb = usage.get("disk_free_gb", 0.0)
+        self.self_info.active_job_count = (
+            selfplay + training +
+            (1 if self.self_info.cmaes_running else 0) +
+            (1 if self.self_info.gauntlet_running else 0) +
+            (1 if self.self_info.tournament_running else 0)
+        )
+
+        # Report to resource optimizer (fast, in-memory)
+        if HAS_NEW_COORDINATION:
+            try:
+                optimizer = get_resource_optimizer()
+                node_resources = NodeResources(
+                    node_id=self.node_id,
+                    cpu_percent=usage["cpu_percent"],
+                    gpu_percent=usage["gpu_percent"],
+                    memory_percent=usage["memory_percent"],
+                    disk_percent=usage["disk_percent"],
+                    gpu_memory_percent=usage["gpu_memory_percent"],
+                    cpu_count=int(getattr(self.self_info, "cpu_count", 0) or 0),
+                    memory_gb=float(getattr(self.self_info, "memory_gb", 0) or 0),
+                    has_gpu=bool(getattr(self.self_info, "has_gpu", False)),
+                    gpu_name=str(getattr(self.self_info, "gpu_name", "") or ""),
+                    active_jobs=selfplay + training,
+                    selfplay_jobs=selfplay,
+                    training_jobs=training,
+                    orchestrator="p2p_orchestrator",
+                )
+                optimizer.report_node_resources(node_resources)
+            except (ValueError, KeyError, IndexError, AttributeError):
+                pass
+
+        # NODE_CAPACITY_UPDATED event (throttled, fast)
+        last_emit = getattr(self, "_last_capacity_emit_time", 0)
+        if now - last_emit >= 30:
+            self._last_capacity_emit_time = now
+            try:
+                from app.coordination.event_router import get_event_bus
+                from app.distributed.data_events import DataEventType, DataEvent
+
+                bus = get_event_bus()
+                if bus:
+                    event = DataEvent(
+                        event_type=DataEventType.NODE_CAPACITY_UPDATED,
+                        payload={
+                            "node_id": self.node_id,
+                            "gpu_utilization": usage["gpu_percent"],
+                            "cpu_utilization": usage["cpu_percent"],
+                            "memory_used_percent": usage["memory_percent"],
+                            "disk_used_percent": usage["disk_percent"],
+                            "gpu_memory_percent": usage["gpu_memory_percent"],
+                            "task_slots_available": max(0, self._get_max_selfplay_jobs() - selfplay - training),
+                            "task_slots_total": self._get_max_selfplay_jobs(),
+                        },
+                    )
+                    bus.publish_sync(event)
+            except (ImportError, RuntimeError, AttributeError):
+                pass
+
     async def _send_heartbeat_to_peer(self, peer_host: str, peer_port: int, scheme: str = "http", timeout: int = 10) -> NodeInfo | None:
         """Send heartbeat to a peer and return their info.
 

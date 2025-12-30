@@ -762,7 +762,11 @@ class GossipProtocolMixin(P2PMixinBase):
         self._last_gossip_time = now
 
         # Prepare our state to share
-        self._update_self_info()
+        # Dec 30, 2025: Use async version to avoid blocking event loop with subprocess calls
+        if hasattr(self, '_update_self_info_async'):
+            await self._update_self_info_async()
+        else:
+            self._update_self_info()  # Fallback for legacy orchestrators
         local_state = self._build_local_gossip_state(now)
 
         # Select K random peers to gossip with
@@ -1368,13 +1372,16 @@ class GossipProtocolMixin(P2PMixinBase):
         peer = random.choice(alive_peers)
 
         # Prepare full state dump (not just recent states)
-        full_state = self._build_anti_entropy_state(now)
+        full_state = await self._build_anti_entropy_state_async(now)
 
         # Send anti-entropy request
         await self._send_anti_entropy_request(peer, full_state, now)
 
-    def _build_anti_entropy_state(self, now: float) -> dict[str, Any]:
-        """Build full state for anti-entropy repair."""
+    async def _build_anti_entropy_state_async(self, now: float) -> dict[str, Any]:
+        """Build full state for anti-entropy repair (async version).
+
+        Dec 30, 2025: Converted to async to avoid blocking event loop.
+        """
         full_state: dict[str, Any] = {
             "anti_entropy": True,  # Flag for full state exchange
             "sender": self.node_id,
@@ -1387,8 +1394,11 @@ class GossipProtocolMixin(P2PMixinBase):
         for node_id, state in gossip_states.items():
             full_state["all_known_states"][node_id] = state
 
-        # Include our own state
-        self._update_self_info()
+        # Include our own state (use async version if available)
+        if hasattr(self, '_update_self_info_async'):
+            await self._update_self_info_async()
+        else:
+            self._update_self_info()
         full_state["all_known_states"][self.node_id] = {
             "node_id": self.node_id,
             "timestamp": now,
