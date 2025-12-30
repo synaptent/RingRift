@@ -485,3 +485,153 @@ class TestEdgeCases:
         assert result.harness_results == {}
         assert result.best_harness is None
         assert result.best_elo == 0.0
+
+
+# =============================================================================
+# NNUE Evaluation Profile Tests (Phase 4)
+# =============================================================================
+
+
+class TestNNUEEvaluationProfile:
+    """Tests for NNUEEvaluationProfile dataclass."""
+
+    def test_default_values(self):
+        """Default profile has expected values."""
+        from app.training.multi_harness_gauntlet import NNUEEvaluationProfile
+
+        profile = NNUEEvaluationProfile()
+        assert profile.board_type == "square8"
+        assert profile.num_players == 2
+        assert profile.minimax_depth == 4
+        assert profile.maxn_depth == 3
+        assert profile.brs_depth == 3
+        assert profile.games_per_baseline == 30
+        assert profile.include_brs is True
+
+    def test_custom_values(self):
+        """Profile accepts custom values."""
+        from app.training.multi_harness_gauntlet import NNUEEvaluationProfile
+
+        profile = NNUEEvaluationProfile(
+            board_type="hex8",
+            num_players=4,
+            minimax_depth=6,
+            maxn_depth=4,
+            games_per_baseline=50,
+        )
+        assert profile.board_type == "hex8"
+        assert profile.num_players == 4
+        assert profile.minimax_depth == 6
+        assert profile.maxn_depth == 4
+        assert profile.games_per_baseline == 50
+
+    def test_get_harnesses_2_player(self):
+        """2-player profile returns minimax harness."""
+        from app.training.multi_harness_gauntlet import (
+            HarnessType,
+            NNUEEvaluationProfile,
+        )
+
+        profile = NNUEEvaluationProfile(num_players=2)
+        harnesses = profile.get_harnesses()
+
+        assert len(harnesses) == 1
+        assert HarnessType.MINIMAX in harnesses
+
+    def test_get_harnesses_4_player(self):
+        """4-player profile returns maxn and brs harnesses."""
+        from app.training.multi_harness_gauntlet import (
+            HarnessType,
+            NNUEEvaluationProfile,
+        )
+
+        profile = NNUEEvaluationProfile(num_players=4)
+        harnesses = profile.get_harnesses()
+
+        assert HarnessType.MAXN in harnesses
+        assert HarnessType.BRS in harnesses
+
+    def test_get_harnesses_4_player_no_brs(self):
+        """4-player profile without BRS returns only maxn."""
+        from app.training.multi_harness_gauntlet import (
+            HarnessType,
+            NNUEEvaluationProfile,
+        )
+
+        profile = NNUEEvaluationProfile(num_players=4, include_brs=False)
+        harnesses = profile.get_harnesses()
+
+        assert harnesses == [HarnessType.MAXN]
+
+    def test_get_harness_config_minimax(self):
+        """Minimax config uses minimax_depth."""
+        from app.training.multi_harness_gauntlet import (
+            HarnessType,
+            NNUEEvaluationProfile,
+        )
+
+        profile = NNUEEvaluationProfile(minimax_depth=5)
+        config = profile.get_harness_config(HarnessType.MINIMAX)
+
+        assert config.harness_type == HarnessType.MINIMAX
+        assert config.search_depth == 5
+
+    def test_get_harness_config_maxn(self):
+        """MaxN config uses maxn_depth."""
+        from app.training.multi_harness_gauntlet import (
+            HarnessType,
+            NNUEEvaluationProfile,
+        )
+
+        profile = NNUEEvaluationProfile(maxn_depth=4)
+        config = profile.get_harness_config(HarnessType.MAXN)
+
+        assert config.harness_type == HarnessType.MAXN
+        assert config.search_depth == 4
+
+    def test_get_harness_config_brs(self):
+        """BRS config uses brs_depth."""
+        from app.training.multi_harness_gauntlet import (
+            HarnessType,
+            NNUEEvaluationProfile,
+        )
+
+        profile = NNUEEvaluationProfile(brs_depth=2)
+        config = profile.get_harness_config(HarnessType.BRS)
+
+        assert config.harness_type == HarnessType.BRS
+        assert config.search_depth == 2
+
+
+class TestGetNNUEEvaluationProfile:
+    """Tests for get_nnue_evaluation_profile function."""
+
+    def test_standard_profile(self):
+        """Standard profile has expected settings."""
+        from app.training.multi_harness_gauntlet import get_nnue_evaluation_profile
+
+        profile = get_nnue_evaluation_profile("hex8", 2)
+
+        assert profile.board_type == "hex8"
+        assert profile.num_players == 2
+        assert profile.minimax_depth == 4
+        assert profile.games_per_baseline == 30
+
+    def test_fast_profile(self):
+        """Fast profile has reduced settings."""
+        from app.training.multi_harness_gauntlet import get_nnue_evaluation_profile
+
+        profile = get_nnue_evaluation_profile("hex8", 2, fast=True)
+
+        assert profile.minimax_depth == 2
+        assert profile.games_per_baseline == 10
+
+    def test_multiplayer_profile(self):
+        """Multiplayer profile uses correct depths."""
+        from app.training.multi_harness_gauntlet import get_nnue_evaluation_profile
+
+        profile = get_nnue_evaluation_profile("square8", 4)
+
+        assert profile.num_players == 4
+        assert profile.maxn_depth == 3
+        assert profile.brs_depth == 3
