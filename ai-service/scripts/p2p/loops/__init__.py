@@ -103,6 +103,10 @@ from .discovery_loop import (
 )
 from .manifest_collection_loop import ManifestCollectionLoop
 from .queue_populator_loop import QueuePopulatorLoop
+from .peer_cleanup_loop import (
+    PeerCleanupConfig,
+    PeerCleanupLoop,
+)
 from .peer_recovery_loop import (
     PeerRecoveryConfig,
     PeerRecoveryLoop,
@@ -182,6 +186,9 @@ __all__ = [
     "TrainingSyncLoop",
     # Manifest
     "ManifestCollectionLoop",
+    # Peer Cleanup (Dec 2025)
+    "PeerCleanupConfig",
+    "PeerCleanupLoop",
     # Peer Recovery (Dec 2025)
     "PeerRecoveryConfig",
     "PeerRecoveryLoop",

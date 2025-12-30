@@ -40,6 +40,8 @@ from typing import (
     Any,
 )
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -540,8 +542,12 @@ class ThreadSpawner:
 
         return threads
 
-    def health_check(self) -> dict[str, Any]:
-        """Get health status of all threads."""
+    def health_check(self) -> HealthCheckResult:
+        """Get health status of all threads.
+
+        Returns:
+            HealthCheckResult with healthy status, message, and details.
+        """
         with self._lock:
             threads = list(self._threads.values())
 
@@ -560,13 +566,34 @@ class ThreadSpawner:
                 healthy = False
                 unhealthy_threads.append(thread.name)
 
-        return {
-            "healthy": healthy,
-            "unhealthy_threads": unhealthy_threads,
-            "running": sum(1 for t in threads if t.is_running),
-            "failed": sum(1 for t in threads if t.state == ThreadState.FAILED),
-            "completed": sum(1 for t in threads if t.state == ThreadState.COMPLETED),
-        }
+        running_count = sum(1 for t in threads if t.is_running)
+        failed_count = sum(1 for t in threads if t.state == ThreadState.FAILED)
+        completed_count = sum(1 for t in threads if t.state == ThreadState.COMPLETED)
+
+        # Determine status and message
+        if not healthy:
+            status = CoordinatorStatus.DEGRADED
+            message = f"{len(unhealthy_threads)} threads unhealthy: {', '.join(unhealthy_threads[:3])}"
+            if len(unhealthy_threads) > 3:
+                message += f" (+{len(unhealthy_threads) - 3} more)"
+        elif running_count > 0:
+            status = CoordinatorStatus.RUNNING
+            message = f"{running_count} threads running, {completed_count} completed"
+        else:
+            status = CoordinatorStatus.READY
+            message = f"No threads running, {completed_count} completed"
+
+        return HealthCheckResult(
+            healthy=healthy,
+            status=status,
+            message=message,
+            details={
+                "unhealthy_threads": unhealthy_threads,
+                "running": running_count,
+                "failed": failed_count,
+                "completed": completed_count,
+            },
+        )
 
 
 # =============================================================================

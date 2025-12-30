@@ -24,6 +24,7 @@ December 2025: Migrated to use handlers_base.py utilities for event bridge.
 
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
 import logging
@@ -110,7 +111,9 @@ class GossipHandlersMixin(BaseP2PHandler):
                 is_gzip = len(body) >= 2 and body[:2] == b"\x1f\x8b"
                 if is_gzip:
                     try:
-                        decompressed = gzip.decompress(body)
+                        # Dec 30, 2025: Use asyncio.to_thread() to avoid blocking event loop
+                        # Large payloads (100KB+) can take 50-200ms to decompress
+                        decompressed = await asyncio.to_thread(gzip.decompress, body)
                         data = json.loads(decompressed.decode("utf-8"))
                     except (gzip.BadGzipFile, OSError) as e:
                         # Decompression failed despite magic bytes - treat as raw JSON
@@ -180,8 +183,11 @@ class GossipHandlersMixin(BaseP2PHandler):
 
             # GOSSIP COMPRESSION: Send compressed response if client accepts it
             # Always compress responses for efficiency
+            # Dec 30, 2025: Use asyncio.to_thread() to avoid blocking event loop
             response_json = json.dumps(response_data).encode("utf-8")
-            compressed_response = gzip.compress(response_json, compresslevel=6)
+            compressed_response = await asyncio.to_thread(
+                gzip.compress, response_json, 6  # compresslevel=6
+            )
             return web.Response(
                 body=compressed_response,
                 content_type="application/json",

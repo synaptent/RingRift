@@ -335,6 +335,71 @@ class GameDiscovery:
         """Clear the discovery cache."""
         self._cache.clear()
 
+    # =========================================================================
+    # Event-Driven Cache Invalidation (Dec 30, 2025)
+    # Phase 1.3 of Distributed Data Pipeline Architecture
+    # =========================================================================
+
+    _event_wired: bool = False
+
+    def wire_to_events(self) -> None:
+        """Subscribe to data change events for automatic cache invalidation.
+
+        Dec 30, 2025: Added for Phase 1.3 of distributed data pipeline.
+
+        Subscribes to:
+        - DATA_SYNC_COMPLETED: New data synced from other nodes
+        - SELFPLAY_COMPLETE: New games generated locally
+        - NPZ_EXPORT_COMPLETE: New training data exported
+        - CONSOLIDATION_COMPLETE: Games consolidated into canonical DB
+
+        Thread-safe: Can be called multiple times without re-subscribing.
+        """
+        if self._event_wired:
+            return
+
+        try:
+            from app.coordination.event_router import get_event_router
+            from app.coordination.data_events import DataEventType
+
+            router = get_event_router()
+
+            # Subscribe to events that affect data availability
+            events_to_watch = [
+                DataEventType.DATA_SYNC_COMPLETED,
+                DataEventType.SELFPLAY_COMPLETE,
+                DataEventType.NPZ_EXPORT_COMPLETE,
+            ]
+
+            # Try to add CONSOLIDATION_COMPLETE if it exists
+            if hasattr(DataEventType, "CONSOLIDATION_COMPLETE"):
+                events_to_watch.append(DataEventType.CONSOLIDATION_COMPLETE)
+
+            for event_type in events_to_watch:
+                router.subscribe(event_type, self._on_data_changed)
+
+            self._event_wired = True
+            logger.info("[GameDiscovery] Wired to data change events for cache invalidation")
+
+        except ImportError:
+            logger.debug("[GameDiscovery] Event router not available, skipping event wiring")
+        except Exception as e:
+            logger.warning(f"[GameDiscovery] Failed to wire events: {e}")
+
+    def _on_data_changed(self, event: object) -> None:
+        """Handle data change events by clearing cache.
+
+        Args:
+            event: Event object (DataEvent or similar)
+        """
+        try:
+            # Extract event type for logging
+            event_type = getattr(event, "event_type", type(event).__name__)
+            logger.debug(f"[GameDiscovery] Cache invalidated by {event_type}")
+            self.clear_cache()
+        except Exception as e:
+            logger.warning(f"[GameDiscovery] Error handling data change event: {e}")
+
     def _find_by_pattern(
         self, pattern: str, is_central: bool
     ) -> Iterator[DatabaseInfo]:

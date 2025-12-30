@@ -2,6 +2,7 @@
 
 Provides a unified base class for handlers/daemons with common patterns:
 - Event subscription via EventSubscribingDaemonMixin
+- Safe event emission via SafeEventEmitterMixin
 - Singleton pattern with thread-safe access
 - Standardized health check format (HealthCheckResult)
 - Event deduplication (hash-based)
@@ -14,6 +15,8 @@ Usage:
     from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
     class MyDaemon(HandlerBase):
+        _event_source = "MyDaemon"  # For safe event emission
+
         def __init__(self, config: Optional[MyConfig] = None):
             super().__init__(name="my_daemon", config=config)
 
@@ -24,7 +27,8 @@ Usage:
 
         async def _run_cycle(self) -> None:
             # Main work loop
-            pass
+            # Use safe event emission:
+            await self._safe_emit_event_async("MY_EVENT", {"key": "value"})
 
         async def _on_training_completed(self, event: dict) -> None:
             # Handle event with deduplication
@@ -38,6 +42,7 @@ Usage:
     await daemon.start()
 
 December 2025 - Phase 2 handler consolidation.
+December 30, 2025 - Added SafeEventEmitterMixin for unified event emission.
 """
 
 from __future__ import annotations
@@ -54,6 +59,7 @@ from typing import Any, Callable, ClassVar
 
 # Import canonical types from contracts.py (single source of truth)
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.coordination.safe_event_emitter import SafeEventEmitterMixin
 
 logger = logging.getLogger(__name__)
 
@@ -118,16 +124,22 @@ class HandlerStats:
         return result
 
 
-class HandlerBase(ABC):
+class HandlerBase(SafeEventEmitterMixin, ABC):
     """Base class for daemon handlers with common patterns.
 
     Provides:
     - Singleton management with thread-safe access
     - Event subscription infrastructure
+    - Safe event emission (via SafeEventEmitterMixin)
     - Event deduplication (hash-based with TTL)
     - Standardized health check
     - Error tracking with bounded log
     - Async lifecycle management
+
+    Event Emission:
+        Subclasses inherit _safe_emit_event() and _safe_emit_event_async()
+        from SafeEventEmitterMixin. Set _event_source class attribute to
+        identify the source in emitted events.
 
     Subclasses must implement:
     - _run_cycle(): Main work loop iteration
@@ -1018,6 +1030,7 @@ __all__ = [
     "HandlerBase",
     "HandlerStats",
     "HealthCheckResult",
+    "SafeEventEmitterMixin",
     # Backward-compatible aliases
     "BaseEventHandler",
     "BaseSingletonHandler",

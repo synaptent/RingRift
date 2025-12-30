@@ -381,6 +381,67 @@ class GossipProtocolMixin(P2PMixinBase):
     # Proactive validation of stale peer endpoints to prevent partition isolation
     # =========================================================================
 
+    async def _probe_endpoint_with_retry(self, peer: "NodeInfo") -> str | None:
+        """Probe peer endpoint with retry logic for transient failures.
+
+        December 30, 2025: Added retry wrapper to handle transient network failures
+        that could cause stale IP addresses to persist. Uses exponential backoff.
+
+        Args:
+            peer: The NodeInfo to probe
+
+        Returns:
+            The first working IP address, or None if all retries exhausted
+        """
+        try:
+            from app.utils.retry import RetryConfig
+        except ImportError:
+            # Fallback if retry module unavailable
+            return await self._probe_best_endpoint(peer)
+
+        config = RetryConfig(
+            max_attempts=3,
+            base_delay=1.0,
+            max_delay=5.0,
+            exponential=True,
+            jitter=0.2,
+        )
+
+        for attempt in config.attempts():
+            try:
+                result = await self._probe_best_endpoint(peer)
+                if result:
+                    return result
+                # No IPs worked but no exception - don't retry
+                if attempt.is_last:
+                    return None
+                # Log and retry
+                if self.verbose:
+                    self._log_debug(
+                        f"Endpoint probe returned None for {peer.node_id}, "
+                        f"attempt {attempt.number}/{attempt.max_attempts}"
+                    )
+                await attempt.wait_async()
+            except (asyncio.TimeoutError, OSError) as e:
+                # Transient network error - retry
+                if attempt.is_last:
+                    self._log_warning(
+                        f"All endpoint probe attempts failed for {peer.node_id}: {e}"
+                    )
+                    return None
+                if self.verbose:
+                    self._log_debug(
+                        f"Endpoint probe failed for {peer.node_id} (attempt "
+                        f"{attempt.number}/{attempt.max_attempts}): {e}"
+                    )
+                await attempt.wait_async()
+            except Exception as e:
+                # Non-transient error - don't retry
+                self._log_warning(f"Unexpected error probing {peer.node_id}: {e}")
+                return None
+
+        return None
+
     async def _validate_stale_endpoints(self) -> int:
         """Validate and refresh stale peer endpoints.
 
@@ -431,7 +492,8 @@ class GossipProtocolMixin(P2PMixinBase):
         refreshed = 0
         for peer in stale_peers:
             try:
-                new_host = await self._probe_best_endpoint(peer)
+                # Dec 30, 2025: Use retry wrapper for transient failures
+                new_host = await self._probe_endpoint_with_retry(peer)
                 if new_host:
                     with self.peers_lock:
                         if peer.node_id in self.peers:
@@ -1058,9 +1120,12 @@ class GossipProtocolMixin(P2PMixinBase):
             }
 
             # GOSSIP COMPRESSION: Compress payload with gzip to reduce network transfer
+            # Dec 30, 2025: Use asyncio.to_thread() to avoid blocking event loop
             json_bytes = json.dumps(gossip_payload).encode("utf-8")
             original_size = len(json_bytes)
-            compressed_bytes = gzip.compress(json_bytes, compresslevel=6)
+            compressed_bytes = await asyncio.to_thread(
+                gzip.compress, json_bytes, 6  # compresslevel=6
+            )
             compressed_size = len(compressed_bytes)
 
             # Track compression metrics (method now in this class)
@@ -1197,11 +1262,15 @@ class GossipProtocolMixin(P2PMixinBase):
         return False  # All URLs failed
 
     async def _read_gossip_response(self, resp: Any) -> dict:
-        """Read and decompress gossip response."""
+        """Read and decompress gossip response.
+
+        Dec 30, 2025: Uses asyncio.to_thread() for decompression to avoid
+        blocking the event loop on large payloads.
+        """
         content_encoding = resp.headers.get("Content-Encoding", "")
         if content_encoding == "gzip":
             response_bytes = await resp.read()
-            decompressed = gzip.decompress(response_bytes)
+            decompressed = await asyncio.to_thread(gzip.decompress, response_bytes)
             return json.loads(decompressed.decode("utf-8"))
         else:
             return await resp.json()
@@ -1925,7 +1994,11 @@ class GossipProtocolMixin(P2PMixinBase):
             Dict with message counts, latency, and compression stats
         """
         self._ensure_state_attr("_gossip_metrics", {})
-        self._ensure_state_attr("_gossip_compression_stats", {})
+        self._ensure_state_attr("_gossip_compression_stats", {
+            "total_original_bytes": 0,
+            "total_compressed_bytes": 0,
+            "messages_compressed": 0,
+        })
         metrics = self._gossip_metrics
         delays = metrics.get("propagation_delay_ms", [])
 

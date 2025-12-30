@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
-from app.coordination.safe_event_emitter import SafeEventEmitterMixin
 
 if TYPE_CHECKING:
     from app.coordination.providers.base import GPUType, Instance
@@ -82,12 +81,13 @@ class ClusterCapacity:
     providers: dict[str, int] = field(default_factory=dict)
 
 
-class Provisioner(HandlerBase, SafeEventEmitterMixin):
+class Provisioner(HandlerBase):
     """Auto-provisioning daemon for maintaining cluster capacity.
 
     December 2025: Migrated to HandlerBase pattern.
     - Uses HandlerBase singleton (get_instance/reset_instance)
     - Uses _stats for metrics tracking
+    - Inherits safe event emission from HandlerBase (via SafeEventEmitterMixin)
 
     Monitors cluster GPU capacity and automatically provisions new
     instances when capacity drops below minimum thresholds. Respects

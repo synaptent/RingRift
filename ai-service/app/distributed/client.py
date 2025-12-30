@@ -40,6 +40,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.ai.heuristic_weights import (
     BASE_V1_BALANCED_WEIGHTS,
     HeuristicWeights,
@@ -148,35 +149,60 @@ class WorkerClient:
         else:
             self._base_url = f"http://{worker_url}"
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """
         Check worker health.
 
         Returns
         -------
-        Dict[str, Any]
-            Health response or error dict
+        HealthCheckResult
+            Health status with remote response in details.
         """
         try:
             url = f"{self._base_url}/health"
             request = Request(url, method="GET")
             with urlopen(request, timeout=5.0) as response:
-                return json.loads(response.read().decode("utf-8"))
+                remote_response = json.loads(response.read().decode("utf-8"))
+                remote_status = remote_response.get("status", "unknown")
+                is_healthy = remote_status == "healthy"
+                return HealthCheckResult(
+                    healthy=is_healthy,
+                    status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.ERROR,
+                    message=f"Worker {remote_status}" if is_healthy else f"Worker unhealthy: {remote_status}",
+                    details={"worker_url": self._base_url, "remote_response": remote_response},
+                )
         except HTTPError as e:
-            return {"status": "error", "error": f"HTTP {e.code}"}
+            return HealthCheckResult.unhealthy(
+                message=f"HTTP error: {e.code}",
+                worker_url=self._base_url,
+                error_code=e.code,
+            )
         except URLError as e:
-            return {"status": "error", "error": f"URL error: {e.reason}"}
+            return HealthCheckResult.unhealthy(
+                message=f"URL error: {e.reason}",
+                worker_url=self._base_url,
+                error=str(e.reason),
+            )
         except TimeoutError:
-            return {"status": "error", "error": "Request timeout"}
+            return HealthCheckResult.unhealthy(
+                message="Request timeout",
+                worker_url=self._base_url,
+            )
         except json.JSONDecodeError as e:
-            return {"status": "error", "error": f"Invalid JSON: {e}"}
+            return HealthCheckResult.unhealthy(
+                message=f"Invalid JSON response: {e}",
+                worker_url=self._base_url,
+            )
         except OSError as e:
-            return {"status": "error", "error": f"Network error: {e}"}
+            return HealthCheckResult.unhealthy(
+                message=f"Network error: {e}",
+                worker_url=self._base_url,
+            )
 
     def is_healthy(self) -> bool:
         """Check if worker is healthy."""
         result = self.health_check()
-        return result.get("status") == "healthy"
+        return result.healthy
 
     def get_memory_info(self) -> dict[str, Any]:
         """

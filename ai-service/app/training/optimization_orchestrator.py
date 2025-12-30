@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -475,11 +477,11 @@ class OptimizationOrchestrator:
             "event_counts": self._event_counts,
         }
 
-    def health_check(self) -> dict:
+    def health_check(self) -> HealthCheckResult:
         """Return health check status for DaemonManager integration.
 
         Returns:
-            Dict with healthy status, message, and details
+            HealthCheckResult with healthy status, message, and details.
         """
         try:
             active_count = len(self._active_runs)
@@ -489,23 +491,34 @@ class OptimizationOrchestrator:
             # Healthy if subscribed (or has processed events)
             is_healthy = self._subscribed or total_events > 0
 
-            return {
-                "healthy": is_healthy,
-                "message": f"Subscribed: {self._subscribed}, {active_count} active, {completed_count} completed",
-                "details": {
+            # Determine status based on subscription and activity
+            if not self._subscribed and total_events == 0:
+                status = CoordinatorStatus.INITIALIZING
+                message = "Not yet subscribed to optimization events"
+            elif active_count > 0:
+                status = CoordinatorStatus.RUNNING
+                message = f"{active_count} active runs, {completed_count} completed"
+            else:
+                status = CoordinatorStatus.READY
+                message = f"Subscribed, {completed_count} completed runs"
+
+            return HealthCheckResult(
+                healthy=is_healthy,
+                status=status,
+                message=message,
+                details={
                     "subscribed": self._subscribed,
                     "active_runs": active_count,
                     "completed_runs": completed_count,
                     "total_events_processed": total_events,
                     "event_counts": self._event_counts.copy(),
                 },
-            }
+            )
         except Exception as e:
-            return {
-                "healthy": False,
-                "message": f"Health check failed: {e}",
-                "details": {"error": str(e)},
-            }
+            return HealthCheckResult.unhealthy(
+                message=f"Health check failed: {e}",
+                error=str(e),
+            )
 
 
 # Singleton instance

@@ -45,6 +45,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.utils.canonical_naming import (
     CANONICAL_CONFIG_KEYS,
     make_config_key,
@@ -613,11 +614,11 @@ class ModelRetentionManager:
 
         return status
 
-    def health_check(self) -> dict:
+    def health_check(self) -> HealthCheckResult:
         """Return health check status for DaemonManager integration.
 
         Returns:
-            Dict with healthy status, message, and details
+            HealthCheckResult with healthy status, message, and details.
         """
         try:
             # Count models across all configs
@@ -633,23 +634,31 @@ class ModelRetentionManager:
                 if len(models) > self.policy.max_models_per_config:
                     needs_culling += 1
 
-            return {
-                "healthy": True,
-                "message": f"Managing {total_models} models, {total_archived} archived",
-                "details": {
+            # Determine status based on culling needs
+            if needs_culling > 0:
+                status = CoordinatorStatus.DEGRADED
+                message = f"Managing {total_models} models, {needs_culling} configs need culling"
+            else:
+                status = CoordinatorStatus.RUNNING
+                message = f"Managing {total_models} models, {total_archived} archived"
+
+            return HealthCheckResult(
+                healthy=True,
+                status=status,
+                message=message,
+                details={
                     "total_models": total_models,
                     "total_archived": total_archived,
                     "configs_needing_culling": needs_culling,
                     "maintenance_count": self._maintenance_count,
                     "last_maintenance": max(self._last_maintenance.values()) if self._last_maintenance else None,
                 },
-            }
+            )
         except Exception as e:
-            return {
-                "healthy": False,
-                "message": f"Health check failed: {e}",
-                "details": {"error": str(e)},
-            }
+            return HealthCheckResult.unhealthy(
+                message=f"Health check failed: {e}",
+                error=str(e),
+            )
 
 
 # Convenience function for scripts

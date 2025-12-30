@@ -67,6 +67,8 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 # Emit pending deprecation warning at import time
 warnings.warn(
     "SyncOrchestrator may be deprecated in favor of SyncFacade. "
@@ -962,12 +964,11 @@ class SyncOrchestrator:
 
         return status
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """Perform health check on sync orchestrator (December 2025).
 
         Returns:
-            Dict with health status including:
-            - healthy: Overall health status
+            HealthCheckResult with health status including details on:
             - initialized: Whether orchestrator is initialized
             - error_rate: Recent sync error rate
             - components: Health of individual sync components
@@ -1005,22 +1006,41 @@ class SyncOrchestrator:
             }
 
         # Overall health: initialized, low error rate, recent sync
+        initialized = status.get("initialized", False)
         healthy = (
-            status.get("initialized", False)
+            initialized
             and error_rate < 0.2
             and (last_sync_age < 3600 or total == 0)  # Less than 1 hour or no syncs yet
         )
 
-        return {
-            "healthy": healthy,
-            "initialized": status.get("initialized", False),
-            "total_syncs": total,
-            "sync_errors": errors,
-            "error_rate": round(error_rate, 4),
-            "last_sync_age_seconds": round(last_sync_age, 1) if last_sync_age != float("inf") else None,
-            "components": component_health,
-            "quality_orchestrator_available": status.get("quality_orchestrator") is not None,
-        }
+        # Determine status and message
+        if not initialized:
+            coordinator_status = CoordinatorStatus.INITIALIZING
+            message = "Sync orchestrator not yet initialized"
+        elif error_rate >= 0.2:
+            coordinator_status = CoordinatorStatus.DEGRADED
+            message = f"High sync error rate: {error_rate:.1%}"
+        elif last_sync_age >= 3600 and total > 0:
+            coordinator_status = CoordinatorStatus.DEGRADED
+            message = f"No successful sync in {last_sync_age / 60:.0f} minutes"
+        else:
+            coordinator_status = CoordinatorStatus.RUNNING
+            message = "Sync orchestrator healthy"
+
+        return HealthCheckResult(
+            healthy=healthy,
+            status=coordinator_status,
+            message=message,
+            details={
+                "initialized": initialized,
+                "total_syncs": total,
+                "sync_errors": errors,
+                "error_rate": round(error_rate, 4),
+                "last_sync_age_seconds": round(last_sync_age, 1) if last_sync_age != float("inf") else None,
+                "components": component_health,
+                "quality_orchestrator_available": status.get("quality_orchestrator") is not None,
+            },
+        )
 
 
 # Singleton instance

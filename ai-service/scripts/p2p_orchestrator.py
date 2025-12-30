@@ -2347,6 +2347,39 @@ class P2POrchestrator(
             except (ImportError, TypeError) as e:
                 logger.warning(f"[LoopManager] TailscalePeerDiscoveryLoop: not available: {e}")
 
+            # PeerCleanupLoop - December 30, 2025
+            # Automatically purges stale peers to maintain accurate health ratio
+            # Prevents false "isolated" partition status from accumulated stale peers
+            try:
+                from scripts.p2p.loops import PeerCleanupLoop, PeerCleanupConfig
+
+                async def _purge_single_peer_async(node_id: str) -> bool:
+                    """Purge a single peer from the peers dict."""
+                    with self.peers_lock:
+                        if node_id in self.peers:
+                            del self.peers[node_id]
+                            logger.debug(f"[PeerCleanup] Removed peer from dict: {node_id}")
+                            return True
+                    return False
+
+                peer_cleanup = PeerCleanupLoop(
+                    get_all_peers=lambda: dict(self.peers),
+                    purge_peer=_purge_single_peer_async,
+                    emit_event=self._emit_event,
+                    config=PeerCleanupConfig(
+                        cleanup_interval_seconds=float(
+                            os.environ.get("RINGRIFT_PEER_CLEANUP_INTERVAL", "300")
+                        ),
+                        enabled=os.environ.get(
+                            "RINGRIFT_PEER_CLEANUP_ENABLED", "1"
+                        ).lower() in ("1", "true", "yes", "on"),
+                    ),
+                )
+                manager.register(peer_cleanup)
+                logger.info("[LoopManager] PeerCleanupLoop registered")
+            except (ImportError, TypeError) as e:
+                logger.warning(f"[LoopManager] PeerCleanupLoop: not available: {e}")
+
             # WorkerPullLoop - December 27, 2025
             # Workers poll leader for work (pull model instead of push)
             # Extracted from _worker_pull_loop
@@ -2745,9 +2778,8 @@ class P2POrchestrator(
                         f"(epoch={epoch})"
                     )
                     await self._emit_split_brain_detected(
-                        leaders=leaders,
-                        epoch=epoch,
-                        source="SplitBrainDetectionLoop",
+                        detected_leaders=leaders,
+                        resolution_action="election",
                     )
 
                 split_brain_detection = SplitBrainDetectionLoop(
@@ -18719,9 +18751,11 @@ print(json.dumps({{
                 # pull a fresh peer snapshot so leader election converges quickly.
                 await self._bootstrap_from_known_peers()
 
+                # Get current time for all time-based checks in this cycle
+                now = time.time()
+
                 # NAT-blocked nodes: poll a relay endpoint for peer snapshots + commands.
                 if getattr(self.self_info, "nat_blocked", False):
-                    now = time.time()
                     if now - self.last_relay_heartbeat >= RELAY_HEARTBEAT_INTERVAL:
                         relay_urls: list[str] = []
                         leader_peer = self._get_leader_peer()
@@ -22764,8 +22798,7 @@ print(json.dumps({{
                 # December 2025: Emit SPLIT_BRAIN_DETECTED event
                 leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
                 await self._emit_split_brain_detected(
-                    leaders_seen=leaders_detected,
-                    voter_count=len(voter_ids),
+                    detected_leaders=leaders_detected,
                     resolution_action="step_down_non_voter",
                 )
                 self.role = NodeRole.FOLLOWER
@@ -22813,8 +22846,7 @@ print(json.dumps({{
             # December 2025: Emit SPLIT_BRAIN_DETECTED event
             leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
             await self._emit_split_brain_detected(
-                leaders_seen=leaders_detected,
-                voter_count=len(voter_ids),
+                detected_leaders=leaders_detected,
                 resolution_action="step_down_bully",
             )
             self.role = NodeRole.FOLLOWER
@@ -22832,8 +22864,7 @@ print(json.dumps({{
         # Emit SPLIT_BRAIN_DETECTED event for this case (asserting leadership)
         leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
         await self._emit_split_brain_detected(
-            leaders_seen=leaders_detected,
-            voter_count=len(voter_ids),
+            detected_leaders=leaders_detected,
             resolution_action="assert_leadership",
         )
 
