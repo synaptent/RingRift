@@ -121,6 +121,7 @@ from app.coordination.budget_calculator import (
     parse_config_key,
 )
 from app.coordination.protocols import HealthCheckResult
+from app.coordination.handler_base import HandlerBase
 
 # December 30, 2025: Extracted cache and metrics classes
 from app.coordination.config_state_cache import ConfigStateCache
@@ -431,7 +432,7 @@ class ConfigPriority:
 # (December 2025 consolidation - removed ~20 lines of duplicate code)
 
 
-class SelfplayScheduler:
+class SelfplayScheduler(HandlerBase):
     """Priority-based selfplay scheduler across cluster nodes.
 
     Responsibilities:
@@ -440,6 +441,9 @@ class SelfplayScheduler:
     - Allocate selfplay games based on node capabilities
     - Integrate with feedback loop signals
     - Calculate target selfplay jobs per node (Dec 2025)
+
+    December 30, 2025: Now inherits from HandlerBase for unified event handling,
+    singleton management, and health check patterns.
     """
 
     def __init__(
@@ -474,6 +478,15 @@ class SelfplayScheduler:
         All callback parameters enable full delegation from P2P orchestrator
         and break circular dependencies. See class docstring for usage.
         """
+        # December 30, 2025: Initialize HandlerBase for unified event handling
+        # SelfplayScheduler is primarily event-driven, so cycle_interval is long
+        # (priority refresh happens on events, not periodic cycles)
+        super().__init__(
+            name="selfplay_scheduler",
+            cycle_interval=300.0,  # 5 min - priorities refreshed on events, not cycles
+            dedup_enabled=True,
+        )
+
         # Store callbacks (Dec 2025)
         self._get_cluster_elo_fn = get_cluster_elo_fn
         self._load_curriculum_weights_fn = load_curriculum_weights_fn
@@ -2094,8 +2107,93 @@ class SelfplayScheduler:
     # Event Integration
     # =========================================================================
 
+    async def _run_cycle(self) -> None:
+        """Main work loop iteration (HandlerBase abstract method).
+
+        December 30, 2025: SelfplayScheduler is primarily event-driven, so
+        this cycle is minimal - just refreshes stale priority data periodically.
+        The main work happens in response to events like SELFPLAY_COMPLETE,
+        TRAINING_COMPLETED, etc.
+        """
+        # Periodic priority refresh (in case events are missed)
+        current_time = time.time()
+        if current_time - self._last_priority_update > self._priority_update_interval:
+            try:
+                await self.update_priorities()
+            except Exception as e:
+                self._record_error(f"Priority update failed: {e}", e)
+
+    def _get_event_subscriptions(self) -> dict[str, Callable]:
+        """Return event_type -> handler mapping (HandlerBase pattern).
+
+        December 30, 2025: Replaces subscribe_to_events() with declarative mapping.
+        All event handlers are registered via this method when start() is called.
+        """
+        from app.coordination.event_router import DataEventType
+
+        # Build subscriptions dict - core events always included
+        subs: dict[str, Callable] = {
+            # Core subscriptions (always active)
+            DataEventType.SELFPLAY_COMPLETE.value: self._on_selfplay_complete,
+            DataEventType.TRAINING_COMPLETED.value: self._on_training_complete,
+            DataEventType.MODEL_PROMOTED.value: self._on_promotion_complete,
+            DataEventType.SELFPLAY_TARGET_UPDATED.value: self._on_selfplay_target_updated,
+            DataEventType.QUALITY_DEGRADED.value: self._on_quality_degraded,
+            DataEventType.CURRICULUM_REBALANCED.value: self._on_curriculum_rebalanced,
+            DataEventType.SELFPLAY_RATE_CHANGED.value: self._on_selfplay_rate_changed,
+            DataEventType.TRAINING_BLOCKED_BY_QUALITY.value: self._on_training_blocked_by_quality,
+        }
+
+        # Optional subscriptions (check if event type exists)
+        optional_events = [
+            ("OPPONENT_MASTERED", self._on_opponent_mastered),
+            ("TRAINING_EARLY_STOPPED", self._on_training_early_stopped),
+            ("ELO_VELOCITY_CHANGED", self._on_elo_velocity_changed),
+            ("EXPLORATION_BOOST", self._on_exploration_boost),
+            ("CURRICULUM_ADVANCED", self._on_curriculum_advanced),
+            ("ADAPTIVE_PARAMS_CHANGED", self._on_adaptive_params_changed),
+            ("LOW_QUALITY_DATA_WARNING", self._on_low_quality_warning),
+            # P2P cluster health events
+            ("NODE_UNHEALTHY", self._on_node_unhealthy),
+            ("NODE_RECOVERED", self._on_node_recovered),
+            ("NODE_ACTIVATED", self._on_node_recovered),  # Same handler
+            ("P2P_NODE_DEAD", self._on_node_unhealthy),  # Same handler
+            ("P2P_CLUSTER_UNHEALTHY", self._on_cluster_unhealthy),
+            ("P2P_CLUSTER_HEALTHY", self._on_cluster_healthy),
+            ("HOST_OFFLINE", self._on_host_offline),
+            ("NODE_TERMINATED", self._on_host_offline),  # Same handler
+            # Regression events
+            ("REGRESSION_DETECTED", self._on_regression_detected),
+            # Backpressure events
+            ("BACKPRESSURE_ACTIVATED", self._on_backpressure_activated),
+            ("BACKPRESSURE_RELEASED", self._on_backpressure_released),
+            ("NODE_OVERLOADED", self._on_node_overloaded),
+            # Elo velocity tracking
+            ("ELO_UPDATED", self._on_elo_updated),
+            # Progress monitoring
+            ("PROGRESS_STALL_DETECTED", self._on_progress_stall),
+            ("PROGRESS_RECOVERED", self._on_progress_recovered),
+            # Architecture updates
+            ("ARCHITECTURE_WEIGHTS_UPDATED", self._on_architecture_weights_updated),
+            # Quality feedback
+            ("QUALITY_FEEDBACK_ADJUSTED", self._on_quality_feedback_adjusted),
+        ]
+
+        for event_name, handler in optional_events:
+            if hasattr(DataEventType, event_name):
+                event_type = getattr(DataEventType, event_name)
+                subs[event_type.value] = handler
+
+        return subs
+
     def subscribe_to_events(self) -> None:
-        """Subscribe to relevant pipeline events."""
+        """Subscribe to relevant pipeline events.
+
+        December 30, 2025: This method is retained for backward compatibility.
+        New code should use start() which automatically subscribes via
+        _get_event_subscriptions(). This method delegates to the HandlerBase
+        subscription infrastructure.
+        """
         if self._subscribed:
             return
 
@@ -3992,37 +4090,47 @@ class SelfplayScheduler:
     def health_check(self) -> HealthCheckResult:
         """Check scheduler health.
 
+        December 30, 2025: Now incorporates HandlerBase error tracking metrics
+        alongside scheduler-specific metrics. Uses SchedulerMetricsCollector
+        for allocation tracking.
+
         Returns:
             Health check result with scheduler status and metrics.
         """
-        # Calculate games in allocation window
-        current_time = time.time()
-        games_in_window = sum(
-            count for ts, count in self._allocation_history
-            if current_time - ts < self._allocation_window_seconds
-        )
+        # Get base class health metrics (error rates, cycles, events processed)
+        base_health = super().health_check()
 
-        # Determine health status
+        # Get metrics from collector (December 30, 2025: extracted to scheduler_metrics.py)
+        games_in_window = self._metrics_collector.get_games_in_window()
+        games_total = self._metrics_collector._games_allocated_total
+
+        # Determine health status (combine base class + scheduler-specific)
+        current_time = time.time()
         stale_priority = current_time - self._last_priority_update > 300  # 5 min
-        healthy = self._subscribed and not stale_priority
+        healthy = base_health.healthy and self._subscribed and not stale_priority
 
         message = "Running" if healthy else (
+            base_health.message if not base_health.healthy else
             "Not subscribed to events" if not self._subscribed else
             "Priority data stale (>5 min)"
         )
 
+        # Merge base details with scheduler-specific details
+        details = {
+            **base_health.details,  # Includes events_processed, errors_count, etc.
+            "subscribed": self._subscribed,
+            "configs_tracked": len(self._config_priorities),
+            "nodes_tracked": len(self._node_capabilities),
+            "last_priority_update": self._last_priority_update,
+            "priority_age_seconds": current_time - self._last_priority_update,
+            "games_allocated_total": games_total,
+            "games_in_last_hour": games_in_window,
+        }
+
         return HealthCheckResult(
             healthy=healthy,
             message=message,
-            details={
-                "subscribed": self._subscribed,
-                "configs_tracked": len(self._config_priorities),
-                "nodes_tracked": len(self._node_capabilities),
-                "last_priority_update": self._last_priority_update,
-                "priority_age_seconds": current_time - self._last_priority_update,
-                "games_allocated_total": self._games_allocated_total,
-                "games_in_last_hour": games_in_window,
-            },
+            details=details,
         )
 
     # =========================================================================
@@ -4187,21 +4295,38 @@ class SelfplayScheduler:
 # Singleton
 # =============================================================================
 
+# December 30, 2025: Module-level cache deprecated in favor of HandlerBase.get_instance()
+# Kept for backward compatibility but delegates to HandlerBase singleton management.
 _scheduler_instance: SelfplayScheduler | None = None
 
 
 def get_selfplay_scheduler() -> SelfplayScheduler:
-    """Get the singleton SelfplayScheduler instance."""
+    """Get the singleton SelfplayScheduler instance.
+
+    December 30, 2025: Now delegates to HandlerBase.get_instance() for unified
+    singleton management. The subscribe_to_events() call is retained for backward
+    compatibility with code that doesn't use start().
+    """
     global _scheduler_instance
 
-    if _scheduler_instance is None:
-        _scheduler_instance = SelfplayScheduler()
-        _scheduler_instance.subscribe_to_events()
+    # Use HandlerBase's singleton management
+    scheduler = SelfplayScheduler.get_instance()
 
-    return _scheduler_instance
+    # Keep module-level cache in sync for any legacy code that checks it
+    _scheduler_instance = scheduler
+
+    # Subscribe to events (safe to call multiple times)
+    if not scheduler._subscribed:
+        scheduler.subscribe_to_events()
+
+    return scheduler
 
 
 def reset_selfplay_scheduler() -> None:
-    """Reset the scheduler singleton (for testing)."""
+    """Reset the scheduler singleton (for testing).
+
+    December 30, 2025: Now delegates to HandlerBase.reset_instance().
+    """
     global _scheduler_instance
     _scheduler_instance = None
+    SelfplayScheduler.reset_instance()

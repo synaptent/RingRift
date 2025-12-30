@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.coordination.event_utils import parse_config_key
+from app.coordination.handler_base import HandlerBase
 from app.coordination.protocols import HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -244,7 +245,7 @@ class AdaptiveTrainingSignal:
         }
 
 
-class FeedbackLoopController:
+class FeedbackLoopController(HandlerBase):
     """Central controller orchestrating all feedback signals.
 
     Subscribes to:
@@ -259,10 +260,26 @@ class FeedbackLoopController:
     - CurriculumFeedback: Curriculum weight adjustments
     - TemperatureScheduler: Exploration rate adjustments
     - SelfplayScheduler: Target games and priorities (via SELFPLAY_TARGET_UPDATED)
+
+    December 30, 2025: Now inherits from HandlerBase for unified singleton
+    management, health checks, and error tracking. Event subscriptions remain
+    in _subscribe_to_events() due to complex conditional logic (coexistence
+    with UnifiedFeedbackOrchestrator).
     """
 
     def __init__(self):
+        # December 30, 2025: Initialize HandlerBase for unified patterns
+        # Note: Event subscriptions handled in _subscribe_to_events() due to
+        # complex conditional logic (coexistence with UnifiedFeedbackOrchestrator)
+        super().__init__(
+            name="feedback_loop_controller",
+            cycle_interval=60.0,  # Feedback loop check interval
+            dedup_enabled=True,
+        )
+
         self._states: dict[str, FeedbackState] = {}
+        # Note: _running and _subscribed inherited from HandlerBase but kept here
+        # for backward compatibility with existing code checking these attributes
         self._running = False
         self._subscribed = False
         self._lock = threading.Lock()
@@ -285,6 +302,54 @@ class FeedbackLoopController:
             if config_key not in self._states:
                 self._states[config_key] = FeedbackState(config_key=config_key)
             return self._states[config_key]
+
+    # =========================================================================
+    # HandlerBase Abstract Methods
+    # =========================================================================
+
+    def _get_event_subscriptions(self) -> dict:
+        """Return event subscriptions (HandlerBase abstract method).
+
+        December 30, 2025: Returns empty dict because FeedbackLoopController
+        handles its own event subscriptions in _subscribe_to_events() due to
+        complex conditional logic (coexistence with UnifiedFeedbackOrchestrator).
+
+        The actual subscriptions happen in start() -> _subscribe_to_events().
+        """
+        return {}
+
+    async def _run_cycle(self) -> None:
+        """Main work loop iteration (HandlerBase abstract method).
+
+        December 30, 2025: FeedbackLoopController is primarily event-driven,
+        so this cycle performs periodic health monitoring and state cleanup.
+        """
+        # Periodic state maintenance
+        if not self._running:
+            return
+
+        # Record cycle for health tracking
+        self._stats.cycles_completed += 1
+
+        # Clean up stale states (configs not updated in 24+ hours)
+        now = time.time()
+        stale_threshold = 24 * 3600  # 24 hours
+
+        stale_configs = [
+            key for key, state in self._states.items()
+            if now - max(
+                state.last_selfplay_time,
+                state.last_training_time,
+                state.last_evaluation_time,
+            ) > stale_threshold
+        ]
+
+        # Log stale configs but don't remove (may be intentionally inactive)
+        if stale_configs:
+            logger.debug(
+                f"[FeedbackLoopController] {len(stale_configs)} configs inactive >24h: "
+                f"{stale_configs[:5]}..."
+            )
 
     async def start(self) -> None:
         """Start the feedback loop controller.
@@ -3519,6 +3584,8 @@ class FeedbackLoopController:
     def health_check(self) -> HealthCheckResult:
         """Check controller health.
 
+        December 30, 2025: Now merges HandlerBase stats with feedback-specific metrics.
+
         Returns:
             Health check result with feedback loop status and metrics.
         """
@@ -3536,18 +3603,26 @@ class FeedbackLoopController:
             "Not subscribed to events"
         )
 
+        # Build details dict with both HandlerBase stats and feedback-specific metrics
+        details = {
+            "running": self._running,
+            "subscribed": self._subscribed,
+            "configs_tracked": len(self._states),
+            "active_configs": active_configs,
+            "cluster_healthy": self._cluster_healthy,
+            "policy_accuracy_threshold": self.policy_accuracy_threshold,
+            "promotion_threshold": self.promotion_threshold,
+            # December 30, 2025: Add HandlerBase stats
+            "cycles_completed": self._stats.cycles_completed,
+            "events_processed": self._stats.events_processed,
+            "errors_count": self._stats.errors_count,
+            "uptime_seconds": time.time() - self._stats.started_at if self._stats.started_at else 0,
+        }
+
         return HealthCheckResult(
             healthy=healthy,
             message=message,
-            details={
-                "running": self._running,
-                "subscribed": self._subscribed,
-                "configs_tracked": len(self._states),
-                "active_configs": active_configs,
-                "cluster_healthy": self._cluster_healthy,
-                "policy_accuracy_threshold": self.policy_accuracy_threshold,
-                "promotion_threshold": self.promotion_threshold,
-            },
+            details=details,
         )
 
     def get_status(self) -> dict[str, Any]:
@@ -3603,29 +3678,46 @@ class FeedbackLoopController:
 
 
 # =============================================================================
-# Singleton
+# Singleton (December 30, 2025: Delegated to HandlerBase)
 # =============================================================================
 
+# Note: Module-level globals kept for backward compatibility, but primary
+# singleton management now goes through HandlerBase.get_instance()
 _controller: FeedbackLoopController | None = None
 _controller_lock = threading.Lock()
 
 
 def get_feedback_loop_controller() -> FeedbackLoopController:
-    """Get the singleton FeedbackLoopController instance."""
+    """Get the singleton FeedbackLoopController instance.
+
+    December 30, 2025: Now delegates to HandlerBase.get_instance() while
+    maintaining backward compatibility with module-level _controller.
+    """
     global _controller
-    if _controller is None:
-        with _controller_lock:
-            if _controller is None:
-                _controller = FeedbackLoopController()
-    return _controller
+
+    # Use HandlerBase singleton management
+    controller = FeedbackLoopController.get_instance()
+
+    # Keep module-level reference in sync
+    _controller = controller
+
+    return controller
 
 
 def reset_feedback_loop_controller() -> None:
-    """Reset the singleton (for testing)."""
+    """Reset the singleton (for testing).
+
+    December 30, 2025: Now delegates to HandlerBase.reset_instance().
+    """
     global _controller
+
+    # Stop running instance if any
     if _controller is not None:
         _safe_create_task(_controller.stop(), "feedback_loop_controller_stop")
+
+    # Reset both module-level and HandlerBase singletons
     _controller = None
+    FeedbackLoopController.reset_instance()
 
 
 __all__ = [
