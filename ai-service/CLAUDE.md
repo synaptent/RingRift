@@ -59,14 +59,14 @@ python scripts/update_all_nodes.py --restart-p2p
 | `app/config/coordination_defaults.py` | Centralized timeouts, thresholds, priority weights             |
 | `app/config/thresholds.py`            | Centralized quality/training/budget thresholds (canonical)     |
 
-### Coordination Infrastructure (224 modules)
+### Coordination Infrastructure (257 modules)
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 99 daemon types (~3,200 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 89 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 91 async runner functions                         |
-| `event_router.py`                      | Unified event bus (202 event types, SHA256 dedup) |
+| `daemon_runners.py`                    | 89 async runner functions                         |
+| `event_router.py`                      | Unified event bus (211 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -340,11 +340,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-99 daemon types (93 active, 6 deprecated). Three-layer architecture:
+89 daemon types (83 active, 6 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 91 async runner functions
+3. **`daemon_runners.py`** - 89 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -402,11 +402,11 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: 99.5% COMPLETE (Dec 30, 2025)
 
-202 event types defined in DataEventType enum. All critical event flows are fully wired.
+211 event types defined in DataEventType enum. All critical event flows are fully wired.
 Only 2 minor informational gaps remain (SELFPLAY_ALLOCATION_UPDATED undercoverage,
 NODE_CAPACITY_UPDATED dual emitters) - neither affects core pipeline operation.
 
-202 event types across 3 layers:
+211 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion
@@ -840,7 +840,7 @@ Comprehensive exploration using 4 parallel agents identified the following:
 | Event chains                     | ✅ Complete | All critical flows wired                                |
 | Feedback loops                   | ✅ Complete | Quality, Elo, curriculum connected                      |
 | Loss anomaly → exploration boost | ✅ Complete | feedback_loop_controller.py:1048                        |
-| 257 coordination modules         | ✅ Active   | 190K+ LOC                                               |
+| 224 coordination modules         | ✅ Active   | 190K+ LOC                                               |
 | NPZ_COMBINATION_COMPLETE         | ✅ Wired    | training_trigger_daemon.py:446,640 → \_maybe_trigger()  |
 | TRAINING_BLOCKED_BY_QUALITY      | ✅ Wired    | 4+ subscribers (training_trigger, selfplay_scheduler)   |
 | EVALUATION_COMPLETED → Scheduler | ✅ Wired    | Via ELO_UPDATED at selfplay_scheduler.py:2221           |

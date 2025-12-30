@@ -75,7 +75,7 @@ python scripts/master_loop.py --dry-run
 This orchestrates:
 
 - **SelfplayScheduler**: Priority-based selfplay allocation (staleness, Elo velocity, curriculum weights)
-- **DaemonManager**: 77 background daemons for sync, training, evaluation (6 deprecated, archived)
+- **DaemonManager**: 95 daemon types for sync, training, evaluation (6 deprecated, Q2 2026 removal)
 - **FeedbackLoopController**: Training feedback signals and curriculum adjustments
 - **DataPipelineOrchestrator**: Export → training → evaluation → promotion
 

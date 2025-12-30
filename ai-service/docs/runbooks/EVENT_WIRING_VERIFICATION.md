@@ -7,7 +7,7 @@ This runbook provides procedures for verifying that all events in the RingRift A
 
 ## Overview
 
-The coordination infrastructure uses 202 event types defined in `DataEventType`. This runbook helps verify:
+The coordination infrastructure uses 211 event types defined in `DataEventType`. This runbook helps verify:
 
 1. All emitted events have at least one subscriber
 2. Event subscriptions match the correct event type values

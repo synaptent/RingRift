@@ -9,7 +9,7 @@ were previously thought to be "orphaned" (TASK_SPAWNED, TASK_HEARTBEAT, QUALITY_
 PROGRESS_STALL_DETECTED) have been verified to have 2-5 active subscribers each.
 
 This document provides a matrix of critical events in the RingRift coordination layer,
-their emitters, and subscribers. `DataEventType` defines 202 events; this file focuses on
+their emitters, and subscribers. `DataEventType` defines 211 events; this file focuses on
 high-impact wiring. For the full list, see `docs/EVENT_REFERENCE_AUTO.md` and `docs/EVENT_CATALOG.md`.
 
 ## Quick Reference

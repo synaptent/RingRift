@@ -9,7 +9,7 @@ The event system uses three layers unified through `event_router.py`:
 | Component                  | File                                       | Purpose                                  |
 | -------------------------- | ------------------------------------------ | ---------------------------------------- |
 | **UnifiedEventRouter**     | `app/coordination/event_router.py`         | Unified API routing to all event buses   |
-| **DataEventType**          | `app/distributed/data_events.py`           | In-memory async event types (202 events) |
+| **DataEventType**          | `app/distributed/data_events.py`           | In-memory async event types (211 events) |
 | **StageEvent**             | `app/coordination/stage_events.py`         | Pipeline stage completion events         |
 | **CrossProcessEventQueue** | `app/coordination/cross_process_events.py` | SQLite-backed cross-process persistence  |
 

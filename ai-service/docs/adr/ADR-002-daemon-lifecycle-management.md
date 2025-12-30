@@ -30,7 +30,7 @@ Implement a centralized **DaemonManager** (`app/coordination/daemon_manager.py`)
 
 ### DaemonType Enum
 
-As of Dec 2025, 66 daemon types organized by category:
+As of Dec 2025, 100 daemon types organized by category (6 deprecated, Q2 2026 removal):
 
 - Core: `EVENT_ROUTER`, `P2P_BACKEND`
 - Data: `AUTO_SYNC`, `EPHEMERAL_SYNC`, `SYNC_BANDWIDTH`
