@@ -194,16 +194,12 @@ class GauntletFeedbackController(BaseEventHandler):
     def get_metrics(self) -> dict[str, Any]:
         """Get controller metrics.
 
-        December 27, 2025: Enhanced with BaseEventHandler metrics.
+        December 30, 2025: Returns controller-specific metrics.
 
         Returns:
             Dictionary of metrics (CoordinatorProtocol compliant)
         """
-        # Get base metrics from parent
-        base_metrics = super().get_metrics()
-
-        # Add controller-specific metrics
-        base_metrics.update({
+        return {
             "events_processed": sum(
                 t.elo_history.maxlen for t in self._config_trackers.values() if t.elo_history
             ),
@@ -211,8 +207,9 @@ class GauntletFeedbackController(BaseEventHandler):
             "configs_tracked": len(self._config_trackers),
             "actions_taken": len(self._actions_taken),
             "recent_actions": self._actions_taken[-10:] if self._actions_taken else [],
-        })
-        return base_metrics
+            "uptime_seconds": self.uptime_seconds,
+            "subscribed": self._subscribed,
+        }
 
     def health_check(self) -> HealthCheckResult:
         """Check controller health.

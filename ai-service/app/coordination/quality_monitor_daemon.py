@@ -130,8 +130,9 @@ class QualityMonitorDaemon(HandlerBase):
         for the specific config and emits results.
         """
         try:
-            payload = event.payload if hasattr(event, "payload") else {}
-            config_key = payload.get("config_key", "")
+            # December 30, 2025: Use consolidated extraction from HandlerBase
+            payload = self._get_payload(event)
+            config_key = self._extract_config_key(payload)
             reason = payload.get("reason", "unknown")
             priority = payload.get("priority", "normal")
 

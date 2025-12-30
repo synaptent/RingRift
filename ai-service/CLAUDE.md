@@ -59,14 +59,14 @@ python scripts/update_all_nodes.py --restart-p2p
 | `app/config/coordination_defaults.py` | Centralized timeouts, thresholds, priority weights             |
 | `app/config/thresholds.py`            | Centralized quality/training/budget thresholds (canonical)     |
 
-### Coordination Infrastructure (257 modules)
+### Coordination Infrastructure (224 modules)
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 95 daemon types (~2,000 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 89 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 90 async runner functions                         |
-| `event_router.py`                      | Unified event bus (207 event types, SHA256 dedup) |
+| `daemon_runners.py`                    | 89 async runner functions                         |
+| `event_router.py`                      | Unified event bus (211 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -339,11 +339,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-89 active daemon types, 6 deprecated (95 total). Three-layer architecture:
+89 daemon types (verified Dec 30, 2025). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 90 async runner functions
+3. **`daemon_runners.py`** - 89 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -401,11 +401,11 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: MOSTLY COMPLETE (Dec 30, 2025)
 
-207 event types defined in DataEventType enum. Most critical event flows are wired. Some integration
+202 event types defined in DataEventType enum. Most critical event flows are wired. Some integration
 gaps remain for feedback loop events (quality scores, loss anomalies, exploration adjustments) which
 are emitted but lack subscribers. See exploration agent findings from Dec 30, 2025.
 
-207 event types across 3 layers:
+202 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion
@@ -745,7 +745,8 @@ Comprehensive exploration verified the following are ALREADY COMPLETE:
 | **Pipeline Stages**    | SELFPLAY → SYNC → NPZ_EXPORT → TRAINING                         | ✅ data_pipeline_orchestrator.py:756-900                           |
 | **Code Consolidation** | Event patterns (16 files)                                       | ✅ event_utils.py, event_handler_utils.py                          |
 | **Daemon Counts**      | 99 types (93 active, 6 deprecated)                              | ✅ Verified via DaemonType enum (Dec 30, 2025)                     |
-| **Event Types**        | 207 DataEventType members                                       | ✅ Verified via DataEventType enum                                 |
+| **Event Types**        | 202 DataEventType members                                       | ✅ Verified via DataEventType enum (Dec 30, 2025)                  |
+| **Startup Order**      | EVENT_ROUTER → FEEDBACK_LOOP → DATA_PIPELINE → sync daemons     | ✅ master_loop.py:1109-1119 (race condition fixed Dec 2025)        |
 
 **Important for future agents**: Before implementing suggested improvements, VERIFY current state.
 Exploration agents may report stale findings. Use `grep` and code inspection to confirm.

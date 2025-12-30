@@ -3,7 +3,7 @@
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
 **Last updated:** December 30, 2025 (availability + connectivity daemons)
-**Total Daemon Types:** 89 (89 in `daemon_runners.py`, 11 deprecated)
+**Total Daemon Types:** 89 (89 in `daemon_runners.py`, 6 deprecated as of Dec 30, 2025)
 **Startup Order:** 24 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
 **Dependencies:** Canonical dependencies live in `DAEMON_REGISTRY` (89 entries); `DAEMON_DEPENDENCIES` covers 85 legacy entries
 

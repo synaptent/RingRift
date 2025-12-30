@@ -1,32 +1,35 @@
 """Daemon runner functions extracted from DaemonManager.
 
 December 2025: Extracted from DaemonManager to reduce module size and improve testability.
+December 30, 2025: Refactored to registry-driven factory pattern (Phase 1 consolidation).
 
-This module provides async runner functions for all 73 daemon types in the system.
-Each runner follows a consistent pattern:
+This module provides async runner functions for all 91 daemon types in the system.
+Runners are now defined declaratively via RUNNER_SPECS registry and instantiated
+via the generic _create_runner_from_spec() factory function.
 
-1. **Import the daemon class** - Lazy imports to avoid circular dependencies
-2. **Create and configure** - Instantiate with config (from env or defaults)
-3. **Start the daemon** - Call `await daemon.start()`
-4. **Wait for completion** - Use `_wait_for_daemon()` to block until stopped
+Runner Specification Pattern:
+    RUNNER_SPECS["auto_sync"] = RunnerSpec(
+        module="app.coordination.auto_sync_daemon",
+        class_name="AutoSyncDaemon",
+    )
 
-Runner Function Pattern:
-    async def create_<daemon_name>() -> None:
-        '''Brief description of daemon purpose.'''
-        try:
-            from app.coordination.<module> import <DaemonClass>
+Instantiation Styles:
+    - DIRECT: DaemonClass()
+    - SINGLETON: DaemonClass.get_instance() or factory function
+    - FACTORY: factory_function() returns daemon instance
+    - WITH_CONFIG: DaemonClass(config=ConfigClass.from_env())
+    - ASYNC_FACTORY: await factory_function() returns daemon instance
 
-            daemon = <DaemonClass>()
-            await daemon.start()
-            await _wait_for_daemon(daemon)
-        except ImportError as e:
-            logger.error(f"<DaemonClass> not available: {e}")
-            raise
+Wait Styles:
+    - DAEMON: await _wait_for_daemon(daemon)
+    - FOREVER_LOOP: while True: await asyncio.sleep(interval)
+    - RUN_FOREVER: await daemon.run_forever()
+    - NONE: No waiting (initialize and return)
 
 Key functions:
 - get_runner(DaemonType) -> Callable: Get runner function for a daemon type
 - get_all_runners() -> dict: Get full registry mapping names to runners
-- _wait_for_daemon(daemon) -> None: Block until daemon.is_running is False
+- _create_runner_from_spec(name) -> None: Generic runner factory
 
 The registry (_RUNNER_REGISTRY) is built lazily on first access to avoid
 import-time circular dependencies with daemon_types.py.
@@ -42,14 +45,693 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import warnings
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 if TYPE_CHECKING:
     from app.coordination.daemon_types import DaemonType
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Runner Specification Infrastructure (December 30, 2025)
+# =============================================================================
+
+
+class InstantiationStyle(Enum):
+    """How to instantiate the daemon class."""
+
+    DIRECT = "direct"  # DaemonClass()
+    SINGLETON = "singleton"  # DaemonClass.get_instance()
+    FACTORY = "factory"  # factory_function() returns daemon
+    WITH_CONFIG = "with_config"  # DaemonClass(config=ConfigClass.from_env())
+    ASYNC_FACTORY = "async_factory"  # await factory_function()
+
+
+class WaitStyle(Enum):
+    """How to wait for daemon completion."""
+
+    DAEMON = "daemon"  # await _wait_for_daemon(daemon)
+    FOREVER_LOOP = "forever_loop"  # while True: await asyncio.sleep(interval)
+    RUN_FOREVER = "run_forever"  # await daemon.run_forever()
+    NONE = "none"  # No waiting (initialize only)
+    CUSTOM = "custom"  # Special handling (keep legacy function)
+
+
+class StartMethod(Enum):
+    """How to start the daemon."""
+
+    ASYNC_START = "async_start"  # await daemon.start()
+    SYNC_START = "sync_start"  # daemon.start() (synchronous)
+    INITIALIZE = "initialize"  # await daemon.initialize()
+    START_SERVER = "start_server"  # await daemon.start_server()
+    NONE = "none"  # No start method needed
+
+
+@dataclass
+class RunnerSpec:
+    """Specification for a daemon runner.
+
+    Defines how to import, instantiate, start, and wait for a daemon.
+    Used by _create_runner_from_spec() to generate runners dynamically.
+
+    Example:
+        RunnerSpec(
+            module="app.coordination.auto_sync_daemon",
+            class_name="AutoSyncDaemon",
+        )
+
+        # Results in:
+        from app.coordination.auto_sync_daemon import AutoSyncDaemon
+        daemon = AutoSyncDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    """
+
+    module: str  # Import path, e.g., "app.coordination.auto_sync_daemon"
+    class_name: str  # Class or function name to import
+
+    # Instantiation
+    style: InstantiationStyle = InstantiationStyle.DIRECT
+    config_class: str | None = None  # For WITH_CONFIG: ConfigClass name
+    factory_func: str | None = None  # For FACTORY/SINGLETON: function name
+
+    # Start
+    start_method: StartMethod = StartMethod.ASYNC_START
+
+    # Wait
+    wait: WaitStyle = WaitStyle.DAEMON
+    wait_interval: float = 60.0  # For FOREVER_LOOP
+
+    # Metadata
+    deprecated: bool = False
+    deprecation_message: str = ""
+    notes: str = ""
+
+    # For daemons that need extra imports (e.g., multiple classes from same module)
+    extra_imports: list[str] = field(default_factory=list)
+
+
+# =============================================================================
+# Runner Specs Registry
+# =============================================================================
+
+# Maps runner name to its specification
+# Runner names match DaemonType enum values (lowercase with underscores)
+RUNNER_SPECS: dict[str, RunnerSpec] = {
+    # --- Sync Daemons ---
+    "sync_coordinator": RunnerSpec(
+        module="app.distributed.sync_coordinator",
+        class_name="SyncCoordinator",
+        style=InstantiationStyle.SINGLETON,
+        deprecated=True,
+        deprecation_message="Use DaemonType.AUTO_SYNC instead. Removal scheduled for Q2 2026.",
+    ),
+    "high_quality_sync": RunnerSpec(
+        module="app.coordination.training_freshness",
+        class_name="HighQualityDataSyncWatcher",
+    ),
+    "elo_sync": RunnerSpec(
+        module="app.tournament.elo_sync_manager",
+        class_name="EloSyncManager",
+        start_method=StartMethod.INITIALIZE,
+        wait=WaitStyle.NONE,  # Manager starts its own loop after initialize()
+        notes="Calls initialize() then start() - manager handles its own loop",
+    ),
+    "auto_sync": RunnerSpec(
+        module="app.coordination.auto_sync_daemon",
+        class_name="AutoSyncDaemon",
+    ),
+    "training_node_watcher": RunnerSpec(
+        module="app.coordination.training_activity_daemon",
+        class_name="TrainingActivityDaemon",
+        style=InstantiationStyle.WITH_CONFIG,
+        config_class="TrainingActivityConfig",
+    ),
+    "training_data_sync": RunnerSpec(
+        module="app.coordination.training_data_sync_daemon",
+        class_name="TrainingDataSyncDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_training_data_sync_daemon",
+        wait=WaitStyle.CUSTOM,  # Special: uses _running attribute check
+    ),
+    "owc_import": RunnerSpec(
+        module="app.coordination.owc_import_daemon",
+        class_name="OWCImportDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_owc_import_daemon",
+    ),
+    "ephemeral_sync": RunnerSpec(
+        module="app.coordination.auto_sync_daemon",
+        class_name="AutoSyncDaemon",
+        style=InstantiationStyle.WITH_CONFIG,
+        config_class="AutoSyncConfig",
+        deprecated=True,
+        deprecation_message="Use AutoSyncDaemon(strategy='ephemeral') instead. Removal scheduled for Q2 2026.",
+        wait=WaitStyle.CUSTOM,  # Sets strategy after config creation
+    ),
+    "gossip_sync": RunnerSpec(
+        module="app.distributed.gossip_sync",
+        class_name="GossipSyncDaemon",
+    ),
+    # --- Event Processing Daemons ---
+    "event_router": RunnerSpec(
+        module="app.coordination.event_router",
+        class_name="UnifiedEventRouter",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_router",
+        wait=WaitStyle.CUSTOM,  # Has validation guards
+    ),
+    "cross_process_poller": RunnerSpec(
+        module="app.coordination.event_router",
+        class_name="CrossProcessEventPoller",
+    ),
+    "dlq_retry": RunnerSpec(
+        module="app.coordination.dead_letter_queue",
+        class_name="DLQRetryDaemon",
+    ),
+    # --- Health & Monitoring Daemons ---
+    "health_check": RunnerSpec(
+        module="app.coordination.health_check_orchestrator",
+        class_name="HealthCheckOrchestrator",
+        deprecated=True,
+        deprecation_message="Use DaemonType.NODE_HEALTH_MONITOR instead. Removal scheduled for Q2 2026.",
+    ),
+    "queue_monitor": RunnerSpec(
+        module="app.coordination.queue_monitor",
+        class_name="QueueMonitor",
+    ),
+    "daemon_watchdog": RunnerSpec(
+        module="app.coordination.daemon_watchdog",
+        class_name="DaemonWatchdog",
+        style=InstantiationStyle.ASYNC_FACTORY,
+        factory_func="start_watchdog",
+        start_method=StartMethod.NONE,  # start_watchdog() handles start
+    ),
+    "node_health_monitor": RunnerSpec(
+        module="app.coordination.health_check_orchestrator",
+        class_name="HealthCheckOrchestrator",
+        deprecated=True,
+        deprecation_message="Use HealthCheckOrchestrator (via DaemonType.HEALTH_SERVER) instead. Removal scheduled for Q2 2026.",
+    ),
+    "system_health_monitor": RunnerSpec(
+        module="app.coordination.unified_health_manager",
+        class_name="UnifiedHealthManager",
+        deprecated=True,
+        deprecation_message="Use unified_health_manager.get_system_health_score() instead. Removal scheduled for Q2 2026.",
+    ),
+    "health_server": RunnerSpec(
+        module="app.coordination.daemon_manager",
+        class_name="DaemonManager",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_daemon_manager",
+        wait=WaitStyle.CUSTOM,  # Calls dm._create_health_server()
+    ),
+    "quality_monitor": RunnerSpec(
+        module="app.coordination.quality_monitor_daemon",
+        class_name="QualityMonitorDaemon",
+    ),
+    "model_performance_watchdog": RunnerSpec(
+        module="app.coordination.model_performance_watchdog",
+        class_name="ModelPerformanceWatchdog",
+    ),
+    "cluster_monitor": RunnerSpec(
+        module="app.coordination.cluster_status_monitor",
+        class_name="ClusterMonitor",
+        wait=WaitStyle.RUN_FOREVER,
+    ),
+    "cluster_watchdog": RunnerSpec(
+        module="app.coordination.cluster_watchdog_daemon",
+        class_name="ClusterWatchdogDaemon",
+    ),
+    "coordinator_health_monitor": RunnerSpec(
+        module="app.coordination.coordinator_health_monitor_daemon",
+        class_name="CoordinatorHealthMonitorDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_coordinator_health_monitor",
+    ),
+    "work_queue_monitor": RunnerSpec(
+        module="app.coordination.work_queue_monitor_daemon",
+        class_name="WorkQueueMonitorDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_work_queue_monitor",
+    ),
+    # --- Training & Pipeline Daemons ---
+    "data_pipeline": RunnerSpec(
+        module="app.coordination.data_pipeline_orchestrator",
+        class_name="DataPipelineOrchestrator",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_pipeline_orchestrator",
+    ),
+    "continuous_training_loop": RunnerSpec(
+        module="app.coordination.continuous_training_loop",
+        class_name="ContinuousTrainingLoop",
+    ),
+    "selfplay_coordinator": RunnerSpec(
+        module="app.coordination.selfplay_scheduler",
+        class_name="SelfplayScheduler",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_selfplay_scheduler",
+        start_method=StartMethod.NONE,  # SelfplayScheduler is utility, not daemon
+        wait=WaitStyle.FOREVER_LOOP,
+        wait_interval=3600.0,  # 1 hour
+    ),
+    "training_trigger": RunnerSpec(
+        module="app.coordination.training_trigger_daemon",
+        class_name="TrainingTriggerDaemon",
+    ),
+    "auto_export": RunnerSpec(
+        module="app.coordination.auto_export_daemon",
+        class_name="AutoExportDaemon",
+    ),
+    "tournament_daemon": RunnerSpec(
+        module="app.coordination.tournament_daemon",
+        class_name="TournamentDaemon",
+    ),
+    "nnue_training": RunnerSpec(
+        module="app.coordination.nnue_training_daemon",
+        class_name="NNUETrainingDaemon",
+        style=InstantiationStyle.SINGLETON,
+    ),
+    "architecture_feedback": RunnerSpec(
+        module="app.coordination.architecture_feedback_controller",
+        class_name="ArchitectureFeedbackController",
+        style=InstantiationStyle.SINGLETON,
+    ),
+    # --- Evaluation & Promotion Daemons ---
+    "evaluation": RunnerSpec(
+        module="app.coordination.evaluation_daemon",
+        class_name="EvaluationDaemon",
+    ),
+    "auto_promotion": RunnerSpec(
+        module="app.coordination.auto_promotion_daemon",
+        class_name="AutoPromotionDaemon",
+    ),
+    "unified_promotion": RunnerSpec(
+        module="app.coordination.promotion_controller",
+        class_name="PromotionController",
+    ),
+    "gauntlet_feedback": RunnerSpec(
+        module="app.coordination.gauntlet_feedback_controller",
+        class_name="GauntletFeedbackController",
+    ),
+    # --- Distribution Daemons ---
+    "model_sync": RunnerSpec(
+        module="app.coordination.unified_distribution_daemon",
+        class_name="UnifiedDistributionDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="create_model_distribution_daemon",
+    ),
+    "model_distribution": RunnerSpec(
+        module="app.coordination.unified_distribution_daemon",
+        class_name="UnifiedDistributionDaemon",
+    ),
+    "npz_distribution": RunnerSpec(
+        module="app.coordination.unified_distribution_daemon",
+        class_name="UnifiedDistributionDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="create_npz_distribution_daemon",
+    ),
+    "data_server": RunnerSpec(
+        module="app.distributed.sync_coordinator",
+        class_name="SyncCoordinator",
+        style=InstantiationStyle.SINGLETON,
+        start_method=StartMethod.START_SERVER,
+    ),
+    # --- Replication Daemons ---
+    "replication_monitor": RunnerSpec(
+        module="app.coordination.unified_replication_daemon",
+        class_name="UnifiedReplicationDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="create_replication_monitor",
+    ),
+    "replication_repair": RunnerSpec(
+        module="app.coordination.unified_replication_daemon",
+        class_name="UnifiedReplicationDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="create_replication_repair_daemon",
+    ),
+    # --- Resource Management Daemons ---
+    "idle_resource": RunnerSpec(
+        module="app.coordination.idle_resource_daemon",
+        class_name="IdleResourceDaemon",
+    ),
+    "node_recovery": RunnerSpec(
+        module="app.coordination.node_recovery_daemon",
+        class_name="NodeRecoveryDaemon",
+    ),
+    "resource_optimizer": RunnerSpec(
+        module="app.coordination.resource_optimizer",
+        class_name="ResourceOptimizer",
+    ),
+    "utilization_optimizer": RunnerSpec(
+        module="app.coordination.utilization_optimizer",
+        class_name="UtilizationOptimizer",
+        start_method=StartMethod.NONE,
+        wait=WaitStyle.CUSTOM,  # Wraps in periodic optimize_cluster() loop
+    ),
+    "adaptive_resources": RunnerSpec(
+        module="app.coordination.adaptive_resource_manager",
+        class_name="AdaptiveResourceManager",
+    ),
+    # --- Provider-Specific Daemons ---
+    "lambda_idle": RunnerSpec(
+        module="app.coordination.unified_idle_shutdown_daemon",
+        class_name="UnifiedIdleShutdownDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="create_lambda_idle_daemon",
+        deprecated=True,
+        deprecation_message="Lambda Labs account was terminated Dec 2025. Use DaemonType.VAST_IDLE instead. Removal scheduled for Q2 2026.",
+        wait=WaitStyle.CUSTOM,  # Returns None, skips start
+    ),
+    "vast_idle": RunnerSpec(
+        module="app.coordination.unified_idle_shutdown_daemon",
+        class_name="UnifiedIdleShutdownDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="create_vast_idle_daemon",
+    ),
+    "multi_provider": RunnerSpec(
+        module="app.coordination.multi_provider_orchestrator",
+        class_name="MultiProviderOrchestrator",
+    ),
+    # --- Queue & Job Daemons ---
+    "queue_populator": RunnerSpec(
+        module="app.coordination.unified_queue_populator",
+        class_name="UnifiedQueuePopulatorDaemon",
+    ),
+    "job_scheduler": RunnerSpec(
+        module="app.coordination.job_scheduler",
+        class_name="PriorityJobScheduler",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_scheduler",
+        start_method=StartMethod.NONE,  # Utility class, no lifecycle
+        wait=WaitStyle.NONE,
+    ),
+    # --- Feedback & Curriculum Daemons ---
+    "feedback_loop": RunnerSpec(
+        module="app.coordination.feedback_loop_controller",
+        class_name="FeedbackLoopController",
+    ),
+    "curriculum_integration": RunnerSpec(
+        module="app.coordination.curriculum_integration",
+        class_name="MomentumToCurriculumBridge",
+        start_method=StartMethod.SYNC_START,  # start() is synchronous
+    ),
+    # --- Recovery & Maintenance Daemons ---
+    "recovery_orchestrator": RunnerSpec(
+        module="app.coordination.recovery_orchestrator",
+        class_name="RecoveryOrchestrator",
+    ),
+    "cache_coordination": RunnerSpec(
+        module="app.coordination.cache_coordination_orchestrator",
+        class_name="CacheCoordinationOrchestrator",
+    ),
+    "maintenance": RunnerSpec(
+        module="app.coordination.maintenance_daemon",
+        class_name="MaintenanceDaemon",
+    ),
+    "orphan_detection": RunnerSpec(
+        module="app.coordination.orphan_detection_daemon",
+        class_name="OrphanDetectionDaemon",
+    ),
+    "data_cleanup": RunnerSpec(
+        module="app.coordination.data_cleanup_daemon",
+        class_name="DataCleanupDaemon",
+    ),
+    "disk_space_manager": RunnerSpec(
+        module="app.coordination.disk_space_manager_daemon",
+        class_name="DiskSpaceManagerDaemon",
+    ),
+    "coordinator_disk_manager": RunnerSpec(
+        module="app.coordination.disk_space_manager_daemon",
+        class_name="CoordinatorDiskManager",
+    ),
+    "node_availability": RunnerSpec(
+        module="app.coordination.node_availability.daemon",
+        class_name="NodeAvailabilityDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_node_availability_daemon",
+    ),
+    "sync_push": RunnerSpec(
+        module="app.coordination.sync_push_daemon",
+        class_name="SyncPushDaemon",
+    ),
+    "unified_data_plane": RunnerSpec(
+        module="app.coordination.unified_data_plane_daemon",
+        class_name="UnifiedDataPlaneDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_data_plane_daemon",
+    ),
+    # --- Miscellaneous Daemons ---
+    "s3_backup": RunnerSpec(
+        module="app.coordination.s3_backup_daemon",
+        class_name="S3BackupDaemon",
+    ),
+    "s3_node_sync": RunnerSpec(
+        module="app.coordination.s3_node_sync_daemon",
+        class_name="S3NodeSyncDaemon",
+    ),
+    "s3_consolidation": RunnerSpec(
+        module="app.coordination.s3_node_sync_daemon",
+        class_name="S3ConsolidationDaemon",
+    ),
+    "distillation": RunnerSpec(
+        module="app.coordination.distillation_daemon",
+        class_name="DistillationDaemon",
+    ),
+    "external_drive_sync": RunnerSpec(
+        module="app.coordination.external_drive_sync",
+        class_name="ExternalDriveSyncDaemon",
+    ),
+    "vast_cpu_pipeline": RunnerSpec(
+        module="app.coordination.vast_cpu_pipeline",
+        class_name="VastCPUPipelineDaemon",
+    ),
+    "cluster_data_sync": RunnerSpec(
+        module="app.coordination.auto_sync_daemon",
+        class_name="AutoSyncDaemon",
+        style=InstantiationStyle.WITH_CONFIG,
+        config_class="AutoSyncConfig",
+        deprecated=True,
+        deprecation_message="Use AutoSyncDaemon(strategy='broadcast') instead. Removal scheduled for Q2 2026.",
+        wait=WaitStyle.CUSTOM,
+    ),
+    "p2p_backend": RunnerSpec(
+        module="app.coordination.p2p_integration",
+        class_name="P2PIntegration",
+    ),
+    "p2p_auto_deploy": RunnerSpec(
+        module="app.coordination.p2p_auto_deployer",
+        class_name="P2PAutoDeployer",
+    ),
+    "metrics_analysis": RunnerSpec(
+        module="app.coordination.metrics_analysis_orchestrator",
+        class_name="MetricsAnalysisOrchestrator",
+    ),
+    "per_orchestrator": RunnerSpec(
+        module="app.training.per_orchestrator",
+        class_name="PEROrchestrator",
+        style=InstantiationStyle.FACTORY,
+        factory_func="wire_per_events",
+        start_method=StartMethod.NONE,
+        wait=WaitStyle.FOREVER_LOOP,
+        wait_interval=60.0,
+    ),
+    "data_consolidation": RunnerSpec(
+        module="app.coordination.data_consolidation_daemon",
+        class_name="DataConsolidationDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_consolidation_daemon",
+    ),
+    "npz_combination": RunnerSpec(
+        module="app.coordination.npz_combination_daemon",
+        class_name="NPZCombinationDaemon",
+        style=InstantiationStyle.ASYNC_FACTORY,
+        factory_func="get_npz_combination_daemon",
+    ),
+    "integrity_check": RunnerSpec(
+        module="app.coordination.integrity_check_daemon",
+        class_name="IntegrityCheckDaemon",
+        style=InstantiationStyle.WITH_CONFIG,
+        config_class="IntegrityCheckConfig",
+    ),
+    # --- Cluster Availability Manager ---
+    "availability_node_monitor": RunnerSpec(
+        module="app.coordination.availability.node_monitor",
+        class_name="NodeMonitor",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_node_monitor",
+    ),
+    "availability_recovery_engine": RunnerSpec(
+        module="app.coordination.availability.recovery_engine",
+        class_name="RecoveryEngine",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_recovery_engine",
+    ),
+    "availability_capacity_planner": RunnerSpec(
+        module="app.coordination.availability.capacity_planner",
+        class_name="CapacityPlanner",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_capacity_planner",
+    ),
+    "availability_provisioner": RunnerSpec(
+        module="app.coordination.availability.provisioner",
+        class_name="Provisioner",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_provisioner",
+    ),
+    "cascade_training": RunnerSpec(
+        module="app.coordination.cascade_training",
+        class_name="CascadeTrainingOrchestrator",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_cascade_orchestrator",
+    ),
+    # --- 48-Hour Autonomous Operation ---
+    "progress_watchdog": RunnerSpec(
+        module="app.coordination.progress_watchdog_daemon",
+        class_name="ProgressWatchdog",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_progress_watchdog",
+    ),
+    "p2p_recovery": RunnerSpec(
+        module="app.coordination.p2p_recovery_daemon",
+        class_name="P2PRecoveryDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_p2p_recovery_daemon",
+    ),
+    "memory_monitor": RunnerSpec(
+        module="app.coordination.memory_monitor_daemon",
+        class_name="MemoryMonitorDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_memory_monitor",
+    ),
+    "stale_fallback": RunnerSpec(
+        module="app.coordination.stale_fallback",
+        class_name="TrainingFallbackController",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_training_fallback_controller",
+        start_method=StartMethod.NONE,
+        wait=WaitStyle.CUSTOM,  # Subscribes to events and runs forever loop
+    ),
+    "tailscale_health": RunnerSpec(
+        module="app.coordination.tailscale_health_daemon",
+        class_name="TailscaleHealthDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_tailscale_health_daemon",
+    ),
+    "connectivity_recovery": RunnerSpec(
+        module="app.coordination.connectivity_recovery_coordinator",
+        class_name="ConnectivityRecoveryCoordinator",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_connectivity_recovery_coordinator",
+    ),
+}
+
+
+async def _create_runner_from_spec(name: str) -> None:
+    """Generic runner factory using registry specs.
+
+    This function creates and runs a daemon based on its specification
+    in the RUNNER_SPECS registry.
+
+    Args:
+        name: The runner name (matches DaemonType enum value in lowercase)
+
+    Raises:
+        ValueError: If runner name is not in registry
+        ImportError: If daemon module cannot be imported
+    """
+    spec = RUNNER_SPECS.get(name)
+    if not spec:
+        raise ValueError(f"Unknown runner: {name}")
+
+    # Emit deprecation warning if applicable
+    if spec.deprecated:
+        warnings.warn(
+            spec.deprecation_message or f"Runner {name} is deprecated.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    try:
+        module = importlib.import_module(spec.module)
+
+        # Instantiate daemon based on style
+        daemon: Any = None
+        match spec.style:
+            case InstantiationStyle.DIRECT:
+                daemon_class = getattr(module, spec.class_name)
+                daemon = daemon_class()
+
+            case InstantiationStyle.SINGLETON:
+                daemon_class = getattr(module, spec.class_name)
+                daemon = daemon_class.get_instance()
+
+            case InstantiationStyle.FACTORY:
+                factory = getattr(module, spec.factory_func)
+                daemon = factory()
+
+            case InstantiationStyle.ASYNC_FACTORY:
+                factory = getattr(module, spec.factory_func)
+                daemon = await factory()
+
+            case InstantiationStyle.WITH_CONFIG:
+                daemon_class = getattr(module, spec.class_name)
+                config_class = getattr(module, spec.config_class)
+                config = config_class.from_env()
+                daemon = daemon_class(config=config)
+
+        # Start daemon based on start method
+        match spec.start_method:
+            case StartMethod.ASYNC_START:
+                await daemon.start()
+            case StartMethod.SYNC_START:
+                daemon.start()
+            case StartMethod.INITIALIZE:
+                await daemon.initialize()
+                await daemon.start()  # Managers often need start() after initialize()
+            case StartMethod.START_SERVER:
+                await daemon.start_server()
+            case StartMethod.NONE:
+                pass  # No start method needed
+
+        # Wait for daemon based on wait style
+        match spec.wait:
+            case WaitStyle.DAEMON:
+                await _wait_for_daemon(daemon)
+            case WaitStyle.FOREVER_LOOP:
+                while True:
+                    await asyncio.sleep(spec.wait_interval)
+            case WaitStyle.RUN_FOREVER:
+                await daemon.run_forever()
+            case WaitStyle.NONE:
+                pass  # No waiting
+            case WaitStyle.CUSTOM:
+                # Custom handling - fall through to legacy function
+                # This shouldn't happen if we migrated correctly
+                logger.warning(f"[{name}] Using CUSTOM wait - check if legacy function is needed")
+                await _wait_for_daemon(daemon)
+
+    except ImportError as e:
+        logger.error(f"{spec.class_name} not available: {e}")
+        raise
+
+
+def get_runner_spec(name: str) -> RunnerSpec | None:
+    """Get the runner specification for a daemon name.
+
+    Args:
+        name: The runner name (lowercase with underscores)
+
+    Returns:
+        The RunnerSpec if found, None otherwise
+    """
+    return RUNNER_SPECS.get(name)
 
 
 def _check_daemon_running(daemon: Any) -> bool:
