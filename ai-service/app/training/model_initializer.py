@@ -35,7 +35,7 @@ from app.utils.numpy_utils import safe_load_npz
 from app.utils.torch_utils import safe_load_checkpoint
 
 if TYPE_CHECKING:
-    from app.rules.types import BoardType
+    from app.coordination.types import BoardType
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +337,7 @@ class ModelInitializer:
 
     def _get_board_size(self) -> int:
         """Get the spatial board size based on board type."""
-        from app.rules.types import BoardType
+        from app.coordination.types import BoardType
 
         if self.config.board_type == BoardType.SQUARE19:
             return 19
@@ -350,13 +350,13 @@ class ModelInitializer:
 
     def _is_hex_model(self) -> bool:
         """Check if this is a hexagonal board model."""
-        from app.rules.types import BoardType
+        from app.coordination.types import BoardType
 
         return self.config.board_type in (BoardType.HEXAGONAL, BoardType.HEX8)
 
     def _get_hex_radius(self) -> int:
         """Get the hex board radius."""
-        from app.rules.types import BoardType
+        from app.coordination.types import BoardType
 
         if self.config.board_type == BoardType.HEX8:
             return 4

@@ -229,6 +229,11 @@ class TestCurriculumFeedbackLoop:
 class TestFeedbackLoopControllerIntegration:
     """Test FeedbackLoopController's event handling."""
 
+    @pytest.fixture
+    def mock_router(self):
+        """Create a mock event router."""
+        return MockEventRouter()
+
     @pytest.mark.asyncio
     async def test_quality_feedback_adjusts_allocation(self, mock_router):
         """Test that quality feedback adjusts selfplay allocation."""
@@ -272,6 +277,11 @@ class TestFeedbackLoopControllerIntegration:
 
 class TestSelfplaySchedulerIntegration:
     """Test SelfplayScheduler's response to curriculum events."""
+
+    @pytest.fixture
+    def mock_router(self):
+        """Create a mock event router."""
+        return MockEventRouter()
 
     @pytest.mark.asyncio
     async def test_allocation_responds_to_curriculum_rebalance(self, mock_router):
@@ -324,6 +334,11 @@ class TestSelfplaySchedulerIntegration:
 
 class TestEventTimingRequirements:
     """Test event timing SLAs."""
+
+    @pytest.fixture
+    def mock_router(self):
+        """Create a mock event router."""
+        return MockEventRouter()
 
     @pytest.mark.asyncio
     async def test_curriculum_update_within_sla(self, mock_router):
