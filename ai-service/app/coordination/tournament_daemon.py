@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import EvaluationDaemonStats
+from app.coordination.event_utils import parse_config_key
 
 __all__ = [
     "TournamentDaemon",
@@ -344,22 +345,14 @@ class TournamentDaemon:
         # evaluation already passed to trigger promotion
 
     def _parse_config(self, config: str) -> tuple[str | None, int | None]:
-        """Parse board_type and num_players from config string."""
-        # Format: "hex8_2p" or "square8_2p"
-        parts = config.replace("_", " ").split()
+        """Parse board_type and num_players from config string.
 
-        board_type = None
-        num_players = None
-
-        for part in parts:
-            # Check for board type
-            if part in ("hex8", "hexagonal", "square8", "square19"):
-                board_type = part
-            # Check for player count
-            elif part.endswith("p") and part[:-1].isdigit():
-                num_players = int(part[:-1])
-
-        return board_type, num_players
+        December 30, 2025: Migrated to use consolidated parse_config_key utility.
+        """
+        parsed = parse_config_key(config)
+        if parsed:
+            return parsed.board_type, parsed.num_players
+        return None, None
 
     async def _evaluation_worker(self) -> None:
         """Worker that processes evaluation queue."""

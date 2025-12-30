@@ -48,6 +48,9 @@ try:
 except ImportError:
     HAS_CENTRALIZED_DEFAULTS = False
 
+# Import config key parsing utility (December 2025)
+from app.coordination.event_utils import parse_config_key
+
 
 @dataclass
 class OrphanDetectionConfig:
@@ -394,21 +397,15 @@ class OrphanDetectionDaemon:
             if game_count is None:
                 return None
 
-            # Parse board type and num_players from filename
+            # Parse board type and num_players from filename using utility (Dec 30, 2025)
             # Expected format: canonical_hex8_2p.db or hex8_2p.db
             board_type = None
             num_players = None
-            name = db_path.stem.replace("canonical_", "")
-
-            for bt in ["hex8", "hexagonal", "square8", "square19"]:
-                if bt in name:
-                    board_type = bt
-                    break
-
-            for np in ["2p", "3p", "4p"]:
-                if np in name:
-                    num_players = int(np[0])
-                    break
+            name = db_path.stem.replace("canonical_", "").replace("selfplay_", "")
+            parsed = parse_config_key(name)
+            if parsed:
+                board_type = parsed.board_type
+                num_players = parsed.num_players
 
             return OrphanInfo(
                 path=db_path,

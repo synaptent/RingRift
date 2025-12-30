@@ -51,7 +51,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 from app.coordination.event_utils import parse_config_key
 
 logger = logging.getLogger(__name__)
@@ -656,9 +656,8 @@ class SelfplayOrchestrator:
         reason = payload.get("reason", "unknown")
 
         if not config_key:
-            # Try to extract from model_id
-            if model_id and "_v" in model_id:
-                config_key = model_id.rsplit("_v", 1)[0]
+            # Try to extract from model_id using utility (Dec 30, 2025)
+            config_key = extract_config_from_path(model_id) or ""
 
         logger.warning(
             f"[SelfplayOrchestrator] Model rollback completed for {config_key}: "

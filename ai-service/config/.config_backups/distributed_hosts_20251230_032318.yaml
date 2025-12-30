@@ -15,6 +15,8 @@ sync_routing:
         npz: canonical_data
         models: canonical_models
   priority_hosts:
+    - local-mac
+    - mac-studio
     - lambda-gh200-1
     - lambda-gh200-2
     - lambda-gh200-3
@@ -22,6 +24,8 @@ sync_routing:
     - lambda-gh200-5
     - lambda-gh200-training
     - lambda-gh200-7
+    - lambda-gh200-10
+    - lambda-gh200-11
     - nebius-h100-3
     - nebius-h100-1
     - runpod-a100-storage-1
@@ -57,13 +61,29 @@ elo_sync:
     - aria2
     - http
 p2p_voters:
+  - local-mac
   - nebius-backbone-1
   - nebius-h100-3
   - hetzner-cpu1
   - hetzner-cpu2
+  - hetzner-cpu3
   - vultr-a100-20gb
-  - runpod-a100-1
-  - runpod-a100-2
+  - runpod-h100
+protocols:
+  swim:
+    enabled: false
+    bind_port: 7947
+    failure_timeout: 10.0
+    suspicion_timeout: 6.0
+    ping_interval: 1.0
+    indirect_ping_count: 7
+  raft:
+    enabled: false
+    bind_port: 4321
+    compaction_min_entries: 1000
+    auto_unlock_time: 300.0
+  membership_mode: hybrid
+  consensus_mode: bully
 hosts:
   mac-studio:
     ssh_host: 100.107.168.125
@@ -104,22 +124,23 @@ hosts:
     export_enabled: false
     skip_sync_receive: true
     sync_to_mac_studio_owc: true
-    p2p_enabled: false
+    p2p_enabled: true
+    p2p_priority_boost: true
   lambda-gh200-1:
     ssh_host: 192.222.57.210
     tailscale_ip: 100.71.89.91
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training_primary
+    role: gpu_selfplay
     status: ready
-    selfplay_enabled: false
-    training_enabled: true
+    selfplay_enabled: true
+    training_enabled: false
     p2p_enabled: true
     nat_blocked: true
     force_relay_mode: true
@@ -129,15 +150,15 @@ hosts:
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
     gpu_vram_gb: 96
-    role: gpu_training_primary
+    role: gpu_selfplay
     status: ready
-    selfplay_enabled: false
-    training_enabled: true
+    selfplay_enabled: true
+    training_enabled: false
     p2p_enabled: true
     nat_blocked: true
     force_relay_mode: true
@@ -147,7 +168,7 @@ hosts:
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -165,7 +186,7 @@ hosts:
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -183,7 +204,7 @@ hosts:
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -201,7 +222,7 @@ hosts:
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -219,7 +240,7 @@ hosts:
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -230,13 +251,13 @@ hosts:
     training_enabled: true
     p2p_enabled: true
     nat_blocked: true
-    force_relay_mode: true
+    force_relay_mode: false
   lambda-gh200-8:
     ssh_host: 192.222.50.174
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -244,16 +265,17 @@ hosts:
     role: gpu_training_primary
     status: ready
     selfplay_enabled: false
-    training_enabled: true
-    p2p_enabled: true
+    training_enabled: false
+    p2p_enabled: false
     nat_blocked: true
-    force_relay_mode: true
+    force_relay_mode: false
+    note: RETIRED Dec 29 2025 - Not in Tailscale network
   lambda-gh200-9:
     ssh_host: 192.222.51.60
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
-    venv_activate: cd ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
     memory_gb: 432
     cpus: 64
     gpu: GH200 (96 GB)
@@ -261,10 +283,41 @@ hosts:
     role: gpu_training_primary
     status: ready
     selfplay_enabled: false
+    training_enabled: false
+    p2p_enabled: false
+    nat_blocked: true
+  lambda-gh200-10:
+    ssh_host: 192.222.50.177
+    tailscale_ip: 100.100.19.96
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    memory_gb: 432
+    cpus: 64
+    gpu: GH200 (96 GB)
+    gpu_vram_gb: 96
+    role: gpu_training_primary
+    status: ready
+    selfplay_enabled: true
     training_enabled: true
     p2p_enabled: true
-    nat_blocked: true
-    force_relay_mode: true
+  lambda-gh200-11:
+    ssh_host: 192.222.50.48
+    tailscale_ip: 100.106.87.89
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    memory_gb: 432
+    cpus: 64
+    gpu: GH200 (96 GB)
+    gpu_vram_gb: 96
+    role: gpu_training_primary
+    status: ready
+    selfplay_enabled: true
+    training_enabled: true
+    p2p_enabled: true
+    force_relay_mode: false
+    note: RETIRED Dec 29 2025 - Not in Tailscale network
   vast-29129529:
     ssh_host: ssh6.vast.ai
     ssh_port: 19528
@@ -279,13 +332,17 @@ hosts:
     role: gpu_selfplay_primary
     status: ready
     vast_instance_id: '29129529'
-    p2p_enabled: true
+    p2p_enabled: false
     is_ephemeral: true
-    # Dec 29, 2025: High ping failure rate (58 deaths) - force Tailscale relay
     force_relay_mode: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: SSH key rejected Dec 2025, may be terminated or key changed
   vast-29118471:
     ssh_host: ssh8.vast.ai
     ssh_port: 38470
+    tailscale_ip: 100.77.85.19
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -299,6 +356,9 @@ hosts:
     vast_instance_id: '29118471'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29128352:
     ssh_host: ssh9.vast.ai
     ssh_port: 18352
@@ -313,11 +373,16 @@ hosts:
     role: nn_training_primary
     status: ready
     vast_instance_id: '29128352'
-    p2p_enabled: true
+    p2p_enabled: false
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: Tailscale logged out, needs auth key (Dec 2025)
   vast-28925166:
     ssh_host: ssh1.vast.ai
     ssh_port: 15166
+    tailscale_ip: 100.119.59.14
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -331,6 +396,9 @@ hosts:
     vast_instance_id: '28925166'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29128356:
     ssh_host: ssh7.vast.ai
     ssh_port: 18356
@@ -345,11 +413,16 @@ hosts:
     role: nn_training_primary
     status: ready
     vast_instance_id: '29128356'
-    p2p_enabled: true
+    p2p_enabled: false
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: Tailscale installed, needs auth key (Dec 2025)
   vast-28918742:
     ssh_host: ssh8.vast.ai
     ssh_port: 38742
+    tailscale_ip: 100.97.157.45
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -363,9 +436,13 @@ hosts:
     vast_instance_id: '28918742'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29031159:
     ssh_host: ssh5.vast.ai
     ssh_port: 31158
+    tailscale_ip: 100.77.191.76
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -379,11 +456,14 @@ hosts:
     vast_instance_id: '29031159'
     p2p_enabled: true
     is_ephemeral: true
-    # Dec 29, 2025: High ping failure rate (59 deaths) - force Tailscale relay
     force_relay_mode: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29126088:
     ssh_host: ssh5.vast.ai
     ssh_port: 16088
+    tailscale_ip: 100.76.233.18
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: /workspace/ringrift/ai-service
@@ -397,9 +477,13 @@ hosts:
     vast_instance_id: '29126088'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29031161:
     ssh_host: ssh2.vast.ai
     ssh_port: 31160
+    tailscale_ip: 100.122.109.15
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -413,9 +497,13 @@ hosts:
     vast_instance_id: '29031161'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-28890015:
     ssh_host: ssh9.vast.ai
     ssh_port: 10014
+    tailscale_ip: 100.111.228.116
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -429,9 +517,13 @@ hosts:
     vast_instance_id: '28890015'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-28889766:
     ssh_host: ssh3.vast.ai
     ssh_port: 19766
+    tailscale_ip: 100.117.81.49
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -445,9 +537,13 @@ hosts:
     vast_instance_id: '28889766'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29046315:
     ssh_host: ssh2.vast.ai
     ssh_port: 16314
+    tailscale_ip: 100.127.145.111
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -461,9 +557,13 @@ hosts:
     vast_instance_id: '29046315'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29118472:
     ssh_host: ssh9.vast.ai
     ssh_port: 38472
+    tailscale_ip: 100.105.9.28
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
     ringrift_path: ~/ringrift/ai-service
@@ -477,6 +577,9 @@ hosts:
     vast_instance_id: '29118472'
     p2p_enabled: true
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   vast-29129151:
     ssh_host: ssh4.vast.ai
     ssh_port: 19150
@@ -491,10 +594,15 @@ hosts:
     role: gpu_selfplay
     status: ready
     vast_instance_id: '29129151'
-    p2p_enabled: true
+    p2p_enabled: false
     is_ephemeral: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: Tailscale installed, needs auth key (Dec 2025)
   runpod-h100:
     ssh_host: 102.210.171.65
+    tailscale_ip: 100.113.2.45
     ssh_port: 30755
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -508,8 +616,13 @@ hosts:
     status: ready
     runpod_id: g47o0nibwifwzw
     p2p_enabled: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: Updated Dec 29, 2025 - Tailscale active via relay
   runpod-a100-1:
     ssh_host: 38.128.233.145
+    tailscale_ip: 100.121.84.68
     ssh_port: 33085
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -522,9 +635,14 @@ hosts:
     role: gpu_selfplay
     status: ready
     runpod_id: hl2rzjdfdrtath
+    note: Updated Dec 29, 2025
     p2p_enabled: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
   runpod-a100-2:
     ssh_host: 104.255.9.187
+    tailscale_ip: 100.107.5.89
     ssh_port: 11681
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -538,8 +656,13 @@ hosts:
     status: ready
     runpod_id: yu03gfn71vrsj7
     p2p_enabled: true
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: Updated Dec 29, 2025
   runpod-a100-storage-1:
     ssh_host: 213.173.105.7
+    tailscale_ip: 100.74.137.51
     ssh_port: 30015
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -554,10 +677,14 @@ hosts:
     runpod_id: a0h3cf7yg1duiv
     p2p_enabled: true
     nat_blocked: true
-    force_relay_mode: true
-    note: A100 80GB with 500GB volume storage. Dec 28 2025 - NAT blocked, needs relay
+    force_relay_mode: false
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: A100 80GB with 500GB volume storage. Updated Dec 29 2025
   runpod-l40s-2:
     ssh_host: 193.183.22.62
+    tailscale_ip: 100.98.97.76
     ssh_port: 1182
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -572,57 +699,14 @@ hosts:
     runpod_id: 3y9qgdj3lkjj6r
     p2p_enabled: true
     nat_blocked: true
-    force_relay_mode: true
-  runpod-3090ti-1:
-    ssh_host: 174.94.157.109
-    ssh_port: 29472
-    ssh_user: root
-    ssh_key: ~/.ssh/id_cluster
-    ringrift_path: /workspace/ringrift/ai-service
-    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
-    memory_gb: 24
-    cpus: 32
-    gpu: RTX 3090 Ti
-    gpu_vram_gb: 24
-    role: gpu_selfplay
-    status: terminated
-    runpod_id: dqc6nvrwig8ajq
-    p2p_enabled: false
-    note: Terminated Dec 29 2025 - replaced with Lambda GH200
-  runpod-selfplay-a100:
-    ssh_host: 38.128.233.200
-    ssh_port: 16117
-    ssh_user: root
-    ssh_key: ~/.ssh/id_cluster
-    ringrift_path: /workspace/ringrift/ai-service
-    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
-    memory_gb: 80
-    cpus: 24
-    gpu: A100 PCIe
-    gpu_vram_gb: 80
-    role: gpu_selfplay
-    status: terminated
-    runpod_id: orevscgw5tx7cw
-    p2p_enabled: false
-    note: Terminated Dec 29 2025 - replaced with Lambda GH200
-  runpod-selfplay-a100-2:
-    ssh_host: 69.19.136.95
-    ssh_port: 24310
-    ssh_user: root
-    ssh_key: ~/.ssh/id_cluster
-    ringrift_path: /workspace/ringrift/ai-service
-    venv_activate: source /workspace/ringrift/ai-service/venv/bin/activate
-    memory_gb: 80
-    cpus: 24
-    gpu: A100 PCIe
-    gpu_vram_gb: 80
-    role: gpu_selfplay
-    status: terminated
-    runpod_id: u7kw5bpu7pg1tj
-    p2p_enabled: false
-    note: Terminated Dec 29 2025 - replaced with Lambda GH200
+    force_relay_mode: false
+    is_container: true
+    needs_userspace_tailscale: true
+    socks5_port: 1055
+    note: Updated Dec 29, 2025
   vultr-a100-20gb:
     ssh_host: 208.167.249.164
+    tailscale_ip: 100.94.201.92
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -637,6 +721,7 @@ hosts:
     vultr_id: 016fe347-d10d-4348-90f6-e3ad9943246a
     region: ewr
     p2p_enabled: true
+    note: Updated Dec 29, 2025 - active on Tailscale
   vultr-a100-20gb-2:
     ssh_host: 140.82.15.69
     ssh_port: 22
@@ -649,7 +734,7 @@ hosts:
     gpu: A100D-20C (vGPU)
     gpu_vram_gb: 20
     role: gpu_selfplay
-    status: ready
+    status: retired
     vultr_id: 7d37247e-37ab-4d21-9eeb-ce082ebad05a
     region: ewr
     p2p_enabled: true
@@ -657,6 +742,7 @@ hosts:
     force_relay_mode: true
   nebius-backbone-1:
     ssh_host: 89.169.112.47
+    tailscale_ip: 100.110.28.41
     ssh_port: 22
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
@@ -671,7 +757,7 @@ hosts:
     nebius_id: computeinstance-e00gyg7x6xhkc7fs5x
     region: eu-north1
     p2p_enabled: true
-    note: P2P backbone node for stable connectivity
+    note: P2P backbone node for stable connectivity - Updated Dec 29, 2025
   nebius-h100-1:
     ssh_host: 89.169.111.139
     tailscale_ip: 100.106.19.6
@@ -689,7 +775,7 @@ hosts:
     nebius_id: computeinstance-e00y1q84pxfs1s3jqb
     region: eu-north1
     p2p_enabled: true
-    note: H100 80GB for training
+    note: H100 80GB for training - Updated Dec 29, 2025
   nebius-h100-2:
     ssh_host: 10.0.0.8
     ssh_port: 22
@@ -724,7 +810,7 @@ hosts:
     nebius_id: computeinstance-e00hcbnn7s7p0c7bbp
     region: eu-north1
     p2p_enabled: true
-    note: H100 80GB with 500GB storage, P2P voter
+    note: H100 80GB with 500GB storage, P2P voter - Updated Dec 29, 2025
   aws-proxy:
     ssh_host: 3.147.65.95
     ssh_port: 22
@@ -741,6 +827,7 @@ hosts:
     p2p_enabled: false
   hetzner-cpu1:
     ssh_host: 46.62.147.150
+    tailscale_ip: 100.94.174.19
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -753,9 +840,10 @@ hosts:
     hetzner_id: ringrift-cpu1
     region: eu-central
     p2p_enabled: true
-    note: CPU-only node for heuristic selfplay
+    note: CPU-only node for heuristic selfplay, P2P voter - Updated Dec 29, 2025
   hetzner-cpu2:
     ssh_host: 135.181.39.239
+    tailscale_ip: 100.67.131.72
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -768,9 +856,10 @@ hosts:
     hetzner_id: ringrift-cpu2
     region: eu-central
     p2p_enabled: true
-    note: CPU-only node for heuristic selfplay
+    note: CPU-only node for heuristic selfplay, P2P voter - Updated Dec 29, 2025
   hetzner-cpu3:
     ssh_host: 46.62.217.168
+    tailscale_ip: 100.126.21.102
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -783,4 +872,4 @@ hosts:
     hetzner_id: ringrift-cpu3
     region: eu-central
     p2p_enabled: true
-    note: CPU-only node for heuristic selfplay
+    note: CPU-only node for heuristic selfplay - Updated Dec 29, 2025

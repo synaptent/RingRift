@@ -63,7 +63,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.distributed_lock import DistributedLock
-from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 from app.coordination.event_utils import parse_config_key
 from app.utils.paths import DATA_DIR
 
@@ -900,9 +900,8 @@ class TrainingCoordinator:
         triggered_by = payload.get("triggered_by", "unknown")
 
         if not config_key:
-            # Try to extract from model_id
-            if model_id and "_v" in model_id:
-                config_key = model_id.rsplit("_v", 1)[0]
+            # Try to extract from model_id using utility (Dec 30, 2025)
+            config_key = extract_config_from_path(model_id) or ""
 
         if not config_key:
             logger.warning("[TrainingCoordinator] PROMOTION_ROLLED_BACK without config_key")

@@ -73,6 +73,7 @@ from typing import Any, Optional
 
 from app.core.async_context import fire_and_forget
 from app.coordination.singleton_mixin import SingletonMixin
+from app.coordination.event_utils import parse_config_key
 
 logger = logging.getLogger(__name__)
 
@@ -997,15 +998,14 @@ class OrchestratorRegistry(SingletonMixin):
         Returns:
             Dict with training readiness assessment
         """
-        # Parse config_key
+        # Parse config_key using consolidated utility (Dec 30, 2025)
         board_type = None
         num_players = None
         if config_key:
-            parts = config_key.replace("_", " ").replace("p", "").split()
-            if len(parts) >= 1:
-                board_type = parts[0]
-            if len(parts) >= 2 and parts[1].isdigit():
-                num_players = int(parts[1])
+            parsed = parse_config_key(config_key)
+            if parsed:
+                board_type = parsed.board_type
+                num_players = parsed.num_players
 
         # Get data availability
         availability = self.get_data_availability(
