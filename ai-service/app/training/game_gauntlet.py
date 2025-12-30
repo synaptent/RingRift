@@ -1426,7 +1426,7 @@ def run_baseline_gauntlet(
                     baseline,
                     model_path,
                     board_type,
-                    games_per_opponent,
+                    effective_games_per_opponent,  # Use confidence-weighted games
                     num_players,
                     verbose,
                     model_getter,
@@ -1466,7 +1466,7 @@ def run_baseline_gauntlet(
                 baseline,
                 model_path,
                 board_type,
-                games_per_opponent,
+                effective_games_per_opponent,  # Use confidence-weighted games
                 num_players,
                 verbose,
                 model_getter,
