@@ -37,6 +37,7 @@ from app.coordination.async_bridge_manager import get_bridge_manager
 
 # Use centralized event emitters (December 2025)
 from app.coordination.event_emitters import emit_training_complete
+from app.coordination.event_utils import parse_config_key
 from app.coordination.training_coordinator import (
     TrainingCoordinator,
     TrainingJob,
@@ -249,17 +250,15 @@ class AsyncTrainingBridge:
 
     async def get_job_by_id(self, job_id: str) -> TrainingJob | None:
         """Get training job by ID."""
-        # Parse board_type and num_players from job_id
+        # Parse board_type and num_players from job_id using canonical utility
         # Format: {board_type}_{num_players}p_{timestamp}_{pid}
         try:
-            parts = job_id.split("_")
-            if len(parts) >= 2:
-                board_type = parts[0]
-                num_players = int(parts[1].rstrip("p"))
+            parsed = parse_config_key(job_id)
+            if parsed:
                 return await self._run_sync(
                     self._coordinator.get_job,
-                    board_type,
-                    num_players
+                    parsed.board_type,
+                    parsed.num_players
                 )
         except Exception as e:
             logger.warning(f"Could not parse job_id {job_id}: {e}")

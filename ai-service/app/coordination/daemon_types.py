@@ -651,7 +651,8 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.TRAINING_NODE_WATCHER: {DaemonType.EVENT_ROUTER},
     DaemonType.TRAINING_DATA_SYNC: {DaemonType.EVENT_ROUTER},  # Pre-training data sync
     # OWC import daemon (December 29, 2025) - imports from OWC external drive
-    DaemonType.OWC_IMPORT: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
+    # December 30, 2025: Removed DATA_PIPELINE - not needed for file import
+    DaemonType.OWC_IMPORT: {DaemonType.EVENT_ROUTER},
     DaemonType.NODE_RECOVERY: {DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR},
 
     # Replication daemons

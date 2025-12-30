@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.base_daemon import BaseDaemon, DaemonConfig
+from app.coordination.event_utils import parse_config_key
 from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -695,11 +696,13 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
         for pth_file in checkpoints_path.glob("**/*.pth"):
             # Extract config from filename (e.g., "hex8_2p_v5_epoch10.pth" -> "hex8_2p")
             name = pth_file.stem
-            parts = name.split("_")
-            if len(parts) >= 2:
-                config_key = f"{parts[0]}_{parts[1]}"
+            parsed = parse_config_key(name)
+            if parsed:
+                config_key = f"{parsed.board_type}_{parsed.num_players}p"
             else:
-                config_key = parts[0]
+                # Fallback: try first two underscore-separated parts
+                parts = name.split("_")
+                config_key = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
 
             if config_key not in checkpoint_groups:
                 checkpoint_groups[config_key] = []

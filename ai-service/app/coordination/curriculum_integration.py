@@ -29,6 +29,7 @@ import time
 from typing import Any
 
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_utils import parse_config_key
 from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -951,19 +952,18 @@ class PFSPWeaknessWatcher:
         self._update_curriculum_weight(config_key)
 
     def _extract_config(self, model_id: str) -> str:
-        """Extract config key from model ID."""
+        """Extract config key from model ID using canonical utility."""
         # Convention: hex8_2p_v123 -> hex8_2p
         # Or: canonical_hex8_2p -> hex8_2p
-        parts = model_id.split("_")
-        if len(parts) >= 2:
-            # Try to find board_Np pattern
-            for i, part in enumerate(parts):
-                if part.endswith("p") and part[:-1].isdigit():
-                    # Found player count, return board_Np
-                    return "_".join(parts[max(0, i - 1):i + 1])
-
-            # Fallback: first two parts
-            return "_".join(parts[:2])
+        # Strip common prefixes first
+        name = model_id
+        for prefix in ("canonical_", "ringrift_best_", "selfplay_"):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+                break
+        parsed = parse_config_key(name)
+        if parsed:
+            return f"{parsed.board_type}_{parsed.num_players}p"
         return model_id
 
     def _emit_opponent_mastered(self, config_key: str, mastery: dict[str, Any]) -> None:

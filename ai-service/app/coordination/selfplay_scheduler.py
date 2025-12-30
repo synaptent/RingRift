@@ -122,6 +122,7 @@ from app.coordination.budget_calculator import (
 )
 from app.coordination.protocols import HealthCheckResult
 from app.coordination.handler_base import HandlerBase
+from app.coordination.event_handler_utils import extract_config_key
 
 # December 30, 2025: Extracted cache and metrics classes
 from app.coordination.config_state_cache import ConfigStateCache
@@ -2325,7 +2326,7 @@ class SelfplayScheduler(HandlerBase):
     def _on_selfplay_complete(self, event: Any) -> None:
         """Handle selfplay completion event."""
         try:
-            config_key = event.payload.get("config_key", "")
+            config_key = extract_config_key(event.payload)
             if config_key in self._config_priorities:
                 # Reset staleness for this config
                 self._config_priorities[config_key].staleness_hours = 0.0
@@ -2335,7 +2336,7 @@ class SelfplayScheduler(HandlerBase):
     def _on_training_complete(self, event: Any) -> None:
         """Handle training completion event."""
         try:
-            config_key = event.payload.get("config_key", "")
+            config_key = extract_config_key(event.payload)
             if config_key in self._config_priorities:
                 # Clear training pending flag
                 self._config_priorities[config_key].training_pending = False
@@ -2345,7 +2346,7 @@ class SelfplayScheduler(HandlerBase):
     def _on_promotion_complete(self, event: Any) -> None:
         """Handle promotion completion event."""
         try:
-            config_key = event.payload.get("config_key", "")
+            config_key = extract_config_key(event.payload)
             success = event.payload.get("success", False)
 
             if config_key in self._config_priorities:
@@ -2370,7 +2371,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             target_games = payload.get("target_games", 0)
             priority_val = payload.get("priority", "normal")
             search_budget = payload.get("search_budget", 0)
@@ -2415,7 +2416,7 @@ class SelfplayScheduler(HandlerBase):
         apply a penalty to reduce selfplay allocation for this config.
         """
         try:
-            config_key = event.payload.get("config_key", "")
+            config_key = extract_config_key(event.payload)
             quality_score = event.payload.get("quality_score", 0.0)
             threshold = event.payload.get("threshold", 0.6)
 
@@ -2454,7 +2455,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             severity = payload.get("severity", "moderate")  # mild, moderate, severe
             win_rate_drop = payload.get("win_rate_drop", 0.0)
 
@@ -2510,7 +2511,7 @@ class SelfplayScheduler(HandlerBase):
                 return
 
             trigger = payload.get("trigger", "")
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             new_weight = payload.get("weight", 1.0)
             reason = payload.get("reason", "")
 
@@ -2577,7 +2578,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "") or payload.get("config", "")
+            config_key = extract_config_key(payload)
             new_rate = payload.get("new_rate", 1.0) or payload.get("rate_multiplier", 1.0)
             momentum_state = payload.get("momentum_state", "unknown")
 
@@ -2612,7 +2613,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "") or payload.get("config", "")
+            config_key = extract_config_key(payload)
             reason = payload.get("reason", "unknown")
             data_age_hours = payload.get("data_age_hours", 0.0)
 
@@ -2666,7 +2667,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "") or payload.get("config", "")
+            config_key = extract_config_key(payload)
             quality_score = payload.get("quality_score", 0.7)
 
             if not config_key:
@@ -2719,7 +2720,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "") or payload.get("config", "")
+            config_key = extract_config_key(payload)
             opponent_level = payload.get("opponent_level", "unknown")
             win_rate = payload.get("win_rate", 0.0)
 
@@ -2785,7 +2786,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "") or payload.get("config", "")
+            config_key = extract_config_key(payload)
             reason = payload.get("reason", "unknown")
             final_loss = payload.get("final_loss", 0.0)
             epochs_completed = payload.get("epochs_completed", 0)
@@ -2860,7 +2861,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             velocity = payload.get("velocity", 0.0)
             previous_velocity = payload.get("previous_velocity", 0.0)
             trend = payload.get("trend", "stable")
@@ -2967,7 +2968,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             boost_factor = payload.get("boost_factor", 1.0)
             reason = payload.get("reason", "unknown")
             anomaly_count = payload.get("anomaly_count", 0)
@@ -3037,7 +3038,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             new_stage = payload.get("stage", 1)
             consecutive_promotions = payload.get("consecutive_promotions", 0)
 
@@ -3078,7 +3079,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             param_type = payload.get("param_type", "")
             old_value = payload.get("old_value")
             new_value = payload.get("new_value")
@@ -3564,7 +3565,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             new_elo = payload.get("new_elo", 0.0)
 
             if not config_key or new_elo <= 0:
@@ -3616,7 +3617,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             boost_multiplier = payload.get("boost_multiplier", 2.0)
             stall_duration = payload.get("stall_duration_hours", 0.0)
 
@@ -3650,7 +3651,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             new_velocity = payload.get("current_velocity", 0.0)
 
             if not config_key or config_key not in self._config_priorities:
@@ -3681,7 +3682,7 @@ class SelfplayScheduler(HandlerBase):
         """
         try:
             payload = event.payload if hasattr(event, "payload") else event
-            config_key = payload.get("config_key", "")
+            config_key = extract_config_key(payload)
             weights = payload.get("weights", {})
 
             if not config_key or not weights:

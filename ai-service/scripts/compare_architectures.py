@@ -569,6 +569,54 @@ def update_architecture_tracker(report: ComparisonReport) -> None:
         logger.warning(f"Could not update architecture tracker: {e}")
 
 
+def emit_comparison_completed_event(report: ComparisonReport) -> None:
+    """Emit ARCHITECTURE_COMPARISON_COMPLETED event for integration with training pipeline.
+
+    This event triggers the ArchitectureFeedbackController to update
+    allocation weights based on the comparison results.
+    """
+    try:
+        from app.coordination.event_router import get_router
+
+        router = get_router()
+
+        # Emit event with full comparison data
+        event_data = {
+            "elo_ratings": report.elo_ratings,
+            "matchups": [
+                {
+                    "arch_a": m.arch_a,
+                    "arch_b": m.arch_b,
+                    "wins_a": m.wins_a,
+                    "wins_b": m.wins_b,
+                    "draws": m.draws,
+                    "games_played": m.games_played,
+                    "elo_diff": m.elo_diff,
+                    "win_rate_a": m.win_rate_a,
+                }
+                for m in report.matchups
+            ],
+            "config": {
+                "board_type": report.config.board_type,
+                "num_players": report.config.num_players,
+                "games_per_matchup": report.config.games_per_matchup,
+                "harness": report.config.harness,
+            },
+            "timestamp": report.timestamp,
+        }
+
+        router.emit("ARCHITECTURE_COMPARISON_COMPLETED", event_data)
+        logger.info(
+            f"Emitted ARCHITECTURE_COMPARISON_COMPLETED event "
+            f"({len(report.elo_ratings)} architectures)"
+        )
+
+    except ImportError as e:
+        logger.warning(f"Could not emit comparison event (event_router not available): {e}")
+    except Exception as e:
+        logger.warning(f"Error emitting comparison event: {e}")
+
+
 def get_default_models(board_type: str, num_players: int) -> dict[str, str]:
     """Get default model paths for a configuration."""
     key = f"{board_type}_{num_players}p"
@@ -607,6 +655,8 @@ def main():
     run_parser.add_argument("--quick", action="store_true", help="Quick test (10 games)")
     run_parser.add_argument("--update-tracker", action="store_true",
                           help="Update architecture tracker with results")
+    run_parser.add_argument("--emit-event", action="store_true",
+                          help="Emit ARCHITECTURE_COMPARISON_COMPLETED event")
 
     # Report command
     report_parser = subparsers.add_parser("report", help="Generate report from results")
@@ -653,6 +703,10 @@ def main():
         # Update tracker if requested
         if args.update_tracker:
             update_architecture_tracker(report)
+
+        # Emit event if requested
+        if args.emit_event:
+            emit_comparison_completed_event(report)
 
     elif args.command == "report":
         # Load and display existing results

@@ -95,9 +95,11 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     ),
     # OWC external drive import (December 29, 2025) - periodic import from OWC drive
     # Imports training data from external archive on mac-studio for underserved configs
+    # December 30, 2025: Removed DATA_PIPELINE dependency - OWC_IMPORT doesn't need pipeline
+    # to run, it only imports files. Events are optional enhancement, not core functionality.
     DaemonType.OWC_IMPORT: DaemonSpec(
         runner_name="create_owc_import",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
         health_check_interval=1800.0,  # 30 min - runs hourly import cycles
     ),

@@ -25,6 +25,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_utils import parse_config_key
 from app.coordination.pipeline_mixin_base import PipelineMixinBase
 
 if TYPE_CHECKING:
@@ -1261,14 +1262,12 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
         # Auto-trigger export if enabled and we're in appropriate stage
         if self.auto_trigger and self.auto_trigger_export:
             if self._current_stage in [PipelineStage.IDLE, PipelineStage.DATA_SYNC]:
-                board_type = config.split("_")[0] if "_" in config else ""
-                num_players_str = config.split("_")[1].replace("p", "") if "_" in config else "2"
-                try:
-                    num_players = int(num_players_str)
+                parsed = parse_config_key(config)
+                if parsed:
                     iteration = self._current_iteration + 1
                     await self._auto_trigger_export(iteration)
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Failed to parse config {config}: {e}")
+                else:
+                    logger.warning(f"Failed to parse config {config}")
 
     async def _on_promotion_started(self, event) -> None:
         """Handle PROMOTION_STARTED - promotion process initiated.
