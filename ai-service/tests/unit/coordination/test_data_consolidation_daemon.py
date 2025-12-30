@@ -252,6 +252,62 @@ class TestDataConsolidationDaemon:
         assert canonical_db not in sources
 
     @pytest.mark.asyncio
+    async def test_find_source_databases_includes_owc_imports(self, daemon, temp_data_dir):
+        """Test that owc_imports directory is searched for source databases.
+
+        December 30, 2025: Critical fix - owc_imports contains 176K+ games that
+        were previously being ignored by the consolidation daemon.
+        """
+        # Create owc_imports database
+        owc_dir = temp_data_dir / "owc_imports"
+        owc_dir.mkdir(parents=True, exist_ok=True)
+        owc_db = owc_dir / "owc_archive_hex8.db"
+
+        conn = sqlite3.connect(str(owc_db))
+        conn.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT,
+                num_players INTEGER
+            )
+        """)
+        conn.execute("INSERT INTO games VALUES ('owc-game-1', 'hex8', 2)")
+        conn.commit()
+        conn.close()
+
+        sources = daemon._find_source_databases("hex8", 2)
+
+        assert any("owc_imports" in str(p) for p in sources)
+
+    @pytest.mark.asyncio
+    async def test_find_source_databases_includes_synced(self, daemon, temp_data_dir):
+        """Test that synced directory is searched for source databases.
+
+        December 30, 2025: Critical fix - synced directory contains P2P synced
+        databases that were previously being ignored.
+        """
+        # Create synced database
+        synced_dir = temp_data_dir / "synced"
+        synced_dir.mkdir(parents=True, exist_ok=True)
+        synced_db = synced_dir / "synced_from_worker.db"
+
+        conn = sqlite3.connect(str(synced_db))
+        conn.execute("""
+            CREATE TABLE games (
+                game_id TEXT PRIMARY KEY,
+                board_type TEXT,
+                num_players INTEGER
+            )
+        """)
+        conn.execute("INSERT INTO games VALUES ('synced-game-1', 'hex8', 2)")
+        conn.commit()
+        conn.close()
+
+        sources = daemon._find_source_databases("hex8", 2)
+
+        assert any("synced" in str(p) for p in sources)
+
+    @pytest.mark.asyncio
     async def test_has_games_for_config(self, daemon, source_db):
         """Test checking if database has games for config."""
         assert daemon._has_games_for_config(source_db, "hex8", 2) is True

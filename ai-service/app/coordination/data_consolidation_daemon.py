@@ -446,10 +446,14 @@ class DataConsolidationDaemon(HandlerBase):
         source_dbs: set[Path] = set()  # Use set to avoid duplicates
 
         # Search patterns for selfplay databases
+        # NOTE: owc_imports and synced are critical - they contain 176K+ games (68GB)
+        # that would otherwise never reach canonical databases for training
         search_dirs = [
             self.config.data_dir,
             self.config.data_dir / "selfplay",
             self.config.data_dir / "p2p_gpu",
+            self.config.data_dir / "owc_imports",  # OWC external drive archives
+            self.config.data_dir / "synced",       # P2P synced databases
         ]
 
         for search_dir in search_dirs:
