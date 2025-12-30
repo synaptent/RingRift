@@ -288,6 +288,12 @@ class GossipProtocolMixin(P2PMixinBase):
         if not hasattr(self, "_gossip_health_tracker"):
             self._gossip_health_tracker = GossipHealthTracker()
 
+        # Dec 30, 2025: Async lock for gossip state mutations to prevent race conditions
+        # Uses TimeoutAsyncLockWrapper to prevent deadlocks on contention
+        if not hasattr(self, "_gossip_state_lock"):
+            from .network import TimeoutAsyncLockWrapper
+            self._gossip_state_lock = TimeoutAsyncLockWrapper(timeout=5.0)
+
         # Dec 29, 2025: Restore persisted gossip state on startup
         # This allows faster cluster state recovery after P2P restarts
         self._restore_gossip_state_on_startup()
