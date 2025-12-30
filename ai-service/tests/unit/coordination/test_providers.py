@@ -365,24 +365,6 @@ class TestVastProvider:
         assert provider.name == "Vast.ai"
 
 
-class TestLambdaProvider:
-    """Tests for Lambda Labs provider implementation.
-
-    Note: Lambda Labs account terminated Dec 2025. Provider removed.
-    These tests are skipped but kept for documentation.
-    """
-
-    @pytest.mark.skip(reason="Lambda Labs account terminated Dec 2025 - provider removed")
-    def test_import(self):
-        """LambdaProvider can be imported."""
-        pass
-
-    @pytest.mark.skip(reason="Lambda Labs account terminated Dec 2025 - provider removed")
-    def test_instantiation(self):
-        """LambdaProvider can be instantiated."""
-        pass
-
-
 class TestVultrProvider:
     """Tests for Vultr provider implementation."""
 

@@ -416,28 +416,6 @@ class TestApplyPlacementMovesBatch:
         assert state.move_history[0, 0, 3].item() == 5  # x
 
 
-# SKIP-REASON: KEEP-SKIPPED - legacy functions removed; use vectorized implementations
-@pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
-class TestApplyPlacementLegacy:
-    """Tests for _apply_placement_moves_batch_legacy."""
-
-    def test_legacy_placement_on_empty_cell(self):
-        """Test legacy placement on empty cell."""
-        device = torch.device('cpu')
-        state = MockBatchGameState(batch_size=1, board_size=7, device=device)
-        state.current_player[0] = 1
-        state.rings_in_hand[0, 1] = 10
-
-        moves = create_single_move(device, 1, 0, 3, 3, 3, 3, MoveType.PLACEMENT)
-        move_indices = torch.tensor([0], dtype=torch.int64, device=device)
-
-        _apply_placement_moves_batch_legacy(state, move_indices, moves)
-
-        assert state.stack_owner[0, 3, 3].item() == 1
-        assert state.stack_height[0, 3, 3].item() == 1
-        assert state.cap_height[0, 3, 3].item() == 1
-
-
 # =============================================================================
 # Test apply_movement_moves_batch
 # =============================================================================
@@ -514,27 +492,6 @@ class TestApplyMovementMovesBatch:
 
         apply_movement_moves_batch(state, move_indices, moves)
         assert state.move_count[0].item() == 0
-
-
-# SKIP-REASON: KEEP-SKIPPED - legacy functions removed; use vectorized implementations
-@pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
-class TestApplyMovementLegacy:
-    """Tests for _apply_movement_moves_batch_legacy."""
-
-    def test_legacy_movement_basic(self):
-        """Test legacy movement."""
-        device = torch.device('cpu')
-        state = MockBatchGameState(batch_size=1, board_size=7, device=device)
-        state.current_player[0] = 1
-        state.place_stack(0, 2, 2, owner=1, height=2, cap=2)
-
-        moves = create_single_move(device, 1, 0, 2, 2, 4, 2, MoveType.MOVEMENT)
-        move_indices = torch.tensor([0], dtype=torch.int64, device=device)
-
-        _apply_movement_moves_batch_legacy(state, move_indices, moves)
-
-        assert state.stack_owner[0, 2, 2].item() == 0
-        assert state.stack_owner[0, 4, 2].item() == 1
 
 
 # =============================================================================
@@ -614,27 +571,6 @@ class TestApplyCaptureMovesBatch:
         assert state.move_history[0, 0, 1].item() == 1
         assert state.move_history[0, 0, 2].item() == 2  # from_y
         assert state.move_history[0, 0, 3].item() == 2  # from_x
-
-
-# SKIP-REASON: KEEP-SKIPPED - legacy functions removed; use vectorized implementations
-@pytest.mark.skip(reason="Legacy functions removed - use vectorized implementations")
-class TestApplyCaptureLegacy:
-    """Tests for _apply_capture_moves_batch_legacy."""
-
-    def test_legacy_capture_basic(self):
-        """Test legacy capture."""
-        device = torch.device('cpu')
-        state = MockBatchGameState(batch_size=1, board_size=7, device=device)
-        state.current_player[0] = 1
-        state.place_stack(0, 2, 2, owner=1, height=2, cap=2)
-        state.place_stack(0, 3, 2, owner=2, height=1, cap=1)
-
-        moves = create_single_move(device, 1, 0, 2, 2, 3, 2, MoveType.CAPTURE)
-        move_indices = torch.tensor([0], dtype=torch.int64, device=device)
-
-        _apply_capture_moves_batch_legacy(state, move_indices, moves)
-
-        assert state.stack_owner[0, 2, 2].item() == 0
 
 
 # =============================================================================
