@@ -48,6 +48,12 @@ This document provides a comprehensive reference for all training features, para
 | `sampling_weights`          | str   | "victory_type"                              | Sample balancing strategy                     |
 | `use_optimized_hyperparams` | bool  | true                                        | Load board-specific hyperparameters           |
 
+Training config resolution is now handled by `TrainConfigResolver`
+(`app/training/train_config_resolver.py`), which applies override > config >
+threshold precedence and produces a `ResolvedConfig`
+(`app/training/train_context.py`). `TrainContext` packages the resolved config
+and shared state for the modularized `train.py` pipeline.
+
 ### Adaptive Early Stopping (Dec 2025)
 
 The thresholds module provides a helper to derive board- and strength-aware

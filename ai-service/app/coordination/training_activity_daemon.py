@@ -116,8 +116,8 @@ class TrainingActivityDaemon(BaseDaemon[TrainingActivityConfig]):
         # Check P2P cluster for training activity
         training_detected = await self._check_p2p_training()
 
-        # Also check local processes
-        if self.detect_local_training():
+        # Also check local processes (via thread pool to avoid blocking)
+        if await asyncio.to_thread(self.detect_local_training):
             training_detected.add(self.node_id)
 
         # Detect new training nodes
