@@ -703,7 +703,27 @@ class UnifiedEventRouter:
 
         # Route to CrossProcessEventQueue
         if route_to_cross_process and HAS_CROSS_PROCESS:
-            cp_publish(event_type_str, payload, source)
+            try:
+                event_id = cp_publish(event_type_str, payload, source)
+                # Dec 29, 2025: Track degradation when cross-process queue returns -1 (readonly)
+                if event_id == -1:
+                    self._cross_process_failures += 1
+                    self._cross_process_degraded = True
+                    self._last_cp_failure_time = time.time()
+                    payload_size = len(json.dumps(payload or {})) if payload else 0
+                    logger.warning(
+                        f"[EventRouter] Cross-process degraded: {event_type_str} "
+                        f"(payload_size={payload_size}B, failures={self._cross_process_failures})"
+                    )
+                elif self._cross_process_degraded:
+                    # Recovered from degraded state
+                    self._cross_process_degraded = False
+                    logger.info("[EventRouter] Cross-process recovered from degradation")
+            except Exception as e:
+                self._cross_process_failures += 1
+                self._cross_process_degraded = True
+                self._last_cp_failure_time = time.time()
+                logger.warning(f"[EventRouter] Cross-process publish failed: {e}")
 
         # Dispatch to router subscribers
         await self._dispatch(router_event, exclude_origin=False)
