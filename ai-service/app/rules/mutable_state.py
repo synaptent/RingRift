@@ -1426,7 +1426,7 @@ class MutableGameState:
             # All players eliminated - use deterministic tiebreaker (lowest player number)
             # This mirrors VictoryAggregate.ts - games must ALWAYS have a winner.
             # Per RR-CANON: The game must always produce a winner.
-            all_player_numbers = list(range(1, self._num_players + 1))
+            all_player_numbers = list(range(1, self._max_players + 1))
             self._winner = min(all_player_numbers)
             self._game_status = GameStatus.COMPLETED
             logger.warning(

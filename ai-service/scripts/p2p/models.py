@@ -274,8 +274,9 @@ class NodeInfo:
         elif self.memory_percent >= MEMORY_WARNING_THRESHOLD:
             issues.append(("memory_warning", f"Memory at {self.memory_percent:.0f}%"))
 
-        # Check NFS
-        if not self.nfs_accessible:
+        # Check NFS (skip if NFS is disabled - RingRift doesn't use NFS)
+        nfs_disabled = os.environ.get("RINGRIFT_DISABLE_NFS_CHECK", "1").lower() in ("1", "true", "yes")
+        if not nfs_disabled and not self.nfs_accessible:
             issues.append(("nfs_unavailable", "NFS mount not accessible"))
 
         # Check errors
