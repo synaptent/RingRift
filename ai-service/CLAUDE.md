@@ -63,10 +63,10 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 95 daemon types (~3,200 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 99 daemon types (~3,200 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 89 async runner functions                         |
-| `event_router.py`                      | Unified event bus (207 event types, SHA256 dedup) |
+| `daemon_runners.py`                    | 91 async runner functions                         |
+| `event_router.py`                      | Unified event bus (202 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -339,11 +339,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-95 daemon types (89 active, 6 deprecated). Three-layer architecture:
+99 daemon types (93 active, 6 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 89 async runner functions
+3. **`daemon_runners.py`** - 91 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -401,11 +401,11 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: 99.5% COMPLETE (Dec 30, 2025)
 
-207 event types defined in DataEventType enum. All critical event flows are fully wired.
+202 event types defined in DataEventType enum. All critical event flows are fully wired.
 Only 2 minor informational gaps remain (SELFPLAY_ALLOCATION_UPDATED undercoverage,
 NODE_CAPACITY_UPDATED dual emitters) - neither affects core pipeline operation.
 
-207 event types across 3 layers:
+202 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion
@@ -783,6 +783,21 @@ Test coverage has been expanded for training modules:
 | `event_driven_selfplay.py` | 650 | `test_event_driven_selfplay.py` | 36    | ✅ Exists  |
 | `streaming_pipeline.py`    | 794 | -                               | 0     | ⚠️ Missing |
 
+**Training Modules Without Tests (7,381 LOC total):**
+
+| Module                   | LOC | Purpose                                 |
+| ------------------------ | --- | --------------------------------------- |
+| `streaming_pipeline.py`  | 794 | Real-time game data streaming           |
+| `reanalysis.py`          | 734 | Re-evaluates games with current model   |
+| `training_facade.py`     | 725 | Unified training enhancements interface |
+| `multi_task_learning.py` | 720 | Auxiliary tasks: outcome prediction     |
+| `ebmo_dataset.py`        | 718 | EBMO training dataset loader            |
+| `tournament.py`          | 704 | Tournament evaluation system            |
+| `train_gmo_selfplay.py`  | 699 | Gumbel MCTS selfplay training           |
+| `env.py`                 | 699 | Game environment implementation         |
+| `ebmo_trainer.py`        | 696 | EBMO ensemble training orchestrator     |
+| `data_loader_factory.py` | 692 | Factory for specialized data loaders    |
+
 **Recent Test Fixes (Dec 30, 2025):**
 
 - Fixed `test_handles_standard_event` by setting `ArchitectureTracker._instance` for singleton isolation
@@ -794,9 +809,9 @@ Test coverage has been expanded for training modules:
 
 Comprehensive exploration using 4 parallel agents identified the following:
 
-### Code Consolidation Opportunities
+### Code Consolidation Status (VERIFIED COMPLETE Dec 30, 2025)
 
-Potential 8,000-12,000 LOC savings (medium priority, not blocking):
+~~Potential 8,000-12,000 LOC savings~~ **Exploration agent estimate was STALE**:
 
 | Consolidation Target       | Files Affected | Estimated Savings |
 | -------------------------- | -------------- | ----------------- |
@@ -805,7 +820,13 @@ Potential 8,000-12,000 LOC savings (medium priority, not blocking):
 | Standardize event handlers | 40 files       | ~3,000 LOC        |
 | P2P mixin consolidation    | 6 files        | ~800 LOC          |
 
-**Already done**: P2PMixinBase (250 LOC) and HandlerBase (550 LOC) created.
+**ALREADY COMPLETE**:
+
+- HandlerBase (550 LOC) - unified 15+ daemons
+- P2PMixinBase (250 LOC) - unified 6 mixins
+- DatabaseSyncManager (~930 LOC saved) - EloSyncManager/RegistrySyncManager migrated
+- Event utilities - event_utils.py, event_handler_utils.py consolidated
+- Re-export modules (`_exports_*.py`) - intentional organization, NOT duplication
 
 ### Training Loop Integration
 
