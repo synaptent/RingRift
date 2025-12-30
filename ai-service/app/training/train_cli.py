@@ -752,22 +752,33 @@ def main() -> None:
             num_players=args.num_players or 2,
             fallback_path=os.path.join(config.data_dir, "dataset.npz"),
         )
-    # December 29, 2025: Use canonical model paths by default
-    # This ensures consistent naming across all training paths
-    if args.save_path:
-        save_path = args.save_path
-    else:
-        board_type = args.board_type or 'square8'
-        num_players = args.num_players or 2
-        save_path = os.path.join(
-            config.model_dir,
-            f"canonical_{board_type}_{num_players}p.pth",
-        )
     # Board-aware default model version (centralized in config.py)
     # Auto-detects from data if data_path provided (Dec 2025)
     model_version = args.model_version
     if model_version is None:
         model_version = get_model_version_for_board(config.board_type, data_path=data_path)
+
+    # December 29, 2025: Use canonical model paths by default
+    # December 30, 2025: Include architecture in default filename to support
+    # multi-architecture training (e.g., canonical_hex8_2p_v4.pth)
+    if args.save_path:
+        save_path = args.save_path
+    else:
+        board_type = args.board_type or 'square8'
+        num_players = args.num_players or 2
+        # Include architecture in filename only if explicitly specified
+        # This avoids breaking backward compat with existing v5 models
+        if args.model_version and args.model_version != 'v5':
+            save_path = os.path.join(
+                config.model_dir,
+                f"canonical_{board_type}_{num_players}p_{args.model_version}.pth",
+            )
+        else:
+            # Default v5 gets the canonical name without suffix for backward compat
+            save_path = os.path.join(
+                config.model_dir,
+                f"canonical_{board_type}_{num_players}p.pth",
+            )
 
     # ==========================================================================
     # Adaptive Training Intensity (2025-12)

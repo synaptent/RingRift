@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import yaml
+
 from app.config.coordination_defaults import DataFreshnessDefaults, SyncDefaults
 from app.config.env import env
 from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
@@ -221,6 +223,132 @@ class TrainingDecision:
         }
 
 
+# December 30, 2025: Multi-Architecture Training Support
+# These dataclasses parse config/architecture_training.yaml to control which
+# architectures are trained on which board configurations.
+
+
+@dataclass
+class ArchitectureSpec:
+    """Specification for training a single architecture."""
+
+    name: str
+    enabled: bool
+    configs: list[str]  # List of config_keys or ["*"] for all
+    priority: float  # Fraction of training compute (0.0-1.0)
+    description: str = ""
+    # Training overrides
+    epochs: int | None = None
+    batch_size: int | None = None
+
+    def matches_config(self, config_key: str) -> bool:
+        """Check if this architecture should be trained on a config."""
+        if not self.enabled:
+            return False
+        if "*" in self.configs:
+            return True
+        return config_key in self.configs
+
+
+@dataclass
+class MultiArchitectureConfig:
+    """Configuration for multi-architecture training."""
+
+    architectures: dict[str, ArchitectureSpec]
+    min_samples_per_architecture: int = 3000
+    max_concurrent_per_architecture: int = 2
+    min_hours_between_runs: float = 4.0
+
+    @classmethod
+    def load(cls, config_path: Path | None = None) -> "MultiArchitectureConfig":
+        """Load architecture config from YAML file.
+
+        Args:
+            config_path: Path to YAML config. If None, uses default path.
+
+        Returns:
+            MultiArchitectureConfig instance.
+        """
+        if config_path is None:
+            base_dir = Path(__file__).resolve().parent.parent.parent
+            config_path = base_dir / "config" / "architecture_training.yaml"
+
+        architectures: dict[str, ArchitectureSpec] = {}
+
+        if not config_path.exists():
+            logger.warning(
+                f"[MultiArchitectureConfig] Config not found: {config_path}, "
+                "using default (v5 only)"
+            )
+            # Default: only train v5 on all configs
+            architectures["v5"] = ArchitectureSpec(
+                name="v5",
+                enabled=True,
+                configs=["*"],
+                priority=1.0,
+                description="Default v5 architecture",
+            )
+            return cls(architectures=architectures)
+
+        try:
+            with open(config_path) as f:
+                data = yaml.safe_load(f)
+        except Exception as e:
+            logger.error(f"[MultiArchitectureConfig] Failed to load {config_path}: {e}")
+            # Fallback to v5 only
+            architectures["v5"] = ArchitectureSpec(
+                name="v5",
+                enabled=True,
+                configs=["*"],
+                priority=1.0,
+            )
+            return cls(architectures=architectures)
+
+        # Parse architectures
+        arch_data = data.get("architectures", {})
+        for arch_name, arch_spec in arch_data.items():
+            if not isinstance(arch_spec, dict):
+                continue
+
+            # Get training overrides if present
+            training_overrides = data.get("training_overrides", {}).get(arch_name, {})
+
+            architectures[arch_name] = ArchitectureSpec(
+                name=arch_name,
+                enabled=arch_spec.get("enabled", True),
+                configs=arch_spec.get("configs", []),
+                priority=arch_spec.get("priority", 0.1),
+                description=arch_spec.get("description", ""),
+                epochs=training_overrides.get("epochs"),
+                batch_size=training_overrides.get("batch_size"),
+            )
+
+        # Parse thresholds
+        thresholds = data.get("thresholds", {})
+        min_samples = thresholds.get("min_samples_per_architecture", 3000)
+        max_concurrent = thresholds.get("max_concurrent_per_architecture", 2)
+        min_hours = thresholds.get("min_hours_between_runs", 4.0)
+
+        logger.info(
+            f"[MultiArchitectureConfig] Loaded {len(architectures)} architectures: "
+            f"{list(architectures.keys())}"
+        )
+
+        return cls(
+            architectures=architectures,
+            min_samples_per_architecture=min_samples,
+            max_concurrent_per_architecture=max_concurrent,
+            min_hours_between_runs=min_hours,
+        )
+
+    def get_architectures_for_config(self, config_key: str) -> list[ArchitectureSpec]:
+        """Get list of architectures that should be trained on a config."""
+        return [
+            arch for arch in self.architectures.values()
+            if arch.matches_config(config_key)
+        ]
+
+
 class TrainingTriggerDaemon(HandlerBase):
     """Daemon that automatically triggers training when conditions are met.
 
@@ -278,6 +406,13 @@ class TrainingTriggerDaemon(HandlerBase):
             "processes_killed": 0,
             "last_timeout_time": 0.0,
         }
+        # December 30, 2025: Multi-architecture training support
+        # Tracks training per (config_key, architecture) tuple
+        self._architecture_config = MultiArchitectureConfig.load()
+        # Track last training time per (config_key, architecture)
+        self._architecture_training_times: dict[tuple[str, str], float] = {}
+        # Track active training per architecture
+        self._active_architecture_training: dict[tuple[str, str], bool] = {}
 
     def _init_state_db(self) -> None:
         """Initialize the SQLite state database (Phase 3 - December 2025).
@@ -1672,25 +1807,72 @@ class TrainingTriggerDaemon(HandlerBase):
         return self._training_states[config_key]
 
     async def _maybe_trigger_training(self, config_key: str) -> bool:
-        """Check conditions and trigger training if appropriate."""
+        """Check conditions and trigger training for all applicable architectures.
+
+        December 30, 2025: Updated to support multi-architecture training.
+        Iterates over architectures configured for this config and triggers
+        training for each one that hasn't trained recently.
+        """
         state = self._training_states.get(config_key)
         if not state:
             return False
 
-        # Check all conditions
+        # Check base conditions (applies to all architectures)
         can_train, reason = await self._check_training_conditions(config_key)
 
         if not can_train:
             logger.debug(f"[TrainingTriggerDaemon] {config_key}: Cannot train - {reason}")
             return False
 
-        # Trigger training
-        logger.info(f"[TrainingTriggerDaemon] Triggering training for {config_key}")
-        task = asyncio.create_task(self._run_training(config_key))
-        task.add_done_callback(lambda t: self._on_training_task_done(t, config_key))
-        self._active_training_tasks[config_key] = task
+        # December 30, 2025: Iterate over architectures for this config
+        architectures = self._architecture_config.get_architectures_for_config(config_key)
+        if not architectures:
+            # Fallback to default v5 if no architectures configured
+            architectures = [ArchitectureSpec(
+                name="v5", enabled=True, configs=["*"], priority=1.0
+            )]
 
-        return True
+        triggered_any = False
+        for arch in architectures:
+            # Check architecture-specific cooldown
+            arch_key = (config_key, arch.name)
+            last_train_time = self._architecture_training_times.get(arch_key, 0.0)
+            time_since_training = time.time() - last_train_time
+            cooldown_seconds = self._architecture_config.min_hours_between_runs * 3600
+
+            if time_since_training < cooldown_seconds:
+                remaining_hours = (cooldown_seconds - time_since_training) / 3600
+                logger.debug(
+                    f"[TrainingTriggerDaemon] {config_key}/{arch.name}: "
+                    f"Architecture cooldown ({remaining_hours:.1f}h remaining)"
+                )
+                continue
+
+            # Check if already training this architecture
+            if self._active_architecture_training.get(arch_key, False):
+                logger.debug(
+                    f"[TrainingTriggerDaemon] {config_key}/{arch.name}: "
+                    f"Already training this architecture"
+                )
+                continue
+
+            # Trigger training for this architecture
+            logger.info(
+                f"[TrainingTriggerDaemon] Triggering training for {config_key} "
+                f"with architecture {arch.name}"
+            )
+            task = asyncio.create_task(self._run_training(config_key, arch))
+            task.add_done_callback(
+                lambda t, ck=config_key, a=arch.name: self._on_training_task_done(t, ck, a)
+            )
+            # Track with architecture suffix
+            task_key = f"{config_key}:{arch.name}"
+            self._active_training_tasks[task_key] = task
+            self._active_architecture_training[arch_key] = True
+            self._architecture_training_times[arch_key] = time.time()
+            triggered_any = True
+
+        return triggered_any
 
     async def _check_training_conditions(self, config_key: str) -> tuple[bool, str]:
         """Check all conditions for training trigger.
@@ -1960,8 +2142,15 @@ class TrainingTriggerDaemon(HandlerBase):
             logger.warning(f"[TrainingTriggerDaemon] ensure_fresh_data failed: {e}")
             return False
 
-    async def _run_training(self, config_key: str) -> bool:
-        """Run training subprocess for a configuration."""
+    async def _run_training(
+        self,
+        config_key: str,
+        arch: ArchitectureSpec | None = None,
+    ) -> bool:
+        """Run training subprocess for a configuration.
+
+        December 30, 2025: Added arch parameter for multi-architecture training.
+        """
         state = self._training_states.get(config_key)
         if not state:
             return False
@@ -1974,6 +2163,12 @@ class TrainingTriggerDaemon(HandlerBase):
             )
             return False
 
+        # December 30, 2025: Default to v5 if no architecture specified
+        if arch is None:
+            arch = ArchitectureSpec(
+                name="v5", enabled=True, configs=["*"], priority=1.0
+            )
+
         async with self._training_semaphore:
             state.training_in_progress = True
             state.training_start_time = time.time()  # Phase 2: Timeout watchdog
@@ -1984,8 +2179,15 @@ class TrainingTriggerDaemon(HandlerBase):
                     state.training_intensity
                 )
 
+                # December 30, 2025: Apply architecture-specific overrides
+                if arch.epochs is not None:
+                    epochs = arch.epochs
+                if arch.batch_size is not None:
+                    batch_size = arch.batch_size
+
                 logger.info(
                     f"[TrainingTriggerDaemon] Starting training for {config_key} "
+                    f"with architecture {arch.name} "
                     f"({state.npz_sample_count} samples, intensity={state.training_intensity}, "
                     f"epochs={epochs}, batch={batch_size}, lr_mult={lr_mult:.1f})"
                 )
@@ -1994,10 +2196,9 @@ class TrainingTriggerDaemon(HandlerBase):
                 base_dir = Path(__file__).resolve().parent.parent.parent
                 npz_path = state.npz_path or f"data/training/{config_key}.npz"
 
-                # December 29, 2025: Use canonical model paths for consistent naming
-                # Training outputs to models/canonical_{board}_{n}p.pth
-                # The training script also saves timestamped checkpoints alongside for history
-                model_filename = f"canonical_{config_key}.pth"
+                # December 30, 2025: Include architecture in model filename
+                # Format: canonical_{config}_{arch}.pth (e.g., canonical_hex8_2p_v4.pth)
+                model_filename = f"canonical_{config_key}_{arch.name}.pth"
                 model_path = str(base_dir / "models" / model_filename)
 
                 cmd = [
@@ -2006,7 +2207,7 @@ class TrainingTriggerDaemon(HandlerBase):
                     "--board-type", state.board_type,
                     "--num-players", str(state.num_players),
                     "--data-path", npz_path,
-                    "--model-version", self.config.model_version,
+                    "--model-version", arch.name,  # December 30, 2025: Use architecture name
                     "--epochs", str(epochs),
                     "--batch-size", str(batch_size),
                     "--save-path", model_path,  # December 29, 2025: Explicit save path
@@ -2123,19 +2324,40 @@ class TrainingTriggerDaemon(HandlerBase):
             finally:
                 state.training_in_progress = False
                 state.training_pid = None
-                # Remove from active tasks
-                self._active_training_tasks.pop(config_key, None)
+                # December 30, 2025: Remove from active tasks using architecture-aware key
+                # Note: The _on_training_task_done callback also cleans up,
+                # but this ensures cleanup on exceptions before callback fires
+                task_key = f"{config_key}:{arch.name}"
+                self._active_training_tasks.pop(task_key, None)
+                arch_key = (config_key, arch.name)
+                self._active_architecture_training.pop(arch_key, None)
 
-    def _on_training_task_done(self, task: asyncio.Task, config_key: str) -> None:
-        """Handle training task completion."""
+    def _on_training_task_done(
+        self, task: asyncio.Task, config_key: str, arch_name: str | None = None
+    ) -> None:
+        """Handle training task completion.
+
+        December 30, 2025: Added arch_name parameter for multi-architecture tracking.
+        """
         try:
             exc = task.exception()
             if exc:
-                logger.error(f"[TrainingTriggerDaemon] Training task error for {config_key}: {exc}")
+                logger.error(
+                    f"[TrainingTriggerDaemon] Training task error for "
+                    f"{config_key}/{arch_name or 'v5'}: {exc}"
+                )
         except asyncio.CancelledError:
             pass
         except asyncio.InvalidStateError:
             pass
+
+        # December 30, 2025: Clear architecture-specific tracking
+        if arch_name:
+            arch_key = (config_key, arch_name)
+            self._active_architecture_training.pop(arch_key, None)
+            # Remove task with architecture suffix
+            task_key = f"{config_key}:{arch_name}"
+            self._active_training_tasks.pop(task_key, None)
 
     async def _emit_training_complete(self, config_key: str, success: bool) -> None:
         """Emit training completion event."""

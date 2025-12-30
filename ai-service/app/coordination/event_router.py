@@ -2377,14 +2377,18 @@ async def emit_evaluation_completed(
     best_elo: float | None = None,
     composite_participant_ids: list | None = None,
     is_multi_harness: bool = False,
+    # December 30, 2025: Architecture for multi-architecture training support
+    architecture: str | None = None,
     **extra_payload
 ) -> None:
     """Emit EVALUATION_COMPLETED event to all systems.
 
-    December 30, 2025: Extended with multi-harness evaluation support.
+    December 30, 2025: Extended with multi-harness evaluation support and
+    multi-architecture training tracking.
     - harness_results: Dict of harness_name -> {elo, win_rate, games_played, composite_participant_id}
     - composite_participant_ids: List of composite IDs for (model, harness) combinations
     - is_multi_harness: True if evaluated under multiple harnesses
+    - architecture: Model architecture (v2, v3, v4, v5, v5_heavy, etc.)
     """
     # Use model_path as model_id if not provided
     effective_model_id = model_id or model_path or "unknown"
@@ -2417,6 +2421,9 @@ async def emit_evaluation_completed(
         payload["composite_participant_ids"] = composite_participant_ids
     if is_multi_harness:
         payload["is_multi_harness"] = is_multi_harness
+    # December 30, 2025: Add architecture for multi-architecture support
+    if architecture is not None:
+        payload["architecture"] = architecture
 
     # Add any extra payload
     payload.update(extra_payload)

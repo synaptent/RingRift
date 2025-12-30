@@ -63,6 +63,9 @@ from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
 # December 2025: Gauntlet evaluation
 from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
 
+# December 30, 2025: Architecture extraction for multi-architecture support
+from app.training.architecture_tracker import extract_architecture_from_model_path
+
 __all__ = [
     "EvaluationConfig",
     "EvaluationDaemon",
@@ -796,11 +799,15 @@ class EvaluationDaemon(BaseEventHandler):
     ) -> None:
         """Emit EVALUATION_COMPLETED event.
 
-        December 30, 2025: Extended to include composite_participant_ids and
-        harness_results for multi-harness evaluation support.
+        December 30, 2025: Extended to include composite_participant_ids,
+        harness_results for multi-harness evaluation support, and architecture
+        for multi-architecture training tracking.
         """
         try:
             from app.coordination.event_router import emit_evaluation_completed
+
+            # December 30, 2025: Extract architecture from model path
+            architecture = extract_architecture_from_model_path(model_path)
 
             # Calculate total games played
             if result.get("is_multi_harness"):
@@ -824,6 +831,8 @@ class EvaluationDaemon(BaseEventHandler):
                 best_elo=result.get("best_elo"),
                 composite_participant_ids=result.get("composite_participant_ids"),
                 is_multi_harness=result.get("is_multi_harness", False),
+                # December 30, 2025: Architecture for multi-arch tracking
+                architecture=architecture,
             )
         except ImportError:
             logger.debug("[EvaluationDaemon] Event emitters not available")

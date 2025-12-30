@@ -136,8 +136,11 @@ class ArchitectureFeedbackController(HandlerBase):
 
         Records architecture performance based on Elo results.
 
+        December 30, 2025: Updated to prefer explicit architecture field if
+        available in event, falling back to extraction from model_path.
+
         Args:
-            event: Event data with config_key, model_path, elo, etc.
+            event: Event data with config_key, model_path, elo, architecture, etc.
         """
         try:
             from app.training.architecture_tracker import (
@@ -150,8 +153,13 @@ class ArchitectureFeedbackController(HandlerBase):
             if not data.is_valid or not data.model_path:
                 return
 
-            # Extract architecture from model path
-            architecture = extract_architecture_from_model_path(data.model_path)
+            # December 30, 2025: Prefer explicit architecture from event payload
+            # This supports multi-architecture training where architecture is known
+            # Check both metadata and direct payload (event_router puts it in payload)
+            architecture = event.get("architecture") or event.get("metadata", {}).get("architecture")
+            if not architecture:
+                # Fallback to extraction from model path
+                architecture = extract_architecture_from_model_path(data.model_path)
 
             # Record in tracker
             tracker = get_architecture_tracker()

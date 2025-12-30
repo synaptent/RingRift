@@ -1,0 +1,93 @@
+# Architecture Training Allocation Configuration
+#
+# This file controls which neural network architectures are trained per board configuration.
+# The goal is to ensure each architecture (v2, v3, v4, v5-heavy-large) is trained on at least
+# 2 configurations to enable architecture comparison and compute allocation optimization.
+#
+# Created: Dec 30, 2025
+# Updated: Dec 30, 2025 - Simplified to train all non-v5 on hex8_2p and square8_2p only
+
+# Architecture allocation
+# Each architecture specifies which configs it should be trained on
+architectures:
+  v2:
+    enabled: true
+    # Train on 2-player small boards for baseline comparison
+    configs:
+      - hex8_2p
+      - square8_2p
+    priority: 0.10 # 10% of training compute
+    description: 'Legacy baseline architecture (HexNeuralNet_v2)'
+
+  v3:
+    enabled: true
+    # Train on 2-player small boards for spatial policy head comparison
+    configs:
+      - hex8_2p
+      - square8_2p
+    priority: 0.10 # 10% of training compute
+    description: 'Spatial policy head variant (HexNeuralNet_v3)'
+
+  v4:
+    enabled: true
+    # NAS-optimized - train on 2-player small boards
+    configs:
+      - hex8_2p
+      - square8_2p
+    priority: 0.20 # 20% of training compute
+    description: 'NAS-optimized architecture (RingRiftCNN_v4)'
+
+  v5:
+    enabled: true
+    # Current production - train on all configs
+    configs:
+      - '*' # Wildcard: all 12 configurations
+    priority: 0.35 # 35% of training compute
+    description: 'Production architecture with heuristic features (HexNeuralNet_v5_Heavy)'
+
+  v5-heavy-large:
+    enabled: true
+    # Scaled-up v5 - train on 2-player small boards
+    configs:
+      - hex8_2p
+      - square8_2p
+    priority: 0.20 # 20% of training compute
+    description: 'Scaled v5-heavy (256 filters, 18 blocks)'
+
+  # Disabled architectures (for reference)
+  v5-heavy-xl:
+    enabled: false
+    configs:
+      - hexagonal_2p
+    priority: 0.05
+    description: 'Extra-large v5-heavy (320 filters, 20 blocks) - experimental'
+
+# Training thresholds
+thresholds:
+  # Minimum samples before triggering training per architecture
+  min_samples_per_architecture: 3000
+
+  # Maximum concurrent training jobs per architecture (prevent resource exhaustion)
+  max_concurrent_per_architecture: 2
+
+  # Minimum hours between training runs for same (config, architecture) pair
+  min_hours_between_runs: 4.0
+
+# Architecture-specific training parameters
+# These override defaults in train_cli.py when specified
+training_overrides:
+  v2:
+    epochs: 30
+    batch_size: 512
+  v3:
+    epochs: 30
+    batch_size: 512
+  v4:
+    epochs: 40
+    batch_size: 512
+  v5:
+    epochs: 50
+    batch_size: 256
+  v5-heavy-large:
+    epochs: 60
+    batch_size: 128 # Larger model needs smaller batch
