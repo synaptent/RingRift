@@ -139,7 +139,8 @@ class MockDataEventBus:
         if self.should_fail:
             if self.fail_count < self.max_fail_count:
                 self.fail_count += 1
-                raise Exception("Mock publish failure")
+                # Use RuntimeError (caught by event_emitters) instead of generic Exception
+                raise RuntimeError("Mock publish failure")
             else:
                 self.should_fail = False
         self.published_events.append(event)
@@ -162,14 +163,16 @@ class MockStageEventBus:
         if self.should_fail:
             if self.fail_count < self.max_fail_count:
                 self.fail_count += 1
-                raise Exception("Mock emit failure")
+                # Use RuntimeError (caught by event_emitters) instead of generic Exception
+                raise RuntimeError("Mock emit failure")
             else:
                 self.should_fail = False
         self.emitted_events.append(result)
 
     def emit_sync(self, result: MockStageCompletionResult) -> None:
         if self.should_fail:
-            raise Exception("Mock emit failure")
+            # Use RuntimeError (caught by event_emitters) instead of generic Exception
+            raise RuntimeError("Mock emit failure")
         self.emitted_events.append(result)
 
     def clear(self):

@@ -309,6 +309,25 @@ The cluster can run unattended for 48+ hours with these daemons:
 | <1000 | 200 | Bootstrap tier 3 - balanced |
 | ≥1000 | Elo-based | STANDARD/QUALITY/ULTIMATE/MASTER |
 
+## Type Consolidation (Dec 2025)
+
+Duplicate type definitions have been consolidated with domain-specific renames and backward-compatible aliases:
+
+| Original Class  | New Name                | Location                                 | Canonical For         |
+| --------------- | ----------------------- | ---------------------------------------- | --------------------- |
+| `Alert`         | `MonitoringAlert`       | `app/monitoring/base.py`                 | Monitoring alerts     |
+| `Alert`         | `RouterAlert`           | `app/monitoring/alert_router.py`         | Alert routing         |
+| `Alert`         | (canonical)             | `app/coordination/alert_types.py`        | Coordination layer    |
+| `FeedbackState` | `PipelineFeedbackState` | `app/integration/pipeline_feedback.py`   | Global pipeline state |
+| `FeedbackState` | (canonical)             | `app/coordination/feedback_state.py`     | Per-config state      |
+| `GameResult`    | `GauntletGameResult`    | `app/training/game_gauntlet.py`          | Gauntlet evaluation   |
+| `GameResult`    | `DistributedGameResult` | `app/tournament/distributed_gauntlet.py` | Distributed gauntlet  |
+| `GameResult`    | `GumbelGameResult`      | `app/ai/multi_game_gumbel.py`            | Multi-game Gumbel     |
+| `GameResult`    | (canonical)             | `app/training/selfplay_runner.py`        | Selfplay results      |
+| `GameResult`    | (canonical)             | `app/execution/game_executor.py`         | Game execution        |
+
+All renamed classes have backward-compatible `ClassName = NewClassName` aliases that will be deprecated in Q2 2026.
+
 ## Known Issues
 
 1. **Parity gates on cluster**: Nodes lack `npx`, so TS validation fails. Set `RINGRIFT_ALLOW_PENDING_GATE=1`.

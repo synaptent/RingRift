@@ -383,8 +383,10 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             # Emit start event
             await self._emit_consolidation_started(config_key, board_type, num_players)
 
-            # Find all source databases
-            source_dbs = self._find_source_databases(board_type, num_players)
+            # Find all source databases (via thread pool to avoid blocking)
+            source_dbs = await asyncio.to_thread(
+                self._find_source_databases, board_type, num_players
+            )
             stats.source_dbs_scanned = len(source_dbs)
 
             if not source_dbs:
@@ -393,12 +395,14 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
                 logger.debug(f"[DataConsolidationDaemon] No source databases found for {config_key}")
                 return stats
 
-            # Get or create canonical database
+            # Get or create canonical database (via thread pool to avoid blocking)
             canonical_db = self._get_canonical_db_path(board_type, num_players)
-            self._ensure_canonical_schema(canonical_db)
+            await asyncio.to_thread(self._ensure_canonical_schema, canonical_db)
 
-            # Get existing game IDs to avoid duplicates
-            existing_ids = self._get_existing_game_ids(canonical_db)
+            # Get existing game IDs to avoid duplicates (via thread pool)
+            existing_ids = await asyncio.to_thread(
+                self._get_existing_game_ids, canonical_db
+            )
 
             # Merge from each source database
             for source_db in source_dbs:
@@ -752,7 +756,7 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
                     )
 
                     # Copy related tables (moves, initial_state, snapshots, players)
-                    await self._copy_game_data(source_conn, target_conn, game_id)
+                    self._copy_game_data_sync(source_conn, target_conn, game_id)
 
                     stats["merged"] += 1
                     stats["new_ids"].add(game_id)
@@ -839,7 +843,7 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         except sqlite3.Error:
             return 0
 
-    async def _copy_game_data(
+    def _copy_game_data_sync(
         self,
         source_conn: sqlite3.Connection,
         target_conn: sqlite3.Connection,
@@ -850,6 +854,8 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         December 29, 2025: Fixed to use SELECT * and dynamically get columns,
         then filter to only columns that exist in target table. This handles
         schema evolution where source and target may have different columns.
+
+        Note: This is a sync method to be called via asyncio.to_thread().
         """
         tables = ["game_moves", "game_initial_state", "game_state_snapshots", "game_players"]
 

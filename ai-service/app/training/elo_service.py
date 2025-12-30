@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 # Path setup
 from app.utils.paths import UNIFIED_ELO_DB
+from app.utils.torch_utils import safe_load_checkpoint
 
 DEFAULT_ELO_DB_PATH = UNIFIED_ELO_DB
 
@@ -511,7 +512,7 @@ class EloService:
             if not path.exists():
                 return True, None  # Can't validate, assume OK
 
-            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+            checkpoint = safe_load_checkpoint(path, map_location="cpu", warn_on_unsafe=False)
 
             # Try to get num_players from checkpoint metadata
             actual_num_players = checkpoint.get("num_players")
