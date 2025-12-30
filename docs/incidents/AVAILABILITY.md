@@ -515,7 +515,8 @@ docker compose logs --tail 100 app | grep -i websocket
 
 # Test WebSocket connection
 # (Requires wscat: npm install -g wscat)
-wscat -c ws://localhost:3001
+APP_PORT=${APP_PORT:-3000}
+wscat -c ws://localhost:${APP_PORT}
 ```
 
 ### Common Causes
@@ -527,7 +528,7 @@ wscat -c ws://localhost:3001
 ### Mitigation
 
 1. Check nginx WebSocket configuration
-2. Verify port 3001 is accessible
+2. Verify the app port is accessible (HTTP + WebSocket share `PORT`)
 3. Restart app if WebSocket server crashed
 
 ---
