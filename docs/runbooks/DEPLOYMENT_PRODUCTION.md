@@ -100,10 +100,6 @@ http {
         server app:3000;
     }
 
-    upstream websocket {
-        server app:3001;
-    }
-
     # Redirect HTTP to HTTPS
     server {
         listen 80;
@@ -140,7 +136,7 @@ http {
 
         # WebSocket
         location /socket.io/ {
-            proxy_pass http://websocket;
+            proxy_pass http://app;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";

@@ -251,6 +251,7 @@ class DataEventType(Enum):
     QUORUM_LOST = "quorum_lost"  # Quorum threshold crossed (was OK, now lost)
     QUORUM_RESTORED = "quorum_restored"  # Quorum threshold crossed (was lost, now OK)
     QUORUM_AT_RISK = "quorum_at_risk"  # Quorum marginal (e.g., exactly at threshold)
+    QUORUM_RECOVERY_STARTED = "quorum_recovery_started"  # Recovery initiated after quorum lost
 
     # Progress monitoring events (December 2025 - 48h autonomous operation)
     PROGRESS_STALL_DETECTED = "progress_stall_detected"  # Config Elo stalled, recovery triggered
