@@ -500,6 +500,44 @@ class IntegrityCheckDaemon(HandlerBase):
             details=details,
         )
 
+    def get_status(self) -> dict[str, Any]:
+        """Get daemon status for monitoring dashboards.
+
+        Returns:
+            Dict with running state, config, stats, and last scan results.
+        """
+        status = {
+            "running": self._running,
+            "config": {
+                "check_interval_seconds": self.config.check_interval_seconds,
+                "data_dir": self.config.data_dir,
+                "quarantine_after_days": self.config.quarantine_after_days,
+                "max_orphans_per_scan": self.config.max_orphans_per_scan,
+            },
+            "stats": {
+                "cycles_completed": self._stats.cycles_completed,
+                "last_activity": (
+                    datetime.fromtimestamp(self._stats.last_activity).isoformat()
+                    if self._stats.last_activity > 0
+                    else None
+                ),
+                "errors_count": self._stats.errors_count,
+                "total_orphans_found": self._total_orphans_found,
+                "total_orphans_cleaned": self._total_orphans_cleaned,
+            },
+        }
+
+        if self._last_result:
+            status["last_scan"] = {
+                "scan_time": self._last_result.scan_time,
+                "databases_scanned": self._last_result.databases_scanned,
+                "orphan_games_found": self._last_result.orphan_games_found,
+                "orphan_games_quarantined": self._last_result.orphan_games_quarantined,
+                "errors": self._last_result.errors,
+            }
+
+        return status
+
 
 # =============================================================================
 # Singleton Access (using HandlerBase class methods)
