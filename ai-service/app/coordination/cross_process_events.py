@@ -610,9 +610,6 @@ class CrossProcessEventQueue:
         Returns:
             HealthCheckResult with queue health status
         """
-        # Import from contracts (zero dependencies)
-        from app.coordination.contracts import HealthCheckResult
-
         try:
             # Try to get connection and run a simple query
             conn = self._get_connection()
@@ -838,8 +835,6 @@ class CrossProcessEventPoller:
         Returns:
             HealthCheckResult with polling status and handler metrics.
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-
         # If not running, report as stopped (healthy but inactive)
         if not self._running:
             return HealthCheckResult(
