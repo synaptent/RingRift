@@ -711,6 +711,24 @@ The cluster can run unattended for 48+ hours with these daemons:
 - `PROGRESS_RECOVERED` - Config resumed progress
 - `MEMORY_PRESSURE` - GPU VRAM critical, pause spawning
 
+**Systematic Reliability Fixes (Dec 30, 2025):**
+
+These architectural improvements prevent recurring issues:
+
+| Fix                          | Location                      | Problem Solved                                             |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------- |
+| P2P IP Self-Validation       | `p2p_orchestrator.py:4224`    | Detects private IP advertising, auto-switches to Tailscale |
+| Tournament Data Export       | `auto_export_daemon.py:65-68` | Training now includes gauntlet/tournament games by default |
+| Starvation Floor Enforcement | `selfplay_scheduler.py:1692`  | ULTRA/EMERGENCY/CRITICAL tiers force minimum allocation    |
+| Voter Quorum Monitoring      | `p2p_recovery_daemon.py`      | Tracks quorum health, triggers recovery                    |
+
+**Common Failure Modes Addressed:**
+
+1. **P2P Quorum Loss**: Caused by nodes advertising private IPs → Fixed by auto-detection and Tailscale fallback
+2. **Tournament Data Not Training**: Default export excluded gauntlet games → Fixed by `include_gauntlet=True` default
+3. **Underserved Configs**: 4-player configs had near-zero games → Fixed by 25x priority multiplier for ULTRA tier
+4. **Model Staleness**: Training used stale models → Fixed by staleness weight in selfplay scheduler
+
 **Budget Tiers** (from `budget_calculator.py`):
 | Game Count | Budget | Purpose |
 |------------|--------|---------|
