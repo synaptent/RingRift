@@ -329,13 +329,14 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ### Base Classes
 
-| Class                  | Location                        | Purpose                                       |
-| ---------------------- | ------------------------------- | --------------------------------------------- |
-| `HandlerBase`          | `handler_base.py`               | Event-driven handlers (550 LOC, 45 tests)     |
-| `MonitorBase`          | `monitor_base.py`               | Health monitoring daemons (800 LOC, 41 tests) |
-| `P2PMixinBase`         | `scripts/p2p/p2p_mixin_base.py` | P2P mixin utilities (995 LOC)                 |
-| `SingletonMixin`       | `singleton_mixin.py`            | Singleton pattern (503 LOC)                   |
-| `CircuitBreakerConfig` | `transport_base.py`             | Circuit breaker configuration (canonical)     |
+| Class                  | Location                        | Purpose                                        |
+| ---------------------- | ------------------------------- | ---------------------------------------------- |
+| `HandlerBase`          | `handler_base.py`               | Event-driven handlers (550 LOC, 45 tests)      |
+| `MonitorBase`          | `monitor_base.py`               | Health monitoring daemons (800 LOC, 41 tests)  |
+| `SyncMixinBase`        | `sync_mixin_base.py`            | AutoSyncDaemon mixins (380 LOC, retry/logging) |
+| `P2PMixinBase`         | `scripts/p2p/p2p_mixin_base.py` | P2P mixin utilities (995 LOC)                  |
+| `SingletonMixin`       | `singleton_mixin.py`            | Singleton pattern (503 LOC)                    |
+| `CircuitBreakerConfig` | `transport_base.py`             | Circuit breaker configuration (canonical)      |
 
 ## Daemon System
 
@@ -757,6 +758,7 @@ Exploration agents may report stale findings. Use `grep` and code inspection to 
 - Payload extraction: `event_handler_utils.extract_*()`
 - Singleton: `SingletonMixin` from singleton_mixin.py
 - Handlers: inherit from `HandlerBase` (consolidates patterns from 15+ daemons)
+- Sync mixins: inherit from `SyncMixinBase` (provides `_retry_with_backoff`, logging helpers)
 - Database sync: inherit from `DatabaseSyncManager` (~930 LOC saved via EloSyncManager/RegistrySyncManager migration)
 
 **Consolidation Status (Dec 30, 2025):**
@@ -824,6 +826,7 @@ Comprehensive exploration using 4 parallel agents identified the following:
 
 - HandlerBase (550 LOC) - unified 15+ daemons
 - P2PMixinBase (250 LOC) - unified 6 mixins
+- SyncMixinBase (380 LOC) - unified 4 sync mixins with `_retry_with_backoff` and logging helpers
 - DatabaseSyncManager (~930 LOC saved) - EloSyncManager/RegistrySyncManager migrated
 - Event utilities - event_utils.py, event_handler_utils.py consolidated
 - Re-export modules (`_exports_*.py`) - intentional organization, NOT duplication
