@@ -75,6 +75,84 @@ class AsyncLockWrapper:
         return False
 
 
+class TimeoutAsyncLockWrapper:
+    """Async lock with configurable timeout to prevent deadlocks.
+
+    December 30, 2025: Added to fix P2P cluster connectivity issues caused by
+    indefinite lock acquisition blocking HTTP handlers and event loops.
+
+    Unlike AsyncLockWrapper which wraps threading.RLock, this uses asyncio.Lock
+    and supports timeout-based acquisition to prevent indefinite blocking.
+
+    Usage:
+        lock = TimeoutAsyncLockWrapper(timeout=5.0)
+
+        # Context manager (raises TimeoutError on timeout)
+        async with lock:
+            # ... critical section
+
+        # Manual acquisition (returns bool)
+        if await lock.acquire(timeout=2.0):
+            try:
+                # ... critical section
+            finally:
+                lock.release()
+        else:
+            # Handle timeout gracefully
+            pass
+    """
+
+    def __init__(self, timeout: float = 5.0):
+        """Initialize lock with default timeout.
+
+        Args:
+            timeout: Default timeout in seconds for lock acquisition.
+        """
+        import asyncio
+        self._lock = asyncio.Lock()
+        self._timeout = timeout
+
+    async def acquire(self, timeout: Optional[float] = None) -> bool:
+        """Acquire lock with timeout.
+
+        Args:
+            timeout: Override timeout in seconds. Uses default if None.
+
+        Returns:
+            True if lock acquired, False if timeout exceeded.
+        """
+        import asyncio
+        wait_time = timeout if timeout is not None else self._timeout
+        try:
+            await asyncio.wait_for(self._lock.acquire(), timeout=wait_time)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    def release(self) -> None:
+        """Release the lock."""
+        self._lock.release()
+
+    def locked(self) -> bool:
+        """Check if lock is currently held."""
+        return self._lock.locked()
+
+    async def __aenter__(self):
+        """Async context manager entry. Raises TimeoutError on timeout."""
+        acquired = await self.acquire()
+        if not acquired:
+            import asyncio
+            raise asyncio.TimeoutError(
+                f"Lock acquisition timed out after {self._timeout}s"
+            )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        self.release()
+        return False
+
+
 def get_client_session(timeout: ClientTimeout = None) -> ClientSession:
     """Create an aiohttp ClientSession with optional SOCKS proxy support.
 

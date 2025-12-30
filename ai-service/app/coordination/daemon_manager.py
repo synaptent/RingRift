@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import contextlib
 import importlib
 import json
 import logging
@@ -114,6 +115,103 @@ PERMANENT_FAILURE_RECOVERY_SECONDS = 86400  # 24 hours - permanently failed daem
 CASCADE_RESTART_WINDOW_SECONDS = 300  # 5 minutes - window for counting global restarts
 CASCADE_RESTART_THRESHOLD = 15  # Max total restarts in window before circuit trips
 CASCADE_COOLDOWN_SECONDS = 120  # 2 minutes - cooldown period when circuit is open
+
+
+# =============================================================================
+# Daemon Status Circuit Breaker (December 30, 2025)
+# =============================================================================
+# Prevents repeated slow health checks from blocking the health server.
+# If a daemon's status collection times out multiple times, the circuit opens
+# and future checks return cached/unavailable status until the reset timeout.
+
+
+class DaemonStatusCircuitBreaker:
+    """Circuit breaker for daemon status collection.
+
+    December 30, 2025: Added to fix P2P cluster connectivity issues where
+    slow daemon status collection blocked HTTP health endpoints.
+
+    When a daemon's status check fails (timeout or error) multiple times,
+    the circuit opens and subsequent checks immediately return "circuit_open"
+    until the reset timeout expires.
+
+    Usage:
+        breaker = DaemonStatusCircuitBreaker()
+
+        if breaker.is_open("my_daemon"):
+            # Skip health check, use cached/unavailable status
+            return {"status": "circuit_open"}
+
+        try:
+            status = await asyncio.timeout(1.0):
+                get_daemon_status(daemon)
+            breaker.record_success("my_daemon")
+        except asyncio.TimeoutError:
+            breaker.record_failure("my_daemon")
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 3,
+        reset_timeout: float = 60.0,
+    ):
+        """Initialize circuit breaker.
+
+        Args:
+            failure_threshold: Number of consecutive failures before circuit opens.
+            reset_timeout: Seconds until circuit closes after opening.
+        """
+        self._failures: dict[str, int] = {}
+        self._open_until: dict[str, float] = {}
+        self._failure_threshold = failure_threshold
+        self._reset_timeout = reset_timeout
+
+    def is_open(self, daemon_name: str) -> bool:
+        """Check if circuit is open (should skip health check).
+
+        Returns True if circuit is open (too many recent failures),
+        False if circuit is closed (ok to try health check).
+        """
+        if daemon_name in self._open_until:
+            if time.time() < self._open_until[daemon_name]:
+                return True
+            # Reset after timeout expired
+            del self._open_until[daemon_name]
+            self._failures[daemon_name] = 0
+        return False
+
+    def record_failure(self, daemon_name: str) -> None:
+        """Record a health check failure (timeout or error)."""
+        self._failures[daemon_name] = self._failures.get(daemon_name, 0) + 1
+        if self._failures[daemon_name] >= self._failure_threshold:
+            self._open_until[daemon_name] = time.time() + self._reset_timeout
+
+    def record_success(self, daemon_name: str) -> None:
+        """Record a successful health check."""
+        self._failures[daemon_name] = 0
+        if daemon_name in self._open_until:
+            del self._open_until[daemon_name]
+
+    def get_status(self) -> dict[str, Any]:
+        """Get circuit breaker status for monitoring."""
+        return {
+            "open_circuits": list(self._open_until.keys()),
+            "failure_counts": dict(self._failures),
+            "threshold": self._failure_threshold,
+            "reset_timeout": self._reset_timeout,
+        }
+
+
+# Global circuit breaker instance for daemon status checks
+_daemon_status_breaker: DaemonStatusCircuitBreaker | None = None
+
+
+def get_daemon_status_breaker() -> DaemonStatusCircuitBreaker:
+    """Get the global daemon status circuit breaker."""
+    global _daemon_status_breaker
+    if _daemon_status_breaker is None:
+        _daemon_status_breaker = DaemonStatusCircuitBreaker()
+    return _daemon_status_breaker
 
 
 # Lazy import for daemon lifecycle events to avoid circular imports
@@ -282,6 +380,60 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
         # Call parent to clear the singleton reference
         super().reset_instance()
+
+    # =========================================================================
+    # Lock Helpers (December 30, 2025)
+    # =========================================================================
+    # Added to prevent deadlocks during health checks and daemon operations.
+
+    async def _acquire_lock_with_timeout(self, timeout: float = 5.0) -> bool:
+        """Acquire the internal lock with timeout.
+
+        December 30, 2025: Added to fix P2P cluster connectivity issues where
+        lock contention in health check loops blocked HTTP endpoints.
+
+        Args:
+            timeout: Maximum seconds to wait for lock acquisition.
+
+        Returns:
+            True if lock was acquired, False if timeout expired.
+        """
+        try:
+            return await asyncio.wait_for(self._lock.acquire(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"DaemonManager lock acquisition timed out after {timeout}s")
+            return False
+
+    @contextlib.asynccontextmanager
+    async def _with_lock_timeout(
+        self,
+        operation_name: str,
+        timeout: float = 5.0,
+    ):
+        """Context manager for timeout-protected lock acquisition.
+
+        Usage:
+            async with self._with_lock_timeout("health_check") as acquired:
+                if acquired:
+                    # ... protected code
+                    pass
+
+        Args:
+            operation_name: Name for logging on timeout.
+            timeout: Maximum seconds to wait for lock.
+
+        Yields:
+            True if lock was acquired, False if timeout expired.
+        """
+        acquired = await self._acquire_lock_with_timeout(timeout)
+        if not acquired:
+            logger.warning(f"Skipping {operation_name}: lock timeout")
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            self._lock.release()
 
     # =========================================================================
     # Restart Count Persistence (Dec 2025)
@@ -2284,8 +2436,14 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         daemons_to_check: list[tuple[DaemonType, DaemonInfo]] = []
         health_check_timeout = DaemonHealthDefaults.HEALTH_CHECK_TIMEOUT
 
-        # Phase 1: Collect daemons needing checks (under lock)
-        async with self._lock:
+        # Phase 1: Collect daemons needing checks (under lock with timeout)
+        # December 30, 2025: Added timeout to prevent indefinite blocking
+        async with self._with_lock_timeout("health_check_phase1", timeout=5.0) as acquired:
+            if not acquired:
+                # Lock timeout - skip this health check cycle
+                logger.debug("Skipping health check cycle: lock acquisition timeout")
+                return
+
             current_time = time.time()
 
             for daemon_type, info in list(self._daemons.items()):
@@ -2401,27 +2559,32 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 _, health_result = await self._check_single_daemon_health(daemon_type, info, health_check_timeout)
                 health_results[daemon_type] = health_result
 
-        # Phase 3: Process health check results (under lock)
+        # Phase 3: Process health check results (under lock with timeout)
+        # December 30, 2025: Added timeout to prevent indefinite blocking
         if health_results:
-            async with self._lock:
-                current_time = time.time()
-                for daemon_type, health_result in health_results.items():
-                    if health_result is None:
-                        continue
-                    info = self._daemons.get(daemon_type)
-                    if info is None:
-                        continue
+            async with self._with_lock_timeout("health_check_phase3", timeout=5.0) as acquired:
+                if not acquired:
+                    # Lock timeout - skip processing, will retry next cycle
+                    logger.warning("Skipping health result processing: lock acquisition timeout")
+                else:
+                    current_time = time.time()
+                    for daemon_type, health_result in health_results.items():
+                        if health_result is None:
+                            continue
+                        info = self._daemons.get(daemon_type)
+                        if info is None:
+                            continue
 
-                    is_healthy = health_result.get('healthy', True)
-                    if not is_healthy:
-                        message = health_result.get('message', 'unhealthy')
-                        logger.warning(f"{daemon_type.value} health check failed: {message}")
-                        info.last_error = f"Health check failed: {message}"
-                        if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
-                            daemons_to_restart.append(daemon_type)
-                        else:
-                            info.state = DaemonState.FAILED
-                            info.last_failure_time = current_time
+                        is_healthy = health_result.get('healthy', True)
+                        if not is_healthy:
+                            message = health_result.get('message', 'unhealthy')
+                            logger.warning(f"{daemon_type.value} health check failed: {message}")
+                            info.last_error = f"Health check failed: {message}"
+                            if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
+                                daemons_to_restart.append(daemon_type)
+                            else:
+                                info.state = DaemonState.FAILED
+                                info.last_failure_time = current_time
 
         # Handle restarts outside lock to prevent deadlock (start() also acquires lock)
         # Dec 2025: Check cascade circuit breaker first - if too many restarts are happening
@@ -3012,19 +3175,70 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             return web.Response(text=self.render_metrics(), content_type=content_type)
 
         async def handle_status(request: web.Request) -> web.Response:
-            """Detailed daemon status."""
-            summary = self.health_summary()
-            # Dec 2025: Fixed to use self._daemons instead of undefined _daemon_states
-            # and self._factories (which contains Callables, not DaemonInfo)
-            summary["daemons"] = {}
-            for daemon_type, info in self._daemons.items():
-                summary["daemons"][daemon_type.value] = {
-                    "state": info.state.value,
-                    "auto_restart": info.auto_restart,
-                    "uptime_seconds": info.uptime_seconds,
-                    "restart_count": info.restart_count,
-                }
-            return web.json_response(summary)
+            """Detailed daemon status.
+
+            December 30, 2025: Added timeout protection per-daemon to prevent
+            slow status collection from blocking the entire endpoint.
+            Also integrates circuit breaker to skip consistently slow daemons.
+            """
+            breaker = get_daemon_status_breaker()
+
+            try:
+                # Overall timeout for entire status collection
+                async with asyncio.timeout(5.0):
+                    summary = self.health_summary()
+                    # Dec 2025: Fixed to use self._daemons instead of undefined _daemon_states
+                    # and self._factories (which contains Callables, not DaemonInfo)
+                    summary["daemons"] = {}
+
+                    # Collect daemon status with individual timeout and circuit breaker
+                    for daemon_type, info in list(self._daemons.items()):
+                        daemon_name = daemon_type.value
+
+                        # Skip if circuit is open (too many recent failures)
+                        if breaker.is_open(daemon_name):
+                            summary["daemons"][daemon_name] = {
+                                "state": "circuit_open",
+                                "error": "Status check disabled after repeated failures",
+                            }
+                            continue
+
+                        try:
+                            # Individual timeout per daemon (1 second each)
+                            async with asyncio.timeout(1.0):
+                                summary["daemons"][daemon_name] = {
+                                    "state": info.state.value,
+                                    "auto_restart": info.auto_restart,
+                                    "uptime_seconds": info.uptime_seconds,
+                                    "restart_count": info.restart_count,
+                                }
+                            breaker.record_success(daemon_name)
+                        except asyncio.TimeoutError:
+                            breaker.record_failure(daemon_name)
+                            summary["daemons"][daemon_name] = {
+                                "state": "timeout",
+                                "error": "Status collection timed out",
+                            }
+                        except Exception as e:  # noqa: BLE001
+                            breaker.record_failure(daemon_name)
+                            summary["daemons"][daemon_name] = {
+                                "state": "error",
+                                "error": str(e),
+                            }
+
+                    # Include circuit breaker status in response
+                    summary["_status_circuit_breaker"] = breaker.get_status()
+
+                    return web.json_response(summary)
+
+            except asyncio.TimeoutError:
+                # Return partial status on overall timeout
+                return web.json_response({
+                    "status": "timeout",
+                    "error": "Status collection timed out",
+                    "timestamp": time.time(),
+                    "_status_circuit_breaker": breaker.get_status(),
+                }, status=504)
 
         try:
             app = web.Application()

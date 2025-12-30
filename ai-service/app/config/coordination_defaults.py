@@ -1050,12 +1050,18 @@ class P2PProtocolDefaults:
     # ===========================================================================
     # SWIM Protocol Settings
     # ===========================================================================
+    # December 30, 2025: Tuned for large clusters (~40 nodes).
+    # Previous 1-second ping interval caused 40 pings/sec cluster-wide.
+    # New 5-second interval reduces to 8 pings/sec while maintaining
+    # failure detection under 30 seconds.
 
     # SWIM suspicion timeout (seconds) - time to suspect before declaring dead
-    SWIM_SUSPICION_TIMEOUT: float = _env_float("RINGRIFT_SWIM_SUSPICION_TIMEOUT", 5.0)
+    # December 30, 2025: Increased from 5.0 to 15.0 for reduced false positives
+    SWIM_SUSPICION_TIMEOUT: float = _env_float("RINGRIFT_SWIM_SUSPICION_TIMEOUT", 15.0)
 
     # SWIM ping interval (seconds) - how often to ping random peers
-    SWIM_PING_INTERVAL: float = _env_float("RINGRIFT_SWIM_PING_INTERVAL", 1.0)
+    # December 30, 2025: Increased from 1.0 to 5.0 to reduce network traffic
+    SWIM_PING_INTERVAL: float = _env_float("RINGRIFT_SWIM_PING_INTERVAL", 5.0)
 
     # SWIM ping timeout (seconds) - direct ping timeout before indirect probing
     SWIM_PING_TIMEOUT: float = _env_float("RINGRIFT_SWIM_PING_TIMEOUT", 0.5)
@@ -2357,6 +2363,32 @@ class CurriculumDefaults:
 # =============================================================================
 
 @dataclass(frozen=True)
+class HTTPHandlerDefaults:
+    """Default values for HTTP handler timeouts.
+
+    Used by: scripts/p2p_orchestrator.py, app/coordination/daemon_manager.py
+
+    December 30, 2025: Added to fix P2P cluster connectivity issues.
+    HTTP handlers were blocking indefinitely on slow operations (lock
+    acquisition, daemon status collection). These timeouts ensure handlers
+    return within reasonable time even when subsystems are slow.
+    """
+    # Status endpoint timeout (seconds) - collect cluster/daemon status
+    STATUS_TIMEOUT: float = _env_float("RINGRIFT_STATUS_TIMEOUT", 10.0)
+
+    # Health endpoint timeout (seconds) - simple liveness check
+    HEALTH_TIMEOUT: float = _env_float("RINGRIFT_HEALTH_TIMEOUT", 5.0)
+
+    # Dispatch endpoint timeout (seconds) - job dispatch operations
+    DISPATCH_TIMEOUT: float = _env_float("RINGRIFT_DISPATCH_TIMEOUT", 30.0)
+
+    # Individual daemon status timeout (seconds) - per-daemon health check
+    DAEMON_STATUS_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_STATUS_TIMEOUT", 1.0)
+
+    # Lock acquisition timeout in handlers (seconds)
+    LOCK_TIMEOUT: float = _env_float("RINGRIFT_HANDLER_LOCK_TIMEOUT", 2.0)
+
+
 class HealthCheckOrchestratorDefaults:
     """Default values for health check orchestrator.
 

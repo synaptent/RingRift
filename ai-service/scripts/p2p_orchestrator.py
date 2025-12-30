@@ -674,6 +674,7 @@ from scripts.p2p.models import (
 from scripts.p2p.p2p_mixin_base import SubscriptionRetryConfig
 from scripts.p2p.network import (
     AsyncLockWrapper,
+    TimeoutAsyncLockWrapper,
     get_client_session,
 )
 
@@ -802,6 +803,54 @@ except ImportError:
 
 # Get SOCKS proxy from environment (e.g., socks5://localhost:1055)
 SOCKS_PROXY = os.environ.get("RINGRIFT_SOCKS_PROXY", "")
+
+
+# =============================================================================
+# HTTP Handler Timeout Decorator (December 30, 2025)
+# =============================================================================
+# Added to fix P2P cluster connectivity issues where HTTP handlers blocked
+# indefinitely on slow operations (lock acquisition, daemon status collection).
+
+def with_request_timeout(timeout_seconds: float = 10.0):
+    """Decorator to add timeout protection to HTTP handlers.
+
+    December 30, 2025: Added to prevent HTTP endpoints from blocking indefinitely.
+
+    Usage:
+        @with_request_timeout(5.0)
+        async def handle_health(self, request):
+            ...
+
+    Args:
+        timeout_seconds: Maximum time in seconds for handler to complete.
+
+    Returns:
+        Decorated handler that returns 504 Gateway Timeout on timeout.
+    """
+    import functools
+
+    def decorator(handler):
+        @functools.wraps(handler)
+        async def wrapper(self_or_request, *args, **kwargs):
+            # Handle both bound methods (self, request) and plain functions (request)
+            try:
+                return await asyncio.wait_for(
+                    handler(self_or_request, *args, **kwargs),
+                    timeout=timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                # Return 504 Gateway Timeout with details
+                return web.json_response(
+                    {
+                        "error": "Request timed out",
+                        "timeout_seconds": timeout_seconds,
+                        "timestamp": time.time(),
+                    },
+                    status=504
+                )
+        return wrapper
+    return decorator
+
 
 # Systemd watchdog support for service health monitoring
 # When running under systemd with WatchdogSec set, we need to periodically
@@ -8023,6 +8072,10 @@ class P2POrchestrator(
         Query parameters:
             alive_only: If "true" (default), only show alive peers. Set to "false" to include dead/stale peers.
             include_stale_jobs: If "false" (default), dead peers show 0 jobs. Set to "true" to show stale job counts.
+
+        December 30, 2025: Made non-blocking with timeout-based lock acquisition.
+        If locks can't be acquired within 2 seconds, returns partial status with
+        "unavailable" markers instead of blocking indefinitely.
         """
         self._update_self_info()
 
@@ -8030,8 +8083,26 @@ class P2POrchestrator(
         alive_only = request.query.get("alive_only", "true").lower() != "false"
         include_stale_jobs = request.query.get("include_stale_jobs", "false").lower() == "true"
 
-        async with AsyncLockWrapper(self.peers_lock):
-            peers_snapshot = list(self.peers.values())
+        # Non-blocking peers lock acquisition (December 30, 2025)
+        # Use threading lock with timeout via asyncio.to_thread to avoid blocking event loop
+        peers_snapshot = None
+        peers_lock_acquired = False
+        try:
+            peers_lock_acquired = await asyncio.wait_for(
+                asyncio.to_thread(self.peers_lock.acquire, True, 2.0),  # blocking=True, timeout=2.0
+                timeout=2.5
+            )
+            if peers_lock_acquired:
+                peers_snapshot = list(self.peers.values())
+        except asyncio.TimeoutError:
+            logger.warning("handle_status: peers_lock acquisition timed out")
+        finally:
+            if peers_lock_acquired:
+                self.peers_lock.release()
+
+        # Handle case when peers lock acquisition failed
+        if peers_snapshot is None:
+            peers_snapshot = []  # Empty list for graceful degradation
 
         conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
         effective_leader = self._get_leader_peer()
@@ -8074,8 +8145,22 @@ class P2POrchestrator(
             ]
         )
 
-        async with AsyncLockWrapper(self.jobs_lock):
-            jobs = {k: v.to_dict() for k, v in self.local_jobs.items()}
+        # Non-blocking jobs lock acquisition (December 30, 2025)
+        jobs = {}
+        jobs_lock_acquired = False
+        try:
+            jobs_lock_acquired = await asyncio.wait_for(
+                asyncio.to_thread(self.jobs_lock.acquire, True, 2.0),
+                timeout=2.5
+            )
+            if jobs_lock_acquired:
+                jobs = {k: v.to_dict() for k, v in self.local_jobs.items()}
+        except asyncio.TimeoutError:
+            logger.warning("handle_status: jobs_lock acquisition timed out")
+            jobs = {"error": "lock_timeout"}
+        finally:
+            if jobs_lock_acquired:
+                self.jobs_lock.release()
 
         # Get improvement cycle manager status
         improvement_status = None
@@ -8203,6 +8288,11 @@ class P2POrchestrator(
             "event_subscriptions": event_subscriptions,
             "partition": partition_status,
             "background_loops": background_loops,
+            # December 30, 2025: Lock acquisition status for debugging
+            "_lock_status": {
+                "peers_lock_acquired": peers_lock_acquired,
+                "jobs_lock_acquired": jobs_lock_acquired,
+            },
         })
 
     async def handle_external_work(self, request: web.Request) -> web.Response:
