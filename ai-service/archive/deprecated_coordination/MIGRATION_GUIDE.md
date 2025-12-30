@@ -27,23 +27,24 @@ This guide documents deprecated coordination modules and their replacements.
 
 ## Quick Reference
 
-| Deprecated Module              | Replacement                                         | Status     | Location                            |
-| ------------------------------ | --------------------------------------------------- | ---------- | ----------------------------------- |
-| `cluster_data_sync.py`         | `AutoSyncDaemon(strategy="broadcast")`              | Deprecated | Active (with warning)               |
-| `ephemeral_sync.py`            | `AutoSyncDaemon(strategy="ephemeral")`              | Deprecated | Active (with warning)               |
-| `node_health_monitor.py`       | `health_check_orchestrator.py`                      | Archived   | `archive/`                          |
-| `system_health_monitor.py`     | `unified_health_manager.py`                         | Deprecated | Active (with warning)               |
-| `queue_populator.py`           | `unified_queue_populator.py`                        | Archived   | `archive/` (re-export shim remains) |
-| `model_distribution_daemon.py` | `unified_distribution_daemon.py`                    | Archived   | `archive/`                          |
-| `npz_distribution_daemon.py`   | `unified_distribution_daemon.py`                    | Archived   | `archive/`                          |
-| `replication_monitor.py`       | `unified_replication_daemon.py`                     | Archived   | `archive/`                          |
-| `replication_repair_daemon.py` | `unified_replication_daemon.py`                     | Archived   | `archive/`                          |
-| `auto_evaluation_daemon.py`    | `evaluation_daemon.py` + `auto_promotion_daemon.py` | Archived   | `archive/`                          |
+| Deprecated Module              | Replacement                                         | Status       | Location                            |
+| ------------------------------ | --------------------------------------------------- | ------------ | ----------------------------------- |
+| `cluster_data_sync.py`         | `AutoSyncDaemon(strategy="broadcast")`              | Consolidated | Merged into `auto_sync_daemon.py`   |
+| `ephemeral_sync.py`            | `AutoSyncDaemon(strategy="ephemeral")`              | Consolidated | Merged into `auto_sync_daemon.py`   |
+| `node_health_monitor.py`       | `health_check_orchestrator.py`                      | Archived     | `archive/`                          |
+| `system_health_monitor.py`     | `unified_health_manager.py`                         | Consolidated | Merged into unified health manager  |
+| `queue_populator.py`           | `unified_queue_populator.py`                        | Archived     | `archive/` (re-export shim remains) |
+| `model_distribution_daemon.py` | `unified_distribution_daemon.py`                    | Archived     | `archive/`                          |
+| `npz_distribution_daemon.py`   | `unified_distribution_daemon.py`                    | Archived     | `archive/`                          |
+| `replication_monitor.py`       | `unified_replication_daemon.py`                     | Archived     | `archive/`                          |
+| `replication_repair_daemon.py` | `unified_replication_daemon.py`                     | Archived     | `archive/`                          |
+| `auto_evaluation_daemon.py`    | `evaluation_daemon.py` + `auto_promotion_daemon.py` | Archived     | `archive/`                          |
 
 **Status Legend:**
 
 - **Deprecated**: Still in `app/coordination/`, emits `DeprecationWarning` on import
 - **Archived**: Moved to `archive/deprecated_coordination/`, no longer importable
+- **Consolidated**: Functionality merged into unified module, original file removed
 
 ---
 
