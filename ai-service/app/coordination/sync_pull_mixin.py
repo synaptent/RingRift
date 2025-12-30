@@ -229,14 +229,18 @@ class SyncPullMixin(SyncMixinBase):
                     continue
 
                 # Count games for stats (Dec 27, 2025: Use context manager to prevent leaks)
-                try:
-                    with sqlite3.connect(str(local_path), timeout=10.0) as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT COUNT(*) FROM games")
-                        game_count = cursor.fetchone()[0]
-                        games_pulled += game_count
-                except sqlite3.Error:
-                    pass
+                # Dec 30, 2025: Wrap SQLite in asyncio.to_thread() to avoid blocking event loop
+                def _count_games_sync(db_path: Path) -> int:
+                    try:
+                        with sqlite3.connect(str(db_path), timeout=10.0) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT COUNT(*) FROM games")
+                            return cursor.fetchone()[0]
+                    except sqlite3.Error:
+                        return 0
+
+                game_count = await asyncio.to_thread(_count_games_sync, local_path)
+                games_pulled += game_count
 
                 # Merge into canonical database
                 await self._merge_into_canonical(local_path, source_node)
@@ -647,53 +651,69 @@ class SyncPullMixin(SyncMixinBase):
             return
 
         # Merge games from pulled into canonical (Dec 28, 2025: Context manager pattern)
-        try:
-            with sqlite3.connect(str(canonical_path), timeout=30.0) as conn:
-                cursor = conn.cursor()
+        # Dec 30, 2025: Wrap blocking SQLite merge in asyncio.to_thread()
+        def _merge_databases_sync(
+            canonical: Path, pulled: Path
+        ) -> tuple[int, str | None]:
+            """Sync helper to merge databases without blocking event loop.
 
-                # Attach pulled database
-                cursor.execute("ATTACH DATABASE ? AS pulled", (str(pulled_db),))
+            Returns:
+                Tuple of (new_games_count, error_message_or_none)
+            """
+            try:
+                with sqlite3.connect(str(canonical), timeout=30.0) as conn:
+                    cursor = conn.cursor()
 
-                try:
-                    # Get count before merge
-                    cursor.execute("SELECT COUNT(*) FROM games")
-                    before_count = cursor.fetchone()[0]
+                    # Attach pulled database
+                    cursor.execute("ATTACH DATABASE ? AS pulled", (str(pulled),))
 
-                    # Copy games that don't exist
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO games
-                        SELECT * FROM pulled.games
-                        WHERE game_id NOT IN (SELECT game_id FROM games)
-                    """)
-
-                    # Copy moves for new games
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO game_moves
-                        SELECT * FROM pulled.game_moves
-                        WHERE game_id NOT IN (SELECT DISTINCT game_id FROM game_moves)
-                    """)
-
-                    conn.commit()
-
-                    # Get count after merge
-                    cursor.execute("SELECT COUNT(*) FROM games")
-                    after_count = cursor.fetchone()[0]
-
-                    new_games = after_count - before_count
-                    if new_games > 0:
-                        logger.info(
-                            f"[AutoSyncDaemon] Merged {new_games} games from {source_node} "
-                            f"into {canonical_name}"
-                        )
-                finally:
-                    # Always detach pulled database
                     try:
-                        cursor.execute("DETACH DATABASE pulled")
-                    except sqlite3.Error:
-                        pass  # May already be detached
+                        # Get count before merge
+                        cursor.execute("SELECT COUNT(*) FROM games")
+                        before_count = cursor.fetchone()[0]
 
-        except sqlite3.Error as e:
-            logger.warning(f"[AutoSyncDaemon] Merge failed for {db_name}: {e}")
+                        # Copy games that don't exist
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO games
+                            SELECT * FROM pulled.games
+                            WHERE game_id NOT IN (SELECT game_id FROM games)
+                        """)
+
+                        # Copy moves for new games
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO game_moves
+                            SELECT * FROM pulled.game_moves
+                            WHERE game_id NOT IN (SELECT DISTINCT game_id FROM game_moves)
+                        """)
+
+                        conn.commit()
+
+                        # Get count after merge
+                        cursor.execute("SELECT COUNT(*) FROM games")
+                        after_count = cursor.fetchone()[0]
+
+                        return after_count - before_count, None
+                    finally:
+                        # Always detach pulled database
+                        try:
+                            cursor.execute("DETACH DATABASE pulled")
+                        except sqlite3.Error:
+                            pass  # May already be detached
+
+            except sqlite3.Error as e:
+                return 0, str(e)
+
+        new_games, error = await asyncio.to_thread(
+            _merge_databases_sync, canonical_path, pulled_db
+        )
+
+        if error:
+            logger.warning(f"[AutoSyncDaemon] Merge failed for {db_name}: {error}")
+        elif new_games > 0:
+            logger.info(
+                f"[AutoSyncDaemon] Merged {new_games} games from {source_node} "
+                f"into {canonical_name}"
+            )
 
     def _get_canonical_name(self, db_name: str) -> str:
         """Convert a database name to its canonical form.

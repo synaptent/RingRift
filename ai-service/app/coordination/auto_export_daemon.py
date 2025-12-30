@@ -489,36 +489,41 @@ class AutoExportDaemon(HandlerBase):
                 return
 
             # Scan for databases
+            # Dec 30, 2025: Wrap blocking SQLite in asyncio.to_thread()
+            import asyncio
+            import sqlite3
+
+            def _scan_databases_sync(scan_dir: Path) -> list[tuple[str, str, int, int]]:
+                """Sync helper to scan databases without blocking event loop."""
+                results: list[tuple[str, str, int, int]] = []
+                for db_path in scan_dir.glob("*.db"):
+                    if not db_path.is_file():
+                        continue
+                    try:
+                        with sqlite3.connect(db_path) as conn:
+                            cursor = conn.execute("""
+                                SELECT board_type, num_players, COUNT(DISTINCT game_id) as game_count
+                                FROM games
+                                WHERE board_type IS NOT NULL
+                                GROUP BY board_type, num_players
+                            """)
+                            for row in cursor:
+                                board_type, num_players, game_count = row
+                                if board_type and num_players and game_count > 0:
+                                    results.append((board_type, num_players, game_count, 1))
+                    except sqlite3.Error:
+                        continue
+                return results
+
+            scan_results = await asyncio.to_thread(_scan_databases_sync, synced_dir)
+
             databases_scanned = 0
             games_found = 0
-
-            for db_path in synced_dir.glob("*.db"):
-                if not db_path.is_file():
-                    continue
-
-                try:
-                    import sqlite3
-
-                    with sqlite3.connect(db_path) as conn:
-                        # Get game counts by config
-                        cursor = conn.execute("""
-                            SELECT board_type, num_players, COUNT(DISTINCT game_id) as game_count
-                            FROM games
-                            WHERE board_type IS NOT NULL
-                            GROUP BY board_type, num_players
-                        """)
-                        for row in cursor:
-                            board_type, num_players, game_count = row
-                            if board_type and num_players and game_count > 0:
-                                config_key = f"{board_type}_{num_players}p"
-                                await self._record_games(config_key, board_type, num_players, game_count)
-                                games_found += game_count
-
-                    databases_scanned += 1
-
-                except sqlite3.Error:
-                    # Not a valid game database
-                    continue
+            for board_type, num_players, game_count, db_count in scan_results:
+                config_key = f"{board_type}_{num_players}p"
+                await self._record_games(config_key, board_type, num_players, game_count)
+                games_found += game_count
+                databases_scanned += db_count
 
             if databases_scanned > 0:
                 logger.info(
