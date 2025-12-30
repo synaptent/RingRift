@@ -298,7 +298,8 @@ class TestNodeAvailabilityCache:
     def test_callback_error_handling(self):
         """Test callback errors are handled gracefully."""
         cache = NodeAvailabilityCache.get_instance()
-        callback = MagicMock(side_effect=Exception("Callback error"))
+        # Use RuntimeError since we only catch specific exception types
+        callback = MagicMock(side_effect=RuntimeError("Callback error"))
         cache.on_unavailable(callback)
 
         # Should not raise despite callback error

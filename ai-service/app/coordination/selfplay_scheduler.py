@@ -467,6 +467,11 @@ class SelfplayScheduler:
         # Verbosity
         verbose: bool = False,
     ):
+        """Initialize selfplay scheduler with optional callback injections.
+
+        All callback parameters enable full delegation from P2P orchestrator
+        and break circular dependencies. See class docstring for usage.
+        """
         # Store callbacks (Dec 2025)
         self._get_cluster_elo_fn = get_cluster_elo_fn
         self._load_curriculum_weights_fn = load_curriculum_weights_fn
@@ -3095,6 +3100,7 @@ class SelfplayScheduler:
 
             # Emit all penalties in a single batched coroutine
             async def emit_all_penalties():
+                """Emit quality penalty events for all penalized configs."""
                 for key, penalty, weight in penalized_configs:
                     try:
                         await emit_quality_penalty_applied(

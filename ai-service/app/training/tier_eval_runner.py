@@ -387,8 +387,8 @@ def _play_matchup(
                         state_before=state_before,
                         available_moves_count=0,
                     )
-                except Exception:
-                    pass
+                except (RuntimeError, ValueError, OSError) as e:
+                    logger.debug(f"Move recording failed: {e}")
 
         if (
             not last_info
@@ -445,8 +445,8 @@ def _play_matchup(
                         "victory_reason": victory_reason,
                     })
                     recorder.__exit__(None, None, None)
-                except Exception:
-                    pass
+                except (RuntimeError, ValueError, OSError) as e:
+                    logger.debug(f"Game recording finalization failed: {e}")
 
     elapsed = time.time() - matchup_start
     logger.info(

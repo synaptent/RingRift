@@ -524,7 +524,7 @@ class BackpressureMonitor:
                     "dynamic_queue": self.get_dynamic_queue_stats(),
                 },
             )
-        except Exception as e:
+        except (RuntimeError, OSError, AttributeError, KeyError) as e:
             logger.warning(f"[BackpressureMonitor] health_check error: {e}")
             return HealthCheckResult(
                 healthy=False,

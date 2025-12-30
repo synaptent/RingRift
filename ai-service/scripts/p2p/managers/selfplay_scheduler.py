@@ -573,6 +573,9 @@ class SelfplayScheduler(EventSubscriptionMixin):
             "EVALUATION_COMPLETED": self._on_evaluation_completed,
             # December 2025 - Phase 4D: Plateau detection for resource balancing
             "PLATEAU_DETECTED": self._on_plateau_detected,
+            # December 2025 - Phase 5: Evaluation backpressure handling
+            "EVALUATION_BACKPRESSURE": self._on_evaluation_backpressure,
+            "EVALUATION_BACKPRESSURE_RELEASED": self._on_evaluation_backpressure_released,
         }
 
     async def _on_selfplay_rate_changed(self, event) -> None:

@@ -612,8 +612,8 @@ class CompositeGauntlet:
                             state_before=state_before,
                             available_moves_count=0,
                         )
-                    except Exception:
-                        pass
+                    except (RuntimeError, ValueError, OSError) as e:
+                        logger.debug(f"Move recording failed: {e}")
 
             duration = time.time() - start_time
 
@@ -636,8 +636,8 @@ class CompositeGauntlet:
                         "winner": winner,
                     })
                     recorder.__exit__(None, None, None)
-                except Exception:
-                    pass
+                except (RuntimeError, ValueError, OSError) as e:
+                    logger.debug(f"Game recording finalization failed: {e}")
 
             return {
                 "winner": winner,

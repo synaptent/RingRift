@@ -1617,6 +1617,19 @@ class TaskCoordinator(SingletonMixin):
         self.registry.unregister_task(task_id)
         logger.debug(f"Unregistered task {task_id}")
 
+    def heartbeat_task(self, task_id: str) -> None:
+        """Update heartbeat timestamp for a task.
+
+        December 30, 2025: Added to fix orphan detection bug. The event handler
+        _on_task_heartbeat() calls this method to update the last_heartbeat
+        timestamp, preventing healthy tasks from being marked as orphaned.
+
+        Args:
+            task_id: The task ID to update heartbeat for
+        """
+        self.registry.update_heartbeat(task_id)
+        logger.debug(f"Updated heartbeat for task {task_id}")
+
     def complete_task(
         self,
         task_id: str,

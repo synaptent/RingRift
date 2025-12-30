@@ -163,7 +163,8 @@ class TrainConfigResolver:
         try:
             if torch.distributed.is_initialized():
                 return torch.distributed.get_world_size()
-        except Exception:
+        except RuntimeError:
+            # torch.distributed not initialized or failed - fall back to single process
             pass
 
         return 1

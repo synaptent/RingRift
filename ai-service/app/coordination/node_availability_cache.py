@@ -396,7 +396,7 @@ class NodeAvailabilityCache:
         for callback in self._on_unavailable_callbacks:
             try:
                 callback(node_id, reason)
-            except Exception as e:
+            except (RuntimeError, TypeError, ValueError) as e:
                 logger.error(f"[NodeAvailabilityCache] Callback error: {e}")
 
     def _notify_available(self, node_id: str) -> None:
@@ -404,7 +404,7 @@ class NodeAvailabilityCache:
         for callback in self._on_available_callbacks:
             try:
                 callback(node_id)
-            except Exception as e:
+            except (RuntimeError, TypeError, ValueError) as e:
                 logger.error(f"[NodeAvailabilityCache] Callback error: {e}")
 
     def health_check(self) -> "HealthCheckResult":
