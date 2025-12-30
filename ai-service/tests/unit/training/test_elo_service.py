@@ -684,3 +684,163 @@ class TestEdgeCases:
 
         assert rating_8x8.games_played == 2  # Counted for both sides
         assert rating_19x19.games_played == 0
+
+
+class TestMultiHarnessSupport:
+    """Tests for multi-harness evaluation support (December 30, 2025)."""
+
+    @pytest.fixture
+    def temp_db(self):
+        """Create a temporary database for testing."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = Path(f.name)
+        yield db_path
+        if db_path.exists():
+            db_path.unlink()
+
+    @pytest.fixture
+    def service(self, temp_db):
+        """Create an EloService with temp database."""
+        return EloService(db_path=temp_db, enforce_single_writer=False)
+
+    def test_record_match_with_harness_type(self, service):
+        """Test that harness_type is stored in match metadata."""
+        result = service.record_match(
+            participant_a="model_a",
+            participant_b="model_b",
+            winner="model_a",
+            board_type="hex8",
+            num_players=2,
+            harness_type="gumbel_mcts",
+        )
+
+        # Verify match was recorded
+        assert result.match_id is not None
+
+        # Check metadata was stored
+        history = get_match_history(service, participant_id="model_a", limit=1)
+        assert len(history) == 1
+        assert history[0].get("metadata") is not None
+
+    def test_record_match_with_is_multi_harness(self, service):
+        """Test that is_multi_harness flag is stored in metadata."""
+        result = service.record_match(
+            participant_a="model_a",
+            participant_b="model_b",
+            winner="model_a",
+            board_type="hex8",
+            num_players=2,
+            harness_type="minimax",
+            is_multi_harness=True,
+        )
+
+        assert result.match_id is not None
+        history = get_match_history(service, participant_id="model_a", limit=1)
+        assert len(history) == 1
+
+    def test_record_match_preserves_existing_metadata(self, service):
+        """Test that harness info is merged with existing metadata."""
+        result = service.record_match(
+            participant_a="model_a",
+            participant_b="model_b",
+            winner="model_a",
+            board_type="hex8",
+            num_players=2,
+            metadata={"source": "tournament", "round": 1},
+            harness_type="gumbel_mcts",
+            is_multi_harness=True,
+        )
+
+        assert result.match_id is not None
+
+    def test_record_multi_harness_evaluation(self, service):
+        """Test recording multi-harness evaluation results."""
+        harness_results = {
+            "gumbel_mcts": {"elo": 1450.0, "games_played": 30, "wins": 20, "losses": 8, "draws": 2},
+            "minimax": {"elo": 1380.0, "games_played": 30, "wins": 17, "losses": 11, "draws": 2},
+        }
+
+        participant_ids = service.record_multi_harness_evaluation(
+            model_path="models/test_model.pth",
+            board_type="hex8",
+            num_players=2,
+            harness_results=harness_results,
+        )
+
+        # Should return participant IDs for each harness
+        assert len(participant_ids) == 2
+        assert "gumbel_mcts" in participant_ids
+        assert "minimax" in participant_ids
+
+    def test_record_multi_harness_evaluation_creates_ratings(self, service):
+        """Test that multi-harness evaluation creates rating entries."""
+        harness_results = {
+            "gumbel_mcts": {"elo": 1500.0, "games_played": 10, "wins": 7, "losses": 2, "draws": 1},
+        }
+
+        participant_ids = service.record_multi_harness_evaluation(
+            model_path="models/canonical_hex8_2p.pth",
+            board_type="hex8",
+            num_players=2,
+            harness_results=harness_results,
+        )
+
+        # Verify participant was registered
+        participant_id = participant_ids.get("gumbel_mcts")
+        assert participant_id is not None
+
+        # Verify rating was created
+        rating = service.get_rating(participant_id, "hex8", 2)
+        assert rating.rating == 1500.0
+        assert rating.games_played == 10
+        assert rating.wins == 7
+        assert rating.losses == 2
+        assert rating.draws == 1
+
+    def test_update_elo_after_match_with_harness(self, service):
+        """Test backwards-compatible update_elo_after_match with harness params."""
+        result = update_elo_after_match(
+            db=service,
+            model_a_id="model_a",
+            model_b_id="model_b",
+            winner="model_a",
+            board_type="square8",
+            num_players=2,
+            harness_type="gumbel_mcts",
+            is_multi_harness=True,
+        )
+
+        assert "model_a" in result
+        assert "model_b" in result
+        assert "changes" in result
+
+    def test_record_multi_harness_empty_results(self, service):
+        """Test recording with empty harness results."""
+        participant_ids = service.record_multi_harness_evaluation(
+            model_path="models/test.pth",
+            board_type="hex8",
+            num_players=2,
+            harness_results={},
+        )
+
+        assert participant_ids == {}
+
+    def test_record_multi_harness_default_values(self, service):
+        """Test recording with minimal harness results."""
+        harness_results = {
+            "policy_only": {"elo": 1200.0},  # Only elo provided
+        }
+
+        participant_ids = service.record_multi_harness_evaluation(
+            model_path="models/minimal.pth",
+            board_type="hex8",
+            num_players=2,
+            harness_results=harness_results,
+        )
+
+        assert "policy_only" in participant_ids
+        participant_id = participant_ids["policy_only"]
+        rating = service.get_rating(participant_id, "hex8", 2)
+        assert rating.rating == 1200.0
+        assert rating.games_played == 0  # Default
+        assert rating.wins == 0  # Default

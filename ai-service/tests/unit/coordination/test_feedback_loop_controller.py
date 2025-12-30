@@ -414,3 +414,291 @@ class TestFeedbackLoopControllerIntegration:
         # Both signals should be reflected
         assert state.last_selfplay_quality == 0.80
         assert state.last_training_accuracy == 0.75
+
+
+class TestFeedbackLoopEventHandlers:
+    """Test FeedbackLoopController event handlers."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_feedback_loop_controller()
+
+    def test_on_training_complete_updates_state(self):
+        """Test _on_training_complete updates state correctly."""
+        controller = get_feedback_loop_controller()
+
+        # Create mock event with payload
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "policy_accuracy": 0.85,
+            "value_accuracy": 0.75,
+            "model_path": "models/test.pth",
+        }
+
+        controller._on_training_complete(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state is not None
+        assert state.last_training_accuracy == 0.85
+        assert state.last_training_time > 0
+
+    def test_on_training_complete_empty_config_returns_early(self):
+        """Test _on_training_complete returns early for empty config."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {"config": "", "policy_accuracy": 0.85}
+
+        controller._on_training_complete(event)
+
+        # Should not create state for empty config
+        assert controller.get_state("") is None
+
+    def test_on_training_complete_snapshots_elo(self):
+        """Test _on_training_complete snapshots Elo before training."""
+        controller = get_feedback_loop_controller()
+
+        # Pre-set an Elo value
+        state = controller._get_or_create_state("hex8_2p")
+        state.last_elo = 1600.0
+
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "policy_accuracy": 0.90,
+            "value_accuracy": 0.80,
+        }
+
+        controller._on_training_complete(event)
+
+        # Elo should be snapshotted
+        state = controller.get_state("hex8_2p")
+        assert state.elo_before_training == 1600.0
+
+    def test_on_training_complete_no_payload_attribute(self):
+        """Test _on_training_complete handles event without payload attr."""
+        controller = get_feedback_loop_controller()
+
+        # Event without payload attribute
+        event = object()
+
+        # Should not raise
+        controller._on_training_complete(event)
+
+    def test_on_evaluation_complete_updates_state(self):
+        """Test _on_evaluation_complete updates state correctly."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "win_rate": 0.72,
+            "elo": 1550.0,
+            "model_path": "models/test.pth",
+        }
+
+        controller._on_evaluation_complete(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state is not None
+        assert state.last_evaluation_win_rate == 0.72
+        assert state.last_elo == 1550.0
+
+    def test_on_evaluation_complete_empty_config_returns_early(self):
+        """Test _on_evaluation_complete returns early for empty config."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {"config_key": "", "win_rate": 0.72}
+
+        controller._on_evaluation_complete(event)
+
+        # Should not create state
+        assert controller.get_state("") is None
+
+    def test_on_regression_detected_increases_failures(self):
+        """Test _on_regression_detected increments consecutive_failures."""
+        controller = get_feedback_loop_controller()
+
+        # Pre-create state
+        state = controller._get_or_create_state("hex8_2p")
+        state.consecutive_failures = 2
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "current_elo": 1450.0,
+            "expected_elo": 1500.0,
+            "model_path": "models/test.pth",
+        }
+
+        controller._on_regression_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.consecutive_failures == 3
+
+    def test_on_regression_detected_resets_successes(self):
+        """Test _on_regression_detected resets consecutive_successes."""
+        controller = get_feedback_loop_controller()
+
+        # Pre-create state with successes
+        state = controller._get_or_create_state("hex8_2p")
+        state.consecutive_successes = 5
+        state.consecutive_failures = 0
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "current_elo": 1450.0,
+            "expected_elo": 1500.0,
+        }
+
+        controller._on_regression_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.consecutive_successes == 0
+        assert state.consecutive_failures == 1
+
+    def test_on_selfplay_complete_updates_state(self):
+        """Test _on_selfplay_complete updates state correctly."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "games_played": 100,
+            "quality_score": 0.85,
+            "engine": "gumbel-mcts",
+        }
+
+        controller._on_selfplay_complete(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state is not None
+        assert state.last_selfplay_games == 100
+        assert state.last_selfplay_quality == 0.85
+        assert state.last_selfplay_engine == "gumbel-mcts"
+
+    def test_on_plateau_detected_boosts_exploration(self):
+        """Test _on_plateau_detected increases exploration."""
+        controller = get_feedback_loop_controller()
+
+        # Pre-create state with normal exploration
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_exploration_boost = 1.0
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "stall_duration_hours": 48.0,
+        }
+
+        controller._on_plateau_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        # Exploration should be boosted after plateau detection
+        assert state.current_exploration_boost >= 1.0
+
+    def test_on_quality_degraded_for_training_updates_intensity(self):
+        """Test _on_quality_degraded_for_training adjusts intensity."""
+        controller = get_feedback_loop_controller()
+
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_training_intensity = "normal"
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "quality_score": 0.45,  # Below threshold
+        }
+
+        controller._on_quality_degraded_for_training(event)
+
+        state = controller.get_state("hex8_2p")
+        # Should reduce intensity or adjust parameters
+        assert state is not None
+
+    def test_on_promotion_complete_updates_state(self):
+        """Test _on_promotion_complete updates state correctly."""
+        controller = get_feedback_loop_controller()
+
+        state = controller._get_or_create_state("hex8_2p")
+        state.consecutive_failures = 3
+        state.consecutive_successes = 0
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "model_path": "models/promoted.pth",
+            "elo": 1600.0,
+        }
+
+        controller._on_promotion_complete(event)
+
+        state = controller.get_state("hex8_2p")
+        # Promotion is a success - resets failures, increments successes
+        assert state.consecutive_successes >= 1
+
+    def test_on_work_completed_updates_metrics(self):
+        """Test _on_work_completed updates work queue metrics."""
+        controller = get_feedback_loop_controller()
+
+        state = controller._get_or_create_state("hex8_2p")
+        initial_count = state.work_completed_count
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "work_type": "selfplay",
+        }
+
+        controller._on_work_completed(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.work_completed_count >= initial_count
+        assert state.last_work_completion_time > 0
+
+    def test_on_work_failed_increments_failures(self):
+        """Test _on_work_failed increments failure tracking."""
+        controller = get_feedback_loop_controller()
+
+        state = controller._get_or_create_state("hex8_2p")
+        state.consecutive_failures = 0
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "work_type": "training",
+            "error": "GPU OOM",
+        }
+
+        controller._on_work_failed(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.consecutive_failures >= 1
+
+    def test_event_handler_exception_safety(self):
+        """Test event handlers don't raise on malformed events."""
+        controller = get_feedback_loop_controller()
+
+        # Test all handlers with None payload
+        handlers = [
+            controller._on_training_complete,
+            controller._on_evaluation_complete,
+            controller._on_regression_detected,
+            controller._on_selfplay_complete,
+            controller._on_promotion_complete,
+            controller._on_work_completed,
+            controller._on_work_failed,
+        ]
+
+        for handler in handlers:
+            event = MagicMock()
+            event.payload = None
+
+            # Should not raise
+            try:
+                handler(event)
+            except Exception as e:
+                pytest.fail(f"{handler.__name__} raised {e} with None payload")

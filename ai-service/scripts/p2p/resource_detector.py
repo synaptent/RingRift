@@ -449,3 +449,33 @@ class ResourceDetectorMixin:
     def _detect_local_external_work(self) -> dict[str, bool]:
         """Detect external work (delegates to ResourceDetector)."""
         return self._resource_detector.detect_local_external_work()
+
+    # Dec 30, 2025: Async versions to avoid blocking event loop
+    # These wrap blocking subprocess calls in asyncio.to_thread()
+
+    async def _get_resource_usage_async(self) -> dict[str, Any]:
+        """Get resource usage without blocking event loop.
+
+        Wraps get_resource_usage() in asyncio.to_thread() to avoid
+        blocking the event loop with subprocess calls.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.get_resource_usage)
+
+    async def _detect_gpu_async(self) -> tuple[bool, str]:
+        """Detect GPU without blocking event loop.
+
+        Wraps detect_gpu() in asyncio.to_thread() to avoid blocking
+        the event loop with subprocess calls.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.detect_gpu)
+
+    async def _detect_memory_async(self) -> int:
+        """Detect memory without blocking event loop.
+
+        Wraps detect_memory() in asyncio.to_thread() to avoid blocking
+        the event loop with subprocess calls (macOS sysctl).
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.detect_memory)

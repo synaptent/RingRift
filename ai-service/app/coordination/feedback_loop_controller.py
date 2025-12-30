@@ -3438,6 +3438,9 @@ class FeedbackLoopController:
             self._failed_nodes: set = set()
         if node_id in self._failed_nodes:
             self._failed_nodes.discard(node_id)
+            # Reset failure count on recovery (Dec 30, 2025)
+            if hasattr(self, "_node_failure_counts") and node_id in self._node_failure_counts:
+                del self._node_failure_counts[node_id]
             logger.info(
                 f"[FeedbackLoopController] Node {node_id} recovered from health failure "
                 f"(check_type={check_type}, latency={latency_ms}ms)"
@@ -3473,9 +3476,18 @@ class FeedbackLoopController:
 
         # Count consecutive failures for this node
         if not hasattr(self, "_node_failure_counts"):
-            self._node_failure_counts: dict = {}
+            self._node_failure_counts: dict[str, int] = {}
         self._node_failure_counts[node_id] = self._node_failure_counts.get(node_id, 0) + 1
         failure_count = self._node_failure_counts[node_id]
+
+        # LRU cleanup: limit to 100 entries max (Dec 30, 2025)
+        MAX_FAILURE_TRACKING_NODES = 100
+        if len(self._node_failure_counts) > MAX_FAILURE_TRACKING_NODES:
+            # Remove entries with lowest counts (least concerning)
+            sorted_nodes = sorted(
+                self._node_failure_counts.items(), key=lambda x: x[1], reverse=True
+            )
+            self._node_failure_counts = dict(sorted_nodes[:MAX_FAILURE_TRACKING_NODES])
 
         # Log warning for repeated failures
         if failure_count >= 3:

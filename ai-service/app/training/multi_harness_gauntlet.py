@@ -567,6 +567,9 @@ def register_multi_harness_results(
 ) -> dict[str, str]:
     """Register multi-harness evaluation results in the Elo system.
 
+    December 30, 2025: Updated to use EloService.record_multi_harness_evaluation()
+    for proper composite participant registration and Elo initialization.
+
     Args:
         result: MultiHarnessResult from evaluation
         elo_service: Optional EloService instance (lazy loaded if None)
@@ -575,34 +578,39 @@ def register_multi_harness_results(
         Dictionary mapping harness names to participant IDs
     """
     try:
-        from app.training.composite_participant import make_composite_participant_id
-        from app.training.elo_service import EloService
+        from app.training.elo_service import get_elo_service
 
         if elo_service is None:
-            elo_service = EloService.get_instance()
+            elo_service = get_elo_service()
 
-        participant_ids = {}
-        model_name = Path(result.model_path).stem
+        if not result.model_path or not result.board_type:
+            logger.warning("Cannot register results: missing model_path or board_type")
+            return {}
 
+        # Convert harness_results to the format expected by record_multi_harness_evaluation
+        harness_results_dict: dict[str, dict[str, Any]] = {}
         for harness, rating in result.harness_results.items():
-            # Create composite participant ID
-            participant_id = make_composite_participant_id(
-                nn_id=model_name,
-                ai_type=harness.value,
-                config={"players": result.num_players},
-            )
+            harness_name = harness.value if hasattr(harness, "value") else str(harness)
+            harness_results_dict[harness_name] = {
+                "elo": getattr(rating, "elo", 1500.0),
+                "games_played": getattr(rating, "games_played", 0),
+                "wins": getattr(rating, "wins", 0),
+                "losses": getattr(rating, "losses", 0),
+                "draws": getattr(rating, "draws", 0),
+                "win_rate": getattr(rating, "win_rate", 0.0),
+            }
 
-            # Register or update rating
-            elo_service.register_participant(
-                participant_id=participant_id,
-                initial_elo=rating.elo,
-                games_played=rating.games_played,
-            )
-
-            participant_ids[harness.value] = participant_id
+        # Use the new unified method
+        participant_ids = elo_service.record_multi_harness_evaluation(
+            model_path=result.model_path,
+            board_type=result.board_type,
+            num_players=result.num_players,
+            harness_results=harness_results_dict,
+        )
 
         logger.info(
-            f"Registered {len(participant_ids)} harness ratings for {model_name}"
+            f"Registered {len(participant_ids)} harness ratings for "
+            f"{Path(result.model_path).stem}"
         )
         return participant_ids
 

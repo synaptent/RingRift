@@ -30,19 +30,22 @@ class TestEvaluationConfig:
     """Tests for EvaluationConfig dataclass."""
 
     def test_default_values(self):
-        """Test default configuration values."""
+        """Test default configuration values.
+
+        December 30, 2025: Updated to match current defaults in EvaluationConfig.
+        """
         config = EvaluationConfig()
-        assert config.games_per_baseline == 20
+        assert config.games_per_baseline == 50
         assert config.baselines == ["random", "heuristic"]
         assert config.early_stopping_enabled is True
         assert config.early_stopping_confidence == 0.95
         assert config.early_stopping_min_games == 10
-        assert config.max_concurrent_evaluations == 8  # Updated Dec 2025
-        assert config.evaluation_timeout_seconds == 1800.0
+        assert config.max_concurrent_evaluations == 24
+        assert config.evaluation_timeout_seconds == 300.0  # 5 minutes
         assert config.dedup_cooldown_seconds == 300.0
-        assert config.max_queue_depth == 50
-        assert config.backpressure_threshold == 25  # Updated Dec 2025 (was 40)
-        assert config.backpressure_release_threshold == 15  # Updated Dec 2025 (was 20)
+        assert config.max_queue_depth == 100
+        assert config.backpressure_threshold == 70
+        assert config.backpressure_release_threshold == 35
 
     def test_custom_values(self):
         """Test configuration with custom values."""
@@ -109,7 +112,7 @@ class TestEvaluationDaemonInit:
         """Test default daemon initialization."""
         daemon = EvaluationDaemon()
 
-        assert daemon.config.games_per_baseline == 20
+        assert daemon.config.games_per_baseline == 50  # Updated Dec 30, 2025
         assert daemon._running is False
         assert daemon._active_evaluations == set()
         assert daemon._recently_evaluated == {}

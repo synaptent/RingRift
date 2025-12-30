@@ -769,7 +769,11 @@ class GossipProtocolMixin(P2PMixinBase):
         # Dec 29, 2025: Increased fanout (3 → 5) for faster state propagation
         # and improved partition recovery. With 30+ peers, 5-peer fanout gives
         # O(log30/log5) ≈ 2.1 rounds for full propagation vs ~3.1 with fanout=3.
-        GOSSIP_FANOUT = 5
+        # Dec 30, 2025: Coordinators get higher fanout (8) for more reliable state
+        # propagation, since they're critical for cluster-wide visibility.
+        is_coordinator = getattr(self, "role", None) in ("coordinator", "leader") or \
+                         getattr(self, "is_coordinator", False)
+        GOSSIP_FANOUT = 8 if is_coordinator else 5
 
         # Dec 2025: Copy peer IDs under lock to avoid stale references.
         # Previously, we copied NodeInfo objects which could become stale
