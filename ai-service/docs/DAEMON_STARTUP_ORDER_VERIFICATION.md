@@ -58,7 +58,7 @@ NPZ export never triggers automatically
 
 | Daemon               | Dependencies | Subscribes To                            |
 | -------------------- | ------------ | ---------------------------------------- |
-| FEEDBACK_LOOP        | EVENT_ROUTER | TRAINING*\*, EVALUATION*_, QUALITY\__    |
+| FEEDBACK_LOOP        | EVENT_ROUTER | TRAINING*\*, EVALUATION*\_, QUALITY\_\_  |
 | DATA_PIPELINE        | EVENT_ROUTER | DATA*SYNC*_, NEW*GAMES*_, REGRESSION\_\* |
 | SELFPLAY_COORDINATOR | EVENT_ROUTER | NODE*RECOVERED, BACKPRESSURE*\*          |
 
@@ -187,7 +187,8 @@ bus.subscribe(DataEventType.DATA_SYNC_COMPLETED, handler)
 **Fix:** Use `_get_event_type_value()` helper:
 
 ```python
-from app.coordination.data_events import DataEventType
+# Note: data_events is in app.distributed, not app.coordination
+from app.distributed.data_events import DataEventType
 
 def _get_event_type_value(name: str) -> str:
     """Map human-readable name to actual event type value."""

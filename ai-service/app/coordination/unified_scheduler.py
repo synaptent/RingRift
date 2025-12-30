@@ -1260,18 +1260,23 @@ class UnifiedScheduler:
         )
 
         # Job counts from database
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("""
-                SELECT
-                    COUNT(*) as total,
-                    SUM(CASE WHEN state = 'running' THEN 1 ELSE 0 END) as running,
-                    SUM(CASE WHEN state = 'pending' OR state = 'queued' THEN 1 ELSE 0 END) as pending
-                FROM jobs
-            """).fetchone()
-            if row:
-                status["jobs"]["total"] = row[0]
-                status["jobs"]["running"] = row[1] or 0
-                status["jobs"]["pending"] = row[2] or 0
+        def _fetch_job_counts() -> tuple[int, int, int]:
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN state = 'running' THEN 1 ELSE 0 END) as running,
+                        SUM(CASE WHEN state = 'pending' OR state = 'queued' THEN 1 ELSE 0 END) as pending
+                    FROM jobs
+                """).fetchone()
+                if row:
+                    return (row[0], row[1] or 0, row[2] or 0)
+                return (0, 0, 0)
+
+        total, running, pending = await asyncio.to_thread(_fetch_job_counts)
+        status["jobs"]["total"] = total
+        status["jobs"]["running"] = running
+        status["jobs"]["pending"] = pending
 
         return status
 

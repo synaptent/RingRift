@@ -36,12 +36,12 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Alert:
+class RouterAlert:
     """An alert to be routed.
 
-    Note: For new code, prefer using app.coordination.alert_types.Alert
-    which has additional fields like category, state, and config_key.
-    This class is maintained for backwards compatibility with AlertRouter.
+    December 2025: Renamed from Alert to avoid collision with
+    app.coordination.alert_types.Alert (canonical for coordination layer).
+    For new code, prefer using the canonical Alert class.
     """
     severity: AlertSeverity
     alert_type: str
@@ -54,6 +54,10 @@ class Alert:
     def key(self) -> str:
         """Unique key for deduplication."""
         return f"{self.alert_type}:{self.node_id or 'cluster'}"
+
+
+# Backward-compat alias (deprecated Dec 2025)
+Alert = RouterAlert
 
 
 @dataclass

@@ -41,8 +41,13 @@ class HealthStatus(str, Enum):
 
 
 @dataclass
-class Alert:
-    """Represents a monitoring alert."""
+class MonitoringAlert:
+    """Represents a monitoring alert.
+
+    December 2025: Renamed from Alert to avoid collision with
+    app.coordination.alert_types.Alert (canonical for coordination layer).
+    For new code, prefer using the canonical Alert class.
+    """
     level: AlertLevel
     category: str
     message: str
@@ -75,6 +80,10 @@ class Alert:
         if self.metric_value is not None and self.threshold is not None:
             parts.append(f"[{self.metric_value:.1f}/{self.threshold:.1f}]")
         return " ".join(parts)
+
+
+# Backward-compat alias (deprecated Dec 2025)
+Alert = MonitoringAlert
 
 
 @dataclass

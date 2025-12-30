@@ -62,14 +62,18 @@ logger = logging.getLogger(__name__)
 # Default algorithms for Phase 2 testing
 PHASE2_ALGORITHMS = ["gumbel_mcts", "mcts", "descent", "gmo_gumbel"]
 
-# Baseline composite IDs (pinned ratings)
+# Baseline composite IDs for gauntlet evaluation
 # Dec 29, 2025: Extended to match game_gauntlet.py default baselines
-# Provides coverage from 400-1700 Elo for meaningful model evaluation
+#
+# NOTE: Only Random is PINNED at 400 Elo (see elo_service.py:815-822).
+# Other baselines have dynamic Elo that changes based on game results.
+# The values below are EXPECTED approximate Elo (not enforced), used only
+# as documentation. Only the keys are actually used by the gauntlet.
 BASELINE_COMPOSITE_IDS = {
-    "none:random:d1": 400.0,        # Random baseline anchor
-    "none:heuristic:d2": 1200.0,    # Basic heuristic (was 1000, aligned with game_gauntlet)
-    "none:mcts:d4": 1500.0,         # MCTS_LIGHT (~32 simulations)
-    "none:mcts:d6": 1700.0,         # MCTS_MEDIUM (~128 simulations)
+    "none:random:d1": 400.0,        # PINNED at 400 (anchor point)
+    "none:heuristic:d2": 1200.0,    # Expected ~1200 (dynamic, not pinned)
+    "none:mcts:d4": 1500.0,         # Expected ~1500 (dynamic, not pinned)
+    "none:mcts:d6": 1700.0,         # Expected ~1700 (dynamic, not pinned)
 }
 
 

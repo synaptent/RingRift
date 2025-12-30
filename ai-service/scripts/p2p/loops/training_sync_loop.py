@@ -152,7 +152,8 @@ class TrainingSyncLoop(BaseLoop):
     async def _emit_sync_started(self) -> None:
         """Emit DATA_SYNC_STARTED event."""
         try:
-            from app.coordination.data_events import DataEventType, emit_event
+            # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
+            from app.distributed.data_events import DataEventType, emit_event
 
             emit_event(
                 DataEventType.DATA_SYNC_STARTED,
@@ -170,7 +171,8 @@ class TrainingSyncLoop(BaseLoop):
     async def _emit_sync_completed(self, jobs_created: int, duration: float) -> None:
         """Emit DATA_SYNC_COMPLETED event."""
         try:
-            from app.coordination.data_events import DataEventType, emit_event
+            # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
+            from app.distributed.data_events import DataEventType, emit_event
 
             emit_event(
                 DataEventType.DATA_SYNC_COMPLETED,
@@ -189,7 +191,8 @@ class TrainingSyncLoop(BaseLoop):
     async def _emit_sync_failed(self, error: str) -> None:
         """Emit DATA_SYNC_FAILED event."""
         try:
-            from app.coordination.data_events import DataEventType, emit_event
+            # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
+            from app.distributed.data_events import DataEventType, emit_event
 
             emit_event(
                 DataEventType.DATA_SYNC_FAILED,

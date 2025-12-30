@@ -412,6 +412,71 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
                     f"Auto-snapshot failed: {e}"
                 )
 
+    def _save_snapshot_db_sync(
+        self,
+        snapshot: StateSnapshot,
+        name: str,
+    ) -> int:
+        """Synchronous helper to persist snapshot to database.
+
+        Args:
+            snapshot: The snapshot to save
+            name: Coordinator name
+
+        Returns:
+            Number of old snapshots deleted
+        """
+        conn = self._get_connection()
+        serialized = StateSerializer.serialize(snapshot.state)
+
+        conn.execute(
+            """
+            INSERT INTO coordinator_snapshots
+            (coordinator_name, timestamp, state_data, checksum, metadata)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                snapshot.coordinator_name,
+                snapshot.timestamp,
+                serialized,
+                snapshot.checksum,
+                json.dumps(snapshot.metadata),
+            ),
+        )
+
+        # Update checkpoint
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO coordinator_checkpoints
+            (coordinator_name, last_snapshot_id, last_checkpoint_time)
+            VALUES (?, last_insert_rowid(), ?)
+            """,
+            (name, time.time()),
+        )
+
+        conn.commit()
+
+        # Cleanup old snapshots (sync)
+        result = conn.execute(
+            """
+            DELETE FROM coordinator_snapshots
+            WHERE coordinator_name = ?
+            AND id NOT IN (
+                SELECT id FROM coordinator_snapshots
+                WHERE coordinator_name = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            )
+            """,
+            (name, name, self._max_snapshots),
+        )
+
+        deleted = result.rowcount
+        if deleted > 0:
+            conn.commit()
+
+        return deleted
+
     async def save_snapshot(self, **metadata) -> StateSnapshot | None:
         """Save current state as a snapshot.
 
@@ -444,40 +509,13 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
         # Create snapshot
         snapshot = StateSnapshot.create(name, state, **metadata)
 
-        # Persist to database
-        conn = self._get_connection()
+        # Persist to database via thread pool (non-blocking)
         try:
-            serialized = StateSerializer.serialize(snapshot.state)
-
-            conn.execute(
-                """
-                INSERT INTO coordinator_snapshots
-                (coordinator_name, timestamp, state_data, checksum, metadata)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    snapshot.coordinator_name,
-                    snapshot.timestamp,
-                    serialized,
-                    snapshot.checksum,
-                    json.dumps(snapshot.metadata),
-                ),
+            deleted = await asyncio.to_thread(
+                self._save_snapshot_db_sync, snapshot, name
             )
-
-            # Update checkpoint
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO coordinator_checkpoints
-                (coordinator_name, last_snapshot_id, last_checkpoint_time)
-                VALUES (?, last_insert_rowid(), ?)
-                """,
-                (name, time.time()),
-            )
-
-            conn.commit()
-
-            # Cleanup old snapshots
-            await self._cleanup_old_snapshots(conn, name)
+            if deleted > 0:
+                logger.debug(f"[{name}] Cleaned up {deleted} old snapshots")
 
             logger.debug(
                 f"[{name}] Snapshot saved (checksum={snapshot.checksum})"
@@ -485,7 +523,6 @@ class StatePersistenceMixin(SQLitePersistenceMixin):
             return snapshot
 
         except Exception as e:
-            conn.rollback()
             logger.error(f"[{name}] Failed to save snapshot: {e}")
             raise
 
