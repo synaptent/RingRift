@@ -389,8 +389,8 @@ class TestGPUMCTSSelfplayRunnerValueAssignment:
         # Player 2 lost, should get -1
         assert game.samples[1].value == -1.0
 
-    def test_assign_values_draw(self, runner):
-        """Test value assignment for draw game."""
+    def test_assign_values_incomplete(self, runner):
+        """Test value assignment for incomplete/abandoned game."""
         from app.models import GameStatus
 
         sample = SelfplaySample(
@@ -405,14 +405,14 @@ class TestGPUMCTSSelfplayRunnerValueAssignment:
         )
         game = GameRecord(game_id="test", samples=[sample])
 
-        # Draw game
+        # Incomplete/abandoned game (not COMPLETED)
         final_state = MagicMock()
-        final_state.game_status = GameStatus.DRAW  # Not COMPLETED
+        final_state.game_status = GameStatus.ABANDONED  # Not COMPLETED
         final_state.winner = None
 
         runner._assign_values(game, final_state)
 
-        # Draw should set value to 0
+        # Non-completed should set value to 0
         assert game.samples[0].value == 0.0
 
     def test_assign_values_4p_rankings(self, runner):
@@ -614,8 +614,8 @@ class TestRunGPUMCTSSelfplay:
 class TestGPUMCTSSelfplayIntegration:
     """Integration-style tests with mocked external components."""
 
-    @patch("app.training.gpu_mcts_selfplay.MultiTreeMCTS")
-    @patch("app.training.gpu_mcts_selfplay.DefaultRulesEngine")
+    @patch("app.ai.tensor_gumbel_tree.MultiTreeMCTS")
+    @patch("app.rules.default_engine.DefaultRulesEngine")
     def test_init_components_board_types(self, mock_engine_cls, mock_mcts_cls):
         """Test component initialization for all board types."""
         mock_engine_cls.return_value = MagicMock()
