@@ -1,0 +1,46 @@
+# Cloudflare Tunnel Configuration for RingRift Cluster
+# Deploy to: /etc/cloudflared/config.yaml on tunnel nodes
+#
+# This configuration routes traffic from Cloudflare to the P2P cluster
+# The tunnel connects outbound (no exposed ports) and Cloudflare handles SSL
+#
+# Nodes running this tunnel:
+#   - nebius-backbone-1 (primary)
+#   - hetzner-cpu1 (backup)
+
+# Tunnel token is set via environment variable or systemd service
+# tunnel: <set-via-token>
+
+ingress:
+  # Main dashboard - routes to P2P leader via Tailscale
+  - hostname: dashboard.ringrift.ai
+    service: http://100.94.201.92:8770
+    path: /dashboard
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # Dashboard static assets
+  - hostname: dashboard.ringrift.ai
+    service: http://100.94.201.92:8770
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # P2P API endpoint
+  - hostname: p2p.ringrift.ai
+    service: http://100.94.201.92:8770
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      httpHostHeader: p2p.ringrift.ai
+
+  # Work queue dashboard
+  - hostname: queue.ringrift.ai
+    service: http://100.94.201.92:8770/work_queue
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # Catch-all (required by cloudflared)
+  - service: http_status:404

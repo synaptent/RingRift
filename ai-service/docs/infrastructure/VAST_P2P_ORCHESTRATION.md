@@ -60,6 +60,9 @@ This document describes the automated P2P orchestration system for Vast.ai GPU i
 - Quick tunnels for NAT bypass
 - No open ports required
 - URLs change on restart (use named tunnels for persistence)
+- For the public cluster entrypoint, use the named tunnel config in
+  `config/cloudflared-config.yaml` with `scripts/setup_cloudflare_tunnel.sh`
+  on the backbone nodes (not on Vast instances).
 
 ## Setup Scripts
 
@@ -373,5 +376,6 @@ python scripts/vast_keepalive.py --install-cron
 - `scripts/vast_p2p_sync.py` - P2P network synchronization
 - `scripts/p2p_orchestrator.py` - Main P2P orchestrator
 - `app/distributed/aria2_transport.py` - aria2 transport layer
-- `scripts/setup_cloudflare_tunnel.sh` - Cloudflare tunnel setup
+- `scripts/setup_cloudflare_tunnel.sh` - Cloudflare tunnel setup (cluster entrypoint)
+- `config/cloudflared-config.yaml` - Cloudflare tunnel ingress rules
 - `config/distributed_hosts.yaml` - Host configuration

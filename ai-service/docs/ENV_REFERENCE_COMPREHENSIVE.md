@@ -248,6 +248,15 @@ value = env.get("CUSTOM_VAR", "default")
 | `RINGRIFT_MIN_HOURS_BETWEEN_TRAINING` | int   | None    |           | Min hours between runs             |
 | `RINGRIFT_TRAINING_RETRY_SLEEP`       | float | `2.0`   |           | Pause between training retries (s) |
 
+### Training Activity Detection
+
+| Variable                                    | Type | Default | In env.py | Description                                           |
+| ------------------------------------------- | ---- | ------- | --------- | ----------------------------------------------------- |
+| `RINGRIFT_TRAINING_ACTIVITY_ENABLED`        | bool | `true`  |           | Enable TrainingActivityDaemon (TRAINING_NODE_WATCHER) |
+| `RINGRIFT_TRAINING_ACTIVITY_INTERVAL`       | int  | `30`    |           | Training activity check interval (seconds)            |
+| `RINGRIFT_TRAINING_ACTIVITY_HANDLE_SIGNALS` | bool | `true`  |           | Enable SIGTERM/SIGINT handling with final sync        |
+| `RINGRIFT_TRAINING_ACTIVITY_TRIGGER_SYNC`   | bool | `true`  |           | Trigger priority sync when training detected          |
+
 ---
 
 ## Data Freshness
