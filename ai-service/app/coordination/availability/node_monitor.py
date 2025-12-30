@@ -98,6 +98,11 @@ class NodeMonitor(BaseDaemon, SafeEventEmitterMixin):
         self._nodes: list[ClusterNode] = nodes or []
         self._failure_counts: dict[str, int] = {}
         self._last_healthy: dict[str, datetime] = {}
+        # SSH-specific tracking (Dec 30, 2025)
+        self._ssh_failure_counts: dict[str, int] = {}
+        self._ssh_last_success: dict[str, datetime] = {}
+        self._ssh_unresponsive: set[str] = set()  # Nodes currently marked unresponsive via SSH
+        self._ssh_consecutive_failures_threshold: int = 3  # Mark unresponsive after N failures
         self._health_history: dict[str, list[NodeHealthResult]] = {}
 
     def _get_default_config(self) -> NodeMonitorConfig:
@@ -248,20 +253,22 @@ class NodeMonitor(BaseDaemon, SafeEventEmitterMixin):
             )
 
     async def _check_ssh(self, node: ClusterNode) -> NodeHealthResult:
-        """Check SSH connectivity."""
+        """Check SSH connectivity with event emission (Dec 30, 2025 enhancement)."""
         start_time = time.time()
         ip = getattr(node, "best_ip", None) or getattr(node, "tailscale_ip", None)
         user = getattr(node, "ssh_user", "root")
         port = getattr(node, "ssh_port", 22)
 
         if not ip:
-            return NodeHealthResult(
+            result = NodeHealthResult(
                 node_id=node.name,
                 layer=HealthCheckLayer.SSH,
                 healthy=False,
                 latency_ms=0.0,
                 error="No IP address configured",
             )
+            await self._handle_ssh_check_result(node, result)
+            return result
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -283,43 +290,185 @@ class NodeMonitor(BaseDaemon, SafeEventEmitterMixin):
                 )
             except asyncio.TimeoutError:
                 proc.kill()
-                return NodeHealthResult(
+                result = NodeHealthResult(
                     node_id=node.name,
                     layer=HealthCheckLayer.SSH,
                     healthy=False,
                     latency_ms=self.config.ssh_timeout_seconds * 1000,
                     error="SSH timeout",
                 )
+                await self._handle_ssh_check_result(node, result)
+                return result
 
             latency = (time.time() - start_time) * 1000
 
             if proc.returncode == 0:
-                return NodeHealthResult(
+                result = NodeHealthResult(
                     node_id=node.name,
                     layer=HealthCheckLayer.SSH,
                     healthy=True,
                     latency_ms=latency,
                 )
+                await self._handle_ssh_check_result(node, result)
+                return result
             else:
                 stderr = ""
                 if proc.stderr:
                     stderr_data = await proc.stderr.read()
                     stderr = stderr_data.decode().strip()[:100]
-                return NodeHealthResult(
+                result = NodeHealthResult(
                     node_id=node.name,
                     layer=HealthCheckLayer.SSH,
                     healthy=False,
                     latency_ms=latency,
                     error=f"SSH exit code {proc.returncode}: {stderr}",
                 )
+                await self._handle_ssh_check_result(node, result)
+                return result
         except Exception as e:
-            return NodeHealthResult(
+            result = NodeHealthResult(
                 node_id=node.name,
                 layer=HealthCheckLayer.SSH,
                 healthy=False,
                 latency_ms=(time.time() - start_time) * 1000,
                 error=str(e),
             )
+            await self._handle_ssh_check_result(node, result)
+            return result
+
+    async def _handle_ssh_check_result(
+        self,
+        node: ClusterNode,
+        result: NodeHealthResult,
+    ) -> None:
+        """Handle SSH check result with event emission and state tracking.
+
+        December 30, 2025 - Stale node detection via SSH.
+        """
+        node_id = node.name
+
+        if result.healthy:
+            # SSH check succeeded
+            was_unresponsive = node_id in self._ssh_unresponsive
+
+            # Update tracking
+            self._ssh_failure_counts[node_id] = 0
+            self._ssh_last_success[node_id] = datetime.now()
+
+            # Emit success event
+            await self._emit_ssh_liveness_succeeded(node, result)
+
+            # Check if node recovered from unresponsive state
+            if was_unresponsive:
+                self._ssh_unresponsive.discard(node_id)
+                await self._emit_ssh_node_recovered(node, result)
+        else:
+            # SSH check failed
+            self._ssh_failure_counts[node_id] = self._ssh_failure_counts.get(node_id, 0) + 1
+            consecutive_failures = self._ssh_failure_counts[node_id]
+
+            # Emit failure event
+            await self._emit_ssh_liveness_failed(node, result, consecutive_failures)
+
+            # Check if node should be marked unresponsive
+            if (
+                consecutive_failures >= self._ssh_consecutive_failures_threshold
+                and node_id not in self._ssh_unresponsive
+            ):
+                self._ssh_unresponsive.add(node_id)
+                await self._emit_ssh_node_unresponsive(node, result, consecutive_failures)
+
+    async def _emit_ssh_liveness_succeeded(
+        self,
+        node: ClusterNode,
+        result: NodeHealthResult,
+    ) -> None:
+        """Emit SSH_LIVENESS_CHECK_SUCCEEDED event."""
+        try:
+            from app.distributed.data_events import DataEventType
+
+            await self._safe_emit_event_async(
+                DataEventType.SSH_LIVENESS_CHECK_SUCCEEDED.value,
+                {
+                    "node_id": node.name,
+                    "latency_ms": result.latency_ms,
+                    "timestamp": result.timestamp.isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit SSH_LIVENESS_CHECK_SUCCEEDED: {e}")
+
+    async def _emit_ssh_liveness_failed(
+        self,
+        node: ClusterNode,
+        result: NodeHealthResult,
+        consecutive_failures: int,
+    ) -> None:
+        """Emit SSH_LIVENESS_CHECK_FAILED event."""
+        try:
+            from app.distributed.data_events import DataEventType
+
+            await self._safe_emit_event_async(
+                DataEventType.SSH_LIVENESS_CHECK_FAILED.value,
+                {
+                    "node_id": node.name,
+                    "error": result.error,
+                    "latency_ms": result.latency_ms,
+                    "consecutive_failures": consecutive_failures,
+                    "timestamp": result.timestamp.isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit SSH_LIVENESS_CHECK_FAILED: {e}")
+
+    async def _emit_ssh_node_unresponsive(
+        self,
+        node: ClusterNode,
+        result: NodeHealthResult,
+        consecutive_failures: int,
+    ) -> None:
+        """Emit SSH_NODE_UNRESPONSIVE event when node becomes unresponsive."""
+        try:
+            from app.distributed.data_events import DataEventType
+
+            last_success = self._ssh_last_success.get(node.name)
+            await self._safe_emit_event_async(
+                DataEventType.SSH_NODE_UNRESPONSIVE.value,
+                {
+                    "node_id": node.name,
+                    "consecutive_failures": consecutive_failures,
+                    "last_ssh_success": last_success.isoformat() if last_success else None,
+                    "last_error": result.error,
+                    "timestamp": result.timestamp.isoformat(),
+                },
+            )
+            logger.warning(
+                f"[NodeMonitor] Node {node.name} marked SSH unresponsive after "
+                f"{consecutive_failures} consecutive failures"
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit SSH_NODE_UNRESPONSIVE: {e}")
+
+    async def _emit_ssh_node_recovered(
+        self,
+        node: ClusterNode,
+        result: NodeHealthResult,
+    ) -> None:
+        """Emit SSH_NODE_RECOVERED event when previously unresponsive node recovers."""
+        try:
+            from app.distributed.data_events import DataEventType
+
+            await self._safe_emit_event_async(
+                DataEventType.SSH_NODE_RECOVERED.value,
+                {
+                    "node_id": node.name,
+                    "latency_ms": result.latency_ms,
+                    "timestamp": result.timestamp.isoformat(),
+                },
+            )
+            logger.info(f"[NodeMonitor] Node {node.name} SSH connectivity recovered")
+        except Exception as e:
+            logger.debug(f"Failed to emit SSH_NODE_RECOVERED: {e}")
 
     async def _check_gpu(self, node: ClusterNode) -> NodeHealthResult:
         """Check GPU health via SSH."""
@@ -585,6 +734,54 @@ class NodeMonitor(BaseDaemon, SafeEventEmitterMixin):
         """Get status for all monitored nodes."""
         return {node.name: self.get_node_status(node.name) for node in self._nodes}
 
+    def get_ssh_unresponsive_nodes(self) -> list[str]:
+        """Get list of nodes currently marked as SSH unresponsive.
+
+        December 30, 2025 - Stale node detection.
+
+        Returns:
+            List of node IDs that have exceeded SSH failure threshold.
+        """
+        return list(self._ssh_unresponsive)
+
+    def get_ssh_status(self, node_id: str) -> dict:
+        """Get SSH-specific health status for a node.
+
+        December 30, 2025 - Stale node detection.
+
+        Returns:
+            Dict with SSH health metrics.
+        """
+        last_success = self._ssh_last_success.get(node_id)
+        return {
+            "node_id": node_id,
+            "ssh_unresponsive": node_id in self._ssh_unresponsive,
+            "ssh_consecutive_failures": self._ssh_failure_counts.get(node_id, 0),
+            "ssh_last_success": last_success.isoformat() if last_success else None,
+            "ssh_failure_threshold": self._ssh_consecutive_failures_threshold,
+        }
+
+    def get_ssh_health_summary(self) -> dict:
+        """Get SSH health summary for all monitored nodes.
+
+        December 30, 2025 - Stale node detection.
+
+        Returns:
+            Summary dict with counts and lists.
+        """
+        unresponsive = list(self._ssh_unresponsive)
+        responsive = [
+            node.name for node in self._nodes
+            if node.name not in self._ssh_unresponsive
+        ]
+        return {
+            "total_nodes": len(self._nodes),
+            "ssh_unresponsive_count": len(unresponsive),
+            "ssh_unresponsive_nodes": unresponsive,
+            "ssh_responsive_count": len(responsive),
+            "ssh_responsive_nodes": responsive,
+        }
+
     def health_check(self) -> "HealthCheckResult":
         """Return health status for DaemonManager integration.
 
@@ -597,13 +794,20 @@ class NodeMonitor(BaseDaemon, SafeEventEmitterMixin):
             1 for node in self._nodes
             if self._failure_counts.get(node.name, 0) >= self.config.consecutive_failures_before_unhealthy
         )
+        ssh_unresponsive_count = len(self._ssh_unresponsive)
 
         return HealthCheckResult(
             healthy=unhealthy_count == 0,
-            message=f"Monitoring {len(self._nodes)} nodes, {unhealthy_count} unhealthy",
+            message=(
+                f"Monitoring {len(self._nodes)} nodes, "
+                f"{unhealthy_count} unhealthy, "
+                f"{ssh_unresponsive_count} SSH unresponsive"
+            ),
             details={
                 "nodes_monitored": len(self._nodes),
                 "unhealthy_count": unhealthy_count,
+                "ssh_unresponsive_count": ssh_unresponsive_count,
+                "ssh_unresponsive_nodes": list(self._ssh_unresponsive),
                 "cycles_completed": self._cycles_completed,
             },
         )
