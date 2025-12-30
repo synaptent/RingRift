@@ -71,6 +71,9 @@ from app.coordination.daemon_types import (
 # Lifecycle management extracted to dedicated module (Dec 2025)
 from app.coordination.daemon_lifecycle import DaemonLifecycleManager
 
+# Event handlers extracted to dedicated module (Dec 2025)
+from app.coordination.daemon_event_handlers import DaemonEventHandlers
+
 # Daemon runner functions extracted to dedicated module (Dec 2025)
 # This reduces daemon_manager.py by ~1,700 LOC
 #
@@ -218,6 +221,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         # Register callback for mark_daemon_ready() to break circular dependency (Dec 2025)
         # This allows daemon_types.py to signal readiness without importing daemon_manager
         register_mark_ready_callback(self._handle_daemon_ready)
+
+        # Event handlers extracted to DaemonEventHandlers (Dec 2025)
+        self._event_handlers = DaemonEventHandlers(self)
 
     @classmethod
     def reset_instance(cls) -> None:
@@ -1822,97 +1828,12 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         )
 
     async def _subscribe_to_critical_events(self) -> None:
-        """Subscribe to REGRESSION_CRITICAL and other critical events.
+        """Subscribe to critical events via DaemonEventHandlers.
 
-        Phase 5 (December 2025): Centralized handling of critical events
-        that require daemon-level coordination response.
-
-        Phase 7 (December 2025): Also wires AutoRollbackHandler to actually
-        perform rollbacks when REGRESSION_CRITICAL events are received.
+        December 2025: Delegated to DaemonEventHandlers class for maintainability.
+        See daemon_event_handlers.py for the full implementation.
         """
-        try:
-            from app.coordination.event_router import get_router, DataEventType
-
-            if DataEventType is None:
-                logger.debug("[DaemonManager] DataEventType not available, skipping event subscription")
-                return
-
-            router = get_router()
-            if router is None:
-                logger.debug("[DaemonManager] Event router not available for critical event subscription")
-                return
-
-            # Subscribe to critical events
-            router.subscribe(DataEventType.REGRESSION_CRITICAL.value, self._on_regression_critical)
-
-            # P0.3 (December 2025): Subscribe to feedback loop events for daemon coordination
-            # SELFPLAY_TARGET_UPDATED - adjust workload scaling based on priority changes
-            if hasattr(DataEventType, 'SELFPLAY_TARGET_UPDATED'):
-                router.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED.value, self._on_selfplay_target_updated)
-                logger.debug("[DaemonManager] Subscribed to SELFPLAY_TARGET_UPDATED")
-
-            # EXPLORATION_BOOST - coordinate temperature adjustments across daemons
-            if hasattr(DataEventType, 'EXPLORATION_BOOST'):
-                router.subscribe(DataEventType.EXPLORATION_BOOST.value, self._on_exploration_boost)
-                logger.debug("[DaemonManager] Subscribed to EXPLORATION_BOOST")
-
-            # DAEMON_STATUS_CHANGED - self-healing when daemons fail
-            if hasattr(DataEventType, 'DAEMON_STATUS_CHANGED'):
-                router.subscribe(DataEventType.DAEMON_STATUS_CHANGED.value, self._on_daemon_status_changed)
-                logger.debug("[DaemonManager] Subscribed to DAEMON_STATUS_CHANGED")
-
-            # Dec 27, 2025: P2P cluster events for daemon lifecycle coordination
-            # HOST_OFFLINE - pause affected daemons when nodes leave cluster
-            if hasattr(DataEventType, 'HOST_OFFLINE'):
-                router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
-                logger.debug("[DaemonManager] Subscribed to HOST_OFFLINE")
-
-            # HOST_ONLINE - resume/restart daemons when nodes rejoin
-            if hasattr(DataEventType, 'HOST_ONLINE'):
-                router.subscribe(DataEventType.HOST_ONLINE.value, self._on_host_online)
-                logger.debug("[DaemonManager] Subscribed to HOST_ONLINE")
-
-            # LEADER_ELECTED - trigger leader-only daemons when leadership changes
-            if hasattr(DataEventType, 'LEADER_ELECTED'):
-                router.subscribe(DataEventType.LEADER_ELECTED.value, self._on_leader_elected)
-                logger.debug("[DaemonManager] Subscribed to LEADER_ELECTED")
-
-            # December 2025: Backpressure events for daemon workload coordination
-            # BACKPRESSURE_ACTIVATED - pause non-essential daemons to reduce load
-            if hasattr(DataEventType, 'BACKPRESSURE_ACTIVATED'):
-                router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, self._on_backpressure_activated)
-                logger.debug("[DaemonManager] Subscribed to BACKPRESSURE_ACTIVATED")
-
-            # BACKPRESSURE_RELEASED - resume normal daemon operations
-            if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
-                router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
-                logger.debug("[DaemonManager] Subscribed to BACKPRESSURE_RELEASED")
-
-            # December 2025: Disk space events for daemon workload coordination
-            # DISK_SPACE_LOW - pause data-generating daemons when disk is low
-            if hasattr(DataEventType, 'DISK_SPACE_LOW'):
-                router.subscribe(DataEventType.DISK_SPACE_LOW.value, self._on_disk_space_low)
-                logger.debug("[DaemonManager] Subscribed to DISK_SPACE_LOW")
-
-            logger.info("[DaemonManager] Subscribed to critical events (Phase 5, P0.3, P2P cluster, backpressure, disk space)")
-
-            # Phase 7: Wire AutoRollbackHandler to actually perform model rollbacks
-            # Without this, REGRESSION_CRITICAL events are logged but no rollback happens
-            try:
-                from app.training.model_registry import get_model_registry
-                from app.training.rollback_manager import wire_regression_to_rollback
-
-                registry = get_model_registry()
-                handler = wire_regression_to_rollback(registry)
-                if handler:
-                    logger.info("[DaemonManager] Wired AutoRollbackHandler for automatic model rollback (Phase 7)")
-                else:
-                    logger.warning("[DaemonManager] Failed to wire AutoRollbackHandler")
-            except (ImportError, RuntimeError, AttributeError) as rollback_err:
-                logger.warning(f"[DaemonManager] Could not wire AutoRollbackHandler: {rollback_err}")
-
-        except (ImportError, RuntimeError, ConnectionError) as e:
-            logger.warning(f"[DaemonManager] Failed to subscribe to critical events: {e}")
+        await self._event_handlers.subscribe_to_events()
 
     async def _on_regression_critical(self, event) -> None:
         """Handle REGRESSION_CRITICAL event - centralized response.

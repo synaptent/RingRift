@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.config.coordination_defaults import DataFreshnessDefaults, SyncDefaults
+from app.config.env import env
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -444,7 +445,6 @@ class TrainingTriggerDaemon(HandlerBase):
 
     async def _on_start(self) -> None:
         """Hook called before main loop - check coordinator mode."""
-        from app.config.env import env
         if env.is_coordinator or not env.training_enabled:
             logger.info(
                 f"[TrainingTriggerDaemon] Skipped on coordinator node: {env.node_id} "

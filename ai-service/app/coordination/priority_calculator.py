@@ -439,6 +439,7 @@ class PriorityInputs:
     curriculum_weight: float = 1.0
     improvement_boost: float = 0.0
     quality_penalty: float = 0.0
+    architecture_boost: float = 0.0  # Phase 5B: From ArchitectureTracker (0.0 to +0.30)
     momentum_multiplier: float = 1.0
     game_count: int = 0
     is_large_board: bool = False
@@ -512,6 +513,10 @@ class PriorityCalculator:
         # Improvement boost
         improvement = inputs.improvement_boost * w.improvement
 
+        # Architecture boost (Phase 5B: from ArchitectureTracker)
+        # Added directly since architecture_boost is already scaled (0.0 to 0.30)
+        architecture = inputs.architecture_boost
+
         # Quality factor
         quality_score = 0.7  # Default
         if self._get_quality_score_fn:
@@ -533,7 +538,7 @@ class PriorityCalculator:
         voi = compute_voi_score(inputs.elo_uncertainty, elo_gap, info_gain) * w.voi
 
         # Combine factors
-        score = staleness + velocity + training + exploration + curriculum + improvement + quality + data_deficit + voi
+        score = staleness + velocity + training + exploration + curriculum + improvement + architecture + quality + data_deficit + voi
 
         # Apply exploration boost as multiplier
         score *= inputs.exploration_boost

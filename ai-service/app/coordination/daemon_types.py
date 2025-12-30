@@ -530,20 +530,22 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.NODE_RECOVERY,          # 15. Node recovery (depends on NODE_HEALTH_MONITOR)
 
     # =========================================================================
-    # Quality and training enhancement (positions 16-18) - Dec 27, 2025
+    # Quality and training enhancement (positions 16-19) - Dec 27, 2025
     # Added: 3 daemons missing from startup order per exploration analysis
+    # Dec 29, 2025: Added NNUE_TRAINING for automatic NNUE model training
     # =========================================================================
     DaemonType.QUALITY_MONITOR,        # 16. Quality monitoring (depends on DATA_PIPELINE)
-    DaemonType.DISTILLATION,           # 17. Distillation (depends on TRAINING_TRIGGER)
+    DaemonType.NNUE_TRAINING,          # 17. NNUE training (depends on DATA_PIPELINE)
+    DaemonType.DISTILLATION,           # 18. Distillation (depends on TRAINING_TRIGGER)
 
     # =========================================================================
-    # Evaluation and promotion chain (positions 18-22)
+    # Evaluation and promotion chain (positions 19-23)
     # Must be in order: EVALUATION -> (UNIFIED_PROMOTION) -> AUTO_PROMOTION -> MODEL_DISTRIBUTION
     # =========================================================================
-    DaemonType.EVALUATION,             # 18. Model evaluation (depends on TRAINING_TRIGGER)
-    DaemonType.UNIFIED_PROMOTION,      # 19. Unified promotion (depends on EVALUATION)
-    DaemonType.AUTO_PROMOTION,         # 20. Auto-promotion (depends on EVALUATION)
-    DaemonType.MODEL_DISTRIBUTION,     # 21. Model distribution (depends on AUTO_PROMOTION)
+    DaemonType.EVALUATION,             # 19. Model evaluation (depends on TRAINING_TRIGGER)
+    DaemonType.UNIFIED_PROMOTION,      # 20. Unified promotion (depends on EVALUATION)
+    DaemonType.AUTO_PROMOTION,         # 21. Auto-promotion (depends on EVALUATION)
+    DaemonType.MODEL_DISTRIBUTION,     # 22. Model distribution (depends on AUTO_PROMOTION)
 ]
 
 

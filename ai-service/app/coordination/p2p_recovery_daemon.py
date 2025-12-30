@@ -49,6 +49,10 @@ class P2PRecoveryConfig(DaemonConfig):
         isolation_check_enabled: Enable network isolation detection (default: True)
         min_peer_ratio: Trigger isolation recovery if P2P/Tailscale ratio below this (default: 0.5)
         isolation_consecutive_checks: Consecutive isolation checks before action (default: 3)
+        # Dec 29, 2025: Self-healing enhancements for quorum and leader gaps
+        max_leader_gap_seconds: Maximum seconds without a leader before forcing election (default: 120)
+        quorum_recovery_enabled: Enable automatic quorum recovery (default: True)
+        leader_election_endpoint: Endpoint to trigger leader election
     """
 
     check_interval_seconds: int = 60
@@ -62,6 +66,10 @@ class P2PRecoveryConfig(DaemonConfig):
     isolation_check_enabled: bool = True
     min_peer_ratio: float = 0.5  # Trigger if P2P sees < 50% of Tailscale peers
     isolation_consecutive_checks: int = 3  # Require 3 checks (~3 min) before action
+    # Dec 29, 2025: Self-healing for quorum and leader gaps
+    max_leader_gap_seconds: int = 120  # Force election if no leader for 2 minutes
+    quorum_recovery_enabled: bool = True
+    leader_election_endpoint: str = "http://localhost:8770/election/start"
 
     @classmethod
     def from_env(cls) -> "P2PRecoveryConfig":
@@ -167,6 +175,10 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         self._consecutive_isolation_checks = 0
         self._last_tailscale_count = 0
         self._isolation_triggered_restarts = 0
+        # Dec 29, 2025: Self-healing for leader gaps and quorum
+        self._last_leader_seen_time = time.time()
+        self._leader_gap_elections_triggered = 0
+        self._quorum_recovery_attempts = 0
 
     @staticmethod
     def _get_default_config() -> P2PRecoveryConfig:
@@ -209,6 +221,11 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         is_isolated, isolation_details = await self._check_network_isolation(alive_peers)
         status["isolation"] = isolation_details
 
+        # Dec 29, 2025: Track leader presence for leader gap detection
+        leader_id = status.get("leader_id")
+        if leader_id:
+            self._last_leader_seen_time = time.time()
+
         if is_healthy and not is_isolated:
             # Reset failure counter
             if self._consecutive_failures > 0:
@@ -222,6 +239,16 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             if self._was_unhealthy:
                 await self._emit_recovery_event(status)
                 self._was_unhealthy = False
+
+        # Dec 29, 2025: Check for leader gap and trigger election if needed
+        leader_gap_seconds = time.time() - self._last_leader_seen_time
+        if not leader_id and leader_gap_seconds > self.config.max_leader_gap_seconds:
+            logger.warning(
+                f"Leader gap detected: no leader for {leader_gap_seconds:.0f}s "
+                f"(threshold: {self.config.max_leader_gap_seconds}s), triggering election"
+            )
+            await self._trigger_leader_election()
+            return  # Skip other recovery actions this cycle
 
         elif is_isolated and self._consecutive_isolation_checks >= self.config.isolation_consecutive_checks:
             # Network isolation confirmed - trigger restart
@@ -463,6 +490,45 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             logger.error(f"Error restarting P2P: {e}")
             self._errors_count += 1
             self._last_error = str(e)
+
+    async def _trigger_leader_election(self) -> bool:
+        """Trigger a leader election via the P2P orchestrator API.
+
+        Dec 29, 2025: Added for self-healing when leader gaps are detected.
+        This allows the daemon to proactively trigger elections without
+        requiring a full P2P restart.
+
+        Returns:
+            True if election was triggered successfully, False otherwise.
+        """
+        try:
+            import aiohttp
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.config.leader_election_endpoint,
+                    timeout=aiohttp.ClientTimeout(total=10.0),
+                ) as resp:
+                    if resp.status == 200:
+                        self._leader_gap_elections_triggered += 1
+                        logger.info(
+                            f"Leader election triggered successfully "
+                            f"(total: {self._leader_gap_elections_triggered})"
+                        )
+                        await self._emit_leader_gap_event()
+                        return True
+                    else:
+                        logger.warning(
+                            f"Leader election trigger failed: HTTP {resp.status}"
+                        )
+                        return False
+
+        except asyncio.TimeoutError:
+            logger.warning("Leader election trigger timed out")
+            return False
+        except Exception as e:
+            logger.error(f"Error triggering leader election: {e}")
+            return False
 
     # =========================================================================
     # Event Emission

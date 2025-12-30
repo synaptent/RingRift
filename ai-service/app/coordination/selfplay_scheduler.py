@@ -282,6 +282,7 @@ class ConfigPriority:
     curriculum_weight: float = 1.0  # Phase 2C.3: Curriculum-based weight
     improvement_boost: float = 0.0  # Phase 5: From ImprovementOptimizer (-0.10 to +0.15)
     quality_penalty: float = 0.0  # Phase 5: Quality degradation penalty (0.0 to -0.20)
+    architecture_boost: float = 0.0  # Phase 5B: From ArchitectureTracker (0.0 to +0.30)
     momentum_multiplier: float = 1.0  # Phase 19: From FeedbackAccelerator (0.5 to 1.5)
     game_count: int = 0  # Dec 2025: Current game count for this config
     is_large_board: bool = False  # Dec 2025: True for square19, hexagonal
@@ -762,6 +763,9 @@ class SelfplayScheduler:
         # Get momentum multipliers (Phase 19)
         momentum_data = self._get_momentum_multipliers()
 
+        # Get architecture boosts (Phase 5B)
+        architecture_data = self._get_architecture_boosts()
+
         # Get game counts (Dec 2025)
         game_count_data = await self._get_game_counts()
 
@@ -794,6 +798,10 @@ class SelfplayScheduler:
             # Update momentum multiplier (Phase 19)
             if config_key in momentum_data:
                 priority.momentum_multiplier = momentum_data[config_key]
+
+            # Update architecture boost (Phase 5B)
+            if config_key in architecture_data:
+                priority.architecture_boost = architecture_data[config_key]
 
             # Update game count and large board flag (Dec 2025)
             if config_key in game_count_data:
@@ -996,6 +1004,7 @@ class SelfplayScheduler:
             curriculum_weight=priority.curriculum_weight,
             improvement_boost=priority.improvement_boost,
             quality_penalty=priority.quality_penalty,
+            architecture_boost=priority.architecture_boost,
             momentum_multiplier=priority.momentum_multiplier,
             game_count=priority.game_count,
             is_large_board=priority.is_large_board,
@@ -1451,6 +1460,59 @@ class SelfplayScheduler:
             logger.debug("[SelfplayScheduler] feedback_accelerator not available")
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error getting momentum multipliers: {e}")
+
+        return result
+
+    def _get_architecture_boosts(self) -> dict[str, float]:
+        """Get architecture-based boosts per config.
+
+        Phase 5B (Dec 2025): Connects selfplay scheduling to architecture performance.
+        Configs where the best architecture is performing well get boosted priority.
+        This creates a feedback loop where successful architectures get more training data.
+
+        Returns:
+            Dict mapping config_key to boost value (0.0 to +0.30)
+        """
+        result: dict[str, float] = {}
+
+        try:
+            from app.training.architecture_tracker import get_allocation_weights
+
+            for config_key in ALL_CONFIGS:
+                # Parse config_key to get board_type and num_players
+                parts = config_key.rsplit("_", 1)
+                if len(parts) < 2:
+                    continue
+
+                board_type = parts[0]
+                num_players_str = parts[1]
+                if not num_players_str.endswith("p"):
+                    continue
+
+                try:
+                    num_players = int(num_players_str.rstrip("p"))
+                except ValueError:
+                    continue
+
+                # Get allocation weights for this config
+                weights = get_allocation_weights(board_type, num_players)
+
+                if weights:
+                    # Boost = max weight * 0.3 (so a dominant architecture with weight 1.0 gives +0.30)
+                    max_weight = max(weights.values())
+                    boost = max_weight * 0.30
+
+                    if boost > 0.01:  # Only log significant boosts
+                        result[config_key] = boost
+                        logger.debug(
+                            f"[SelfplayScheduler] Architecture boost for {config_key}: +{boost:.2f} "
+                            f"(best arch weight: {max_weight:.2f})"
+                        )
+
+        except ImportError:
+            logger.debug("[SelfplayScheduler] architecture_tracker not available")
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error getting architecture boosts: {e}")
 
         return result
 

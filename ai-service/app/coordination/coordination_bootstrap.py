@@ -1153,6 +1153,22 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # - task_orphaned_handler (TASK_ORPHANED -> JobManager)
     # - coordinator_heartbeat_handler (COORDINATOR_HEARTBEAT -> ClusterWatchdog)
 
+    # 25. Wire EVALUATION_COMPLETED to ArchitectureTracker (Phase 5A)
+    # December 2025: Track architecture performance for allocation decisions
+    try:
+        from app.training.architecture_tracker import wire_architecture_tracker_to_events
+
+        success = wire_architecture_tracker_to_events()
+        results["architecture_tracker"] = success
+        if success:
+            logger.debug("[Bootstrap] Wired EVALUATION_COMPLETED -> ArchitectureTracker")
+        else:
+            logger.warning("[Bootstrap] ArchitectureTracker wiring returned False")
+
+    except (ImportError, AttributeError, TypeError) as e:
+        results["architecture_tracker"] = False
+        logger.warning(f"[Bootstrap] Failed to wire architecture tracker: {e}")
+
     wired = sum(1 for v in results.values() if v)
     total = len(results)
     logger.info(f"[Bootstrap] Wired {wired}/{total} missing event subscriptions")

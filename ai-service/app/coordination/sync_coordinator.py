@@ -85,6 +85,7 @@ warnings.warn(
     stacklevel=2,
 )
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -519,7 +520,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
 
             conn.commit()
 
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             try:
                 conn.rollback()
             except sqlite3.Error as rollback_err:
@@ -644,7 +645,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
             sync_id = cursor.lastrowid
             conn.commit()
             return sync_id
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             try:
                 conn.rollback()
             except sqlite3.Error as rollback_err:
@@ -698,7 +699,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
             """, (now, games_synced, bytes_transferred, 1 if success else 0,
                   error_message, duration, sync_id))
             conn.commit()
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             try:
                 conn.rollback()
             except sqlite3.Error as rollback_err:
@@ -1029,7 +1030,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
                 },
             )
 
-        except Exception as e:
+        except (sqlite3.Error, AttributeError, KeyError, RuntimeError, OSError) as e:
             return HealthCheckResult(
                 healthy=False,
                 status=CoordinatorStatus.ERROR,
@@ -1167,7 +1168,7 @@ class SyncScheduler(CoordinatorBase, SQLitePersistenceMixin):
                 logger.info(f"[SyncCoordinator] Executed sync for {host}: "
                            f"{games_synced} files, {bytes_transferred / (1024*1024):.1f}MB")
 
-            except Exception as e:
+            except (ConnectionError, TimeoutError, RuntimeError, OSError, asyncio.CancelledError) as e:
                 self.record_sync_complete(
                     host=host,
                     sync_id=sync_id,

@@ -44,8 +44,15 @@ logger = logging.getLogger(__name__)
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import EvaluationDaemonStats
 
+# December 2025: Event types and contracts
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.coordination.event_router import DataEventType
+
 # December 27, 2025: Use HandlerBase for subscription lifecycle (canonical location)
 from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
+
+# December 2025: Gauntlet evaluation
+from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
 
 __all__ = [
     "EvaluationConfig",
@@ -181,8 +188,6 @@ class EvaluationDaemon(BaseEventHandler):
         Returns:
             Dict mapping event types to handler methods.
         """
-        from app.coordination.event_router import DataEventType
-
         return {
             DataEventType.TRAINING_COMPLETED: self._on_training_complete,
         }
@@ -630,8 +635,6 @@ class EvaluationDaemon(BaseEventHandler):
         num_players: int,
     ) -> dict[str, Any]:
         """Run baseline gauntlet with optional early stopping."""
-        from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
-
         # Map baseline names to enum values
         baseline_map = {
             "random": BaselineOpponent.RANDOM,
@@ -923,8 +926,6 @@ class EvaluationDaemon(BaseEventHandler):
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
-
         # Get base health check first
         base_result = super().health_check()
 

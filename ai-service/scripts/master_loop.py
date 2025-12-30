@@ -1149,6 +1149,9 @@ class MasterLoopController:
             DaemonType.NODE_RECOVERY,
             DaemonType.TRAINING_NODE_WATCHER,
             DaemonType.QUALITY_MONITOR,
+            # December 29, 2025: Automatic NNUE training when game threshold reached
+            # NNUE models are lightweight and train faster than full NN models
+            DaemonType.NNUE_TRAINING,
             # December 29, 2025: Proactive disk space management
             # Prevents sync/training failures due to disk full conditions
             DaemonType.DISK_SPACE_MANAGER,
@@ -1196,6 +1199,7 @@ class MasterLoopController:
                 DaemonType.TRAINING_NODE_WATCHER,   # monitors training
                 DaemonType.AUTO_EXPORT,             # exports training data (CPU-bound)
                 DaemonType.TRAINING_TRIGGER,        # triggers training jobs
+                DaemonType.NNUE_TRAINING,           # dispatches NNUE training to cluster
                 DaemonType.TOURNAMENT_DAEMON,       # runs tournaments
                 DaemonType.EVALUATION,              # runs gauntlets
                 DaemonType.AUTO_PROMOTION,          # triggers promotion (can spawn gauntlet)
