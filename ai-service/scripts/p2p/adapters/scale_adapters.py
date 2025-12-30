@@ -493,7 +493,12 @@ class CompositeScaleAdapter:
         """Get count of currently active GPU nodes."""
         peers = self.peers_getter()
         # Dec 2025: Use is_alive() for consistency - includes SUSPECT state
-        return len([p for p in peers.values() if p.is_alive()])
+        # Dec 2025: Defensive check for dict values (legacy compatibility)
+        count = 0
+        for p in peers.values():
+            if hasattr(p, "is_alive") and p.is_alive():
+                count += 1
+        return count
 
     def get_idle_nodes(self) -> list[str]:
         """Get list of node IDs that are confirmed idle and safe to terminate.

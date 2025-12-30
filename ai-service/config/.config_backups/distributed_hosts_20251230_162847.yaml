@@ -1,3 +1,42 @@
+# ============================================================================
+# Rotating Disk Pool Configuration (Dec 30, 2025)
+# Phase 2 of Distributed Data Pipeline Architecture
+# 10% of free disk space as managed buffer for data sync facilitation
+# ============================================================================
+disk_management:
+  rotating_pool:
+    enabled: true
+    quota_percent: 10 # 10% of free space for rotating data
+    min_quota_gb: 5 # Minimum 5GB even on small disks
+    max_quota_gb: 100 # Cap at 100GB on large disks
+    cleanup_age_hours: 24 # Remove data older than 24h
+    priority_cleanup_on_pressure: true
+    pool_subdirs:
+      - data/games/synced # Synced game databases
+      - data/games/p2p_cache # Temporary P2P data
+      - data/training/synced # Synced training NPZ files
+
+# ============================================================================
+# Consolidation Configuration (Dec 30, 2025)
+# Phase 3 of Distributed Data Pipeline Architecture
+# Enables distributed consolidation on any eligible node
+# ============================================================================
+consolidation:
+  enabled: true
+  min_disk_free_gb: 20
+  max_cpu_percent: 80
+  min_games_to_consolidate: 50
+  max_games_per_batch: 5000
+  eligible_roles:
+    - coordinator
+    - gpu_training
+    - gpu_training_primary
+    - backbone
+    - gpu_selfplay_primary
+  excluded_nodes: [] # Explicit exclusions
+  prefer_nodes_with_most_data: true
+  consolidation_interval_seconds: 300
+
 sync_routing:
   max_disk_usage_percent: 70
   target_disk_usage_percent: 60
@@ -29,14 +68,19 @@ sync_routing:
     - nebius-h100-3
     - nebius-h100-1
     - runpod-a100-storage-1
-  # Updated Dec 30, 2025 - Prioritized by game count severity
   underserved_configs:
-    - square8_4p # CRITICAL: 16 games (need 5,000+)
-    - hexagonal_3p # CRITICAL: 0 completed games (300 stuck active)
-    - square19_4p # CRITICAL: 456 games
-    - hex8_3p # HIGH: 596 games
-    - square19_3p # HIGH: 943 games
-    - hex8_4p # MEDIUM: 4,771 games (near 5K threshold)
+    # Updated Dec 30, 2025 - prioritized by actual game counts
+    # CRITICAL (<600 games): 25x priority boost via ULTRA starvation tier
+    - square19_4p # ~456 games - CRITICAL
+    - hex8_3p # ~596 games - CRITICAL
+    # HIGH (<1500 games): 10x priority boost via EMERGENCY tier
+    - square19_3p # ~1,257 games - insufficient
+    - hex8_2p # ~1,364 games - insufficient
+    - hexagonal_3p # ~1,501 games - insufficient
+    # MEDIUM (<5000 games): 5x priority boost via CRITICAL tier
+    - hex8_4p # ~4,771 games - low
+    - hexagonal_4p # Variable - low
+    - square8_4p # Variable - needs 3p/4p parity
 auto_sync:
   enabled: true
   interval_seconds: 60
@@ -380,7 +424,7 @@ hosts:
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
-    note: Tailscale logged out, needs auth key (Dec 2025)
+    note: Tailscale logged out, needs auth key (Dec 2025) - retired Dec 30 2025
   vast-28925166:
     ssh_host: ssh1.vast.ai
     ssh_port: 15166
@@ -420,7 +464,7 @@ hosts:
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
-    note: Tailscale installed, needs auth key (Dec 2025)
+    note: Tailscale needs auth key (Dec 2025) - retired Dec 30 2025
   vast-28918742:
     ssh_host: ssh8.vast.ai
     ssh_port: 38742
@@ -601,7 +645,7 @@ hosts:
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
-    note: Tailscale installed, needs auth key (Dec 2025)
+    note: Tailscale needs auth key (Dec 2025) - retired Dec 30 2025
   runpod-h100:
     ssh_host: 102.210.171.65
     tailscale_ip: 100.113.2.45

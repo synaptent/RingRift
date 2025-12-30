@@ -8730,22 +8730,29 @@ class P2POrchestrator(
             # Update peer state
             now = time.time()
             if node_name not in self.peers:
-                self.peers[node_name] = {
-                    "last_seen": now,
-                    "addr": addr,
-                    "state": "alive",
-                    "serf_detected": True,
-                }
+                # Parse addr to get host:port (format: "ip:port")
+                host, port = (addr.rsplit(":", 1) + ["8770"])[:2] if ":" in addr else (addr, "8770")
+                try:
+                    port_int = int(port)
+                except ValueError:
+                    port_int = 8770
+                self.peers[node_name] = NodeInfo(
+                    node_id=node_name,
+                    host=host or "unknown",
+                    port=port_int,
+                    last_heartbeat=now,
+                )
             else:
-                self.peers[node_name]["last_seen"] = now
-                self.peers[node_name]["state"] = "alive"
-                self.peers[node_name]["serf_detected"] = True
-                if addr:
-                    self.peers[node_name]["addr"] = addr
+                peer = self.peers[node_name]
+                if isinstance(peer, NodeInfo):
+                    peer.last_heartbeat = now
+                    if addr:
+                        host, _ = (addr.rsplit(":", 1) + [""])[:2] if ":" in addr else (addr, "")
+                        if host:
+                            peer.host = host
 
-            # Extract tags into peer info
-            if tags:
-                self.peers[node_name]["serf_tags"] = tags
+            # Extract tags into peer info (store as capability hints)
+            # Note: Serf tags are for reference only, NodeInfo uses capabilities list
 
     async def _handle_serf_member_leave(self, members: list) -> None:
         """Handle Serf member-leave events (graceful departure)."""
@@ -8758,8 +8765,11 @@ class P2POrchestrator(
             logger.info(f"Serf: member left gracefully: {node_name}")
 
             if node_name in self.peers:
-                self.peers[node_name]["state"] = "left"
-                self.peers[node_name]["left_at"] = time.time()
+                peer = self.peers[node_name]
+                if isinstance(peer, NodeInfo):
+                    # Mark as retired (NodeInfo equivalent of "left")
+                    peer.retired = True
+                    peer.retired_at = time.time()
 
     async def _handle_serf_member_failed(self, members: list) -> None:
         """Handle Serf member-failed events (SWIM failure detection).
@@ -8777,9 +8787,11 @@ class P2POrchestrator(
             logger.warning(f"Serf: member FAILED (SWIM detected): {node_name} @ {addr}")
 
             if node_name in self.peers:
-                self.peers[node_name]["state"] = "failed"
-                self.peers[node_name]["failed_at"] = time.time()
-                self.peers[node_name]["serf_failure"] = True
+                peer = self.peers[node_name]
+                if isinstance(peer, NodeInfo):
+                    # Mark with consecutive failures (triggers dead/suspect state)
+                    peer.consecutive_failures += 1
+                    peer.last_failure_time = time.time()
 
             # If the failed node was leader, trigger election
             if node_name == self.leader_id:
@@ -8800,8 +8812,12 @@ class P2POrchestrator(
             logger.info(f"Serf: member updated: {node_name}")
 
             if node_name in self.peers:
-                self.peers[node_name]["serf_tags"] = tags
-                self.peers[node_name]["last_seen"] = time.time()
+                peer = self.peers[node_name]
+                if isinstance(peer, NodeInfo):
+                    peer.last_heartbeat = time.time()
+                    # Tags can update capabilities if structured appropriately
+                    if "capabilities" in tags and isinstance(tags["capabilities"], list):
+                        peer.capabilities = tags["capabilities"]
 
     async def _handle_serf_member_reap(self, members: list) -> None:
         """Handle Serf member-reap events (failed nodes removed from list)."""
@@ -8813,10 +8829,12 @@ class P2POrchestrator(
 
             logger.info(f"Serf: member reaped (final cleanup): {node_name}")
 
-            # Mark as reaped but don't delete - we may want history
+            # Mark as retired (reaped means permanently gone)
             if node_name in self.peers:
-                self.peers[node_name]["state"] = "reaped"
-                self.peers[node_name]["reaped_at"] = time.time()
+                peer = self.peers[node_name]
+                if isinstance(peer, NodeInfo):
+                    peer.retired = True
+                    peer.retired_at = time.time()
 
     async def _handle_serf_user_event(self, payload: dict) -> None:
         """Handle Serf user events (custom RingRift events).
@@ -8936,15 +8954,24 @@ class P2POrchestrator(
                         for peer_id in alive_peers:
                             if peer_id not in self.peers:
                                 # New peer detected by SWIM
-                                self.peers[peer_id] = {
-                                    "last_seen": now,
-                                    "state": "alive",
-                                    "swim_detected": True,
-                                }
+                                # peer_id format is typically "host:port" from SWIM
+                                host, port_str = (peer_id.rsplit(":", 1) + ["7947"])[:2] if ":" in peer_id else (peer_id, "7947")
+                                try:
+                                    port_int = int(port_str)
+                                except ValueError:
+                                    port_int = 8770  # Use P2P port, not SWIM port
+                                # SWIM detection creates a minimal NodeInfo; HTTP handshake fills details
+                                self.peers[peer_id] = NodeInfo(
+                                    node_id=peer_id,
+                                    host=host or "unknown",
+                                    port=8770,  # P2P API port (SWIM uses 7947)
+                                    last_heartbeat=now,
+                                )
                             else:
-                                # Update existing peer
-                                self.peers[peer_id]["last_seen"] = now
-                                self.peers[peer_id]["swim_alive"] = True
+                                # Update existing peer's heartbeat
+                                peer = self.peers[peer_id]
+                                if isinstance(peer, NodeInfo):
+                                    peer.last_heartbeat = now
 
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"SWIM sync error: {e}")
