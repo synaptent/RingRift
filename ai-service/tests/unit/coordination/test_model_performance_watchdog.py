@@ -327,8 +327,6 @@ class TestAlertCooldown:
     @pytest.mark.asyncio
     async def test_respects_cooldown(self):
         """Doesn't alert during cooldown period."""
-        from app.coordination.event_router import DataEventType
-
         config = WatchdogConfig(
             degradation_threshold=0.55,
             alert_cooldown=300.0,  # 5 minute cooldown
@@ -338,7 +336,12 @@ class TestAlertCooldown:
         mock_router = MagicMock()
         mock_router.publish = AsyncMock()
 
-        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+        # Create mock DataEventType with REGRESSION_DETECTED attribute
+        mock_data_event_type = MagicMock()
+        mock_data_event_type.REGRESSION_DETECTED = "REGRESSION_DETECTED"
+
+        with patch("app.coordination.event_router.get_router", return_value=mock_router), \
+             patch("app.coordination.event_router.DataEventType", mock_data_event_type):
             # First alert
             perf = ModelPerformance(
                 model_id="model_1",
@@ -354,7 +357,7 @@ class TestAlertCooldown:
             # Only one publish call
             assert mock_router.publish.call_count == 1
             # Verify first call was with correct event type
-            mock_router.publish.assert_called_with(DataEventType.REGRESSION_DETECTED, ANY)
+            mock_router.publish.assert_called_with("REGRESSION_DETECTED", ANY)
 
 
 # =============================================================================

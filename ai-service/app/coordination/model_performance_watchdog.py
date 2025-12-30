@@ -155,7 +155,7 @@ class ModelPerformanceWatchdog(MonitorBase[ModelPerformanceWatchdogConfig]):
                 logger.debug("Skipping duplicate EVALUATION_COMPLETED event")
                 return
 
-            self.record_event("EVALUATION_COMPLETED")
+            self.record_event()
 
             payload = event.payload if hasattr(event, 'payload') else event
 
