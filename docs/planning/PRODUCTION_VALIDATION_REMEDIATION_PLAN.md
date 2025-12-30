@@ -1646,6 +1646,8 @@ The drill script and runbook ([`AI_SERVICE_DEGRADATION_DRILL.md`](../runbooks/AI
 
 PV-11 Grafana Dashboard Validation completed on 2025-12-20 05:27 UTC. The dashboard validation confirmed that Grafana is operational and receiving live metrics from the AI cluster via Prometheus. However, web application HTTP/WebSocket metrics are not being scraped by Prometheus, as expected for a staging Docker environment without app-level Prometheus instrumentation.
 
+> **Update (2025-12-30):** The backend now exposes `/metrics` when `ENABLE_METRICS=true` (default). Re-run PV-11 to validate web app scraping; the "not instrumented" observations below reflect the pre-instrumentation state.
+
 ### Execution Timeline
 
 | Time (UTC) | Event                                                                      |

@@ -195,8 +195,17 @@ class ManifestReplicator:
             except (KeyError, ValueError):
                 pass
 
-        ssh_port_opt = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
-        rsync_cmd = f'rsync -az --timeout={self.ssh_timeout} {bwlimit_arg} -e "ssh {ssh_port_opt} -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no" {self.local_path} {host.ssh_user}@{host.ssh_host}:{host.remote_path}'
+        # Dec 30, 2025: Use centralized SSH config for rsync
+        if HAS_SSH_CONFIG and build_ssh_options:
+            ssh_opts = build_ssh_options(
+                key_path=None,  # Use default key
+                port=host.ssh_port if host.ssh_port != 22 else None,
+                include_keepalive=False,  # rsync has its own timeout
+            )
+        else:
+            ssh_port_opt = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
+            ssh_opts = f"ssh {ssh_port_opt} -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no"
+        rsync_cmd = f'rsync -az --timeout={self.ssh_timeout} {bwlimit_arg} -e "{ssh_opts}" {self.local_path} {host.ssh_user}@{host.ssh_host}:{host.remote_path}'
 
         try:
             process = await asyncio.create_subprocess_shell(
@@ -494,15 +503,24 @@ class ManifestReplicator:
             except (KeyError, ValueError):
                 pass
 
-        ssh_port_opt = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
-        rsync_cmd = f'rsync -az --timeout={self.ssh_timeout} {bwlimit_arg} -e "ssh {ssh_port_opt} -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no" {host.ssh_user}@{host.ssh_host}:{host.remote_path} {self.local_path}'
+        # Dec 30, 2025: Use centralized SSH config for rsync
+        if HAS_SSH_CONFIG and build_ssh_options:
+            ssh_opts = build_ssh_options(
+                key_path=None,  # Use default key
+                port=host.ssh_port if host.ssh_port != 22 else None,
+                include_keepalive=False,  # rsync has its own timeout
+            )
+        else:
+            ssh_port_opt = f"-p {host.ssh_port}" if host.ssh_port != 22 else ""
+            ssh_opts = f"ssh {ssh_port_opt} -o ConnectTimeout={self.ssh_timeout} -o StrictHostKeyChecking=no"
+        rsync_cmd = f'rsync -az --timeout={self.ssh_timeout} {bwlimit_arg} -e "{ssh_opts}" {host.ssh_user}@{host.ssh_host}:{host.remote_path} {self.local_path}'
 
         try:
             # Ensure local directory exists
             self.local_path.parent.mkdir(parents=True, exist_ok=True)
 
             process = await asyncio.create_subprocess_shell(
-                scp_cmd,
+                rsync_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
