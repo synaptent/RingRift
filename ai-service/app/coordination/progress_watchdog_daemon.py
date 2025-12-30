@@ -23,8 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
-from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.contracts import CoordinatorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,12 @@ CANONICAL_CONFIGS = [
 ]
 
 
-@dataclass(kw_only=True)
-class ProgressWatchdogConfig(DaemonConfig):
+@dataclass
+class ProgressWatchdogConfig:
     """Configuration for ProgressWatchdog daemon.
+
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
 
     Attributes:
         check_interval_seconds: How often to check Elo velocity (default: 1 hour)
@@ -66,9 +69,6 @@ class ProgressWatchdogConfig(DaemonConfig):
     def from_env(cls) -> "ProgressWatchdogConfig":
         """Load config from environment variables."""
         config = cls()
-
-        if os.environ.get("RINGRIFT_PROGRESS_ENABLED"):
-            config.enabled = os.environ.get("RINGRIFT_PROGRESS_ENABLED", "1") == "1"
 
         if os.environ.get("RINGRIFT_PROGRESS_INTERVAL"):
             try:
@@ -138,8 +138,12 @@ class ConfigProgress:
 # =============================================================================
 
 
-class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
+class ProgressWatchdogDaemon(HandlerBase):
     """Daemon that monitors Elo velocity and detects training stalls.
+
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
 
     Workflow:
     1. Periodically fetch Elo velocity for all configs
@@ -151,10 +155,15 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
     - PROGRESS_RECOVERED: When a stalled config resumes progress
     """
 
-    _instance: "ProgressWatchdogDaemon | None" = None
-
     def __init__(self, config: ProgressWatchdogConfig | None = None):
-        super().__init__(config)
+        self._daemon_config = config or ProgressWatchdogConfig.from_env()
+
+        super().__init__(
+            name="ProgressWatchdog",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
         self._progress: dict[str, ConfigProgress] = {}
         self._init_progress_tracking()
         self._total_stalls_detected = 0
@@ -165,26 +174,10 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
         for config_key in CANONICAL_CONFIGS:
             self._progress[config_key] = ConfigProgress(config_key=config_key)
 
-    @staticmethod
-    def _get_default_config() -> ProgressWatchdogConfig:
-        """Return default config."""
-        return ProgressWatchdogConfig.from_env()
-
-    def _get_daemon_name(self) -> str:
-        """Return daemon name."""
-        return "ProgressWatchdog"
-
-    @classmethod
-    def get_instance(cls) -> "ProgressWatchdogDaemon":
-        """Get singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset singleton (for testing)."""
-        cls._instance = None
+    @property
+    def config(self) -> ProgressWatchdogConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
 
     # =========================================================================
     # Main Cycle
@@ -201,18 +194,15 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
             except asyncio.TimeoutError as e:
                 # Timeout on database/P2P queries - expected in distributed context
                 logger.warning(f"Timeout checking progress for {config_key}: {e}")
-                self._errors_count += 1
-                self._last_error = f"timeout: {e}"
+                self._record_error(f"timeout: {e}")
             except (KeyError, ValueError) as e:
                 # Invalid config_key or data validation errors
                 logger.error(f"Invalid config or data for {config_key}: {e}")
-                self._errors_count += 1
-                self._last_error = str(e)
+                self._record_error(str(e))
             except Exception as e:
                 # Other errors - daemon loop must continue
                 logger.error(f"Error checking progress for {config_key}: {e}")
-                self._errors_count += 1
-                self._last_error = str(e)
+                self._record_error(str(e))
 
     async def _check_config_progress(self, config_key: str) -> None:
         """Check progress for a single config."""
@@ -446,7 +436,7 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
                 message=f"{len(stalled_configs)} configs stalled: {stalled_configs}",
                 details={
                     "stalled_configs": stalled_configs,
-                    "cycles_completed": self._cycles_completed,
+                    "cycles_completed": self._stats.cycles_completed,
                     "total_stalls": self._total_stalls_detected,
                 },
             )
@@ -456,7 +446,7 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
             status=CoordinatorStatus.RUNNING,
             message="All configs making progress",
             details={
-                "cycles_completed": self._cycles_completed,
+                "cycles_completed": self._stats.cycles_completed,
                 "configs_tracked": len(self._progress),
                 "total_stalls": self._total_stalls_detected,
                 "total_recoveries": self._total_recoveries_triggered,
@@ -504,10 +494,21 @@ class ProgressWatchdogDaemon(BaseDaemon[ProgressWatchdogConfig]):
 
 
 # =============================================================================
-# Singleton Accessor
+# Singleton Access (using HandlerBase class methods)
 # =============================================================================
 
 
 def get_progress_watchdog() -> ProgressWatchdogDaemon:
-    """Get the singleton ProgressWatchdog instance."""
+    """Get or create the singleton ProgressWatchdog instance.
+
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
+    """
     return ProgressWatchdogDaemon.get_instance()
+
+
+def reset_progress_watchdog() -> None:
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
+    ProgressWatchdogDaemon.reset_instance()

@@ -307,7 +307,16 @@ describe('Validation Schemas', () => {
 
     it('accepts all supported aiOpponents mode and aiType options', () => {
       const modes = ['local_heuristic', 'service'] as const;
-      const aiTypes = ['random', 'heuristic', 'minimax', 'mcts'] as const;
+      const aiTypes = [
+        'random',
+        'heuristic',
+        'minimax',
+        'mcts',
+        'descent',
+        'policy_only',
+        'gumbel_mcts',
+        'ig_gmo',
+      ] as const;
 
       for (const mode of modes) {
         const result = CreateGameSchema.safeParse({

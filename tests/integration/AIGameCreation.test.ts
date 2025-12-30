@@ -101,7 +101,16 @@ describe('AI Game Creation Integration', () => {
     });
 
     it('should accept valid AI types', () => {
-      const validTypes = ['random', 'heuristic', 'minimax', 'mcts'] as const;
+      const validTypes = [
+        'random',
+        'heuristic',
+        'minimax',
+        'mcts',
+        'descent',
+        'policy_only',
+        'gumbel_mcts',
+        'ig_gmo',
+      ] as const;
 
       for (const aiType of validTypes) {
         const request: CreateGameRequest = {
@@ -132,15 +141,15 @@ describe('AI Game Creation Integration', () => {
     it('should map difficulty to correct AI type', () => {
       const testCases: Array<{ difficulty: number; expectedType: string }> = [
         { difficulty: 1, expectedType: 'random' },
-        { difficulty: 2, expectedType: 'random' },
-        { difficulty: 3, expectedType: 'heuristic' },
-        { difficulty: 4, expectedType: 'heuristic' },
-        { difficulty: 5, expectedType: 'heuristic' },
-        { difficulty: 6, expectedType: 'minimax' },
-        { difficulty: 7, expectedType: 'minimax' },
-        { difficulty: 8, expectedType: 'minimax' },
-        { difficulty: 9, expectedType: 'mcts' },
-        { difficulty: 10, expectedType: 'mcts' },
+        { difficulty: 2, expectedType: 'heuristic' },
+        { difficulty: 3, expectedType: 'minimax' },
+        { difficulty: 4, expectedType: 'minimax' },
+        { difficulty: 5, expectedType: 'descent' },
+        { difficulty: 6, expectedType: 'descent' },
+        { difficulty: 7, expectedType: 'mcts' },
+        { difficulty: 8, expectedType: 'mcts' },
+        { difficulty: 9, expectedType: 'gumbel_mcts' },
+        { difficulty: 10, expectedType: 'gumbel_mcts' },
       ];
 
       // This test documents the expected difficulty-to-type mapping
@@ -148,7 +157,9 @@ describe('AI Game Creation Integration', () => {
       testCases.forEach(({ difficulty, expectedType }) => {
         expect(difficulty).toBeGreaterThanOrEqual(1);
         expect(difficulty).toBeLessThanOrEqual(10);
-        expect(['random', 'heuristic', 'minimax', 'mcts']).toContain(expectedType);
+        expect(['random', 'heuristic', 'minimax', 'descent', 'mcts', 'gumbel_mcts']).toContain(
+          expectedType
+        );
       });
     });
 

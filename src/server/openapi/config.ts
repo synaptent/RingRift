@@ -516,17 +516,43 @@ Rate limit headers are included in responses:
             },
             aiType: {
               type: 'string',
-              enum: ['random', 'heuristic', 'minimax', 'mcts', 'descent'],
-              description: 'Single AI algorithm type (legacy)',
+              enum: [
+                'random',
+                'heuristic',
+                'minimax',
+                'mcts',
+                'descent',
+                'policy_only',
+                'gumbel_mcts',
+                'ig_gmo',
+              ],
+              description:
+                'Single AI algorithm type (legacy; policy_only/ig_gmo are override-only)',
             },
             aiTypes: {
               type: 'array',
               items: {
                 type: 'string',
-                enum: ['random', 'heuristic', 'minimax', 'mcts', 'descent'],
+                enum: [
+                  'random',
+                  'heuristic',
+                  'minimax',
+                  'mcts',
+                  'descent',
+                  'policy_only',
+                  'gumbel_mcts',
+                  'ig_gmo',
+                ],
               },
-              description: 'Per-opponent AI types (overrides aiType when provided)',
+              description:
+                'Per-opponent AI types (overrides aiType when provided; policy_only/ig_gmo are override-only)',
             },
+          },
+          example: {
+            count: 3,
+            difficulty: [3, 7, 9],
+            mode: 'service',
+            aiTypes: ['policy_only', 'gumbel_mcts', 'ig_gmo'],
           },
         },
         RulesOptions: {

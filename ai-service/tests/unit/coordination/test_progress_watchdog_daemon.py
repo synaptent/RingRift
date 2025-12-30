@@ -25,9 +25,12 @@ class TestProgressWatchdogConfig:
     """Tests for ProgressWatchdogConfig."""
 
     def test_default_values(self):
-        """Test default configuration values."""
+        """Test default configuration values.
+
+        December 2025: Removed 'enabled' check - config no longer inherits from DaemonConfig.
+        HandlerBase manages enabled state internally.
+        """
         config = ProgressWatchdogConfig()
-        assert config.enabled is True
         assert config.check_interval_seconds == 3600  # 1 hour
         assert config.min_elo_velocity == 0.5
         assert config.stall_threshold_hours == 6.0
@@ -47,15 +50,17 @@ class TestProgressWatchdogConfig:
         assert config.stall_threshold_hours == 3.0
 
     def test_from_env(self):
-        """Test loading config from environment."""
+        """Test loading config from environment.
+
+        December 2025: Removed 'enabled' check - config no longer inherits from DaemonConfig.
+        HandlerBase manages enabled state internally.
+        """
         with patch.dict("os.environ", {
-            "RINGRIFT_PROGRESS_ENABLED": "0",
             "RINGRIFT_PROGRESS_INTERVAL": "7200",
             "RINGRIFT_PROGRESS_MIN_VELOCITY": "0.25",
             "RINGRIFT_PROGRESS_STALL_HOURS": "12",
         }):
             config = ProgressWatchdogConfig.from_env()
-            assert config.enabled is False
             assert config.check_interval_seconds == 7200
             assert config.min_elo_velocity == 0.25
             assert config.stall_threshold_hours == 12.0
@@ -128,8 +133,11 @@ class TestProgressWatchdogDaemon:
         ProgressWatchdogDaemon.reset_instance()
 
     def test_daemon_name(self, daemon):
-        """Test daemon name."""
-        assert daemon._get_daemon_name() == "ProgressWatchdog"
+        """Test daemon name.
+
+        December 2025: HandlerBase uses daemon.name property instead of _get_daemon_name().
+        """
+        assert daemon.name == "ProgressWatchdog"
 
     def test_health_check_not_running(self, daemon):
         """Test health check when not running."""
@@ -301,23 +309,22 @@ class TestProgressWatchdogConfigEdgeCases:
             # Empty strings should use defaults
             assert config.check_interval_seconds == 3600
 
-    def test_from_env_enabled_variations(self):
-        """Test various enabled flag values."""
-        # Test "1" means enabled
-        with patch.dict("os.environ", {"RINGRIFT_PROGRESS_ENABLED": "1"}):
-            config = ProgressWatchdogConfig.from_env()
-            assert config.enabled is True
+    def test_from_env_interval_variations(self):
+        """Test various interval values from environment.
 
-        # Test "0" means disabled
-        with patch.dict("os.environ", {"RINGRIFT_PROGRESS_ENABLED": "0"}):
+        December 2025: Renamed from test_from_env_enabled_variations.
+        The 'enabled' field was removed when migrating to HandlerBase.
+        HandlerBase manages enabled state internally.
+        """
+        # Test custom interval
+        with patch.dict("os.environ", {"RINGRIFT_PROGRESS_INTERVAL": "1800"}):
             config = ProgressWatchdogConfig.from_env()
-            assert config.enabled is False
+            assert config.check_interval_seconds == 1800
 
-        # Test "true" means enabled (truthy behavior)
-        with patch.dict("os.environ", {"RINGRIFT_PROGRESS_ENABLED": "true"}):
+        # Test another interval
+        with patch.dict("os.environ", {"RINGRIFT_PROGRESS_INTERVAL": "7200"}):
             config = ProgressWatchdogConfig.from_env()
-            # "true" != "1" so it's False
-            assert config.enabled is False
+            assert config.check_interval_seconds == 7200
 
     def test_config_with_extreme_values(self):
         """Test config accepts extreme values."""
@@ -588,8 +595,12 @@ class TestProgressWatchdogDaemonAsyncEdgeCases:
 
     @pytest.mark.asyncio
     async def test_run_cycle_tracks_cycles(self, daemon):
-        """Test run cycle increments cycle counter."""
-        initial_cycles = daemon._cycles_completed
+        """Test run cycle increments cycle counter.
+
+        December 2025: HandlerBase uses daemon._stats.cycles_completed instead of
+        daemon._cycles_completed.
+        """
+        initial_cycles = daemon._stats.cycles_completed
 
         with patch.object(daemon, "_check_config_progress", new_callable=AsyncMock):
             try:
@@ -598,7 +609,7 @@ class TestProgressWatchdogDaemonAsyncEdgeCases:
                 pass  # Handle potential asyncio import issue
 
         # Cycle counter may or may not increment depending on implementation
-        assert daemon._cycles_completed >= initial_cycles
+        assert daemon._stats.cycles_completed >= initial_cycles
 
 
 class TestCanonicalConfigs:

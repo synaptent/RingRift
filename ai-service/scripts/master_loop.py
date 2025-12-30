@@ -1108,9 +1108,10 @@ class MasterLoopController:
             # Core event infrastructure (must be first)
             DaemonType.EVENT_ROUTER,
             # Health monitoring layer
-            DaemonType.NODE_HEALTH_MONITOR,
+            # Dec 30 2025: Replaced deprecated NODE_HEALTH_MONITOR + SYSTEM_HEALTH_MONITOR
+            # with COORDINATOR_HEALTH_MONITOR which uses unified_health_manager
+            DaemonType.COORDINATOR_HEALTH_MONITOR,
             DaemonType.CLUSTER_MONITOR,
-            DaemonType.SYSTEM_HEALTH_MONITOR,
             DaemonType.HEALTH_SERVER,
             # Dec 2025 fix: DATA_PIPELINE and FEEDBACK_LOOP BEFORE sync daemons
             # They subscribe to events that sync daemons emit (DATA_SYNC_COMPLETED, etc.)
@@ -1118,8 +1119,8 @@ class MasterLoopController:
             DaemonType.FEEDBACK_LOOP,  # Subscribes to: TRAINING_COMPLETED, EVALUATION_COMPLETED, etc.
             DaemonType.DATA_PIPELINE,  # Subscribes to: DATA_SYNC_COMPLETED, SELFPLAY_COMPLETE, etc.
             # Sync daemons (emit events that DATA_PIPELINE receives)
+            # Dec 30 2025: Removed deprecated CLUSTER_DATA_SYNC (use AUTO_SYNC with broadcast strategy)
             DaemonType.AUTO_SYNC,
-            DaemonType.CLUSTER_DATA_SYNC,
             DaemonType.ELO_SYNC,
         ]
 
@@ -1169,9 +1170,20 @@ class MasterLoopController:
                 DaemonType.S3_NODE_SYNC,   # Bi-directional sync with S3
             ]
 
+        # Dec 30 2025: All deprecated daemons (from daemon_registry.py)
+        # These have replacement modules and will be removed Q2 2026
         deprecated = {
-            DaemonType.SYNC_COORDINATOR,
-            DaemonType.HEALTH_CHECK,
+            DaemonType.SYNC_COORDINATOR,      # Use AUTO_SYNC
+            DaemonType.HEALTH_CHECK,          # Use COORDINATOR_HEALTH_MONITOR
+            DaemonType.EPHEMERAL_SYNC,        # Use AUTO_SYNC with strategy='ephemeral'
+            DaemonType.NODE_HEALTH_MONITOR,   # Use COORDINATOR_HEALTH_MONITOR
+            DaemonType.SYSTEM_HEALTH_MONITOR, # Use unified_health_manager
+            DaemonType.NPZ_DISTRIBUTION,      # Use MODEL_DISTRIBUTION with DataType.NPZ
+            DaemonType.REPLICATION_MONITOR,   # Use unified_replication_daemon
+            DaemonType.REPLICATION_REPAIR,    # Use unified_replication_daemon
+            DaemonType.LAMBDA_IDLE,           # GH200 nodes are dedicated (Dec 28)
+            DaemonType.VAST_IDLE,             # Use unified_idle_shutdown_daemon
+            DaemonType.CLUSTER_DATA_SYNC,     # Use AUTO_SYNC with strategy='broadcast'
         }
         full = [daemon for daemon in DaemonType if daemon not in deprecated]
 

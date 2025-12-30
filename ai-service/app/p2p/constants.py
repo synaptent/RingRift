@@ -181,8 +181,11 @@ GOSSIP_MAX_PEER_ENDPOINTS = int(
 )
 
 # Peer lifecycle
-PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "3600") or 3600)
-# Dec 2025: CRITICAL FIX - Changed from 3600 (1 hour) to 120 (2 minutes) for active peer recovery
+# Dec 30, 2025: CRITICAL FIX - Reduced from 3600 (1 hour) to 300 (5 minutes).
+# The 1-hour retirement window was causing nodes to stay "retired" after cluster restart,
+# preventing them from being discovered. 5 minutes is enough to detect truly dead nodes
+# while allowing recovery during coordinated restarts.
+PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "300") or 300)
 # Renamed from RETRY_RETIRED_NODE_INTERVAL to PEER_RECOVERY_RETRY_INTERVAL for clarity
 PEER_RECOVERY_RETRY_INTERVAL = int(os.environ.get("RINGRIFT_P2P_PEER_RECOVERY_INTERVAL", "120") or 120)
 # Backward compat alias (deprecated - use PEER_RECOVERY_RETRY_INTERVAL)
@@ -227,6 +230,12 @@ NAT_EXTERNAL_IP_CACHE_TTL = 300
 # Peer bootstrap
 PEER_BOOTSTRAP_INTERVAL = 60
 PEER_BOOTSTRAP_MIN_PEERS = 3
+
+# Dec 30, 2025: Startup grace period before continuous bootstrap loop starts.
+# Increased from 60s to 180s to give time for all nodes to start during mass restart.
+# During `update_all_nodes.py --restart-p2p`, all nodes restart simultaneously and need
+# time to initialize before they can respond to bootstrap requests.
+STARTUP_GRACE_PERIOD = int(os.environ.get("RINGRIFT_P2P_STARTUP_GRACE_PERIOD", "180") or 180)
 VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_P2P_VOTER_MIN_QUORUM", "3") or 3)
 
 # Bootstrap seeds - initial peers to contact for mesh join

@@ -273,8 +273,32 @@ export const CreateGameSchema = z.object({
       count: z.number().min(0).max(3),
       difficulty: z.array(z.number().min(1).max(10)),
       mode: z.enum(['local_heuristic', 'service']).optional(),
-      aiType: z.enum(['random', 'heuristic', 'minimax', 'mcts', 'descent']).optional(),
-      aiTypes: z.array(z.enum(['random', 'heuristic', 'minimax', 'mcts', 'descent'])).optional(),
+      aiType: z
+        .enum([
+          'random',
+          'heuristic',
+          'minimax',
+          'mcts',
+          'descent',
+          'policy_only',
+          'gumbel_mcts',
+          'ig_gmo',
+        ])
+        .optional(),
+      aiTypes: z
+        .array(
+          z.enum([
+            'random',
+            'heuristic',
+            'minimax',
+            'mcts',
+            'descent',
+            'policy_only',
+            'gumbel_mcts',
+            'ig_gmo',
+          ])
+        )
+        .optional(),
     })
     .optional(),
   seed: z.number().int().min(0).max(0x7fffffff).optional(), // Optional RNG seed for deterministic games
