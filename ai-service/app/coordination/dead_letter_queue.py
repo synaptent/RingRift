@@ -408,7 +408,10 @@ class DeadLetterQueue:
         Returns:
             Stats dict with recovered, failed, skipped counts
         """
-        pending = self.get_pending_events(limit=max_events, event_type=event_type)
+        # Wrap blocking SQLite call with asyncio.to_thread to avoid event loop blocking
+        pending = await asyncio.to_thread(
+            self.get_pending_events, limit=max_events, event_type=event_type
+        )
 
         stats = {"recovered": 0, "failed": 0, "skipped": 0}
 
