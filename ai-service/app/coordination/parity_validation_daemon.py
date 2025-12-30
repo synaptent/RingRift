@@ -175,7 +175,8 @@ class ParityValidationDaemon(BaseDaemon):
 
     async def _run_cycle(self) -> None:
         """Run one validation cycle."""
-        if not self._check_npx_available():
+        # December 30, 2025: Wrap blocking subprocess call with asyncio.to_thread
+        if not await asyncio.to_thread(self._check_npx_available):
             logger.warning(
                 "[ParityValidationDaemon] npx not available - skipping validation"
             )

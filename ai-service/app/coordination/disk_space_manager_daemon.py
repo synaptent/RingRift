@@ -453,20 +453,22 @@ class DiskSpaceManagerDaemon(BaseDaemon[DiskSpaceConfig]):
             if status.usage_percent <= self.config.target_disk_usage:
                 break  # Target reached
 
+            # December 30, 2025: Wrap sync cleanup methods with asyncio.to_thread
+            # to avoid blocking the event loop during file I/O operations
             if priority == "logs":
-                bytes_freed += self._cleanup_old_logs()
+                bytes_freed += await asyncio.to_thread(self._cleanup_old_logs)
             elif priority == "cache":
-                bytes_freed += self._cleanup_cache()
+                bytes_freed += await asyncio.to_thread(self._cleanup_cache)
             elif priority == "empty_dbs":
-                bytes_freed += self._cleanup_empty_databases()
+                bytes_freed += await asyncio.to_thread(self._cleanup_empty_databases)
             elif priority == "synced_games":
                 # NEW: Sync-aware cleanup (December 2025)
                 if self.config.enable_sync_aware_cleanup:
-                    bytes_freed += self._cleanup_synced_databases()
+                    bytes_freed += await asyncio.to_thread(self._cleanup_synced_databases)
             elif priority == "old_checkpoints":
-                bytes_freed += self._cleanup_old_checkpoints()
+                bytes_freed += await asyncio.to_thread(self._cleanup_old_checkpoints)
             elif priority == "quarantine":
-                bytes_freed += self._cleanup_quarantine()
+                bytes_freed += await asyncio.to_thread(self._cleanup_quarantine)
 
             # Refresh status
             status = DiskStatus.from_path(str(self._root_path), self.config)

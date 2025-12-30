@@ -11,6 +11,7 @@ Features:
 - Event emission for monitoring
 
 December 2025: Created for Phase 6 of Move Data Integrity Enforcement.
+December 2025: Migrated from BaseDaemon to HandlerBase pattern.
 """
 
 from __future__ import annotations
@@ -24,9 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.coordination.base_daemon import BaseDaemon, DaemonConfig
 from app.coordination.contracts import CoordinatorStatus
-from app.coordination.protocols import HealthCheckResult
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,11 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class IntegrityCheckConfig(DaemonConfig):
+class IntegrityCheckConfig:
     """Configuration for IntegrityCheckDaemon.
+
+    December 2025: Simplified - no longer inherits from DaemonConfig.
+    HandlerBase uses cycle_interval directly.
 
     Attributes:
         check_interval_seconds: How often to scan for integrity issues (default: 1 hour)
@@ -59,11 +62,13 @@ class IntegrityCheckConfig(DaemonConfig):
         """Load configuration from environment variables."""
         config = cls()
 
-        # Call parent for common env vars
-        parent_config = super().from_env(prefix)
-        config.enabled = parent_config.enabled
-        config.check_interval_seconds = parent_config.check_interval_seconds
-        config.handle_signals = parent_config.handle_signals
+        # Check interval
+        interval_key = f"{prefix}_INTERVAL"
+        if os.environ.get(interval_key):
+            try:
+                config.check_interval_seconds = int(os.environ[interval_key])
+            except ValueError:
+                pass
 
         # Daemon-specific env vars
         if os.environ.get(f"{prefix}_DATA_DIR"):
@@ -124,11 +129,15 @@ class IntegrityCheckResult:
 # =============================================================================
 
 
-class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
+class IntegrityCheckDaemon(HandlerBase):
     """Periodic data integrity validation daemon.
 
     Scans game databases for games without move data, quarantines them,
     and cleans up old quarantined games.
+
+    December 2025: Migrated to HandlerBase pattern.
+    - Uses HandlerBase singleton (get_instance/reset_instance)
+    - Uses _stats for metrics tracking
     """
 
     DAEMON_NAME = "integrity_check"
@@ -139,25 +148,29 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
         Args:
             config: Configuration. If None, loads from environment.
         """
-        if config is None:
-            config = IntegrityCheckConfig.from_env()
-
-        super().__init__(config)
+        self._daemon_config = config or IntegrityCheckConfig.from_env()
 
         # Default data directory
-        if not config.data_dir:
-            config.data_dir = str(
+        if not self._daemon_config.data_dir:
+            self._daemon_config.data_dir = str(
                 Path(__file__).parent.parent.parent / "data" / "games"
             )
 
+        super().__init__(
+            name="IntegrityCheckDaemon",
+            config=self._daemon_config,
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
+        # Daemon-specific state
         self._last_result: IntegrityCheckResult | None = None
         self._total_orphans_found = 0
         self._total_orphans_cleaned = 0
 
-    @staticmethod
-    def _get_default_config() -> IntegrityCheckConfig:
-        """Return default configuration from environment."""
-        return IntegrityCheckConfig.from_env()
+    @property
+    def config(self) -> IntegrityCheckConfig:
+        """Get daemon configuration."""
+        return self._daemon_config
 
     async def _run_cycle(self) -> None:
         """Run one integrity check cycle."""
@@ -489,21 +502,21 @@ class IntegrityCheckDaemon(BaseDaemon[IntegrityCheckConfig]):
 
 
 # =============================================================================
-# Singleton Access
+# Singleton Access (using HandlerBase class methods)
 # =============================================================================
-
-_instance: IntegrityCheckDaemon | None = None
 
 
 def get_integrity_check_daemon() -> IntegrityCheckDaemon:
-    """Get or create the singleton IntegrityCheckDaemon instance."""
-    global _instance
-    if _instance is None:
-        _instance = IntegrityCheckDaemon()
-    return _instance
+    """Get or create the singleton IntegrityCheckDaemon instance.
+
+    Uses HandlerBase.get_instance() for thread-safe singleton access.
+    """
+    return IntegrityCheckDaemon.get_instance()
 
 
 def reset_integrity_check_daemon() -> None:
-    """Reset the singleton instance (for testing)."""
-    global _instance
-    _instance = None
+    """Reset the singleton instance (for testing).
+
+    Uses HandlerBase.reset_instance() for thread-safe cleanup.
+    """
+    IntegrityCheckDaemon.reset_instance()
