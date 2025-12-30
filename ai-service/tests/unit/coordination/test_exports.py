@@ -210,24 +210,54 @@ class TestExportsSync:
         from app.coordination import _exports_sync
         assert _exports_sync is not None
 
-    def test_auto_sync_daemon_exports(self):
-        """Test auto sync daemon exports."""
-        from app.coordination._exports_sync import (
-            AutoSyncDaemon,
-            get_auto_sync_daemon,
-        )
-        assert AutoSyncDaemon is not None
-        assert callable(get_auto_sync_daemon)
-
     def test_sync_facade_exports(self):
         """Test sync facade exports."""
         from app.coordination._exports_sync import (
+            SyncBackend,
             SyncFacade,
+            SyncRequest,
+            SyncResponse,
+            get_sync_facade,
+            reset_sync_facade,
             sync,
         )
         assert SyncFacade is not None
+        assert callable(get_sync_facade)
         # sync may be async function or coroutine
         assert sync is not None
+
+    def test_sync_scheduler_exports(self):
+        """Test sync scheduler exports."""
+        from app.coordination._exports_sync import (
+            SyncScheduler,
+            SyncAction,
+            SyncPriority,
+            get_sync_scheduler,
+        )
+        assert SyncScheduler is not None
+        assert callable(get_sync_scheduler)
+
+    def test_bandwidth_exports(self):
+        """Test bandwidth manager exports."""
+        from app.coordination._exports_sync import (
+            BandwidthAllocation,
+            BandwidthManager,
+            TransferPriority,
+            get_bandwidth_manager,
+        )
+        assert BandwidthManager is not None
+        assert callable(get_bandwidth_manager)
+
+    def test_sync_mutex_exports(self):
+        """Test sync mutex exports."""
+        from app.coordination._exports_sync import (
+            SyncMutex,
+            acquire_sync_lock,
+            release_sync_lock,
+            get_sync_mutex,
+        )
+        assert SyncMutex is not None
+        assert callable(acquire_sync_lock)
 
 
 class TestExportsUtils:
@@ -245,19 +275,58 @@ class TestExportsUtils:
         )
         assert SingletonMixin is not None
 
-    def test_handler_base_exports(self):
-        """Test handler base exports."""
+    def test_coordinator_base_exports(self):
+        """Test coordinator base exports."""
         from app.coordination._exports_utils import (
-            HandlerBase,
+            CoordinatorBase,
+            CoordinatorProtocol,
+            CoordinatorStats,
+            CoordinatorStatus,
         )
-        assert HandlerBase is not None
+        assert CoordinatorBase is not None
+        assert CoordinatorProtocol is not None
 
-    def test_health_check_exports(self):
-        """Test health check exports."""
+    def test_coordinator_config_exports(self):
+        """Test coordinator config exports."""
         from app.coordination._exports_utils import (
-            HealthCheckResult,
+            CoordinatorConfig,
+            get_config,
+            set_config,
         )
-        assert HealthCheckResult is not None
+        assert CoordinatorConfig is not None
+        assert callable(get_config)
+
+    def test_tracing_exports(self):
+        """Test distributed tracing exports."""
+        from app.coordination._exports_utils import (
+            TraceContext,
+            TraceSpan,
+            get_trace_id,
+            new_trace,
+            traced,
+        )
+        assert TraceContext is not None
+        assert callable(get_trace_id)
+
+    def test_helpers_exports(self):
+        """Test helper function exports."""
+        from app.coordination._exports_utils import (
+            get_current_node_id,
+            has_coordination,
+            can_spawn_safe,
+        )
+        assert callable(get_current_node_id)
+        assert callable(has_coordination)
+
+    def test_work_distributor_exports(self):
+        """Test work distributor exports."""
+        from app.coordination._exports_utils import (
+            WorkDistributor,
+            get_work_distributor,
+            distribute_selfplay,
+        )
+        assert WorkDistributor is not None
+        assert callable(get_work_distributor)
 
 
 class TestNoCircularImports:
