@@ -434,10 +434,358 @@ def reset_elo_facade() -> None:
 EloFacade = EloServiceFacade
 
 
+# ==============================================================================
+# Architecture Performance Tracking (December 2025)
+# ==============================================================================
+
+
+@dataclass
+class ArchitecturePerformance:
+    """Performance metrics for a model architecture version.
+
+    Used for:
+    - Comparing efficiency across NN architectures (v2, v3, v4, v5, v6)
+    - Tracking NNUE vs full NN performance
+    - Allocating training compute to better-performing architectures
+    """
+
+    model_type: str       # e.g., "nn_v5", "nnue_v1", "nnue_mp_v1"
+    avg_elo: float        # Average Elo across all harnesses
+    best_elo: float       # Best Elo for this architecture
+    worst_elo: float      # Worst Elo (useful for consistency check)
+    games_evaluated: int  # Total games played by models of this type
+    configs_trained: int  # Number of board configurations with models
+    harnesses_tested: int  # Number of harness variants evaluated
+    best_harness: str | None  # Which harness gave best results
+    elo_variance: float   # Variance in Elo across harnesses (consistency)
+
+    @property
+    def elo_range(self) -> float:
+        """Elo range (best - worst) as measure of harness sensitivity."""
+        return self.best_elo - self.worst_elo
+
+    @property
+    def is_reliable(self) -> bool:
+        """Check if we have enough data for reliable comparison."""
+        return self.games_evaluated >= 50 and self.harnesses_tested >= 2
+
+
+def get_architecture_rankings(
+    board_type: str | None = None,
+    num_players: int | None = None,
+    min_games: int = 10,
+) -> list[ArchitecturePerformance]:
+    """Get performance rankings by model architecture.
+
+    Aggregates Elo data across all model+harness combinations, grouped by
+    architecture version. Useful for deciding which architectures to train.
+
+    Args:
+        board_type: Optional filter by board type
+        num_players: Optional filter by player count
+        min_games: Minimum games required for inclusion
+
+    Returns:
+        List of ArchitecturePerformance sorted by avg_elo descending
+    """
+    try:
+        from app.training.composite_participant import (
+            ModelType,
+            extract_model_type,
+            is_composite_id,
+        )
+    except ImportError:
+        logger.warning("composite_participant not available")
+        return []
+
+    if not HAS_ELO_SERVICE:
+        return []
+
+    service = get_elo_service()
+
+    # Get all participants
+    try:
+        leaderboard = service.get_leaderboard(
+            board_type=board_type,
+            num_players=num_players,
+            limit=1000,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to get leaderboard: {e}")
+        return []
+
+    # Group by model type
+    type_data: dict[str, list[tuple[float, int, str]]] = {}  # model_type -> [(elo, games, harness), ...]
+
+    for entry in leaderboard:
+        pid = entry.participant_id
+        elo = entry.rating
+        games = entry.games_played
+
+        if games < min_games:
+            continue
+
+        # Extract model type
+        model_type = extract_model_type(pid)
+        if model_type is None:
+            continue
+
+        type_key = model_type.value
+
+        # Extract harness from composite ID
+        harness = "unknown"
+        if is_composite_id(pid):
+            parts = pid.split(":")
+            if len(parts) >= 2:
+                harness = parts[1]
+
+        if type_key not in type_data:
+            type_data[type_key] = []
+        type_data[type_key].append((elo, games, harness))
+
+    # Compute aggregate stats per architecture
+    results: list[ArchitecturePerformance] = []
+
+    for model_type, entries in type_data.items():
+        if not entries:
+            continue
+
+        elos = [e[0] for e in entries]
+        games = [e[1] for e in entries]
+        harnesses = set(e[2] for e in entries)
+
+        avg_elo = sum(elos) / len(elos)
+        best_elo = max(elos)
+        worst_elo = min(elos)
+        total_games = sum(games)
+
+        # Find best harness
+        best_idx = elos.index(best_elo)
+        best_harness = entries[best_idx][2] if best_idx < len(entries) else None
+
+        # Compute variance
+        variance = sum((e - avg_elo) ** 2 for e in elos) / len(elos) if len(elos) > 1 else 0.0
+
+        results.append(ArchitecturePerformance(
+            model_type=model_type,
+            avg_elo=avg_elo,
+            best_elo=best_elo,
+            worst_elo=worst_elo,
+            games_evaluated=total_games,
+            configs_trained=len(entries),  # Approximation
+            harnesses_tested=len(harnesses),
+            best_harness=best_harness,
+            elo_variance=variance,
+        ))
+
+    # Sort by average Elo descending
+    results.sort(key=lambda x: x.avg_elo, reverse=True)
+    return results
+
+
+def get_harness_rankings(
+    model_id: str,
+    board_type: str,
+    num_players: int,
+) -> list[tuple[str, float, int]]:
+    """Get performance by harness for a specific model.
+
+    Args:
+        model_id: Model identifier (e.g., "ringrift_v5_sq8_2p")
+        board_type: Board type
+        num_players: Number of players
+
+    Returns:
+        List of (harness, elo, games) tuples sorted by elo descending
+    """
+    try:
+        from app.training.composite_participant import (
+            get_all_harness_variants,
+            parse_composite_participant_id,
+        )
+    except ImportError:
+        logger.warning("composite_participant not available")
+        return []
+
+    if not HAS_ELO_SERVICE:
+        return []
+
+    service = get_elo_service()
+
+    # Get all harness variants for this model
+    variants = get_all_harness_variants(model_id)
+
+    results: list[tuple[str, float, int]] = []
+    for pid in variants:
+        try:
+            _, harness, _ = parse_composite_participant_id(pid)
+            rating = service.get_rating(pid, board_type, num_players)
+            results.append((harness, rating.rating, rating.games_played))
+        except (ValueError, AttributeError):
+            continue
+
+    # Sort by Elo descending
+    results.sort(key=lambda x: x[1], reverse=True)
+    return results
+
+
+def compute_training_allocation(
+    board_type: str | None = None,
+    num_players: int | None = None,
+    temperature: float = 0.5,
+) -> dict[str, float]:
+    """Compute training compute allocation based on architecture performance.
+
+    Uses softmax with temperature to convert Elo rankings into allocation
+    weights. Higher-performing architectures get more training compute.
+
+    Args:
+        board_type: Optional filter by board type
+        num_players: Optional filter by player count
+        temperature: Softmax temperature (lower = more winner-take-all)
+
+    Returns:
+        Dict mapping model_type to allocation weight (sums to 1.0)
+
+    Example:
+        >>> compute_training_allocation("square8", 2, temperature=0.5)
+        {"nn_v5": 0.4, "nn_v4": 0.3, "nn_v3": 0.2, "nn_v2": 0.1}
+    """
+    import math
+
+    rankings = get_architecture_rankings(board_type, num_players)
+    if not rankings:
+        return {}
+
+    # Filter to reliable entries only
+    reliable = [r for r in rankings if r.is_reliable]
+    if not reliable:
+        reliable = rankings[:5]  # Fall back to top 5
+
+    # Compute softmax weights
+    elos = [r.avg_elo for r in reliable]
+    max_elo = max(elos)
+
+    # Normalize Elo (subtract max for numerical stability)
+    exp_elos = [math.exp((elo - max_elo) / (temperature * 100)) for elo in elos]
+    total = sum(exp_elos)
+
+    allocations = {}
+    for perf, exp_elo in zip(reliable, exp_elos, strict=False):
+        allocations[perf.model_type] = exp_elo / total
+
+    return allocations
+
+
+def register_nnue_participant(
+    nnue_version: str,
+    board_config: str,
+    ai_type: str = "minimax",
+    model_path: str | None = None,
+) -> str:
+    """Register an NNUE model as a participant.
+
+    Convenience function for registering NNUE models with proper
+    composite participant ID format.
+
+    Args:
+        nnue_version: NNUE version (e.g., "v1")
+        board_config: Board configuration (e.g., "sq8_2p")
+        ai_type: Algorithm type (defaults to "minimax")
+        model_path: Optional path to model file
+
+    Returns:
+        Composite participant ID that was registered
+    """
+    try:
+        from app.training.composite_participant import make_nnue_participant_id
+    except ImportError:
+        raise ImportError("composite_participant module required")
+
+    pid = make_nnue_participant_id(nnue_version, board_config, ai_type)
+
+    # Extract board_type and num_players from config
+    parts = board_config.split("_")
+    board_type = parts[0] if parts else "square8"
+    num_players = 2
+    if len(parts) > 1 and parts[-1].endswith("p"):
+        try:
+            num_players = int(parts[-1][:-1])
+        except ValueError:
+            pass
+
+    if HAS_ELO_SERVICE:
+        service = get_elo_service()
+        service.register_model(
+            model_id=pid,
+            board_type=board_type,
+            num_players=num_players,
+            model_path=model_path,
+            validate_file=model_path is not None,
+        )
+
+    return pid
+
+
+def register_nnue_mp_participant(
+    nnue_version: str,
+    board_config: str,
+    ai_type: str = "maxn",
+    model_path: str | None = None,
+) -> str:
+    """Register a multi-player NNUE model as a participant.
+
+    Args:
+        nnue_version: NNUE version (e.g., "v1")
+        board_config: Board configuration (e.g., "hex8_4p")
+        ai_type: Algorithm type (defaults to "maxn")
+        model_path: Optional path to model file
+
+    Returns:
+        Composite participant ID that was registered
+    """
+    try:
+        from app.training.composite_participant import make_nnue_mp_participant_id
+    except ImportError:
+        raise ImportError("composite_participant module required")
+
+    pid = make_nnue_mp_participant_id(nnue_version, board_config, ai_type)
+
+    # Extract board_type and num_players from config
+    parts = board_config.split("_")
+    board_type = parts[0] if parts else "hex8"
+    num_players = 4
+    if len(parts) > 1 and parts[-1].endswith("p"):
+        try:
+            num_players = int(parts[-1][:-1])
+        except ValueError:
+            pass
+
+    if HAS_ELO_SERVICE:
+        service = get_elo_service()
+        service.register_model(
+            model_id=pid,
+            board_type=board_type,
+            num_players=num_players,
+            model_path=model_path,
+            validate_file=model_path is not None,
+        )
+
+    return pid
+
+
 __all__ = [
+    # Legacy facade
     "EloServiceFacade",
     "EloFacade",
     "LegacyEloRating",
     "get_elo_facade",
     "reset_elo_facade",
+    # Architecture performance (December 2025)
+    "ArchitecturePerformance",
+    "get_architecture_rankings",
+    "get_harness_rankings",
+    "compute_training_allocation",
+    "register_nnue_participant",
+    "register_nnue_mp_participant",
 ]

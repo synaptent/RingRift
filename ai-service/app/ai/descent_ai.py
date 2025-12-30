@@ -216,6 +216,9 @@ class DescentAI(BaseAI):
             entry_size_estimate=10000,
         )
 
+        # Track last root state key for visit distribution extraction
+        self._last_root_state_key: int | None = None
+
         # Progressive widening parameters for large boards. We store only a
         # bounded tail of unexpanded moves to keep TT entries small.
         self._pw_max_remaining_store: int = 512
@@ -496,6 +499,8 @@ class DescentAI(BaseAI):
 
         # Select best move from root
         state_key = self._get_state_key(game_state)
+        # Store root key for visit distribution extraction
+        self._last_root_state_key = state_key
         entry = self.transposition_table.get(state_key)
         if entry is not None:
             _, children_values, _, _, _ = self._unpack_tt_entry(entry)
@@ -586,6 +591,8 @@ class DescentAI(BaseAI):
 
         # Select best move from root
         state_key = mutable_state.zobrist_hash
+        # Store root key for visit distribution extraction
+        self._last_root_state_key = state_key
         entry = self.transposition_table.get(state_key)
         if entry is not None:
             _, children_values, _, _, _ = self._unpack_tt_entry(entry)
@@ -1715,3 +1722,54 @@ class DescentAI(BaseAI):
                 opp_elim += count
 
         return (my_elim - opp_elim) * 0.05
+
+    def get_visit_distribution(self) -> tuple[list[Move], list[float]]:
+        """Extract normalized visit count distribution from the last Descent search.
+
+        Returns a tuple of (moves, visit_probabilities) representing the
+        search policy based on child visit counts stored in the transposition
+        table. This can be used as soft policy targets during training.
+
+        Note: Descent stores visits per-child in TT entries as (move, value, prob, visits).
+
+        Returns:
+            Tuple of (list of moves, list of visit probabilities) where
+            probabilities sum to 1.0. Returns ([], []) if no search has
+            been performed or the root has no children with visits.
+        """
+        if self._last_root_state_key is None:
+            return [], []
+
+        entry = self.transposition_table.get(self._last_root_state_key)
+        if entry is None:
+            return [], []
+
+        _, children_values, _, _, _ = self._unpack_tt_entry(entry)
+
+        if not children_values:
+            return [], []
+
+        # Extract moves and visit counts from children
+        # Each child is (move, value, prob, child_visits)
+        moves: list[Move] = []
+        visits: list[int] = []
+
+        for _move_key, child_data in children_values.items():
+            if not isinstance(child_data, tuple) or len(child_data) < 4:
+                continue
+            move = child_data[0]
+            child_visits = int(child_data[3]) if len(child_data) > 3 else 0
+            if child_visits > 0:
+                moves.append(move)
+                visits.append(child_visits)
+
+        if not moves:
+            return [], []
+
+        # Normalize to probabilities
+        total_visits = sum(visits)
+        if total_visits == 0:
+            return [], []
+
+        probs = [v / total_visits for v in visits]
+        return moves, probs
