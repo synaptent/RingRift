@@ -3,9 +3,9 @@
 This document provides a comprehensive reference for all daemons managed by the RingRift AI service `DaemonManager`.
 
 **Last updated:** December 30, 2025 (availability + connectivity daemons)
-**Total Daemon Types:** 85 (85 in `daemon_runners.py`, 11 deprecated)
-**Startup Order:** 21 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
-**Dependencies:** Canonical dependencies live in `DAEMON_REGISTRY` (85 entries); `DAEMON_DEPENDENCIES` covers 79 legacy entries
+**Total Daemon Types:** 87 (87 in `daemon_runners.py`, 11 deprecated)
+**Startup Order:** 23 daemons in `DAEMON_STARTUP_ORDER` (see `daemon_types.py`)
+**Dependencies:** Canonical dependencies live in `DAEMON_REGISTRY` (87 entries); `DAEMON_DEPENDENCIES` covers 81 legacy entries
 
 > **Architecture Note (December 2025):** Factory methods have been extracted from `daemon_manager.py` to `daemon_runners.py`. Factory methods named `create_*()` are in `daemon_runners.py`; methods named `_create_*()` remain in `daemon_manager.py` for legacy or special cases.
 
@@ -34,7 +34,7 @@ This document provides a comprehensive reference for all daemons managed by the 
 
 ## Overview
 
-The `DaemonManager` coordinates the lifecycle of 85 background services across the RingRift cluster. Daemons are organized into profiles based on node roles (coordinator, training_node, ephemeral, selfplay).
+The `DaemonManager` coordinates the lifecycle of 87 background services across the RingRift cluster. Daemons are organized into profiles based on node roles (coordinator, training_node, ephemeral, selfplay).
 It also listens for backpressure events (`BACKPRESSURE_ACTIVATED`/`BACKPRESSURE_RELEASED`) and
 pauses or resumes non-essential daemons when supported to reduce cluster load.
 
@@ -375,11 +375,13 @@ Training feedback and curriculum learning.
 | ------------------------ | ------------ | -------------------------------------------------------------------------------------------------------- | ------------ |
 | `FEEDBACK_LOOP`          | **CRITICAL** | Orchestrates all training feedback signals (quality, performance, Elo velocity).                         | EVENT_ROUTER |
 | `CURRICULUM_INTEGRATION` | MEDIUM       | Bridges all feedback loops for self-improvement. Adjusts training curriculum based on model performance. | EVENT_ROUTER |
+| `ARCHITECTURE_FEEDBACK`  | MEDIUM       | Tracks architecture performance and updates selfplay allocation weights (min 10% per architecture).      | EVENT_ROUTER |
 
 **Factory Methods:**
 
 - `create_feedback_loop()` → Creates `FeedbackLoopController`
 - `create_curriculum_integration()` → Creates `CurriculumIntegrationDaemon`
+- `create_architecture_feedback()` → Creates `ArchitectureFeedbackController`
 
 ---
 
@@ -546,7 +548,7 @@ Runs on selfplay-only nodes (generates training data).
 
 All daemons (for testing/development).
 
-**Daemon Count:** 85
+**Daemon Count:** 87
 
 **Use Case:** Complete daemon suite for integration testing.
 
@@ -700,15 +702,17 @@ Monitoring Daemons (positions 11-15)
 14. CLUSTER_WATCHDOG    # Cluster watchdog (depends on CLUSTER_MONITOR)
 15. NODE_RECOVERY       # Node recovery (depends on NODE_HEALTH_MONITOR)
 
-Quality + Training Enhancement (positions 16-17)
+Quality + Training Enhancement (positions 16-18)
 16. QUALITY_MONITOR     # Quality monitoring (depends on DATA_PIPELINE)
-17. DISTILLATION        # Distillation (depends on TRAINING_TRIGGER)
+17. NNUE_TRAINING       # NNUE training (depends on DATA_PIPELINE)
+18. ARCHITECTURE_FEEDBACK # Architecture feedback (depends on EVENT_ROUTER)
+19. DISTILLATION        # Distillation (depends on TRAINING_TRIGGER)
 
-Evaluation and Promotion Chain (positions 18-21)
-18. EVALUATION          # Model evaluation (depends on TRAINING_TRIGGER)
-19. UNIFIED_PROMOTION   # Unified promotion (depends on EVALUATION)
-20. AUTO_PROMOTION      # Auto-promotion (depends on EVALUATION)
-21. MODEL_DISTRIBUTION  # Model distribution (depends on AUTO_PROMOTION)
+Evaluation and Promotion Chain (positions 20-23)
+20. EVALUATION          # Model evaluation (depends on TRAINING_TRIGGER)
+21. UNIFIED_PROMOTION   # Unified promotion (depends on EVALUATION)
+22. AUTO_PROMOTION      # Auto-promotion (depends on EVALUATION)
+23. MODEL_DISTRIBUTION  # Model distribution (depends on AUTO_PROMOTION)
 ```
 
 **Validation:** The startup order is validated against `DAEMON_DEPENDENCIES` at startup
@@ -1022,8 +1026,8 @@ Automated verification confirmed the following architecture is properly configur
 
 | Metric                         | Value | Status          |
 | ------------------------------ | ----- | --------------- |
-| Total DaemonType values        | 85    | ✓ All accounted |
-| Runners in `daemon_runners.py` | 85    | ✓ Complete      |
+| Total DaemonType values        | 87    | ✓ All accounted |
+| Runners in `daemon_runners.py` | 87    | ✓ Complete      |
 | Inline runners                 | 0     | ✓ None          |
 | Missing runners                | 0     | ✓ None          |
 
@@ -1031,8 +1035,8 @@ Automated verification confirmed the following architecture is properly configur
 
 | Metric                             | Value  | Notes                                  |
 | ---------------------------------- | ------ | -------------------------------------- |
-| Daemons in `DAEMON_STARTUP_ORDER`  | 21     | Critical path daemons                  |
-| Daemons with `DAEMON_DEPENDENCIES` | 79     | Legacy dependency map                  |
+| Daemons in `DAEMON_STARTUP_ORDER`  | 23     | Critical path daemons                  |
+| Daemons with `DAEMON_DEPENDENCIES` | 81     | Legacy dependency map                  |
 | Order/Dependency consistency       | Passes | `validate_startup_order_consistency()` |
 
 ### P2P Event Subscriptions
@@ -1074,7 +1078,7 @@ print('✓ Valid' if valid else f'✗ Errors: {errors}')
 ## See Also
 
 - `daemon_manager.py` - Main daemon lifecycle management
-- `daemon_runners.py` - 85 async runner functions for daemon types
+- `daemon_runners.py` - 87 async runner functions for daemon types
 - `daemon_types.py` - Type definitions and enums
 - `daemon_factory.py` - Centralized daemon creation factory
 - `daemon_adapters.py` - Daemon wrappers for legacy code

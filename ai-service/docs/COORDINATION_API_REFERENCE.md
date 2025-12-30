@@ -8,7 +8,7 @@ Comprehensive API documentation for the RingRift coordination layer, providing u
 
 The coordination system consists of four major components:
 
-1. **Daemon Manager** - Lifecycle management for 85 background services
+1. **Daemon Manager** - Lifecycle management for 87 background services
 2. **Event Router** - Unified event bus bridging in-memory, stage, and cross-process events
 3. **Sync Facade** - Single entry point for all cluster synchronization operations
 4. **Coordination Bootstrap** - Initialization and wiring of all coordinators
@@ -22,7 +22,7 @@ The coordination system consists of four major components:
          |                        |                        |
          v                        v                        v
 +-------------------+     +------------------+     +----------------+
-| 85 Daemon Types   |     | 3 Event Buses    |     | 5+ Backends    |
+| 87 Daemon Types   |     | 3 Event Buses    |     | 5+ Backends    |
 | - AUTO_SYNC       |     | - DataEventBus   |     | - AutoSync     |
 | - DATA_PIPELINE   |     | - StageEventBus  |     | - ClusterSync  |
 | - FEEDBACK_LOOP   |     | - CrossProcess   |     | - Router       |
@@ -162,7 +162,7 @@ manager = DaemonManager(config=config)
 
 ### Daemon Types
 
-The system supports 85 daemon types organized by category:
+The system supports 87 daemon types organized by category:
 
 | Category       | Key Daemons                                                  | Purpose                      |
 | -------------- | ------------------------------------------------------------ | ---------------------------- |

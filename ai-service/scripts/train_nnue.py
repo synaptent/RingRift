@@ -65,6 +65,7 @@ from torch.utils.data import DataLoader, random_split
 from app.ai.nnue import (
     CURRENT_NNUE_FEATURE_VERSION,
     FEATURE_DIMS,
+    MultiPlayerNNUE,
     RingRiftNNUE,
     clear_nnue_cache,
     get_feature_dim,

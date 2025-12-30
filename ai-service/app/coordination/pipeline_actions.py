@@ -807,6 +807,7 @@ async def trigger_training(
     init_weights: str | None = None,
     max_retries: int = 2,
     retry_delay: float = 30.0,
+    architecture: str | None = None,
 ) -> StageCompletionResult:
     """Trigger neural network training with retry logic.
 
@@ -825,6 +826,8 @@ async def trigger_training(
         init_weights: Path to initial weights (for transfer learning)
         max_retries: Maximum retry attempts (default: 2)
         retry_delay: Delay between retries in seconds (default: 30)
+        architecture: Architecture version (e.g., "v5", "v6"). If None, selects
+            based on ArchitectureTracker allocation weights (Phase 7).
 
     Returns:
         StageCompletionResult with training results
@@ -896,8 +899,41 @@ async def trigger_training(
         except Exception as e:
             logger.debug(f"[PipelineActions] Failed to emit training_triggered: {e}")
 
-    # Output model path
-    model_filename = f"{board_type}_{num_players}p_iter{iteration}.pth"
+    # Phase 7: Architecture selection based on ArchitectureTracker weights
+    selected_architecture = architecture
+    if selected_architecture is None:
+        try:
+            from app.training.architecture_tracker import get_allocation_weights
+            import random
+
+            weights = get_allocation_weights(board_type, num_players)
+            if weights:
+                # Weighted random selection based on allocation weights
+                architectures = list(weights.keys())
+                weight_values = list(weights.values())
+                selected_architecture = random.choices(
+                    architectures, weights=weight_values, k=1
+                )[0]
+                logger.info(
+                    f"[PipelineActions] Selected architecture {selected_architecture} "
+                    f"from weights: {weights}"
+                )
+            else:
+                # Default to v5 if no tracking data
+                selected_architecture = "v5"
+                logger.debug(
+                    f"[PipelineActions] No architecture weights for {config_key}, "
+                    f"defaulting to {selected_architecture}"
+                )
+        except ImportError:
+            selected_architecture = "v5"
+            logger.debug("[PipelineActions] ArchitectureTracker not available, using v5")
+
+    # Output model path (include architecture in filename for multi-arch)
+    if selected_architecture and selected_architecture != "v5":
+        model_filename = f"{board_type}_{num_players}p_{selected_architecture}_iter{iteration}.pth"
+    else:
+        model_filename = f"{board_type}_{num_players}p_iter{iteration}.pth"
     model_path = root / config.models_dir / model_filename
 
     for attempt in range(max_retries):
@@ -928,6 +964,8 @@ async def trigger_training(
                 cmd.append("--early-stopping")
             if init_weights:
                 cmd.extend(["--init-weights", init_weights])
+            if selected_architecture:
+                cmd.extend(["--model-version", selected_architecture])
 
             # December 29, 2025: Enable pending_gate bypass for training data access
             exit_code, stdout, stderr = await _run_subprocess(
@@ -979,6 +1017,7 @@ async def trigger_training(
                     "board_type": board_type,
                     "num_players": num_players,
                     "model_id": model_filename,
+                    "architecture": selected_architecture,  # Phase 7
                     "train_loss": train_loss,
                     "val_loss": val_loss,
                     "policy_accuracy": policy_accuracy,

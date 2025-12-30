@@ -2575,6 +2575,51 @@ class FeedbackLoopController:
         except ImportError as e:
             logger.debug(f"[FeedbackLoopController] trigger_evaluation not available: {e}")
 
+    async def _run_single_harness_gauntlet(
+        self, config_key: str, model_path: str, board_type: str, num_players: int
+    ) -> None:
+        """Run single-harness gauntlet as fallback when MultiHarnessGauntlet unavailable.
+
+        This is the legacy evaluation path using pipeline_actions.trigger_evaluation.
+        Used when the multi-harness gauntlet is not available (e.g., missing dependencies).
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            model_path: Path to model checkpoint
+            board_type: Board type string
+            num_players: Number of players
+        """
+        try:
+            from app.coordination.pipeline_actions import trigger_evaluation
+
+            result = await trigger_evaluation(
+                model_path=model_path,
+                board_type=board_type,
+                num_players=num_players,
+                num_games=50,  # Standard gauntlet size
+            )
+            if result.success:
+                logger.info(
+                    f"[FeedbackLoopController] Single-harness gauntlet passed for {config_key}: "
+                    f"eligible={result.metadata.get('promotion_eligible')}"
+                )
+                if result.metadata.get("promotion_eligible"):
+                    self._consider_promotion(
+                        config_key,
+                        model_path,
+                        result.metadata.get("win_rates", {}).get("heuristic", 0) / 100,
+                        result.metadata.get("elo_delta", 0),
+                    )
+            else:
+                logger.warning(
+                    f"[FeedbackLoopController] Single-harness gauntlet failed for {config_key}: "
+                    f"{result.error or 'unknown error'}"
+                )
+        except ImportError:
+            logger.debug("[FeedbackLoopController] trigger_evaluation not available for fallback")
+        except Exception as e:
+            logger.error(f"[FeedbackLoopController] Single-harness fallback failed: {e}")
+
     def _record_training_in_curriculum(self, config_key: str) -> None:
         """Record training completion in curriculum."""
         try:
