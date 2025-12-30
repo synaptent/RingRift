@@ -1010,137 +1010,65 @@ class SelfplayScheduler:
 
         Higher score = higher priority for selfplay allocation.
 
-        December 2025 - Phase 2C.3: Now includes curriculum weight factor.
-        December 2025 - Phase 5: Now includes improvement boost and quality penalty.
-        December 2025 - Phase 19: Now includes momentum multiplier from FeedbackAccelerator.
-        December 2025 - Data deficit factor for large boards with low game counts.
-        December 2025 - Dynamic weight adjustment based on cluster state.
+        December 2025: Refactored to delegate core computation to PriorityCalculator.
+        Keeps scheduler-specific handling for:
+        - Dynamic weight updates (triggers cluster state refresh)
+        - ULTRA starvation tier (more severe than PriorityCalculator's emergency)
+        - Detailed logging for starvation warnings
+        - Momentum multiplier change logging
         """
-        # Dec 29, 2025: Use dynamic weights instead of static constants
-        w = self._compute_dynamic_weights()
+        # Ensure dynamic weights are fresh and update calculator
+        self._compute_dynamic_weights()
 
-        # Base factors (now using dynamic weights)
-        staleness = priority.staleness_factor * w.staleness
-        velocity = priority.velocity_factor * w.velocity
-        training = (1.0 if priority.training_pending else 0.0) * w.training
-        exploration = (priority.exploration_boost - 1.0) * w.exploration
+        # Convert ConfigPriority to PriorityInputs for calculator
+        inputs = self._config_priority_to_inputs(priority)
 
-        # Phase 2C.3: Curriculum weight factor (normalized around 1.0)
-        # Higher curriculum weight = more data needed for this config
-        curriculum = (priority.curriculum_weight - 1.0) * w.curriculum
+        # Delegate core computation to PriorityCalculator
+        # This handles: staleness, velocity, curriculum, quality, VOI, data deficit,
+        # exploration boost, momentum, priority override, player count, cascade, starvation
+        score = self._priority_calculator.compute_priority_score(inputs)
 
-        # Phase 5: Improvement optimizer boost (-0.10 to +0.15)
-        # Positive when config is on a promotion streak
-        improvement = priority.improvement_boost * w.improvement
-
-        # Dec 29, 2025 - Phase 1: Quality-weighted selfplay allocation
-        # Combines quality_penalty from ConfigPriority (0.0 to -0.20) with
-        # dynamic quality score from QualityMonitorDaemon (0.0 to 1.0)
-        # High-quality data generators get boosted, low-quality get penalized
-        quality_score = self._get_config_data_quality(priority.config_key)
-        quality = (quality_score - 0.7) * w.quality + priority.quality_penalty  # Normalized around 0.7
-
-        # Dec 2025: Data deficit factor - boost configs with low game counts
-        # Large boards (square19, hexagonal) especially need more data
-        data_deficit = priority.data_deficit_factor * w.data_deficit
-
-        # Dec 29, 2025: VOI (Value of Information) factor
-        # Prioritizes configs where more games yield the highest expected Elo gain
-        # High uncertainty + high Elo gap + high info gain per game = high VOI
-        voi = priority.voi_score * w.voi
-
-        # Combine factors
-        score = staleness + velocity + training + exploration + curriculum + improvement + quality + data_deficit + voi
-
-        # Apply exploration boost as multiplier
-        score *= priority.exploration_boost
-
-        # Phase 19: Apply momentum multiplier from FeedbackAccelerator
-        # This provides Elo momentum → Selfplay rate coupling:
-        # - ACCELERATING: 1.5x (capitalize on positive momentum)
-        # - IMPROVING: 1.25x (boost for continued improvement)
-        # - STABLE: 1.0x (normal rate)
-        # - PLATEAU: 1.1x (slight boost to try to break plateau)
-        # - REGRESSING: 0.75x (reduce noise, focus on quality)
-        score_before_momentum = score
-        score *= priority.momentum_multiplier
-
-        # Log when momentum multiplier significantly affects priority (>10% change)
-        if abs(priority.momentum_multiplier - 1.0) > 0.1:
-            logger.info(
-                f"[SelfplayScheduler] Momentum multiplier applied to {priority.config_key}: "
-                f"{priority.momentum_multiplier:.2f}x (score: {score_before_momentum:.3f} → {score:.3f})"
-            )
-
-        # Dec 29, 2025 - Phase 2: Elo velocity multiplier
-        # Stagnant configs (velocity < 0.5 Elo/hour) get reduced allocation
-        # Fast-improving configs (velocity > 5.0 Elo/hour) get boosted allocation
-        elo_velocity = self.get_elo_velocity(priority.config_key)
-        if elo_velocity < 0.5:
-            score *= 0.7  # Reduce allocation for stagnant configs
-        elif elo_velocity > 5.0:
-            score *= 1.2  # Boost allocation for fast improvers
-
-        # Dec 2025: Apply priority override from config
-        # Boosts critically data-starved configs (hexagonal_*, square19_3p/4p)
-        # 0=CRITICAL (3x), 1=HIGH (2x), 2=MEDIUM (1.25x), 3=LOW (1x)
-        override_multiplier = PRIORITY_OVERRIDE_MULTIPLIERS.get(priority.priority_override, 1.0)
-        score *= override_multiplier
-
-        # December 2025: Apply player count allocation multiplier
-        # 3p/4p games take longer per game, so boost their priority to ensure
-        # equal data collection across player counts
-        player_multiplier = PLAYER_COUNT_ALLOCATION_MULTIPLIER.get(priority.player_count, 1.0)
-        score *= player_multiplier
-
-        # Dec 29, 2025: Cascade training priority boost
-        # Configs that are blocking cascade advancement get boosted priority
-        # to accelerate multiplayer bootstrapping (2p → 3p → 4p)
-        cascade_boost = self._get_cascade_priority(priority.config_key)
-        score *= cascade_boost
-
-        # Dec 29, 2025: Data starvation tiered multipliers
-        # Configs with very few games get massive priority boost
-        # This addresses the critical data starvation for 4-player configs
-        # ULTRA tier (< 20 games): 25x boost (hexagonal_4p: 4 games, square19_4p: 3 games)
-        starvation_multiplier = 1.0
+        # ULTRA starvation tier override (more severe than PriorityCalculator's emergency)
+        # PriorityCalculator handles emergency (< 50) and critical (< 200) tiers
+        # ULTRA (< 20) is even more urgent and needs special logging
         game_count = priority.game_count
         if game_count < DATA_STARVATION_ULTRA_THRESHOLD:
-            # ULTRA: Critically starved (< 20 games) - maximum priority boost
-            starvation_multiplier = DATA_STARVATION_ULTRA_MULTIPLIER
+            # ULTRA tier: divide out the emergency multiplier already applied by calculator,
+            # then apply ULTRA multiplier instead
+            score = score / DATA_STARVATION_EMERGENCY_MULTIPLIER * DATA_STARVATION_ULTRA_MULTIPLIER
             logger.warning(
                 f"[SelfplayScheduler] ULTRA STARVATION: {priority.config_key} has only "
                 f"{game_count} games (<{DATA_STARVATION_ULTRA_THRESHOLD}). "
-                f"Applying {starvation_multiplier}x priority boost. URGENT DATA NEEDED!"
+                f"Applying {DATA_STARVATION_ULTRA_MULTIPLIER}x priority boost. URGENT DATA NEEDED!"
             )
         elif game_count < DATA_STARVATION_EMERGENCY_THRESHOLD:
-            starvation_multiplier = DATA_STARVATION_EMERGENCY_MULTIPLIER
+            # Log for visibility (calculator already applied the multiplier)
             logger.warning(
                 f"[SelfplayScheduler] EMERGENCY: {priority.config_key} has only "
                 f"{game_count} games (<{DATA_STARVATION_EMERGENCY_THRESHOLD}). "
-                f"Applying {starvation_multiplier}x priority boost."
+                f"Applying {DATA_STARVATION_EMERGENCY_MULTIPLIER}x priority boost."
             )
         elif game_count < DATA_STARVATION_CRITICAL_THRESHOLD:
-            starvation_multiplier = DATA_STARVATION_CRITICAL_MULTIPLIER
+            # Log for visibility (calculator already applied the multiplier)
             logger.info(
                 f"[SelfplayScheduler] CRITICAL: {priority.config_key} has only "
                 f"{game_count} games (<{DATA_STARVATION_CRITICAL_THRESHOLD}). "
-                f"Applying {starvation_multiplier}x priority boost."
+                f"Applying {DATA_STARVATION_CRITICAL_MULTIPLIER}x priority boost."
             )
-        score *= starvation_multiplier
 
-        # Dec 29, 2025: Log component breakdown for priority decisions at DEBUG level
-        # This helps diagnose why configs get different allocations
+        # Log momentum multiplier changes (>10% change from baseline)
+        if abs(priority.momentum_multiplier - 1.0) > 0.1:
+            logger.info(
+                f"[SelfplayScheduler] Momentum multiplier applied to {priority.config_key}: "
+                f"{priority.momentum_multiplier:.2f}x"
+            )
+
+        # Debug logging for priority component breakdown
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                f"[SelfplayScheduler] Priority breakdown for {priority.config_key}: "
-                f"staleness={staleness:.3f}, velocity={velocity:.3f}, "
-                f"curriculum={curriculum:.3f}, quality={quality:.3f}, "
-                f"voi={voi:.3f}, data_deficit={data_deficit:.3f} | "
-                f"multipliers: momentum={priority.momentum_multiplier:.2f}x, "
-                f"override={override_multiplier:.2f}x, player={player_multiplier:.2f}x, "
-                f"cascade={cascade_boost:.2f}x, starvation={starvation_multiplier:.2f}x | "
-                f"final_score={score:.4f}"
+                f"[SelfplayScheduler] Priority for {priority.config_key}: "
+                f"score={score:.4f}, games={game_count}, "
+                f"momentum={priority.momentum_multiplier:.2f}x"
             )
 
         return score

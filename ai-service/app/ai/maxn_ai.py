@@ -65,6 +65,12 @@ class MaxNAI(HeuristicAI):
         - Automatic fallback to CPU if GPU unavailable
         - Control: RINGRIFT_GPU_MAXN_DISABLE=1 to disable
         - Shadow validation: RINGRIFT_GPU_MAXN_SHADOW_VALIDATE=1 to enable parity checks
+
+    Neural Network Evaluation (optional, Dec 2025):
+        - Set use_neural_net=True in AIConfig to enable
+        - Uses per-player value heads from full NN or NNUE
+        - Falls back to heuristic if NN unavailable
+        - Control: RINGRIFT_MAXN_USE_NEURAL_NET=1 to force enable
     """
 
     def __init__(self, player_number: int, config: AIConfig) -> None:
@@ -102,9 +108,20 @@ class MaxNAI(HeuristicAI):
         if _GPU_MAXN_SHADOW_VALIDATE:
             self._init_shadow_validator()
 
+        # Neural network evaluation support (Dec 2025 - Phase 2)
+        # Enables using Full NN or NNUE for position evaluation
+        nn_env = os.environ.get("RINGRIFT_MAXN_USE_NEURAL_NET", "").lower() in (
+            "1", "true", "yes", "on"
+        )
+        self.use_neural_net: bool = getattr(config, 'use_neural_net', False) or nn_env
+        self._neural_net: Any | None = None  # NeuralNetAI (lazy loaded)
+        self._nnue_evaluator: Any | None = None  # RingRiftNNUEWithPolicy (lazy loaded)
+        self._multi_player_nnue: Any | None = None  # MultiPlayerNNUE (lazy loaded)
+        self._nn_initialized: bool = False
+
         logger.debug(
             f"MaxNAI(player={player_number}, difficulty={config.difficulty}, "
-            f"gpu_enabled={self._gpu_enabled})"
+            f"gpu_enabled={self._gpu_enabled}, use_neural_net={self.use_neural_net})"
         )
 
     def _get_max_depth(self) -> int:
@@ -323,6 +340,158 @@ class MaxNAI(HeuristicAI):
         self.player_number = original_player
         return scores
 
+    def _ensure_nn_initialized(self) -> bool:
+        """Lazily initialize neural network resources. Returns True if NN available."""
+        if self._nn_initialized:
+            return (
+                self._neural_net is not None
+                or self._nnue_evaluator is not None
+                or self._multi_player_nnue is not None
+            )
+
+        self._nn_initialized = True
+
+        if not self.use_neural_net:
+            return False
+
+        num_players = self._num_players or 2
+
+        # For multiplayer (3+), prefer MultiPlayerNNUE for true per-player scores
+        if num_players >= 3 and self._board_type is not None:
+            try:
+                from .nnue import MultiPlayerNNUE
+                self._multi_player_nnue = MultiPlayerNNUE(
+                    num_players=num_players,
+                    board_type=self._board_type,
+                    hidden_dim=256,
+                    num_hidden_layers=2,
+                )
+                logger.info(
+                    f"MaxNAI: Loaded MultiPlayerNNUE for {num_players}p "
+                    f"board_type={self._board_type.value}"
+                )
+                return True
+            except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+                logger.debug(f"MaxNAI: Could not load MultiPlayerNNUE: {e}")
+
+        # Try to load Full NN
+        try:
+            from .neural_net import NeuralNetAI
+            self._neural_net = NeuralNetAI(self.player_number, self.config)
+            logger.info(
+                f"MaxNAI: Loaded Full NN for player {self.player_number}"
+            )
+            return True
+        except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+            logger.debug(f"MaxNAI: Could not load Full NN: {e}")
+
+        # Fall back to NNUE (scalar output, will be converted to per-player)
+        try:
+            from .nnue_policy import RingRiftNNUEWithPolicy
+            if self._board_type is not None:
+                self._nnue_evaluator = RingRiftNNUEWithPolicy(
+                    board_type=self._board_type,
+                    hidden_dim=128,
+                    num_hidden_layers=2,
+                )
+                logger.info(
+                    f"MaxNAI: Loaded NNUE for board_type={self._board_type.value}"
+                )
+                return True
+        except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+            logger.debug(f"MaxNAI: Could not load NNUE: {e}")
+
+        logger.warning("MaxNAI: Neural network requested but not available, using heuristic")
+        return False
+
+    def _evaluate_all_players_nn(self, state: MutableGameState) -> dict[int, float] | None:
+        """Evaluate position for ALL players using neural network.
+
+        Returns None if NN not available (caller should fall back to heuristic).
+
+        Evaluation priority:
+            1. MultiPlayerNNUE - true per-player values (best for MaxN/BRS)
+            2. Full NN - per-player value head
+            3. NNUE - single value converted to per-player perspective
+        """
+        if not self._ensure_nn_initialized():
+            return None
+
+        immutable = state.to_immutable()
+        num_players = self._num_players or 2
+
+        # MultiPlayerNNUE: Direct per-player scores (best quality)
+        if self._multi_player_nnue is not None:
+            try:
+                from .nnue import extract_features_from_gamestate
+                features = extract_features_from_gamestate(immutable, state.current_player)
+                per_player_values = self._multi_player_nnue.forward_single(features)
+                scores = {}
+                for p in range(1, num_players + 1):
+                    if p - 1 < len(per_player_values):
+                        # Scale from [-1, 1] to heuristic range [-100, 100]
+                        scores[p] = float(per_player_values[p - 1]) * 100.0
+                    else:
+                        scores[p] = 0.0
+                return scores
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"MaxNAI: MultiPlayerNNUE evaluation failed: {e}")
+                # Fall through to other NN types
+
+        if self._neural_net is not None:
+            # Full NN: Get per-player value estimates
+            try:
+                # Use vector value head for multiplayer
+                values, _ = self._neural_net.evaluate_batch(
+                    [immutable],
+                    value_head=None,  # Get all value heads
+                )
+                if values is not None and len(values) > 0:
+                    val = values[0]
+                    # If val is a vector (multiplayer), extract per-player
+                    if hasattr(val, '__iter__') and not isinstance(val, (int, float)):
+                        scores = {}
+                        for p in range(1, num_players + 1):
+                            if p - 1 < len(val):
+                                scores[p] = float(val[p - 1]) * 100.0  # Scale to heuristic range
+                            else:
+                                scores[p] = 0.0
+                        return scores
+                    else:
+                        # Scalar value - convert to per-player
+                        v = float(val)
+                        scores = {}
+                        current_player = state.current_player
+                        for p in range(1, num_players + 1):
+                            if p == current_player:
+                                scores[p] = v * 100.0
+                            else:
+                                scores[p] = -v * 100.0 / (num_players - 1)
+                        return scores
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"MaxNAI: NN evaluation failed: {e}")
+                return None
+
+        if self._nnue_evaluator is not None:
+            # NNUE: Single value, convert to per-player perspective
+            try:
+                # NNUE evaluates from current player's perspective
+                val = self._nnue_evaluator.evaluate(immutable)
+                v = float(val) if val is not None else 0.0
+                scores = {}
+                current_player = state.current_player
+                for p in range(1, num_players + 1):
+                    if p == current_player:
+                        scores[p] = v * 100.0
+                    else:
+                        scores[p] = -v * 100.0 / (num_players - 1)
+                return scores
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"MaxNAI: NNUE evaluation failed: {e}")
+                return None
+
+        return None
+
     def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using Max-N search.
 
@@ -471,6 +640,11 @@ class MaxNAI(HeuristicAI):
         Returns a score vector where each player's score reflects
         how good the position is for them.
 
+        Evaluation priority (Dec 2025):
+            1. Neural network (Full NN or NNUE) if use_neural_net=True
+            2. GPU heuristic batch evaluation if available
+            3. CPU heuristic fallback
+
         GPU Acceleration:
             When GPU is available, positions are buffered and batch-evaluated
             for 10-50x speedup. Results are cached in transposition table.
@@ -494,6 +668,13 @@ class MaxNAI(HeuristicAI):
         # Check if we already have cached GPU results
         if state_hash in self._leaf_results:
             return self._leaf_results[state_hash]
+
+        # Neural network path (Dec 2025 - Phase 2)
+        if self.use_neural_net:
+            nn_result = self._evaluate_all_players_nn(state)
+            if nn_result is not None:
+                return nn_result
+            # Fall through to heuristic if NN unavailable
 
         # GPU path: buffer for batch evaluation
         if self._gpu_available:
@@ -524,6 +705,12 @@ class BRSAI(HeuristicAI):
     1-ply lookahead iterated for a few rounds.
 
     Much faster than Max-N but less accurate for deep tactical play.
+
+    Neural Network Evaluation (optional, Dec 2025):
+        - Set use_neural_net=True in AIConfig to enable
+        - Uses Full NN or NNUE for position evaluation
+        - Falls back to heuristic if NN unavailable
+        - Control: RINGRIFT_BRS_USE_NEURAL_NET=1 to force enable
     """
 
     def __init__(self, player_number: int, config: AIConfig) -> None:
@@ -532,9 +719,21 @@ class BRSAI(HeuristicAI):
         self.time_limit: float = 0.0
         self.nodes_visited: int = 0
         self._num_players: int | None = None
+        self._board_type: BoardType | None = None
+
+        # Neural network evaluation support (Dec 2025 - Phase 2)
+        nn_env = os.environ.get("RINGRIFT_BRS_USE_NEURAL_NET", "").lower() in (
+            "1", "true", "yes", "on"
+        )
+        self.use_neural_net: bool = getattr(config, 'use_neural_net', False) or nn_env
+        self._neural_net: Any | None = None  # NeuralNetAI (lazy loaded)
+        self._nnue_evaluator: Any | None = None  # RingRiftNNUEWithPolicy (lazy loaded)
+        self._multi_player_nnue: Any | None = None  # MultiPlayerNNUE (lazy loaded)
+        self._nn_initialized: bool = False
 
         logger.debug(
-            f"BRSAI(player={player_number}, difficulty={config.difficulty})"
+            f"BRSAI(player={player_number}, difficulty={config.difficulty}, "
+            f"use_neural_net={self.use_neural_net})"
         )
 
     def _get_lookahead_rounds(self) -> int:
@@ -545,6 +744,120 @@ class BRSAI(HeuristicAI):
             return 2
         else:
             return 1
+
+    def _ensure_nn_initialized(self) -> bool:
+        """Lazily initialize neural network resources. Returns True if NN available."""
+        if self._nn_initialized:
+            return (
+                self._neural_net is not None
+                or self._nnue_evaluator is not None
+                or self._multi_player_nnue is not None
+            )
+
+        self._nn_initialized = True
+
+        if not self.use_neural_net:
+            return False
+
+        num_players = self._num_players or 2
+
+        # For multiplayer (3+), prefer MultiPlayerNNUE for true per-player scores
+        if num_players >= 3 and self._board_type is not None:
+            try:
+                from .nnue import MultiPlayerNNUE
+                self._multi_player_nnue = MultiPlayerNNUE(
+                    num_players=num_players,
+                    board_type=self._board_type,
+                    hidden_dim=256,
+                    num_hidden_layers=2,
+                )
+                logger.info(
+                    f"BRSAI: Loaded MultiPlayerNNUE for {num_players}p "
+                    f"board_type={self._board_type.value}"
+                )
+                return True
+            except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+                logger.debug(f"BRSAI: Could not load MultiPlayerNNUE: {e}")
+
+        # Try to load Full NN
+        try:
+            from .neural_net import NeuralNetAI
+            self._neural_net = NeuralNetAI(self.player_number, self.config)
+            logger.info(
+                f"BRSAI: Loaded Full NN for player {self.player_number}"
+            )
+            return True
+        except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+            logger.debug(f"BRSAI: Could not load Full NN: {e}")
+
+        # Fall back to NNUE (scalar output, will be converted to per-player)
+        try:
+            from .nnue_policy import RingRiftNNUEWithPolicy
+            if self._board_type is not None:
+                self._nnue_evaluator = RingRiftNNUEWithPolicy(
+                    board_type=self._board_type,
+                    hidden_dim=128,
+                    num_hidden_layers=2,
+                )
+                logger.info(
+                    f"BRSAI: Loaded NNUE for board_type={self._board_type.value}"
+                )
+                return True
+        except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+            logger.debug(f"BRSAI: Could not load NNUE: {e}")
+
+        logger.warning("BRSAI: Neural network requested but not available, using heuristic")
+        return False
+
+    def _evaluate_for_me_nn(self, state: MutableGameState) -> float | None:
+        """Evaluate position using neural network. Returns None if unavailable.
+
+        Evaluation priority:
+            1. MultiPlayerNNUE - true per-player values (best for BRS)
+            2. Full NN - per-player value head
+            3. NNUE - single value (current player perspective)
+        """
+        if not self._ensure_nn_initialized():
+            return None
+
+        immutable = state.to_immutable()
+
+        # MultiPlayerNNUE: Direct per-player scores (best quality)
+        if self._multi_player_nnue is not None:
+            try:
+                from .nnue import extract_features_from_gamestate
+                features = extract_features_from_gamestate(immutable, state.current_player)
+                # Use evaluate_for_player to get this player's score directly
+                score = self._multi_player_nnue.evaluate_for_player(features, self.player_number)
+                # Scale from [-1, 1] to heuristic range [-100, 100]
+                return score * 100.0
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"BRSAI: MultiPlayerNNUE evaluation failed: {e}")
+                # Fall through to other NN types
+
+        if self._neural_net is not None:
+            try:
+                values, _ = self._neural_net.evaluate_batch([immutable])
+                if values is not None and len(values) > 0:
+                    val = values[0]
+                    # For multiplayer, extract this player's value
+                    if hasattr(val, '__iter__') and not isinstance(val, (int, float)):
+                        if self.player_number - 1 < len(val):
+                            return float(val[self.player_number - 1]) * 100.0
+                    return float(val) * 100.0
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"BRSAI: NN evaluation failed: {e}")
+                return None
+
+        if self._nnue_evaluator is not None:
+            try:
+                val = self._nnue_evaluator.evaluate(immutable)
+                return float(val) * 100.0 if val is not None else None
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"BRSAI: NNUE evaluation failed: {e}")
+                return None
+
+        return None
 
     def select_move(self, game_state: GameState) -> Move | None:
         """Select the best move using Best-Reply Search.
@@ -559,9 +872,11 @@ class BRSAI(HeuristicAI):
         if len(valid_moves) == 1:
             return valid_moves[0]
 
-        # Detect number of players
+        # Detect number of players and board type
         if self._num_players is None:
             self._num_players = len(game_state.players)
+        if self._board_type is None and hasattr(game_state.board, 'board_type'):
+            self._board_type = game_state.board.board_type
 
         # Initialize search parameters
         self.start_time = time.time()
@@ -655,7 +970,12 @@ class BRSAI(HeuristicAI):
         return result
 
     def _evaluate_for_me(self, state: MutableGameState) -> float:
-        """Evaluate position from this AI's perspective."""
+        """Evaluate position from this AI's perspective.
+
+        Evaluation priority (Dec 2025):
+            1. Neural network (Full NN or NNUE) if use_neural_net=True
+            2. Heuristic evaluation fallback
+        """
         if state.is_game_over():
             winner = state.get_winner()
             if winner == self.player_number:
@@ -663,6 +983,13 @@ class BRSAI(HeuristicAI):
             elif winner is not None:
                 return -100000.0
             return 0.0
+
+        # Neural network path (Dec 2025 - Phase 2)
+        if self.use_neural_net:
+            nn_result = self._evaluate_for_me_nn(state)
+            if nn_result is not None:
+                return nn_result
+            # Fall through to heuristic if NN unavailable
 
         immutable = state.to_immutable()
         return self.evaluate_position(immutable)

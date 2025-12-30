@@ -56,8 +56,14 @@ class PolicyOnlyAI(BaseAI):
     search-based methods. The strength depends entirely on the quality
     of the neural network policy head.
 
+    Supports both Full NN and NNUE policy models (Dec 2025 - Phase 3):
+        - Set use_nnue_policy=True in AIConfig to use NNUE instead of Full NN
+        - NNUE models are smaller (~5-10MB vs ~30-100MB) and faster
+        - Falls back to uniform policy if neither NN is available
+
     Attributes:
         neural_net: The loaded neural network for policy evaluation.
+        nnue_policy: The loaded NNUE policy model (alternative to neural_net).
         temperature: Temperature for policy softmax sampling.
         board_type: The board type this AI is configured for.
     """
@@ -79,10 +85,19 @@ class PolicyOnlyAI(BaseAI):
             RuntimeError: If neural network cannot be loaded and allow_fresh_weights
                 is False.
         """
+        import os
+
         super().__init__(player_number, config)
 
         self.board_type = board_type
         self.temperature = config.policy_temperature or 1.0
+
+        # Dec 2025 - Phase 3: NNUE policy support
+        nnue_env = os.environ.get("RINGRIFT_POLICY_ONLY_USE_NNUE", "").lower() in (
+            "1", "true", "yes", "on"
+        )
+        self.use_nnue_policy: bool = getattr(config, 'use_nnue_policy', False) or nnue_env
+        self.nnue_policy: "RingRiftNNUEWithPolicy | None" = None  # type: ignore
 
         # Log expected encoder configuration for debugging
         try:
@@ -96,8 +111,20 @@ class PolicyOnlyAI(BaseAI):
         except ImportError:
             pass  # Registry not available
 
-        # Load neural network
+        # Load neural network (NNUE or Full NN)
         self.neural_net: NeuralNetAI | None = None
+
+        if self.use_nnue_policy:
+            # Try to load NNUE policy model first
+            self._load_nnue_policy(config)
+            if self.nnue_policy is not None:
+                logger.info(
+                    f"PolicyOnlyAI(player={player_number}): using NNUE policy "
+                    f"(temp={self.temperature})"
+                )
+                return  # NNUE loaded successfully
+
+        # Fall back to Full NN
         try:
             self.neural_net = NeuralNetAI(player_number, config, board_type=self.board_type)
             logger.info(
@@ -114,6 +141,113 @@ class PolicyOnlyAI(BaseAI):
                 f"({e}), will use uniform policy"
             )
             self.neural_net = None
+
+    def _load_nnue_policy(self, config: AIConfig) -> None:
+        """Load NNUE policy model if available."""
+        try:
+            import os
+            from .nnue_policy import RingRiftNNUEWithPolicy
+            from app.utils.torch_utils import safe_load_checkpoint
+
+            # Try to find NNUE policy model
+            num_players = getattr(config, 'num_players', 2)
+            model_path = os.path.join(
+                os.path.dirname(__file__), "..", "..",
+                "models", "nnue", f"nnue_policy_{self.board_type.value}_{num_players}p.pt"
+            )
+            model_path = os.path.normpath(model_path)
+
+            if os.path.exists(model_path):
+                checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
+
+                # Handle versioned checkpoints
+                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                    state_dict = checkpoint['model_state_dict']
+                    hidden_dim = checkpoint.get('hidden_dim', 128)
+                    num_hidden_layers = checkpoint.get('num_hidden_layers', 2)
+                else:
+                    state_dict = checkpoint
+                    hidden_dim = 128
+                    num_hidden_layers = 2
+
+                model = RingRiftNNUEWithPolicy(
+                    board_type=self.board_type,
+                    hidden_dim=hidden_dim,
+                    num_hidden_layers=num_hidden_layers,
+                )
+                model.load_state_dict(state_dict)
+                model.eval()
+
+                self.nnue_policy = model
+                logger.debug(f"PolicyOnlyAI: Loaded NNUE policy from {model_path}")
+            else:
+                logger.debug(f"PolicyOnlyAI: No NNUE policy model at {model_path}")
+
+        except (ImportError, ModuleNotFoundError, RuntimeError, FileNotFoundError, OSError) as e:
+            logger.debug(f"PolicyOnlyAI: Could not load NNUE policy: {e}")
+
+    def _get_nnue_policy_scores(
+        self,
+        game_state: GameState,
+        valid_moves: list[Move],
+    ) -> np.ndarray:
+        """Get policy scores using NNUE policy model.
+
+        Args:
+            game_state: Current game state.
+            valid_moves: List of valid moves to score.
+
+        Returns:
+            Array of scores for each move (higher = better).
+        """
+        try:
+            import torch
+            from .nnue import extract_features_from_gamestate
+
+            # Extract NNUE features
+            features = extract_features_from_gamestate(game_state)
+            features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
+
+            # Forward pass through NNUE
+            with torch.no_grad():
+                _, policy = self.nnue_policy(features_tensor, return_policy=True)
+
+            if policy is None:
+                return np.ones(len(valid_moves))
+
+            policy_vec = policy[0].numpy()
+
+            # Map valid moves to policy indices
+            scores = []
+            for move in valid_moves:
+                idx = self._encode_move_for_nnue(move, game_state.board)
+                if idx is not None and 0 <= idx < len(policy_vec):
+                    score = float(policy_vec[idx])
+                else:
+                    score = 1e-8  # Small non-zero for unmapped moves
+                scores.append(score)
+
+            return np.array(scores, dtype=np.float32)
+
+        except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+            logger.warning(f"PolicyOnlyAI: NNUE policy evaluation failed ({e})")
+            return np.ones(len(valid_moves))
+
+    def _encode_move_for_nnue(self, move: Move, board: "Board") -> int | None:  # type: ignore
+        """Encode a move to NNUE policy index."""
+        try:
+            # Use the same encoding as the NNUE policy head
+            from .nnue_policy import encode_move_for_policy
+
+            return encode_move_for_policy(move, board)
+        except (ImportError, RuntimeError, ValueError, TypeError, AttributeError):
+            # Fallback: linear move index based on position
+            if hasattr(move, 'to') and move.to is not None:
+                to_pos = move.to
+                if hasattr(to_pos, 'x') and hasattr(to_pos, 'y'):
+                    grid_size = getattr(board, 'size', 8)
+                    return to_pos.x * grid_size + to_pos.y
+            return None
 
     def select_move(self, game_state: GameState) -> Move | None:
         """Select a move based on neural network policy output.
@@ -158,6 +292,11 @@ class PolicyOnlyAI(BaseAI):
     ) -> np.ndarray:
         """Get policy scores for each valid move.
 
+        Evaluation priority (Dec 2025 - Phase 3):
+            1. NNUE policy if use_nnue_policy=True and model loaded
+            2. Full NN policy if neural_net loaded
+            3. Uniform policy fallback
+
         Args:
             game_state: Current game state.
             valid_moves: List of valid moves to score.
@@ -165,6 +304,10 @@ class PolicyOnlyAI(BaseAI):
         Returns:
             Array of scores for each move (higher = better).
         """
+        # NNUE policy path (Dec 2025 - Phase 3)
+        if self.nnue_policy is not None:
+            return self._get_nnue_policy_scores(game_state, valid_moves)
+
         if self.neural_net is None:
             # Uniform policy when no neural net available
             return np.ones(len(valid_moves))
