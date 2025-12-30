@@ -1,12 +1,12 @@
 # AI Service Environment Variables Reference
 
-This document covers environment variables specific to the Python AI service cluster operations, coordination, and training infrastructure. For TypeScript/server variables, see the main `docs/operations/ENVIRONMENT_VARIABLES.md`.
+This document covers environment variables specific to the Python AI service cluster operations, coordination, and training infrastructure. For TypeScript/server variables, see `../../docs/operations/ENVIRONMENT_VARIABLES.md`.
 
 For internal/experimental AI-service flags discovered in code but not yet fully described,
-see `docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
+see `../../docs/operations/ENVIRONMENT_VARIABLES_INTERNAL.md`.
 
 For the curated cross-service overview (with defaults), see the "AI Service" and
-"Python Training Flags" sections in `docs/operations/ENVIRONMENT_VARIABLES.md`.
+"Python Training Flags" sections in `../../docs/operations/ENVIRONMENT_VARIABLES.md`.
 
 ## Table of Contents
 
@@ -1241,7 +1241,7 @@ The `from_env()` factory method on config classes reads these automatically.
 
 ## See Also
 
-- `docs/operations/ENVIRONMENT_VARIABLES.md` - Main TypeScript/server variables
-- `docs/coordination/DAEMON_INDEX.md` - Daemon documentation
+- `../../docs/operations/ENVIRONMENT_VARIABLES.md` - Main TypeScript/server variables
+- `DAEMON_REGISTRY.md` - Daemon documentation
 - `app/config/env.py` - Centralized environment configuration
 - `app/config/coordination_defaults.py` - Coordination default values

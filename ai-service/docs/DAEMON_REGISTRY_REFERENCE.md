@@ -1,5 +1,7 @@
 # Daemon Registry Reference
 
+> **Deprecated:** This document is a legacy snapshot and is no longer maintained. Use `DAEMON_REGISTRY.md` and `app/coordination/daemon_registry.py` for canonical daemon listings.
+
 This document provides a comprehensive reference for all daemon types in the RingRift AI service coordination infrastructure.
 
 **Last Updated**: December 2025

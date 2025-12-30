@@ -665,6 +665,24 @@ async def create_tournament_daemon() -> None:
         raise
 
 
+async def create_nnue_training() -> None:
+    """Create and run NNUE training daemon (December 2025).
+
+    Automatically trains NNUE models when game thresholds are met.
+    Per-config thresholds: hex8_2p=5000, hex8_4p=10000, square19_2p=2000.
+    Subscribes to: NEW_GAMES_AVAILABLE, CONSOLIDATION_COMPLETE, DATA_SYNC_COMPLETED.
+    """
+    try:
+        from app.coordination.nnue_training_daemon import NNUETrainingDaemon
+
+        daemon = NNUETrainingDaemon.get_instance()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"NNUETrainingDaemon not available: {e}")
+        raise
+
+
 # =============================================================================
 # Evaluation & Promotion Daemons
 # =============================================================================
@@ -1810,6 +1828,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.TAILSCALE_HEALTH.name: create_tailscale_health,
         # Connectivity recovery coordinator (December 29, 2025)
         DaemonType.CONNECTIVITY_RECOVERY.name: create_connectivity_recovery,
+        # NNUE automatic training (December 29, 2025)
+        DaemonType.NNUE_TRAINING.name: create_nnue_training,
     }
 
 

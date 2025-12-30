@@ -122,6 +122,7 @@ class QualityFeedbackHandler(HandlerBase):
         # Metrics
         self._quality_events_processed = 0
         self._last_quality_event_time = 0.0
+        self._last_cycle_time = 0.0
 
     @classmethod
     def get_instance(
@@ -238,9 +239,8 @@ class QualityFeedbackHandler(HandlerBase):
 
                 optimizer = ImprovementOptimizer.get_instance()
                 optimizer.record_data_quality(
-                    config_key=config_key,
                     data_quality_score=quality_score,
-                    parity_success_rate=quality_score,
+                    parity_success_rate=quality_score,  # Use quality as proxy
                 )
                 logger.info(
                     f"[QualityFeedbackHandler] Updated ImprovementOptimizer for {config_key}: "
@@ -248,6 +248,8 @@ class QualityFeedbackHandler(HandlerBase):
                 )
             except ImportError:
                 logger.debug("[QualityFeedbackHandler] ImprovementOptimizer not available")
+            except (TypeError, AttributeError) as e:
+                logger.debug(f"[QualityFeedbackHandler] ImprovementOptimizer error: {e}")
 
             # Also boost exploration for this config
             self._boost_exploration_for_stall(config_key, trend_duration_epochs=3)

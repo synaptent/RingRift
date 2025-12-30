@@ -3754,7 +3754,7 @@ def reset_daemon_manager() -> None:
 # Signal handlers for graceful shutdown
 def setup_signal_handlers() -> None:
     """Set up signal handlers for graceful shutdown."""
-    def handle_signal(signum, frame):
+    def handle_signal(signum: int, frame: Any) -> None:
         """Handle SIGTERM/SIGINT for graceful daemon shutdown.
 
         Args:

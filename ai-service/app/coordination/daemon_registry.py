@@ -625,6 +625,19 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         auto_restart=True,
         max_restarts=10,
     ),
+    # =========================================================================
+    # NNUE Automatic Training (December 29, 2025)
+    # Trains NNUE models when game thresholds are met
+    # Subscribes to: NEW_GAMES_AVAILABLE, CONSOLIDATION_COMPLETE, DATA_SYNC_COMPLETED
+    # =========================================================================
+    DaemonType.NNUE_TRAINING: DaemonSpec(
+        runner_name="create_nnue_training",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
+        category="pipeline",
+        health_check_interval=3600.0,  # 1 hour - training jobs are long-running
+        auto_restart=True,
+        max_restarts=5,
+    ),
 }
 
 

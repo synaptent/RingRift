@@ -423,7 +423,7 @@ sqlite3 data/work_queue.db < dump.sql
 
 ## Related Documentation
 
-- [DAEMON_INDEX.md](./DAEMON_INDEX.md) - Complete daemon catalog
+- [DAEMON_REGISTRY.md](../DAEMON_REGISTRY.md) - Canonical daemon catalog
 - [EVENT_CATALOG.md](../EVENT_CATALOG.md) - Event types reference
 - [../AI_SERVICE_ENVIRONMENT_REFERENCE.md](../AI_SERVICE_ENVIRONMENT_REFERENCE.md) - Environment variables
 - [ALERTING_THRESHOLDS.md](../../../docs/operations/ALERTING_THRESHOLDS.md) - Alerting setup

@@ -560,7 +560,7 @@ async def verify_pipeline_flow(config_key: str, hours: int = 24):
 
 ## See Also
 
-- `docs/EVENT_SYSTEM_REFERENCE.md` - Complete event type reference
-- `docs/DAEMON_REGISTRY_REFERENCE.md` - Daemon specifications
-- `docs/runbooks/DAEMON_FAILURE_RECOVERY.md` - Daemon troubleshooting
+- `../EVENT_SYSTEM_REFERENCE.md` - Complete event type reference
+- `../DAEMON_REGISTRY.md` - Daemon specifications
+- `DAEMON_FAILURE_RECOVERY.md` - Daemon troubleshooting
 - `app/coordination/event_router.py` - Event router implementation

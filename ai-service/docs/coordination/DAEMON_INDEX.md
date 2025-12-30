@@ -1,5 +1,7 @@
 # Daemon Index
 
+> **Deprecated:** This index is no longer maintained. Use `../DAEMON_REGISTRY.md` and `app/coordination/daemon_registry.py` for canonical daemon listings and dependencies.
+
 This document catalogs all daemons managed by the `DaemonManager` in the RingRift AI training pipeline.
 
 ## Overview

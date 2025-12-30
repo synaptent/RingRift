@@ -326,6 +326,13 @@ class DaemonType(Enum):
     # =========================================================================
     CONNECTIVITY_RECOVERY = "connectivity_recovery"
 
+    # =========================================================================
+    # NNUE Automatic Training (December 29, 2025)
+    # Automatically trains NNUE models when game thresholds are met
+    # Per-config game thresholds: hex8_2p=5000, hex8_4p=10000, square19_2p=2000
+    # =========================================================================
+    NNUE_TRAINING = "nnue_training"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -717,6 +724,10 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     # Subscribes to TAILSCALE_*, HOST_*, P2P_NODE_DEAD events
     # Coordinates SSH-based recovery and escalation
     DaemonType.CONNECTIVITY_RECOVERY: {DaemonType.EVENT_ROUTER, DaemonType.TAILSCALE_HEALTH},
+
+    # NNUE automatic training (December 29, 2025)
+    # Trains NNUE models when game thresholds are met
+    DaemonType.NNUE_TRAINING: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
 }
 
 

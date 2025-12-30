@@ -872,7 +872,7 @@ def train_model(
     enable_quality_weighting: bool = True,
     quality_weight_blend: float = 0.5,
     quality_ranking_weight: float = 0.1,
-):
+) -> dict[str, Any]:
     """
     Train the RingRift neural network model.
 
@@ -3881,7 +3881,7 @@ def train_model(
             )
 
             # Create a simple combined loss for LR finding
-            def combined_criterion(outputs, targets):
+            def combined_criterion(outputs: Any, targets: Any) -> torch.Tensor:
                 """Combine value and policy losses for LR range test."""
                 if isinstance(outputs, tuple):
                     value_out, policy_out = outputs[:2]

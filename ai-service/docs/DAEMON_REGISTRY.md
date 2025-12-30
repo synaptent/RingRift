@@ -124,6 +124,7 @@ Training pipeline orchestration and coordination.
 | `DATA_PIPELINE`            | HIGH     | Orchestrates pipeline stages: selfplay → sync → export → train → evaluate → promote.                               | EVENT_ROUTER                |
 | `DATA_CONSOLIDATION`       | HIGH     | Merges scattered selfplay games into canonical databases. Runs after sync, before training.                        | EVENT_ROUTER, DATA_PIPELINE |
 | `CONTINUOUS_TRAINING_LOOP` | MEDIUM   | Continuous training loop that runs indefinitely.                                                                   | EVENT_ROUTER                |
+| `NNUE_TRAINING`            | MEDIUM   | Auto-trains NNUE models when per-config game thresholds are met.                                                   | EVENT_ROUTER, DATA_PIPELINE |
 | `PER_ORCHESTRATOR`         | MEDIUM   | Monitors prioritized experience replay (PER) buffers and orchestrates sampling refresh.                            | EVENT_ROUTER                |
 | `UNIFIED_PROMOTION`        | HIGH     | Auto-promotes models after evaluation. Subscribes to EVALUATION_COMPLETED events.                                  | EVENT_ROUTER                |
 | `AUTO_PROMOTION`           | HIGH     | Auto-promotes models based on evaluation thresholds. Emits MODEL_PROMOTED.                                         | EVENT_ROUTER, EVALUATION    |
@@ -149,6 +150,7 @@ Fixes critical training pipeline gap where selfplay games remain scattered acros
 - `create_data_pipeline()` → Creates `DataPipelineOrchestrator`
 - `create_data_consolidation()` → Creates `DataConsolidationDaemon`
 - `create_continuous_training_loop()` → Creates `ContinuousTrainingLoop`
+- `create_nnue_training()` → Creates `NNUETrainingDaemon`
 - `create_per_orchestrator()` → Wires `per_orchestrator` events via `wire_per_events()`
 - `create_unified_promotion()` → Creates `PromotionController`
 - `create_auto_promotion()` → Uses `auto_promotion_daemon.get_auto_promotion_daemon()`
@@ -698,10 +700,15 @@ Monitoring Daemons (positions 11-15)
 14. CLUSTER_WATCHDOG    # Cluster watchdog (depends on CLUSTER_MONITOR)
 15. NODE_RECOVERY       # Node recovery (depends on NODE_HEALTH_MONITOR)
 
-Evaluation and Promotion Chain (positions 16-18)
-16. EVALUATION          # Model evaluation (depends on TRAINING_TRIGGER)
-17. AUTO_PROMOTION      # Auto-promotion (depends on EVALUATION)
-18. MODEL_DISTRIBUTION  # Model distribution (depends on AUTO_PROMOTION)
+Quality + Training Enhancement (positions 16-17)
+16. QUALITY_MONITOR     # Quality monitoring (depends on DATA_PIPELINE)
+17. DISTILLATION        # Distillation (depends on TRAINING_TRIGGER)
+
+Evaluation and Promotion Chain (positions 18-21)
+18. EVALUATION          # Model evaluation (depends on TRAINING_TRIGGER)
+19. UNIFIED_PROMOTION   # Unified promotion (depends on EVALUATION)
+20. AUTO_PROMOTION      # Auto-promotion (depends on EVALUATION)
+21. MODEL_DISTRIBUTION  # Model distribution (depends on AUTO_PROMOTION)
 ```
 
 **Validation:** The startup order is validated against `DAEMON_DEPENDENCIES` at startup

@@ -2,43 +2,53 @@
 
 This document explains how daemon startup ordering and dependencies work in the RingRift AI service coordination infrastructure.
 
-**Last Updated**: December 28, 2025
+**Last Updated**: December 30, 2025
 
 ## Overview
 
-The daemon manager starts 70+ daemon types with specific dependencies. Incorrect startup order can cause race conditions where daemons try to use resources that aren't ready.
+The daemon manager starts 85 daemon types with specific dependencies. Incorrect startup order can cause race conditions where daemons try to use resources that aren't ready.
 
-There are two layers of dependency management:
+There are two canonical dependency layers:
 
-1. **`master_loop.py`**: Explicit startup order for production
-2. **`daemon_registry.py`**: Declarative `depends_on` specifications
+1. **`daemon_types.py`**: `DAEMON_STARTUP_ORDER` (explicit production startup order)
+2. **`daemon_registry.py`**: Declarative `depends_on` specifications (canonical dependencies)
 
-Both must be consistent for correct behavior.
+`daemon_types.py:DAEMON_DEPENDENCIES` remains a legacy validation map for startup checks.
 
 ## Key Concepts
 
-### Startup Order (master_loop.py)
+### Startup Order (daemon_types.py)
 
-The `master_loop.py` defines the actual startup sequence used in production:
+The `DAEMON_STARTUP_ORDER` defines the startup sequence used in production:
 
 ```
-Position | Daemon Type             | Dependencies              | Why This Position?
----------|-------------------------|---------------------------|--------------------
-1        | EVENT_ROUTER            | (None - first)            | Event bus for all others
-2        | NODE_HEALTH_MONITOR     | EVENT_ROUTER              | Health tracking needed early
-3        | CLUSTER_MONITOR         | EVENT_ROUTER              | Cluster state awareness
-4        | SYSTEM_HEALTH_MONITOR   | NODE_HEALTH_MONITOR       | Aggregates node health
-5        | HEALTH_SERVER           | EVENT_ROUTER              | HTTP endpoints for monitoring
-6        | FEEDBACK_LOOP           | EVENT_ROUTER              | Must receive TRAINING_COMPLETED events
-7        | DATA_PIPELINE           | EVENT_ROUTER              | Must receive DATA_SYNC_COMPLETED events
-8        | AUTO_SYNC               | DATA_PIPELINE, FEEDBACK_LOOP | Sync events need subscribers
-9        | CLUSTER_DATA_SYNC       | EVENT_ROUTER              | Cluster-wide sync
-10       | ELO_SYNC                | EVENT_ROUTER              | Elo rating sync
-...
+Position | Daemon Type                | Dependencies                             | Why This Position?
+---------|----------------------------|------------------------------------------|--------------------
+1        | EVENT_ROUTER               | (None - first)                           | Event bus for all others
+2        | DAEMON_WATCHDOG            | EVENT_ROUTER                             | Self-healing for daemon crashes
+3        | DATA_PIPELINE              | EVENT_ROUTER                             | Must receive DATA_SYNC_COMPLETED events
+4        | FEEDBACK_LOOP              | EVENT_ROUTER                             | Must receive TRAINING_COMPLETED events
+5        | AUTO_SYNC                  | EVENT_ROUTER, DATA_PIPELINE, FEEDBACK_LOOP | Sync events need subscribers
+6        | QUEUE_POPULATOR            | EVENT_ROUTER, SELFPLAY_COORDINATOR       | Work queue maintenance
+7        | WORK_QUEUE_MONITOR         | EVENT_ROUTER, QUEUE_POPULATOR            | Queue visibility after populator
+8        | COORDINATOR_HEALTH_MONITOR | EVENT_ROUTER                             | Coordinator lifecycle visibility
+9        | IDLE_RESOURCE              | EVENT_ROUTER                             | GPU utilization monitoring
+10       | TRAINING_TRIGGER           | EVENT_ROUTER, AUTO_EXPORT                | Training trigger after export
+11       | CLUSTER_MONITOR            | EVENT_ROUTER                             | Cluster monitoring
+12       | NODE_HEALTH_MONITOR        | EVENT_ROUTER                             | Node health checks (deprecated, still ordered)
+13       | HEALTH_SERVER              | EVENT_ROUTER                             | Health endpoints
+14       | CLUSTER_WATCHDOG           | EVENT_ROUTER, CLUSTER_MONITOR            | Cluster watchdog depends on monitor
+15       | NODE_RECOVERY              | EVENT_ROUTER                             | Node recovery actions
+16       | QUALITY_MONITOR            | EVENT_ROUTER                             | Quality monitoring before evaluation
+17       | DISTILLATION               | EVENT_ROUTER                             | Distillation readiness
+18       | EVALUATION                 | EVENT_ROUTER                             | Model evaluation
+19       | UNIFIED_PROMOTION          | EVENT_ROUTER                             | Promotion controller wiring
+20       | AUTO_PROMOTION             | EVENT_ROUTER, EVALUATION                 | Auto-promotion after evaluation
+21       | MODEL_DISTRIBUTION         | EVENT_ROUTER, EVALUATION, AUTO_PROMOTION | Distribute promoted models
 ```
 
-**Critical Ordering Rule**: Event _subscribers_ (DATA_PIPELINE, FEEDBACK_LOOP) must start
-before event _emitters_ (AUTO_SYNC) to avoid lost events.
+**Critical Ordering Rule**: Event _subscribers_ (DATA*PIPELINE, FEEDBACK_LOOP) must start
+before event \_emitters* (AUTO_SYNC) to avoid lost events.
 
 ### Registry-Based Dependencies (daemon_registry.py)
 
