@@ -142,10 +142,11 @@ class NNUETrainingDaemon(HandlerBase):
         Args:
             config: Training configuration (uses defaults if None)
         """
-        self._config = config or NNUETrainingConfig()
+        # Store in _nnue_config to avoid HandlerBase._config overwrite
+        self._nnue_config = config or NNUETrainingConfig()
         super().__init__(
             name="nnue_training",
-            cycle_interval=self._config.check_interval_seconds,
+            cycle_interval=self._nnue_config.check_interval_seconds,
         )
 
         self._state = NNUETrainingState()
@@ -156,8 +157,8 @@ class NNUETrainingDaemon(HandlerBase):
         self._current_game_counts: dict[str, int] = {}
 
         logger.info(
-            f"NNUETrainingDaemon initialized (check_interval={self._config.check_interval_seconds}s, "
-            f"max_concurrent={self._config.max_concurrent_trainings})"
+            f"NNUETrainingDaemon initialized (check_interval={self._nnue_config.check_interval_seconds}s, "
+            f"max_concurrent={self._nnue_config.max_concurrent_trainings})"
         )
 
     @classmethod
@@ -243,7 +244,7 @@ class NNUETrainingDaemon(HandlerBase):
 
         # Trigger trainings (respecting concurrency limit)
         available_slots = (
-            self._config.max_concurrent_trainings
+            self._nnue_config.max_concurrent_trainings
             - len(self._state.active_trainings)
         )
 
