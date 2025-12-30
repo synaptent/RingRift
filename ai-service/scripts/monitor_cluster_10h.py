@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -57,7 +58,7 @@ def get_cluster_status(timeout: int = 30) -> dict | None:
         url = f"http://{P2P_LEADER_IP}:{P2P_PORT}/status"
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode())
-    except Exception as e:
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError) as e:
         log(f"Failed to get cluster status: {e}", "ERROR")
         return None
 
@@ -68,7 +69,7 @@ def get_local_p2p_status(timeout: int = 10) -> dict | None:
         url = f"http://localhost:{P2P_PORT}/status"
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return json.loads(response.read().decode())
-    except Exception:
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError):
         return None
 
 
@@ -149,7 +150,7 @@ def restart_local_p2p():
     try:
         subprocess.run(["pkill", "-f", "p2p_orchestrator"], timeout=5)
         time.sleep(2)
-    except Exception:
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError):
         pass
 
     # Start new

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def main() -> int:
     try:
         existing_count = elo.get_total_ratings()
         logger.info(f"Existing ratings in database: {existing_count}")
-    except Exception:
+    except (sqlite3.Error, OSError, ValueError):
         existing_count = 0
 
     if existing_count > 0 and not args.force:
@@ -111,7 +112,7 @@ def _show_current_state(elo) -> None:
     try:
         total_ratings = elo.get_total_ratings()
         logger.info(f"Total ratings: {total_ratings}")
-    except Exception as e:
+    except (sqlite3.Error, OSError, ValueError) as e:
         logger.warning(f"Could not get total ratings: {e}")
 
     # Show leaderboard for each config
@@ -123,7 +124,7 @@ def _show_current_state(elo) -> None:
                     logger.info(f"\n{board_type}_{num_players}p leaderboard:")
                     for entry in leaderboard:
                         logger.info(f"  {entry.rank}. {entry.participant_id}: {entry.rating:.0f} ({entry.games_played} games)")
-            except Exception:
+            except (sqlite3.Error, OSError, ValueError, KeyError):
                 pass
 
 

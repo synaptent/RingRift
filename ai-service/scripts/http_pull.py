@@ -77,7 +77,7 @@ def get_default_source() -> str:
             if leader_id and leader_id in peers:
                 peer = peers[leader_id]
                 return f"{peer.get('host', '127.0.0.1')}:{peer.get('port', 8770)}"
-    except Exception:
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError, KeyError):
         pass
 
     return "localhost:8770"

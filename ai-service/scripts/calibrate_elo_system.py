@@ -348,7 +348,7 @@ def get_elo_dashboard(elo: EloService) -> dict[str, ModelEloSummary]:
                 if rating:
                     summary.methods[ai_type] = rating.rating
                     summary.games_played[ai_type] = rating.games_played
-            except Exception:
+            except (KeyError, ValueError, AttributeError):
                 pass
 
         # Also check legacy format (non-composite)
@@ -357,7 +357,7 @@ def get_elo_dashboard(elo: EloService) -> dict[str, ModelEloSummary]:
             if legacy_rating and legacy_rating.games_played > 0:
                 summary.methods["legacy"] = legacy_rating.rating
                 summary.games_played["legacy"] = legacy_rating.games_played
-        except Exception:
+        except (KeyError, ValueError, AttributeError):
             pass
 
         summary.calculate_unified_elo()

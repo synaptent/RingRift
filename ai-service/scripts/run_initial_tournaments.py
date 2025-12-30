@@ -64,7 +64,7 @@ def find_leader(endpoints: list[str]) -> str | None:
                                 return leader_url.rstrip("/")
                     # Fallback: use the first endpoint if it knows the leader
                     return endpoint
-        except Exception:
+        except (requests.RequestException, ValueError, KeyError):
             continue
     return None
 
@@ -101,7 +101,7 @@ def run_tournament(endpoint: str, board_type: str, num_players: int, games_per_p
         else:
             logger.error(f"Failed to start tournament for {model_id}: {resp.status_code} - {resp.text[:200]}")
             return None
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError) as e:
         logger.error(f"Error starting tournament for {model_id}: {e}")
         return None
 
@@ -112,7 +112,7 @@ def check_tournament_status(endpoint: str, job_ids: list[str]) -> dict:
         resp = requests.get(f"{endpoint}/tournament/status", timeout=10)
         if resp.ok:
             return resp.json()
-    except Exception:
+    except (requests.RequestException, ValueError):
         pass
     return {}
 
