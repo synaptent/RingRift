@@ -2056,6 +2056,13 @@ class SelfplayPriorityWeightDefaults:
         "RINGRIFT_DATA_STARVATION_CRITICAL_MULTIPLIER", 5.0
     )
 
+    # Data poverty tier - configs below this threshold get moderate priority boost
+    # Dec 30, 2025: Added to bridge gap between CRITICAL (1000) and no boost
+    DATA_POVERTY_THRESHOLD: int = _env_int("RINGRIFT_DATA_POVERTY_THRESHOLD", 5000)
+    DATA_POVERTY_MULTIPLIER: float = _env_float(
+        "RINGRIFT_DATA_POVERTY_MULTIPLIER", 2.5  # Moderate boost for <5000 games
+    )
+
     # Staleness thresholds (hours)
     FRESH_DATA_THRESHOLD: float = _env_float("RINGRIFT_FRESH_DATA_THRESHOLD", 1.0)
     STALE_DATA_THRESHOLD: float = _env_float("RINGRIFT_STALE_DATA_THRESHOLD", 4.0)
