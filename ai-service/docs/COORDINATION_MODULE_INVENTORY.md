@@ -21,7 +21,7 @@ This document is a curated inventory of primary modules in `app/coordination/` (
 | Health & Monitoring | ~14   | Health checks, status, metrics               |
 | Coordination        | ~15   | Orchestrators, coordinators, bridges         |
 | Queue & Work        | ~10   | Work queue, scheduling, backpressure         |
-| Deprecated          | 10+   | Q2 2026 removal scheduled                    |
+| Deprecated          | 11    | Q2 2026 removal scheduled                    |
 
 ---
 

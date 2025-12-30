@@ -5,6 +5,8 @@
 **Scope**: RingRift AI Service (`ai-service/`)
 **Analysis Coverage**: 350+ Python files, 1.3M lines of code
 
+> **Note:** This report is a Dec 2025 snapshot. Daemon counts and registry status may have changed; see `ai-service/docs/DAEMON_REGISTRY.md` for current numbers.
+
 ---
 
 ## Executive Summary: Top 10 Highest-Impact Improvements

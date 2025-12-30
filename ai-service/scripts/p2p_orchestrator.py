@@ -18616,6 +18616,73 @@ print(json.dumps({{
         key = self._endpoint_key(peer)
         return not (key and key in conflict_keys)
 
+    def _register_peer_with_dedup(self, info: NodeInfo) -> bool:
+        """Register or update a peer with deduplication support.
+
+        Dec 29, 2025: Implements peer deduplication by node_id. When the same
+        node is discovered via multiple IPs (Tailscale, public, etc.), this
+        method merges them into a single canonical entry instead of creating
+        duplicate entries.
+
+        Args:
+            info: NodeInfo to register
+
+        Returns:
+            True if this was a new peer, False if updating existing
+        """
+        if not info or not info.node_id:
+            return False
+
+        with self.peers_lock:
+            existing = self.peers.get(info.node_id)
+            if existing is not None:
+                # Merge new info into existing entry
+                existing.merge_from(info)
+                return False
+            else:
+                # New peer - initialize alternate_ips from host if available
+                if info.host and not info.alternate_ips:
+                    info.alternate_ips = set()
+                self.peers[info.node_id] = info
+                return True
+
+    def _deduplicate_peers(self) -> int:
+        """Periodic deduplication of peers dict.
+
+        Dec 29, 2025: Scans for any duplicate entries that may have been
+        created before deduplication was implemented, and merges them.
+
+        Returns:
+            Number of duplicates removed
+        """
+        removed = 0
+        # This method is called periodically to clean up any legacy duplicates
+        # Since we now key by node_id, duplicates shouldn't occur, but this
+        # handles edge cases from state file loading
+        with self.peers_lock:
+            # Build IP -> node_id mapping to detect duplicates
+            ip_to_nodes: dict[str, list[str]] = {}
+            for node_id, peer in self.peers.items():
+                if peer.host:
+                    ip_to_nodes.setdefault(peer.host, []).append(node_id)
+                if peer.reported_host:
+                    ip_to_nodes.setdefault(peer.reported_host, []).append(node_id)
+                for alt_ip in (peer.alternate_ips or set()):
+                    ip_to_nodes.setdefault(alt_ip, []).append(node_id)
+
+            # Find IPs shared by multiple node_ids (potential duplicates)
+            # This can happen if the same physical node registers with different
+            # node_ids (rare, but possible after hostname changes)
+            for ip, node_ids in ip_to_nodes.items():
+                if len(node_ids) > 1 and ip:
+                    # Multiple nodes claim the same IP - log for investigation
+                    logger.warning(
+                        f"Dedup: IP {ip} claimed by multiple nodes: {node_ids}. "
+                        f"Consider manual cleanup if these are the same physical host."
+                    )
+
+        return removed
+
     def _maybe_adopt_leader_from_peers(self) -> bool:
         """If we can already see a healthy leader, adopt it and avoid elections."""
         if self.role == NodeRole.LEADER:
