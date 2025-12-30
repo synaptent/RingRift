@@ -561,6 +561,261 @@ class RingRiftNNUE(nn.Module):
         return model
 
 
+class MultiPlayerNNUE(RingRiftNNUE):
+    """Multi-player NNUE network for MaxN/BRS algorithms.
+
+    Extends RingRiftNNUE to output per-player scores instead of a single scalar.
+    This enables use with multi-player search algorithms like MaxN and BRS
+    that need to evaluate positions from each player's perspective.
+
+    Input: Sparse feature vector (same as RingRiftNNUE)
+    Output: Per-player scores in (batch, num_players) shape
+
+    The scores represent relative advantage for each player, with higher values
+    indicating better positions. Unlike 2-player zero-sum where one player's
+    gain is another's loss, multi-player games require independent evaluations.
+    """
+
+    ARCHITECTURE_VERSION = "v1.0.0-mp"
+
+    def __init__(
+        self,
+        num_players: int = 4,
+        board_type: BoardType = BoardType.SQUARE8,
+        hidden_dim: int = 256,
+        num_hidden_layers: int = 2,
+        use_spectral_norm: bool = False,
+        use_batch_norm: bool = False,
+        num_heads: int = 1,
+        stochastic_depth_prob: float = 0.0,
+    ):
+        """Initialize MultiPlayerNNUE.
+
+        Args:
+            num_players: Number of players in the game (2-4)
+            board_type: Board geometry and size
+            hidden_dim: Hidden layer dimension (default 256)
+            num_hidden_layers: Number of hidden residual blocks (default 2)
+            use_spectral_norm: Apply spectral normalization to linear layers
+            use_batch_norm: Apply batch normalization after accumulator
+            num_heads: Number of attention heads for feature projection
+            stochastic_depth_prob: Drop probability for residual blocks
+        """
+        # Initialize parent with same architecture
+        super().__init__(
+            board_type=board_type,
+            hidden_dim=hidden_dim,
+            num_hidden_layers=num_hidden_layers,
+            use_spectral_norm=use_spectral_norm,
+            use_batch_norm=use_batch_norm,
+            num_heads=num_heads,
+            stochastic_depth_prob=stochastic_depth_prob,
+        )
+
+        self.num_players = num_players
+
+        # Replace single-output layer with multi-player output
+        # Parent creates self.output = nn.Linear(32, 1), we replace it
+        def maybe_spectral_norm(layer: nn.Linear) -> nn.Linear:
+            if use_spectral_norm:
+                return nn.utils.spectral_norm(layer)
+            return layer
+
+        self.output = maybe_spectral_norm(nn.Linear(32, num_players))
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """Forward pass returning per-player scores.
+
+        Args:
+            features: Shape (batch, input_dim) sparse/dense input features
+
+        Returns:
+            Shape (batch, num_players) scores, one per player
+        """
+        # Multi-head or single accumulator projection
+        if self.head_projections is not None:
+            chunk_size = features.shape[-1] // self.num_heads
+            chunks = [
+                features[..., i * chunk_size : (i + 1) * chunk_size]
+                for i in range(self.num_heads)
+            ]
+            head_outputs = [
+                proj(chunk)
+                for proj, chunk in zip(self.head_projections, chunks, strict=False)
+            ]
+            acc = torch.cat(head_outputs, dim=-1)
+        else:
+            acc = self.accumulator(features)
+
+        # Optional batch normalization before activation
+        if self.acc_batch_norm is not None:
+            acc = self.acc_batch_norm(acc)
+
+        # ClippedReLU activation
+        acc = torch.clamp(acc, 0.0, 1.0)
+
+        # Concatenate perspectives
+        x = torch.cat([acc, acc], dim=-1)
+
+        # Hidden layers with residual blocks
+        if self.hidden_blocks:
+            for block in self.hidden_blocks:
+                x = block(x)
+        elif self.hidden is not None:
+            x = self.hidden(x)
+
+        # Output per-player scores (tanh for bounded [-1, 1] range)
+        return torch.tanh(self.output(x))
+
+    def forward_with_hidden(
+        self, features: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass returning both per-player values and hidden features.
+
+        Args:
+            features: Shape (batch, input_dim) sparse/dense input features
+
+        Returns:
+            Tuple of (values, hidden):
+              - values: Shape (batch, num_players) per-player scores
+              - hidden: Shape (batch, 32) last hidden layer features
+        """
+        if self.head_projections is not None:
+            chunk_size = features.shape[-1] // self.num_heads
+            chunks = [
+                features[..., i * chunk_size : (i + 1) * chunk_size]
+                for i in range(self.num_heads)
+            ]
+            head_outputs = [
+                proj(chunk)
+                for proj, chunk in zip(self.head_projections, chunks, strict=False)
+            ]
+            acc = torch.cat(head_outputs, dim=-1)
+        else:
+            acc = self.accumulator(features)
+
+        if self.acc_batch_norm is not None:
+            acc = self.acc_batch_norm(acc)
+
+        acc = torch.clamp(acc, 0.0, 1.0)
+        x = torch.cat([acc, acc], dim=-1)
+
+        if self.hidden_blocks:
+            for block in self.hidden_blocks:
+                x = block(x)
+        elif self.hidden is not None:
+            x = self.hidden(x)
+
+        hidden = x
+        values = torch.tanh(self.output(x))
+        return values, hidden
+
+    def forward_single(self, features: np.ndarray) -> np.ndarray:
+        """Convenience method for single-sample inference.
+
+        Args:
+            features: Shape (input_dim,) numpy array
+
+        Returns:
+            Shape (num_players,) array of per-player scores in [-1, 1]
+        """
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(features[None, ...]).float()
+            device = next(self.parameters()).device
+            x = x.to(device)
+            values = self.forward(x)
+        return values.cpu().numpy()[0]
+
+    def evaluate_for_player(self, features: np.ndarray, player: int) -> float:
+        """Get evaluation score for a specific player.
+
+        Args:
+            features: Shape (input_dim,) numpy array
+            player: Player number (1-indexed, 1 to num_players)
+
+        Returns:
+            Scalar evaluation for that player in [-1, 1]
+        """
+        if not 1 <= player <= self.num_players:
+            raise ValueError(f"Player {player} out of range [1, {self.num_players}]")
+
+        scores = self.forward_single(features)
+        return float(scores[player - 1])  # Convert to 0-indexed
+
+    def evaluate_batch(
+        self, states: list, player_numbers: list[int] | None = None
+    ) -> torch.Tensor:
+        """Batch evaluation for multiple states.
+
+        Args:
+            states: List of game states (must have extract_features_from_gamestate available)
+            player_numbers: Optional list of player perspectives (if None, uses player 1)
+
+        Returns:
+            Shape (batch, num_players) tensor of per-player scores
+        """
+        from app.ai.nnue import extract_features_from_gamestate
+
+        if player_numbers is None:
+            player_numbers = [1] * len(states)
+
+        features_list = [
+            extract_features_from_gamestate(state, pn)
+            for state, pn in zip(states, player_numbers, strict=False)
+        ]
+        features = np.stack(features_list, axis=0)
+
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(features).float()
+            device = next(self.parameters()).device
+            x = x.to(device)
+            return self.forward(x)
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str,
+        board_type: BoardType = BoardType.SQUARE8,
+        num_players: int = 4,
+    ) -> "MultiPlayerNNUE":
+        """Load a multi-player NNUE model from checkpoint.
+
+        Args:
+            checkpoint_path: Path to model checkpoint
+            board_type: Board type for the model
+            num_players: Number of players
+
+        Returns:
+            MultiPlayerNNUE model
+        """
+        checkpoint = safe_load_checkpoint(
+            checkpoint_path, map_location="cpu", warn_on_unsafe=False
+        )
+
+        # Extract architecture params from checkpoint
+        hidden_dim = checkpoint.get("hidden_dim", 256)
+        num_hidden_layers = checkpoint.get("num_hidden_layers", 2)
+        stored_num_players = checkpoint.get("num_players", num_players)
+
+        model = cls(
+            num_players=stored_num_players,
+            board_type=board_type,
+            hidden_dim=hidden_dim,
+            num_hidden_layers=num_hidden_layers,
+        )
+
+        # Load state dict
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            model.load_state_dict(checkpoint)
+
+        model.eval()
+        return model
+
+
 # =============================================================================
 # Feature Extraction
 # =============================================================================

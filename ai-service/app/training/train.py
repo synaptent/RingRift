@@ -179,6 +179,9 @@ from app.training.train_epoch import (
     run_training_epoch,
     run_validation_loop,
 )
+from app.training.train_components import (
+    resolve_train_config,
+)
 
 # Data validation (2025-12) - use unified module
 try:
@@ -920,24 +923,30 @@ def train_model(
         lr_finder_max: Maximum LR for range test (default 1.0)
         lr_finder_iterations: Number of iterations for LR range test (default 100)
     """
-    # Resolve optional parameters from config (use config as source of truth)
-    # This ensures callers that don't pass these params get the config defaults
-    # rather than arbitrary function defaults
-    #
-    # December 2025: Defaults now use thresholds.py values (20 and 15 respectively)
-    # instead of hardcoded 5/10 which caused premature early stopping at ~3-5 epochs.
-    if early_stopping_patience is None:
-        early_stopping_patience = getattr(config, 'early_stopping_patience', EARLY_STOPPING_PATIENCE)
-    if elo_early_stopping_patience is None:
-        elo_early_stopping_patience = getattr(config, 'elo_early_stopping_patience', ELO_PATIENCE)
-    if elo_min_improvement is None:
-        elo_min_improvement = getattr(config, 'elo_min_improvement', 5.0)
-    if warmup_epochs is None:
-        warmup_epochs = getattr(config, 'warmup_epochs', 1)
-    if lr_scheduler is None:
-        lr_scheduler = getattr(config, 'lr_scheduler', 'cosine')
-    if lr_min is None:
-        lr_min = getattr(config, 'lr_min', 1e-6)
+    # Resolve optional parameters using TrainConfigResolver (December 2025)
+    # Provides consistent precedence: explicit param > config attr > default
+    resolved = resolve_train_config(
+        config=config,
+        early_stopping_patience=early_stopping_patience,
+        elo_early_stopping_patience=elo_early_stopping_patience,
+        elo_min_improvement=elo_min_improvement,
+        warmup_epochs=warmup_epochs,
+        lr_scheduler=lr_scheduler,
+        lr_min=lr_min,
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_interval=checkpoint_interval,
+        distributed=distributed,
+        local_rank=local_rank,
+        num_players=num_players,
+    )
+
+    # Extract resolved values for backward compatibility
+    early_stopping_patience = resolved.early_stopping_patience
+    elo_early_stopping_patience = resolved.elo_early_stopping_patience
+    elo_min_improvement = resolved.elo_min_improvement
+    warmup_epochs = resolved.warmup_epochs
+    lr_scheduler = resolved.lr_scheduler
+    lr_min = resolved.lr_min
 
     # Set up distributed training if enabled
     if distributed:
