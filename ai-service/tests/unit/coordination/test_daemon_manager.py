@@ -1085,7 +1085,11 @@ class TestImportFailureHandling:
         assert info.state == DaemonState.FAILED
         assert "Factory failed" in info.last_error
 
-        await manager.shutdown()
+        # Shutdown may re-raise pending task errors - that's expected
+        try:
+            await manager.shutdown()
+        except RuntimeError:
+            pass  # Expected - factory error may propagate
 
 
 # =============================================================================

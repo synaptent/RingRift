@@ -1344,6 +1344,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
         try:
             from app.coordination.event_router import emit_daemon_status_changed
+
+            if emit_daemon_status_changed is None:
+                logger.debug("emit_daemon_status_changed not available, skipping event emission")
+                return
+
             hostname = socket.gethostname()
 
             # Fire and forget - don't block state transitions on event emission
