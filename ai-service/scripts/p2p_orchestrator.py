@@ -604,6 +604,7 @@ from scripts.p2p.constants import (
     PEER_BOOTSTRAP_INTERVAL,
     PEER_BOOTSTRAP_MIN_PEERS,
     PEER_PURGE_AFTER_SECONDS,
+    PEER_RECOVERY_RETRY_INTERVAL,
     PEER_RETIRE_AFTER_SECONDS,
     PEER_TIMEOUT,
     RELAY_COMMAND_MAX_ATTEMPTS,
@@ -616,6 +617,7 @@ from scripts.p2p.constants import (
     RUNAWAY_SELFPLAY_PROCESS_THRESHOLD,
     SPAWN_RATE_LIMIT_PER_MINUTE,
     STALE_PROCESS_CHECK_INTERVAL,
+    STARTUP_GRACE_PERIOD,
     STALE_PROCESS_PATTERNS,
     STARTUP_JSONL_GRACE_PERIOD_SECONDS,
     # State directory
@@ -17760,8 +17762,11 @@ print(json.dumps({{
         3. Hardcoded BOOTSTRAP_SEEDS
         4. Tailscale network scan (fallback)
         """
-        # Wait for initial startup before checking isolation
-        await asyncio.sleep(60)
+        # Dec 30, 2025: Increased startup grace period from 60s to STARTUP_GRACE_PERIOD (180s)
+        # During coordinated cluster restarts via update_all_nodes.py --restart-p2p,
+        # all nodes restart simultaneously and need time to initialize before they
+        # can respond to bootstrap requests. 180s gives ample time for slow nodes.
+        await asyncio.sleep(STARTUP_GRACE_PERIOD)
 
         while self.running:
             try:
@@ -18341,6 +18346,17 @@ print(json.dumps({{
 
                 # Check for dead peers
                 await self._check_dead_peers_async()
+
+                # Dec 30, 2025: Probe retired peers periodically to detect recovery
+                # This runs every PEER_RECOVERY_RETRY_INTERVAL (120s) to actively probe
+                # retired nodes that may have come back online after cluster restart.
+                last_probe = getattr(self, "_last_retired_probe", 0.0)
+                if now - last_probe >= PEER_RECOVERY_RETRY_INTERVAL:
+                    self._last_retired_probe = now
+                    try:
+                        await self._probe_retired_peers_async()
+                    except Exception as e:
+                        logger.warning(f"Error in retired peer probe: {e}")
 
                 # Self-healing: detect network partition and trigger Tailscale-priority mode
                 if self._detect_network_partition():
@@ -19192,6 +19208,79 @@ print(json.dumps({{
         elif self.leader_id:
             # Reset retry count when we have a leader
             self._election_retry_count = 0
+
+    async def _probe_retired_peers_async(self) -> None:
+        """Actively probe retired peers to detect recovery.
+
+        Dec 30, 2025: Added to fix cluster connectivity after restart.
+        Retired nodes don't send heartbeats, so we must probe them.
+        This runs periodically (every PEER_RECOVERY_RETRY_INTERVAL) to
+        detect nodes that have come back online after being retired.
+        """
+        # Collect retired peers (excluding self)
+        async with AsyncLockWrapper(self.peers_lock):
+            retired = [
+                p for p in self.peers.values()
+                if getattr(p, "retired", False) and p.node_id != self.node_id
+            ]
+
+        if not retired:
+            return
+
+        logger.debug(f"Probing {len(retired)} retired peers for recovery")
+
+        # Use a short timeout for health checks
+        timeout = aiohttp.ClientTimeout(total=5)
+
+        for peer in retired:
+            try:
+                # Try to reach the peer's health endpoint
+                url = f"http://{peer.host}:{peer.port}/health"
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            # Node is alive - un-retire it
+                            async with AsyncLockWrapper(self.peers_lock):
+                                if peer.node_id in self.peers:
+                                    self.peers[peer.node_id].retired = False
+                                    self.peers[peer.node_id].retired_at = 0.0
+                                    self.peers[peer.node_id].last_heartbeat = time.time()
+
+                            logger.info(f"Recovered retired peer via probe: {peer.node_id}")
+
+                            # Emit HOST_ONLINE event
+                            caps = []
+                            if hasattr(peer, "gpu_type") and peer.gpu_type:
+                                caps.append(f"gpu:{peer.gpu_type}")
+                            await self._emit_host_online(peer.node_id, caps)
+
+                            # Emit CLUSTER_CAPACITY_CHANGED
+                            async with AsyncLockWrapper(self.peers_lock):
+                                alive_count = sum(
+                                    1 for p in self.peers.values()
+                                    if p.is_alive() and not getattr(p, "retired", False)
+                                )
+                                gpu_count = sum(
+                                    1 for p in self.peers.values()
+                                    if p.is_alive() and not getattr(p, "retired", False)
+                                    and getattr(p, "gpu_type", None)
+                                )
+                            asyncio.create_task(self._emit_cluster_capacity_changed(
+                                change_type="node_added",
+                                node_id=peer.node_id,
+                                total_nodes=alive_count,
+                                gpu_nodes=gpu_count,
+                                reason="peer_recovered_via_probe",
+                            ))
+
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                # Still unreachable - remain retired
+                logger.debug(f"Retired peer {peer.node_id} still unreachable: {e}")
+                continue
+            except Exception as e:
+                # Unexpected error - log but don't crash
+                logger.warning(f"Error probing retired peer {peer.node_id}: {e}")
+                continue
 
     def _check_dead_peers(self):
         """Check for peers that have stopped responding."""
