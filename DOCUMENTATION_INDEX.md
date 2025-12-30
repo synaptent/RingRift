@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-29
+> **Last Updated:** 2025-12-30
 > **Organization:** Core docs in root, organized subdirectories in `/docs/` and `/ai-service/docs/`
 
 This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.
@@ -391,6 +391,20 @@ Key docs and tools for TS↔Python parity, replay analysis, and replay DB health
 | [ai-service/app/distributed/CLUSTER_MONITOR_QUICKSTART.md](ai-service/app/distributed/CLUSTER_MONITOR_QUICKSTART.md) | Cluster monitor quick reference                 |
 | [ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md](ai-service/docs/architecture/NEURAL_AI_ARCHITECTURE.md)     | Neural network architecture (RingRiftCNN)       |
 | [ai-service/docs/architecture/MPS_ARCHITECTURE.md](ai-service/docs/architecture/MPS_ARCHITECTURE.md)                 | Apple Silicon MPS-compatible architecture       |
+
+### Event System (AI Service)
+
+| Document                                                                                                               | Purpose                                 |
+| ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| [ai-service/docs/EVENT_REFERENCE_AUTO.md](ai-service/docs/EVENT_REFERENCE_AUTO.md)                                     | Auto-generated canonical event list     |
+| [ai-service/docs/EVENT_CATALOG.md](ai-service/docs/EVENT_CATALOG.md)                                                   | Event emitter/subscriber catalog        |
+| [ai-service/docs/EVENT_SYSTEM_REFERENCE.md](ai-service/docs/EVENT_SYSTEM_REFERENCE.md)                                 | Event system usage and wiring reference |
+| [ai-service/docs/EVENT_REFERENCE.md](ai-service/docs/EVENT_REFERENCE.md)                                               | Curated event overview                  |
+| [ai-service/docs/EVENT_QUICK_REFERENCE.md](ai-service/docs/EVENT_QUICK_REFERENCE.md)                                   | One-page event quick reference          |
+| [ai-service/docs/EVENT_WIRING_DIAGRAM.md](ai-service/docs/EVENT_WIRING_DIAGRAM.md)                                     | Event flow diagrams                     |
+| [ai-service/docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md](ai-service/docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md) | Critical event wiring matrix            |
+| [ai-service/docs/runbooks/EVENT_WIRING_VERIFICATION.md](ai-service/docs/runbooks/EVENT_WIRING_VERIFICATION.md)         | Wiring verification runbook             |
+| [ai-service/docs/runbooks/EVENT_DEBUGGING.md](ai-service/docs/runbooks/EVENT_DEBUGGING.md)                             | Event debugging runbook                 |
 
 ### Training Pipeline (Active - Dec 2025)
 

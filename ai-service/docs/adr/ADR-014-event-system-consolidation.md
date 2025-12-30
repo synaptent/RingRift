@@ -9,7 +9,7 @@
 The RingRift AI service has evolved to include three separate event bus systems:
 
 1. **`event_router.py`** - Primary in-memory event bus
-   - `DataEventType` enum with 207 event types
+   - `DataEventType` enum with 202 event types
    - `get_event_bus()` / `get_router()` accessors
    - Supports async handlers with fire-and-forget
 

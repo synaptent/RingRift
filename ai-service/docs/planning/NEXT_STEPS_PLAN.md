@@ -128,20 +128,20 @@ def _ssh_with_budget(self, cmd, budget: SyncOperationBudget, retries=2):
 | `priority_calculator.py`       | 25+ tests | ✅ Complete |
 | `budget_calculator.py`         | 20+ tests | ✅ Complete |
 
-**Remaining gaps (lower priority):**
+**Previously listed as gaps (now covered - Dec 30, 2025):**
 
-1. `event_router.py` (926 lines) - Event routing backbone
-2. `pipeline_actions.py` (853 lines) - Pipeline stage invokers
+1. `event_router.py` (926 lines) - ✅ 670-line test file
+2. `pipeline_actions.py` (853 lines) - ✅ 1,051-line test file
 
-### 2.2 Distributed Module Tests (32 gaps)
+### 2.2 Distributed Module Tests - MOSTLY COMPLETE
 
-**Most critical untested modules:**
+**Previously listed as critical (now covered - Dec 30, 2025):**
 
-1. `circuit_breaker.py` - Fault tolerance
-2. `cluster_coordinator.py` - Cluster orchestration
-3. `sync_coordinator.py` - Data synchronization
+1. `circuit_breaker.py` - ✅ 826-line test file
+2. `cluster_coordinator.py` - ❌ Still needs tests
+3. `sync_coordinator.py` - ✅ 1,170-line test file
 
-**Approach:** Test circuit breaker first as it's used by many other modules.
+**Remaining gap:** Only `cluster_coordinator.py` lacks dedicated tests.
 
 ### 2.3 Core Module Tests
 

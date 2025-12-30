@@ -72,7 +72,7 @@ Fix: Batch CPU transfer before loop (pattern exists at line 1061)
 
 Issues:
 
-- 207 event types across 15 files
+- 202 event types across 15 files
 - Inconsistent naming: `TRAINING_COMPLETED` vs `sync_completed`
 - Missing subscriber wiring discovered Dec 27
 

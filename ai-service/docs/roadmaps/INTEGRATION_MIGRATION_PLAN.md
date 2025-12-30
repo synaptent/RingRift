@@ -129,7 +129,7 @@ All EloService migration tasks have been completed:
 
 **Implemented:**
 
-- `app/distributed/data_events.py` - Full event type definitions (DataEventType enum with 207 event types)
+- `app/distributed/data_events.py` - Full event type definitions (DataEventType enum with 202 event types)
 - `app/distributed/event_helpers.py` - Safe wrappers (`emit_*_safe()` functions)
 - Legacy `unified_ai_loop.py` - Has its own EventBus + StageEventBus integration
 - 12+ scripts import and use the event system

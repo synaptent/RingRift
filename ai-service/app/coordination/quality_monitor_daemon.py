@@ -117,10 +117,31 @@ class QualityMonitorDaemon(HandlerBase):
         """Return event subscriptions for HandlerBase.
 
         Subscribes to QUALITY_CHECK_REQUESTED for on-demand quality checks.
+        December 30, 2025: Added EVALUATION_STARTED to track evaluation timing.
         """
         return {
             "quality_check_requested": self._on_quality_check_requested,
+            "evaluation_started": self._on_evaluation_started,
         }
+
+    async def _on_evaluation_started(self, event) -> None:
+        """Handle EVALUATION_STARTED event to track evaluation timing.
+
+        December 30, 2025: Added to close the feedback loop gap.
+        When evaluation starts, we track the config to monitor evaluation duration.
+
+        Args:
+            event: Event with payload containing config_key, model_path, etc.
+        """
+        payload = self._get_payload(event)
+        config_key = self._extract_config_key(payload)
+        model_path = self._extract_model_path(payload)
+
+        if config_key and config_key != "unknown":
+            self._stats["evaluations_tracked"] = self._stats.get("evaluations_tracked", 0) + 1
+            logger.debug(
+                f"[QualityMonitorDaemon] Tracking evaluation for {config_key}: {model_path}"
+            )
 
     async def _on_quality_check_requested(self, event) -> None:
         """Handle on-demand quality check requests (Phase 9).

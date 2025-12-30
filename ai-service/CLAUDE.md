@@ -883,3 +883,107 @@ The following have been verified as COMPLETE and should NOT be reimplemented:
 7. **NPZ_COMBINATION_COMPLETE → Training** - training_trigger_daemon.py:446,640 already wired
 8. **TRAINING_BLOCKED_BY_QUALITY sync** - 4+ subscribers already wired (verified Dec 30, 2025)
 9. **CURRICULUM_REBALANCED handler** - selfplay_scheduler.py:2413 updates weights, is NOT passive
+
+## High-Value Improvement Priorities (Dec 30, 2025)
+
+Comprehensive exploration identified these TOP 5 highest-value improvements for future work:
+
+### Priority 1: Resilience Framework Consolidation (P0)
+
+**Current State**: 15+ daemons have custom retry/circuit-breaker logic scattered throughout
+**Proposed**: Unified `ResilienceFramework` base class
+
+| Metric        | Current  | Target    |
+| ------------- | -------- | --------- |
+| Bug reduction | Baseline | -15-20%   |
+| LOC savings   | 0        | 800-1,200 |
+| Effort        | -        | ~24 hours |
+
+**Key files to consolidate**:
+
+- `evaluation_daemon.py` retry logic
+- `training_coordinator.py` circuit breakers
+- `auto_sync_daemon.py` backoff patterns
+- 12+ other daemons with similar patterns
+
+### Priority 2: Async Primitives Standardization (P0)
+
+**Current State**: Mix of `asyncio.to_thread()`, raw subprocess calls, and sync DB operations
+**Proposed**: Standardized async wrappers for all blocking operations
+
+| Metric          | Current  | Target      |
+| --------------- | -------- | ----------- |
+| Extension speed | Baseline | +40% faster |
+| LOC savings     | 0        | 1,500-2,000 |
+| Effort          | -        | ~32 hours   |
+
+**Primitives needed**:
+
+- `async_subprocess_run()` - Already used in some places, standardize everywhere
+- `async_sqlite_execute()` - Replace raw `sqlite3.connect()` in async contexts
+- `async_file_io()` - For large file operations
+
+### Priority 3: Event Extraction Consolidation (P0)
+
+**Current State**: `event_utils.py` created but not fully adopted (16 files still have inline parsing)
+**Proposed**: Complete migration to unified event extraction
+
+| Metric          | Current  | Target      |
+| --------------- | -------- | ----------- |
+| Elo improvement | Baseline | +12-18 Elo  |
+| LOC savings     | 0        | 2,000-2,500 |
+| Effort          | -        | ~20 hours   |
+
+**Files to migrate**:
+
+- `training_trigger_daemon.py` - Inline `config_key` parsing
+- `curriculum_feedback.py` - Inline `board_type/num_players` extraction
+- 14 other handlers with duplicate extraction logic
+
+### Priority 4: Test Fixture Consolidation (P1)
+
+**Current State**: 230+ test files with repeated mock setup code
+**Proposed**: Shared test fixtures for common patterns
+
+| Metric             | Current  | Target    |
+| ------------------ | -------- | --------- |
+| Event bugs caught  | Baseline | +30-40%   |
+| Test creation time | Baseline | -50%      |
+| Effort             | -        | ~40 hours |
+
+**Fixtures to create**:
+
+- `MockEventRouter` - Standard event bus mock
+- `MockDaemonManager` - Daemon lifecycle testing
+- `MockP2PCluster` - Distributed scenario testing
+- `MockGameEngine` - Game state testing
+
+### Priority 5: Training Signal Pipeline (P0)
+
+**Current State**: Training signals (quality, Elo velocity, regression) flow through multiple hops
+**Proposed**: Direct signal pipeline from source to consumer
+
+| Metric          | Current  | Target      |
+| --------------- | -------- | ----------- |
+| Elo improvement | Baseline | +25-40 Elo  |
+| LOC savings     | 0        | 2,000-2,500 |
+| Effort          | -        | ~28 hours   |
+
+**Signal paths to optimize**:
+
+- Quality score → Training weight (currently 3 hops, should be 1)
+- Elo velocity → Selfplay allocation (currently 2 hops, should be 1)
+- Regression detection → Curriculum adjustment (currently 4 hops, should be 2)
+
+### Implementation Order
+
+For maximum ROI, implement in this order:
+
+1. **Event Extraction** (20h) - Quickest win, immediate Elo benefit
+2. **Resilience Framework** (24h) - Reduces bug rate across all daemons
+3. **Training Signal Pipeline** (28h) - Largest Elo improvement
+4. **Async Primitives** (32h) - Enables faster development
+5. **Test Fixtures** (40h) - Improves long-term quality
+
+**Total estimated effort**: ~144 hours
+**Expected cumulative benefit**: +37-58 Elo, ~8,000 LOC savings, 15-20% bug reduction

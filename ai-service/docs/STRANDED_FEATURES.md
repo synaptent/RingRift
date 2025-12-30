@@ -224,8 +224,12 @@ Last updated: 2025-12-21
 
 ### 6.2 Missing Test Coverage
 
-- `gumbel_mcts_ai.py` visit distribution tests
-- `gmo_ai.py`, `gmo_v2.py`, `ig_gmo.py` unit tests
+**Updated Dec 30, 2025:** Most AI modules now have tests:
+
+- `gumbel_mcts_ai.py` - ✅ 419-line test file
+- `gmo_ai.py` - ✅ 620-line test file
+- `gmo_v2.py` - ❌ Still needs tests
+- `ig_gmo.py` - ❌ Still needs tests
 - GPU batching parity tests (shadow validation exists but not in CI)
 
 ---

@@ -127,12 +127,38 @@ class CurriculumFeedbackHandler(HandlerBase):
             cls._instance = None
 
     def _get_event_subscriptions(self) -> dict[str, callable]:
-        """Return event subscriptions for this handler."""
+        """Return event subscriptions for this handler.
+
+        December 30, 2025: Added EVALUATION_STARTED to prepare curriculum updates.
+        """
         return {
             "SELFPLAY_QUALITY_ASSESSED": self._on_selfplay_quality_assessed,
             "TRAINING_METRICS_AVAILABLE": self._on_training_metrics_available,
             "TRAINING_COMPLETED": self._on_training_completed,
+            "evaluation_started": self._on_evaluation_started,
         }
+
+    async def _on_evaluation_started(self, event) -> None:
+        """Handle EVALUATION_STARTED event to prepare curriculum updates.
+
+        December 30, 2025: Added to close the feedback loop gap.
+        When evaluation starts, we can pre-compute curriculum adjustments
+        that will be applied once EVALUATION_COMPLETED arrives.
+
+        Args:
+            event: Event with payload containing config_key, model_path, etc.
+        """
+        payload = self._get_payload(event)
+        config_key = self._extract_config_key(payload)
+
+        if config_key and config_key != "unknown":
+            # Mark that evaluation is in progress for this config
+            state = self._get_or_create_state(config_key)
+            state.evaluation_in_progress = True
+            logger.debug(
+                f"[CurriculumFeedbackHandler] Evaluation started for {config_key}, "
+                f"preparing curriculum updates"
+            )
 
     async def _run_cycle(self) -> None:
         """Run one cycle of the curriculum feedback handler.
