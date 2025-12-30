@@ -6,6 +6,8 @@
 >
 > **Last Validated:** 2025-12-23
 >
+> **Update (2025-12-30):** The backend now exposes `/metrics` when `ENABLE_METRICS=true` (default). Treat earlier PV-11 notes about missing web-app instrumentation as historical; re-validate Prometheus scrape config in staging.
+>
 > **References:**
 >
 > - [`PRODUCTION_VALIDATION_REMEDIATION_PLAN.md`](../planning/PRODUCTION_VALIDATION_REMEDIATION_PLAN.md) - Full remediation details
@@ -17,14 +19,14 @@
 
 ## Quick Reference: Validation Status Summary
 
-| Category              | Status     | Key Metric                              |
-| --------------------- | ---------- | --------------------------------------- |
-| Pre-Deploy Tests      | ✅ PASS    | All test suites passing                 |
-| Load Test Validation  | ✅ PASS    | 14.68ms p95, 0% true errors             |
-| AI Service Validation | ✅ PASS    | 10s recovery time                       |
-| Observability         | ⚠️ PARTIAL | Grafana works, web app not instrumented |
-| Security              | ✅ PASS    | Rate limiting, TLS configured           |
-| Infrastructure        | ✅ PASS    | Docker builds successful                |
+| Category              | Status    | Key Metric                                   |
+| --------------------- | --------- | -------------------------------------------- |
+| Pre-Deploy Tests      | ✅ PASS   | All test suites passing                      |
+| Load Test Validation  | ✅ PASS   | 14.68ms p95, 0% true errors                  |
+| AI Service Validation | ✅ PASS   | 10s recovery time                            |
+| Observability         | ⚠️ VERIFY | Grafana works; confirm app `/metrics` scrape |
+| Security              | ✅ PASS   | Rate limiting, TLS configured                |
+| Infrastructure        | ✅ PASS   | Docker builds successful                     |
 
 ---
 
@@ -237,18 +239,18 @@ npx ts-node scripts/run-ai-degradation-drill.ts
 
 ### 4.3 Dashboard Data Status
 
-| Dashboard                   | Data Status  | Notes                              |
-| --------------------------- | ------------ | ---------------------------------- |
-| RingRift AI Cluster         | ✅ Live data | Self-play metrics, GPU utilization |
-| RingRift - Game Performance | ⚠️ Partial   | AI cluster data only               |
-| RingRift - System Health    | ⚠️ No data   | Web app not instrumented           |
-| Integration Health          | ⚠️ Partial   | Some metrics available             |
+| Dashboard                   | Data Status  | Notes                                 |
+| --------------------------- | ------------ | ------------------------------------- |
+| RingRift AI Cluster         | ✅ Live data | Self-play metrics, GPU utilization    |
+| RingRift - Game Performance | ⚠️ Partial   | AI cluster data only                  |
+| RingRift - System Health    | ⚠️ Verify    | App metrics require `/metrics` scrape |
+| Integration Health          | ⚠️ Partial   | Some metrics available                |
 
-**Known Gap (Non-Blocking for v1.0):**
+**Current requirement (non-blocking for v1.0):**
 
-- Web app not instrumented with Prometheus metrics
-- System Health dashboard shows "No data" for HTTP/WebSocket metrics
-- k6 load test results provide required SLO data as alternative
+- Ensure the web app `/metrics` endpoint is exposed and scraped by Prometheus.
+- If app metrics are unavailable, System Health dashboards may show "No data".
+- k6 load test results can still provide required SLO data as a fallback.
 
 **Checklist:**
 
@@ -489,10 +491,10 @@ The following gaps were identified during validation but are **not blocking** fo
 
 ### Optional/Informational Validations
 
-| Validation         | PV Task | Status     | Notes                                      |
-| ------------------ | ------- | ---------- | ------------------------------------------ |
-| AI-heavy load test | PV-09   | ⚠️ PARTIAL | WebSocket passed, Python AI not tested     |
-| Grafana dashboards | PV-11   | ⚠️ PARTIAL | AI cluster works, web app not instrumented |
+| Validation         | PV Task | Status     | Notes                                           |
+| ------------------ | ------- | ---------- | ----------------------------------------------- |
+| AI-heavy load test | PV-09   | ⚠️ PARTIAL | WebSocket passed, Python AI not tested          |
+| Grafana dashboards | PV-11   | ⚠️ VERIFY  | AI cluster works; confirm app `/metrics` scrape |
 
 ---
 

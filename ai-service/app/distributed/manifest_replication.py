@@ -132,15 +132,29 @@ class ManifestReplicator:
         return checksum, stat.st_mtime, stat.st_size
 
     def _build_ssh_args(self, host: ReplicaHost) -> str:
-        """Build SSH arguments string."""
-        args = [
-            f"-o ConnectTimeout={self.ssh_timeout}",
-            "-o StrictHostKeyChecking=no",
-            "-o BatchMode=yes",
-        ]
-        if host.ssh_port != 22:
-            args.append(f"-p {host.ssh_port}")
-        return " ".join(args)
+        """Build SSH arguments string.
+
+        Dec 30, 2025: Uses centralized SSH config for consistent timeouts.
+        """
+        if HAS_SSH_CONFIG and build_ssh_options:
+            # Use centralized config - returns "ssh -o ..." string
+            ssh_opts = build_ssh_options(
+                key_path=None,  # Use default key
+                port=host.ssh_port if host.ssh_port != 22 else None,
+                include_keepalive=False,  # Use batch mode for replication
+            )
+            # Extract just the options part (remove "ssh " prefix)
+            return ssh_opts.replace("ssh ", "") + " -o BatchMode=yes"
+        else:
+            # Fallback
+            args = [
+                f"-o ConnectTimeout={self.ssh_timeout}",
+                "-o StrictHostKeyChecking=no",
+                "-o BatchMode=yes",
+            ]
+            if host.ssh_port != 22:
+                args.append(f"-p {host.ssh_port}")
+            return " ".join(args)
 
     async def _replicate_to_host(self, host: ReplicaHost) -> bool:
         """Replicate manifest to a single host.
