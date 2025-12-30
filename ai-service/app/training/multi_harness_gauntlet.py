@@ -21,6 +21,11 @@ Harness Types:
     - maxn: Max-N search (multi-player)
     - brs: Best-Reply Search (multi-player)
 
+December 2025: Updated to integrate with Phase 1 harness abstraction layer.
+- Uses app.ai.harness for unified harness creation
+- Integrates with NNUE baseline opponents for evaluation
+- Captures visit distributions for soft policy targets
+
 Usage:
     from app.training.multi_harness_gauntlet import MultiHarnessGauntlet
 
@@ -603,3 +608,89 @@ def register_multi_harness_results(
     except ImportError as e:
         logger.warning(f"Could not register results: {e}")
         return {}
+
+
+# ============================================
+# Phase 1 Harness Integration (Dec 2025)
+# ============================================
+
+
+def get_harness_compatibility_from_registry(
+    model_path: str | Path,
+) -> dict[str, list[str]]:
+    """Get harness compatibility using Phase 1 harness registry.
+
+    This bridges the multi-harness gauntlet with the unified harness
+    abstraction layer from Phase 1.
+
+    Args:
+        model_path: Path to model checkpoint
+
+    Returns:
+        Dictionary with model type and compatible harnesses
+    """
+    try:
+        from app.ai.harness import (
+            HarnessType as HT,
+            ModelType as MT,
+            get_compatible_harnesses,
+        )
+
+        path_str = str(model_path).lower()
+
+        # Detect model type
+        if "nnue" in path_str:
+            model_type = MT.NNUE
+        elif path_str.endswith(".pth") or path_str.endswith(".pt"):
+            model_type = MT.NEURAL_NET
+        else:
+            model_type = MT.HEURISTIC
+
+        compatible = get_compatible_harnesses(model_type)
+
+        return {
+            "model_type": model_type.value,
+            "compatible_harnesses": [h.value for h in compatible],
+        }
+    except ImportError as e:
+        logger.debug(f"Harness registry not available: {e}")
+        return {"model_type": "unknown", "compatible_harnesses": []}
+
+
+def create_harness_for_evaluation(
+    harness_type: str,
+    model_path: str | Path,
+    board_type: str,
+    num_players: int,
+) -> Any:
+    """Create a harness instance using Phase 1 factory.
+
+    This uses the unified harness creation from the Phase 1 harness
+    abstraction layer, providing consistent configuration.
+
+    Args:
+        harness_type: Harness type string (e.g., "gumbel_mcts")
+        model_path: Path to model checkpoint
+        board_type: Board type string
+        num_players: Number of players
+
+    Returns:
+        AIHarness instance ready for evaluation
+    """
+    try:
+        from app.ai.harness import HarnessType as HT, create_harness
+        from app.models import BoardType as BT
+
+        harness = create_harness(
+            harness_type=HT(harness_type),
+            model_path=model_path,
+            board_type=BT(board_type),
+            num_players=num_players,
+        )
+        return harness
+    except ImportError as e:
+        raise ImportError(f"Harness registry not available: {e}") from e
+
+
+# Backwards-compatible aliases for existing code
+run_multi_harness_evaluation = evaluate_model_all_harnesses

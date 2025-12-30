@@ -745,14 +745,22 @@ class TournamentDaemon:
                 for game_num in range(games_per_matchup):
                     try:
                         # Alternate which player is "stronger" for position fairness
+                        # Dec 29: Fixed argument order (baseline, player, board_type, num_players)
                         if game_num % 2 == 0:
-                            player_0_ai = create_baseline_ai(stronger, board_type, num_players)
-                            player_1_ai = create_baseline_ai(weaker, board_type, num_players)
+                            player_0_ai = create_baseline_ai(
+                                stronger, 1, board_type, num_players=num_players
+                            )
+                            player_1_ai = create_baseline_ai(
+                                weaker, 2, board_type, num_players=num_players
+                            )
                             stronger_player = 0
                         else:
-                            player_0_ai = create_baseline_ai(weaker, board_type, num_players)
-                            player_1_ai = create_baseline_ai(stronger, board_type, num_players)
-                            stronger_player = 1
+                            player_0_ai = create_baseline_ai(
+                                weaker, 1, board_type, num_players=num_players
+                            )
+                            player_1_ai = create_baseline_ai(
+                                stronger, 2, board_type, num_players=num_players
+                            )
 
                         game_result = play_single_game(
                             board_type=board_type,

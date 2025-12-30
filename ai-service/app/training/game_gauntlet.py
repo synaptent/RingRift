@@ -188,10 +188,19 @@ class BaselineOpponent(Enum):
         HEURISTIC:        ~1200 Elo (handcrafted evaluation, difficulty 5)
         HEURISTIC_STRONG: ~1400 Elo (difficulty 8, deeper search)
         MCTS_LIGHT:       ~1500 Elo (MCTS with 32 simulations)
+        NNUE_BRS_D3:      ~1550 Elo (NNUE + BRS depth 3, multiplayer)
+        NNUE_MINIMAX_D4:  ~1600 Elo (NNUE + Minimax depth 4, 2-player)
+        NNUE_MAXN_D3:     ~1650 Elo (NNUE + MaxN depth 3, multiplayer)
         MCTS_MEDIUM:      ~1700 Elo (MCTS with 128 simulations)
         MCTS_STRONG:      ~1900 Elo (MCTS with 512 simulations)
         MCTS_MASTER:      ~2000 Elo (MCTS with 1024 simulations) - Dec 28
         MCTS_GRANDMASTER: ~2100 Elo (MCTS with 2048 simulations) - Dec 28
+
+    December 2025: Added NNUE baselines for unified harness evaluation.
+    NNUE baselines evaluate models under different search harnesses:
+        - NNUE_MINIMAX_D4: Best for 2-player games (alpha-beta pruning)
+        - NNUE_MAXN_D3: Accurate multiplayer (each player maximizes)
+        - NNUE_BRS_D3: Fast multiplayer (greedy best reply)
     """
     RANDOM = "random"
     HEURISTIC = "heuristic"
@@ -201,6 +210,10 @@ class BaselineOpponent(Enum):
     MCTS_STRONG = "mcts_strong"
     MCTS_MASTER = "mcts_master"              # Dec 28: 2000+ Elo
     MCTS_GRANDMASTER = "mcts_grandmaster"    # Dec 28: 2100+ Elo
+    # Dec 29: NNUE baseline opponents for unified harness evaluation
+    NNUE_MINIMAX_D4 = "nnue_minimax_d4"      # NNUE under minimax depth 4
+    NNUE_MAXN_D3 = "nnue_maxn_d3"            # NNUE under MaxN depth 3 (3+ players)
+    NNUE_BRS_D3 = "nnue_brs_d3"              # NNUE under BRS depth 3 (3+ players)
 
 
 # ============================================
@@ -420,6 +433,12 @@ class GauntletResult:
     early_stopped_baselines: list[str] = field(default_factory=list)
     games_saved_by_early_stopping: int = 0
 
+    # Harness metadata (December 2025 - Phase 2)
+    harness_type: str = ""  # e.g., "gumbel_mcts", "minimax", "maxn"
+    harness_config_hash: str = ""  # Configuration hash for Elo tracking
+    model_id: str = ""  # Composite participant ID for Elo
+    visit_distributions: list[dict[str, float]] = field(default_factory=list)  # For soft targets
+
 
 def create_baseline_ai(
     baseline: BaselineOpponent,
@@ -427,6 +446,7 @@ def create_baseline_ai(
     board_type: Any,  # BoardType
     difficulty: int | None = None,
     game_seed: int | None = None,
+    num_players: int = 2,
 ) -> Any:
     """Create an AI instance for a baseline opponent.
 
@@ -436,6 +456,7 @@ def create_baseline_ai(
         board_type: Board type enum
         difficulty: Optional difficulty override
         game_seed: Optional seed for RNG variation per game
+        num_players: Number of players in the game (for NNUE multiplayer baselines)
 
     Returns:
         AI instance ready to play
@@ -535,6 +556,80 @@ def create_baseline_ai(
             rngSeed=ai_rng_seed,
         )
         return MCTSAI(player, config)
+
+    # ========================================
+    # Dec 29, 2025: NNUE Baseline Opponents
+    # These enable unified harness evaluation (Phase 2)
+    # ========================================
+
+    elif baseline == BaselineOpponent.NNUE_MINIMAX_D4:
+        # NNUE under Minimax depth 4 (~1600 Elo) - best for 2-player games
+        from app.ai.minimax_ai import MinimaxAI
+        config = AIConfig(
+            ai_type=AIType.MINIMAX,
+            board_type=board_type,
+            difficulty=difficulty or 7,
+            use_neural_net=True,  # Enable NNUE evaluation
+            rngSeed=ai_rng_seed,
+        )
+        ai = MinimaxAI(player, config)
+        # Override depth to 4 for consistent baseline
+        ai._max_depth = 4
+        return ai
+
+    elif baseline == BaselineOpponent.NNUE_MAXN_D3:
+        # NNUE under MaxN depth 3 (~1650 Elo) - accurate multiplayer search
+        if num_players < 3:
+            # Fall back to Minimax for 2-player games
+            logger.warning(
+                f"NNUE_MAXN_D3 is for 3+ players, using NNUE_MINIMAX_D4 for 2-player"
+            )
+            return create_baseline_ai(
+                BaselineOpponent.NNUE_MINIMAX_D4, player, board_type,
+                difficulty, game_seed, num_players
+            )
+
+        from app.ai.nnue_search_ai import NNUEMaxNAI
+        config = AIConfig(
+            ai_type=AIType.HEURISTIC,  # Base type, NNUE is injected
+            board_type=board_type,
+            difficulty=difficulty or 7,
+            rngSeed=ai_rng_seed,
+        )
+        ai = NNUEMaxNAI(
+            player_number=player,
+            config=config,
+            board_type=board_type,
+            num_players=num_players,
+        )
+        return ai
+
+    elif baseline == BaselineOpponent.NNUE_BRS_D3:
+        # NNUE under BRS depth 3 (~1550 Elo) - fast multiplayer search
+        if num_players < 3:
+            # Fall back to Minimax for 2-player games
+            logger.warning(
+                f"NNUE_BRS_D3 is for 3+ players, using NNUE_MINIMAX_D4 for 2-player"
+            )
+            return create_baseline_ai(
+                BaselineOpponent.NNUE_MINIMAX_D4, player, board_type,
+                difficulty, game_seed, num_players
+            )
+
+        from app.ai.nnue_search_ai import NNUEBRSAI
+        config = AIConfig(
+            ai_type=AIType.HEURISTIC,  # Base type, NNUE is injected
+            board_type=board_type,
+            difficulty=difficulty or 6,
+            rngSeed=ai_rng_seed,
+        )
+        ai = NNUEBRSAI(
+            player_number=player,
+            config=config,
+            board_type=board_type,
+            num_players=num_players,
+        )
+        return ai
 
     else:
         raise ValueError(f"Unknown baseline: {baseline}")
@@ -938,6 +1033,7 @@ def _play_single_gauntlet_game(
                 opponent_ais[p] = create_baseline_ai(
                     baseline, p, board_type,
                     game_seed=game_seed,
+                    num_players=num_players,
                 )
 
         first_opponent = (candidate_player % num_players) + 1
@@ -1130,6 +1226,7 @@ def _evaluate_single_opponent(
                     opponent_ais[p] = create_baseline_ai(
                         baseline, p, board_type,
                         game_seed=game_seed,
+                        num_players=num_players,
                     )
 
             # For backwards compatibility, also pass opponent_ai (player after candidate)
@@ -1741,8 +1838,14 @@ async def run_baseline_calibration(
 
             game_seed = random.randint(0, 0xFFFFFFFF)
 
-            ai_a = create_baseline_ai(baseline_a, player_a, board_type, game_seed=game_seed)
-            ai_b = create_baseline_ai(baseline_b, player_b, board_type, game_seed=game_seed)
+            ai_a = create_baseline_ai(
+                baseline_a, player_a, board_type,
+                game_seed=game_seed, num_players=num_players
+            )
+            ai_b = create_baseline_ai(
+                baseline_b, player_b, board_type,
+                game_seed=game_seed, num_players=num_players
+            )
 
             # Build player_ais dict for multiplayer
             player_ais = {player_a: ai_a, player_b: ai_b}
@@ -1751,7 +1854,8 @@ async def run_baseline_calibration(
             for p in range(1, num_players + 1):
                 if p not in player_ais:
                     player_ais[p] = create_baseline_ai(
-                        BaselineOpponent.RANDOM, p, board_type, game_seed=game_seed
+                        BaselineOpponent.RANDOM, p, board_type,
+                        game_seed=game_seed, num_players=num_players
                     )
 
             # Play the game
