@@ -198,11 +198,14 @@ class TestEventSubscription:
 
         mock_router = MagicMock()
         mock_router.subscribe.return_value = "subscription_id"
-        mock_get_router = MagicMock(return_value=mock_router)
 
-        with patch(
-            "app.coordination.event_router.get_event_router",
-            mock_get_router,
+        # Mock the entire module import that happens inside _subscribe_to_events
+        mock_event_router_module = MagicMock()
+        mock_event_router_module.get_event_router.return_value = mock_router
+
+        with patch.dict(
+            "sys.modules",
+            {"app.coordination.event_router": mock_event_router_module},
         ):
             manager._subscribe_to_events()
 
@@ -223,9 +226,12 @@ class TestEventSubscription:
 
         mock_router = MagicMock()
 
-        with patch(
-            "app.coordination.event_router.get_event_router",
-            return_value=mock_router,
+        mock_event_router_module = MagicMock()
+        mock_event_router_module.get_event_router.return_value = mock_router
+
+        with patch.dict(
+            "sys.modules",
+            {"app.coordination.event_router": mock_event_router_module},
         ):
             manager._unsubscribe_from_events()
 

@@ -60,8 +60,7 @@ def export_curriculum_weights(weights: dict[str, float]) -> bool:
         temp_path.rename(CURRICULUM_WEIGHTS_PATH)
         return True
     except Exception as e:
-        # Use print for backwards compatibility (no logger dependency)
-        print(f"[Curriculum] Failed to export weights: {e}")
+        logger.error(f"Failed to export curriculum weights: {e}")
         return False
 
 

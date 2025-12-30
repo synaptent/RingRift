@@ -2,6 +2,8 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
+**Last Updated**: December 29, 2025
+
 ## Project Overview
 
 RingRift is a multiplayer territory control game. The Python `ai-service` mirrors the TypeScript engine (`src/shared/engine/`) for training data generation and must maintain **parity** with it.

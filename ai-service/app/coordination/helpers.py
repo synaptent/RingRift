@@ -520,8 +520,10 @@ def warn_if_orchestrator_running(daemon_name: str = "daemon") -> None:
         if registry.is_role_held(_OrchestratorRole.UNIFIED_LOOP):
             holder = registry.get_role_holder(_OrchestratorRole.UNIFIED_LOOP)
             existing_pid = holder.pid if holder else "unknown"
-            print(f"[{daemon_name}] WARNING: Unified orchestrator is running (PID {existing_pid})")
-            print(f"[{daemon_name}] The orchestrator handles this work - this {daemon_name} may duplicate work")
+            logger.warning(
+                f"[{daemon_name}] Unified orchestrator is running (PID {existing_pid}) - "
+                f"this {daemon_name} may duplicate work"
+            )
     except (AttributeError, TypeError, RuntimeError) as e:
         # AttributeError: registry methods missing
         # TypeError: invalid role type

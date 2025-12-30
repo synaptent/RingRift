@@ -37,6 +37,7 @@ file can be executed during unpickling.
 2. **Phase 2** (In Progress): Migrating critical paths to use safe loading by default
    - ✅ `app/training/checkpoint_utils.py` - migrated
    - ✅ `app/training/checkpointing.py` - migrated
+   - ✅ `app/training/elo_service.py` - migrated (Dec 2025)
    - ✅ `app/ai/nnue_policy.py` - migrated
    - ✅ `app/ai/minimax_ai.py` - migrated
    - ✅ `app/ai/mcts_ai.py` - migrated
@@ -45,6 +46,8 @@ file can be executed during unpickling.
    - ✅ `app/ai/ebmo_network.py` - migrated
    - ✅ `app/ai/ebmo_online.py` - migrated
    - ✅ `app/ai/ig_gmo.py` - migrated
+   - ✅ `scripts/fix_hex_checkpoint_metadata.py` - migrated (Dec 2025)
+   - ✅ `scripts/cleanup_phantom_elo_entries.py` - migrated (Dec 2025)
 3. **Phase 3** (TODO): Update checkpoint format to be fully weights_only compatible
 
 ### Files Still Requiring Migration
