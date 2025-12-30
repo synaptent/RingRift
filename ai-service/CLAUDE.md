@@ -63,9 +63,9 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 89 daemon types (~2,000 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 105 daemon types (~2,000 LOC)       |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 89 async runner functions                         |
+| `daemon_runners.py`                    | 93 async runner functions                         |
 | `event_router.py`                      | Unified event bus (207 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
@@ -303,11 +303,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-82 active daemon types, 7 deprecated (89 total). Three-layer architecture:
+93 active daemon types, 12 deprecated (105 total). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 89 async runner functions
+3. **`daemon_runners.py`** - 93 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -585,12 +585,12 @@ The GPU selfplay engine (`app/ai/gpu_parallel_games.py`) has been **extensively 
 
 ### Current State
 
-| Metric                    | Value                                        |
-| ------------------------- | -------------------------------------------- |
-| Speedup                   | 6-57× on CUDA vs CPU (batch-dependent)       |
-| Remaining `.item()` calls | **6** (down from 80+)                        |
-| Hot path `.item()` calls  | **0**                                        |
-| Fully vectorized          | Move selection, game state updates, sampling |
+| Metric                   | Value                                        |
+| ------------------------ | -------------------------------------------- |
+| Speedup                  | 6-57× on CUDA vs CPU (batch-dependent)       |
+| Total `.item()` calls    | **52** (6 in game loop, 46 cold path)        |
+| Hot path `.item()` calls | **4** (infrequent, negligible)               |
+| Fully vectorized         | Move selection, game state updates, sampling |
 
 ### Remaining `.item()` Calls (All Necessary)
 
