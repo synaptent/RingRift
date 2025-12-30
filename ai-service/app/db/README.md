@@ -263,25 +263,25 @@ if not is_valid:
 
 ## Schema
 
-Current schema version: **15** (see `app/db/game_replay.py`).
+Current schema version: **16** (see `app/db/game_replay.py`).
 
 For column-level definitions, see
 [`../../docs/specs/GAME_REPLAY_DATABASE_SPEC.md`](../../docs/specs/GAME_REPLAY_DATABASE_SPEC.md).
 
 ### Tables
 
-| Table                  | Purpose                                                             |
-| ---------------------- | ------------------------------------------------------------------- |
-| `games`                | Game metadata (status, winner, source, quality, parity status)      |
-| `game_players`         | Per-player final stats (eliminated rings, territory, rings in hand) |
-| `game_initial_state`   | Serialized initial `GameState`                                      |
-| `game_moves`           | Ordered move list with metadata (0-based `move_number`)             |
-| `game_state_snapshots` | Periodic state snapshots + hashes for validation/training           |
-| `game_history_entries` | Optional before/after states + available moves for parity debugging |
-| `game_choices`         | PlayerChoice payloads captured during decision phases               |
-| `game_nnue_features`   | Cached NNUE features for training                                   |
-| `schema_metadata`      | Schema version key/value                                            |
-| `orphaned_games`       | Quarantine table for invalid/partial records                        |
+| Table                  | Purpose                                                                |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `games`                | Game metadata (status, winner, source, quality, parity, opponent tags) |
+| `game_players`         | Per-player final stats (eliminated rings, territory, rings in hand)    |
+| `game_initial_state`   | Serialized initial `GameState`                                         |
+| `game_moves`           | Ordered move list with metadata (0-based `move_number`)                |
+| `game_state_snapshots` | Periodic state snapshots + hashes for validation/training              |
+| `game_history_entries` | Optional before/after states + available moves for parity debugging    |
+| `game_choices`         | PlayerChoice payloads captured during decision phases                  |
+| `game_nnue_features`   | Cached NNUE features for training                                      |
+| `schema_metadata`      | Schema version key/value                                               |
+| `orphaned_games`       | Quarantine table for invalid/partial records                           |
 
 Notes:
 
@@ -294,7 +294,7 @@ The database auto-migrates when opening older versions:
 
 ```python
 db = GameReplayDB("old_database.db")
-# Automatically migrates to SCHEMA_VERSION=15
+# Automatically migrates to SCHEMA_VERSION=16
 ```
 
 ---
@@ -541,6 +541,9 @@ class RecordingConfig:
     generation: int | None = None
     candidate_id: str | None = None
     tags: list[str] = field(default_factory=list)
+    opponent_type: str | None = None
+    opponent_model_id: str | None = None
+    opponent_elo: float | None = None
     # Database configuration
     db_path: str | None = None
     db_prefix: str = "selfplay"
@@ -551,6 +554,9 @@ class RecordingConfig:
     parity_mode: str | None = None
     fsm_validation: bool = False
 ```
+
+When set, `opponent_type` and `opponent_model_id` populate the `games` table
+columns and are also captured in `metadata_json` for downstream analysis.
 
 ---
 

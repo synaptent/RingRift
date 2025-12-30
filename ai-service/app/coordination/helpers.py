@@ -42,8 +42,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Try to import coordination components
-_HAS_COORDINATION = False
+# =============================================================================
+# Lazy Import System (Dec 29, 2025)
+# =============================================================================
+# Using lazy imports to avoid circular import issues during module loading.
+# Imports are deferred until first actual use of coordination functions.
+
+_IMPORTS_LOADED = False
+_IMPORTS_AVAILABLE = False
+
+# Cached module references (populated on first use)
 _TaskCoordinator = None
 _TaskType = None
 _TaskLimits = None
@@ -52,8 +60,6 @@ _OrchestratorRegistry = None
 _Safeguards = None
 _CircuitBreaker = None
 _CircuitState = None
-
-# Import functions
 _can_spawn = None
 _get_coordinator = None
 _get_registry = None
@@ -61,42 +67,66 @@ _acquire_orchestrator_role = None
 _release_orchestrator_role = None
 _check_before_spawn = None
 
-try:
-    # Import directly from specific modules to avoid circular imports via __init__.py
-    # Dec 29, 2025: Fixed circular dependency through coordination package
-    from app.coordination.types import TaskType
-    from app.coordination.task_coordinator import (
-        TaskCoordinator,
-        TaskLimits,
-        can_spawn,
-        get_coordinator,
-    )
-    from app.coordination.orchestrator_registry import (
-        OrchestratorRegistry,
-        OrchestratorRole,
-        acquire_orchestrator_role,
-        get_registry,
-        release_orchestrator_role,
-    )
-    from app.coordination.safeguards import Safeguards, check_before_spawn
-    from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
-    _HAS_COORDINATION = True
-    _TaskCoordinator = TaskCoordinator
-    _TaskType = TaskType
-    _TaskLimits = TaskLimits
-    _OrchestratorRole = OrchestratorRole
-    _OrchestratorRegistry = OrchestratorRegistry
-    _Safeguards = Safeguards
-    _CircuitBreaker = CircuitBreaker
-    _CircuitState = CircuitState
-    _can_spawn = can_spawn
-    _get_coordinator = get_coordinator
-    _get_registry = get_registry
-    _acquire_orchestrator_role = acquire_orchestrator_role
-    _release_orchestrator_role = release_orchestrator_role
-    _check_before_spawn = check_before_spawn
-except ImportError as e:
-    logger.debug(f"Coordination module not available: {e}")
+
+def _ensure_imports() -> bool:
+    """Lazily load coordination imports on first use.
+
+    Returns:
+        True if imports are available, False otherwise.
+    """
+    global _IMPORTS_LOADED, _IMPORTS_AVAILABLE
+    global _TaskCoordinator, _TaskType, _TaskLimits
+    global _OrchestratorRole, _OrchestratorRegistry, _Safeguards
+    global _CircuitBreaker, _CircuitState
+    global _can_spawn, _get_coordinator, _get_registry
+    global _acquire_orchestrator_role, _release_orchestrator_role, _check_before_spawn
+
+    if _IMPORTS_LOADED:
+        return _IMPORTS_AVAILABLE
+
+    _IMPORTS_LOADED = True
+
+    try:
+        # Import directly from specific modules to avoid circular imports via __init__.py
+        # Dec 29, 2025: Using lazy loading to defer imports until first use
+        from app.coordination.types import TaskType
+        from app.coordination.task_coordinator import (
+            TaskCoordinator,
+            TaskLimits,
+            can_spawn,
+            get_coordinator,
+        )
+        from app.coordination.orchestrator_registry import (
+            OrchestratorRegistry,
+            OrchestratorRole,
+            acquire_orchestrator_role,
+            get_registry,
+            release_orchestrator_role,
+        )
+        from app.coordination.safeguards import Safeguards, check_before_spawn
+        from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
+
+        _TaskCoordinator = TaskCoordinator
+        _TaskType = TaskType
+        _TaskLimits = TaskLimits
+        _OrchestratorRole = OrchestratorRole
+        _OrchestratorRegistry = OrchestratorRegistry
+        _Safeguards = Safeguards
+        _CircuitBreaker = CircuitBreaker
+        _CircuitState = CircuitState
+        _can_spawn = can_spawn
+        _get_coordinator = get_coordinator
+        _get_registry = get_registry
+        _acquire_orchestrator_role = acquire_orchestrator_role
+        _release_orchestrator_role = release_orchestrator_role
+        _check_before_spawn = check_before_spawn
+        _IMPORTS_AVAILABLE = True
+
+    except ImportError as e:
+        logger.debug(f"Coordination module not available: {e}")
+        _IMPORTS_AVAILABLE = False
+
+    return _IMPORTS_AVAILABLE
 
 
 def has_coordination() -> bool:
@@ -105,7 +135,7 @@ def has_coordination() -> bool:
     Returns:
         True if app.coordination is importable, False otherwise.
     """
-    return _HAS_COORDINATION
+    return _ensure_imports()
 
 
 def get_task_types() -> type | None:
@@ -114,6 +144,7 @@ def get_task_types() -> type | None:
     Returns:
         TaskType enum or None if not available.
     """
+    _ensure_imports()
     return _TaskType
 
 
@@ -123,6 +154,7 @@ def get_orchestrator_roles() -> type | None:
     Returns:
         OrchestratorRole enum or None if not available.
     """
+    _ensure_imports()
     return _OrchestratorRole
 
 
@@ -136,7 +168,7 @@ def get_coordinator_safe() -> Any | None:
     Returns:
         TaskCoordinator instance or None if not available.
     """
-    if not _HAS_COORDINATION or _get_coordinator is None:
+    if not _ensure_imports() or _get_coordinator is None:
         return None
     try:
         return _get_coordinator()
@@ -162,7 +194,7 @@ def can_spawn_safe(
         Tuple of (allowed: bool, reason: str)
         If coordination unavailable, returns (True, "coordination_unavailable")
     """
-    if not _HAS_COORDINATION or _get_coordinator is None:
+    if not _ensure_imports() or _get_coordinator is None:
         return (True, "coordination_unavailable")
 
     if node_id is None:
@@ -197,7 +229,7 @@ def register_task_safe(
     Returns:
         True if registration succeeded, False otherwise.
     """
-    if not _HAS_COORDINATION:
+    if not _ensure_imports():
         return False
 
     coordinator = get_coordinator_safe()
@@ -230,7 +262,7 @@ def complete_task_safe(task_id: str) -> bool:
     Returns:
         True if completion succeeded, False otherwise.
     """
-    if not _HAS_COORDINATION:
+    if not _ensure_imports():
         return False
 
     coordinator = get_coordinator_safe()
@@ -258,7 +290,7 @@ def fail_task_safe(task_id: str, error: str = "") -> bool:
     Returns:
         True if operation succeeded, False otherwise.
     """
-    if not _HAS_COORDINATION:
+    if not _ensure_imports():
         return False
 
     coordinator = get_coordinator_safe()
@@ -286,7 +318,7 @@ def get_registry_safe() -> Any | None:
     Returns:
         OrchestratorRegistry instance or None if not available.
     """
-    if not _HAS_COORDINATION or _get_registry is None:
+    if not _ensure_imports() or _get_registry is None:
         return None
     try:
         return _get_registry()
@@ -307,7 +339,7 @@ def acquire_role_safe(role: Any) -> bool:
     Returns:
         True if role was acquired, False otherwise.
     """
-    if not _HAS_COORDINATION or _acquire_orchestrator_role is None:
+    if not _ensure_imports() or _acquire_orchestrator_role is None:
         return False
 
     try:
@@ -330,7 +362,7 @@ def release_role_safe(role: Any) -> bool:
     Returns:
         True if role was released, False otherwise.
     """
-    if not _HAS_COORDINATION or _release_orchestrator_role is None:
+    if not _ensure_imports() or _release_orchestrator_role is None:
         return False
 
     try:
@@ -408,7 +440,7 @@ def check_spawn_allowed(
     Returns:
         Tuple of (allowed: bool, reason: str)
     """
-    if not _HAS_COORDINATION or _check_before_spawn is None:
+    if not _ensure_imports() or _check_before_spawn is None:
         return (True, "safeguards_unavailable")
 
     try:
@@ -427,7 +459,7 @@ def get_safeguards() -> Any | None:
     Returns:
         Safeguards instance or None if not available.
     """
-    if not _HAS_COORDINATION or _Safeguards is None:
+    if not _ensure_imports() or _Safeguards is None:
         return None
     try:
         return _Safeguards()
@@ -459,7 +491,7 @@ def is_unified_loop_running() -> bool:
     Returns:
         True if unified loop holds the role, False otherwise.
     """
-    if not _HAS_COORDINATION or _OrchestratorRole is None:
+    if not _ensure_imports() or _OrchestratorRole is None:
         return False
 
     try:
@@ -477,7 +509,7 @@ def warn_if_orchestrator_running(daemon_name: str = "daemon") -> None:
     Args:
         daemon_name: Name of the daemon for the warning message.
     """
-    if not _HAS_COORDINATION or _OrchestratorRole is None:
+    if not _ensure_imports() or _OrchestratorRole is None:
         return
 
     registry = get_registry_safe()

@@ -167,6 +167,8 @@ class TournamentDaemon:
 
         self._running = False
         self._periodic_task: asyncio.Task | None = None
+        self._calibration_task: asyncio.Task | None = None  # Dec 2025
+        self._cross_nn_task: asyncio.Task | None = None  # Dec 2025
         self._stats = TournamentStats()
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
         self._evaluation_task: asyncio.Task | None = None
@@ -196,9 +198,24 @@ class TournamentDaemon:
                 name="tournament_periodic_ladder"
             )
 
+        # Start calibration tournaments (Dec 2025)
+        if self.config.enable_calibration_tournaments:
+            self._calibration_task = asyncio.create_task(
+                self._calibration_loop(),
+                name="tournament_calibration"
+            )
+
+        # Start cross-NN version tournaments (Dec 2025)
+        if self.config.enable_cross_nn_tournaments:
+            self._cross_nn_task = asyncio.create_task(
+                self._cross_nn_loop(),
+                name="tournament_cross_nn"
+            )
+
         logger.info(
             f"TournamentDaemon started (periodic_ladder={self.config.enable_periodic_ladder}, "
-            f"interval={self.config.ladder_interval_seconds}s)"
+            f"calibration={self.config.enable_calibration_tournaments}, "
+            f"cross_nn={self.config.enable_cross_nn_tournaments})"
         )
 
     async def stop(self) -> None:
@@ -224,6 +241,24 @@ class TournamentDaemon:
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             self._evaluation_task = None
+
+        # Cancel calibration task (Dec 2025)
+        if self._calibration_task:
+            self._calibration_task.cancel()
+            try:
+                await asyncio.wait_for(self._calibration_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._calibration_task = None
+
+        # Cancel cross-NN task (Dec 2025)
+        if self._cross_nn_task:
+            self._cross_nn_task.cancel()
+            try:
+                await asyncio.wait_for(self._cross_nn_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._cross_nn_task = None
 
         logger.info("TournamentDaemon stopped")
 
@@ -371,6 +406,61 @@ class TournamentDaemon:
                 logger.error(f"Error in periodic ladder: {e}")
                 self._stats.record_failure(str(e))
 
+    async def _calibration_loop(self) -> None:
+        """Periodic calibration tournament loop (Dec 2025).
+
+        Runs calibration tournaments at configured interval to validate
+        that Elo ladder gaps match expected win rates.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(self.config.calibration_interval_seconds)
+
+                if not self._running:
+                    break
+
+                logger.info("Running scheduled calibration tournament")
+                results = await self._run_calibration_tournament()
+
+                if results.get("all_valid"):
+                    logger.info("Calibration tournament: all matchups valid")
+                else:
+                    logger.warning(f"Calibration tournament: some matchups invalid")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in calibration loop: {e}")
+                self._stats.record_failure(str(e))
+
+    async def _cross_nn_loop(self) -> None:
+        """Periodic cross-NN version tournament loop (Dec 2025).
+
+        Runs tournaments between different NN versions (v2, v3, v4, etc.)
+        to track model evolution and maintain accurate Elo ratings.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(self.config.cross_nn_interval_seconds)
+
+                if not self._running:
+                    break
+
+                logger.info("Running scheduled cross-NN tournament")
+                results = await self._run_cross_nn_tournament()
+
+                if results.get("success"):
+                    games_played = results.get("games_played", 0)
+                    logger.info(f"Cross-NN tournament completed: {games_played} games")
+                else:
+                    logger.warning(f"Cross-NN tournament failed: {results.get('error')}")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in cross-NN loop: {e}")
+                self._stats.record_failure(str(e))
+
     async def _run_evaluation(
         self,
         model_path: str,
@@ -410,6 +500,24 @@ class TournamentDaemon:
             # Run gauntlet evaluation
             from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
 
+            # Create recording config if enabled (Dec 2025 - tournament games for training)
+            recording_config = None
+            if self.config.enable_game_recording:
+                try:
+                    from app.db.unified_recording import RecordingConfig, RecordSource
+                    recording_config = RecordingConfig(
+                        board_type=board_type,
+                        num_players=num_players,
+                        source=RecordSource.TOURNAMENT,
+                        engine_mode="gauntlet",
+                        db_prefix=self.config.recording_db_prefix,
+                        db_dir=self.config.recording_db_dir,
+                        store_history_entries=True,
+                    )
+                    logger.debug(f"Tournament recording enabled for {board_type}_{num_players}p")
+                except ImportError:
+                    logger.debug("Recording module not available, games will not be saved")
+
             gauntlet_results = await asyncio.wait_for(
                 asyncio.to_thread(
                     run_baseline_gauntlet,
@@ -418,6 +526,7 @@ class TournamentDaemon:
                     num_players=num_players,
                     games_per_opponent=self.config.games_per_baseline,
                     opponents=[BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC],
+                    recording_config=recording_config,
                 ),
                 timeout=self.config.evaluation_timeout_seconds,
             )
@@ -676,6 +785,206 @@ class TournamentDaemon:
 
         results["duration_seconds"] = time.time() - start_time
         logger.info(f"Calibration tournament completed: {results.get('all_valid', False)}")
+        return results
+
+    async def _run_cross_nn_tournament(self) -> dict[str, Any]:
+        """Run cross-NN version tournament to compare model generations (Dec 2025).
+
+        Discovers all model versions for each configuration and runs tournaments
+        between adjacent versions (e.g., v2 vs v3, v3 vs v4) to:
+        - Validate newer models are stronger than older ones
+        - Maintain accurate Elo ratings across model generations
+        - Identify potential regressions in model quality
+
+        Returns:
+            Tournament results with per-pairing win rates and Elo updates
+        """
+        logger.info("Running cross-NN version tournament")
+        start_time = time.time()
+
+        results = {
+            "tournament_id": str(uuid.uuid4()),
+            "tournament_type": "cross_nn",
+            "success": False,
+            "pairings": {},
+            "games_played": 0,
+        }
+
+        try:
+            from app.training.game_gauntlet import play_single_game
+            from app.models import BoardType
+            from app.ai.neural_net import UnifiedNeuralNetFactory
+            from app.training.elo_service import get_elo_service
+            from pathlib import Path
+            import re
+
+            elo_service = get_elo_service()
+            models_dir = Path("models")
+
+            # Find all canonical models per config
+            # Pattern: canonical_{board}_{n}p.pth or canonical_{board}_{n}p_v{version}.pth
+            model_pattern = re.compile(
+                r"canonical_(?P<board>\w+)_(?P<players>\d)p(?:_v(?P<version>\d+))?\.pth"
+            )
+
+            # Group models by config (board_type, num_players)
+            config_models: dict[tuple[str, int], list[tuple[str, Path]]] = {}
+
+            for model_path in models_dir.glob("canonical_*.pth"):
+                match = model_pattern.match(model_path.name)
+                if match:
+                    board = match.group("board")
+                    players = int(match.group("players"))
+                    version = match.group("version") or "base"
+                    config_key = (board, players)
+
+                    if config_key not in config_models:
+                        config_models[config_key] = []
+                    config_models[config_key].append((version, model_path))
+
+            # Also check for versioned models like hex8_2p_v2.pth, hex8_2p_v3.pth
+            version_pattern = re.compile(
+                r"(?:canonical_)?(?P<board>\w+)_(?P<players>\d)p_v(?P<version>\d+)\.pth"
+            )
+
+            for model_path in models_dir.glob("*_v*.pth"):
+                if "canonical" in model_path.name:
+                    continue  # Already captured above
+                match = version_pattern.match(model_path.name)
+                if match:
+                    board = match.group("board")
+                    players = int(match.group("players"))
+                    version = f"v{match.group('version')}"
+                    config_key = (board, players)
+
+                    if config_key not in config_models:
+                        config_models[config_key] = []
+                    config_models[config_key].append((version, model_path))
+
+            games_per_pairing = self.config.cross_nn_games_per_pairing
+            total_games = 0
+
+            for (board, num_players), models in config_models.items():
+                if len(models) < 2:
+                    continue  # Need at least 2 versions to compare
+
+                # Sort by version (base < v2 < v3 < ...)
+                def version_key(item: tuple[str, Path]) -> int:
+                    v = item[0]
+                    if v == "base":
+                        return 0
+                    return int(v.replace("v", ""))
+
+                models.sort(key=version_key)
+
+                # Get board type enum
+                try:
+                    board_type = BoardType(board)
+                except ValueError:
+                    logger.warning(f"Unknown board type: {board}")
+                    continue
+
+                # Run tournaments between adjacent versions
+                for i in range(len(models) - 1):
+                    older_version, older_path = models[i]
+                    newer_version, newer_path = models[i + 1]
+
+                    pairing_key = f"{board}_{num_players}p:{older_version}_vs_{newer_version}"
+                    logger.info(f"Cross-NN pairing: {pairing_key}")
+
+                    # Load models
+                    try:
+                        older_ai = UnifiedNeuralNetFactory.create(
+                            str(older_path),
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+                        newer_ai = UnifiedNeuralNetFactory.create(
+                            str(newer_path),
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to load models for {pairing_key}: {e}")
+                        results["pairings"][pairing_key] = {"error": str(e)}
+                        continue
+
+                    wins_newer = 0
+                    wins_older = 0
+
+                    for game_num in range(games_per_pairing):
+                        try:
+                            # Alternate positions for fairness
+                            if game_num % 2 == 0:
+                                player_ais = [newer_ai, older_ai]
+                                newer_player = 0
+                            else:
+                                player_ais = [older_ai, newer_ai]
+                                newer_player = 1
+
+                            game_result = play_single_game(
+                                board_type=board_type,
+                                num_players=num_players,
+                                player_ais=player_ais,
+                                timeout=self.config.game_timeout_seconds,
+                            )
+
+                            winner = game_result.get("winner")
+                            if winner == newer_player:
+                                wins_newer += 1
+                            elif winner is not None:
+                                wins_older += 1
+
+                            total_games += 1
+                            self._stats.games_played += 1
+
+                            # Record match for Elo update
+                            if winner is not None:
+                                winner_id = newer_path.stem if winner == newer_player else older_path.stem
+                                loser_id = older_path.stem if winner == newer_player else newer_path.stem
+                                elo_service.record_match(
+                                    winner_id=winner_id,
+                                    loser_id=loser_id,
+                                    board_type=board,
+                                    num_players=num_players,
+                                )
+
+                        except Exception as e:
+                            logger.warning(f"Cross-NN game failed: {e}")
+
+                    win_rate_newer = wins_newer / games_per_pairing if games_per_pairing > 0 else 0
+                    # Newer model should win >50% if it's actually better
+                    improvement_validated = win_rate_newer >= 0.5
+
+                    results["pairings"][pairing_key] = {
+                        "newer_wins": wins_newer,
+                        "older_wins": wins_older,
+                        "draws": games_per_pairing - wins_newer - wins_older,
+                        "games": games_per_pairing,
+                        "newer_win_rate": win_rate_newer,
+                        "improvement_validated": improvement_validated,
+                    }
+
+                    if not improvement_validated:
+                        logger.warning(
+                            f"Potential regression: {newer_version} only {win_rate_newer:.1%} "
+                            f"vs {older_version} in {board}_{num_players}p"
+                        )
+
+            results["success"] = True
+            results["games_played"] = total_games
+            results["configs_tested"] = len([k for k, v in config_models.items() if len(v) >= 2])
+
+        except ImportError as e:
+            logger.warning(f"Cross-NN tournament dependencies not available: {e}")
+            results["error"] = str(e)
+        except Exception as e:
+            logger.error(f"Cross-NN tournament failed: {e}")
+            results["error"] = str(e)
+            self._stats.errors.append(str(e))
+
+        results["duration_seconds"] = time.time() - start_time
+        logger.info(f"Cross-NN tournament completed: {results.get('games_played', 0)} games")
         return results
 
     async def _update_elo(

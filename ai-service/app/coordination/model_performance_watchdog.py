@@ -187,7 +187,7 @@ class ModelPerformanceWatchdog(MonitorBase[ModelPerformanceWatchdogConfig]):
             )
 
         except Exception as e:
-            self.record_error()
+            self.record_error(e)
             logger.error(f"Error handling evaluation event: {e}")
 
     async def _update_model_performance(
@@ -257,6 +257,10 @@ class ModelPerformanceWatchdog(MonitorBase[ModelPerformanceWatchdogConfig]):
 
         try:
             from app.coordination.event_router import DataEventType, get_router
+
+            if DataEventType is None:
+                logger.debug("DataEventType not available, skipping degradation alert")
+                return
 
             router = get_router()
 

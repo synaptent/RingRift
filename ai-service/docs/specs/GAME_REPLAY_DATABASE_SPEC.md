@@ -19,7 +19,7 @@ The database supports:
 3. **Queryability**: Index on useful dimensions (board type, player count, outcome)
 4. **Extensibility**: Schema supports future metadata (AI profiles, evaluation scores)
 
-**Current schema version:** 15 (see `SCHEMA_VERSION` in `app/db/game_replay.py`).
+**Current schema version:** 16 (see `SCHEMA_VERSION` in `app/db/game_replay.py`).
 
 ## Storage Format
 
@@ -55,7 +55,7 @@ Primary game metadata, one row per game.
 | `total_turns`            | INTEGER NOT NULL | Number of full turn cycles                                                                                                                                                                                                      |
 | `duration_ms`            | INTEGER          | Total game duration in milliseconds                                                                                                                                                                                             |
 | `source`                 | TEXT             | Canonical: 'self_play', 'soak_test', 'cmaes', 'gauntlet', 'tournament', 'training', 'manual' (script-specific/legacy values may include 'online_game', 'manual_import', 'selfplay_soak', 'python-strict', 'cmaes_optimization') |
-| `schema_version`         | INTEGER NOT NULL | Schema version for forward compatibility (current: 15)                                                                                                                                                                          |
+| `schema_version`         | INTEGER NOT NULL | Schema version for forward compatibility (current: 16)                                                                                                                                                                          |
 | `time_control_type`      | TEXT             | Time control mode ('none', 'blitz', 'rapid', 'classical', etc.)                                                                                                                                                                 |
 | `initial_time_ms`        | INTEGER          | Initial clock time per player in milliseconds                                                                                                                                                                                   |
 | `time_increment_ms`      | INTEGER          | Increment added after each move in milliseconds                                                                                                                                                                                 |
@@ -63,6 +63,8 @@ Primary game metadata, one row per game.
 | `quality_score`          | REAL             | Training quality score (higher is better)                                                                                                                                                                                       |
 | `quality_category`       | TEXT             | Quality tier label                                                                                                                                                                                                              |
 | `engine_mode`            | TEXT             | AI/engine mode label (fast filtering)                                                                                                                                                                                           |
+| `opponent_type`          | TEXT             | Opponent category for diversity analysis (random, heuristic, mcts, nn_v2, etc.)                                                                                                                                                 |
+| `opponent_model_id`      | TEXT             | Opponent model identifier/version (when opponent_type is neural)                                                                                                                                                                |
 | `parity_status`          | TEXT             | 'passed', 'failed', 'error', 'pending', 'skipped'                                                                                                                                                                               |
 | `parity_checked_at`      | TEXT             | Timestamp of last parity check                                                                                                                                                                                                  |
 | `parity_divergence_move` | INTEGER          | Move index where parity first diverged                                                                                                                                                                                          |
@@ -78,6 +80,8 @@ until `finalize()` persists the terminal status.
 - `idx_games_created` on `created_at`
 - `idx_games_board_players` on (`board_type`, `num_players`)
 - `idx_games_config` on (`board_type`, `num_players`, `game_status`)
+- `idx_games_opponent_type` on `opponent_type`
+- `idx_games_board_opponent` on (`board_type`, `opponent_type`)
 - `idx_games_parity_status` on `parity_status`
 - `idx_games_quality_board` on (`board_type`, `quality_score` DESC)
 

@@ -205,7 +205,7 @@ Location:
 
 Key invariants:
 
-- Schema version is tracked in `schema_metadata`; current version is `SCHEMA_VERSION = 15`.
+- Schema version is tracked in `schema_metadata`; current version is `SCHEMA_VERSION = 16`.
 - **Write‑time canonical enforcement**:
   - `GameReplayDB.__init__(db_path, snapshot_interval=..., enforce_canonical_history=True)`:
     - When `enforce_canonical_history=True` (default), `_store_move_conn` will:

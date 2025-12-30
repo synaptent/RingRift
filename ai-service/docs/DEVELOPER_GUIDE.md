@@ -276,6 +276,10 @@ config = RecordingConfig(
     difficulty=5,
 )
 
+# Optional: tag opponent information for diversity analysis
+# config.opponent_type = "heuristic"
+# config.opponent_model_id = "nn_v2_2025_12_29"
+
 with UnifiedGameRecorder(config, initial_state) as recorder:
     for move in game_loop():
         recorder.add_move(move, state_after)

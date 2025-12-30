@@ -275,6 +275,135 @@ def run_calibration_games(
 
 
 # ============================================================================
+# Baseline vs Baseline Calibration (Dec 2025)
+# ============================================================================
+
+def run_baseline_calibration(
+    elo: EloService,
+    board_type: str,
+    num_players: int,
+    games: int = 50,
+) -> dict[str, Any]:
+    """Run heuristic vs random calibration games.
+
+    This ensures heuristic's Elo is properly anchored relative to random (400 Elo).
+    Essential for meaningful Elo comparisons across all participants.
+
+    Args:
+        elo: EloService instance
+        board_type: Board type for games
+        num_players: Number of players
+        games: Number of games to play
+
+    Returns:
+        Dict with calibration results (wins, losses, win_rate, estimated_elo)
+    """
+    from app.training.game_gauntlet import play_single_game, GameResult
+    from app.ai.heuristic_ai import HeuristicAI
+    from app.ai.random_ai import RandomAI
+    from app.models import BoardType
+
+    # Map string to BoardType enum
+    board_type_enum = BoardType(board_type.upper()) if hasattr(BoardType, board_type.upper()) else BoardType[board_type.upper()]
+
+    # Create AIs
+    heuristic_ai = HeuristicAI(difficulty=5)  # Standard heuristic (d5)
+    random_ai = RandomAI()
+
+    heuristic_wins = 0
+    random_wins = 0
+    draws = 0
+
+    logger.info(f"Running {games} heuristic vs random calibration games for {board_type}_{num_players}p...")
+
+    for game_num in range(games):
+        # Alternate which player heuristic plays as
+        heuristic_player = (game_num % num_players) + 1
+
+        try:
+            result: GameResult = play_single_game(
+                candidate_ai=heuristic_ai,
+                opponent_ai=random_ai,
+                board_type=board_type_enum,
+                num_players=num_players,
+                candidate_player=heuristic_player,
+                max_moves=500,
+                seed=game_num,  # Reproducible
+            )
+
+            if result.candidate_won:
+                heuristic_wins += 1
+            elif result.winner is not None:
+                random_wins += 1
+            else:
+                draws += 1
+
+            if (game_num + 1) % 10 == 0:
+                logger.debug(f"  Progress: {game_num + 1}/{games} games")
+
+        except Exception as e:
+            logger.warning(f"Game {game_num + 1} failed: {e}")
+            continue
+
+    total_games = heuristic_wins + random_wins + draws
+    if total_games == 0:
+        logger.warning("No games completed!")
+        return {"heuristic_wins": 0, "random_wins": 0, "draws": 0, "win_rate": 0.0}
+
+    win_rate = heuristic_wins / total_games
+
+    # Record results to Elo system
+    heuristic_pid = "none:heuristic:d5"
+    random_pid = "none:random:d1"
+
+    for _ in range(heuristic_wins):
+        try:
+            elo.record_match(
+                participant_ids=[heuristic_pid, random_pid],
+                winner_id=heuristic_pid,
+                board_type=board_type,
+                num_players=num_players,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record heuristic win: {e}")
+
+    for _ in range(random_wins):
+        try:
+            elo.record_match(
+                participant_ids=[heuristic_pid, random_pid],
+                winner_id=random_pid,
+                board_type=board_type,
+                num_players=num_players,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record random win: {e}")
+
+    # Estimate Elo difference from win rate
+    # Elo difference = 400 * log10(win_rate / (1 - win_rate))
+    import math
+    if win_rate > 0 and win_rate < 1:
+        elo_diff = 400 * math.log10(win_rate / (1 - win_rate))
+        estimated_heuristic_elo = BASELINE_ELO_RANDOM + elo_diff
+    elif win_rate >= 1:
+        estimated_heuristic_elo = BASELINE_ELO_RANDOM + 800  # Cap at +800
+    else:
+        estimated_heuristic_elo = BASELINE_ELO_RANDOM - 400  # If heuristic loses all
+
+    logger.info(
+        f"  Heuristic vs Random: {heuristic_wins}W-{random_wins}L-{draws}D "
+        f"({win_rate:.1%}) → Est. Elo: {estimated_heuristic_elo:.0f}"
+    )
+
+    return {
+        "heuristic_wins": heuristic_wins,
+        "random_wins": random_wins,
+        "draws": draws,
+        "win_rate": win_rate,
+        "estimated_elo": estimated_heuristic_elo,
+    }
+
+
+# ============================================================================
 # Dashboard
 # ============================================================================
 
@@ -477,9 +606,14 @@ def main():
         help="Run calibration games against baselines",
     )
     parser.add_argument(
+        "--baseline-calibrate", "-b",
+        action="store_true",
+        help="Run heuristic vs random calibration games to anchor baseline Elos",
+    )
+    parser.add_argument(
         "--full", "-f",
         action="store_true",
-        help="Full calibration (register + calibrate + dashboard)",
+        help="Full calibration (register + baseline-calibrate + calibrate + dashboard)",
     )
     parser.add_argument(
         "--games", "-g",
@@ -517,12 +651,13 @@ def main():
     elo = get_elo_service()
 
     # Default to dashboard if no action specified
-    if not any([args.dashboard, args.register, args.calibrate, args.full]):
+    if not any([args.dashboard, args.register, args.calibrate, args.baseline_calibrate, args.full]):
         args.dashboard = True
 
     # Full mode sets all actions
     if args.full:
         args.register = True
+        args.baseline_calibrate = True
         args.calibrate = True
         args.dashboard = True
 
@@ -533,6 +668,45 @@ def main():
 
         logger.info("Registering models with AI methods...")
         register_models_with_methods(elo)
+
+    # Run baseline calibration (heuristic vs random)
+    if args.baseline_calibrate:
+        configs_to_calibrate = ALL_CONFIGS
+
+        if args.config:
+            # Parse specific config
+            parts = args.config.replace("_", " ").replace("p", "").split()
+            if len(parts) == 2:
+                board_type = parts[0]
+                num_players = int(parts[1])
+                configs_to_calibrate = [(board_type, num_players)]
+            else:
+                logger.error(f"Invalid config format: {args.config}")
+                return 1
+
+        logger.info("Running baseline calibration (heuristic vs random)...")
+        baseline_results = {}
+        for board_type, num_players in configs_to_calibrate:
+            config_key = f"{board_type}_{num_players}p"
+            try:
+                result = run_baseline_calibration(
+                    elo=elo,
+                    board_type=board_type,
+                    num_players=num_players,
+                    games=args.games,
+                )
+                baseline_results[config_key] = result
+            except Exception as e:
+                logger.error(f"Failed baseline calibration for {config_key}: {e}")
+
+        # Summary
+        if baseline_results:
+            logger.info("\nBaseline Calibration Summary:")
+            for config_key, result in baseline_results.items():
+                logger.info(
+                    f"  {config_key}: Heuristic {result['win_rate']:.1%} vs Random → "
+                    f"Est. Elo: {result.get('estimated_elo', 'N/A'):.0f}"
+                )
 
     # Run calibration
     if args.calibrate:

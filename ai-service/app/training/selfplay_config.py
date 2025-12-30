@@ -306,6 +306,12 @@ class SelfplayConfig:
     mixed_opponents: bool = False  # Enable mixed opponent training
     opponent_mix: dict[str, float] | None = None  # Custom opponent mix distribution
 
+    # Per-player AI configuration (December 2025)
+    # Enables heterogeneous opponents where each player uses a different AI type
+    # Maps player number (1-indexed) to AI configuration
+    # Example: {1: {"engine": "gumbel-mcts", "budget": 200}, 2: {"engine": "heuristic"}, ...}
+    player_ai_configs: dict[int, dict[str, Any]] | None = None
+
     # Additional engine-specific options
     extra_options: dict[str, Any] = field(default_factory=dict)
 
@@ -409,6 +415,58 @@ class SelfplayConfig:
 
         # Priority 4: Default
         return GUMBEL_BUDGET_STANDARD
+
+    def get_player_ai_config(self, player: int) -> dict[str, Any]:
+        """Get the AI configuration for a specific player.
+
+        For cross-AI games with heterogeneous opponents, each player can have
+        a different AI configuration (engine type, budget, difficulty, etc.).
+
+        Args:
+            player: Player number (1-indexed)
+
+        Returns:
+            AI configuration dict with at least "engine" key.
+            Falls back to the global engine_mode if no per-player config is set.
+
+        Example:
+            >>> config = SelfplayConfig(
+            ...     engine_mode="gumbel-mcts",
+            ...     player_ai_configs={
+            ...         1: {"engine": "gumbel-mcts", "budget": 200},
+            ...         2: {"engine": "heuristic", "difficulty": 5},
+            ...     }
+            ... )
+            >>> config.get_player_ai_config(1)
+            {"engine": "gumbel-mcts", "budget": 200}
+            >>> config.get_player_ai_config(2)
+            {"engine": "heuristic", "difficulty": 5}
+        """
+        # If per-player configs are set, use them
+        if self.player_ai_configs and player in self.player_ai_configs:
+            return self.player_ai_configs[player]
+
+        # Fall back to global engine mode
+        return {
+            "engine": self.engine_mode.value if hasattr(self.engine_mode, 'value') else str(self.engine_mode),
+            "difficulty": self.difficulty,
+            "budget": self.get_effective_budget(),
+        }
+
+    def is_heterogeneous_game(self) -> bool:
+        """Check if this config uses different AI types for different players.
+
+        Returns:
+            True if player_ai_configs is set with different engines for different players.
+        """
+        if not self.player_ai_configs:
+            return False
+
+        engines = set()
+        for config in self.player_ai_configs.values():
+            engines.add(config.get("engine", "unknown"))
+
+        return len(engines) > 1
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary for serialization."""

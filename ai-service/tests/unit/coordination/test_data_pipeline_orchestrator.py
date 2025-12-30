@@ -504,16 +504,17 @@ class TestDataPipelineOrchestratorPauseResume:
         assert orchestrator._paused is False
         assert orchestrator._pause_reason is None
 
-    def test_is_paused_property(self, mock_config):
-        """Test is_paused property returns _paused value."""
+    def test_is_paused_method(self, mock_config):
+        """Test is_paused method returns _paused value."""
         from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
         orchestrator = DataPipelineOrchestrator(config=mock_config)
 
-        assert orchestrator.is_paused is False
+        # is_paused() is a method
+        assert orchestrator.is_paused() is False
 
         orchestrator._paused = True
-        assert orchestrator.is_paused is True
+        assert orchestrator.is_paused() is True
 
 
 class TestDataPipelineOrchestratorIterations:

@@ -916,12 +916,14 @@ def _evaluate_single_opponent(
     early_stopping_min_games: int,
     model_id: str | None = None,
     parallel_games: int = 1,
+    recording_config: Any | None = None,
 ) -> dict[str, Any]:
     """Evaluate a model against a single baseline opponent.
 
     Args:
         parallel_games: Number of games to run in parallel (default: 1 = sequential).
             Phase 3 optimization: Set to 4-8 for ~3-6x speedup on multi-core systems.
+        recording_config: Optional RecordingConfig for saving game data (Dec 2025).
 
     Returns:
         Dict with keys: baseline_name, wins, games, losses, draws, win_rate,
@@ -1072,6 +1074,7 @@ def _evaluate_single_opponent(
                 num_players=num_players,
                 candidate_player=candidate_player,
                 opponent_ais=opponent_ais,
+                recording_config=recording_config,
             )
 
             result["games"] += 1
@@ -1212,6 +1215,7 @@ def run_baseline_gauntlet(
     parallel_opponents: bool = True,
     max_parallel_workers: int = 2,
     parallel_games: int = 1,
+    recording_config: Any | None = None,
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
@@ -1237,6 +1241,8 @@ def run_baseline_gauntlet(
         max_parallel_workers: Maximum number of parallel opponent evaluations (default: 2)
         parallel_games: Number of games to run in parallel per opponent (default: 1 = sequential).
             Phase 3 optimization: Set to 4-8 for ~3-6x speedup on multi-core systems.
+        recording_config: Optional RecordingConfig for saving game data (Dec 2025).
+            When provided, games are recorded to canonical databases for training.
 
     Returns:
         GauntletResult with aggregated statistics
@@ -1303,6 +1309,7 @@ def run_baseline_gauntlet(
                     early_stopping_min_games,
                     effective_model_id,
                     parallel_games,
+                    recording_config,
                 ): baseline
                 for baseline in opponents
             }
@@ -1342,6 +1349,7 @@ def run_baseline_gauntlet(
                 early_stopping_min_games,
                 effective_model_id,
                 parallel_games,
+                recording_config,
             )
             opponent_eval_results.append(eval_result)
 

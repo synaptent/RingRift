@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -327,6 +327,8 @@ class TestAlertCooldown:
     @pytest.mark.asyncio
     async def test_respects_cooldown(self):
         """Doesn't alert during cooldown period."""
+        from app.coordination.event_router import DataEventType
+
         config = WatchdogConfig(
             degradation_threshold=0.55,
             alert_cooldown=300.0,  # 5 minute cooldown
@@ -351,6 +353,8 @@ class TestAlertCooldown:
 
             # Only one publish call
             assert mock_router.publish.call_count == 1
+            # Verify first call was with correct event type
+            mock_router.publish.assert_called_with(DataEventType.REGRESSION_DETECTED, ANY)
 
 
 # =============================================================================

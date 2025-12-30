@@ -1156,6 +1156,7 @@ def export_replay_dataset_multi(
         "move_types": move_types_arr,  # For chain-aware sample weighting
         "opponent_elo": opponent_elo_arr,  # For ELO-weighted training (December 2025)
         "quality_score": quality_score_arr,  # For quality-weighted training (December 2025)
+        "opponent_types": opponent_types_arr,  # For opponent diversity tracking (December 2025)
     }
 
     # Add heuristic features if extracted (December 2025, v5 training)

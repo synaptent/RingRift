@@ -254,7 +254,7 @@ from Python scripts.
 
 **Schema version**
 
-- `SCHEMA_VERSION = 6` (historical; current schema v15)
+- `SCHEMA_VERSION = 6` (historical; current schema v16)
   - v1: initial schema.
   - v2: time control + engine eval fields on moves.
   - v3: `game_history_entries` and state hash fields.
@@ -262,7 +262,7 @@ from Python scripts.
   - v5: `metadata_json` on `games` for full recording metadata.
   - v6: `available_moves_json` and `available_moves_count` on
     `game_history_entries` for per-step move enumeration parity/debugging.
-  - Current schema is v15; see `ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md`.
+  - Current schema is v16; see `ai-service/docs/specs/GAME_REPLAY_DATABASE_SPEC.md`.
 
 **Tables and key columns**
 

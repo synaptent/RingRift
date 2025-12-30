@@ -171,33 +171,63 @@ class SelfplayScheduler(EventSubscriptionMixin):
         ("maxn", 25, False, None),  # 25% - highest heuristic quality
     ]
 
-    # Large board types that should use the mixed-engine strategy
+    # December 2025: Standard board engine mix for smaller boards (hex8, square8)
+    # Higher neural network weight since games are faster on smaller boards
+    STANDARD_BOARD_ENGINE_MIX = [
+        # (engine_mode, weight, gpu_required, extra_args)
+        ("heuristic", 25, False, None),  # 25% - fast bootstrap
+        ("brs", 15, False, None),  # 15% - good for multiplayer diversity
+        ("maxn", 10, False, None),  # 10% - highest heuristic quality
+        ("policy-only", 20, True, None),  # 20% - neural guided (GPU)
+        ("gumbel-mcts", 30, True, {"budget": 150}),  # 30% - balanced neural (GPU)
+    ]
+
+    # CPU-only variant for standard boards
+    STANDARD_BOARD_ENGINE_MIX_CPU = [
+        # (engine_mode, weight, gpu_required, extra_args)
+        ("heuristic", 40, False, None),  # 40% - fast bootstrap
+        ("brs", 30, False, None),  # 30% - good for multiplayer
+        ("maxn", 30, False, None),  # 30% - highest heuristic quality
+    ]
+
+    # Large board types that should use the large board engine mix
     LARGE_BOARD_TYPES = {"square19", "hexagonal"}
+    # Standard board types that should use the standard board engine mix
+    STANDARD_BOARD_TYPES = {"hex8", "square8"}
 
     @classmethod
-    def _select_large_board_engine(
+    def _select_board_engine(
         cls,
         has_gpu: bool,
-        board_type: str | None = None,
+        board_type: str,
     ) -> tuple[str, dict[str, Any] | None]:
-        """Select an engine mode from the large board engine mix.
+        """Select an engine mode from the appropriate engine mix for the board type.
 
-        Uses weighted random selection from LARGE_BOARD_ENGINE_MIX (for GPU nodes)
-        or LARGE_BOARD_ENGINE_MIX_CPU (for CPU-only nodes).
+        Uses weighted random selection from the engine mix matching the board type:
+        - Large boards (square19, hexagonal): LARGE_BOARD_ENGINE_MIX
+        - Standard boards (hex8, square8): STANDARD_BOARD_ENGINE_MIX
+
+        GPU vs CPU variants are selected based on node capability.
 
         Args:
             has_gpu: Whether the node has GPU capability
-            board_type: Optional board type for logging
+            board_type: Board type to select engine for
 
         Returns:
             Tuple of (engine_mode, extra_args) where extra_args may contain
             additional parameters like {"budget": 64} for gumbel-mcts.
 
-        December 2025: Added to support mixed-engine strategy for large boards
-        (square19, hexagonal) as per user requirements for balanced quality/speed.
+        December 2025: Extended to support mixed-engine strategy for ALL board types,
+        not just large boards. BRS and MaxN now available for hex8/square8 diversity.
         """
-        # Select appropriate engine mix based on GPU availability
-        engine_mix = cls.LARGE_BOARD_ENGINE_MIX if has_gpu else cls.LARGE_BOARD_ENGINE_MIX_CPU
+        # Select appropriate engine mix based on board type and GPU availability
+        if board_type in cls.LARGE_BOARD_TYPES:
+            engine_mix = cls.LARGE_BOARD_ENGINE_MIX if has_gpu else cls.LARGE_BOARD_ENGINE_MIX_CPU
+            board_category = "large"
+        else:
+            # Use standard board mix for all other boards (hex8, square8, etc.)
+            engine_mix = cls.STANDARD_BOARD_ENGINE_MIX if has_gpu else cls.STANDARD_BOARD_ENGINE_MIX_CPU
+            board_category = "standard"
 
         # Build weighted selection list
         weighted_engines: list[tuple[str, dict[str, Any] | None]] = []
@@ -211,7 +241,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         if not weighted_engines:
             # Fallback to heuristic if no engines available
             logger.warning(
-                f"No compatible engines for large board (gpu={has_gpu}), "
+                f"No compatible engines for {board_category} board (gpu={has_gpu}), "
                 f"falling back to heuristic"
             )
             return ("heuristic", None)
@@ -221,11 +251,23 @@ class SelfplayScheduler(EventSubscriptionMixin):
         engine_mode, extra_args = selected
 
         logger.debug(
-            f"Selected engine '{engine_mode}' for large board "
+            f"Selected engine '{engine_mode}' for {board_category} board "
             f"(board={board_type}, gpu={has_gpu}, extra_args={extra_args})"
         )
 
         return (engine_mode, extra_args)
+
+    @classmethod
+    def _select_large_board_engine(
+        cls,
+        has_gpu: bool,
+        board_type: str | None = None,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Legacy wrapper - use _select_board_engine() instead.
+
+        Kept for backward compatibility.
+        """
+        return cls._select_board_engine(has_gpu, board_type or "square19")
 
     def __init__(
         self,
@@ -1280,16 +1322,17 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 )
                 self._previous_priorities[config_key] = new_priority
 
-        # December 2025: Apply mixed-engine selection for large boards
+        # December 2025: Apply mixed-engine selection for ALL board types
         # Instead of returning "mixed" mode, select a specific engine from the mix
+        # This ensures BRS/MaxN diversity in hex8/square8 as well as large boards
         if selected:
             board_type = selected.get("board_type", "")
             engine_mode = selected.get("engine_mode", "")
 
-            # Check if this is a large board with "mixed" mode - apply engine mix
-            if board_type in self.LARGE_BOARD_TYPES and engine_mode in ("mixed", "diverse"):
+            # Apply engine mix for any board type with "mixed" or "diverse" mode
+            if engine_mode in ("mixed", "diverse"):
                 has_gpu = self._node_has_gpu(node)
-                actual_engine, extra_args = self._select_large_board_engine(
+                actual_engine, extra_args = self._select_board_engine(
                     has_gpu=has_gpu,
                     board_type=board_type,
                 )
@@ -1299,8 +1342,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 if extra_args:
                     selected["engine_extra_args"] = extra_args
 
+                # Determine board category for logging
+                board_category = "large" if board_type in self.LARGE_BOARD_TYPES else "standard"
                 logger.info(
-                    f"Large board engine mix: {board_type} '{engine_mode}' -> "
+                    f"{board_category.capitalize()} board engine mix: {board_type} '{engine_mode}' -> "
                     f"'{actual_engine}' (gpu={has_gpu}, extra_args={extra_args})"
                 )
 
