@@ -32,8 +32,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict
 
@@ -164,7 +166,6 @@ class EvaluationDaemon(BaseEventHandler):
         }
         # December 29, 2025: Retry queue for failed evaluations
         # Tuple: (model_path, board_type, num_players, attempts, next_retry_time)
-        from collections import deque
         self._retry_queue: deque[tuple[str, str, int, int, float]] = deque()
         self._max_retry_attempts = 3
         self._base_retry_delay = 60.0  # seconds, exponential backoff
@@ -277,7 +278,6 @@ class EvaluationDaemon(BaseEventHandler):
 
         December 2025: Prevents duplicate evaluations from multiple event sources.
         """
-        import hashlib
         content = f"{model_path}:{board_type}:{num_players}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
@@ -628,7 +628,7 @@ class EvaluationDaemon(BaseEventHandler):
         model_path: str,
         board_type: str,
         num_players: int,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Run baseline gauntlet with optional early stopping."""
         from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
 

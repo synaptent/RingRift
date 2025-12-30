@@ -32,11 +32,14 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import math
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -188,7 +191,6 @@ class TrainingTriggerDaemon(HandlerBase):
         }
         # December 29, 2025 (Phase 3): Training retry queue for failed jobs
         # Tuple: (config_key, board_type, num_players, attempts, next_retry_time, error)
-        from collections import deque
         self._training_retry_queue: deque[tuple[str, str, int, int, float, str]] = deque()
         self._max_training_retries = 3
         self._base_training_retry_delay = 300.0  # 5 minutes, exponential backoff
@@ -584,7 +586,6 @@ class TrainingTriggerDaemon(HandlerBase):
             pass  # Use default variance if quality monitor unavailable
 
         # Calculate CI width: 2 * z * sqrt(variance / n)
-        import math
         ci_width = 2 * z_score * math.sqrt(variance / sample_count)
 
         # Check if confidence is high enough
@@ -1458,8 +1459,6 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             (board_type, num_players) or (None, None) if not parseable.
         """
-        import re
-
         # Match board_type followed by _Np pattern anywhere in filename
         match = re.search(r'(hex8|square8|square19|hexagonal)_(\d+)p', name)
         if match:
@@ -1915,7 +1914,6 @@ class TrainingTriggerDaemon(HandlerBase):
                 model_path = state._pending_model_path
                 # Verify model exists before including path
                 if model_path and success:
-                    from pathlib import Path
                     if not Path(model_path).exists():
                         logger.warning(
                             f"[TrainingTriggerDaemon] Model not found at {model_path}, "
