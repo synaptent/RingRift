@@ -2401,7 +2401,8 @@ class FeedbackLoopController:
                 # Dec 2025: Emit CURRICULUM_REBALANCED event for SelfplayScheduler
                 # This closes the feedback loop from selfplay quality -> scheduler priorities
                 try:
-                    from app.coordination.data_events import DataEventType, get_event_bus
+                    # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
+                    from app.distributed.data_events import DataEventType, get_event_bus
 
                     bus = get_event_bus()
                     # bus.emit() is synchronous - no task wrapper needed (Dec 28, 2025 fix)

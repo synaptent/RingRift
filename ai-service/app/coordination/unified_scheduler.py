@@ -559,27 +559,30 @@ class UnifiedScheduler:
 
     async def get_status(self, unified_id: str) -> JobStatus | None:
         """Get status of a job."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM jobs WHERE unified_id = ?",
-                (unified_id,)
-            ).fetchone()
+        def _fetch_status() -> JobStatus | None:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT * FROM jobs WHERE unified_id = ?",
+                    (unified_id,)
+                ).fetchone()
 
-            if not row:
-                return None
+                if not row:
+                    return None
 
-            return JobStatus(
-                job_id=row["backend_job_id"] or unified_id,
-                unified_id=unified_id,
-                backend=Backend(row["backend"]),
-                state=JobState(row["state"]),
-                node=row["target_node"],
-                start_time=row["started_at"],
-                end_time=row["finished_at"],
-                exit_code=row["exit_code"],
-                error=row["error"],
-            )
+                return JobStatus(
+                    job_id=row["backend_job_id"] or unified_id,
+                    unified_id=unified_id,
+                    backend=Backend(row["backend"]),
+                    state=JobState(row["state"]),
+                    node=row["target_node"],
+                    start_time=row["started_at"],
+                    end_time=row["finished_at"],
+                    exit_code=row["exit_code"],
+                    error=row["error"],
+                )
+
+        return await asyncio.to_thread(_fetch_status)
 
     async def list_jobs(
         self,
@@ -589,7 +592,7 @@ class UnifiedScheduler:
     ) -> list[JobStatus]:
         """List jobs with optional filtering."""
         query = "SELECT * FROM jobs WHERE 1=1"
-        params = []
+        params: list[Any] = []
 
         if backend:
             query += " AND backend = ?"
@@ -602,24 +605,27 @@ class UnifiedScheduler:
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(query, params).fetchall()
+        def _fetch_jobs() -> list[JobStatus]:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(query, params).fetchall()
 
-            return [
-                JobStatus(
-                    job_id=row["backend_job_id"] or row["unified_id"],
-                    unified_id=row["unified_id"],
-                    backend=Backend(row["backend"]),
-                    state=JobState(row["state"]),
-                    node=row["target_node"],
-                    start_time=row["started_at"],
-                    end_time=row["finished_at"],
-                    exit_code=row["exit_code"],
-                    error=row["error"],
-                )
-                for row in rows
-            ]
+                return [
+                    JobStatus(
+                        job_id=row["backend_job_id"] or row["unified_id"],
+                        unified_id=row["unified_id"],
+                        backend=Backend(row["backend"]),
+                        state=JobState(row["state"]),
+                        node=row["target_node"],
+                        start_time=row["started_at"],
+                        end_time=row["finished_at"],
+                        exit_code=row["exit_code"],
+                        error=row["error"],
+                    )
+                    for row in rows
+                ]
+
+        return await asyncio.to_thread(_fetch_jobs)
 
     async def cancel(self, unified_id: str) -> bool:
         """Cancel a job."""

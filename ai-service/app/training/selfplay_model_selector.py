@@ -425,7 +425,8 @@ def _init_event_subscription() -> None:
 
     try:
         from app.coordination.event_router import get_router
-        from app.coordination.data_events import DataEventType
+        # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
+        from app.distributed.data_events import DataEventType
 
         router = get_router()
         router.subscribe(DataEventType.MODEL_PROMOTED.value, _on_model_promoted)
