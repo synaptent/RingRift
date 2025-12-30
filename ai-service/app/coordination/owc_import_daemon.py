@@ -412,7 +412,8 @@ class OWCImportDaemon(HandlerBase):
         self._owc_available = True
 
         # Get underserved configs
-        underserved = self._get_underserved_configs()
+        # December 30, 2025: Wrap blocking SQLite calls with asyncio.to_thread
+        underserved = await asyncio.to_thread(self._get_underserved_configs)
         if not underserved:
             logger.debug("[OWCImport] All configs have sufficient data")
             return
