@@ -175,7 +175,8 @@ class AdaptiveResourceManager:
                 stat.used / (1024**3),
                 stat.free / (1024**3),
             )
-        except Exception as e:
+        except OSError as e:
+            # OSError covers FileNotFoundError, PermissionError, etc.
             logger.error(f"Error getting disk usage for {path}: {e}")
             return 0, 0, 0
 
@@ -195,7 +196,9 @@ class AdaptiveResourceManager:
                 free = meminfo.get("MemFree", 0) + meminfo.get("Buffers", 0) + meminfo.get("Cached", 0)
                 used = total - free
                 return total, used, free
-        except Exception as e:
+        except (OSError, ValueError) as e:
+            # OSError: /proc/meminfo not found (non-Linux)
+            # ValueError: parsing failure
             logger.error(f"Error getting memory usage: {e}")
             return 0, 0, 0
 
@@ -218,7 +221,11 @@ class AdaptiveResourceManager:
                         total_used += float(parts[0].strip()) / 1024  # MB to GB
                         total_total += float(parts[1].strip()) / 1024
                 return total_used, total_total
-        except Exception as e:
+        except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError) as e:
+            # FileNotFoundError: nvidia-smi not installed
+            # TimeoutExpired: query took too long
+            # SubprocessError: execution failed
+            # ValueError: float parsing failure
             logger.debug(f"GPU memory query failed: {e}")
         return 0, 0
 
@@ -337,7 +344,8 @@ class AdaptiveResourceManager:
                         file_path.unlink()
                     result.files_deleted += 1
                     result.bytes_freed += size
-                except Exception as e:
+                except OSError as e:
+                    # OSError covers PermissionError, FileNotFoundError (race condition)
                     result.errors.append(f"Failed to delete {file_path}: {e}")
 
         except Exception as e:
