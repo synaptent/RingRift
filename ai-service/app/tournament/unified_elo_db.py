@@ -312,7 +312,11 @@ class EloDatabase:
                 worker TEXT,
                 metadata TEXT,
                 elo_before TEXT,        -- JSON dict of participant_id -> elo before match
-                elo_after TEXT          -- JSON dict of participant_id -> elo after match
+                elo_after TEXT,         -- JSON dict of participant_id -> elo after match
+                -- Dec 2025: Harness abstraction columns for Phase 1
+                harness_type TEXT,           -- e.g. "gumbel_mcts", "minimax", "maxn"
+                architecture_version TEXT,   -- e.g. "v4", "v5", "v6"
+                evaluation_metadata TEXT     -- JSON blob with full EvaluationMetadata
             );
 
             -- Rating history: track Elo changes over time
@@ -400,6 +404,13 @@ class EloDatabase:
             conn.execute("ALTER TABLE match_history ADD COLUMN worker TEXT")
         if "game_id" not in match_cols:
             conn.execute("ALTER TABLE match_history ADD COLUMN game_id TEXT")
+        # Dec 2025: Harness abstraction columns for Phase 1
+        if "harness_type" not in match_cols:
+            conn.execute("ALTER TABLE match_history ADD COLUMN harness_type TEXT")
+        if "architecture_version" not in match_cols:
+            conn.execute("ALTER TABLE match_history ADD COLUMN architecture_version TEXT")
+        if "evaluation_metadata" not in match_cols:
+            conn.execute("ALTER TABLE match_history ADD COLUMN evaluation_metadata TEXT")
 
         # Upgrade rating_history table
         rating_cols = get_columns("rating_history")
