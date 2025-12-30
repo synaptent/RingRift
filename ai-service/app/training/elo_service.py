@@ -762,6 +762,9 @@ class EloService:
         duration_sec: float = 0.0,
         tournament_id: str | None = None,
         metadata: dict | None = None,
+        # December 30, 2025: Multi-harness evaluation support
+        harness_type: str | None = None,
+        is_multi_harness: bool = False,
     ) -> MatchResult:
         """Record a match result and update Elo ratings.
 
@@ -770,9 +773,21 @@ class EloService:
                 - weight_profile_a: Heuristic weight profile ID for participant A
                 - weight_profile_b: Heuristic weight profile ID for participant B
                 - source: Origin of the match (e.g., "tournament", "selfplay")
+            harness_type: AI harness type used for this match (e.g., "gumbel_mcts", "minimax").
+                December 30, 2025: Added to support multi-harness evaluation tracking.
+            is_multi_harness: True if this match is part of a multi-harness evaluation.
+                When True, the harness_type is included in emitted events.
         """
         match_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
+
+        # December 30, 2025: Merge harness info into metadata
+        if harness_type or is_multi_harness:
+            metadata = metadata.copy() if metadata else {}
+            if harness_type:
+                metadata["harness_type"] = harness_type
+            if is_multi_harness:
+                metadata["is_multi_harness"] = is_multi_harness
 
         # Get current ratings
         rating_a = self.get_rating(participant_a, board_type, num_players)
@@ -998,6 +1013,113 @@ class EloService:
             timestamp=timestamp,
             elo_changes=elo_changes
         )
+
+    def record_multi_harness_evaluation(
+        self,
+        model_path: str,
+        board_type: str,
+        num_players: int,
+        harness_results: dict[str, dict[str, Any]],
+    ) -> dict[str, str]:
+        """Record multi-harness evaluation results in the Elo system.
+
+        December 30, 2025: Added to support multi-harness gauntlet integration.
+        This method registers composite participant IDs for each (model, harness)
+        combination and initializes their Elo ratings.
+
+        Args:
+            model_path: Path to the model being evaluated
+            board_type: Board type (e.g., "hex8", "square8")
+            num_players: Number of players (2, 3, or 4)
+            harness_results: Dictionary mapping harness names to result dicts:
+                {
+                    "gumbel_mcts": {"elo": 1450.0, "games_played": 30, "win_rate": 0.65, ...},
+                    "minimax": {"elo": 1380.0, "games_played": 30, "win_rate": 0.55, ...},
+                }
+
+        Returns:
+            Dictionary mapping harness names to composite participant IDs:
+                {"gumbel_mcts": "model_v5:gumbel_mcts:abc123", ...}
+
+        Example:
+            >>> elo = get_elo_service()
+            >>> harness_results = {
+            ...     "gumbel_mcts": {"elo": 1450, "games_played": 30, "wins": 20},
+            ...     "minimax": {"elo": 1380, "games_played": 30, "wins": 17},
+            ... }
+            >>> participant_ids = elo.record_multi_harness_evaluation(
+            ...     model_path="models/canonical_hex8_2p.pth",
+            ...     board_type="hex8",
+            ...     num_players=2,
+            ...     harness_results=harness_results,
+            ... )
+        """
+        from pathlib import Path as PathLib
+
+        try:
+            from app.training.composite_participant import make_composite_participant_id
+        except ImportError:
+            logger.warning("composite_participant module not available")
+            return {}
+
+        participant_ids: dict[str, str] = {}
+        model_name = PathLib(model_path).stem
+
+        for harness_name, result_data in harness_results.items():
+            # Create composite participant ID
+            participant_id = make_composite_participant_id(
+                nn_id=model_name,
+                ai_type=harness_name,
+                config={"players": num_players},
+            )
+
+            # Extract rating data
+            elo = result_data.get("elo", self.INITIAL_ELO)
+            games_played = result_data.get("games_played", 0)
+            wins = result_data.get("wins", 0)
+            losses = result_data.get("losses", 0)
+            draws = result_data.get("draws", 0)
+
+            # Register as composite participant
+            self.register_composite_participant(
+                nn_id=model_name,
+                ai_type=harness_name,
+                config={"players": num_players},
+                board_type=board_type,
+                num_players=num_players,
+                nn_model_path=model_path,
+            )
+
+            # Update the rating directly with provided values
+            with self._transaction() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO elo_ratings
+                    (participant_id, board_type, num_players, rating, games_played,
+                     wins, losses, draws, peak_rating, last_update)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    participant_id,
+                    board_type,
+                    num_players,
+                    elo,
+                    games_played,
+                    wins,
+                    losses,
+                    draws,
+                    elo,  # peak_rating = current elo for new entry
+                    time.time(),
+                ))
+
+            participant_ids[harness_name] = participant_id
+            logger.debug(
+                f"Registered multi-harness result: {participant_id} with Elo {elo:.0f}"
+            )
+
+        logger.info(
+            f"Recorded {len(participant_ids)} harness ratings for {model_name} "
+            f"({board_type}_{num_players}p)"
+        )
+        return participant_ids
 
     def get_leaderboard(
         self,
@@ -1613,6 +1735,9 @@ def update_elo_after_match(
     num_players: int = 2,
     game_length: int = 0,
     duration_sec: float = 0.0,
+    # December 30, 2025: Multi-harness support
+    harness_type: str | None = None,
+    is_multi_harness: bool = False,
 ) -> dict[str, Any]:
     """Update Elo ratings after a match (backwards compatible).
 
@@ -1625,6 +1750,8 @@ def update_elo_after_match(
         num_players: Number of players
         game_length: Number of moves in game
         duration_sec: Game duration in seconds
+        harness_type: AI harness type (e.g., "gumbel_mcts", "minimax")
+        is_multi_harness: True if part of multi-harness evaluation
 
     Returns:
         Dict with rating changes: {"model_a": new_rating, "model_b": new_rating, "changes": {...}}
@@ -1647,7 +1774,9 @@ def update_elo_after_match(
         board_type=board_type,
         num_players=num_players,
         game_length=game_length,
-        duration_sec=duration_sec
+        duration_sec=duration_sec,
+        harness_type=harness_type,
+        is_multi_harness=is_multi_harness,
     )
 
     # Return in the format expected by legacy callers

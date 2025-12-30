@@ -63,9 +63,9 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 105 daemon types (~2,000 LOC)       |
+| `daemon_manager.py`                    | Lifecycle for 89 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 93 async runner functions                         |
+| `daemon_runners.py`                    | 89 async runner functions                         |
 | `event_router.py`                      | Unified event bus (207 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
@@ -93,6 +93,41 @@ python scripts/update_all_nodes.py --restart-p2p
 | `orphan_detection_daemon.py`           | Detects incomplete selfplay records               |
 | `integrity_check_daemon.py`            | Data integrity validation                         |
 | `event_utils.py`                       | Unified event extraction utilities (Dec 2025)     |
+| `coordinator_persistence.py`           | State persistence mixin for crash recovery        |
+
+### State Persistence (Dec 2025)
+
+The `StatePersistenceMixin` provides crash-safe state persistence for coordinators with auto-snapshot and recovery:
+
+```python
+from app.coordination.coordinator_persistence import (
+    StatePersistenceMixin,
+    StateSnapshot,
+    get_snapshot_coordinator,
+)
+
+class MyCoordinator(CoordinatorBase, StatePersistenceMixin):
+    def __init__(self, db_path: Path):
+        super().__init__()
+        self.init_persistence(db_path)
+
+    def _get_state_for_persistence(self) -> dict[str, Any]:
+        return {"counter": self._counter, "mode": self._mode}
+
+    def _restore_state_from_persistence(self, state: dict[str, Any]) -> None:
+        self._counter = state.get("counter", 0)
+        self._mode = state.get("mode", "default")
+```
+
+**Features:**
+
+- JSON serialization with datetime/timedelta/set/bytes support
+- Gzip compression for states >10KB
+- Automatic periodic snapshots (configurable interval)
+- Checksum verification for data integrity
+- Cross-coordinator synchronized snapshots via `SnapshotCoordinator`
+
+**Note:** Some daemons (`training_trigger_daemon.py`, `auto_export_daemon.py`) have inline SQLite persistence. New daemons should use `StatePersistenceMixin` instead.
 
 ### Event Extraction Utilities (Dec 2025)
 
@@ -303,11 +338,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-93 active daemon types, 12 deprecated (105 total). Three-layer architecture:
+78 active daemon types, 11 deprecated (89 total). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 93 async runner functions
+3. **`daemon_runners.py`** - 89 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager

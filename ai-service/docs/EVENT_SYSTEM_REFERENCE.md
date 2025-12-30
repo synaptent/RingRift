@@ -408,6 +408,7 @@ To bridge a new event type:
 | `BACKPRESSURE_RELEASED`        | `backpressure_released`        | BackpressureMonitor   | SelfplayScheduler, DaemonManager | Resume normal rate      |
 | `IDLE_RESOURCE_DETECTED`       | `idle_resource_detected`       | IdleResourceDaemon    | SelfplayScheduler                | Spawn work              |
 | `RESOURCE_CONSTRAINT`          | `resource_constraint`          | ResourceTargetManager | IdleResourceDaemon               | CPU/GPU/Memory pressure |
+| `MEMORY_PRESSURE`              | `memory_pressure`              | MemoryMonitorDaemon   | IdleResourceDaemon               | GPU/CPU memory pressure |
 | `RESOURCE_CONSTRAINT_DETECTED` | `resource_constraint_detected` | ResourceTargetManager | SelfplayScheduler                | Resource limit hit      |
 | `DISK_SPACE_LOW`               | `disk_space_low`               | DiskSpaceManager      | CleanupDaemon                    | Trigger cleanup         |
 | `DISK_CLEANUP_TRIGGERED`       | `disk_cleanup_triggered`       | DiskSpaceManager      | MetricsAnalysisOrchestrator      | Cleanup started         |

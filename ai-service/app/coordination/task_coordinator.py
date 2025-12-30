@@ -1844,8 +1844,8 @@ class TaskCoordinator(SingletonMixin):
                 "tasks_by_node": stats["by_node"],
                 "spawns_last_minute": stats["spawns_last_minute"],
                 "rate_limiter_tokens": stats["rate_limiter_tokens"],
-                "gauntlet_reserved": len(self._gauntlet_reserved),
-                "training_reserved": len(self._training_reserved),
+                "gauntlet_reserved": len(self.get_gauntlet_reserved()),
+                "training_reserved": len(self.get_training_reserved()),
             },
         )
 

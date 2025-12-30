@@ -297,6 +297,7 @@ These events form the main training pipeline:
 | `HEALTH_CHECK_FAILED` | ClusterWatchdogDaemon   | HealthCheckOrchestrator, FeedbackLoopController, NodeHealthOrchestrator | Node unhealthy               |
 | `HEALTH_ALERT`        | HealthCheckOrchestrator | AlertManager                                                            | General health warning       |
 | `RESOURCE_CONSTRAINT` | ResourceTargetManager   | IdleResourceDaemon                                                      | CPU/GPU/Memory/Disk pressure |
+| `MEMORY_PRESSURE`     | MemoryMonitorDaemon     | IdleResourceDaemon                                                      | GPU/CPU memory pressure      |
 | `NODE_OVERLOADED`     | ResourceTargetManager   | SelfplayScheduler                                                       | Node overloaded              |
 | `RECOVERY_INITIATED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator                                             | Auto-recovery started        |
 | `RECOVERY_COMPLETED`  | NodeRecoveryDaemon      | MetricsAnalysisOrchestrator                                             | Auto-recovery finished       |
