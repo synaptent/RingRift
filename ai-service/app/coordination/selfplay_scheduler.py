@@ -97,12 +97,17 @@ from app.config.thresholds import (
 )
 
 # December 2025: Constants consolidated in priority_calculator.py
+# December 29, 2025: Now also imports PriorityCalculator for delegation
 from app.coordination.priority_calculator import (
     ALL_CONFIGS,
+    ClusterState,
     PLAYER_COUNT_ALLOCATION_MULTIPLIER,
+    PriorityCalculator,
+    PriorityInputs,
     PRIORITY_OVERRIDE_MULTIPLIERS,
     SAMPLES_PER_GAME_BY_BOARD,
     VOI_SAMPLE_COST_BY_BOARD,
+    compute_dynamic_weights,
 )
 
 # December 2025: NodeCapability extracted to node_allocator.py
@@ -523,6 +528,19 @@ class SelfplayScheduler:
         self._allocation_window_seconds = 3600
         self._allocation_history: deque[tuple[float, int]] = deque()
         self._games_allocated_total = 0
+
+        # December 29, 2025: PriorityCalculator for delegated score computation
+        # Callbacks are bound methods so PriorityCalculator can access scheduler state
+        self._priority_calculator = PriorityCalculator(
+            dynamic_weights=self._dynamic_weights,
+            get_quality_score_fn=self._get_config_data_quality,
+            get_elo_velocity_fn=self.get_elo_velocity,
+            get_cascade_priority_fn=self._get_cascade_priority,
+            data_starvation_emergency_threshold=DATA_STARVATION_EMERGENCY_THRESHOLD,
+            data_starvation_critical_threshold=DATA_STARVATION_CRITICAL_THRESHOLD,
+            data_starvation_emergency_multiplier=DATA_STARVATION_EMERGENCY_MULTIPLIER,
+            data_starvation_critical_multiplier=DATA_STARVATION_CRITICAL_MULTIPLIER,
+        )
 
     def _load_priority_overrides(self) -> None:
         """Load board_priority_overrides from unified_loop.yaml.
@@ -991,6 +1009,35 @@ class SelfplayScheduler:
 
         self._dynamic_weights = weights
         return weights
+
+    def _config_priority_to_inputs(self, priority: ConfigPriority) -> PriorityInputs:
+        """Convert ConfigPriority to PriorityInputs for PriorityCalculator.
+
+        December 29, 2025: Helper for delegating priority calculation.
+
+        Args:
+            priority: ConfigPriority from scheduler state
+
+        Returns:
+            PriorityInputs for use with PriorityCalculator
+        """
+        return PriorityInputs(
+            config_key=priority.config_key,
+            staleness_hours=priority.staleness_hours,
+            elo_velocity=priority.elo_velocity,
+            training_pending=priority.training_pending,
+            exploration_boost=priority.exploration_boost,
+            curriculum_weight=priority.curriculum_weight,
+            improvement_boost=priority.improvement_boost,
+            quality_penalty=priority.quality_penalty,
+            momentum_multiplier=priority.momentum_multiplier,
+            game_count=priority.game_count,
+            is_large_board=priority.is_large_board,
+            priority_override=priority.priority_override,
+            current_elo=priority.current_elo,
+            elo_uncertainty=priority.elo_uncertainty,
+            target_elo=priority.target_elo,
+        )
 
     def _compute_priority_score(self, priority: ConfigPriority) -> float:
         """Compute overall priority score for a configuration.

@@ -3,6 +3,9 @@
 This module provides backward-compatible API wrappers for scripts that still use
 the deprecated EloDatabase interface. New code should use EloService directly.
 
+Additionally provides architecture performance ranking for the unified NN/NNUE
+multi-harness evaluation system (December 2025).
+
 Usage:
     from app.tournament.elo_facade import EloServiceFacade
 
@@ -21,6 +24,17 @@ Usage:
     # Get leaderboard
     leaders = facade.get_leaderboard(board_type="square8", num_players=2)
 
+    # NEW: Architecture performance tracking
+    from app.tournament.elo_facade import (
+        get_architecture_rankings,
+        ArchitecturePerformance,
+    )
+
+    # Get performance by architecture version
+    rankings = get_architecture_rankings(board_type="square8", num_players=2)
+    for perf in rankings:
+        print(f"{perf.model_type}: avg={perf.avg_elo:.0f}, best={perf.best_elo:.0f}")
+
 Migration from EloDatabase:
     # Old way
     from app.tournament import get_elo_database
@@ -38,6 +52,7 @@ Migration from EloDatabase:
     elo.record_match(...)
 
 December 2025: Created as part of Elo unification initiative.
+December 2025: Added architecture performance ranking for unified NN/NNUE tracking.
 """
 
 from __future__ import annotations

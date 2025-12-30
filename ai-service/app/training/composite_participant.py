@@ -100,6 +100,21 @@ STANDARD_ALGORITHM_CONFIGS: dict[str, dict[str, Any]] = {
         "budget": 150,
         "m": 16,
     },
+    # NNUE-compatible algorithms
+    "minimax": {
+        "depth": 6,
+        "use_nnue": True,
+        "alpha_beta": True,
+    },
+    # Multi-player NNUE algorithms
+    "maxn": {
+        "depth": 7,
+        "use_nnue": True,
+    },
+    "brs": {
+        "depth": 5,
+        "use_nnue": True,
+    },
 }
 
 # Config hash key mapping (config parameter → hash prefix)
@@ -116,6 +131,7 @@ CONFIG_HASH_KEYS = {
     "learning_rate": "lr",   # Learning rate
     "num_restarts": "r",     # Number of restarts
     "direct_eval": "de",     # Direct eval mode (bool)
+    "depth": "dp",           # Search depth (minimax, maxn, brs)
 }
 
 # Reverse mapping for parsing
@@ -128,7 +144,137 @@ class ParticipantCategory(Enum):
     PURE_NN = "pure_nn"          # NN strength without search (e.g., nn:policy_only:t0.3)
     NN_SEARCH = "nn_search"      # Full NN + search combination
     SEARCH_ONLY = "search_only"  # Heuristic eval with search (no NN)
+    NNUE = "nnue"                # NNUE with Minimax (2p zero-sum)
+    NNUE_MP = "nnue_mp"          # Multi-player NNUE with MaxN/BRS
     LEGACY = "legacy"            # Old-format participant ID (not composite)
+
+
+class ModelType(Enum):
+    """Model architecture types for unified tracking.
+
+    Used to categorize models by their architecture version for:
+    - Performance comparison across architectures
+    - Training compute allocation based on architecture efficiency
+    - Unified Elo tracking of model+harness combinations
+
+    Naming convention:
+        {type}_{version}
+
+    Where type is:
+        - nn: Full neural network (outputs policy logits + value)
+        - nnue: NNUE (outputs scalar value, 2p zero-sum)
+        - nnue_mp: Multi-player NNUE (outputs per-player values)
+    """
+    # Full Neural Networks (policy + value)
+    NN_V2 = "nn_v2"              # Original v2 architecture
+    NN_V3 = "nn_v3"              # v3 with SE attention
+    NN_V3_1 = "nn_v3.1"          # v3.1 minor improvements
+    NN_V4 = "nn_v4"              # v4 architecture
+    NN_V5 = "nn_v5"              # v5 standard
+    NN_V5_HEAVY = "nn_v5_heavy"  # v5.1 with full heuristics
+    NN_V6 = "nn_v6"              # v6 latest
+
+    # NNUE (scalar value output, 2p zero-sum)
+    NNUE_V1 = "nnue_v1"          # NNUE v1
+
+    # Multi-player NNUE (per-player value output)
+    NNUE_MP_V1 = "nnue_mp_v1"    # Multi-player NNUE v1
+
+    @classmethod
+    def from_model_path(cls, model_path: str) -> "ModelType":
+        """Infer model type from model path or filename.
+
+        Args:
+            model_path: Path to model file or model identifier
+
+        Returns:
+            ModelType enum value
+
+        Examples:
+            >>> ModelType.from_model_path("models/canonical_hex8_2p.pth")
+            ModelType.NN_V5  # Default assumption
+            >>> ModelType.from_model_path("models/nnue_sq8_2p.pth")
+            ModelType.NNUE_V1
+            >>> ModelType.from_model_path("models/canonical_hex8_2p_v5heavy.pth")
+            ModelType.NN_V5_HEAVY
+        """
+        path_lower = model_path.lower()
+
+        # Check for NNUE variants
+        if "nnue_mp" in path_lower:
+            return cls.NNUE_MP_V1
+        if "nnue" in path_lower:
+            return cls.NNUE_V1
+
+        # Check for specific NN versions
+        if "v5heavy" in path_lower or "v5_heavy" in path_lower:
+            return cls.NN_V5_HEAVY
+        if "v6" in path_lower:
+            return cls.NN_V6
+        if "v5" in path_lower:
+            return cls.NN_V5
+        if "v4" in path_lower:
+            return cls.NN_V4
+        if "v3.1" in path_lower or "v3_1" in path_lower:
+            return cls.NN_V3_1
+        if "v3" in path_lower:
+            return cls.NN_V3
+        if "v2" in path_lower:
+            return cls.NN_V2
+
+        # Default to v5 for canonical models without version suffix
+        return cls.NN_V5
+
+    @property
+    def is_full_nn(self) -> bool:
+        """Check if this is a full neural network (outputs policy + value)."""
+        return self.value.startswith("nn_")
+
+    @property
+    def is_nnue(self) -> bool:
+        """Check if this is any NNUE variant."""
+        return "nnue" in self.value
+
+    @property
+    def is_multiplayer_nnue(self) -> bool:
+        """Check if this is a multi-player NNUE."""
+        return self.value.startswith("nnue_mp")
+
+    @property
+    def supported_algorithms(self) -> list[str]:
+        """Get list of algorithms this model type supports.
+
+        Returns:
+            List of algorithm type strings compatible with this model.
+        """
+        if self.is_full_nn:
+            return ["policy_only", "mcts", "gumbel_mcts", "descent"]
+        elif self.is_multiplayer_nnue:
+            return ["maxn", "brs", "minimax"]  # minimax in 2p paranoid mode
+        elif self.is_nnue:
+            return ["minimax"]
+        return []
+
+
+# Algorithm types that support neural network evaluation
+NN_COMPATIBLE_ALGORITHMS = frozenset({
+    "policy_only",
+    "mcts",
+    "gumbel_mcts",
+    "descent",
+})
+
+# Algorithm types that support NNUE evaluation
+NNUE_COMPATIBLE_ALGORITHMS = frozenset({
+    "minimax",
+})
+
+# Algorithm types that support multi-player NNUE evaluation
+NNUE_MP_COMPATIBLE_ALGORITHMS = frozenset({
+    "maxn",
+    "brs",
+    "minimax",  # Can use multi-player NNUE in paranoid mode
+})
 
 
 @dataclass
@@ -399,6 +545,14 @@ def get_participant_category(participant_id: str) -> ParticipantCategory:
     if not has_nn and ai_type in ("random", "heuristic"):
         return ParticipantCategory.BASELINE
 
+    # Check for NNUE variants based on model ID prefix
+    if has_nn:
+        nn_id_lower = nn_id.lower() if nn_id else ""
+        if nn_id_lower.startswith("nnue_mp"):
+            return ParticipantCategory.NNUE_MP
+        if nn_id_lower.startswith("nnue"):
+            return ParticipantCategory.NNUE
+
     # Pure NN: NN with policy_only (no search)
     if has_nn and ai_type == "policy_only":
         return ParticipantCategory.PURE_NN
@@ -584,3 +738,169 @@ def get_baseline_rating(participant_id: str) -> float | None:
 def is_baseline_participant(participant_id: str) -> bool:
     """Check if a participant ID is a known baseline."""
     return participant_id in BASELINE_PARTICIPANTS
+
+
+def extract_model_type(participant_id: str) -> ModelType | None:
+    """Extract the model type from a participant ID.
+
+    Args:
+        participant_id: Participant ID (composite or legacy)
+
+    Returns:
+        ModelType enum, or None if model type cannot be determined
+    """
+    nn_id = extract_nn_id(participant_id)
+    if nn_id is None:
+        return None
+    return ModelType.from_model_path(nn_id)
+
+
+def get_compatible_algorithms(model_type: ModelType) -> list[str]:
+    """Get list of algorithms compatible with a model type.
+
+    Args:
+        model_type: ModelType enum value
+
+    Returns:
+        List of algorithm type strings
+    """
+    return model_type.supported_algorithms
+
+
+def make_nnue_participant_id(
+    nnue_version: str,
+    board_config: str,
+    ai_type: str = "minimax",
+    config: dict[str, Any] | None = None,
+) -> str:
+    """Create a composite participant ID for an NNUE model.
+
+    Args:
+        nnue_version: NNUE version (e.g., "v1")
+        board_config: Board configuration (e.g., "sq8_2p")
+        ai_type: Algorithm type (defaults to "minimax")
+        config: Algorithm configuration
+
+    Returns:
+        Composite participant ID
+
+    Example:
+        >>> make_nnue_participant_id("v1", "sq8_2p")
+        "nnue_v1_sq8_2p:minimax:dp6"
+    """
+    nn_id = f"nnue_{nnue_version}_{board_config}"
+    return make_composite_participant_id(nn_id, ai_type, config)
+
+
+def make_nnue_mp_participant_id(
+    nnue_version: str,
+    board_config: str,
+    ai_type: str = "maxn",
+    config: dict[str, Any] | None = None,
+) -> str:
+    """Create a composite participant ID for a multi-player NNUE model.
+
+    Args:
+        nnue_version: NNUE version (e.g., "v1")
+        board_config: Board configuration (e.g., "hex8_4p")
+        ai_type: Algorithm type (defaults to "maxn")
+        config: Algorithm configuration
+
+    Returns:
+        Composite participant ID
+
+    Example:
+        >>> make_nnue_mp_participant_id("v1", "hex8_4p")
+        "nnue_mp_v1_hex8_4p:maxn:dp7"
+    """
+    nn_id = f"nnue_mp_{nnue_version}_{board_config}"
+    return make_composite_participant_id(nn_id, ai_type, config)
+
+
+def get_all_harness_variants(
+    model_id: str,
+    model_type: ModelType | None = None,
+) -> list[str]:
+    """Generate composite participant IDs for a model across all compatible harnesses.
+
+    Args:
+        model_id: Model identifier (e.g., "ringrift_v5_sq8_2p")
+        model_type: Optional ModelType (auto-detected if not provided)
+
+    Returns:
+        List of composite participant IDs for all compatible harnesses
+
+    Example:
+        >>> get_all_harness_variants("ringrift_v5_sq8_2p")
+        [
+            "ringrift_v5_sq8_2p:policy_only:t0p3",
+            "ringrift_v5_sq8_2p:mcts:s800",
+            "ringrift_v5_sq8_2p:gumbel_mcts:b200",
+            "ringrift_v5_sq8_2p:descent:d6",
+        ]
+    """
+    if model_type is None:
+        model_type = ModelType.from_model_path(model_id)
+
+    algorithms = model_type.supported_algorithms
+    return [
+        make_composite_participant_id(model_id, algo)
+        for algo in algorithms
+    ]
+
+
+def is_nnue_participant(participant_id: str) -> bool:
+    """Check if a participant ID represents an NNUE model.
+
+    Args:
+        participant_id: Participant ID to check
+
+    Returns:
+        True if the participant uses an NNUE model
+    """
+    nn_id = extract_nn_id(participant_id)
+    if nn_id is None:
+        return False
+    return "nnue" in nn_id.lower()
+
+
+def is_multiplayer_nnue_participant(participant_id: str) -> bool:
+    """Check if a participant ID represents a multi-player NNUE model.
+
+    Args:
+        participant_id: Participant ID to check
+
+    Returns:
+        True if the participant uses a multi-player NNUE model
+    """
+    nn_id = extract_nn_id(participant_id)
+    if nn_id is None:
+        return False
+    return nn_id.lower().startswith("nnue_mp")
+
+
+def validate_algorithm_compatibility(
+    model_id: str,
+    ai_type: str,
+) -> bool:
+    """Check if an algorithm is compatible with a model type.
+
+    Args:
+        model_id: Model identifier
+        ai_type: Algorithm type
+
+    Returns:
+        True if the algorithm is compatible with the model
+
+    Raises:
+        ValueError: If the algorithm is not compatible
+    """
+    model_type = ModelType.from_model_path(model_id)
+    compatible = model_type.supported_algorithms
+
+    if ai_type not in compatible:
+        raise ValueError(
+            f"Algorithm '{ai_type}' is not compatible with model type "
+            f"'{model_type.value}'. Compatible algorithms: {compatible}"
+        )
+    return True
