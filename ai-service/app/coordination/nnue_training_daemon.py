@@ -290,12 +290,12 @@ class NNUETrainingDaemon(HandlerBase):
 
         # Check minimum time between trainings
         last_time = self._state.last_training_time.get(config_key, 0.0)
-        if time.time() - last_time < self._config.min_time_between_trainings:
+        if time.time() - last_time < self._nnue_config.min_time_between_trainings:
             return False
 
         # Check game count threshold
         last_count = self._state.last_training_game_count.get(config_key, 0)
-        threshold = self._config.get_threshold(config_key)
+        threshold = self._nnue_config.get_threshold(config_key)
         games_since_last = current_count - last_count
 
         if games_since_last >= threshold:
@@ -367,7 +367,7 @@ class NNUETrainingDaemon(HandlerBase):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=self._config.training_timeout_seconds,
+                timeout=self._nnue_config.training_timeout_seconds,
             )
 
             if proc.returncode == 0:
@@ -417,7 +417,7 @@ class NNUETrainingDaemon(HandlerBase):
     def _cleanup_active_trainings(self) -> None:
         """Clean up timed-out active trainings."""
         now = time.time()
-        timeout = self._config.training_timeout_seconds
+        timeout = self._nnue_config.training_timeout_seconds
 
         timed_out = [
             config_key

@@ -423,46 +423,43 @@ Profiles group daemons by node role for easier management.
 
 Runs on the central coordinator node (typically MacBook M3).
 
-**Daemon Count:** 36
+**Daemon Count:** 33
 
 **Daemons:**
 
 - `EVENT_ROUTER` (CRITICAL)
 - `HEALTH_SERVER`
+- `DAEMON_WATCHDOG`
 - `P2P_BACKEND`
 - `TOURNAMENT_DAEMON`
 - `MODEL_DISTRIBUTION`
 - `S3_BACKUP`
-- `REPLICATION_MONITOR`
-- `REPLICATION_REPAIR`
+- `REPLICATION_MONITOR` (deprecated)
+- `REPLICATION_REPAIR` (deprecated)
 - `CLUSTER_MONITOR`
 - `QUEUE_MONITOR`
 - `FEEDBACK_LOOP` (CRITICAL)
 - `QUALITY_MONITOR`
 - `MODEL_PERFORMANCE_WATCHDOG`
-- `NPZ_DISTRIBUTION`
+- `NPZ_DISTRIBUTION` (deprecated)
 - `ORPHAN_DETECTION`
-- `NODE_HEALTH_MONITOR`
-- `SYSTEM_HEALTH_MONITOR`
 - `UNIFIED_PROMOTION`
 - `JOB_SCHEDULER`
 - `IDLE_RESOURCE` (CRITICAL)
 - `NODE_RECOVERY`
-- `LAMBDA_IDLE`
 - `QUEUE_POPULATOR` (CRITICAL)
 - `CURRICULUM_INTEGRATION`
 - `AUTO_EXPORT`
+- `NPZ_COMBINATION`
 - `TRAINING_TRIGGER`
 - `DLQ_RETRY`
 - `GAUNTLET_FEEDBACK`
 - `AUTO_SYNC` (CRITICAL)
-- `CLUSTER_DATA_SYNC`
 - `CLUSTER_WATCHDOG`
 - `METRICS_ANALYSIS`
+- `ELO_SYNC`
 - `DATA_CONSOLIDATION` (December 2025)
-- `DISK_SPACE_MANAGER` (December 2025)
 - `COORDINATOR_DISK_MANAGER` (December 2025)
-- `EXTERNAL_DRIVE_SYNC` (December 2025)
 
 **Use Case:** Centralized coordination, monitoring, and job scheduling for the entire cluster.
 
@@ -472,7 +469,7 @@ Runs on the central coordinator node (typically MacBook M3).
 
 Runs on GPU training nodes (H100, Nebius, RunPod, Vultr; Lambda legacy).
 
-**Daemon Count:** 19
+**Daemon Count:** 21
 
 **Daemons:**
 
@@ -491,6 +488,7 @@ Runs on GPU training nodes (H100, Nebius, RunPod, Vultr; Lambda legacy).
 - `UTILIZATION_OPTIMIZER`
 - `CURRICULUM_INTEGRATION`
 - `AUTO_EXPORT`
+- `NPZ_COMBINATION`
 - `TRAINING_TRIGGER`
 - `FEEDBACK_LOOP` (CRITICAL)
 - `METRICS_ANALYSIS`
@@ -511,13 +509,13 @@ Runs on ephemeral/spot instances (Vast.ai marketplace).
 
 - `EVENT_ROUTER` (CRITICAL)
 - `HEALTH_SERVER`
-- `EPHEMERAL_SYNC` (5-second aggressive sync)
 - `DATA_PIPELINE`
 - `IDLE_RESOURCE` (CRITICAL)
 - `QUALITY_MONITOR`
 - `ORPHAN_DETECTION`
 - `AUTO_SYNC` (CRITICAL)
 - `FEEDBACK_LOOP` (CRITICAL)
+- `DISK_SPACE_MANAGER` (December 2025)
 
 **Use Case:** Ephemeral nodes with aggressive data sync to prevent loss on termination.
 
@@ -546,7 +544,7 @@ Runs on selfplay-only nodes (generates training data).
 
 All daemons (for testing/development).
 
-**Daemon Count:** 60+
+**Daemon Count:** 85
 
 **Use Case:** Complete daemon suite for integration testing.
 
@@ -568,7 +566,7 @@ Just event routing (for debugging).
 
 ## Dependency Graph
 
-This graph shows which daemons depend on other daemons being started first.
+This graph is a simplified snapshot. For canonical dependencies, see `app/coordination/daemon_registry.py`.
 
 ```
 EVENT_ROUTER (CRITICAL - no dependencies)
