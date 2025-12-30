@@ -147,35 +147,50 @@ class HarnessConfig:
 class MultiHarnessResult:
     """Result of multi-harness evaluation."""
 
-    model_path: str
-    model_type: ModelType
-    board_type: str
-    num_players: int
-    harness_results: dict[HarnessType, EloRating]
-    best_harness: HarnessType | None
-    best_elo: float | None
-    total_games: int
-    evaluation_time_seconds: float
+    model_path: str | None = None
+    model_type: ModelType | None = None
+    board_type: str | None = None
+    num_players: int = 2
+    harness_results: dict[HarnessType, Any] = field(default_factory=dict)
+    best_harness: HarnessType | str | None = None
+    best_elo: float = 0.0
+    total_games: int = 0
+    evaluation_time_seconds: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
+        # Handle harness results - may be EloRating or GauntletResult objects
+        harness_data = {}
+        for h, r in self.harness_results.items():
+            h_key = h.value if hasattr(h, "value") else str(h)
+            if hasattr(r, "elo"):
+                harness_data[h_key] = {
+                    "elo": r.elo,
+                    "games_played": getattr(r, "games_played", 0),
+                    "wins": getattr(r, "wins", 0),
+                    "losses": getattr(r, "losses", 0),
+                    "draws": getattr(r, "draws", 0),
+                    "win_rate": getattr(r, "win_rate", 0.0),
+                }
+            else:
+                harness_data[h_key] = r
+
+        # Handle best_harness which may be str or enum
+        best_harness_str = None
+        if self.best_harness is not None:
+            best_harness_str = (
+                self.best_harness.value
+                if hasattr(self.best_harness, "value")
+                else str(self.best_harness)
+            )
+
         return {
             "model_path": self.model_path,
-            "model_type": self.model_type.value,
+            "model_type": self.model_type.value if self.model_type else None,
             "board_type": self.board_type,
             "num_players": self.num_players,
-            "harness_results": {
-                h.value: {
-                    "elo": r.elo,
-                    "games_played": r.games_played,
-                    "wins": r.wins,
-                    "losses": r.losses,
-                    "draws": r.draws,
-                    "win_rate": r.win_rate,
-                }
-                for h, r in self.harness_results.items()
-            },
-            "best_harness": self.best_harness.value if self.best_harness else None,
+            "harness_results": harness_data,
+            "best_harness": best_harness_str,
             "best_elo": self.best_elo,
             "total_games": self.total_games,
             "evaluation_time_seconds": self.evaluation_time_seconds,
@@ -694,3 +709,52 @@ def create_harness_for_evaluation(
 
 # Backwards-compatible aliases for existing code
 run_multi_harness_evaluation = evaluate_model_all_harnesses
+
+
+# ============================================
+# Harness Compatibility Helpers (Dec 2025)
+# ============================================
+
+# Compatibility dict for tests and external consumers
+# Maps harness name -> {nn: bool, nnue: bool, policy_required: bool, min_players: int}
+HARNESS_COMPATIBILITY: dict[str, dict[str, Any]] = {
+    "gumbel_mcts": {"nn": True, "nnue": False, "policy_required": True, "min_players": 2},
+    "mcts": {"nn": True, "nnue": False, "policy_required": True, "min_players": 2},
+    "policy_only": {"nn": True, "nnue": False, "policy_required": True, "min_players": 2},
+    "descent": {"nn": True, "nnue": False, "policy_required": True, "min_players": 2},
+    "minimax": {"nn": True, "nnue": True, "policy_required": False, "min_players": 2},
+    "maxn": {"nn": True, "nnue": True, "policy_required": False, "min_players": 3},
+    "brs": {"nn": True, "nnue": True, "policy_required": False, "min_players": 3},
+}
+
+
+def get_compatible_harnesses_for_model(model_type: str) -> list[str]:
+    """Get list of harnesses compatible with a model type.
+
+    Args:
+        model_type: Model type string ("nn" or "nnue")
+
+    Returns:
+        List of compatible harness type names
+    """
+    key = "nn" if model_type == "nn" else "nnue"
+    return [name for name, compat in HARNESS_COMPATIBILITY.items() if compat.get(key, False)]
+
+
+def is_harness_compatible(harness_type: str, model_type: str) -> bool:
+    """Check if a harness is compatible with a model type.
+
+    Args:
+        harness_type: Harness type string (e.g., "gumbel_mcts")
+        model_type: Model type string ("nn" or "nnue")
+
+    Returns:
+        True if compatible, False otherwise
+    """
+    if not harness_type:
+        return False
+    compat = HARNESS_COMPATIBILITY.get(harness_type)
+    if compat is None:
+        return False
+    key = "nn" if model_type == "nn" else "nnue"
+    return compat.get(key, False)

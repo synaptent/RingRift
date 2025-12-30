@@ -318,6 +318,10 @@ try:
         get_elo_adaptive_win_rate_vs_random,
     )
     HAS_ELO_ADAPTIVE = True
+    # Dec 29, 2025: NNUE baseline Elo ratings (not in thresholds.py yet)
+    BASELINE_ELO_NNUE_MINIMAX_D4 = 1300
+    BASELINE_ELO_NNUE_MAXN_D3 = 1250
+    BASELINE_ELO_NNUE_BRS_D3 = 1250
 except ImportError:
     # Fallback values - keep in sync with app/config/thresholds.py
     BASELINE_ELO_RANDOM = 400
@@ -325,6 +329,10 @@ except ImportError:
     # Dec 28, 2025: Added 2000+ Elo baselines
     BASELINE_ELO_MCTS_MASTER = 2000
     BASELINE_ELO_MCTS_GRANDMASTER = 2100
+    # Dec 29, 2025: NNUE baseline Elo ratings
+    BASELINE_ELO_NNUE_MINIMAX_D4 = 1300  # NNUE minimax depth 4
+    BASELINE_ELO_NNUE_MAXN_D3 = 1250  # NNUE MaxN depth 3 (3+ players)
+    BASELINE_ELO_NNUE_BRS_D3 = 1250  # NNUE BRS depth 3 (3+ players)
     GAUNTLET_GAMES_PER_OPPONENT = 50
     # Dec 29, 2025: Updated to match thresholds.py (rationalized for player count)
     # Using ~1.7x multiplier over random baseline consistently
@@ -374,6 +382,10 @@ BASELINE_ELOS = {
     # Dec 28, 2025: Added 2000+ Elo baselines
     BaselineOpponent.MCTS_MASTER: BASELINE_ELO_MCTS_MASTER,
     BaselineOpponent.MCTS_GRANDMASTER: BASELINE_ELO_MCTS_GRANDMASTER,
+    # Dec 29, 2025: NNUE baseline Elo ratings for unified harness evaluation
+    BaselineOpponent.NNUE_MINIMAX_D4: BASELINE_ELO_NNUE_MINIMAX_D4,
+    BaselineOpponent.NNUE_MAXN_D3: BASELINE_ELO_NNUE_MAXN_D3,
+    BaselineOpponent.NNUE_BRS_D3: BASELINE_ELO_NNUE_BRS_D3,
 }
 
 # Static fallback (use get_min_win_rate_* functions for player-aware thresholds)
