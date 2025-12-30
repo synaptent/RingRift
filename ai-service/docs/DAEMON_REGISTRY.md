@@ -724,62 +724,56 @@ Daemons are categorized by priority for health monitoring and restart behavior.
 
 ### CRITICAL Priority
 
-These daemons get 15-second health check intervals (vs 60s for others):
+These daemons get 15-second health check intervals (vs 60s for others), per `CRITICAL_DAEMONS`:
 
 1. **EVENT_ROUTER** - Core event bus. All coordination depends on this.
-2. **AUTO_SYNC** - Primary data sync mechanism. Ensures fresh data.
-3. **QUEUE_POPULATOR** - Keeps work queue populated. Prevents idle cluster.
-4. **IDLE_RESOURCE** - Ensures GPUs stay utilized. Prevents waste.
-5. **FEEDBACK_LOOP** - Coordinates training feedback signals.
+2. **DAEMON_WATCHDOG** - Self-healing for daemon crashes.
+3. **DATA_PIPELINE** - Pipeline processor (before sync).
+4. **AUTO_SYNC** - Primary data sync mechanism. Ensures fresh data.
+5. **QUEUE_POPULATOR** - Keeps work queue populated. Prevents idle cluster.
+6. **IDLE_RESOURCE** - Ensures GPUs stay utilized. Prevents waste.
+7. **FEEDBACK_LOOP** - Coordinates training feedback signals.
 
 **Health Check Interval:** 15 seconds
 **Auto-Restart:** Yes (with exponential backoff, max 5 attempts)
 
 ### HIGH Priority
 
-Important daemons for cluster operation:
+Important daemons for cluster operation (examples, non-exhaustive):
 
-- P2P_BACKEND
-- NODE_HEALTH_MONITOR
 - HEALTH_SERVER
-- DATA_PIPELINE
-- UNIFIED_PROMOTION
-- AUTO_PROMOTION
-- EVALUATION
-- SYSTEM_HEALTH_MONITOR
-- UTILIZATION_OPTIMIZER
-- RECOVERY_ORCHESTRATOR
+- WORK_QUEUE_MONITOR
+- COORDINATOR_HEALTH_MONITOR
 - CLUSTER_WATCHDOG
+- EVALUATION
+- UTILIZATION_OPTIMIZER
 - JOB_SCHEDULER
-- EPHEMERAL_SYNC
 
 **Health Check Interval:** 60 seconds
 **Auto-Restart:** Yes
 
 ### MEDIUM Priority
 
-Standard operational daemons:
+Standard operational daemons (examples, non-exhaustive):
 
-- All sync daemons (GOSSIP_SYNC, MODEL_SYNC, etc.)
-- Training support (CONTINUOUS_TRAINING_LOOP, DISTILLATION)
-- Monitoring (QUALITY_MONITOR, CLUSTER_MONITOR, etc.)
+- Sync daemons (GOSSIP_SYNC, MODEL_SYNC, HIGH_QUALITY_SYNC)
+- Training support (CONTINUOUS_TRAINING_LOOP, DISTILLATION, CASCADE_TRAINING)
+- Monitoring (QUALITY_MONITOR, CLUSTER_MONITOR, METRICS_ANALYSIS)
 - Pipeline automation (AUTO_EXPORT, TRAINING_TRIGGER)
 - Tournaments and evaluation (TOURNAMENT_DAEMON, GAUNTLET_FEEDBACK)
-- Resource management (NODE_RECOVERY, VAST_IDLE)
+- Resource management (NODE_RECOVERY, ADAPTIVE_RESOURCES)
 
 **Health Check Interval:** 60 seconds
 **Auto-Restart:** Yes
 
 ### LOW Priority
 
-Optional/non-critical daemons:
+Optional/non-critical daemons (examples, non-exhaustive):
 
 - ORPHAN_DETECTION
 - EXTERNAL_DRIVE_SYNC
 - VAST_CPU_PIPELINE
 - MAINTENANCE
-- DISTILLATION
-- LAMBDA_IDLE
 - DATA_CLEANUP
 
 **Health Check Interval:** 60 seconds
@@ -789,7 +783,7 @@ Optional/non-critical daemons:
 
 ## Factory Methods Reference
 
-All daemon factory methods follow the pattern `_create_<daemon_name>()`. They either:
+All daemon factory methods follow the pattern `create_<daemon_name>()` (defined in `daemon_runners.py`). Legacy `_create_*()` helpers remain only for special cases (e.g., health server wiring). They either:
 
 1. **Direct instantiation:** Create the daemon class directly
 2. **Factory function:** Call a module-level factory function (e.g., `get_router()`, `get_evaluation_daemon()`)
