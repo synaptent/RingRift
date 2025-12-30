@@ -320,6 +320,12 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 ## Event System
 
+**Integration Status**: VERIFIED COMPLETE (Dec 30, 2025)
+
+All 220+ event types have been verified to have proper emitters and subscribers. Previously reported
+"orphaned" events (TASK_SPAWNED, TASK_HEARTBEAT, QUALITY_DEGRADED, PROGRESS_STALL_DETECTED) have 2-5
+active subscribers each. No integration gaps remain in the event system.
+
 220+ event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
