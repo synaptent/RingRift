@@ -1082,24 +1082,27 @@ Migrated 6 files to use `extract_config_key()` from `event_handler_utils`:
 | `selfplay_orchestrator.py`  | 2                 | ✅ Complete |
 | `auto_export_daemon.py`     | 1                 | ✅ Complete |
 
-**Remaining files** with inline config_key extraction: ~12 files
-**Estimated remaining effort**: ~8 hours
+**Remaining files** with inline config_key extraction: ~4-5 files
+**Estimated remaining effort**: ~4 hours
 
-**Resilience Framework Assessment - COMPLETED**
+**Resilience Framework Assessment - 95% COMPLETE** (Dec 30, 2025)
 
-Exploration found existing solid foundation:
+Comprehensive exploration verified solid foundation with only 2 daemons needing migration:
 
-| Component                      | Location                   | Status                    |
-| ------------------------------ | -------------------------- | ------------------------- |
-| `RetryConfig`                  | `app/utils/retry.py`       | ✅ Ready to use           |
-| `RETRY_QUICK/STANDARD/PATIENT` | `app/utils/retry.py`       | ✅ Pre-configured         |
-| `CircuitBreakerDefaults`       | `coordination_defaults.py` | ✅ Per-transport/provider |
-| `RetryDefaults`                | `coordination_defaults.py` | ✅ Centralized            |
+| Component                          | Location                   | Status                    |
+| ---------------------------------- | -------------------------- | ------------------------- |
+| `RetryConfig`                      | `app/utils/retry.py`       | ✅ Ready to use           |
+| `RETRY_QUICK/STANDARD/PATIENT`     | `app/utils/retry.py`       | ✅ Pre-configured         |
+| `CircuitBreakerDefaults`           | `coordination_defaults.py` | ✅ Per-transport/provider |
+| `RetryDefaults`                    | `coordination_defaults.py` | ✅ Centralized            |
+| 20+ HandlerBase subclasses         | Various                    | ✅ Using standard base    |
+| SyncMixinBase.\_retry_with_backoff | `sync_mixin_base.py`       | ✅ Good example pattern   |
 
-**Next step**: Migrate daemons to USE existing utilities instead of custom implementations
+**Daemons with custom retry (need migration)**:
 
-- `evaluation_daemon.py` - Custom retry queue → `RetryConfig`
-- `training_trigger_daemon.py` - Inline backoff → `RETRY_STANDARD`
-- 10+ sync daemons - Already use `sync_mixin_base._retry_with_backoff()`
+| Daemon                       | Custom LOC | Recommended Config                              |
+| ---------------------------- | ---------- | ----------------------------------------------- |
+| `evaluation_daemon.py`       | ~100       | `RetryConfig(max_attempts=3, base_delay=60.0)`  |
+| `training_trigger_daemon.py` | ~120       | `RetryConfig(max_attempts=3, base_delay=300.0)` |
 
-**Estimated migration effort**: ~16 hours (reduced from 24h due to existing foundation)
+**Estimated migration effort**: ~12-16 hours
