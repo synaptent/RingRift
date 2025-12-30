@@ -75,6 +75,9 @@ class NodeInfo:
     # pollute scheduling, but they can be reactivated if they come back online.
     retired: bool = False
     retired_at: float = 0.0
+    # Dec 29, 2025: Track alternate IPs for the same node (Tailscale, public, etc.)
+    # This enables peer deduplication - multiple IPs map to single canonical entry
+    alternate_ips: set[str] = field(default_factory=set)
     # External work detection - work running outside P2P orchestrator tracking
     cmaes_running: bool = False
     gauntlet_running: bool = False
@@ -387,6 +390,8 @@ class NodeInfo:
         """Convert to dictionary for JSON serialization."""
         d = asdict(self)
         d['role'] = self.role.value
+        # Dec 29, 2025: Convert set to list for JSON serialization
+        d['alternate_ips'] = list(self.alternate_ips) if self.alternate_ips else []
         # Derived metrics (not persisted as dataclass fields).
         d["load_score"] = self.get_load_score()
         d["gpu_power_score"] = self.gpu_power_score()
@@ -396,6 +401,65 @@ class NodeInfo:
         d["has_external_work"] = self.has_external_work()
         d["is_misrouted"] = self.is_misrouted()
         return d
+
+    def merge_from(self, other: "NodeInfo") -> None:
+        """Merge information from another NodeInfo representing the same node.
+
+        Dec 29, 2025: Used for peer deduplication - when we discover the same
+        node via multiple IPs, merge them into a single canonical entry.
+
+        Args:
+            other: Another NodeInfo for the same node_id
+        """
+        if other.node_id != self.node_id:
+            return  # Safety: only merge if same node
+
+        # Collect all known IPs for this node
+        all_ips = set()
+        if self.host:
+            all_ips.add(self.host)
+        if self.reported_host:
+            all_ips.add(self.reported_host)
+        if other.host:
+            all_ips.add(other.host)
+        if other.reported_host:
+            all_ips.add(other.reported_host)
+        all_ips.update(self.alternate_ips)
+        all_ips.update(other.alternate_ips)
+        # Remove empty strings
+        all_ips.discard("")
+
+        # Pick the most recently updated node as primary
+        if other.last_heartbeat > self.last_heartbeat:
+            # Other is more recent - update our primary host
+            self.host = other.host
+            self.port = other.port
+            self.scheme = other.scheme
+            self.last_heartbeat = other.last_heartbeat
+            # Copy resource metrics from more recent source
+            self.cpu_percent = other.cpu_percent
+            self.memory_percent = other.memory_percent
+            self.disk_percent = other.disk_percent
+            self.gpu_percent = other.gpu_percent
+            self.gpu_memory_percent = other.gpu_memory_percent
+            self.selfplay_jobs = other.selfplay_jobs
+            self.training_jobs = other.training_jobs
+
+        # Remove primary host from alternate_ips to avoid duplication
+        all_ips.discard(self.host)
+        self.alternate_ips = all_ips
+
+        # Merge capabilities (union)
+        if other.capabilities:
+            caps = set(self.capabilities)
+            caps.update(other.capabilities)
+            self.capabilities = list(caps)
+
+        # Clear retired status if other is alive
+        if other.is_alive() and not other.retired:
+            self.retired = False
+            self.retired_at = 0.0
+            self.consecutive_failures = 0
 
     @classmethod
     def from_dict(cls, d: dict) -> NodeInfo:
@@ -419,6 +483,9 @@ class NodeInfo:
         d.setdefault('relay_via', '')
         d.setdefault('retired', False)
         d.setdefault('retired_at', 0.0)
+        # Dec 29, 2025: Handle alternate_ips (stored as list in JSON, convert to set)
+        alt_ips = d.get('alternate_ips', [])
+        d['alternate_ips'] = set(alt_ips) if isinstance(alt_ips, (list, set)) else set()
         # External work detection fields
         d.setdefault('cmaes_running', False)
         d.setdefault('gauntlet_running', False)

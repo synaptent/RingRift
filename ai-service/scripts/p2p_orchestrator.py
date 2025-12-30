@@ -7926,6 +7926,16 @@ class P2POrchestrator(
                 # Dec 2025: Track first-contact for HOST_ONLINE emission
                 is_first_contact = existing is None
                 if existing:
+                    # Dec 29, 2025: Merge alternate IPs for peer deduplication
+                    all_ips = set(existing.alternate_ips) if existing.alternate_ips else set()
+                    if existing.host:
+                        all_ips.add(existing.host)
+                    if peer_info.host and peer_info.host != existing.host:
+                        all_ips.add(peer_info.host)
+                    all_ips.discard("")
+                    # Remove primary host from alternates
+                    all_ips.discard(peer_info.host)
+                    peer_info.alternate_ips = all_ips
                     peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
                     peer_info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
                     # Sticky NAT/relay routing with recovery:
