@@ -35,7 +35,7 @@ The RingRift AI service has evolved to include three separate event bus systems:
 ```
                                     ┌─────────────────────┐
                                     │   event_router.py   │
-                                    │  DataEventType(207) │
+                                    │  DataEventType(211) │
                                     │  Primary in-memory  │
                                     └─────────────────────┘
                                               │
