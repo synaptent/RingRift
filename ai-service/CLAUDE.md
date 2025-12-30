@@ -65,7 +65,7 @@ python scripts/update_all_nodes.py --restart-p2p
 | ------------------------------- | -------------------------------------------------- |
 | `daemon_manager.py`             | Lifecycle for 97 daemon types (~2,000 LOC)         |
 | `daemon_registry.py`            | Declarative daemon specs (DaemonSpec dataclass)    |
-| `daemon_runners.py`             | 89 async runner functions                          |
+| `daemon_runners.py`             | 88 async runner functions                          |
 | `event_router.py`               | Unified event bus (220+ event types, SHA256 dedup) |
 | `selfplay_scheduler.py`         | Priority-based selfplay allocation (~3,800 LOC)    |
 | `budget_calculator.py`          | Gumbel budget tiers, target games calculation      |
