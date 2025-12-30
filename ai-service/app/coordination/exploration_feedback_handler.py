@@ -313,7 +313,8 @@ class ExplorationFeedbackHandler(HandlerBase):
 
     def _on_loss_anomaly_detected(self, event: Any) -> None:
         """Handle LOSS_ANOMALY_DETECTED event."""
-        payload = event.payload if hasattr(event, "payload") else {}
+        # December 30, 2025: Use consolidated extraction from HandlerBase
+        payload = self._get_payload(event)
         config_key = payload.get("config_key", "")
         anomaly_count = payload.get("anomaly_count", 1)
 
@@ -322,7 +323,8 @@ class ExplorationFeedbackHandler(HandlerBase):
 
     def _on_training_stall_detected(self, event: Any) -> None:
         """Handle TRAINING_STALL_DETECTED event."""
-        payload = event.payload if hasattr(event, "payload") else {}
+        # December 30, 2025: Use consolidated extraction from HandlerBase
+        payload = self._get_payload(event)
         config_key = payload.get("config_key", "")
         stall_epochs = payload.get("stall_epochs", 5)
 
@@ -331,7 +333,8 @@ class ExplorationFeedbackHandler(HandlerBase):
 
     def _on_training_improved(self, event: Any) -> None:
         """Handle TRAINING_IMPROVED event."""
-        payload = event.payload if hasattr(event, "payload") else {}
+        # December 30, 2025: Use consolidated extraction from HandlerBase
+        payload = self._get_payload(event)
         config_key = payload.get("config_key", "")
 
         if config_key:
@@ -342,7 +345,8 @@ class ExplorationFeedbackHandler(HandlerBase):
 
         When Elo plateaus, boost exploration to try different strategies.
         """
-        payload = event.payload if hasattr(event, "payload") else {}
+        # December 30, 2025: Use consolidated extraction from HandlerBase
+        payload = self._get_payload(event)
         config_key = payload.get("config_key", "")
         plateau_duration_hours = payload.get("duration_hours", 24)
 

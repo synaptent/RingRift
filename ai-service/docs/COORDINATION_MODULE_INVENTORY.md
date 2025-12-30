@@ -1,7 +1,7 @@
 # Coordination Module Inventory
 
 **Last Updated:** December 30, 2025
-**Total Modules:** 256 Python modules in `app/coordination/`
+**Total Modules:** 224 Python modules in `app/coordination/`
 **Status:** Active
 
 Counts are snapshots unless noted; use:
