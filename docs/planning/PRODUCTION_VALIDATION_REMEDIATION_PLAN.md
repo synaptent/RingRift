@@ -45,14 +45,14 @@
 **Production (ringrift.ai)**:
 
 - EC2 r5.4xlarge (128GB RAM, 16 vCPU)
-- nginx → Node.js (:3001) → AI Service (:8765)
+- nginx → Node.js (`PORT`, default 3001) → AI Service (:8765)
 - PM2 process management
 - Let's Encrypt SSL
 
 **Local Staging (Docker Compose)**:
 
 - `docker-compose.staging.yml`
-- nginx → app (:3000/:3001) → ai-service (:8001) → postgres, redis
+- nginx → app (:3000, HTTP + WebSocket) → ai-service (:8001) → postgres, redis
 - Prometheus + Grafana monitoring stack
 
 ### Load Test Environment Variables

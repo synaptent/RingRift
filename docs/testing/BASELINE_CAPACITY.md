@@ -453,7 +453,7 @@ Use this information to:
 #### Option 1: Using npm scripts
 
 ```bash
-# Local baseline (against localhost:3001)
+# Local baseline (against localhost:3000)
 npm run load:baseline:local
 
 # Staging baseline
@@ -472,11 +472,11 @@ cd tests/load
 
 ```bash
 # Basic run
-k6 run --env BASE_URL=http://localhost:3001 tests/load/scenarios/concurrent-games.js
+k6 run --env BASE_URL=http://localhost:3000 tests/load/scenarios/concurrent-games.js
 
 # With JSON output
 k6 run \
-  --env BASE_URL=http://localhost:3001 \
+  --env BASE_URL=http://localhost:3000 \
   --env LOAD_PROFILE=load \
   --out json=results/baseline.json \
   tests/load/scenarios/concurrent-games.js
