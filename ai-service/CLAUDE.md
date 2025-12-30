@@ -129,6 +129,33 @@ health = await dm.get_daemon_health(DaemonType.AUTO_SYNC)
 # {"status": "healthy", "running": True, "last_sync": ..., "errors_count": 0}
 ```
 
+### Evaluation Daemon Backpressure (Dec 29, 2025)
+
+When evaluation queue exceeds threshold, EvaluationDaemon emits backpressure events:
+
+- `EVALUATION_BACKPRESSURE` at queue_depth >= 70 - signals training to pause
+- `EVALUATION_BACKPRESSURE_RELEASED` at queue_depth <= 35 - training can resume
+- Hysteresis prevents oscillation between states
+- Config: `EvaluationConfig.backpressure_threshold` / `backpressure_release_threshold`
+
+### Training Trigger Confidence-Based Triggering (Dec 29, 2025)
+
+Can trigger training with <5000 samples if statistical confidence is high:
+
+- Minimum 1000 samples as safety floor
+- Targets 95% confidence interval width ±2.5%
+- Enables faster iteration on high-quality data
+- Config: `TrainingTriggerConfig.confidence_early_trigger_enabled` (default: true)
+
+### Evaluation Daemon Retry Strategy (Dec 29, 2025)
+
+Automatic retry for transient failures (GPU OOM, timeouts):
+
+- Up to 3 attempts per model with exponential backoff: 60s, 120s, 240s
+- Retryable failures: timeout, GPU OOM, distribution incomplete
+- Max retries exceeded: emits `EVALUATION_FAILED` event
+- Stats tracked: `retries_queued`, `retries_succeeded`, `retries_exhausted`
+
 ## Event System
 
 118 event types across 3 layers:
