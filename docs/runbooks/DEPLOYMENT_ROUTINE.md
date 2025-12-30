@@ -325,10 +325,11 @@ curl -s http://localhost:8001/health | jq
 docker compose logs app | grep -i websocket
 
 # Verify port is exposed
-netstat -tlnp | grep 3001
+APP_PORT=${APP_PORT:-3000}
+netstat -tlnp | grep ${APP_PORT}
 
 # Test with wscat
-wscat -c ws://localhost:3001
+wscat -c ws://localhost:${APP_PORT}
 ```
 
 ### Migration failed
