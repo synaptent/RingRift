@@ -221,8 +221,9 @@ class AdaptiveResourceManager:
                         total_used += float(parts[0].strip()) / 1024  # MB to GB
                         total_total += float(parts[1].strip()) / 1024
                 return total_used, total_total
-        except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError) as e:
+        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError) as e:
             # FileNotFoundError: nvidia-smi not installed
+            # PermissionError: no permission to run nvidia-smi
             # TimeoutExpired: query took too long
             # SubprocessError: execution failed
             # ValueError: float parsing failure

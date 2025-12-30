@@ -925,12 +925,59 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 f"[DaemonManager] Cleared permanent failure status for {daemon_name}"
             )
 
+    def _get_adaptive_cascade_threshold(self) -> int:
+        """Compute adaptive cascade threshold based on critical daemon health.
+
+        December 29, 2025: Added for cascade prevention enhancement.
+        If most critical daemons are healthy, allow more restarts before tripping.
+        If many critical daemons are failing, trip sooner to protect the system.
+
+        Returns:
+            Adaptive threshold (10-20 restarts based on health)
+        """
+        try:
+            # Count healthy critical daemons
+            healthy_critical = 0
+            total_critical = len(CRITICAL_DAEMONS)
+
+            for daemon_type in CRITICAL_DAEMONS:
+                if daemon_type in self._daemons:
+                    info = self._daemons[daemon_type]
+                    if info.state == DaemonState.RUNNING:
+                        healthy_critical += 1
+
+            # Adjust threshold based on health ratio
+            if total_critical == 0:
+                return CASCADE_RESTART_THRESHOLD  # Default if no critical daemons defined
+
+            health_ratio = healthy_critical / total_critical
+
+            if health_ratio >= 0.8:
+                # 80%+ critical daemons healthy - allow more restarts
+                return 20
+            elif health_ratio >= 0.6:
+                # 60-80% healthy - use default threshold
+                return CASCADE_RESTART_THRESHOLD
+            elif health_ratio >= 0.4:
+                # 40-60% healthy - be more protective
+                return 12
+            else:
+                # <40% healthy - trip early to stabilize
+                return 10
+
+        except Exception:
+            # Any error - use default threshold
+            return CASCADE_RESTART_THRESHOLD
+
     def _check_cascade_circuit_breaker(self) -> bool:
         """Check if cascade circuit breaker allows restarts.
 
         Dec 2025: Implements a global circuit breaker to prevent thundering herd effect.
         When too many daemons restart in a short window, pause all restarts to allow
         the system to stabilize.
+
+        December 29, 2025: Added cascade recovery signaling - proactively restart
+        blocked critical daemons when circuit closes.
 
         Returns:
             True if restarts are allowed, False if circuit breaker is open
@@ -946,6 +993,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 logger.info(
                     f"[DaemonManager] Cascade circuit breaker CLOSED after "
                     f"{elapsed:.0f}s cooldown - restarts allowed"
+                )
+                # Trigger recovery of critical daemons that were blocked
+                fire_and_forget(
+                    self._cascade_recovery(),
+                    name="cascade_recovery",
                 )
             else:
                 # Still in cooldown
@@ -976,16 +1028,17 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         current_time = time.time()
         self._global_restart_timestamps.append(current_time)
 
-        # Check if we've exceeded threshold
+        # Check if we've exceeded threshold (use adaptive threshold Dec 2025)
         recent_restarts = len(self._global_restart_timestamps)
-        if recent_restarts > CASCADE_RESTART_THRESHOLD:
+        adaptive_threshold = self._get_adaptive_cascade_threshold()
+        if recent_restarts > adaptive_threshold:
             if not self._cascade_breaker_open:
                 self._cascade_breaker_open = True
                 self._cascade_breaker_opened_at = current_time
                 logger.error(
                     f"[DaemonManager] CASCADE CIRCUIT BREAKER TRIPPED! "
                     f"{recent_restarts} restarts in {CASCADE_RESTART_WINDOW_SECONDS}s "
-                    f"(threshold: {CASCADE_RESTART_THRESHOLD}). "
+                    f"(adaptive threshold: {adaptive_threshold}). "
                     f"Pausing all restarts for {CASCADE_COOLDOWN_SECONDS}s. "
                     f"Triggered by: {daemon_type.value}"
                 )
@@ -1027,6 +1080,55 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         except Exception as e:
             logger.debug(f"Failed to emit circuit breaker event: {e}")
 
+    async def _cascade_recovery(self) -> None:
+        """Proactively restart critical daemons that were blocked during cascade cooldown.
+
+        December 29, 2025: Added to improve recovery time after cascade events.
+        When the circuit breaker closes, some critical daemons may still be in
+        a failed state. This method proactively restarts them to ensure the
+        system recovers quickly.
+        """
+        try:
+            restarted = []
+            for daemon_type in CRITICAL_DAEMONS:
+                if daemon_type in self._daemons:
+                    info = self._daemons[daemon_type]
+                    # Only restart if not already running
+                    if info.state != DaemonState.RUNNING:
+                        logger.info(
+                            f"[DaemonManager] Cascade recovery: restarting "
+                            f"{daemon_type.value} (state: {info.state.value})"
+                        )
+                        success = await self.start(daemon_type)
+                        if success:
+                            restarted.append(daemon_type.value)
+
+            if restarted:
+                logger.info(
+                    f"[DaemonManager] Cascade recovery complete: "
+                    f"restarted {len(restarted)} critical daemons: {restarted}"
+                )
+
+                # Emit recovery event
+                try:
+                    from app.coordination.event_router import get_router
+
+                    router = get_router()
+                    router.publish(
+                        "daemon.cascade_recovery_complete",
+                        {
+                            "restarted_daemons": restarted,
+                            "count": len(restarted),
+                        },
+                    )
+                except (ImportError, RuntimeError, AttributeError):
+                    pass
+            else:
+                logger.debug("[DaemonManager] Cascade recovery: all critical daemons already running")
+
+        except Exception as e:
+            logger.warning(f"[DaemonManager] Cascade recovery failed: {e}")
+
     def get_circuit_breaker_status(self) -> dict[str, Any]:
         """Get status of the cascade circuit breaker.
 
@@ -1041,10 +1143,12 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             ts for ts in self._global_restart_timestamps if ts > cutoff
         ]
 
+        adaptive_threshold = self._get_adaptive_cascade_threshold()
         result = {
             "breaker_open": self._cascade_breaker_open,
             "recent_restart_count": len(recent_restarts),
-            "threshold": CASCADE_RESTART_THRESHOLD,
+            "threshold": adaptive_threshold,
+            "base_threshold": CASCADE_RESTART_THRESHOLD,
             "window_seconds": CASCADE_RESTART_WINDOW_SECONDS,
         }
 
