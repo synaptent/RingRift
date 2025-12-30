@@ -503,3 +503,304 @@ class TestStateCheckerSubclass:
         result = checker.correlate_with_config(instances, config_hosts)
         assert result == instances
         assert checker.correlated == instances
+
+
+# =============================================================================
+# Additional Tests - December 29, 2025
+# =============================================================================
+
+
+class TestProviderInstanceStateEdgeCases:
+    """Additional edge case tests for ProviderInstanceState."""
+
+    def test_all_states_are_unique(self):
+        """Test all state values are unique."""
+        values = [state.value for state in ProviderInstanceState]
+        assert len(values) == len(set(values))
+
+    def test_state_name_value_consistency(self):
+        """Test state names are uppercase of values."""
+        for state in ProviderInstanceState:
+            assert state.name == state.value.upper()
+
+    def test_state_iteration(self):
+        """Test iteration over all states."""
+        states = list(ProviderInstanceState)
+        assert len(states) == 6
+        assert ProviderInstanceState.RUNNING in states
+        assert ProviderInstanceState.TERMINATED in states
+
+
+class TestStateToYamlStatusEdgeCases:
+    """Additional edge case tests for STATE_TO_YAML_STATUS."""
+
+    def test_offline_mappings(self):
+        """Test multiple states map to offline."""
+        offline_states = [
+            ProviderInstanceState.STOPPING,
+            ProviderInstanceState.STOPPED,
+            ProviderInstanceState.UNKNOWN,
+        ]
+        for state in offline_states:
+            assert STATE_TO_YAML_STATUS[state] == "offline"
+
+    def test_mapping_values_are_strings(self):
+        """Test all mapping values are strings."""
+        for status in STATE_TO_YAML_STATUS.values():
+            assert isinstance(status, str)
+            assert len(status) > 0
+
+
+class TestInstanceInfoEdgeCases:
+    """Additional edge case tests for InstanceInfo."""
+
+    def test_instance_info_with_all_none_optional(self):
+        """Test InstanceInfo with all optional fields as None."""
+        info = InstanceInfo(
+            instance_id="i-test",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+            node_name=None,
+            tailscale_ip=None,
+            public_ip=None,
+            ssh_host=None,
+            gpu_type=None,
+            hostname=None,
+            created_at=None,
+            last_seen=None,
+        )
+        assert info.yaml_status == "ready"
+        assert "i-test" in str(info)
+
+    def test_instance_info_raw_data_isolation(self):
+        """Test raw_data field is isolated between instances."""
+        info1 = InstanceInfo("i-1", ProviderInstanceState.RUNNING, "test")
+        info2 = InstanceInfo("i-2", ProviderInstanceState.RUNNING, "test")
+
+        info1.raw_data["key"] = "value1"
+
+        assert "key" not in info2.raw_data
+
+    def test_instance_info_equality(self):
+        """Test InstanceInfo equality based on all fields."""
+        now = datetime.now()
+        info1 = InstanceInfo(
+            instance_id="i-1",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+            created_at=now,
+        )
+        info2 = InstanceInfo(
+            instance_id="i-1",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+            created_at=now,
+        )
+        # Dataclass equality
+        assert info1 == info2
+
+    def test_instance_info_with_empty_instance_id(self):
+        """Test InstanceInfo with empty instance_id."""
+        info = InstanceInfo(
+            instance_id="",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+        )
+        # Empty instance_id is allowed (though unusual)
+        assert info.instance_id == ""
+        assert info.yaml_status == "ready"
+
+    def test_instance_info_with_special_chars_in_id(self):
+        """Test InstanceInfo with special characters in instance_id."""
+        info = InstanceInfo(
+            instance_id="i-abc-123_def.ghi",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+        )
+        assert "i-abc-123_def.ghi" in str(info)
+
+    def test_yaml_status_for_all_states(self):
+        """Test yaml_status property for all possible states."""
+        expected = {
+            ProviderInstanceState.RUNNING: "ready",
+            ProviderInstanceState.STARTING: "setup",
+            ProviderInstanceState.STOPPING: "offline",
+            ProviderInstanceState.STOPPED: "offline",
+            ProviderInstanceState.TERMINATED: "retired",
+            ProviderInstanceState.UNKNOWN: "offline",
+        }
+        for state, expected_status in expected.items():
+            info = InstanceInfo("i-test", state, "test")
+            assert info.yaml_status == expected_status
+
+    def test_instance_info_gpu_vram_precision(self):
+        """Test GPU VRAM field precision."""
+        info = InstanceInfo(
+            instance_id="i-test",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+            gpu_vram_gb=23.567,
+        )
+        assert info.gpu_vram_gb == 23.567
+
+
+class TestStateCheckerEdgeCases:
+    """Additional edge case tests for StateChecker."""
+
+    def test_checker_with_empty_provider_name(self):
+        """Test StateChecker with empty provider name."""
+        class EmptyNameChecker(StateChecker):
+            async def get_instance_states(self):
+                return []
+
+            async def check_api_availability(self):
+                return True
+
+            def correlate_with_config(self, instances, config_hosts):
+                return instances
+
+        checker = EmptyNameChecker("")
+        assert checker.provider_name == ""
+        assert checker.is_enabled is True
+
+    def test_checker_last_error_tracking(self):
+        """Test StateChecker error tracking."""
+        class TestChecker(StateChecker):
+            async def get_instance_states(self):
+                return []
+
+            async def check_api_availability(self):
+                return True
+
+            def correlate_with_config(self, instances, config_hosts):
+                return instances
+
+        checker = TestChecker("test")
+        assert checker._last_error is None
+
+        checker._last_error = "API timeout"
+        status = checker.get_status()
+        assert status["last_error"] == "API timeout"
+
+    def test_checker_last_check_tracking(self):
+        """Test StateChecker last check tracking."""
+        class TestChecker(StateChecker):
+            async def get_instance_states(self):
+                return []
+
+            async def check_api_availability(self):
+                return True
+
+            def correlate_with_config(self, instances, config_hosts):
+                return instances
+
+        checker = TestChecker("test")
+        assert checker._last_check is None
+
+        now = datetime.now()
+        checker._last_check = now
+        status = checker.get_status()
+        assert status["last_check"] == now.isoformat()
+
+    def test_enable_after_disable(self):
+        """Test enabling checker after it was disabled."""
+        class TestChecker(StateChecker):
+            async def get_instance_states(self):
+                return []
+
+            async def check_api_availability(self):
+                return True
+
+            def correlate_with_config(self, instances, config_hosts):
+                return instances
+
+        checker = TestChecker("test")
+        checker.disable("test reason")
+        assert checker.is_enabled is False
+
+        checker.enable()
+        assert checker.is_enabled is True
+
+    def test_disable_multiple_times(self):
+        """Test disabling multiple times is idempotent."""
+        class TestChecker(StateChecker):
+            async def get_instance_states(self):
+                return []
+
+            async def check_api_availability(self):
+                return True
+
+            def correlate_with_config(self, instances, config_hosts):
+                return instances
+
+        checker = TestChecker("test")
+        checker.disable("reason 1")
+        checker.disable("reason 2")
+        checker.disable("reason 3")
+
+        assert checker.is_enabled is False
+
+
+class TestInstanceInfoTimestamps:
+    """Tests for InstanceInfo timestamp fields."""
+
+    def test_created_at_is_optional(self):
+        """Test created_at defaults to None."""
+        info = InstanceInfo("i-test", ProviderInstanceState.RUNNING, "test")
+        assert info.created_at is None
+
+    def test_last_seen_is_optional(self):
+        """Test last_seen defaults to None."""
+        info = InstanceInfo("i-test", ProviderInstanceState.RUNNING, "test")
+        assert info.last_seen is None
+
+    def test_timestamps_can_be_set(self):
+        """Test timestamps can be set to datetime values."""
+        created = datetime(2025, 12, 1, 10, 0, 0)
+        seen = datetime(2025, 12, 29, 15, 30, 0)
+
+        info = InstanceInfo(
+            instance_id="i-test",
+            state=ProviderInstanceState.RUNNING,
+            provider="test",
+            created_at=created,
+            last_seen=seen,
+        )
+
+        assert info.created_at == created
+        assert info.last_seen == seen
+
+
+class TestStateCheckerWithMultipleProviders:
+    """Tests for StateChecker with multiple provider scenarios."""
+
+    def create_checker(self, provider_name: str) -> StateChecker:
+        """Create a mock checker with given provider name."""
+        class MockChecker(StateChecker):
+            async def get_instance_states(self):
+                return []
+
+            async def check_api_availability(self):
+                return True
+
+            def correlate_with_config(self, instances, config_hosts):
+                return instances
+
+        return MockChecker(provider_name)
+
+    def test_multiple_checkers_independent(self):
+        """Test multiple checker instances are independent."""
+        checker1 = self.create_checker("vast")
+        checker2 = self.create_checker("lambda")
+
+        checker1.disable("test")
+
+        assert checker1.is_enabled is False
+        assert checker2.is_enabled is True
+
+    def test_checker_status_reflects_provider(self):
+        """Test get_status reflects correct provider name."""
+        for provider in ["vast", "lambda", "runpod", "vultr", "hetzner"]:
+            checker = self.create_checker(provider)
+            status = checker.get_status()
+            assert status["provider"] == provider

@@ -1,6 +1,7 @@
 """Pipeline metrics mixin - metrics, status, and health reporting for DataPipelineOrchestrator.
 
 December 2025: Extracted from data_pipeline_orchestrator.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from PipelineMixinBase for common patterns.
 
 This mixin provides metrics, status, and health reporting methods:
 - get_metrics: Get orchestrator metrics in protocol-compliant format
@@ -17,40 +18,10 @@ This mixin provides metrics, status, and health reporting methods:
 - get_current_iteration: Get the current iteration number
 - get_iteration_record: Get record for a specific iteration
 
-Expected attributes from main class:
-- _current_stage: PipelineStage
-- _current_iteration: int
-- _iteration_records: dict
-- _completed_iterations: list
-- _stage_start_times: dict
-- _stage_durations: dict
-- _transitions: list
-- _total_games: int
-- _total_models: int
-- _total_promotions: int
-- _subscribed: bool
-- auto_trigger: bool
-- auto_trigger_sync: bool
-- auto_trigger_export: bool
-- auto_trigger_training: bool
-- auto_trigger_evaluation: bool
-- auto_trigger_promotion: bool
-- _circuit_breaker: PipelineCircuitBreaker | None
-- _quality_distribution: dict
-- _pending_cache_refresh: bool
-- _cache_invalidation_count: int
-- _active_optimization: str | None
-- _optimization_run_id: str | None
-- _paused: bool
-- _pause_reason: str | None
-- _backpressure_active: bool
-- _resource_constraints: dict
-- _coordinator_status: CoordinatorStatus
-- _start_time: float
-- _events_processed: int
-- _errors_count: int
-- _last_error: str
-- max_history: int
+Inherits from PipelineMixinBase which provides:
+- DataPipelineOrchestratorProtocol (documents expected interface)
+- Common utility methods (_get_config_key, _log_stage_event, etc.)
+- Circuit breaker helpers (_is_circuit_open, _record_circuit_failure, etc.)
 """
 
 from __future__ import annotations
@@ -58,6 +29,8 @@ from __future__ import annotations
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+
+from app.coordination.pipeline_mixin_base import PipelineMixinBase
 
 if TYPE_CHECKING:
     from app.coordination.data_pipeline_orchestrator import (
@@ -71,33 +44,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class PipelineMetricsMixin:
+class PipelineMetricsMixin(PipelineMixinBase):
     """Mixin providing metrics, status, and health reporting for DataPipelineOrchestrator.
 
     This mixin provides observability into the pipeline state through
     status reporting, metrics collection, and health checks.
+
+    Inherits from PipelineMixinBase for common utilities.
     """
 
-    # Type hints for attributes expected from main class
+    # Additional type hints specific to this mixin
     if TYPE_CHECKING:
-        _current_stage: PipelineStage
-        _current_iteration: int
-        _iteration_records: dict
         _completed_iterations: list
-        _stage_start_times: dict
         _stage_durations: dict
         _transitions: list
         _total_games: int
         _total_models: int
         _total_promotions: int
         _subscribed: bool
-        auto_trigger: bool
-        auto_trigger_sync: bool
-        auto_trigger_export: bool
-        auto_trigger_training: bool
-        auto_trigger_evaluation: bool
-        auto_trigger_promotion: bool
-        _circuit_breaker: Any
+        _coordinator_status: Any
+        _start_time: float
+        _events_processed: int
+        _errors_count: int
+        _last_error: str
+        max_history: int
         _quality_distribution: dict
         _pending_cache_refresh: bool
         _cache_invalidation_count: int

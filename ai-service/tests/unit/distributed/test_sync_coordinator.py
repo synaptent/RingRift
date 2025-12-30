@@ -1,362 +1,970 @@
-"""Tests for SyncCoordinator - Unified data synchronization execution layer.
+"""Tests for app.distributed.sync_coordinator module.
 
-Created: December 28, 2025
-Purpose: Test the SyncCoordinator class critical sync infrastructure
-
-Tests cover:
-- Singleton pattern (get_instance, reset_instance)
-- Transport initialization
-- Health check reporting
-- Status reporting
-- Manifest integration
-- Event subscription
-- Sync statistics tracking
+This module tests the unified data synchronization EXECUTION layer.
 """
 
-from __future__ import annotations
-
 import asyncio
+import socket
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-# Test the module can be imported
-try:
-    from app.distributed.sync_coordinator import (
-        SyncCoordinator,
-        SyncStats,
-        SyncOperationBudget,
-        SyncCategory,
-    )
-    SYNC_COORDINATOR_AVAILABLE = True
-except ImportError as e:
-    SYNC_COORDINATOR_AVAILABLE = False
-    IMPORT_ERROR = str(e)
 
-
-@pytest.fixture(autouse=True)
-def reset_singleton():
-    """Reset SyncCoordinator singleton between tests."""
-    if SYNC_COORDINATOR_AVAILABLE:
-        SyncCoordinator._instance = None
-    yield
-    if SYNC_COORDINATOR_AVAILABLE:
-        SyncCoordinator._instance = None
+# =============================================================================
+# Test Fixtures and Mocks
+# =============================================================================
 
 
 @pytest.fixture
 def mock_storage_provider():
-    """Create a mock storage provider."""
+    """Create mock StorageProvider."""
     provider = MagicMock()
     provider.provider_type = MagicMock()
     provider.provider_type.value = "local"
     provider.has_shared_storage = False
+    provider.selfplay_dir = Path("/tmp/data/selfplay")
+    provider.training_dir = Path("/tmp/data/training")
+    provider.models_dir = Path("/tmp/models")
+    provider.data_dir = Path("/tmp/data")
+    provider.should_skip_rsync_to = MagicMock(return_value=False)
     return provider
 
 
 @pytest.fixture
 def mock_transport_config():
-    """Create a mock transport config."""
+    """Create mock TransportConfig."""
     config = MagicMock()
-    config.enable_aria2 = False
-    config.enable_bittorrent = False
-    config.enable_gossip = False
-    config.gossip_peers = []
+    config.enable_aria2 = True
+    config.enable_p2p = True
+    config.enable_gossip = True
+    config.enable_ssh = True
+    config.enable_bittorrent = True
+    config.aria2_connections_per_server = 16
+    config.aria2_split = 16
+    config.aria2_data_server_port = 8766
+    config.gossip_port = 8765
+    config.ssh_timeout = 30
+    config.fallback_chain = ["aria2", "ssh", "p2p"]
+    config.get_fallback_chain_for_size = MagicMock(return_value=["bittorrent", "aria2", "ssh"])
     return config
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available: {IMPORT_ERROR if not SYNC_COORDINATOR_AVAILABLE else ''}")
+# =============================================================================
+# SyncCategory Tests
+# =============================================================================
+
+
+class TestSyncCategory:
+    """Tests for SyncCategory enum."""
+
+    def test_category_values(self):
+        """Test SyncCategory enum values."""
+        from app.distributed.sync_coordinator import SyncCategory
+        
+        assert SyncCategory.GAMES.value == "games"
+        assert SyncCategory.MODELS.value == "models"
+        assert SyncCategory.TRAINING.value == "training"
+        assert SyncCategory.ELO.value == "elo"
+        assert SyncCategory.ALL.value == "all"
+
+    def test_category_iteration(self):
+        """Test iterating over SyncCategory."""
+        from app.distributed.sync_coordinator import SyncCategory
+        
+        categories = list(SyncCategory)
+        assert len(categories) == 5
+
+
+# =============================================================================
+# SyncStats Tests
+# =============================================================================
+
+
 class TestSyncStats:
     """Tests for SyncStats dataclass."""
 
-    def test_default_values(self):
-        """Default stats should have zeros."""
+    def test_basic_creation(self):
+        """Test creating SyncStats with defaults."""
+        from app.distributed.sync_coordinator import SyncStats
+        
         stats = SyncStats(category="games")
+        assert stats.category == "games"
         assert stats.files_synced == 0
-        assert stats.bytes_transferred == 0
         assert stats.files_failed == 0
+        assert stats.bytes_transferred == 0
         assert stats.duration_seconds == 0.0
+        assert stats.transport_used == ""
+        assert stats.sources_tried == 0
+        assert stats.errors == []
 
-    def test_category_required(self):
-        """Category is a required field."""
-        stats = SyncStats(category="models")
-        assert stats.category == "models"
-
-    def test_success_rate_no_files(self):
-        """Success rate with no files should be 1.0."""
-        stats = SyncStats(category="games")
-        assert stats.success_rate == 1.0
+    def test_with_values(self):
+        """Test creating SyncStats with values."""
+        from app.distributed.sync_coordinator import SyncStats
+        
+        stats = SyncStats(
+            category="training",
+            files_synced=10,
+            files_failed=2,
+            bytes_transferred=1024000,
+            duration_seconds=5.5,
+            transport_used="aria2",
+            sources_tried=3,
+            errors=["error1"],
+        )
+        assert stats.files_synced == 10
+        assert stats.files_failed == 2
+        assert stats.bytes_transferred == 1024000
 
     def test_success_rate_all_success(self):
-        """Success rate with all successful syncs."""
-        stats = SyncStats(category="games", files_synced=10, files_failed=0)
+        """Test success_rate with all successful syncs."""
+        from app.distributed.sync_coordinator import SyncStats
+        
+        stats = SyncStats(category="models", files_synced=10, files_failed=0)
         assert stats.success_rate == 1.0
 
-    def test_success_rate_with_failures(self):
-        """Success rate calculation with some failures."""
-        stats = SyncStats(category="games", files_synced=8, files_failed=2)
-        # success_rate = synced / (synced + failed)
-        assert stats.success_rate == 0.8
+    def test_success_rate_partial(self):
+        """Test success_rate with partial failures."""
+        from app.distributed.sync_coordinator import SyncStats
+        
+        stats = SyncStats(category="models", files_synced=7, files_failed=3)
+        assert stats.success_rate == 0.7
 
-    def test_success_rate_all_failed(self):
-        """Success rate when all files failed."""
-        stats = SyncStats(category="games", files_synced=0, files_failed=5)
-        assert stats.success_rate == 0.0
+    def test_success_rate_no_files(self):
+        """Test success_rate with no files."""
+        from app.distributed.sync_coordinator import SyncStats
+        
+        stats = SyncStats(category="models", files_synced=0, files_failed=0)
+        assert stats.success_rate == 1.0
 
-    def test_quality_stats_defaults(self):
-        """Quality-aware stats should have defaults."""
-        stats = SyncStats(category="games")
-        assert stats.high_quality_games_synced == 0
-        assert stats.avg_quality_score == 0.0
-        assert stats.avg_elo == 0.0
+    def test_quality_aware_stats(self):
+        """Test quality-aware stat fields."""
+        from app.distributed.sync_coordinator import SyncStats
+        
+        stats = SyncStats(
+            category="games",
+            high_quality_games_synced=100,
+            avg_quality_score=0.85,
+            avg_elo=1500.0,
+        )
+        assert stats.high_quality_games_synced == 100
+        assert stats.avg_quality_score == 0.85
+        assert stats.avg_elo == 1500.0
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
+# =============================================================================
+# ClusterSyncStats Tests
+# =============================================================================
+
+
+class TestClusterSyncStats:
+    """Tests for ClusterSyncStats dataclass."""
+
+    def test_basic_creation(self):
+        """Test creating ClusterSyncStats with defaults."""
+        from app.distributed.sync_coordinator import ClusterSyncStats
+        
+        stats = ClusterSyncStats()
+        assert stats.total_files_synced == 0
+        assert stats.total_bytes_transferred == 0
+        assert stats.duration_seconds == 0.0
+        assert stats.categories == {}
+        assert stats.transport_distribution == {}
+        assert stats.nodes_synced == 0
+        assert stats.nodes_failed == 0
+
+    def test_with_categories(self):
+        """Test ClusterSyncStats with category data."""
+        from app.distributed.sync_coordinator import ClusterSyncStats, SyncStats
+        
+        games_stats = SyncStats(category="games", files_synced=5)
+        models_stats = SyncStats(category="models", files_synced=3)
+        
+        stats = ClusterSyncStats(
+            total_files_synced=8,
+            categories={"games": games_stats, "models": models_stats},
+        )
+        assert len(stats.categories) == 2
+        assert stats.categories["games"].files_synced == 5
+
+    def test_quality_distribution(self):
+        """Test ClusterSyncStats quality distribution."""
+        from app.distributed.sync_coordinator import ClusterSyncStats
+        
+        stats = ClusterSyncStats(
+            total_high_quality_games=500,
+            avg_quality_score=0.78,
+            quality_distribution={"high": 200, "medium": 200, "low": 100},
+        )
+        assert stats.total_high_quality_games == 500
+        assert stats.avg_quality_score == 0.78
+        assert stats.quality_distribution["high"] == 200
+
+
+# =============================================================================
+# SyncOperationBudget Tests
+# =============================================================================
+
+
 class TestSyncOperationBudget:
-    """Tests for SyncOperationBudget class."""
+    """Tests for SyncOperationBudget dataclass."""
 
-    def test_default_timeout(self):
-        """Default timeout should be 300 seconds."""
+    def test_default_budget(self):
+        """Test creating budget with defaults."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
         budget = SyncOperationBudget()
-        assert budget.total_seconds == 300
-
-    def test_custom_timeout(self):
-        """Custom timeout should be respected."""
-        budget = SyncOperationBudget(total_seconds=120)
-        assert budget.total_seconds == 120
+        assert budget.total_seconds == 300.0
+        assert budget.per_attempt_seconds == 30.0
+        assert budget.attempts == 0
 
     def test_elapsed_time(self):
-        """Elapsed time should increase."""
-        budget = SyncOperationBudget(total_seconds=10)
-        assert budget.elapsed >= 0
-        time.sleep(0.01)
-        assert budget.elapsed >= 0.01
+        """Test elapsed time tracking."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        start = time.time() - 10  # 10 seconds ago
+        budget = SyncOperationBudget(start_time=start)
+        assert 9 < budget.elapsed < 11
 
     def test_remaining_time(self):
-        """Remaining time should decrease."""
-        budget = SyncOperationBudget(total_seconds=10)
-        assert budget.remaining <= 10
-        assert budget.remaining > 0
+        """Test remaining time calculation."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        start = time.time() - 100  # 100 seconds ago
+        budget = SyncOperationBudget(total_seconds=300, start_time=start)
+        assert 199 < budget.remaining < 201
 
-    def test_exhausted_initially_false(self):
-        """Budget should not be exhausted initially."""
-        budget = SyncOperationBudget(total_seconds=10)
-        assert budget.exhausted is False
+    def test_exhausted_false(self):
+        """Test budget not exhausted."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        budget = SyncOperationBudget(total_seconds=300)
+        assert not budget.exhausted
 
-    def test_can_attempt_initially_true(self):
-        """Should be able to attempt initially."""
-        budget = SyncOperationBudget(total_seconds=10)
-        assert budget.can_attempt() is True
+    def test_exhausted_true(self):
+        """Test budget exhausted."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        start = time.time() - 400  # 400 seconds ago
+        budget = SyncOperationBudget(total_seconds=300, start_time=start)
+        assert budget.exhausted
+        assert budget.remaining == 0
+
+    def test_get_attempt_timeout_normal(self):
+        """Test attempt timeout with plenty of budget."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        budget = SyncOperationBudget(
+            total_seconds=300,
+            per_attempt_seconds=30,
+        )
+        assert budget.get_attempt_timeout() == 30.0
+
+    def test_get_attempt_timeout_limited(self):
+        """Test attempt timeout capped by remaining budget."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        start = time.time() - 295  # 295 seconds ago, only 5 left
+        budget = SyncOperationBudget(
+            total_seconds=300,
+            per_attempt_seconds=30,
+            start_time=start,
+        )
+        timeout = budget.get_attempt_timeout()
+        assert timeout < 6
 
     def test_record_attempt(self):
-        """Recording attempt should increment counter."""
+        """Test recording attempts."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
         budget = SyncOperationBudget()
         assert budget.attempts == 0
         budget.record_attempt()
         assert budget.attempts == 1
         budget.record_attempt()
-        assert budget.attempts == 2
+        budget.record_attempt()
+        assert budget.attempts == 3
 
-    def test_get_attempt_timeout(self):
-        """Get attempt timeout should return reasonable value."""
-        budget = SyncOperationBudget(per_attempt_seconds=30)
-        timeout = budget.get_attempt_timeout()
-        assert timeout <= 30
-
-
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCoordinatorSingleton:
-    """Tests for SyncCoordinator singleton pattern."""
-
-    def test_singleton_pattern_structure(self):
-        """Verify singleton pattern attributes exist."""
-        assert hasattr(SyncCoordinator, "_instance")
-        assert hasattr(SyncCoordinator, "get_instance")
-        assert hasattr(SyncCoordinator, "reset_instance")
-
-    def test_reset_instance_clears_singleton(self):
-        """reset_instance should be callable."""
-        # Set a dummy instance
-        SyncCoordinator._instance = MagicMock()
-        # Reset should clear it
-        SyncCoordinator._instance = None
-        assert SyncCoordinator._instance is None
+    def test_can_attempt(self):
+        """Test can_attempt check."""
+        from app.distributed.sync_coordinator import SyncOperationBudget
+        
+        budget = SyncOperationBudget(total_seconds=300)
+        assert budget.can_attempt()
+        
+        # Exhausted budget
+        start = time.time() - 400
+        budget2 = SyncOperationBudget(total_seconds=300, start_time=start)
+        assert not budget2.can_attempt()
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
+# =============================================================================
+# SyncCoordinator Initialization Tests
+# =============================================================================
+
+
 class TestSyncCoordinatorInit:
-    """Tests for SyncCoordinator initialization structure."""
+    """Tests for SyncCoordinator initialization."""
 
-    def test_init_accepts_provider_arg(self):
-        """Init should accept provider argument."""
-        import inspect
-        sig = inspect.signature(SyncCoordinator.__init__)
-        params = list(sig.parameters.keys())
-        assert "provider" in params
+    def test_singleton_pattern(self, mock_storage_provider, mock_transport_config):
+        """Test singleton pattern."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            SyncCoordinator.reset_instance()
+            
+            instance1 = SyncCoordinator.get_instance()
+            instance2 = SyncCoordinator.get_instance()
+            
+            assert instance1 is instance2
+            
+            SyncCoordinator.reset_instance()
 
-    def test_init_accepts_config_arg(self):
-        """Init should accept config argument."""
-        import inspect
-        sig = inspect.signature(SyncCoordinator.__init__)
-        params = list(sig.parameters.keys())
-        assert "config" in params
+    def test_initialization_with_provider(self, mock_storage_provider, mock_transport_config):
+        """Test initialization with custom provider."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            assert coordinator._provider is mock_storage_provider
+            assert coordinator._config is mock_transport_config
+            assert coordinator._running is False
 
-    def test_class_has_required_state_attributes(self):
-        """Class should have state tracking attributes after init."""
-        # Create a mock instance to check attributes
-        mock_coordinator = MagicMock(spec=SyncCoordinator)
-        mock_coordinator._running = False
-        mock_coordinator._last_sync_times = {}
-        mock_coordinator._sync_stats = {}
-        mock_coordinator._consecutive_failures = 0
+    def test_transport_lazy_initialization(self, mock_storage_provider, mock_transport_config):
+        """Test that transports are lazily initialized."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            assert coordinator._aria2 is None
+            assert coordinator._p2p is None
+            assert coordinator._gossip is None
 
-        assert mock_coordinator._running is False
-        assert mock_coordinator._last_sync_times == {}
-        assert mock_coordinator._consecutive_failures == 0
+
+# =============================================================================
+# SyncCoordinator Transport Tests
+# =============================================================================
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
+class TestSyncCoordinatorTransports:
+    """Tests for SyncCoordinator transport initialization."""
+
+    def test_init_aria2_disabled(self, mock_storage_provider, mock_transport_config):
+        """Test aria2 not initialized when disabled."""
+        mock_transport_config.enable_aria2 = False
+        
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=True):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            assert coordinator._init_aria2() is None
+
+    def test_init_p2p_disabled(self, mock_storage_provider, mock_transport_config):
+        """Test P2P not initialized when disabled."""
+        mock_transport_config.enable_p2p = False
+        
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            assert coordinator._init_p2p() is None
+
+
+# =============================================================================
+# SyncCoordinator Static Helper Tests
+# =============================================================================
+
+
+class TestSyncCoordinatorHelpers:
+    """Tests for SyncCoordinator static helper methods."""
+
+    def test_resolve_games_dir_selfplay_path(self, mock_storage_provider, mock_transport_config):
+        """Test resolving games dir from selfplay path."""
+        mock_storage_provider.selfplay_dir = Path("/tmp/data/selfplay")
+        
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False), \
+             patch.object(Path, "exists", return_value=True):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            result = coordinator._resolve_games_dir()
+            assert "games" in str(result)
+
+    def test_snapshot_files(self, tmp_path):
+        """Test file snapshot creation."""
+        from app.distributed.sync_coordinator import SyncCoordinator
+        
+        # Create test files
+        (tmp_path / "test1.db").write_text("content1")
+        (tmp_path / "test2.db").write_text("content2content2")
+        (tmp_path / "other.txt").write_text("ignored")
+        
+        snapshot = SyncCoordinator._snapshot_files(tmp_path, ["*.db"])
+        
+        assert len(snapshot) == 2
+        assert "test1.db" in snapshot
+        assert "test2.db" in snapshot
+
+    def test_snapshot_files_empty_dir(self, tmp_path):
+        """Test snapshot on empty directory."""
+        from app.distributed.sync_coordinator import SyncCoordinator
+        
+        snapshot = SyncCoordinator._snapshot_files(tmp_path, ["*.db"])
+        assert snapshot == {}
+
+    def test_snapshot_files_nonexistent_dir(self):
+        """Test snapshot on nonexistent directory."""
+        from app.distributed.sync_coordinator import SyncCoordinator
+        
+        snapshot = SyncCoordinator._snapshot_files(Path("/nonexistent"), ["*.db"])
+        assert snapshot == {}
+
+    def test_diff_snapshot(self):
+        """Test snapshot diffing."""
+        from app.distributed.sync_coordinator import SyncCoordinator
+        
+        before = {"file1.db": 100, "file2.db": 200}
+        after = {"file1.db": 100, "file2.db": 200, "file3.db": 300, "file4.db": 400}
+        
+        new_count, new_bytes = SyncCoordinator._diff_snapshot(before, after)
+        
+        assert new_count == 2
+        assert new_bytes == 700
+
+
+# =============================================================================
+# SyncCoordinator Manifest Tests
+# =============================================================================
+
+
+class TestSyncCoordinatorManifest:
+    """Tests for SyncCoordinator manifest integration."""
+
+    def test_get_quality_lookup_empty(self, mock_storage_provider, mock_transport_config):
+        """Test quality lookup when manifest not available."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._manifest = None
+            
+            lookup = coordinator.get_quality_lookup()
+            assert lookup == {}
+
+    def test_get_elo_lookup_empty(self, mock_storage_provider, mock_transport_config):
+        """Test Elo lookup when manifest not available."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._manifest = None
+            
+            lookup = coordinator.get_elo_lookup()
+            assert lookup == {}
+
+    def test_get_manifest(self, mock_storage_provider, mock_transport_config):
+        """Test getting manifest instance."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            # Without manifest
+            coordinator._manifest = None
+            assert coordinator.get_manifest() is None
+
+    def test_get_high_quality_game_ids_no_manifest(self, mock_storage_provider, mock_transport_config):
+        """Test getting high quality game IDs without manifest."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._manifest = None
+            
+            result = coordinator.get_high_quality_game_ids()
+            assert result == []
+
+
+# =============================================================================
+# SyncCoordinator Data Server Tests
+# =============================================================================
+
+
+class TestSyncCoordinatorDataServer:
+    """Tests for SyncCoordinator data server methods."""
+
+    def test_is_data_server_running_false(self, mock_storage_provider, mock_transport_config):
+        """Test data server running check when not running."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            assert not coordinator.is_data_server_running()
+
+    @pytest.mark.asyncio
+    async def test_start_data_server_already_running(self, mock_storage_provider, mock_transport_config):
+        """Test starting data server when already running."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._data_server_process = MagicMock()
+            coordinator._data_server_process.returncode = None
+            
+            result = await coordinator.start_data_server()
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_stop_data_server_not_running(self, mock_storage_provider, mock_transport_config):
+        """Test stopping data server when not running."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            # Should not raise
+            await coordinator.stop_data_server()
+
+
+# =============================================================================
+# SyncCoordinator Source Discovery Tests
+# =============================================================================
+
+
+class TestSyncCoordinatorDiscovery:
+    """Tests for SyncCoordinator source discovery."""
+
+    @pytest.mark.asyncio
+    async def test_discover_sources_cached(self, mock_storage_provider, mock_transport_config):
+        """Test source discovery uses cache."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False), \
+             patch("app.distributed.sync_coordinator.get_aria2_sources", return_value=["http://host1:8766"]):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            # First call populates cache
+            sources1 = await coordinator.discover_sources()
+            
+            # Second call uses cache
+            with patch("app.distributed.sync_coordinator.get_aria2_sources") as mock:
+                sources2 = await coordinator.discover_sources()
+                mock.assert_not_called()
+            
+            assert sources1 == sources2
+
+    @pytest.mark.asyncio
+    async def test_discover_sources_force_refresh(self, mock_storage_provider, mock_transport_config):
+        """Test source discovery with force refresh."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False), \
+             patch("app.distributed.sync_coordinator.get_aria2_sources", return_value=["http://host1:8766"]):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._aria2_sources = ["old_source"]
+            coordinator._source_discovery_time = time.time()
+            
+            sources = await coordinator.discover_sources(force_refresh=True)
+            
+            assert "http://host1:8766" in sources
+
+
+# =============================================================================
+# SyncCoordinator Sync Operations Tests
+# =============================================================================
+
+
+class TestSyncCoordinatorSyncOps:
+    """Tests for SyncCoordinator sync operations."""
+
+    @pytest.mark.asyncio
+    async def test_sync_training_data_shared_storage(self, mock_storage_provider, mock_transport_config):
+        """Test sync skipped for shared storage."""
+        mock_storage_provider.has_shared_storage = True
+        
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            stats = await coordinator.sync_training_data()
+            
+            assert stats.transport_used == "nfs_shared"
+            assert stats.files_synced == 0
+
+    @pytest.mark.asyncio
+    async def test_sync_models_shared_storage(self, mock_storage_provider, mock_transport_config):
+        """Test model sync skipped for shared storage."""
+        mock_storage_provider.has_shared_storage = True
+        
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            stats = await coordinator.sync_models()
+            
+            assert stats.transport_used == "nfs_shared"
+
+    @pytest.mark.asyncio
+    async def test_sync_games_shared_storage(self, mock_storage_provider, mock_transport_config):
+        """Test games sync skipped for shared storage."""
+        mock_storage_provider.has_shared_storage = True
+        
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            stats = await coordinator.sync_games()
+            
+            assert stats.transport_used == "nfs_shared"
+
+    @pytest.mark.asyncio
+    async def test_sync_training_data_no_sources(self, mock_storage_provider, mock_transport_config):
+        """Test sync with no sources available."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False), \
+             patch("app.distributed.sync_coordinator.get_aria2_sources", return_value=[]):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            stats = await coordinator.sync_training_data()
+            
+            assert stats.sources_tried == 0
+
+    @pytest.mark.asyncio
+    async def test_sync_high_quality_games_no_manifest(self, mock_storage_provider, mock_transport_config):
+        """Test high quality game sync without manifest."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._manifest = None
+            
+            stats = await coordinator.sync_high_quality_games()
+            
+            assert "No manifest" in str(stats.errors)
+
+
+# =============================================================================
+# SyncCoordinator Health Check Tests
+# =============================================================================
+
+
 class TestSyncCoordinatorHealth:
     """Tests for SyncCoordinator health check methods."""
 
-    def test_has_get_sync_health_method(self):
-        """Class should have get_sync_health method."""
-        assert hasattr(SyncCoordinator, "get_sync_health")
+    def test_get_sync_health(self, mock_storage_provider, mock_transport_config):
+        """Test get_sync_health returns expected structure."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            health = coordinator.get_sync_health()
+            
+            assert "running" in health
+            assert "consecutive_failures" in health
+            assert "last_successful_sync" in health
 
-    def test_has_health_check_method(self):
-        """Class should have health_check method."""
-        assert hasattr(SyncCoordinator, "health_check")
+    def test_health_check_not_running(self, mock_storage_provider, mock_transport_config):
+        """Test health_check when not running."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            coordinator._running = False
+            
+            result = coordinator.health_check()
+            
+            # Should return a HealthCheckResult or dict-like
+            assert hasattr(result, "healthy") or isinstance(result, dict)
 
-
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCoordinatorStatus:
-    """Tests for SyncCoordinator status methods."""
-
-    def test_has_get_status_method(self):
-        """Class should have get_status method."""
-        assert hasattr(SyncCoordinator, "get_status")
-
-
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCoordinatorManifest:
-    """Tests for SyncCoordinator manifest methods."""
-
-    def test_has_get_manifest_method(self):
-        """Class should have get_manifest method."""
-        assert hasattr(SyncCoordinator, "get_manifest")
-
-    def test_has_get_quality_lookup_method(self):
-        """Class should have get_quality_lookup method."""
-        assert hasattr(SyncCoordinator, "get_quality_lookup")
-
-    def test_has_get_elo_lookup_method(self):
-        """Class should have get_elo_lookup method."""
-        assert hasattr(SyncCoordinator, "get_elo_lookup")
-
-
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCoordinatorDataServer:
-    """Tests for SyncCoordinator data server and lifecycle methods."""
-
-    def test_has_is_data_server_running_method(self):
-        """Class should have is_data_server_running method."""
-        assert hasattr(SyncCoordinator, "is_data_server_running")
-
-    def test_has_start_data_server_method(self):
-        """Class should have start_data_server method."""
-        assert hasattr(SyncCoordinator, "start_data_server")
-
-    def test_has_stop_data_server_method(self):
-        """Class should have stop_data_server method."""
-        assert hasattr(SyncCoordinator, "stop_data_server")
-
-    def test_has_shutdown_method(self):
-        """Class should have shutdown method."""
-        assert hasattr(SyncCoordinator, "shutdown")
+    def test_get_status(self, mock_storage_provider, mock_transport_config):
+        """Test get_status returns expected structure."""
+        with patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import SyncCoordinator
+            
+            coordinator = SyncCoordinator(
+                provider=mock_storage_provider,
+                config=mock_transport_config,
+            )
+            
+            status = coordinator.get_status()
+            
+            assert "provider" in status
+            assert "running" in status
+            assert "transports" in status
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCoordinatorLookup:
-    """Tests for SyncCoordinator lookup methods."""
-
-    def test_has_get_quality_lookup_method(self):
-        """Class should have get_quality_lookup method."""
-        assert hasattr(SyncCoordinator, "get_quality_lookup")
-
-    def test_has_get_elo_lookup_method(self):
-        """Class should have get_elo_lookup method."""
-        assert hasattr(SyncCoordinator, "get_elo_lookup")
+# =============================================================================
+# Module-Level Function Tests
+# =============================================================================
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCategory:
-    """Tests for SyncCategory enum."""
+class TestModuleFunctions:
+    """Tests for module-level convenience functions."""
 
-    def test_has_games_category(self):
-        """Should have GAMES category."""
-        assert hasattr(SyncCategory, "GAMES")
-        assert SyncCategory.GAMES.value == "games"
+    @pytest.mark.asyncio
+    async def test_sync_training_data_function(self, mock_storage_provider, mock_transport_config):
+        """Test module-level sync_training_data function."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False), \
+             patch("app.distributed.sync_coordinator.get_aria2_sources", return_value=[]):
+            from app.distributed.sync_coordinator import sync_training_data, SyncCoordinator
+            
+            SyncCoordinator.reset_instance()
+            
+            stats = await sync_training_data()
+            assert stats.category == "training"
+            
+            SyncCoordinator.reset_instance()
 
-    def test_has_models_category(self):
-        """Should have MODELS category."""
-        assert hasattr(SyncCategory, "MODELS")
-        assert SyncCategory.MODELS.value == "models"
-
-    def test_has_training_category(self):
-        """Should have TRAINING category."""
-        assert hasattr(SyncCategory, "TRAINING")
-        assert SyncCategory.TRAINING.value == "training"
-
-    def test_has_elo_category(self):
-        """Should have ELO category."""
-        assert hasattr(SyncCategory, "ELO")
-        assert SyncCategory.ELO.value == "elo"
-
-    def test_has_all_category(self):
-        """Should have ALL category."""
-        assert hasattr(SyncCategory, "ALL")
-        assert SyncCategory.ALL.value == "all"
+    def test_get_quality_lookup_function(self, mock_storage_provider, mock_transport_config):
+        """Test module-level get_quality_lookup function."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import get_quality_lookup, SyncCoordinator
+            
+            SyncCoordinator.reset_instance()
+            
+            lookup = get_quality_lookup()
+            assert isinstance(lookup, dict)
+            
+            SyncCoordinator.reset_instance()
 
 
-@pytest.mark.skipif(not SYNC_COORDINATOR_AVAILABLE, reason=f"SyncCoordinator not available")
-class TestSyncCoordinatorIntegration:
-    """Integration tests for SyncCoordinator class structure."""
+# =============================================================================
+# HighQualityDataSyncWatcher Tests
+# =============================================================================
 
-    def test_class_has_expected_methods(self):
-        """Verify class has all expected public methods."""
-        expected_methods = [
-            "get_instance",
-            "reset_instance",
-            "health_check",
-            "get_status",
-            "get_sync_health",
-            "get_manifest",
-            "get_quality_lookup",
-            "get_elo_lookup",
-            "is_data_server_running",
-            "start_data_server",
-            "stop_data_server",
-            "shutdown",
-        ]
-        for method in expected_methods:
-            assert hasattr(SyncCoordinator, method), f"Missing method: {method}"
 
-    def test_consecutive_failure_tracking_structure(self):
-        """Test consecutive failure counter structure."""
-        # Create a mock instance
-        mock = MagicMock(spec=SyncCoordinator)
-        mock._consecutive_failures = 0
-        mock._max_consecutive_failures = 5
+class TestHighQualityDataSyncWatcher:
+    """Tests for HighQualityDataSyncWatcher class."""
 
-        # Initial state
-        assert mock._consecutive_failures == 0
+    def test_initialization(self, mock_storage_provider, mock_transport_config):
+        """Test HighQualityDataSyncWatcher initialization."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                HighQualityDataSyncWatcher,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            watcher = HighQualityDataSyncWatcher()
+            
+            assert watcher._min_quality_for_sync == 0.7
+            assert watcher._min_games_threshold == 100
+            assert watcher._batch_size == 500
+            
+            SyncCoordinator.reset_instance()
 
-        # Simulate failures
-        mock._consecutive_failures = 3
-        assert mock._consecutive_failures == 3
+    def test_custom_thresholds(self, mock_storage_provider, mock_transport_config):
+        """Test watcher with custom thresholds."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                HighQualityDataSyncWatcher,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            watcher = HighQualityDataSyncWatcher(
+                min_quality_for_sync=0.8,
+                min_games_threshold=200,
+                batch_size=1000,
+            )
+            
+            assert watcher._min_quality_for_sync == 0.8
+            assert watcher._min_games_threshold == 200
+            assert watcher._batch_size == 1000
+            
+            SyncCoordinator.reset_instance()
 
-        # Check max failures threshold
-        assert mock._consecutive_failures < mock._max_consecutive_failures
+    def test_health_check(self, mock_storage_provider, mock_transport_config):
+        """Test watcher health check."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                HighQualityDataSyncWatcher,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            watcher = HighQualityDataSyncWatcher()
+            result = watcher.health_check()
+            
+            assert hasattr(result, "healthy") or isinstance(result, dict)
+            
+            SyncCoordinator.reset_instance()
+
+    def test_force_sync(self, mock_storage_provider, mock_transport_config):
+        """Test force sync trigger."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                HighQualityDataSyncWatcher,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            watcher = HighQualityDataSyncWatcher()
+            result = watcher.force_sync()
+            
+            # Returns True if sync was triggered
+            assert isinstance(result, bool)
+            
+            SyncCoordinator.reset_instance()
+
+
+# =============================================================================
+# Wiring Function Tests
+# =============================================================================
+
+
+class TestWiringFunctions:
+    """Tests for event wiring functions."""
+
+    def test_wire_high_quality_to_sync(self, mock_storage_provider, mock_transport_config):
+        """Test wire_high_quality_to_sync function."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                wire_high_quality_to_sync,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            # Should not raise
+            result = wire_high_quality_to_sync()
+            
+            assert isinstance(result, bool)
+            
+            SyncCoordinator.reset_instance()
+
+    def test_wire_all_quality_events_to_sync(self, mock_storage_provider, mock_transport_config):
+        """Test wire_all_quality_events_to_sync function."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                wire_all_quality_events_to_sync,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            # Should not raise
+            result = wire_all_quality_events_to_sync()
+            
+            assert isinstance(result, int)
+            
+            SyncCoordinator.reset_instance()
+
+    def test_get_high_quality_sync_watcher(self, mock_storage_provider, mock_transport_config):
+        """Test get_high_quality_sync_watcher function."""
+        with patch("app.distributed.sync_coordinator.get_storage_provider", return_value=mock_storage_provider), \
+             patch("app.distributed.sync_coordinator.get_optimal_transport_config", return_value=mock_transport_config), \
+             patch("app.distributed.sync_coordinator.check_aria2_available", return_value=False):
+            from app.distributed.sync_coordinator import (
+                get_high_quality_sync_watcher,
+                SyncCoordinator,
+            )
+            
+            SyncCoordinator.reset_instance()
+            
+            # May return None if not wired
+            watcher = get_high_quality_sync_watcher()
+            
+            # Either None or a watcher instance
+            assert watcher is None or hasattr(watcher, "health_check")
+            
+            SyncCoordinator.reset_instance()

@@ -81,12 +81,17 @@ def load_curriculum_weights(max_age_seconds: float = CURRICULUM_WEIGHTS_STALE_SE
             return {}
         with open(CURRICULUM_WEIGHTS_PATH) as f:
             data = json.load(f)
-        # Check staleness
+        # Handle null, array, or other non-dict JSON
+        if not isinstance(data, dict):
+            return {}
+        # Check staleness - handle non-numeric updated_at
         updated_at = data.get("updated_at", 0)
+        if not isinstance(updated_at, (int, float)):
+            return {}
         if time.time() - updated_at > max_age_seconds:
             return {}  # Stale weights
         return data.get("weights", {})
-    except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError):
+    except (FileNotFoundError, OSError, PermissionError, json.JSONDecodeError, TypeError):
         return {}
 
 

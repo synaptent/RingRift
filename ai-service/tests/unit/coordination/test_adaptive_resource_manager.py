@@ -1369,3 +1369,382 @@ class TestErrorRecovery:
         # Should complete and delete the good file
         assert result.success is True
         assert result.files_deleted >= 0  # May or may not delete depending on timing
+
+
+# =============================================================================
+# Additional Tests - December 29, 2025
+# =============================================================================
+
+
+class TestResourceStatusAdditional:
+    """Additional tests for ResourceStatus dataclass."""
+
+    def test_to_dict_empty_warnings_errors(self) -> None:
+        """Test to_dict with empty warnings and errors lists."""
+        status = ResourceStatus(node_id="test")
+        result = status.to_dict()
+
+        assert result["warnings"] == []
+        assert result["errors"] == []
+
+    def test_to_dict_preserves_all_fields(self) -> None:
+        """Test to_dict preserves all field values."""
+        status = ResourceStatus(
+            node_id="full-node",
+            disk_total_gb=500.0,
+            disk_used_gb=350.0,
+            disk_free_gb=150.0,
+            disk_percent=70.0,
+            memory_total_gb=64.0,
+            memory_used_gb=48.0,
+            memory_free_gb=16.0,
+            memory_percent=75.0,
+            gpu_memory_used_gb=20.0,
+            gpu_memory_total_gb=24.0,
+            gpu_percent=83.3,
+            is_healthy=True,
+        )
+        result = status.to_dict()
+
+        assert result["disk"]["total_gb"] == 500.0
+        assert result["disk"]["used_gb"] == 350.0
+        assert result["disk"]["free_gb"] == 150.0
+        assert result["memory"]["free_gb"] == 16.0
+        assert result["gpu"]["percent"] == 83.3
+
+
+class TestCleanupResultAdditional:
+    """Additional tests for CleanupResult dataclass."""
+
+    def test_cleanup_result_zero_duration(self) -> None:
+        """Test CleanupResult with zero duration."""
+        result = CleanupResult(
+            success=True,
+            files_deleted=0,
+            bytes_freed=0,
+            duration_seconds=0.0,
+        )
+        assert result.duration_seconds == 0.0
+
+    def test_cleanup_result_large_values(self) -> None:
+        """Test CleanupResult with large values."""
+        result = CleanupResult(
+            success=True,
+            files_deleted=100000,
+            bytes_freed=1024 * 1024 * 1024 * 100,  # 100 GB
+            duration_seconds=3600.0,
+        )
+        assert result.files_deleted == 100000
+        assert result.bytes_freed == 1024 * 1024 * 1024 * 100
+
+
+class TestAdaptiveResourceManagerConfigEdgeCases:
+    """Edge case tests for manager configuration."""
+
+    def test_init_with_nonexistent_paths(self) -> None:
+        """Test initialization with nonexistent paths creates them if possible."""
+        manager = AdaptiveResourceManager(
+            nfs_path="/nonexistent/nfs/path",
+            data_path="/nonexistent/data/path",
+        )
+        # Paths are stored but may not exist
+        assert manager.nfs_path == Path("/nonexistent/nfs/path")
+        assert manager.data_path == Path("/nonexistent/data/path")
+
+    def test_init_with_zero_thresholds(self) -> None:
+        """Test initialization with zero thresholds."""
+        manager = AdaptiveResourceManager(
+            disk_threshold=0.0,
+            memory_threshold=0.0,
+        )
+        assert manager.disk_threshold == 0.0
+        assert manager.memory_threshold == 0.0
+
+    def test_init_with_100_percent_thresholds(self) -> None:
+        """Test initialization with 100% thresholds."""
+        manager = AdaptiveResourceManager(
+            disk_threshold=100.0,
+            memory_threshold=100.0,
+        )
+        assert manager.disk_threshold == 100.0
+        assert manager.memory_threshold == 100.0
+
+
+class TestDiskUsageEdgeCases:
+    """Edge case tests for disk usage."""
+
+    def test_get_disk_usage_symlink(self, manager: AdaptiveResourceManager) -> None:
+        """Test disk usage for symlinked path."""
+        # Create a symlink to the data path
+        symlink = manager.data_path.parent / "symlink_test"
+        try:
+            symlink.symlink_to(manager.data_path)
+            total, used, free = manager._get_disk_usage(symlink)
+            assert total > 0  # Should follow symlink
+        finally:
+            if symlink.exists():
+                symlink.unlink()
+
+    def test_get_disk_usage_file_instead_of_dir(self, manager: AdaptiveResourceManager) -> None:
+        """Test disk usage when path is a file, not directory."""
+        test_file = manager.data_path / "test_file.txt"
+        test_file.write_text("test")
+
+        # shutil.disk_usage works on files too (gets parent dir stats)
+        total, used, free = manager._get_disk_usage(test_file)
+        assert total > 0
+
+
+class TestMemoryUsageParsing:
+    """Tests for memory usage parsing edge cases."""
+
+    def test_get_memory_usage_missing_memfree(self, manager: AdaptiveResourceManager) -> None:
+        """Test memory usage with missing MemFree line."""
+        mock_meminfo = """MemTotal:       32000000 kB
+Buffers:        1000000 kB
+Cached:         7000000 kB
+"""
+        with patch("builtins.open", mock_open(read_data=mock_meminfo)):
+            total, used, free = manager._get_memory_usage()
+            # Should handle gracefully, free defaults to 0
+            assert total >= 0
+
+    def test_get_memory_usage_malformed_values(self, manager: AdaptiveResourceManager) -> None:
+        """Test memory usage with malformed values."""
+        mock_meminfo = """MemTotal:       invalid kB
+MemFree:        also_invalid kB
+"""
+        with patch("builtins.open", mock_open(read_data=mock_meminfo)):
+            total, used, free = manager._get_memory_usage()
+            # Should handle gracefully without crashing
+            assert isinstance(total, (int, float))
+
+
+class TestGpuMemoryParsing:
+    """Tests for GPU memory parsing edge cases."""
+
+    def test_get_gpu_memory_empty_output(self, manager: AdaptiveResourceManager) -> None:
+        """Test GPU memory with empty output."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+
+        with patch("subprocess.run", return_value=mock_result):
+            used, total = manager._get_gpu_memory()
+            assert used == 0
+            assert total == 0
+
+    def test_get_gpu_memory_whitespace_only(self, manager: AdaptiveResourceManager) -> None:
+        """Test GPU memory with whitespace-only output."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "   \n  \t  \n"
+
+        with patch("subprocess.run", return_value=mock_result):
+            used, total = manager._get_gpu_memory()
+            assert used == 0
+            assert total == 0
+
+    def test_get_gpu_memory_partial_line(self, manager: AdaptiveResourceManager) -> None:
+        """Test GPU memory with incomplete CSV line."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "8000\n"  # Missing total
+
+        with patch("subprocess.run", return_value=mock_result):
+            used, total = manager._get_gpu_memory()
+            # Should handle gracefully
+            assert isinstance(used, (int, float))
+            assert isinstance(total, (int, float))
+
+
+class TestCleanupFiltering:
+    """Tests for file filtering during cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skip_directories(self, manager: AdaptiveResourceManager) -> None:
+        """Test cleanup skips directories."""
+        test_dir = manager.data_path / "skip_dirs_test"
+        test_dir.mkdir()
+        subdir = test_dir / "subdir"
+        subdir.mkdir()
+
+        old_time = time.time() - (25 * 3600)
+        os.utime(subdir, (old_time, old_time))
+
+        result = await manager.cleanup_old_files(test_dir)
+
+        # Subdir should not be deleted (cleanup is for files only)
+        assert subdir.exists()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_multiple_patterns(self, manager: AdaptiveResourceManager) -> None:
+        """Test cleanup with multiple file patterns."""
+        test_dir = manager.data_path / "multi_pattern_test"
+        test_dir.mkdir()
+
+        files = {
+            "data.jsonl": True,   # Should be deleted
+            "data.db": True,      # Should be deleted
+            "data.txt": False,    # Should NOT be deleted (not in patterns)
+        }
+
+        old_time = time.time() - (25 * 3600)
+        for filename in files:
+            f = test_dir / filename
+            f.write_text("data")
+            os.utime(f, (old_time, old_time))
+
+        result = await manager.cleanup_old_files(test_dir, patterns=["*.jsonl", "*.db"])
+
+        assert result.files_deleted == 2
+        assert not (test_dir / "data.jsonl").exists()
+        assert not (test_dir / "data.db").exists()
+        assert (test_dir / "data.txt").exists()
+
+
+class TestAggregationEdgeCases:
+    """Edge case tests for data aggregation."""
+
+    @pytest.mark.asyncio
+    async def test_aggregate_all_nodes_fail(self, manager: AdaptiveResourceManager) -> None:
+        """Test aggregation when all nodes fail."""
+        with patch.object(manager, "_aggregate_from_node", new_callable=AsyncMock) as mock_agg:
+            mock_agg.side_effect = Exception("Connection failed")
+            result = await manager.aggregate_selfplay_data(source_nodes=["node-1", "node-2"])
+
+        # Should still return a result, but with all errors
+        assert "errors" in result
+        assert len(result["errors"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_aggregate_empty_response(self, manager: AdaptiveResourceManager) -> None:
+        """Test aggregation with empty response from node."""
+        with patch.object(manager, "_aggregate_from_node", new_callable=AsyncMock) as mock_agg:
+            mock_agg.return_value = {"games": 0, "bytes": 0, "error": None}
+            result = await manager.aggregate_selfplay_data(source_nodes=["node-1"])
+
+        assert result["games_aggregated"] == 0
+        assert result["success"] is True
+
+
+class TestCheckAndCleanupEdgeCases:
+    """Edge case tests for check_and_cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_check_and_cleanup_nfs_error(self, manager: AdaptiveResourceManager) -> None:
+        """Test check_and_cleanup handles NFS status error."""
+        # Mock the NFS status to return an error status rather than raise
+        nfs_status = ResourceStatus(node_id="nfs", is_healthy=False, errors=["NFS error"])
+        with patch.object(manager, "get_nfs_status", return_value=nfs_status):
+            with patch.object(manager, "get_local_status") as mock_local:
+                mock_local.return_value = ResourceStatus(node_id="local")
+                result = await manager.check_and_cleanup()
+
+        # Should handle gracefully
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_check_and_cleanup_local_error(self, manager: AdaptiveResourceManager) -> None:
+        """Test check_and_cleanup handles local status error."""
+        # Mock the local status to return an error status rather than raise
+        local_status = ResourceStatus(node_id="local", is_healthy=False, errors=["Local error"])
+        with patch.object(manager, "get_nfs_status") as mock_nfs:
+            mock_nfs.return_value = ResourceStatus(node_id="nfs")
+            with patch.object(manager, "get_local_status", return_value=local_status):
+                result = await manager.check_and_cleanup()
+
+        # Should handle gracefully
+        assert result is not None
+
+
+class TestHealthCheckDetails:
+    """Tests for health check details."""
+
+    def test_health_check_details_include_paths(self, manager: AdaptiveResourceManager) -> None:
+        """Test health check details include paths."""
+        result = manager.health_check()
+
+        assert "nfs_path" in result.details
+        assert "data_path" in result.details
+
+    def test_health_check_details_include_thresholds(self, manager: AdaptiveResourceManager) -> None:
+        """Test health check details include thresholds."""
+        result = manager.health_check()
+
+        assert "disk_threshold" in result.details
+        assert "memory_threshold" in result.details
+
+
+class TestConcurrencyScenarios:
+    """Tests for concurrent access scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_status_checks(self, manager: AdaptiveResourceManager) -> None:
+        """Test concurrent status checks don't interfere."""
+        with patch.object(manager, "_get_disk_usage", return_value=(100.0, 50.0, 50.0)):
+            with patch.object(manager, "_get_memory_usage", return_value=(32.0, 16.0, 16.0)):
+                with patch.object(manager, "_get_gpu_memory", return_value=(0.0, 0.0)):
+                    # Run multiple concurrent status checks
+                    tasks = [
+                        asyncio.create_task(asyncio.to_thread(manager.get_local_status, f"node-{i}"))
+                        for i in range(5)
+                    ]
+                    results = await asyncio.gather(*tasks)
+
+        # All should complete successfully
+        assert len(results) == 5
+        for i, status in enumerate(results):
+            assert status.node_id == f"node-{i}"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_cleanups(self, manager: AdaptiveResourceManager) -> None:
+        """Test concurrent cleanups don't cause issues."""
+        test_dirs = []
+        for i in range(3):
+            test_dir = manager.data_path / f"concurrent_test_{i}"
+            test_dir.mkdir()
+            test_dirs.append(test_dir)
+
+            # Create old file
+            f = test_dir / "old.jsonl"
+            f.write_text("data")
+            old_time = time.time() - (25 * 3600)
+            os.utime(f, (old_time, old_time))
+
+        # Run concurrent cleanups
+        tasks = [manager.cleanup_old_files(d) for d in test_dirs]
+        results = await asyncio.gather(*tasks)
+
+        # All should complete successfully
+        assert len(results) == 3
+        for result in results:
+            assert result.success is True
+
+
+class TestGetStatsCompleteness:
+    """Tests for stats completeness."""
+
+    def test_get_stats_all_expected_keys(self, manager: AdaptiveResourceManager) -> None:
+        """Test get_stats includes all expected keys."""
+        stats = manager.get_stats()
+
+        expected_keys = [
+            "running",
+            "cleanups_triggered",
+            "bytes_freed_total",
+            "files_deleted_total",
+            "aggregations_completed",
+            "nodes_paused",
+            "errors",
+            "nfs_path",
+            "data_path",
+            "disk_threshold",
+            "memory_threshold",
+            "last_cleanup_time",
+            "last_aggregation_time",
+            "node_statuses",
+        ]
+
+        for key in expected_keys:
+            assert key in stats, f"Missing expected key: {key}"

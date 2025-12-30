@@ -1203,6 +1203,49 @@ async def emit_sync_complete(
     return await _emit_stage_event(StageEvent.SYNC_COMPLETE, result)
 
 
+async def emit_sync_failure_critical(
+    consecutive_failures: int,
+    last_success: float | None = None,
+    source: str = "sync_coordinator",
+    **metadata,
+) -> bool:
+    """Emit SYNC_FAILURE_CRITICAL event when sync fails multiple times.
+
+    December 2025: Added to trigger recovery when background sync repeatedly fails.
+    This event should trigger:
+    - Alert to operators
+    - Potential failover to alternate sync mechanism
+    - Circuit breaker activation
+
+    Args:
+        consecutive_failures: Number of consecutive sync failures
+        last_success: Timestamp of last successful sync (Unix epoch)
+        source: Component emitting this event
+        **metadata: Additional metadata
+
+    Returns:
+        True if emitted successfully
+    """
+    if not HAS_DATA_EVENTS:
+        return False
+
+    import time
+    time_since_success = None
+    if last_success:
+        time_since_success = time.time() - last_success
+
+    return await _emit_data_event(
+        DataEventType.SYNC_FAILURE_CRITICAL,
+        {
+            "consecutive_failures": consecutive_failures,
+            "last_success": last_success,
+            "time_since_success_seconds": time_since_success,
+            "source": source,
+            **metadata,
+        },
+    )
+
+
 # =============================================================================
 # Quality Events
 # =============================================================================
@@ -2672,6 +2715,7 @@ __all__ = [
     "emit_selfplay_complete",
     # Sync events
     "emit_sync_complete",
+    "emit_sync_failure_critical",
     "emit_task_abandoned",
     # Generic task events
     "emit_task_complete",

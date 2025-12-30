@@ -197,7 +197,7 @@ class QualityMonitorDaemon(HandlerBase):
                 },
             )
             logger.warning(f"[QualityMonitorDaemon] Quality check failed: {reason}")
-        except (ImportError, RuntimeError, TypeError) as e:
+        except (ImportError, RuntimeError, TypeError, AttributeError) as e:
             logger.debug(f"[QualityMonitorDaemon] Failed to emit QUALITY_CHECK_FAILED: {e}")
 
     def _load_state(self) -> None:

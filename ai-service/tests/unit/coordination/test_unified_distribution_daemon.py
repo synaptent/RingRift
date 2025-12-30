@@ -1074,16 +1074,21 @@ class TestDistributionVerification:
 
     def test_get_model_availability_score_with_no_nodes(self, daemon):
         """Test get_model_availability_score returns 0 with no GPU nodes."""
-        # Mock the required imports to simulate no GPU nodes
+        # Mock the required modules at import time
         mock_manifest = MagicMock()
         mock_manifest.find_model.return_value = []
+        mock_cluster_manifest_module = MagicMock()
+        mock_cluster_manifest_module.get_cluster_manifest.return_value = mock_manifest
 
-        with patch(
-            "app.distributed.cluster_manifest.get_cluster_manifest",
-            return_value=mock_manifest,
-        ), patch(
-            "app.config.cluster_config.get_gpu_nodes",
-            return_value=[],
+        mock_cluster_config_module = MagicMock()
+        mock_cluster_config_module.get_gpu_nodes.return_value = []
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "app.distributed.cluster_manifest": mock_cluster_manifest_module,
+                "app.config.cluster_config": mock_cluster_config_module,
+            }
         ):
             score = daemon.get_model_availability_score("model.pth")
             assert score == 0.0

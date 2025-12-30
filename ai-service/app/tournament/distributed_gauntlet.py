@@ -1217,7 +1217,11 @@ class DistributedNNGauntlet:
         board_type = parts[0]
         num_players = int(parts[1].replace("p", ""))
 
-        K = 32  # Standard Elo K-factor
+        # Scale K-factor for multiplayer games
+        # In N-player games, each game provides (N-1) pairwise matchups worth of info
+        # Dividing by (N-1) ensures consistent rating change magnitude across player counts
+        K_BASE = 32  # Standard Elo K-factor for 2-player
+        K = K_BASE / (num_players - 1) if num_players > 2 else K_BASE
 
         conn = self._get_db_connection()
         try:
@@ -1252,10 +1256,14 @@ class DistributedNNGauntlet:
                 model_rating = ratings.get(model_id, DEFAULT_RATING)
                 baseline_rating = ratings.get(baseline_id, DEFAULT_RATING)
 
-                # Expected score
+                # Expected score for pairwise matchup (model vs baseline)
+                # This is the probability that model finishes ahead of baseline
+                # Note: In multiplayer, random players can affect outcomes, but
+                # the pairwise expected score between model and baseline is still
+                # based on their rating difference
                 expected = 1 / (1 + 10 ** ((baseline_rating - model_rating) / 400))
 
-                # Actual score
+                # Actual score (did model finish ahead of baseline?)
                 if result.model_won:
                     actual = 1.0
                 elif result.draw:
@@ -1263,7 +1271,7 @@ class DistributedNNGauntlet:
                 else:
                     actual = 0.0
 
-                # Elo change
+                # Elo change (scaled by K for multiplayer)
                 delta = K * (actual - expected)
 
                 if model_id not in elo_changes:

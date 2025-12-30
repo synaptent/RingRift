@@ -1,6 +1,7 @@
 """Pipeline stage mixin - stage callback handlers for DataPipelineOrchestrator.
 
 December 2025: Extracted from data_pipeline_orchestrator.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from PipelineMixinBase for common patterns.
 
 This mixin provides stage callback handlers (different from data event handlers):
 - _on_selfplay_complete: Handle selfplay completion
@@ -12,28 +13,12 @@ This mixin provides stage callback handlers (different from data event handlers)
 - _on_evaluation_complete: Handle evaluation completion
 - _on_promotion_complete: Handle promotion completion
 - _on_iteration_complete: Handle iteration completion
-- _extract_stage_result: Extract StageCompletionResult from RouterEvent
+- _extract_stage_result: Extract StageCompletionResult from RouterEvent (overrides base)
 
-Expected attributes from main class:
-- _current_stage: PipelineStage
-- _current_iteration: int
-- _current_board_type: str | None
-- _current_num_players: int | None
-- _iteration_records: dict
-- _completed_iterations: list
-- _stage_start_times: dict
-- _total_games: int
-- _total_models: int
-- _total_promotions: int
-- auto_trigger: bool
-- auto_trigger_sync: bool
-- auto_trigger_export: bool
-- auto_trigger_training: bool
-- auto_trigger_evaluation: bool
-- auto_trigger_promotion: bool
-- quality_gate_enabled: bool
-- _last_quality_score: float
-- max_history: int
+Inherits from PipelineMixinBase which provides:
+- DataPipelineOrchestratorProtocol (documents expected interface)
+- Common utility methods (_get_config_key, _log_stage_event, etc.)
+- Circuit breaker helpers
 """
 
 from __future__ import annotations
@@ -43,44 +28,36 @@ import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.pipeline_mixin_base import PipelineMixinBase
+
 if TYPE_CHECKING:
     from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
-class PipelineStageMixin:
+class PipelineStageMixin(PipelineMixinBase):
     """Mixin providing stage callback handlers for DataPipelineOrchestrator.
 
     This mixin handles StageEvent callbacks that drive pipeline stage transitions.
     Stage handlers update pipeline state, trigger downstream stages, and maintain
     iteration records.
+
+    Inherits from PipelineMixinBase for common utilities.
     """
 
-    # Type hints for attributes expected from main class
+    # Additional type hints specific to this mixin
     if TYPE_CHECKING:
-        _current_stage: Any
-        _current_iteration: int
-        _current_board_type: str | None
-        _current_num_players: int | None
-        _iteration_records: dict
         _completed_iterations: list
-        _stage_start_times: dict
         _total_games: int
         _total_models: int
         _total_promotions: int
-        auto_trigger: bool
-        auto_trigger_sync: bool
-        auto_trigger_export: bool
-        auto_trigger_training: bool
-        auto_trigger_evaluation: bool
-        auto_trigger_promotion: bool
         quality_gate_enabled: bool
         _last_quality_score: float
         max_history: int
 
     # =========================================================================
-    # Stage Result Extraction
+    # Stage Result Extraction (overrides base with more fields)
     # =========================================================================
 
     def _extract_stage_result(self, event_or_result) -> Any:

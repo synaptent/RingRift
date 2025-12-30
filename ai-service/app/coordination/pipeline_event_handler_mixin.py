@@ -1,6 +1,7 @@
 """Pipeline event handler mixin - data event handlers for DataPipelineOrchestrator.
 
 December 2025: Extracted from data_pipeline_orchestrator.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from PipelineMixinBase for common patterns.
 
 This mixin provides all `_on_*` event handlers for DataEventType events:
 - Core pipeline events: selfplay complete, sync, training, evaluation, promotion
@@ -9,26 +10,10 @@ This mixin provides all `_on_*` event handlers for DataEventType events:
 - Resource events: backpressure, resource constraints
 - Infrastructure events: S3 backup, database creation, work queue
 
-Expected attributes from main class:
-- _current_stage: PipelineStage
-- _current_iteration: int
-- _current_board_type: str | None
-- _current_num_players: int | None
-- auto_trigger: bool
-- auto_trigger_sync: bool
-- auto_trigger_export: bool
-- _paused: bool
-- _pause_reason: str | None
-- _backpressure_active: bool
-- _resource_constraints: dict
-- _stage_metadata: dict
-- _quality_distribution: dict
-- _last_quality_update: float
-- _cache_invalidation_count: int
-- _pending_cache_refresh: bool
-- _active_optimization: str | None
-- _optimization_run_id: str | None
-- _optimization_start_time: float
+Inherits from PipelineMixinBase which provides:
+- DataPipelineOrchestratorProtocol (documents expected interface)
+- Common utility methods (_get_config_key, _log_stage_event, etc.)
+- Stage result extraction (_extract_stage_result)
 """
 
 from __future__ import annotations
@@ -39,29 +24,25 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.pipeline_mixin_base import PipelineMixinBase
+
 if TYPE_CHECKING:
     from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
-class PipelineEventHandlerMixin:
+class PipelineEventHandlerMixin(PipelineMixinBase):
     """Mixin providing data event handlers for DataPipelineOrchestrator.
 
     This mixin handles DataEventType events that drive the training pipeline.
     Event handlers update pipeline state and trigger downstream actions.
+
+    Inherits from PipelineMixinBase for common utilities.
     """
 
-    # Type hints for attributes expected from main class
-    # These are defined in DataPipelineOrchestrator.__init__
+    # Additional type hints specific to this mixin
     if TYPE_CHECKING:
-        _current_stage: Any
-        _current_iteration: int
-        _current_board_type: str | None
-        _current_num_players: int | None
-        auto_trigger: bool
-        auto_trigger_sync: bool
-        auto_trigger_export: bool
         _paused: bool
         _pause_reason: str | None
         _backpressure_active: bool

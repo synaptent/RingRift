@@ -1065,6 +1065,12 @@ class SyncRouter:
                 self._on_sync_stalled,
             )
 
+            # Dec 29, 2025: Subscribe to SYNC_FAILURE_CRITICAL for multi-failure recovery
+            router.subscribe(
+                DataEventType.SYNC_FAILURE_CRITICAL.value,
+                self._on_sync_failure_critical,
+            )
+
             # Dec 27, 2025: Subscribe to backpressure events
             router.subscribe(
                 DataEventType.BACKPRESSURE_ACTIVATED.value,
@@ -1079,7 +1085,7 @@ class SyncRouter:
                 "[SyncRouter] Wired to event router "
                 "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE, "
                 "NODE_RECOVERED, CLUSTER_CAPACITY_CHANGED, MODEL_SYNC_REQUESTED, "
-                "SYNC_STALLED, BACKPRESSURE_ACTIVATED/RELEASED)"
+                "SYNC_STALLED, SYNC_FAILURE_CRITICAL, BACKPRESSURE_ACTIVATED/RELEASED)"
             )
 
         except ImportError as e:
@@ -1444,6 +1450,73 @@ class SyncRouter:
 
         except (AttributeError, KeyError) as e:
             logger.debug(f"[SyncRouter] Error handling sync stalled: {e}")
+
+    async def _on_sync_failure_critical(self, event: Any) -> None:
+        """Handle SYNC_FAILURE_CRITICAL event - trigger emergency sync recovery.
+
+        December 29, 2025: Added to handle sustained sync failures.
+        When multiple consecutive sync failures occur, this indicates a systemic
+        issue that requires intervention:
+        - Alert operators via logging
+        - Reset failed transport tracking to retry all transports
+        - Emit CLUSTER_HEALTH_DEGRADED if threshold exceeded
+
+        Args:
+            event: Event with payload containing consecutive_failures,
+                   last_success, time_since_success_seconds
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            consecutive_failures = payload.get("consecutive_failures", 0)
+            time_since_success = payload.get("time_since_success_seconds")
+            source = payload.get("source", "unknown")
+
+            logger.error(
+                f"[SyncRouter] CRITICAL: {consecutive_failures} consecutive sync failures "
+                f"from {source}. "
+                + (f"Last success was {time_since_success:.0f}s ago. " if time_since_success else "")
+                + "Initiating recovery..."
+            )
+
+            # Reset failed transport tracking to give nodes a fresh chance
+            if hasattr(self, '_failed_transports'):
+                reset_count = len(self._failed_transports)
+                self._failed_transports.clear()
+                logger.info(
+                    f"[SyncRouter] Reset failed transport tracking for {reset_count} nodes"
+                )
+
+            # Reset stall counts
+            if hasattr(self, '_stall_counts'):
+                self._stall_counts.clear()
+
+            # Re-enable sync for nodes that were disabled
+            for node_id, cap in self._node_capabilities.items():
+                if not cap.can_receive_games or not cap.can_receive_models or not cap.can_receive_npz:
+                    cap.can_receive_games = True
+                    cap.can_receive_models = True
+                    cap.can_receive_npz = True
+                    logger.info(f"[SyncRouter] Re-enabled sync for {node_id}")
+
+            # If failures are severe, emit cluster health degraded
+            if consecutive_failures >= 5:
+                try:
+                    from app.coordination.event_router import safe_emit_event
+
+                    safe_emit_event(
+                        "CLUSTER_HEALTH_DEGRADED",
+                        {
+                            "reason": "sync_failure_critical",
+                            "consecutive_failures": consecutive_failures,
+                            "time_since_success_seconds": time_since_success,
+                        },
+                        source="SyncRouter",
+                    )
+                except (ImportError, RuntimeError, OSError, AttributeError) as emit_err:
+                    logger.debug(f"[SyncRouter] Could not emit CLUSTER_HEALTH_DEGRADED: {emit_err}")
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[SyncRouter] Error handling sync failure critical: {e}")
 
     async def _on_backpressure_activated(self, event: Any) -> None:
         """Handle BACKPRESSURE_ACTIVATED event - track state but DO NOT reduce sync priority.

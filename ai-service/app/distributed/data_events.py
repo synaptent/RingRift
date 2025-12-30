@@ -227,6 +227,7 @@ class DataEventType(Enum):
     SYNC_STALLED = "sync_stalled"  # December 2025: Sync operation stalled/timed out
     SYNC_CHECKSUM_FAILED = "sync_checksum_failed"  # December 2025: Checksum mismatch after sync
     SYNC_NODE_UNREACHABLE = "sync_node_unreachable"  # December 2025: Node unreachable for sync
+    SYNC_FAILURE_CRITICAL = "sync_failure_critical"  # December 2025: Multiple consecutive sync failures
     P2P_NODE_DEAD = "p2p_node_dead"  # Dec 2025: Single node dead (vs P2P_NODES_DEAD for batch)
     P2P_NODES_DEAD = "p2p_nodes_dead"
     P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"

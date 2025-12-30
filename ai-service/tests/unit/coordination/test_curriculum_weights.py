@@ -426,3 +426,410 @@ class TestIntegration:
         assert loaded == {"v3": 3.0}
         assert "v1" not in loaded
         assert "v2" not in loaded
+
+
+# =============================================================================
+# Additional Tests - December 29, 2025
+# =============================================================================
+
+
+class TestExportEdgeCases:
+    """Additional edge case tests for export_curriculum_weights."""
+
+    def test_export_with_float_weights(self, tmp_path: Path) -> None:
+        """Verify export handles various float values correctly."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            weights = {
+                "config_a": 0.0,
+                "config_b": 0.001,
+                "config_c": 999.999,
+                "config_d": -1.5,
+            }
+            result = export_curriculum_weights(weights)
+
+        assert result is True
+        with open(weights_path) as f:
+            data = json.load(f)
+        assert data["weights"]["config_a"] == 0.0
+        assert data["weights"]["config_b"] == 0.001
+        assert data["weights"]["config_c"] == 999.999
+        assert data["weights"]["config_d"] == -1.5
+
+    def test_export_with_unicode_keys(self, tmp_path: Path) -> None:
+        """Verify export handles unicode config keys."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            weights = {"hex8_2p": 1.0, "test_config": 2.0}
+            result = export_curriculum_weights(weights)
+
+        assert result is True
+        with open(weights_path) as f:
+            data = json.load(f)
+        assert "hex8_2p" in data["weights"]
+
+    def test_export_includes_iso_timestamp(self, tmp_path: Path) -> None:
+        """Verify export includes ISO-formatted timestamp."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            export_curriculum_weights({"hex8_2p": 1.0})
+
+        with open(weights_path) as f:
+            data = json.load(f)
+
+        # Verify ISO format looks like "2025-12-29T12:34:56Z"
+        iso_ts = data["updated_at_iso"]
+        assert "T" in iso_ts
+        assert iso_ts.endswith("Z")
+        assert len(iso_ts) == 20  # "YYYY-MM-DDTHH:MM:SSZ"
+
+    def test_export_returns_false_on_oserror(self, tmp_path: Path) -> None:
+        """Verify export returns False on OSError."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            with mock.patch("builtins.open", side_effect=OSError("disk full")):
+                result = export_curriculum_weights({"hex8_2p": 1.0})
+
+        assert result is False
+
+    def test_export_returns_false_on_rename_failure(self, tmp_path: Path) -> None:
+        """Verify export returns False when rename fails."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            with mock.patch.object(Path, "rename", side_effect=OSError("rename failed")):
+                result = export_curriculum_weights({"hex8_2p": 1.0})
+
+        assert result is False
+
+    def test_export_all_12_canonical_configs(self, tmp_path: Path) -> None:
+        """Verify export works with all 12 canonical configs."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        canonical_configs = [
+            "hex8_2p", "hex8_3p", "hex8_4p",
+            "square8_2p", "square8_3p", "square8_4p",
+            "square19_2p", "square19_3p", "square19_4p",
+            "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
+        ]
+        weights = {config: 1.0 + i * 0.1 for i, config in enumerate(canonical_configs)}
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = export_curriculum_weights(weights)
+
+        assert result is True
+        with open(weights_path) as f:
+            data = json.load(f)
+        assert len(data["weights"]) == 12
+        for config in canonical_configs:
+            assert config in data["weights"]
+
+
+class TestLoadEdgeCases:
+    """Additional edge case tests for load_curriculum_weights."""
+
+    def test_load_handles_empty_file(self, tmp_path: Path) -> None:
+        """Verify load returns empty dict for empty file."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        weights_path.write_text("")
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights()
+
+        assert result == {}
+
+    def test_load_handles_null_json(self, tmp_path: Path) -> None:
+        """Verify load returns empty dict for null JSON."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        weights_path.write_text("null")
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights()
+
+        assert result == {}
+
+    def test_load_handles_array_json(self, tmp_path: Path) -> None:
+        """Verify load returns empty dict for array JSON (wrong structure)."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        weights_path.write_text("[1, 2, 3]")
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights()
+
+        assert result == {}
+
+    def test_load_with_zero_max_age(self, tmp_path: Path) -> None:
+        """Verify load with max_age_seconds=0 always returns stale."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        data = {
+            "weights": {"hex8_2p": 1.5},
+            "updated_at": time.time(),  # Just created
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights(max_age_seconds=0)
+
+        assert result == {}
+
+    def test_load_with_negative_max_age(self, tmp_path: Path) -> None:
+        """Verify load with negative max_age_seconds treats all as stale."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        data = {
+            "weights": {"hex8_2p": 1.5},
+            "updated_at": time.time(),
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights(max_age_seconds=-1)
+
+        assert result == {}
+
+    def test_load_with_very_large_max_age(self, tmp_path: Path) -> None:
+        """Verify load with very large max_age accepts old data."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        data = {
+            "weights": {"hex8_2p": 1.5},
+            "updated_at": time.time() - 365 * 24 * 3600,  # 1 year old
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights(max_age_seconds=365 * 24 * 3600 + 100)
+
+        assert result == {"hex8_2p": 1.5}
+
+    def test_load_handles_non_numeric_updated_at(self, tmp_path: Path) -> None:
+        """Verify load handles non-numeric updated_at gracefully."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        data = {
+            "weights": {"hex8_2p": 1.5},
+            "updated_at": "not_a_number",
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            # Should not raise, but may return empty (depends on impl)
+            result = load_curriculum_weights()
+
+        # Implementation treats invalid timestamp as 0 (stale)
+        assert result == {}
+
+    def test_load_handles_weights_not_dict(self, tmp_path: Path) -> None:
+        """Verify load handles weights being non-dict gracefully."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        data = {
+            "weights": [1, 2, 3],  # Array instead of dict
+            "updated_at": time.time(),
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights()
+
+        # Returns the weights as-is (array), which may not be what's expected
+        # but doesn't crash
+        assert result == [1, 2, 3]
+
+
+class TestGetCurriculumWeightEdgeCases:
+    """Additional edge case tests for get_curriculum_weight."""
+
+    def test_get_weight_with_zero_default(self, tmp_path: Path) -> None:
+        """Verify get_weight works with default=0."""
+        weights_path = tmp_path / "nonexistent.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = get_curriculum_weight("hex8_2p", default=0.0)
+
+        assert result == 0.0
+
+    def test_get_weight_with_negative_default(self, tmp_path: Path) -> None:
+        """Verify get_weight works with negative default."""
+        weights_path = tmp_path / "nonexistent.json"
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = get_curriculum_weight("hex8_2p", default=-1.0)
+
+        assert result == -1.0
+
+    def test_get_weight_empty_config_key(self, tmp_path: Path) -> None:
+        """Verify get_weight handles empty config key."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        data = {
+            "weights": {"": 1.5},  # Empty key
+            "updated_at": time.time(),
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = get_curriculum_weight("")
+
+        assert result == 1.5
+
+    def test_get_weight_special_characters_in_key(self, tmp_path: Path) -> None:
+        """Verify get_weight handles special characters in config key."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        special_key = "config_with-special.chars_123"
+        data = {
+            "weights": {special_key: 2.5},
+            "updated_at": time.time(),
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = get_curriculum_weight(special_key)
+
+        assert result == 2.5
+
+
+class TestConcurrencySafety:
+    """Tests for thread/concurrency safety of curriculum weights operations."""
+
+    def test_load_handles_file_deleted_during_read(self, tmp_path: Path) -> None:
+        """Verify load handles file being deleted during read."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        def side_effect(*args, **kwargs):
+            raise FileNotFoundError("deleted")
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            with mock.patch("builtins.open", side_effect=side_effect):
+                result = load_curriculum_weights()
+
+        assert result == {}
+
+    def test_export_then_immediate_load_is_consistent(self, tmp_path: Path) -> None:
+        """Verify immediate load after export returns same data."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        weights = {f"config_{i}": float(i) for i in range(100)}
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            export_curriculum_weights(weights)
+            loaded = load_curriculum_weights()
+
+        assert loaded == weights
+
+
+class TestBoundaryConditions:
+    """Tests for boundary conditions."""
+
+    def test_staleness_exactly_at_threshold(self, tmp_path: Path) -> None:
+        """Verify behavior when timestamp is exactly at staleness threshold."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        # Create data that's exactly CURRICULUM_WEIGHTS_STALE_SECONDS old
+        data = {
+            "weights": {"hex8_2p": 1.5},
+            "updated_at": time.time() - CURRICULUM_WEIGHTS_STALE_SECONDS,
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights()
+
+        # At exactly the threshold, should be considered stale
+        assert result == {}
+
+    def test_staleness_just_under_threshold(self, tmp_path: Path) -> None:
+        """Verify data just under staleness threshold is accepted."""
+        weights_path = tmp_path / "curriculum_weights.json"
+
+        # Create data that's 1 second under threshold
+        data = {
+            "weights": {"hex8_2p": 1.5},
+            "updated_at": time.time() - (CURRICULUM_WEIGHTS_STALE_SECONDS - 1),
+        }
+        weights_path.write_text(json.dumps(data))
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            result = load_curriculum_weights()
+
+        assert result == {"hex8_2p": 1.5}
+
+    def test_large_weights_dict(self, tmp_path: Path) -> None:
+        """Verify export/load handles large weights dictionary."""
+        weights_path = tmp_path / "curriculum_weights.json"
+        # Create 1000 config entries
+        large_weights = {f"config_{i}": float(i) * 0.001 for i in range(1000)}
+
+        with mock.patch(
+            "app.coordination.curriculum_weights.CURRICULUM_WEIGHTS_PATH",
+            weights_path,
+        ):
+            export_result = export_curriculum_weights(large_weights)
+            loaded = load_curriculum_weights()
+
+        assert export_result is True
+        assert loaded == large_weights
+        assert len(loaded) == 1000

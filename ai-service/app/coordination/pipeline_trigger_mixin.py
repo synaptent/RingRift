@@ -1,6 +1,7 @@
 """Pipeline trigger mixin - stage triggering methods for DataPipelineOrchestrator.
 
 December 2025: Extracted from data_pipeline_orchestrator.py as part of mixin-based refactoring.
+December 2025: Updated to inherit from PipelineMixinBase for common patterns.
 
 This mixin provides stage triggering methods:
 - _auto_trigger_sync: Trigger data sync after selfplay
@@ -14,18 +15,10 @@ This mixin provides stage triggering methods:
 - _trigger_model_sync_after_promotion: Sync models after promotion
 - _update_curriculum_on_promotion: Update curriculum weights after promotion
 
-Expected attributes from main class:
-- auto_trigger: bool
-- auto_trigger_sync: bool
-- auto_trigger_export: bool
-- auto_trigger_training: bool
-- auto_trigger_evaluation: bool
-- auto_trigger_promotion: bool
-- _current_board_type: str | None
-- _current_num_players: int | None
-- _iteration_records: dict
-- _circuit_breaker: PipelineCircuitBreaker | None
-- _last_quality_score: float
+Inherits from PipelineMixinBase which provides:
+- DataPipelineOrchestratorProtocol (documents expected interface)
+- Common utility methods (_get_config_key, _should_auto_trigger, etc.)
+- Circuit breaker helpers (_is_circuit_open, _record_circuit_failure, etc.)
 """
 
 from __future__ import annotations
@@ -33,31 +26,28 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.pipeline_mixin_base import PipelineMixinBase
+
 if TYPE_CHECKING:
     from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
-class PipelineTriggerMixin:
+class PipelineTriggerMixin(PipelineMixinBase):
     """Mixin providing stage triggering methods for DataPipelineOrchestrator.
 
     This mixin handles automatic triggering of downstream pipeline stages
     after upstream stages complete successfully.
+
+    Inherits from PipelineMixinBase for common utilities including:
+    - _should_auto_trigger(stage): Check if auto-triggering is enabled
+    - _is_circuit_open(): Check if circuit breaker is open
+    - _get_config_key(): Get current board config key
     """
 
-    # Type hints for attributes expected from main class
+    # Additional type hints specific to this mixin
     if TYPE_CHECKING:
-        auto_trigger: bool
-        auto_trigger_sync: bool
-        auto_trigger_export: bool
-        auto_trigger_training: bool
-        auto_trigger_evaluation: bool
-        auto_trigger_promotion: bool
-        _current_board_type: str | None
-        _current_num_players: int | None
-        _iteration_records: dict
-        _circuit_breaker: Any
         _last_quality_score: float
 
     # =========================================================================

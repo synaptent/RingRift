@@ -744,9 +744,14 @@ class EloService:
         else:
             score_a, score_b = 0.5, 0.5
 
+        # Scale K-factor for multiplayer games
+        # In N-player games, each pairwise matchup is 1/(N-1) of the rating info
+        # This ensures consistent rating change magnitude across player counts
+        k = self.K_FACTOR / (num_players - 1) if num_players > 2 else self.K_FACTOR
+
         # Calculate Elo changes
-        change_a = self.K_FACTOR * (score_a - exp_a)
-        change_b = self.K_FACTOR * (score_b - exp_b)
+        change_a = k * (score_a - exp_a)
+        change_b = k * (score_b - exp_b)
 
         new_rating_a = rating_a.rating + change_a
         new_rating_b = rating_b.rating + change_b

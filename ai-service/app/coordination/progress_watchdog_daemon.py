@@ -15,6 +15,7 @@ December 2025: Created for 48-hour autonomous operation enablement.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sqlite3
@@ -128,7 +129,7 @@ class ConfigProgress:
 
     def reset_recovery_counter_if_needed(self) -> None:
         """Reset recovery counter if 24h has passed."""
-        if time.time() - self.last_recovery_time > 86400:  # 24 hours
+        if time.time() - self.last_recovery_time >= 86400:  # 24 hours
             self.recovery_attempts = 0
 
 
