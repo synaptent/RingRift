@@ -334,7 +334,7 @@ python scripts/run_self_play_soak.py \
     --engine-mode nn-only \
     --num-games 500 \
     --board-type square8 \
-    --log-jsonl logs/selfplay_soak/square8_nn_only.jsonl \
+    --log-jsonl logs/soak_test/square8_nn_only.jsonl \
     --no-record-db
 ```
 

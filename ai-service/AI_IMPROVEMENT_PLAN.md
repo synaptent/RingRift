@@ -192,13 +192,13 @@ The `HexNeuralNet` class exists with proper architecture. As of 2025-12-22:
 
 **Current State:** CMA‑ES optimisation and other training/self‑play harnesses now record games by default to `GameReplayDB` SQLite databases:
 
-- `ai-service/app/db/recording.py` provides the canonical recording helpers:
+- `ai-service/app/db/unified_recording.py` provides the canonical recording helpers:
   - Environment controls: `RINGRIFT_RECORD_SELFPLAY_GAMES` (global on/off, default enabled) and `RINGRIFT_SELFPLAY_DB_PATH` (default DB path when none is supplied).
-  - Helpers: `should_record_games(...)`, `get_or_create_db(...)`, `record_completed_game(...)`, and `GameRecorder` for incremental recording.
+  - Helpers: `should_record_games(...)`, `get_or_create_db(...)`, `record_completed_game(...)`, `record_completed_game_with_parity_check(...)`, plus `GameRecorder`/`UnifiedGameRecorder` for incremental recording.
 - `run_cmaes_optimization.py`:
   - Enables recording by default (`record_games=True`) and gates it via `should_record_games(cli_no_record=not config.record_games)` and a `--no-record` flag.
   - Creates a per‑run DB at `{run_dir}/games.db` and records all evaluation games with rich metadata (`source="cmaes"`, board, num_players, run_id, generation, candidate index, and any extra tags from `recording_context`).
-- Other self‑play / evaluation scripts (for example `run_self_play_soak.py` and multi‑player evaluation helpers) share the same `GameReplayDB` + `record_completed_game(...)` surface when recording is enabled.
+- Other self‑play / evaluation scripts (for example `run_self_play_soak.py` and multi‑player evaluation helpers) share the same `GameReplayDB` + `record_completed_game_with_parity_check(...)` surface when recording is enabled.
 - `ai-service/scripts/export_state_pool.py` extracts mid‑game states from one or more such DBs and writes JSONL evaluation pools that are consumed by `app.training.eval_pools.load_state_pool(...)` and the CMA‑ES/GA fitness harnesses.
 
 **Remaining Gaps:**

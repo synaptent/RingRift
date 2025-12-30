@@ -1805,24 +1805,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
         Returns:
             HealthCheckResult with status, scheduling metrics, and error info
         """
-        # Import HealthCheckResult with fallback
-        try:
-            from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-        except ImportError:
-            from dataclasses import dataclass as _dc, field as _field
-
-            @_dc
-            class HealthCheckResult:
-                healthy: bool
-                status: str = "running"
-                message: str = ""
-                timestamp: float = _field(default_factory=time.time)
-                details: dict = _field(default_factory=dict)
-
-            class CoordinatorStatus:
-                RUNNING = "running"
-                DEGRADED = "degraded"
-                ERROR = "error"
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import HealthCheckResult, CoordinatorStatus
 
         status = CoordinatorStatus.RUNNING
         is_healthy = True

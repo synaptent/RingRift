@@ -97,8 +97,8 @@ All responses use Pydantic models for validation:
 Uses `GameReplayDB` from `app.db.game_replay` for data access:
 
 - Singleton pattern for connection reuse
-- Read-only operations
-- Supports schema v5+ databases
+- Read-only endpoints (DB open may still trigger schema migrations)
+- Auto-migrates schema v1+ databases to current schema v15 on open
 
 ## Response Models
 

@@ -790,27 +790,8 @@ def check_registry_health() -> "HealthCheckResult":
 
     December 2025: Added for DaemonManager integration.
     """
-    import time
-    from dataclasses import dataclass, field
-    from typing import Any
-
-    # Import contracts lazily to avoid circular imports
-    try:
-        from app.coordination.contracts import HealthCheckResult, CoordinatorStatus
-    except ImportError:
-        # Fallback if contracts not available
-        @dataclass
-        class HealthCheckResult:  # type: ignore[no-redef]
-            healthy: bool
-            status: str = "running"
-            message: str = ""
-            timestamp: float = field(default_factory=time.time)
-            details: dict[str, Any] = field(default_factory=dict)
-
-        class CoordinatorStatus:  # type: ignore[no-redef]
-            RUNNING = "running"
-            DEGRADED = "degraded"
-            ERROR = "error"
+    # Import from contracts (zero dependencies)
+    from app.coordination.contracts import HealthCheckResult, CoordinatorStatus
 
     # Run validation
     validation_errors = validate_registry()

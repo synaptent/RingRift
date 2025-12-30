@@ -609,20 +609,8 @@ class CrossProcessEventQueue:
         Returns:
             HealthCheckResult with queue health status
         """
-        try:
-            from app.coordination.contracts import HealthCheckResult
-        except ImportError:
-            # Fallback if contracts not available
-            from dataclasses import dataclass, field
-            from typing import Any
-            import time as time_module
-
-            @dataclass
-            class HealthCheckResult:
-                healthy: bool
-                message: str = ""
-                timestamp: float = field(default_factory=time_module.time)
-                details: dict[str, Any] = field(default_factory=dict)
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import HealthCheckResult
 
         try:
             # Try to get connection and run a simple query

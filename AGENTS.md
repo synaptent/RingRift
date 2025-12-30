@@ -200,11 +200,12 @@ Location:
 
 - `ai-service/app/db/game_replay.py`:
   - `GameReplayDB` – SQLite‑backed storage for games.
-  - `GameWriter`, `GameRecorder`, and helpers in `app/db/recording.py`.
+  - `GameWriter` in `app/db/game_replay.py`; `GameRecorder`/`UnifiedGameRecorder`
+    and helpers in `app/db/unified_recording.py`.
 
 Key invariants:
 
-- Schema version is tracked in `schema_metadata`; current version is `SCHEMA_VERSION = 9`.
+- Schema version is tracked in `schema_metadata`; current version is `SCHEMA_VERSION = 15`.
 - **Write‑time canonical enforcement**:
   - `GameReplayDB.__init__(db_path, snapshot_interval=..., enforce_canonical_history=True)`:
     - When `enforce_canonical_history=True` (default), `_store_move_conn` will:
