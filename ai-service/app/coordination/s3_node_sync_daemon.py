@@ -192,17 +192,8 @@ class S3NodeSyncDaemon:
 
     def health_check(self) -> "HealthCheckResult":
         """Check daemon health."""
-        try:
-            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
-        except ImportError:
-            # Fallback for standalone usage
-            @dataclass
-            class HealthCheckResult:
-                healthy: bool
-                status: str
-                message: str
-                details: dict = field(default_factory=dict)
-            CoordinatorStatus = type("CS", (), {"RUNNING": "running", "STOPPED": "stopped"})()
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
         if not self._running:
             return HealthCheckResult(
@@ -847,24 +838,8 @@ class S3ConsolidationDaemon:
         Returns:
             HealthCheckResult with status and metrics
         """
-        try:
-            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
-        except ImportError:
-            # Fallback if protocols not available
-            from dataclasses import dataclass
-
-            @dataclass
-            class HealthCheckResult:
-                healthy: bool
-                status: str
-                message: str
-                details: dict | None = None
-
-            CoordinatorStatus = type("CoordinatorStatus", (), {
-                "RUNNING": "running",
-                "STOPPED": "stopped",
-                "DEGRADED": "degraded",
-            })()
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
         # Check staleness - if no consolidation in 2x interval, mark degraded
         max_age = self._consolidation_interval * 2

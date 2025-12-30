@@ -388,17 +388,8 @@ class NodeAvailabilityCache:
         Returns:
             HealthCheckResult with healthy status, message, and details
         """
-        try:
-            from app.coordination.protocols import HealthCheckResult
-        except ImportError:
-            # Fallback if protocols not available
-            from dataclasses import dataclass
-
-            @dataclass
-            class HealthCheckResult:
-                healthy: bool
-                message: str
-                details: dict
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import HealthCheckResult
 
         summary = self.get_status_summary()
         total = summary["total_nodes"]

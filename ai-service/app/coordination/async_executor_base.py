@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     Any,
+    AsyncGenerator,
     Awaitable,
     Callable,
     Coroutine,
@@ -825,7 +826,7 @@ async def managed_executor(
     name: str = "managed",
     max_concurrent: int = 50,
     default_timeout: float | None = None,
-):
+) -> AsyncGenerator[AsyncExecutor, None]:
     """Context manager for executor lifecycle.
 
     Example:

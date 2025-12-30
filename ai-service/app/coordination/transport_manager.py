@@ -949,21 +949,8 @@ class TransportManager:
 
     def health_check(self) -> "HealthCheckResult":
         """Check transport manager health."""
-        try:
-            from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
-        except ImportError:
-            from dataclasses import dataclass as dc
-
-            @dc
-            class HealthCheckResult:
-                healthy: bool
-                status: str
-                message: str
-                details: dict | None = None
-
-            CoordinatorStatus = type(
-                "CS", (), {"RUNNING": "running", "DEGRADED": "degraded"}
-            )()
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
         stats = self.get_stats()
 

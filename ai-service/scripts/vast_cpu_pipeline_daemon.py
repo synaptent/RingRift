@@ -359,26 +359,8 @@ class PipelineDaemon:
         Returns:
             HealthCheckResult with status and metrics
         """
-        try:
-            from app.coordination.contracts import HealthCheckResult
-            from app.coordination.protocols import CoordinatorStatus
-        except ImportError:
-            # Fallback for standalone execution without full app context
-            from dataclasses import dataclass
-            from enum import Enum
-
-            class CoordinatorStatus(Enum):
-                RUNNING = "running"
-                STOPPED = "stopped"
-                DEGRADED = "degraded"
-                ERROR = "error"
-
-            @dataclass
-            class HealthCheckResult:
-                healthy: bool
-                status: CoordinatorStatus
-                message: str
-                details: dict
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
         try:
             details = {

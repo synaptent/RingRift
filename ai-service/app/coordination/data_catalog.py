@@ -721,22 +721,8 @@ class DataCatalog:
         Returns:
             HealthCheckResult with status and details.
         """
-        try:
-            from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
-        except ImportError:
-            # Fallback
-            from dataclasses import dataclass as dc
-
-            @dc
-            class HealthCheckResult:
-                healthy: bool
-                status: str
-                message: str
-                details: dict | None = None
-
-            CoordinatorStatus = type(
-                "CS", (), {"RUNNING": "running", "DEGRADED": "degraded"}
-            )()
+        # Import from contracts (zero dependencies)
+        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
         with self._lock:
             stats = self.get_stats()

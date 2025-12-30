@@ -135,6 +135,35 @@ game_id = record_game_unified(
 )
 ```
 
+Legacy one-shot helpers (still supported, but prefer `record_game_unified`):
+
+```python
+from app.db import (
+    GameReplayDB,
+    record_completed_game,
+    record_completed_game_with_parity_check,
+)
+
+db = GameReplayDB("data/games/selfplay.db")
+
+game_id = record_completed_game(
+    db=db,
+    initial_state=initial_state,
+    final_state=final_state,
+    moves=moves,
+    metadata={"model_id": "v2"},
+)
+
+# Optional: validate parity immediately after recording
+game_id = record_completed_game_with_parity_check(
+    db=db,
+    initial_state=initial_state,
+    final_state=final_state,
+    moves=moves,
+    metadata={"model_id": "v2"},
+)
+```
+
 #### Record Sources
 
 | Source                    | Description                        |
@@ -437,6 +466,22 @@ cache_nnue_features_batch(
     model_version="v2",
     batch_size=100,
     num_workers=4,
+)
+```
+
+If you need a single-call record + NNUE cache path, use:
+
+```python
+from app.db import GameReplayDB, record_completed_game_with_nnue_cache
+
+db = GameReplayDB("data/games/selfplay.db")
+
+game_id = record_completed_game_with_nnue_cache(
+    db=db,
+    initial_state=initial_state,
+    final_state=final_state,
+    moves=moves,
+    metadata={"model_id": "v2"},
 )
 ```
 
