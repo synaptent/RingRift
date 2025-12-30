@@ -847,7 +847,8 @@ if wilson_lower_bound(wins, total) > threshold:
 
 ### Pinned Baseline Anchoring
 
-Random baselines are pinned at 400 Elo to prevent rating inflation (`app/tournament/unified_elo_db.py`):
+Random baselines are pinned at 400 Elo to prevent rating inflation (primary:
+`app/training/elo_service.py`; legacy utility in `app/tournament/unified_elo_db.py`):
 
 ```python
 # baseline_random models are immutable anchors
@@ -872,16 +873,24 @@ For 3-4 player games, results are decomposed into virtual pairwise matchups:
 For tournaments with 100+ models, gauntlet evaluation provides O(n) scaling instead of O(n²) round-robin (`app/tournament/distributed_gauntlet.py`):
 
 ```python
-from app.tournament.distributed_gauntlet import DistributedGauntlet
+import asyncio
+from pathlib import Path
+from app.tournament.distributed_gauntlet import DistributedNNGauntlet
 
 # Each model plays fixed baselines instead of all other models
-gauntlet = DistributedGauntlet(
-    baselines=["baseline_random", "baseline_heuristic", "champion_v1"],
-    games_per_baseline=20,
+gauntlet = DistributedNNGauntlet(
+    elo_db_path=Path("data/unified_elo.db"),
+    model_dir=Path("models"),
 )
 
+# Baselines are selected automatically per config:
+# - Best model by Elo
+# - Median model by Elo
+# - Lower quartile model by Elo
+# - random_ai anchor
+
 # Results tracked in gauntlet_runs and gauntlet_results tables
-results = gauntlet.evaluate_model("model_v42", board_type="hex8", num_players=2)
+asyncio.run(gauntlet.run_gauntlet("hex8_2p"))
 ```
 
 **When to use gauntlet vs round-robin:**

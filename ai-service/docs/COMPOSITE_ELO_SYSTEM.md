@@ -16,6 +16,11 @@ These represent fundamentally different playing strengths but were previously tr
 **Solution:**
 Track `(NN, Algorithm, Config)` tuples as distinct participants in the ELO system.
 
+**Implementation note (Dec 2025):**
+Composite gauntlet baselines and phase-2 algorithms are now fixed in code. The
+baseline list and default algorithm set below reflect the current implementation.
+Algorithm-specific baselines remain a planned extension (not yet wired).
+
 ---
 
 ## 1. Composite Participant Identity
@@ -65,12 +70,15 @@ none:random:d1                          # Random baseline
 
 ```python
 STANDARD_ALGORITHM_CONFIGS = {
+    "random": {"difficulty": 1},
+    "heuristic": {"difficulty": 2, "randomness": 0.3},
     "policy_only": {"temperature": 0.3},
     "mcts": {"simulations": 800, "c_puct": 1.5},
     "gumbel_mcts": {"budget": 200, "m": 16},
     "descent": {"difficulty": 6, "time_ms": 5000},
     "ebmo": {"direct_eval": True},
     "gmo": {"optim_steps": 50},
+    "gmo_gumbel": {"budget": 150, "m": 16},
 }
 ```
 
@@ -142,31 +150,34 @@ CREATE TABLE IF NOT EXISTS nn_performance_summary (
 **Phase 2: Search Amplification**
 
 - Surviving NNs tested with each search algorithm
-- Algorithms: gumbel_mcts, mcts, descent
+- Algorithms: gumbel_mcts, mcts, descent, gmo_gumbel
 - ~20 games per (NN, algorithm) pair
 - Records separate Elo for each combination
 
-### 3.2 Gauntlet Baselines
+### 3.2 Gauntlet Baselines (Current Implementation)
 
-Each algorithm has its own baseline set:
+Composite gauntlet uses a fixed baseline set (not per-algorithm yet):
 
 ```
-Baselines per algorithm:
-|--- none:{algo}:standard     # Algorithm with heuristic eval
-|--- best_nn:{algo}:standard  # Best NN with this algorithm
-|--- median_nn:{algo}:standard # Median NN with this algorithm
-`--- none:random:d1           # Universal random baseline (400 Elo)
+Baseline composite IDs (pinned):
+|--- none:random:d1    # 400 Elo anchor
+|--- none:heuristic:d2 # 1200 Elo heuristic baseline
+|--- none:mcts:d4      # 1500 Elo MCTS_LIGHT baseline
+`--- none:mcts:d6      # 1700 Elo MCTS_MEDIUM baseline
 ```
+
+Algorithm-specific baselines are a planned extension; the composite gauntlet
+currently uses the fixed baseline set above for all phases.
 
 ### 3.3 Gauntlet Efficiency
 
 ```
-Naive approach: 50 NNs x 5 algorithms x 50 games = 12,500 games
+Naive approach: 50 NNs x 4 algorithms x 50 games = 10,000 games
 
 Two-phase approach:
   Phase 1: 50 NNs x 50 games = 2,500 games
   Phase 2: 25 NNs x 4 algorithms x 20 games = 2,000 games
-  Total: 4,500 games (64% reduction)
+  Total: 4,500 games (55% reduction)
 ```
 
 ---
@@ -181,7 +192,8 @@ Two-phase approach:
 Purpose: Rank search algorithms fairly
 Method:
 |--- Fix NN to "current best" model
-|--- Round-robin: MCTS vs Gumbel vs Descent vs Policy vs EBMO vs GMO
+|--- Round-robin (defaults): gumbel_mcts vs mcts vs descent vs policy_only
+|--- Optional: include ebmo/gmo/gmo_gumbel via explicit algorithm list
 |--- Same NN for all participants
 `--- Isolates algorithm strength from NN quality
 

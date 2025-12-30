@@ -64,6 +64,9 @@ class AutoPromotionConfig:
     # Dec 29: Reduced from 0.6 to 0.5 for less strict quality gate
     min_quality_score: float = 0.5
     require_parity_validation: bool = True  # Require TS parity validation passed
+    # December 2025: Stability gate to prevent promoting volatile models
+    stability_gate_enabled: bool = True
+    max_volatility_score: float = 0.6  # Block models with volatility > 0.6
 
 
 @dataclass
@@ -724,6 +727,95 @@ class AutoPromotionDaemon:
             # Don't block on quality check errors
             return True, f"quality_check_error: {e}"
 
+    async def _check_stability_gate(
+        self,
+        candidate: PromotionCandidate,
+    ) -> tuple[bool, str]:
+        """Check if candidate passes stability gate before promotion.
+
+        December 2025: Prevents promotion of volatile models by verifying:
+        1. Rating volatility is within acceptable bounds
+        2. Model is not in a declining trend
+        3. Rating has stabilized (not oscillating)
+
+        Args:
+            candidate: PromotionCandidate to check
+
+        Returns:
+            Tuple of (passed, reason) where reason explains the gate result
+        """
+        if not self.config.stability_gate_enabled:
+            return True, "stability_gate_disabled"
+
+        config_key = candidate.config_key
+
+        # Parse board_type and num_players from config_key (e.g., "hex8_2p")
+        parts = config_key.rsplit("_", 1)
+        if len(parts) != 2:
+            logger.warning(f"[AutoPromotion] Cannot parse config_key: {config_key}")
+            return True, "config_key_unparseable"
+
+        board_type = parts[0]
+        try:
+            num_players = int(parts[1].rstrip("p"))
+        except ValueError:
+            return True, "num_players_unparseable"
+
+        try:
+            from app.coordination.stability_heuristic import (
+                StabilityLevel,
+                assess_model_stability,
+            )
+
+            # Assess stability
+            assessment = assess_model_stability(
+                model_id="canonical",
+                board_type=board_type,
+                num_players=num_players,
+            )
+
+            # Log the assessment for debugging
+            logger.info(
+                f"[AutoPromotion] Stability assessment for {config_key}: "
+                f"level={assessment.level.value}, volatility={assessment.volatility_score:.3f}, "
+                f"slope={assessment.slope:.2f}, samples={assessment.sample_count}"
+            )
+
+            # Check volatility score
+            if assessment.volatility_score > self.config.max_volatility_score:
+                return False, (
+                    f"high_volatility: {assessment.volatility_score:.2f} > "
+                    f"{self.config.max_volatility_score}"
+                )
+
+            # Block declining models
+            if assessment.level == StabilityLevel.DECLINING:
+                return False, (
+                    f"declining_trend: slope={assessment.slope:.2f} Elo/hour"
+                )
+
+            # Block highly volatile models
+            if assessment.level == StabilityLevel.VOLATILE:
+                actions = ", ".join(assessment.recommended_actions[:2])
+                return False, f"volatile_model: {actions}"
+
+            # Check if promotion is explicitly unsafe
+            if not assessment.promotion_safe:
+                return False, f"promotion_unsafe: {', '.join(assessment.recommended_actions[:1])}"
+
+            return True, (
+                f"stability_ok: level={assessment.level.value}, "
+                f"volatility={assessment.volatility_score:.2f}"
+            )
+
+        except ImportError:
+            logger.debug("[AutoPromotion] Stability heuristic not available")
+            return True, "stability_check_unavailable"
+        except Exception as e:
+            logger.warning(f"[AutoPromotion] Stability check error: {e}")
+            # Don't block on stability check errors
+            return True, f"stability_check_error: {e}"
+
     async def _promote_model(self, candidate: PromotionCandidate) -> None:
         """Promote a model that passed evaluation.
 
@@ -740,6 +832,15 @@ class AutoPromotionDaemon:
                 f"[AutoPromotion] {config_key} blocked by quality gate: {quality_reason}"
             )
             await self._emit_promotion_failed(candidate, error=f"quality_gate: {quality_reason}")
+            return
+
+        # December 2025: Check stability gate to prevent promoting volatile models
+        stability_passed, stability_reason = await self._check_stability_gate(candidate)
+        if not stability_passed:
+            logger.warning(
+                f"[AutoPromotion] {config_key} blocked by stability gate: {stability_reason}"
+            )
+            await self._emit_promotion_failed(candidate, error=f"stability_gate: {stability_reason}")
             return
 
         if self.config.dry_run:

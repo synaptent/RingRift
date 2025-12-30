@@ -841,10 +841,25 @@ Notes:
 
 ## File Locations
 
-- Database file: `data/games/ringrift_games.db`
+- Primary replay DBs live under `data/games/`:
+  - `data/games/selfplay.db` (default `run_self_play_soak.py` output)
+  - `data/games/selfplay_<board>_<players>p.db` (matrix/soak outputs)
+  - `data/games/tournament_<board>_<players>p.db`
+  - `data/games/gauntlet_<board>_<players>p.db`
+  - `data/games/baseline_calibration_<board>_<players>p.db`
+- Canonical DBs typically live under `data/selfplay/`:
+  - `data/selfplay/canonical_<board>_<players>p.db`
+  - `data/selfplay/canonical_<board>.db` (multi-player)
+  - Legacy canonical DBs may still appear under `data/games/canonical_*.db`
+- Session DBs:
+  - `data/selfplay/unified_*/games.db`
+  - `data/selfplay/p2p/**/games.db`
+  - `data/selfplay/p2p_hybrid/**/games.db`
 - Backup location: `data/games/backups/`
 - Schema migrations: `app/db/migrations/`
 - API implementation: `app/db/game_replay.py`
+
+`app/utils/game_discovery.py` is the authoritative source for discovery patterns.
 
 ---
 

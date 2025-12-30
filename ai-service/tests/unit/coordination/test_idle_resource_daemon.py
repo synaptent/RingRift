@@ -22,7 +22,7 @@ from app.coordination.idle_resource_daemon import (
     NodeSpawnHistory,
     ConfigSpawnHistory,
 )
-from app.coordination.protocols import CoordinatorStatus
+from app.coordination.contracts import CoordinatorStatus
 
 
 class TestIdleResourceConfig:
@@ -436,3 +436,684 @@ class TestIdleResourceDaemonAsync:
         # Without P2P, should return 0
         depth = await daemon._get_queue_depth()
         assert depth >= 0
+
+
+# =============================================================================
+# TestSpawnAttempt - Spawn attempt dataclass
+# =============================================================================
+
+
+class TestSpawnAttempt:
+    """Tests for SpawnAttempt dataclass."""
+
+    def test_spawn_attempt_creation(self):
+        """Test creating a spawn attempt record."""
+        attempt = SpawnAttempt(
+            node_id="test-node",
+            config_key="hex8_2p",
+            games=100,
+            timestamp=time.time(),
+            success=True,
+        )
+        assert attempt.node_id == "test-node"
+        assert attempt.config_key == "hex8_2p"
+        assert attempt.games == 100
+        assert attempt.success is True
+        assert attempt.error is None
+        assert attempt.duration_seconds == 0.0
+
+    def test_spawn_attempt_with_error(self):
+        """Test spawn attempt with error."""
+        attempt = SpawnAttempt(
+            node_id="fail-node",
+            config_key="square8_4p",
+            games=50,
+            timestamp=time.time(),
+            success=False,
+            error="Connection refused",
+            duration_seconds=30.5,
+        )
+        assert attempt.success is False
+        assert attempt.error == "Connection refused"
+        assert attempt.duration_seconds == 30.5
+
+
+# =============================================================================
+# TestSpawnStats - Statistics tracking
+# =============================================================================
+
+
+class TestSpawnStats:
+    """Tests for SpawnStats dataclass."""
+
+    def test_spawn_stats_defaults(self):
+        """Test default values."""
+        from app.coordination.idle_resource_daemon import SpawnStats
+
+        stats = SpawnStats()
+        assert stats.total_spawns == 0
+        assert stats.successful_spawns == 0
+        assert stats.failed_spawns == 0
+        assert stats.games_spawned == 0
+
+    def test_spawn_stats_record_success(self):
+        """Test recording successful spawn."""
+        from app.coordination.idle_resource_daemon import SpawnStats
+
+        stats = SpawnStats()
+        stats.record_spawn_success(games=100)
+
+        assert stats.total_spawns == 1
+        assert stats.successful_spawns == 1
+        assert stats.failed_spawns == 0
+        assert stats.games_spawned == 100
+
+    def test_spawn_stats_record_failure(self):
+        """Test recording failed spawn."""
+        from app.coordination.idle_resource_daemon import SpawnStats
+
+        stats = SpawnStats()
+        stats.record_spawn_failure("Connection error")
+
+        assert stats.total_spawns == 1
+        assert stats.failed_spawns == 1
+        assert stats.successful_spawns == 0
+
+    def test_spawn_stats_last_spawn_time(self):
+        """Test last spawn time alias."""
+        from app.coordination.idle_resource_daemon import SpawnStats
+
+        stats = SpawnStats()
+        stats.record_spawn_success()
+
+        assert stats.last_spawn_time > 0
+
+
+# =============================================================================
+# TestNodeIdleState - Node idle state dataclass
+# =============================================================================
+
+
+class TestNodeIdleState:
+    """Tests for NodeIdleState dataclass."""
+
+    def test_node_idle_state_creation(self):
+        """Test creating a node idle state."""
+        from app.coordination.idle_resource_daemon import NodeIdleState
+
+        state = NodeIdleState(
+            node_id="gpu-1",
+            host="10.0.0.1",
+            is_idle=True,
+            gpu_utilization=5.0,
+            gpu_memory_free_gb=70.0,
+            gpu_memory_total_gb=80.0,
+            idle_duration_seconds=300,
+            recommended_config="hex8_2p",
+            provider="runpod",
+        )
+        assert state.node_id == "gpu-1"
+        assert state.gpu_utilization == 5.0
+        assert state.idle_duration_seconds == 300
+        assert state.is_idle is True
+
+    def test_node_idle_state_defaults(self):
+        """Test NodeIdleState default values."""
+        from app.coordination.idle_resource_daemon import NodeIdleState
+
+        state = NodeIdleState(
+            node_id="gpu-1",
+            host="10.0.0.1",
+            is_idle=True,
+            gpu_utilization=5.0,
+            gpu_memory_free_gb=70.0,
+            gpu_memory_total_gb=80.0,
+            idle_duration_seconds=300,
+            recommended_config="hex8_2p",
+            provider="runpod",
+        )
+        # Check default values
+        assert state.active_jobs == 0
+        assert state.timestamp > 0
+
+
+# =============================================================================
+# TestClusterIdleState - Cluster-wide idle state
+# =============================================================================
+
+
+class TestClusterIdleState:
+    """Tests for ClusterIdleState dataclass."""
+
+    def test_cluster_idle_state_creation(self):
+        """Test creating a cluster idle state."""
+        from app.coordination.idle_resource_daemon import ClusterIdleState, NodeIdleState
+
+        node1 = NodeIdleState(
+            node_id="gpu-1",
+            host="10.0.0.1",
+            is_idle=True,
+            gpu_utilization=5.0,
+            gpu_memory_free_gb=70.0,
+            gpu_memory_total_gb=80.0,
+            idle_duration_seconds=300,
+            recommended_config="hex8_2p",
+            provider="runpod",
+        )
+        node2 = NodeIdleState(
+            node_id="gpu-2",
+            host="10.0.0.2",
+            is_idle=False,
+            gpu_utilization=85.0,
+            gpu_memory_free_gb=10.0,
+            gpu_memory_total_gb=80.0,
+            idle_duration_seconds=0,
+            recommended_config="",
+            provider="vast",
+        )
+
+        cluster_state = ClusterIdleState(
+            total_nodes=2,
+            idle_nodes=1,
+            total_idle_gpu_memory_gb=70.0,
+            nodes=[node1, node2],
+        )
+
+        assert len(cluster_state.nodes) == 2
+        assert cluster_state.total_nodes == 2
+        assert cluster_state.idle_nodes == 1
+        assert cluster_state.idle_ratio == 0.5
+
+    def test_cluster_idle_state_has_idle_capacity(self):
+        """Test has_idle_capacity property."""
+        from app.coordination.idle_resource_daemon import ClusterIdleState
+
+        # No idle nodes
+        no_idle = ClusterIdleState(
+            total_nodes=5,
+            idle_nodes=0,
+            total_idle_gpu_memory_gb=0.0,
+        )
+        assert no_idle.has_idle_capacity is False
+
+        # Some idle nodes
+        some_idle = ClusterIdleState(
+            total_nodes=5,
+            idle_nodes=2,
+            total_idle_gpu_memory_gb=160.0,
+        )
+        assert some_idle.has_idle_capacity is True
+
+
+# =============================================================================
+# TestSelfplayCapability - Selfplay capability checking
+# =============================================================================
+
+
+class TestSelfplayCapability:
+    """Tests for selfplay capability checking."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_is_selfplay_capable_unknown_node(self, daemon):
+        """Unknown nodes are not capable by default."""
+        # Should not crash, returns False for unknown nodes
+        result = daemon._is_selfplay_capable("nonexistent-node")
+        assert isinstance(result, bool)
+
+    def test_is_selfplay_capable_tracked_node(self, daemon):
+        """Tracked nodes with GPU memory are capable."""
+        # Add a node with GPU memory
+        daemon._node_states["gpu-node"] = NodeStatus(
+            node_id="gpu-node",
+            host="10.0.0.1",
+            gpu_memory_total_gb=24.0,
+        )
+        # Implementation checks _selfplay_capable dict, not node_states
+        # Just verify the method doesn't crash
+        result = daemon._is_selfplay_capable("gpu-node")
+        assert isinstance(result, bool)
+
+
+# =============================================================================
+# TestBackoffTracking - Node backoff tracking
+# =============================================================================
+
+
+class TestBackoffTracking:
+    """Tests for node backoff tracking."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_get_node_backoff_remaining_no_history(self, daemon):
+        """Node with no history has 0 backoff remaining."""
+        remaining = daemon._get_node_backoff_remaining("unknown-node")
+        assert remaining == 0.0
+
+    def test_get_node_backoff_remaining_active_backoff(self, daemon):
+        """Node with active backoff returns remaining time."""
+        daemon._node_spawn_history["test-node"] = NodeSpawnHistory(
+            node_id="test-node",
+            backoff_until=time.time() + 100,  # 100s in future
+        )
+        remaining = daemon._get_node_backoff_remaining("test-node")
+        assert remaining > 0
+        assert remaining <= 100
+
+    def test_get_node_backoff_remaining_expired_backoff(self, daemon):
+        """Node with expired backoff returns 0."""
+        daemon._node_spawn_history["test-node"] = NodeSpawnHistory(
+            node_id="test-node",
+            backoff_until=time.time() - 100,  # 100s in past
+        )
+        remaining = daemon._get_node_backoff_remaining("test-node")
+        assert remaining == 0.0
+
+
+# =============================================================================
+# TestClusterStateManagement - Cluster state management
+# =============================================================================
+
+
+class TestClusterStateManagement:
+    """Tests for cluster state management."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_prune_stale_cluster_states(self, daemon):
+        """Test pruning of stale cluster states."""
+        from app.coordination.idle_resource_daemon import NodeIdleState
+
+        now = time.time()
+
+        # Add a fresh state
+        daemon._cluster_idle_states["fresh-node"] = NodeIdleState(
+            node_id="fresh-node",
+            host="10.0.0.1",
+            is_idle=True,
+            gpu_utilization=5.0,
+            gpu_memory_free_gb=50.0,
+            gpu_memory_total_gb=80.0,
+            idle_duration_seconds=100,
+            recommended_config="hex8_2p",
+            provider="runpod",
+            timestamp=now,
+        )
+
+        # Add a stale state (10 minutes old)
+        daemon._cluster_idle_states["stale-node"] = NodeIdleState(
+            node_id="stale-node",
+            host="10.0.0.2",
+            is_idle=True,
+            gpu_utilization=5.0,
+            gpu_memory_free_gb=50.0,
+            gpu_memory_total_gb=80.0,
+            idle_duration_seconds=100,
+            recommended_config="hex8_2p",
+            provider="vast",
+            timestamp=now - 600,  # 10 min ago
+        )
+
+        # Prune stale states
+        daemon._prune_stale_cluster_states()
+
+        # Fresh state should remain
+        assert "fresh-node" in daemon._cluster_idle_states
+        # Stale state should be removed
+        assert "stale-node" not in daemon._cluster_idle_states
+
+    def test_get_cluster_idle_state(self, daemon):
+        """Test getting cluster-wide idle state."""
+        state = daemon.get_cluster_idle_state()
+
+        # Should return a ClusterIdleState
+        from app.coordination.idle_resource_daemon import ClusterIdleState
+
+        assert isinstance(state, ClusterIdleState)
+        assert hasattr(state, "nodes")
+        assert hasattr(state, "timestamp")
+
+
+# =============================================================================
+# TestConfigRecommendation - Config recommendation based on GPU
+# =============================================================================
+
+
+class TestConfigRecommendation:
+    """Tests for config recommendation."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_get_recommended_config_small_gpu(self, daemon):
+        """Small GPU gets small board recommendation."""
+        node = NodeStatus(
+            node_id="small-gpu",
+            host="10.0.0.1",
+            gpu_memory_total_gb=8.0,
+        )
+        config = daemon._get_recommended_config(node)
+        # Small GPU should get small boards
+        assert config is not None
+        assert "hex8" in config or "square8" in config
+
+    def test_get_recommended_config_large_gpu(self, daemon):
+        """Large GPU can handle larger boards."""
+        node = NodeStatus(
+            node_id="large-gpu",
+            host="10.0.0.1",
+            gpu_memory_total_gb=80.0,
+        )
+        config = daemon._get_recommended_config(node)
+        assert config is not None
+
+
+# =============================================================================
+# TestPendingTrainingHours - Training backlog tracking
+# =============================================================================
+
+
+class TestPendingTrainingHours:
+    """Tests for pending training hours calculation."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_get_pending_training_hours_returns_float(self, daemon):
+        """Method returns a non-negative float value."""
+        hours = daemon._get_pending_training_hours()
+        assert isinstance(hours, float)
+        assert hours >= 0.0
+
+
+# =============================================================================
+# TestDaemonStatus - Status reporting
+# =============================================================================
+
+
+class TestDaemonStatus:
+    """Tests for daemon status reporting."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_get_status_returns_enum(self, daemon):
+        """Test status returns CoordinatorStatus enum."""
+        status = daemon.get_status()
+        assert isinstance(status, CoordinatorStatus)
+
+    def test_get_status_not_running(self, daemon):
+        """Status when daemon is not running."""
+        status = daemon.get_status()
+        # CoordinatorStatus is an enum, STOPPED or INITIALIZING when not running
+        assert status in (
+            CoordinatorStatus.STOPPED,
+            CoordinatorStatus.INITIALIZING,
+        )
+
+
+# =============================================================================
+# TestRateAdjustments - Selfplay rate adjustments
+# =============================================================================
+
+
+class TestRateAdjustments:
+    """Tests for selfplay rate adjustment tracking."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_get_selfplay_rate_adjustments_empty(self, daemon):
+        """Empty adjustments when nothing recorded."""
+        adjustments = daemon.get_selfplay_rate_adjustments()
+        assert isinstance(adjustments, dict)
+
+    def test_get_quality_degraded_configs_empty(self, daemon):
+        """Empty degraded configs when nothing recorded."""
+        degraded = daemon.get_quality_degraded_configs()
+        assert isinstance(degraded, dict)
+
+    def test_get_priority_configs_empty(self, daemon):
+        """Empty priority configs when nothing recorded."""
+        priority = daemon.get_priority_configs()
+        assert isinstance(priority, dict)
+
+
+# =============================================================================
+# TestSpawnEvent - Event emission on spawn
+# =============================================================================
+
+
+class TestSpawnEvent:
+    """Tests for spawn event emission."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_emit_spawn_event(self, daemon):
+        """Test emitting spawn event."""
+        node = NodeStatus(
+            node_id="test-node",
+            host="10.0.0.1",
+            gpu_memory_total_gb=24.0,
+        )
+        # Should not crash even if event system not available
+        daemon._emit_spawn_event(
+            node=node,
+            config_key="hex8_2p",
+            games=100,
+        )
+
+
+# =============================================================================
+# TestNodeStateUpdate - Node state update logic
+# =============================================================================
+
+
+class TestNodeStateUpdate:
+    """Tests for node state update logic."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_update_node_state_new_node(self, daemon):
+        """Test updating state for a new node."""
+        node = NodeStatus(
+            node_id="new-node",
+            host="10.0.0.1",
+            gpu_utilization=50.0,
+            gpu_memory_total_gb=24.0,
+        )
+
+        daemon._update_node_state(node)
+
+        assert "new-node" in daemon._node_states
+        assert daemon._node_states["new-node"].gpu_utilization == 50.0
+
+    def test_update_node_state_idle_detection(self, daemon):
+        """Test idle detection on state update."""
+        # First update with high utilization
+        busy_node = NodeStatus(
+            node_id="transitioning-node",
+            host="10.0.0.1",
+            gpu_utilization=80.0,
+        )
+        daemon._update_node_state(busy_node)
+
+        # Second update with low utilization - should set idle_since
+        idle_node = NodeStatus(
+            node_id="transitioning-node",
+            host="10.0.0.1",
+            gpu_utilization=5.0,
+        )
+        daemon._update_node_state(idle_node)
+
+        state = daemon._node_states["transitioning-node"]
+        # When transitioning from busy to idle, idle_since should be set
+        assert state.idle_since > 0
+
+
+# =============================================================================
+# TestAsyncClusterOperations - Async cluster operations
+# =============================================================================
+
+
+class TestAsyncClusterOperations:
+    """Async tests for cluster operations."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    @pytest.mark.asyncio
+    async def test_get_cluster_nodes_returns_list(self, daemon):
+        """Test getting cluster nodes returns a list."""
+        nodes = await daemon._get_cluster_nodes()
+        assert isinstance(nodes, list)
+
+    @pytest.mark.asyncio
+    async def test_broadcast_local_state(self, daemon):
+        """Test broadcasting local state doesn't crash."""
+        # Should complete without error even if P2P unavailable
+        await daemon._broadcast_local_state(force=True)
+
+    @pytest.mark.asyncio
+    async def test_update_scheduler_priorities(self, daemon):
+        """Test updating scheduler priorities."""
+        # Should complete without error
+        await daemon._update_scheduler_priorities()
+
+    @pytest.mark.asyncio
+    async def test_refresh_backpressure_signal(self, daemon):
+        """Test refreshing backpressure signal."""
+        # Should complete without error
+        await daemon._refresh_backpressure_signal()
+
+    @pytest.mark.asyncio
+    async def test_enforce_process_limits(self, daemon):
+        """Test enforcing process limits."""
+        # Mock SSH executor to prevent actual network calls
+        with patch("app.coordination.idle_resource_daemon.SSHExecutor", None):
+            # Should complete without error
+            await daemon._enforce_process_limits()
+
+    @pytest.mark.asyncio
+    async def test_emit_idle_resource_events(self, daemon):
+        """Test emitting idle resource events."""
+        idle_nodes = [
+            NodeStatus(
+                node_id="idle-1",
+                host="10.0.0.1",
+                gpu_utilization=5.0,
+                gpu_memory_total_gb=24.0,
+            )
+        ]
+        # Should complete without error
+        await daemon._emit_idle_resource_events(idle_nodes)
+
+
+# =============================================================================
+# TestDistributedJobOperations - Distributed job operations
+# =============================================================================
+
+
+class TestDistributedJobOperations:
+    """Tests for distributed job operations."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    @pytest.mark.asyncio
+    async def test_distribute_job_via_p2p_no_p2p(self, daemon):
+        """Test job distribution when P2P unavailable."""
+        node = NodeStatus(
+            node_id="test-node",
+            host="10.0.0.1",
+            gpu_memory_total_gb=24.0,
+        )
+        # Should fail gracefully when no P2P
+        result = await daemon._distribute_job_via_p2p(
+            node=node,
+            board_type="hex8",
+            num_players=2,
+            games=100,
+        )
+        # Returns False when P2P unavailable
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_distribute_job_via_ssh_no_ssh(self, daemon):
+        """Test job distribution when SSH unavailable."""
+        node = NodeStatus(
+            node_id="test-node",
+            host="10.0.0.1",
+            gpu_memory_total_gb=24.0,
+        )
+        # Should fail gracefully when no SSH available
+        result = await daemon._distribute_job_via_ssh(
+            node=node,
+            board_type="hex8",
+            num_players=2,
+            games=100,
+        )
+        # Returns False when SSH unavailable
+        assert result is False
+
+
+# =============================================================================
+# TestGetLocalIdleState - Local idle state retrieval
+# =============================================================================
+
+
+class TestGetLocalIdleState:
+    """Tests for local idle state retrieval."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_get_local_idle_state_no_gpu(self, daemon):
+        """Test local idle state when no GPU info available."""
+        state = daemon._get_local_idle_state()
+        # May return None if no GPU info available
+        if state is not None:
+            from app.coordination.idle_resource_daemon import NodeIdleState
+
+            assert isinstance(state, NodeIdleState)

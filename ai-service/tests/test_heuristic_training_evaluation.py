@@ -47,9 +47,11 @@ from scripts import (
     generate_axis_aligned_profiles,  # type: ignore[attr-defined]
     run_genetic_heuristic_search as ga_search,  # type: ignore[attr-defined]
 )
-from scripts.archive.deprecated.run_axis_aligned_tournament import (  # type: ignore
-    load_axis_aligned_participants,
-)
+# NOTE: run_axis_aligned_tournament was archived and removed. Import commented out.
+# The test_axis_aligned_participant_loading_schema_and_metadata test is now skipped.
+# from scripts.archive.deprecated.run_axis_aligned_tournament import (
+#     load_axis_aligned_participants,
+# )
 from scripts.run_cmaes_optimization import (  # type: ignore
     create_heuristic_ai_with_weights,
     evaluate_fitness,
@@ -462,6 +464,7 @@ def test_axis_aligned_profile_construction_single_factor() -> None:
     assert neg_profile[factor_key] == -expected_mag
 
 
+@pytest.mark.skip(reason="run_axis_aligned_tournament module was archived and removed")
 def test_axis_aligned_participant_loading_schema_and_metadata() -> None:
     """
     Axis-aligned participant loading must:
@@ -470,6 +473,10 @@ def test_axis_aligned_participant_loading_schema_and_metadata() -> None:
     - Preserve the baseline weight schema.
     - Derive ids from ``meta.factor`` and ``meta.sign`` when present.
     - Preserve meta fields on the Participant.
+
+    NOTE: This test is skipped because the run_axis_aligned_tournament module
+    was archived and removed. The test references load_axis_aligned_participants
+    which no longer exists.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         profile_path = os.path.join(tmpdir, "WEIGHT_TERRITORY_pos.json")
