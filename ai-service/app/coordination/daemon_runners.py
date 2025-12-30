@@ -3,7 +3,7 @@
 December 2025: Extracted from DaemonManager to reduce module size and improve testability.
 December 30, 2025: Refactored to registry-driven factory pattern (Phase 1 consolidation).
 
-This module provides async runner functions for all 91 daemon types in the system.
+This module provides async runner functions for all 89 daemon types in the system.
 Runners are now defined declaratively via RUNNER_SPECS registry and instantiated
 via the generic _create_runner_from_spec() factory function.
 

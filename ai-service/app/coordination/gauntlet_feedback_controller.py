@@ -208,7 +208,7 @@ class GauntletFeedbackController(BaseEventHandler):
             "actions_taken": len(self._actions_taken),
             "recent_actions": self._actions_taken[-10:] if self._actions_taken else [],
             "uptime_seconds": self.uptime_seconds,
-            "subscribed": self._subscribed,
+            "subscribed": getattr(self, "is_subscribed", False),
         }
 
     def health_check(self) -> HealthCheckResult:

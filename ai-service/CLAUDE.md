@@ -399,13 +399,13 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 ## Event System
 
-**Integration Status**: MOSTLY COMPLETE (Dec 30, 2025)
+**Integration Status**: 99.5% COMPLETE (Dec 30, 2025)
 
-202 event types defined in DataEventType enum. Most critical event flows are wired. Some integration
-gaps remain for feedback loop events (quality scores, loss anomalies, exploration adjustments) which
-are emitted but lack subscribers. See exploration agent findings from Dec 30, 2025.
+211 event types defined in DataEventType enum. All critical event flows are fully wired.
+Only 2 minor informational gaps remain (SELFPLAY_ALLOCATION_UPDATED undercoverage,
+NODE_CAPACITY_UPDATED dual emitters) - neither affects core pipeline operation.
 
-202 event types across 3 layers:
+211 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion
@@ -435,7 +435,7 @@ Selfplay → NEW_GAMES_AVAILABLE → DataPipeline → TRAINING_THRESHOLD_REACHED
 
 **Complete Event Documentation:**
 
-- `docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md` - Full list of 220+ events with emitters/subscribers
+- `docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md` - Full list of 211 events with emitters/subscribers
 - `docs/architecture/EVENT_FLOW_INTEGRATION.md` - Event flow diagrams and integration patterns
 
 ```python
