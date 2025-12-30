@@ -173,6 +173,35 @@ Target: 8 modules with Pydantic validation
 
 ---
 
+## Scheduled for Q2 2026
+
+### data_events Import Migration (Documented Dec 29, 2025)
+
+**Status**: Tracked, scheduled for Q2 2026 removal
+**Scope**: 78 import lines across 40+ files in `app/coordination/`
+**Current State**: Deprecation warnings active, module functional
+
+All imports from `app.distributed.data_events` should be migrated to:
+
+- `DataEventType` → `app.coordination.event_router.DataEventType`
+- `emit_*` functions → `app.coordination.event_emitters.*`
+- `get_event_bus` → `app.coordination.event_router.get_event_bus`
+
+Files affected (by import count):
+
+- daemon_manager.py (5 imports)
+- pipeline_event_handler_mixin.py (5 imports)
+- dead_letter_queue.py (3 imports)
+- data_consolidation_daemon.py (4 imports)
+- npz_combination_daemon.py (4 imports)
+- auto_sync_daemon.py (3 imports)
+- p2p_recovery_daemon.py (4 imports)
+- 33+ other files (1-2 imports each)
+
+**Note**: The deprecated module works correctly with warnings. Migration is safe to defer.
+
+---
+
 ## Success Metrics
 
 By end of January 2025:

@@ -42,14 +42,21 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Constants
+# Constants (imported from centralized thresholds)
 # ============================================================================
 
-# Quality thresholds for different assessment tiers
-HIGH_QUALITY_THRESHOLD = 0.90
-MEDIUM_QUALITY_THRESHOLD = 0.70
-LOW_QUALITY_THRESHOLD = 0.50
-MINIMUM_QUALITY_THRESHOLD = 0.30
+# Import quality thresholds from canonical source
+# Note: quality_analysis uses stricter thresholds than general training:
+# - HIGH (0.90) = excellent quality, hot_path training
+# - MEDIUM (0.70) = good quality, accelerated training
+# - LOW (0.50) = acceptable quality, normal training
+# - MINIMUM (0.30) = minimum for training, reduced intensity
+from app.config.thresholds import (
+    QUALITY_EXCELLENT_THRESHOLD as HIGH_QUALITY_THRESHOLD,  # 0.90
+    HIGH_QUALITY_THRESHOLD as MEDIUM_QUALITY_THRESHOLD,  # 0.70
+    MEDIUM_QUALITY_THRESHOLD as LOW_QUALITY_THRESHOLD,  # 0.50
+    LOW_QUALITY_THRESHOLD as MINIMUM_QUALITY_THRESHOLD,  # 0.30
+)
 
 # Quality assessment parameters
 DEFAULT_SAMPLE_LIMIT = 50  # Games to sample for quality assessment

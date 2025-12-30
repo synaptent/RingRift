@@ -3561,7 +3561,7 @@ class FeedbackLoopController:
 
             config_info = {
                 "config": config_key,
-                "current_elo": state.current_elo,
+                "current_elo": state.last_elo,
                 "last_training": state.last_training_time,
                 "hours_since_training": round(hours_since_training, 2),
                 "games_since_training": state.games_since_training,

@@ -63,7 +63,7 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                          | Purpose                                            |
 | ------------------------------- | -------------------------------------------------- |
-| `daemon_manager.py`             | Lifecycle for 93 daemon types (~2,000 LOC)         |
+| `daemon_manager.py`             | Lifecycle for 97 daemon types (~2,000 LOC)         |
 | `daemon_registry.py`            | Declarative daemon specs (DaemonSpec dataclass)    |
 | `daemon_runners.py`             | 89 async runner functions                          |
 | `event_router.py`               | Unified event bus (220+ event types, SHA256 dedup) |
@@ -260,11 +260,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-90 active daemon types, 6 deprecated. Three-layer architecture:
+91 active daemon types, 6 deprecated. Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 81 async runner functions
+3. **`daemon_runners.py`** - 89 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -278,8 +278,8 @@ health = dm.get_all_daemon_health()
 **Key Categories:**
 | Category | Daemons |
 |----------|---------|
-| Sync | AUTO_SYNC, MODEL_DISTRIBUTION, ELO_SYNC |
-| Pipeline | DATA_PIPELINE, SELFPLAY_COORDINATOR |
+| Sync | AUTO_SYNC, MODEL_DISTRIBUTION, ELO_SYNC, GOSSIP_SYNC, OWC_IMPORT |
+| Pipeline | DATA_PIPELINE, SELFPLAY_COORDINATOR, TRAINING_NODE_WATCHER |
 | Health | NODE_HEALTH_MONITOR, QUALITY_MONITOR, NODE_AVAILABILITY |
 | Resources | IDLE_RESOURCE, NODE_RECOVERY |
 | Autonomous | PROGRESS_WATCHDOG, P2P_RECOVERY, STALE_FALLBACK, MEMORY_MONITOR |

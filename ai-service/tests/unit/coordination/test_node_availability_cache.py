@@ -375,8 +375,8 @@ class TestNodeAvailabilityCache:
 
             cache.wire_to_events()
 
-            # Should have subscribed to events
-            assert mock_router.subscribe.call_count == 3
+            # Should have subscribed to events (P2P_NODE_DEAD, HOST_OFFLINE, NODE_RECOVERED, NODE_UNHEALTHY)
+            assert mock_router.subscribe.call_count == 4
             assert cache._event_subscribed is True
 
     def test_wire_to_events_idempotent(self):
@@ -390,8 +390,8 @@ class TestNodeAvailabilityCache:
             cache.wire_to_events()
             cache.wire_to_events()  # Call again
 
-            # Should only subscribe once
-            assert mock_router.subscribe.call_count == 3
+            # Should only subscribe once (4 events: P2P_NODE_DEAD, HOST_OFFLINE, NODE_RECOVERED, NODE_UNHEALTHY)
+            assert mock_router.subscribe.call_count == 4
 
     def test_wire_to_events_handles_import_error(self):
         """Test wire_to_events handles import error gracefully."""

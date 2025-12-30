@@ -57,15 +57,14 @@ elo_sync:
     - aria2
     - http
 p2p_voters:
+  # Only non-NAT-blocked nodes as voters (Dec 29, 2025)
+  # NAT-blocked nodes (lambda-gh200-*) removed - they can't receive inbound voter heartbeats
   - nebius-backbone-1
+  - nebius-h100-3
   - hetzner-cpu1
   - hetzner-cpu2
-  - lambda-gh200-1
-  - lambda-gh200-2
-  - nebius-h100-3
+  - hetzner-cpu3
   - vultr-a100-20gb
-  - runpod-a100-1
-  - runpod-a100-2
   - runpod-h100
 protocols:
   swim:
@@ -262,10 +261,11 @@ hosts:
     role: gpu_training_primary
     status: ready
     selfplay_enabled: false
-    training_enabled: true
-    p2p_enabled: true
+    training_enabled: false
+    p2p_enabled: false
     nat_blocked: true
     force_relay_mode: false
+    note: RETIRED Dec 29 2025 - Not in Tailscale network
   lambda-gh200-9:
     ssh_host: 192.222.51.60
     ssh_user: ubuntu
@@ -279,10 +279,11 @@ hosts:
     role: gpu_training_primary
     status: ready
     selfplay_enabled: false
-    training_enabled: true
-    p2p_enabled: true
+    training_enabled: false
+    p2p_enabled: false
     nat_blocked: true
     force_relay_mode: false
+    note: RETIRED Dec 29 2025 - Not in Tailscale network
   vast-29129529:
     ssh_host: ssh6.vast.ai
     ssh_port: 19528
@@ -317,7 +318,7 @@ hosts:
     gpu: 8x RTX 3090
     gpu_vram_gb: 192
     role: gpu_selfplay_primary
-    status: retired
+    status: ready
     vast_instance_id: '29118471'
     p2p_enabled: true
     is_ephemeral: true
@@ -336,7 +337,7 @@ hosts:
     gpu: 2x RTX 5090
     gpu_vram_gb: 64
     role: nn_training_primary
-    status: retired
+    status: ready
     vast_instance_id: '29128352'
     p2p_enabled: false
     is_ephemeral: true
@@ -357,7 +358,7 @@ hosts:
     gpu: RTX 5090
     gpu_vram_gb: 32
     role: nn_training_primary
-    status: retired
+    status: ready
     vast_instance_id: '28925166'
     p2p_enabled: true
     is_ephemeral: true
@@ -376,7 +377,7 @@ hosts:
     gpu: RTX 5090
     gpu_vram_gb: 32
     role: nn_training_primary
-    status: retired
+    status: ready
     vast_instance_id: '29128356'
     p2p_enabled: false
     is_ephemeral: true
@@ -397,7 +398,7 @@ hosts:
     gpu: A40
     gpu_vram_gb: 46
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '28918742'
     p2p_enabled: true
     is_ephemeral: true
@@ -417,7 +418,7 @@ hosts:
     gpu: RTX 5080
     gpu_vram_gb: 16
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '29031159'
     p2p_enabled: true
     is_ephemeral: true
@@ -438,7 +439,7 @@ hosts:
     gpu: RTX 4060 Ti
     gpu_vram_gb: 16
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '29126088'
     p2p_enabled: true
     is_ephemeral: true
@@ -458,7 +459,7 @@ hosts:
     gpu: RTX 3060
     gpu_vram_gb: 12
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '29031161'
     p2p_enabled: true
     is_ephemeral: true
@@ -478,7 +479,7 @@ hosts:
     gpu: RTX 2080 Ti
     gpu_vram_gb: 11
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '28890015'
     p2p_enabled: true
     is_ephemeral: true
@@ -498,7 +499,7 @@ hosts:
     gpu: RTX 3060 Ti
     gpu_vram_gb: 8
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '28889766'
     p2p_enabled: true
     is_ephemeral: true
@@ -518,7 +519,7 @@ hosts:
     gpu: RTX 3060 Ti
     gpu_vram_gb: 8
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '29046315'
     p2p_enabled: true
     is_ephemeral: true
@@ -538,7 +539,7 @@ hosts:
     gpu: RTX 5090
     gpu_vram_gb: 32
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '29118472'
     p2p_enabled: true
     is_ephemeral: true
@@ -557,7 +558,7 @@ hosts:
     gpu: RTX 5090
     gpu_vram_gb: 32
     role: gpu_selfplay
-    status: retired
+    status: ready
     vast_instance_id: '29129151'
     p2p_enabled: false
     is_ephemeral: true
@@ -567,6 +568,7 @@ hosts:
     note: Tailscale installed, needs auth key (Dec 2025)
   runpod-h100:
     ssh_host: 102.210.171.65
+    tailscale_ip: 100.113.2.45
     ssh_port: 30755
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -577,14 +579,16 @@ hosts:
     gpu: H100 PCIe
     gpu_vram_gb: 80
     role: gpu_selfplay_primary
-    status: retired
+    status: ready
     runpod_id: g47o0nibwifwzw
     p2p_enabled: true
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
+    note: Updated Dec 29, 2025 - Tailscale active via relay
   runpod-a100-1:
     ssh_host: 38.128.233.145
+    tailscale_ip: 100.121.84.68
     ssh_port: 33085
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -595,14 +599,16 @@ hosts:
     gpu: A100 PCIe
     gpu_vram_gb: 80
     role: gpu_selfplay
-    status: retired
+    status: ready
     runpod_id: hl2rzjdfdrtath
+    note: Updated Dec 29, 2025
     p2p_enabled: true
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
   runpod-a100-2:
     ssh_host: 104.255.9.187
+    tailscale_ip: 100.107.5.89
     ssh_port: 11681
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -613,14 +619,16 @@ hosts:
     gpu: A100 PCIe
     gpu_vram_gb: 80
     role: gpu_selfplay
-    status: retired
+    status: ready
     runpod_id: yu03gfn71vrsj7
     p2p_enabled: true
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
+    note: Updated Dec 29, 2025
   runpod-a100-storage-1:
     ssh_host: 213.173.105.7
+    tailscale_ip: 100.74.137.51
     ssh_port: 30015
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -631,7 +639,7 @@ hosts:
     gpu: A100 PCIe
     gpu_vram_gb: 80
     role: gpu_selfplay
-    status: retired
+    status: ready
     runpod_id: a0h3cf7yg1duiv
     p2p_enabled: true
     nat_blocked: true
@@ -639,10 +647,10 @@ hosts:
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
-    note: A100 80GB with 500GB volume storage. Dec 28 2025 - NAT blocked, uses direct
-      SSH
+    note: A100 80GB with 500GB volume storage. Updated Dec 29 2025
   runpod-l40s-2:
     ssh_host: 193.183.22.62
+    tailscale_ip: 100.98.97.76
     ssh_port: 1182
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -653,7 +661,7 @@ hosts:
     gpu: L40S
     gpu_vram_gb: 48
     role: gpu_selfplay
-    status: retired
+    status: ready
     runpod_id: 3y9qgdj3lkjj6r
     p2p_enabled: true
     nat_blocked: true
@@ -661,8 +669,10 @@ hosts:
     is_container: true
     needs_userspace_tailscale: true
     socks5_port: 1055
+    note: Updated Dec 29, 2025
   vultr-a100-20gb:
     ssh_host: 208.167.249.164
+    tailscale_ip: 100.94.201.92
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -673,10 +683,11 @@ hosts:
     gpu: A100D-20C (vGPU)
     gpu_vram_gb: 20
     role: gpu_selfplay
-    status: retired
+    status: ready
     vultr_id: 016fe347-d10d-4348-90f6-e3ad9943246a
     region: ewr
     p2p_enabled: true
+    note: Updated Dec 29, 2025 - active on Tailscale
   vultr-a100-20gb-2:
     ssh_host: 140.82.15.69
     ssh_port: 22
@@ -697,6 +708,7 @@ hosts:
     force_relay_mode: true
   nebius-backbone-1:
     ssh_host: 89.169.112.47
+    tailscale_ip: 100.110.28.41
     ssh_port: 22
     ssh_user: ubuntu
     ssh_key: ~/.ssh/id_cluster
@@ -707,11 +719,11 @@ hosts:
     gpu: L40S
     gpu_vram_gb: 48
     role: backbone
-    status: retired
+    status: ready
     nebius_id: computeinstance-e00gyg7x6xhkc7fs5x
     region: eu-north1
     p2p_enabled: true
-    note: P2P backbone node for stable connectivity
+    note: P2P backbone node for stable connectivity - Updated Dec 29, 2025
   nebius-h100-1:
     ssh_host: 89.169.111.139
     tailscale_ip: 100.106.19.6
@@ -725,11 +737,11 @@ hosts:
     gpu: H100 SXM
     gpu_vram_gb: 80
     role: gpu_training_primary
-    status: retired
+    status: ready
     nebius_id: computeinstance-e00y1q84pxfs1s3jqb
     region: eu-north1
     p2p_enabled: true
-    note: H100 80GB for training
+    note: H100 80GB for training - Updated Dec 29, 2025
   nebius-h100-2:
     ssh_host: 10.0.0.8
     ssh_port: 22
@@ -760,11 +772,11 @@ hosts:
     gpu: H100 SXM
     gpu_vram_gb: 80
     role: gpu_training_primary
-    status: retired
+    status: ready
     nebius_id: computeinstance-e00hcbnn7s7p0c7bbp
     region: eu-north1
     p2p_enabled: true
-    note: H100 80GB with 500GB storage, P2P voter
+    note: H100 80GB with 500GB storage, P2P voter - Updated Dec 29, 2025
   aws-proxy:
     ssh_host: 3.147.65.95
     ssh_port: 22
@@ -781,6 +793,7 @@ hosts:
     p2p_enabled: false
   hetzner-cpu1:
     ssh_host: 46.62.147.150
+    tailscale_ip: 100.94.174.19
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -789,13 +802,14 @@ hosts:
     memory_gb: 16
     cpus: 8
     role: cpu_selfplay
-    status: retired
+    status: ready
     hetzner_id: ringrift-cpu1
     region: eu-central
     p2p_enabled: true
-    note: CPU-only node for heuristic selfplay
+    note: CPU-only node for heuristic selfplay, P2P voter - Updated Dec 29, 2025
   hetzner-cpu2:
     ssh_host: 135.181.39.239
+    tailscale_ip: 100.67.131.72
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -804,13 +818,14 @@ hosts:
     memory_gb: 32
     cpus: 16
     role: cpu_selfplay
-    status: retired
+    status: ready
     hetzner_id: ringrift-cpu2
     region: eu-central
     p2p_enabled: true
-    note: CPU-only node for heuristic selfplay
+    note: CPU-only node for heuristic selfplay, P2P voter - Updated Dec 29, 2025
   hetzner-cpu3:
     ssh_host: 46.62.217.168
+    tailscale_ip: 100.126.21.102
     ssh_port: 22
     ssh_user: root
     ssh_key: ~/.ssh/id_cluster
@@ -819,8 +834,8 @@ hosts:
     memory_gb: 32
     cpus: 16
     role: cpu_selfplay
-    status: retired
+    status: ready
     hetzner_id: ringrift-cpu3
     region: eu-central
     p2p_enabled: true
-    note: CPU-only node for heuristic selfplay
+    note: CPU-only node for heuristic selfplay - Updated Dec 29, 2025

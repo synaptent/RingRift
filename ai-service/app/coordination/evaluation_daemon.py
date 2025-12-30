@@ -46,7 +46,14 @@ from app.coordination.daemon_stats import EvaluationDaemonStats
 
 # December 2025: Event types and contracts
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
-from app.coordination.event_router import DataEventType
+from app.coordination.event_router import DataEventType, emit
+
+# December 2025: Distribution defaults and utilities
+from app.config.coordination_defaults import DistributionDefaults
+from app.coordination.unified_distribution_daemon import (
+    verify_model_distribution,
+    wait_for_model_availability,
+)
 
 # December 27, 2025: Use HandlerBase for subscription lifecycle (canonical location)
 from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
@@ -128,6 +135,12 @@ class EvaluationConfig:
     max_queue_depth: int = 100  # Maximum pending evaluations (increased from 60)
     backpressure_threshold: int = 70  # Emit backpressure at this depth (increased from 40)
     backpressure_release_threshold: int = 35  # Release backpressure at this depth (increased from 20)
+
+    # December 30, 2025: Multi-harness evaluation
+    # When enabled, models are evaluated under all compatible harnesses (GUMBEL_MCTS, MINIMAX, etc.)
+    # This produces composite Elo ratings per (model, harness) combination
+    enable_multi_harness: bool = True  # Use MultiHarnessGauntlet for richer evaluation
+    multi_harness_max_harnesses: int = 3  # Max harnesses to evaluate (limit for speed)
 
 
 class EvaluationDaemon(BaseEventHandler):
@@ -465,12 +478,6 @@ class EvaluationDaemon(BaseEventHandler):
             Tuple of (available, node_count)
         """
         try:
-            from app.config.coordination_defaults import DistributionDefaults
-            from app.coordination.unified_distribution_daemon import (
-                verify_model_distribution,
-                wait_for_model_availability,
-            )
-
             min_nodes = DistributionDefaults.MIN_NODES_FOR_EVALUATION
             timeout = 120.0  # 2 minutes for pre-eval check
 
@@ -498,20 +505,15 @@ class EvaluationDaemon(BaseEventHandler):
                     f"{count}/{min_nodes} nodes"
                 )
                 # Emit MODEL_EVALUATION_BLOCKED event
-                try:
-                    from app.coordination.event_router import emit
-
-                    await emit(
-                        event_type="MODEL_EVALUATION_BLOCKED",
-                        data={
-                            "model_path": model_path,
-                            "required_nodes": min_nodes,
-                            "actual_nodes": count,
-                            "reason": "insufficient_distribution",
-                        },
-                    )
-                except ImportError:
-                    pass
+                await emit(
+                    event_type="MODEL_EVALUATION_BLOCKED",
+                    data={
+                        "model_path": model_path,
+                        "required_nodes": min_nodes,
+                        "actual_nodes": count,
+                        "reason": "insufficient_distribution",
+                    },
+                )
 
             return (success, count)
 

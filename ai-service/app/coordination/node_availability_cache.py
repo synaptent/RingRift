@@ -165,6 +165,9 @@ class NodeAvailabilityCache:
                 router.subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead_event)
                 router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline_event)
                 router.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered_event)
+                # Dec 30, 2025: Subscribe to health check events for real-time updates
+                if hasattr(DataEventType, "NODE_UNHEALTHY"):
+                    router.subscribe(DataEventType.NODE_UNHEALTHY, self._on_node_unhealthy_event)
 
                 self._event_subscribed = True
                 logger.info("[NodeAvailabilityCache] Subscribed to availability events")
@@ -217,6 +220,24 @@ class NodeAvailabilityCache:
         node_id = payload.get("node_id")
         if node_id:
             self.mark_available(node_id, source="event")
+
+    async def _on_node_unhealthy_event(self, event) -> None:
+        """Handle NODE_UNHEALTHY event from health check layer.
+
+        Dec 30, 2025: React to health check failures in real-time for faster
+        node unavailability detection (vs 60-120s polling interval).
+        """
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
+        node_id = payload.get("node_id")
+        if node_id:
+            self.mark_unavailable(
+                node_id,
+                AvailabilityReason.HEALTH_CHECK_FAILED,
+                source="health_check",
+                error_message=payload.get("reason") or payload.get("error"),
+            )
 
     def is_available(self, node_id: str) -> bool:
         """Check if a node is available.
