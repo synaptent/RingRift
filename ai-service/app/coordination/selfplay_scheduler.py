@@ -610,7 +610,18 @@ class SelfplayScheduler:
             self._config_priorities[config_key] = ConfigPriority(config_key=config_key)
 
         priority = self._config_priorities[config_key]
-        priority.target_training_samples = target_samples
+        # Validate target: 0 or negative keeps existing value or uses default
+        if target_samples <= 0:
+            if priority.target_training_samples <= 0:
+                # Use default if no existing value
+                priority.target_training_samples = 100000
+            # Otherwise keep existing value
+            logger.debug(
+                f"[SelfplayScheduler] Target {target_samples} <= 0 for {config_key}, "
+                f"using existing/default: {priority.target_training_samples}"
+            )
+        else:
+            priority.target_training_samples = target_samples
         priority.samples_per_game_estimate = self._get_samples_per_game_estimate(config_key)
 
         games_needed = priority.games_needed

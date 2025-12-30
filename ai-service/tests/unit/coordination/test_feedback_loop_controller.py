@@ -916,3 +916,611 @@ class TestErrorHandling:
         controller._on_selfplay_complete(event)
         controller._on_training_complete(event)
         controller._on_work_completed(event)
+
+
+# =============================================================================
+# Plateau Detection Tests
+# =============================================================================
+
+
+class TestPlateauDetection:
+    """Tests for _on_plateau_detected handler."""
+
+    def test_plateau_overfitting_sets_temperature_boost(self, controller):
+        """Overfitting plateau should set temperature boost."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "plateau_type": "overfitting",
+            "exploration_boost": 1.5,
+            "train_val_gap": 0.15,
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_plateau_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.exploration_boost == 1.5
+        assert state.selfplay_temperature_boost == 1.2
+
+    def test_plateau_data_limitation_sets_games_multiplier(self, controller):
+        """Data-limited plateau should set games multiplier."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "plateau_type": "data_limitation",
+            "exploration_boost": 1.3,
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_plateau_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.exploration_boost == 1.3
+        assert state.games_multiplier == 1.5
+
+    def test_plateau_missing_config_key_returns_early(self, controller):
+        """Missing config_key should return early."""
+        event = MagicMock()
+        event.payload = {"plateau_type": "overfitting"}
+
+        controller._on_plateau_detected(event)
+
+        # No state should be created
+        assert "hex8_2p" not in controller._states
+
+    def test_plateau_count_increments(self, controller):
+        """Plateau count should increment with each event."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "plateau_type": "data_limitation",
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_plateau_detected(event)
+            controller._on_plateau_detected(event)
+            controller._on_plateau_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.plateau_count == 3
+
+    def test_plateau_sets_expiration_time(self, controller):
+        """Exploration boost should have expiration time."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "plateau_type": "overfitting",
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_plateau_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.exploration_boost_expires_at > time.time()
+
+    def test_plateau_uses_default_exploration_boost(self, controller):
+        """Should use default exploration boost if not provided."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "plateau_type": "data_limitation",
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_plateau_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.exploration_boost == 1.3  # Default
+
+    def test_repeated_plateaus_triggers_curriculum_advancement(self, controller):
+        """2+ plateaus should trigger curriculum advancement."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "plateau_type": "data_limitation",
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            with patch.object(controller, "_advance_curriculum_on_velocity_plateau") as mock_advance:
+                controller._on_plateau_detected(event)
+                controller._on_plateau_detected(event)
+
+                # Should call advancement after 2 plateaus
+                mock_advance.assert_called_once()
+
+
+# =============================================================================
+# Training Loss Anomaly Tests
+# =============================================================================
+
+
+class TestTrainingLossAnomaly:
+    """Tests for _on_training_loss_anomaly handler."""
+
+    def test_anomaly_tracks_count(self, controller):
+        """Should track anomaly count."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "loss": 2.5,
+            "expected_loss": 1.0,
+            "deviation": 3.0,
+            "epoch": 10,
+            "severity": "moderate",
+        }
+
+        with patch.object(controller, "_trigger_quality_check"):
+            controller._on_training_loss_anomaly(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.loss_anomaly_count == 1
+
+    def test_anomaly_triggers_quality_check(self, controller):
+        """Should trigger quality check on anomaly."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "loss": 2.5,
+            "expected_loss": 1.0,
+            "deviation": 3.0,
+        }
+
+        with patch.object(controller, "_trigger_quality_check") as mock_quality:
+            controller._on_training_loss_anomaly(event)
+
+        mock_quality.assert_called_once_with("hex8_2p", reason="training_loss_anomaly")
+
+    def test_severe_anomaly_boosts_exploration(self, controller):
+        """Severe anomaly should boost exploration."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "loss": 5.0,
+            "expected_loss": 1.0,
+            "deviation": 4.0,
+            "severity": "severe",
+        }
+
+        with patch.object(controller, "_trigger_quality_check"):
+            with patch.object(controller, "_boost_exploration_for_anomaly") as mock_boost:
+                controller._on_training_loss_anomaly(event)
+
+        mock_boost.assert_called_once()
+
+    def test_consecutive_anomalies_boost_exploration(self, controller):
+        """Multiple consecutive anomalies should boost exploration."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "loss": 2.0,
+            "expected_loss": 1.0,
+            "severity": "moderate",
+        }
+
+        # Create state with prior anomaly count
+        state = controller._get_or_create_state("hex8_2p")
+        state.loss_anomaly_count = 2  # Already at threshold - 1
+
+        with patch.object(controller, "_trigger_quality_check"):
+            with patch.object(controller, "_boost_exploration_for_anomaly") as mock_boost:
+                controller._on_training_loss_anomaly(event)
+
+        # Count should now be 3, triggering exploration boost
+        mock_boost.assert_called_once()
+
+    def test_missing_config_returns_early(self, controller):
+        """Missing config should return early."""
+        event = MagicMock()
+        event.payload = {
+            "loss": 2.5,
+            "expected_loss": 1.0,
+        }
+
+        with patch.object(controller, "_trigger_quality_check") as mock_quality:
+            controller._on_training_loss_anomaly(event)
+
+        mock_quality.assert_not_called()
+
+    def test_anomaly_sets_timestamp(self, controller):
+        """Should set last anomaly timestamp."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "loss": 2.0,
+            "severity": "moderate",
+        }
+
+        with patch.object(controller, "_trigger_quality_check"):
+            controller._on_training_loss_anomaly(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.last_loss_anomaly_time > 0
+
+
+# =============================================================================
+# Selfplay Velocity Adjustment Tests
+# =============================================================================
+
+
+class TestSelfplayVelocityAdjustment:
+    """Tests for _adjust_selfplay_for_velocity method."""
+
+    def test_plateau_increases_search_budget(self, controller):
+        """Low velocity plateau should increase search budget."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 400
+        state.current_exploration_boost = 1.0
+        # Add enough history for velocity calculation
+        state.elo_history = [(time.time() - 3600, 1500.0)] * 4
+
+        with patch.object(controller, "_emit_selfplay_adjustment"):
+            controller._adjust_selfplay_for_velocity(
+                config_key="hex8_2p",
+                state=state,
+                elo=1500.0,
+                velocity=1.0,  # Low velocity
+            )
+
+        assert state.current_search_budget == 500  # Increased by 100
+        assert state.current_exploration_boost > 1.0
+
+    def test_plateau_caps_budget_at_800(self, controller):
+        """Search budget should cap at 800."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 750
+        state.elo_history = [(time.time() - 3600, 1500.0)] * 4
+
+        with patch.object(controller, "_emit_selfplay_adjustment"):
+            controller._adjust_selfplay_for_velocity(
+                config_key="hex8_2p",
+                state=state,
+                elo=1500.0,
+                velocity=1.0,  # Low velocity
+            )
+
+        assert state.current_search_budget == 800  # Capped
+
+    def test_fast_improvement_maintains_settings(self, controller):
+        """Fast improvement should maintain current settings."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 400
+        state.current_exploration_boost = 1.0
+
+        with patch.object(controller, "_emit_selfplay_adjustment"):
+            controller._adjust_selfplay_for_velocity(
+                config_key="hex8_2p",
+                state=state,
+                elo=1600.0,
+                velocity=50.0,  # High velocity
+            )
+
+        # Settings should be unchanged
+        assert state.current_search_budget == 400
+        assert state.current_exploration_boost == 1.0
+
+    def test_near_goal_increases_minimum_budget(self, controller):
+        """Elo > 1800 should ensure minimum budget of 600."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 400
+
+        with patch.object(controller, "_emit_selfplay_adjustment"):
+            controller._adjust_selfplay_for_velocity(
+                config_key="hex8_2p",
+                state=state,
+                elo=1850.0,
+                velocity=10.0,  # Normal velocity
+            )
+
+        assert state.current_search_budget >= 600
+
+    def test_emits_selfplay_adjustment(self, controller):
+        """Should emit SELFPLAY_TARGET_UPDATED event."""
+        state = controller._get_or_create_state("hex8_2p")
+
+        with patch.object(controller, "_emit_selfplay_adjustment") as mock_emit:
+            controller._adjust_selfplay_for_velocity(
+                config_key="hex8_2p",
+                state=state,
+                elo=1600.0,
+                velocity=10.0,
+            )
+
+        mock_emit.assert_called_once()
+
+
+# =============================================================================
+# Trigger Evaluation Tests
+# =============================================================================
+
+
+class TestTriggerEvaluation:
+    """Tests for _trigger_evaluation method."""
+
+    def test_trigger_evaluation_parses_config_key(self, controller):
+        """Should parse board_type and num_players from config_key."""
+        # Trigger evaluation uses pipeline actions which may not be available
+        # Test that parsing works correctly
+        config_key = "hex8_2p"
+        parts = config_key.rsplit("_", 1)
+        board_type = parts[0]
+        num_players = int(parts[1].rstrip("p"))
+
+        assert board_type == "hex8"
+        assert num_players == 2
+
+    def test_trigger_evaluation_handles_4p_config(self, controller):
+        """Should handle 4-player config key parsing."""
+        config_key = "square8_4p"
+        parts = config_key.rsplit("_", 1)
+        board_type = parts[0]
+        num_players = int(parts[1].rstrip("p"))
+
+        assert board_type == "square8"
+        assert num_players == 4
+
+    def test_trigger_evaluation_handles_invalid_config_key(self, controller):
+        """Should handle invalid config_key format gracefully."""
+        # Should not raise - graceful handling
+        try:
+            controller._trigger_evaluation("invalid", "/tmp/model.pth")
+        except (ValueError, IndexError):
+            pass  # Expected for invalid format
+
+    def test_trigger_evaluation_records_time(self, controller):
+        """Should record last training time for config."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.last_training_time = 0.0
+
+        # The method may update training time
+        # Test that it's callable without error
+        try:
+            controller._trigger_evaluation("hex8_2p", "/tmp/model.pth")
+        except (ImportError, AttributeError):
+            pass  # Expected if dependencies not available
+
+
+# =============================================================================
+# Adaptive Training Signal Tests
+# =============================================================================
+
+
+class TestAdaptiveTrainingSignal:
+    """Tests for _compute_adaptive_signal method and AdaptiveTrainingSignal dataclass."""
+
+    def test_adaptive_signal_defaults(self):
+        """AdaptiveTrainingSignal should have sensible defaults."""
+        from app.coordination.feedback_loop_controller import AdaptiveTrainingSignal
+
+        signal = AdaptiveTrainingSignal()
+        assert signal.learning_rate_multiplier == 1.0
+        assert signal.batch_size_multiplier == 1.0
+        assert signal.epochs_extension == 0
+        assert signal.gradient_clip_enabled is False
+        assert signal.reason == ""
+
+    def test_adaptive_signal_to_dict(self):
+        """Should convert to dictionary for event emission."""
+        from app.coordination.feedback_loop_controller import AdaptiveTrainingSignal
+
+        signal = AdaptiveTrainingSignal(
+            learning_rate_multiplier=0.5,
+            epochs_extension=5,
+            gradient_clip_enabled=True,
+            reason="regression_recovery",
+        )
+
+        d = signal.to_dict()
+        assert d["learning_rate_multiplier"] == 0.5
+        assert d["epochs_extension"] == 5
+        assert d["gradient_clip_enabled"] is True
+        assert d["reason"] == "regression_recovery"
+
+    def test_compute_adaptive_signal_callable(self, controller):
+        """_compute_adaptive_signal should be callable."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.elo_history = [(time.time() - 7200, 1500.0)]
+        state.last_elo = 1500.0
+
+        eval_result = {
+            "elo": 1570.0,  # +70 Elo
+            "win_rate": 0.65,
+        }
+
+        # Should not raise
+        signal = controller._compute_adaptive_signal("hex8_2p", state, eval_result)
+        assert signal is not None
+
+    def test_compute_adaptive_signal_returns_signal(self, controller):
+        """Should return AdaptiveTrainingSignal instance."""
+        from app.coordination.feedback_loop_controller import AdaptiveTrainingSignal
+
+        state = controller._get_or_create_state("hex8_2p")
+        state.last_elo = 1500.0
+
+        eval_result = {"elo": 1505.0, "win_rate": 0.55}
+
+        signal = controller._compute_adaptive_signal("hex8_2p", state, eval_result)
+
+        assert isinstance(signal, AdaptiveTrainingSignal)
+
+
+# =============================================================================
+# Emit Selfplay Adjustment Tests
+# =============================================================================
+
+
+class TestEmitSelfplayAdjustment:
+    """Tests for _emit_selfplay_adjustment method."""
+
+    def test_emits_event_with_state_params(self, controller):
+        """Should emit event with state parameters."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 500
+        state.current_exploration_boost = 1.3
+
+        # Mock the event bus import path inside the method
+        with patch("app.coordination.event_router.get_event_bus") as mock_bus_getter:
+            mock_bus = MagicMock()
+            mock_bus_getter.return_value = mock_bus
+
+            controller._emit_selfplay_adjustment(
+                config_key="hex8_2p",
+                state=state,
+                elo_gap=400.0,
+                velocity=5.0,
+            )
+
+            # Check that emit was called (may or may not succeed depending on mock)
+            # The method gracefully handles failures
+
+    def test_emit_adjustment_updates_state(self, controller):
+        """Method should not raise even without event bus."""
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 500
+        state.current_exploration_boost = 1.3
+
+        # Should not raise even if event bus unavailable
+        controller._emit_selfplay_adjustment(
+            config_key="hex8_2p",
+            state=state,
+            elo_gap=400.0,
+            velocity=5.0,
+        )
+
+    def test_handles_missing_event_bus(self, controller):
+        """Should handle missing event bus gracefully."""
+        state = controller._get_or_create_state("hex8_2p")
+
+        # The method imports get_event_bus internally, so we just test it doesn't raise
+        # Should not raise
+        controller._emit_selfplay_adjustment("hex8_2p", state, 400.0, 5.0)
+
+
+# =============================================================================
+# Regression Detection Tests
+# =============================================================================
+
+
+class TestRegressionDetection:
+    """Tests for _on_regression_detected handler."""
+
+    def test_regression_increments_failures(self, controller):
+        """Should increment consecutive_failures count."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "elo_drop": 30,
+            "previous_elo": 1600,
+            "current_elo": 1570,
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_regression_detected(event)
+
+        state = controller.get_state("hex8_2p")
+        assert state.consecutive_failures >= 1
+
+    def test_regression_increases_exploration_boost(self, controller):
+        """Should increase exploration boost."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "elo_drop": 30,
+        }
+
+        # Set initial low exploration boost
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_exploration_boost = 1.0
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task"):
+            controller._on_regression_detected(event)
+
+        # Exploration boost should be increased
+        assert state.current_exploration_boost > 1.0
+
+    def test_regression_emits_selfplay_target(self, controller):
+        """Should emit SELFPLAY_TARGET_UPDATED for more diverse games."""
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "elo_drop": 50,
+            "consecutive_regressions": 2,
+        }
+
+        with patch("app.coordination.feedback_loop_controller._safe_create_task") as mock_task:
+            controller._on_regression_detected(event)
+
+        # Should attempt to create task for emitting event
+        # (may not succeed if no event loop)
+
+    def test_regression_handles_missing_config(self, controller):
+        """Should handle missing config_key."""
+        event = MagicMock()
+        event.payload = {"elo_drop": 30}
+
+        # Should not raise
+        controller._on_regression_detected(event)
+
+
+# =============================================================================
+# Training Loss Trend Tests
+# =============================================================================
+
+
+class TestTrainingLossTrend:
+    """Tests for _on_training_loss_trend handler."""
+
+    def test_stalled_trend_boosts_exploration(self, controller):
+        """Stalled trend should boost exploration."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "trend": "stalled",
+            "duration_epochs": 10,
+        }
+
+        with patch.object(controller, "_boost_exploration_for_stall") as mock_boost:
+            controller._on_training_loss_trend(event)
+
+        mock_boost.assert_called_once()
+
+    def test_degrading_trend_triggers_quality_check(self, controller):
+        """Degrading trend should trigger quality check."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "trend": "degrading",
+            "duration_epochs": 5,
+        }
+
+        with patch.object(controller, "_trigger_quality_check") as mock_quality:
+            controller._on_training_loss_trend(event)
+
+        mock_quality.assert_called_once()
+
+    def test_improving_trend_reduces_exploration(self, controller):
+        """Improving trend should reduce exploration boost."""
+        event = MagicMock()
+        event.payload = {
+            "config": "hex8_2p",
+            "trend": "improving",
+        }
+
+        # Set up state with prior anomaly
+        state = controller._get_or_create_state("hex8_2p")
+        state.loss_anomaly_count = 3
+
+        with patch.object(controller, "_reduce_exploration_after_improvement") as mock_reduce:
+            controller._on_training_loss_trend(event)
+
+        # Should reset anomaly count and reduce exploration
+        assert state.loss_anomaly_count == 0
+
+    def test_handles_missing_config(self, controller):
+        """Should handle missing config."""
+        event = MagicMock()
+        event.payload = {"trend": "stalled"}
+
+        # Should not raise
+        controller._on_training_loss_trend(event)

@@ -841,13 +841,19 @@ class AutoSyncDaemon(
         """Emit DATA_SYNC_FAILED event."""
         try:
             from app.coordination.event_router import emit_data_sync_failed
+
+            # Dec 29, 2025: emit_data_sync_failed is None if data_events failed to import
+            if emit_data_sync_failed is None:
+                logger.debug("emit_data_sync_failed unavailable (data_events not imported)")
+                return
+
             await emit_data_sync_failed(
                 host=self.node_id,
                 error=error,
                 retry_count=self._stats.failed_syncs,
                 source="AutoSyncDaemon",
             )
-        except (RuntimeError, OSError, ConnectionError) as e:
+        except (RuntimeError, OSError, ConnectionError, TypeError) as e:
             logger.debug(f"Could not emit DATA_SYNC_FAILED: {e}")
 
     async def _emit_sync_completed(self, games_synced: int, bytes_transferred: int = 0) -> None:

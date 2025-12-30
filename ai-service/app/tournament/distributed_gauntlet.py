@@ -1221,7 +1221,19 @@ class DistributedNNGauntlet:
         # In N-player games, each game provides (N-1) pairwise matchups worth of info
         # Dividing by (N-1) ensures consistent rating change magnitude across player counts
         K_BASE = 32  # Standard Elo K-factor for 2-player
-        K = K_BASE / (num_players - 1) if num_players > 2 else K_BASE
+        base_k = K_BASE / (num_players - 1) if num_players > 2 else K_BASE
+
+        def get_adaptive_k(games_model: int, games_baseline: int) -> float:
+            """Adaptive K-factor: higher for new models, lower for established."""
+            min_games = min(games_model, games_baseline)
+            if min_games < 30:
+                return base_k * 1.5  # Provisional: fast convergence
+            elif min_games < 100:
+                return base_k * 1.25  # Developing
+            elif min_games < 300:
+                return base_k * 1.0  # Established
+            else:
+                return base_k * 0.75  # Mature: stability
 
         conn = self._get_db_connection()
         try:
@@ -1271,7 +1283,10 @@ class DistributedNNGauntlet:
                 else:
                     actual = 0.0
 
-                # Elo change (scaled by K for multiplayer)
+                # Elo change (adaptive K based on games played)
+                model_games = games_played.get(model_id, 0)
+                baseline_games = games_played.get(baseline_id, 0)
+                K = get_adaptive_k(model_games, baseline_games)
                 delta = K * (actual - expected)
 
                 if model_id not in elo_changes:

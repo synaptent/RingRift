@@ -1233,6 +1233,65 @@ def _evaluate_single_opponent(
     return result
 
 
+def get_confidence_weighted_games(
+    games_per_opponent: int,
+    model_id: str | None,
+    board_type: str,
+    num_players: int,
+    max_multiplier: float = 2.0,
+) -> int:
+    """Calculate adaptive games count based on model's rating confidence.
+
+    New models (low games played, high rating deviation) get more evaluation
+    games for better rating accuracy. Established models get fewer games
+    since their rating is already well-calibrated.
+
+    Args:
+        games_per_opponent: Base games per opponent
+        model_id: Model identifier for Elo lookup
+        board_type: Board type string
+        num_players: Number of players
+        max_multiplier: Maximum game count multiplier (default: 2x for new models)
+
+    Returns:
+        Adjusted games count based on rating confidence
+
+    December 2025: Added for confidence-weighted evaluation.
+    """
+    if not model_id:
+        return games_per_opponent
+
+    try:
+        from app.training.elo_service import get_elo_service
+        elo_service = get_elo_service()
+        rating = elo_service.get_rating(model_id, board_type, num_players)
+
+        # Calculate confidence from games played
+        # 0-30 games: low confidence, 30-100: medium, 100+: high
+        games_played = rating.games_played
+        if games_played < 30:
+            # New model: full multiplier (2x games)
+            multiplier = max_multiplier
+        elif games_played < 100:
+            # Developing model: partial multiplier (1.5x games)
+            multiplier = 1.0 + (max_multiplier - 1.0) * (100 - games_played) / 70
+        else:
+            # Established model: no extra games
+            multiplier = 1.0
+
+        adaptive_games = int(games_per_opponent * multiplier)
+        if adaptive_games != games_per_opponent:
+            logger.debug(
+                f"[gauntlet] Confidence-weighted games: {games_per_opponent} -> {adaptive_games} "
+                f"(model has {games_played} games)"
+            )
+        return adaptive_games
+
+    except Exception as e:
+        logger.debug(f"[gauntlet] Could not get rating for confidence weighting: {e}")
+        return games_per_opponent
+
+
 def run_baseline_gauntlet(
     model_path: str | Path | None = None,
     board_type: Any = None,  # BoardType
@@ -1255,6 +1314,7 @@ def run_baseline_gauntlet(
     parallel_games: int = 1,
     recording_config: Any | None = None,
     save_games_for_training: bool = True,
+    confidence_weighted_games: bool = False,
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
@@ -1285,6 +1345,9 @@ def run_baseline_gauntlet(
         save_games_for_training: Whether to save games for training data (default: True).
             Dec 29, 2025: When True and recording_config is None, creates default config
             that saves games to data/games/gauntlet_{board_type}_{num_players}p.db
+        confidence_weighted_games: Whether to adjust games based on model confidence (default: False).
+            December 2025: New models (low games played) get up to 2x more evaluation games
+            for better rating accuracy. Established models get the base game count.
 
     Returns:
         GauntletResult with aggregated statistics
@@ -1336,6 +1399,22 @@ def run_baseline_gauntlet(
     effective_model_id = model_id
     if effective_model_id is None and model_path is not None:
         effective_model_id = Path(model_path).stem
+
+    # Apply confidence-weighted games allocation (December 2025)
+    effective_games_per_opponent = games_per_opponent
+    if confidence_weighted_games and board_type is not None:
+        board_type_str = getattr(board_type, "value", str(board_type)).lower()
+        effective_games_per_opponent = get_confidence_weighted_games(
+            games_per_opponent=games_per_opponent,
+            model_id=effective_model_id,
+            board_type=board_type_str,
+            num_players=num_players,
+        )
+        if effective_games_per_opponent != games_per_opponent:
+            logger.info(
+                f"[gauntlet] Using confidence-weighted games: {effective_games_per_opponent} "
+                f"(base: {games_per_opponent})"
+            )
 
     if parallel_opponents and len(opponents) > 1:
         # Parallel evaluation using ThreadPoolExecutor
