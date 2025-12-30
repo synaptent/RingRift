@@ -828,21 +828,24 @@ class TrainingTriggerDaemon(HandlerBase):
         Expected improvement: 50-100 Elo by closing the feedback loop.
         """
         try:
+            # December 30, 2025: Use extract_evaluation_data for consistency
+            from app.coordination.event_utils import extract_evaluation_data
+
             payload = event.payload if hasattr(event, "payload") else event
+            data = extract_evaluation_data(payload)
 
-            config_key = payload.get("config", "") or payload.get("config_key", "")
-            win_rate = payload.get("win_rate", 0.5)
-            elo = payload.get("elo", 1500.0)
-            games_played = payload.get("games_played", 0)
+            config_key = data.config_key
+            win_rate = data.win_rate
+            elo = data.elo
+            games_played = data.games_played
 
-            # Try to parse config_key from model_id if not provided
-            if not config_key:
-                model_id = payload.get("model_id", "")
-                if model_id:
-                    # Extract config from model_id like "canonical_hex8_2p" -> "hex8_2p"
-                    parts = model_id.replace("canonical_", "").rsplit("_", 1)
-                    if len(parts) == 2 and parts[1].endswith("p"):
-                        config_key = f"{parts[0]}_{parts[1]}"
+            # December 30, 2025: If multi-harness, use best harness for decisions
+            if data.is_multi_harness and data.harness_results and data.best_harness:
+                best_result = data.harness_results.get(data.best_harness, {})
+                if isinstance(best_result, dict):
+                    elo = best_result.get("elo", elo)
+                    win_rate = best_result.get("win_rate", win_rate)
+                    games_played = best_result.get("games_played", games_played)
 
             if not config_key:
                 logger.debug("[TrainingTriggerDaemon] No config_key in evaluation event")

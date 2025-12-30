@@ -63,9 +63,9 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 89 daemon types (~2,000 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 99 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 89 async runner functions                         |
+| `daemon_runners.py`                    | 91 async runner functions                         |
 | `event_router.py`                      | Unified event bus (207 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
@@ -338,11 +338,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-78 active daemon types, 11 deprecated (89 total). Three-layer architecture:
+93 active daemon types, 6 deprecated (99 total). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 89 async runner functions
+3. **`daemon_runners.py`** - 91 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager
@@ -743,8 +743,27 @@ Comprehensive exploration verified the following are ALREADY COMPLETE:
 | **Event Emitters**     | PROGRESS_STALL_DETECTED, PROGRESS_RECOVERED, REGRESSION_CLEARED | ✅ progress_watchdog_daemon.py:394,414, regression_detector.py:508 |
 | **Pipeline Stages**    | SELFPLAY → SYNC → NPZ_EXPORT → TRAINING                         | ✅ data_pipeline_orchestrator.py:756-900                           |
 | **Code Consolidation** | Event patterns (16 files)                                       | ✅ event_utils.py, event_handler_utils.py                          |
-| **Daemon Counts**      | 89 types (82 active, 7 deprecated)                              | ✅ Verified via DaemonType enum                                    |
+| **Daemon Counts**      | 99 types (93 active, 6 deprecated)                              | ✅ Verified via DaemonType enum (Dec 30, 2025)                     |
 | **Event Types**        | 207 DataEventType members                                       | ✅ Verified via DataEventType enum                                 |
 
 **Important for future agents**: Before implementing suggested improvements, VERIFY current state.
 Exploration agents may report stale findings. Use `grep` and code inspection to confirm.
+
+## Test Coverage Status (Dec 30, 2025)
+
+Test coverage has been expanded for training modules:
+
+| Module                     | LOC | Test File                       | Tests | Status     |
+| -------------------------- | --- | ------------------------------- | ----- | ---------- |
+| `data_validation.py`       | 749 | `test_data_validation.py`       | 57    | ✅ NEW     |
+| `adaptive_controller.py`   | 835 | `test_adaptive_controller.py`   | 56    | ✅ NEW     |
+| `architecture_tracker.py`  | 520 | `test_architecture_tracker.py`  | 62    | ✅ FIXED   |
+| `event_driven_selfplay.py` | 650 | `test_event_driven_selfplay.py` | 36    | ✅ Exists  |
+| `streaming_pipeline.py`    | 794 | -                               | 0     | ⚠️ Missing |
+
+**Recent Test Fixes (Dec 30, 2025):**
+
+- Fixed `test_handles_standard_event` by setting `ArchitectureTracker._instance` for singleton isolation
+- Fixed `test_backpressure_activated_pauses_daemons` by using valid `DaemonType.TRAINING_NODE_WATCHER`
+
+**Total Training Tests**: 200+ unit tests across training modules

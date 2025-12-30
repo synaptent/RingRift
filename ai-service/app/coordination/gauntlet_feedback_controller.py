@@ -251,17 +251,33 @@ class GauntletFeedbackController(BaseEventHandler):
     async def _process_evaluation(self, event: Any) -> None:
         """Process an evaluation event and take appropriate action.
 
+        December 30, 2025: Updated to use extract_evaluation_data for consistency
+        and to support multi-harness evaluation fields.
+
         Args:
             event: The EVALUATION_COMPLETED event
         """
-        payload = event.payload if hasattr(event, "payload") else {}
+        from app.coordination.event_utils import extract_evaluation_data
 
-        # Extract evaluation results
-        config_key = payload.get("config", "")
-        board_type = payload.get("board_type", "")
-        num_players = payload.get("num_players", 2)
-        elo = payload.get("elo", 1000.0)
-        games_played = payload.get("games_played", 0)
+        payload = event.payload if hasattr(event, "payload") else event
+
+        # December 30, 2025: Use unified extraction for consistency
+        data = extract_evaluation_data(payload)
+        config_key = data.config_key
+        board_type = data.board_type
+        num_players = data.num_players
+        elo = data.elo
+        games_played = data.games_played
+
+        # December 30, 2025: If multi-harness, use best harness Elo
+        if data.is_multi_harness and data.harness_results and data.best_harness:
+            best_result = data.harness_results.get(data.best_harness, {})
+            if isinstance(best_result, dict):
+                elo = best_result.get("elo", elo)
+                games_played = best_result.get("games_played", games_played)
+            logger.debug(
+                f"[{self.name}] Using best harness '{data.best_harness}' with Elo {elo:.0f}"
+            )
 
         # Extract win rates (may be nested in win_rates dict)
         win_rates = payload.get("win_rates", {})

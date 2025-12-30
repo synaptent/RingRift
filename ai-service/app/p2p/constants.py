@@ -48,11 +48,14 @@ TAILSCALE_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 # false positives on congested networks.
 # Dec 2025: Now configurable via environment variable for cluster tuning.
 HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15") or 15)
-# Dec 2025: Reduced from 90s to 60s for faster failure detection.
-# With 15s heartbeats, 4 missed = dead. The 90s default caused too-slow detection.
-# Dec 29, 2025: P2P stability analysis showed 60s is optimal for cluster self-healing.
-# Environment variable allows runtime tuning without code changes.
-PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "60") or 60)
+# Dec 2025: Originally reduced from 90s to 60s for faster failure detection.
+# Dec 30, 2025: Increased back to 90s for coordinator nodes behind NAT.
+# Coordinators (like local-mac) behind home NAT experience higher latency
+# and need longer timeouts to avoid false-positive peer deaths.
+# With 15s heartbeats, 6 missed = dead for coordinators, 4 missed for others.
+PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "90") or 90)
+# Original fast timeout for non-coordinator nodes in well-connected DC environments
+PEER_TIMEOUT_FAST = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_FAST", "60") or 60)
 # SUSPECT grace period: nodes transition ALIVE -> SUSPECT -> DEAD
 # Dec 29, 2025: Reduced from 60s to 30s - faster suspect detection enables quicker recovery.
 # With 15s heartbeats, this means 2 missed = suspect, 4 missed = dead
@@ -365,6 +368,31 @@ def get_effective_election_timeout() -> int:
     if AGGRESSIVE_FAILOVER_ENABLED:
         return AGGRESSIVE_ELECTION_TIMEOUT
     return ELECTION_TIMEOUT
+
+
+def get_adaptive_peer_timeout(node_id: str = "", role: str = "") -> int:
+    """Return adaptive peer timeout based on node characteristics.
+
+    Dec 30, 2025: Added to provide longer timeouts for coordinators and
+    NAT-blocked nodes while keeping fast detection for DC nodes.
+
+    Args:
+        node_id: Node identifier (e.g., "local-mac", "nebius-h100-1")
+        role: Node role (e.g., "coordinator", "gpu_selfplay")
+
+    Returns:
+        Peer timeout in seconds (90s for coordinators, 60s for others)
+    """
+    if AGGRESSIVE_FAILOVER_ENABLED:
+        return AGGRESSIVE_PEER_TIMEOUT
+
+    # Coordinators and local nodes get longer timeout for NAT resilience
+    is_coordinator = role in ("coordinator", "leader")
+    is_local = node_id.startswith("local-") or node_id.startswith("mac-")
+
+    if is_coordinator or is_local:
+        return PEER_TIMEOUT  # 90s for coordinators
+    return PEER_TIMEOUT_FAST  # 60s for DC nodes
 
 # ============================================
 # Environment Variable Names (for reference)

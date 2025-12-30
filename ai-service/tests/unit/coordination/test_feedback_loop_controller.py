@@ -577,13 +577,16 @@ class TestFeedbackLoopEventHandlers:
             "engine_mode": "gumbel-mcts",  # Uses "engine_mode" not "engine"
         }
 
-        controller._on_selfplay_complete(event)
+        # Mock _assess_selfplay_quality to avoid database access
+        with patch.object(controller, '_assess_selfplay_quality', return_value=0.75):
+            controller._on_selfplay_complete(event)
 
         state = controller.get_state("hex8_2p")
         assert state is not None
         assert state.last_selfplay_games == 100  # Accumulates games_count
         assert state.last_selfplay_engine == "gumbel-mcts"
         assert state.last_selfplay_time > 0
+        assert state.last_selfplay_quality == 0.75
 
     def test_on_plateau_detected_boosts_exploration(self):
         """Test _on_plateau_detected increases exploration."""
