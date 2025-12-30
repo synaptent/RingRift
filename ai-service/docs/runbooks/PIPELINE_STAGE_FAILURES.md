@@ -84,7 +84,7 @@ python scripts/export_replay_dataset.py \
   --max-samples 100000
 
 # Skip parity validation if needed (temporary)
-export RINGRIFT_SKIP_PARITY_GATE=1
+export RINGRIFT_SKIP_PARITY=1
 python scripts/export_replay_dataset.py ...
 ```
 

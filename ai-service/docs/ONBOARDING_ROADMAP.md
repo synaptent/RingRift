@@ -525,12 +525,12 @@ python scripts/master_loop.py --watch
 
 ### Environment Variables
 
-| Variable                         | Default | Purpose                       |
-| -------------------------------- | ------- | ----------------------------- |
-| `RINGRIFT_LOG_LEVEL`             | INFO    | Logging verbosity             |
-| `RINGRIFT_DATA_DIR`              | data    | Data directory                |
-| `RINGRIFT_ALLOW_PENDING_GATE`    | false   | Allow training without parity |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | false   | Skip contract validation      |
+| Variable                         | Default | Purpose                         |
+| -------------------------------- | ------- | ------------------------------- |
+| `RINGRIFT_LOG_LEVEL`             | INFO    | Logging verbosity               |
+| `RINGRIFT_DATA_DIR`              | data    | Data directory                  |
+| `RINGRIFT_ALLOW_PENDING_GATE`    | false   | Allow training without parity   |
+| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | true    | Skip shadow contract validation |
 
 See `ENV_REFERENCE.md` and `ENV_REFERENCE_COMPREHENSIVE.md` for complete reference.
 

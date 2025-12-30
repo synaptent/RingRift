@@ -478,15 +478,17 @@ non-prefixed variables (for example `AI_SERVICE_PORT`, `CORS_ORIGINS`, or
 
 ### Feature Flags
 
-| Variable                         | Type   | Default | Description                     |
-| -------------------------------- | ------ | ------- | ------------------------------- |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | bool   | false   | Skip shadow contract validation |
-| `RINGRIFT_PARITY_VALIDATION`     | string | "off"   | Parity validation mode          |
-| `RINGRIFT_IDLE_RESOURCE_ENABLED` | bool   | true    | Idle resource daemon enabled    |
-| `RINGRIFT_SELFPLAY_ENABLED`      | bool   | true    | Selfplay enabled on this node   |
-| `RINGRIFT_TRAINING_ENABLED`      | bool   | true    | Training enabled on this node   |
-| `RINGRIFT_GAUNTLET_ENABLED`      | bool   | true    | Gauntlet enabled on this node   |
-| `RINGRIFT_EXPORT_ENABLED`        | bool   | true    | Export enabled on this node     |
+| Variable                         | Type   | Default | Description                                             |
+| -------------------------------- | ------ | ------- | ------------------------------------------------------- |
+| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | bool   | true    | Skip shadow contract validation                         |
+| `RINGRIFT_PARITY_VALIDATION`     | string | "off"   | Parity validation mode                                  |
+| `RINGRIFT_PARITY_BACKEND`        | string | "auto"  | Parity backend (auto, ts, python_only, ts_hashes, skip) |
+| `RINGRIFT_SKIP_PARITY`           | bool   | false   | Skip parity validation entirely                         |
+| `RINGRIFT_IDLE_RESOURCE_ENABLED` | bool   | true    | Idle resource daemon enabled                            |
+| `RINGRIFT_SELFPLAY_ENABLED`      | bool   | true    | Selfplay enabled on this node                           |
+| `RINGRIFT_TRAINING_ENABLED`      | bool   | true    | Training enabled on this node                           |
+| `RINGRIFT_GAUNTLET_ENABLED`      | bool   | true    | Gauntlet enabled on this node                           |
+| `RINGRIFT_EXPORT_ENABLED`        | bool   | true    | Export enabled on this node                             |
 
 ### Training
 

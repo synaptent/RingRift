@@ -2191,6 +2191,30 @@ Controls parity validation mode when recording games in the Python service.
 
 Directory where parity tooling writes failure bundles and dumps.
 
+### `RINGRIFT_PARITY_BACKEND`
+
+| Property | Value                                            |
+| -------- | ------------------------------------------------ |
+| Type     | `enum`                                           |
+| Values   | `auto`, `ts`, `python_only`, `ts_hashes`, `skip` |
+| Default  | `auto`                                           |
+| Required | No                                               |
+
+Selects the parity validation backend. `auto` prefers the TS engine when
+`npx` is available and falls back to a Python-only replay validator.
+Use `skip` to disable parity validation entirely.
+
+### `RINGRIFT_SKIP_PARITY`
+
+| Property | Value                                       |
+| -------- | ------------------------------------------- |
+| Type     | `boolean` (string flag)                     |
+| Values   | `1`, `true`, `yes`, `on` (case-insensitive) |
+| Default  | `false`                                     |
+| Required | No                                          |
+
+Skip parity validation entirely (overrides backend and mode).
+
 ### `RINGRIFT_SKIP_SHADOW_CONTRACTS`
 
 | Property | Value                                       |

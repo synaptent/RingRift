@@ -2793,11 +2793,27 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 async with semaphore:
                     return await self._check_single_daemon_health(dt, di, health_check_timeout)
 
-            # Run all health checks concurrently
-            results = await asyncio.gather(
-                *[check_with_semaphore(dt, di) for dt, di in daemons_to_check],
-                return_exceptions=True
-            )
+            # Run all health checks concurrently with overall timeout protection
+            # Dec 29, 2025: Added wait_for to prevent indefinite hang if all checks stall
+            overall_timeout = health_check_timeout * 2 + 5.0  # Safety margin
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(
+                        *[check_with_semaphore(dt, di) for dt, di in daemons_to_check],
+                        return_exceptions=True
+                    ),
+                    timeout=overall_timeout
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"[DaemonManager] Health check batch timed out after {overall_timeout:.1f}s "
+                    f"({len(daemons_to_check)} daemons). Marking all as unhealthy."
+                )
+                # Mark all as failed due to timeout
+                results = [
+                    (dt, {"healthy": False, "message": f"batch timeout ({overall_timeout:.1f}s)"})
+                    for dt, _ in daemons_to_check
+                ]
 
             for result in results:
                 if isinstance(result, Exception):

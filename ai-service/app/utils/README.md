@@ -355,12 +355,12 @@ env.get_float("LEARNING_RATE", default=0.001, min_value=0.0001)
 
 #### Environment Variables
 
-| Variable                         | Type | Default | Description            |
-| -------------------------------- | ---- | ------- | ---------------------- |
-| `RINGRIFT_DEBUG`                 | bool | False   | Enable debug mode      |
-| `RINGRIFT_LOG_LEVEL`             | str  | INFO    | Logging level          |
-| `RINGRIFT_DATA_DIR`              | str  | data/   | Data directory         |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | bool | True    | Skip parity validation |
+| Variable                         | Type | Default | Description                     |
+| -------------------------------- | ---- | ------- | ------------------------------- |
+| `RINGRIFT_DEBUG`                 | bool | False   | Enable debug mode               |
+| `RINGRIFT_LOG_LEVEL`             | str  | INFO    | Logging level                   |
+| `RINGRIFT_DATA_DIR`              | str  | data/   | Data directory                  |
+| `RINGRIFT_SKIP_SHADOW_CONTRACTS` | bool | True    | Skip shadow contract validation |
 
 ---
 

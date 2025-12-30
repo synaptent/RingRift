@@ -454,3 +454,429 @@ class TestEventEmission:
             )
 
             mock_router.publish_sync.assert_not_called()
+
+
+# =============================================================================
+# THREAD SAFETY TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestThreadSafety:
+    """Tests for thread safety of singleton and concurrent operations."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_training_fallback_controller()
+
+    def teardown_method(self):
+        """Reset singleton after each test."""
+        reset_training_fallback_controller()
+
+    def test_concurrent_singleton_access(self):
+        """Concurrent singleton access should return same instance."""
+        import threading
+
+        instances = []
+
+        def get_instance():
+            instance = get_training_fallback_controller()
+            instances.append(instance)
+
+        threads = [threading.Thread(target=get_instance) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All should be the same instance
+        assert len(instances) == 10
+        assert all(i is instances[0] for i in instances)
+
+    def test_concurrent_failure_recording(self):
+        """Concurrent failure recording should not corrupt state."""
+        import threading
+
+        controller = get_training_fallback_controller()
+        errors = []
+
+        def record_failures():
+            try:
+                for _ in range(100):
+                    controller.record_sync_failure("hex8_2p")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=record_failures) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        # Total failures should be 500 (5 threads * 100 failures)
+        state = controller._get_state("hex8_2p")
+        assert state.sync_failures == 500
+
+    def test_concurrent_success_and_failure(self):
+        """Concurrent success and failure calls should not deadlock."""
+        import threading
+
+        controller = get_training_fallback_controller()
+        errors = []
+
+        def record_ops():
+            try:
+                for i in range(50):
+                    if i % 2 == 0:
+                        controller.record_sync_failure("hex8_2p")
+                    else:
+                        controller.record_sync_success("hex8_2p")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=record_ops) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+# =============================================================================
+# EDGE CASES TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge cases and boundary conditions."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_training_fallback_controller()
+
+    def teardown_method(self):
+        """Reset singleton after each test."""
+        reset_training_fallback_controller()
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_negative_data_age_handled(self, mock_defaults):
+        """Negative data age should be handled gracefully."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Negative data age should not crash
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=-1.0,  # Invalid but should not crash
+            sync_failures=0,
+        )
+        # Should not be allowed (negative age is not a valid trigger)
+        assert decision.allowed is False
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_empty_config_key(self, mock_defaults):
+        """Empty config key should be handled."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+
+        controller = TrainingFallbackController()
+        controller.record_sync_failure("")
+
+        # Should not crash
+        assert "" in controller.get_status()["states"]
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_very_large_failure_count(self, mock_defaults):
+        """Very large failure count should not overflow."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            sync_failures=10**9,  # Very large
+            games_available=1000,
+        )
+        # Should allow (far exceeds threshold)
+        assert decision.allowed is True
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_boundary_max_sync_failures(self, mock_defaults):
+        """Test exact boundary for max sync failures."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.MAX_SYNC_DURATION = 10000.0  # High, won't trigger
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Just below threshold
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            sync_failures=4,
+            games_available=1000,
+        )
+        assert decision.allowed is False
+
+        # Exactly at threshold
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            sync_failures=5,
+            games_available=1000,
+        )
+        assert decision.allowed is True
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_boundary_max_sync_duration(self, mock_defaults):
+        """Test exact boundary for max sync duration."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 1000  # High, won't trigger
+        mock_defaults.MAX_SYNC_DURATION = 1000.0
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Just below threshold
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            sync_failures=1,
+            elapsed_sync_time=999.9,
+            games_available=1000,
+        )
+        assert decision.allowed is False
+
+        # At threshold
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            sync_failures=1,
+            elapsed_sync_time=1000.0,
+            games_available=1000,
+        )
+        assert decision.allowed is True
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_boundary_data_age(self, mock_defaults):
+        """Test exact boundary for absolute max data age."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Exactly at max age
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=24.0,
+            sync_failures=10,
+            games_available=1000,
+        )
+        # Should be allowed (at limit, not over)
+        assert decision.allowed is True
+
+        # Just over max age
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=24.1,
+            sync_failures=10,
+            games_available=1000,
+        )
+        # Should be blocked
+        assert decision.allowed is False
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_multiple_configs_independent(self, mock_defaults):
+        """Test that multiple configs are tracked independently."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Record failures for hex8_2p but not square8_4p
+        for _ in range(5):
+            controller.record_sync_failure("hex8_2p")
+
+        # hex8_2p should allow fallback
+        decision_hex = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            games_available=1000,
+        )
+        assert decision_hex.allowed is True
+
+        # square8_4p should not (no failures recorded)
+        decision_sq = controller.should_allow_training(
+            config_key="square8_4p",
+            data_age_hours=1.0,
+            games_available=1000,
+        )
+        assert decision_sq.allowed is False
+
+
+# =============================================================================
+# ERROR HANDLING TESTS
+# =============================================================================
+
+
+class TestErrorHandling:
+    """Tests for error handling and graceful degradation."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_training_fallback_controller()
+
+    def teardown_method(self):
+        """Reset singleton after each test."""
+        reset_training_fallback_controller()
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_event_router_import_error(self, mock_defaults):
+        """Event emission should handle import errors gracefully."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = True
+
+        controller = TrainingFallbackController()
+
+        # Patch get_router to raise ImportError
+        with patch("app.coordination.stale_fallback.get_router") as mock_get_router:
+            mock_get_router.side_effect = ImportError("Module not found")
+
+            # Should not crash, just skip event emission
+            decision = controller.should_allow_training(
+                config_key="hex8_2p",
+                data_age_hours=1.0,
+                sync_failures=10,
+                games_available=1000,
+            )
+            assert decision.allowed is True
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_event_router_exception(self, mock_defaults):
+        """Event emission should handle router exceptions gracefully."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 5
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = True
+
+        controller = TrainingFallbackController()
+
+        with patch("app.coordination.stale_fallback.get_router") as mock_get_router:
+            mock_router = MagicMock()
+            mock_router.publish_sync.side_effect = RuntimeError("Router error")
+            mock_get_router.return_value = mock_router
+
+            # Should not crash, just skip event emission
+            decision = controller.should_allow_training(
+                config_key="hex8_2p",
+                data_age_hours=1.0,
+                sync_failures=10,
+                games_available=1000,
+            )
+            assert decision.allowed is True
+
+
+# =============================================================================
+# TIMEOUT HANDLING TESTS (Critical for 48-hour autonomous operation)
+# =============================================================================
+
+
+class TestTimeoutHandling:
+    """Tests for timeout-related behavior."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_training_fallback_controller()
+
+    def teardown_method(self):
+        """Reset singleton after each test."""
+        reset_training_fallback_controller()
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_elapsed_time_from_tracked_first_failure(self, mock_defaults):
+        """Elapsed time should be calculated from tracked first failure."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 1000  # Won't trigger
+        mock_defaults.MAX_SYNC_DURATION = 0.01  # 10ms - should trigger quickly
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Record a failure to start the timer
+        controller.record_sync_failure("hex8_2p")
+
+        # Wait a bit
+        time.sleep(0.02)
+
+        # Should now trigger based on duration (elapsed from first failure)
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            # Don't pass elapsed_sync_time - should calculate from first_failure_time
+            games_available=1000,
+        )
+        assert decision.allowed is True
+        assert decision.elapsed_time >= 0.01
+
+    @patch("app.coordination.stale_fallback.StaleFallbackDefaults")
+    def test_passed_elapsed_time_takes_precedence(self, mock_defaults):
+        """Explicitly passed elapsed_sync_time should take precedence."""
+        mock_defaults.ENABLE_STALE_FALLBACK = True
+        mock_defaults.ABSOLUTE_MAX_DATA_AGE = 24.0
+        mock_defaults.MIN_GAMES_FOR_FALLBACK = 0
+        mock_defaults.MAX_SYNC_FAILURES = 1000  # Won't trigger
+        mock_defaults.MAX_SYNC_DURATION = 1000.0
+        mock_defaults.FALLBACK_COOLDOWN = 0.0
+        mock_defaults.EMIT_FALLBACK_EVENTS = False
+
+        controller = TrainingFallbackController()
+
+        # Record a failure to start the timer
+        controller.record_sync_failure("hex8_2p")
+
+        # Pass explicit elapsed time that exceeds threshold
+        decision = controller.should_allow_training(
+            config_key="hex8_2p",
+            data_age_hours=1.0,
+            elapsed_sync_time=1500.0,  # Exceeds 1000s threshold
+            games_available=1000,
+        )
+        assert decision.allowed is True
+        assert decision.elapsed_time == 1500.0

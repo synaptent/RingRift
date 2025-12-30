@@ -96,22 +96,24 @@ These flags are read directly by runtime modules and bypass `unified_config`. De
 
 ### Rules, validation, and parity
 
-| Variable                               | Description                                                    | Default           |
-| -------------------------------------- | -------------------------------------------------------------- | ----------------- |
-| `RINGRIFT_RULES_VERSION`               | Rules engine version tag                                       | `v1`              |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS`       | Skip mutator shadow contract validation                        | `true`            |
-| `RINGRIFT_RULES_MUTATOR_FIRST`         | Enable mutator-first orchestration (requires server flag)      | `false`           |
-| `RINGRIFT_SERVER_ENABLE_MUTATOR_FIRST` | Allow mutator-first mode at all                                | `false`           |
-| `RINGRIFT_FORCE_BOOKKEEPING_MOVES`     | Synthesize required no\_\* bookkeeping moves for current actor | `false`           |
-| `RINGRIFT_FSM_VALIDATION_MODE`         | FSM validation mode (`active`, `off`)                          | `active`          |
-| `RINGRIFT_STRICT_NO_MOVE_INVARIANT`    | Strict legacy move invariant checks                            | `false`           |
-| `RINGRIFT_SKIP_PHASE_INVARIANT`        | Skip legacy phase invariant checks                             | `false`           |
-| `RINGRIFT_RECOVERY_STACK_STRIKE_V1`    | Enable recovery stack-strike fallback                          | `true`            |
-| `RINGRIFT_PARITY_VALIDATION`           | Parity validation mode (`off`, `warn`, `strict`)               | `off`             |
-| `RINGRIFT_PARITY_DUMP_DIR`             | Parity failure dump directory                                  | `parity_failures` |
-| `RINGRIFT_NPX_PATH`                    | Override npx path for TS parity                                | `unset`           |
-| `RINGRIFT_TS_REPLAY_DUMP_DIR`          | TS replay dump directory                                       | `unset`           |
-| `RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K`   | TS replay dump move index                                      | `unset`           |
+| Variable                               | Description                                                       | Default           |
+| -------------------------------------- | ----------------------------------------------------------------- | ----------------- |
+| `RINGRIFT_RULES_VERSION`               | Rules engine version tag                                          | `v1`              |
+| `RINGRIFT_SKIP_SHADOW_CONTRACTS`       | Skip mutator shadow contract validation                           | `true`            |
+| `RINGRIFT_RULES_MUTATOR_FIRST`         | Enable mutator-first orchestration (requires server flag)         | `false`           |
+| `RINGRIFT_SERVER_ENABLE_MUTATOR_FIRST` | Allow mutator-first mode at all                                   | `false`           |
+| `RINGRIFT_FORCE_BOOKKEEPING_MOVES`     | Synthesize required no\_\* bookkeeping moves for current actor    | `false`           |
+| `RINGRIFT_FSM_VALIDATION_MODE`         | FSM validation mode (`active`, `off`)                             | `active`          |
+| `RINGRIFT_STRICT_NO_MOVE_INVARIANT`    | Strict legacy move invariant checks                               | `false`           |
+| `RINGRIFT_SKIP_PHASE_INVARIANT`        | Skip legacy phase invariant checks                                | `false`           |
+| `RINGRIFT_RECOVERY_STACK_STRIKE_V1`    | Enable recovery stack-strike fallback                             | `true`            |
+| `RINGRIFT_PARITY_VALIDATION`           | Parity validation mode (`off`, `warn`, `strict`)                  | `off`             |
+| `RINGRIFT_PARITY_DUMP_DIR`             | Parity failure dump directory                                     | `parity_failures` |
+| `RINGRIFT_PARITY_BACKEND`              | Parity backend (`auto`, `ts`, `python_only`, `ts_hashes`, `skip`) | `auto`            |
+| `RINGRIFT_SKIP_PARITY`                 | Skip parity validation entirely                                   | `false`           |
+| `RINGRIFT_NPX_PATH`                    | Override npx path for TS parity                                   | `unset`           |
+| `RINGRIFT_TS_REPLAY_DUMP_DIR`          | TS replay dump directory                                          | `unset`           |
+| `RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K`   | TS replay dump move index                                         | `unset`           |
 
 ### Recording and replay metadata
 
