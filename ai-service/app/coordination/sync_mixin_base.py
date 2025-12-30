@@ -216,6 +216,102 @@ class SyncMixinBase(ABC):
         """Log an error message with standard prefix."""
         logger.error(f"{self.LOG_PREFIX} {message}")
 
+    async def _retry_with_backoff(
+        self,
+        async_func: Any,
+        *args: Any,
+        max_retries: int | None = None,
+        base_delay: float | None = None,
+        max_delay: float | None = None,
+        backoff_multiplier: float | None = None,
+        non_retryable_errors: tuple[str, ...] = ("Connection refused", "No route to host"),
+        operation_name: str = "operation",
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Execute an async function with exponential backoff retry.
+
+        December 2025: Extracted from sync_push_mixin.py to consolidate
+        retry logic across all sync mixins.
+
+        Args:
+            async_func: Async function to execute
+            *args: Positional arguments for the function
+            max_retries: Max retry attempts (default from RetryDefaults)
+            base_delay: Initial delay between retries in seconds
+            max_delay: Maximum delay between retries
+            backoff_multiplier: Multiplier for exponential backoff
+            non_retryable_errors: Error substrings that should not trigger retry
+            operation_name: Name for logging purposes
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            Result dict from the function, or error dict on failure
+        """
+        import asyncio
+        import random
+
+        # Get retry defaults
+        try:
+            from app.config.coordination_defaults import RetryDefaults
+            max_retries = max_retries if max_retries is not None else RetryDefaults.SYNC_MAX_RETRIES
+            base_delay = base_delay if base_delay is not None else RetryDefaults.SYNC_BASE_DELAY
+            max_delay = max_delay if max_delay is not None else RetryDefaults.SYNC_MAX_DELAY
+            backoff_multiplier = backoff_multiplier if backoff_multiplier is not None else RetryDefaults.BACKOFF_MULTIPLIER
+        except ImportError:
+            max_retries = max_retries if max_retries is not None else 3
+            base_delay = base_delay if base_delay is not None else 2.0
+            max_delay = max_delay if max_delay is not None else 30.0
+            backoff_multiplier = backoff_multiplier if backoff_multiplier is not None else 2.0
+
+        last_result: dict[str, Any] | None = None
+
+        for attempt in range(max_retries):
+            try:
+                result = await async_func(*args, **kwargs)
+
+                # Check if result indicates success
+                if isinstance(result, dict):
+                    if result.get("success"):
+                        if attempt > 0:
+                            self._log_info(f"{operation_name} succeeded on attempt {attempt + 1}")
+                        return result
+                    last_result = result
+                    error = str(result.get("error", "Unknown"))
+                else:
+                    # Non-dict result treated as success
+                    return {"success": True, "result": result}
+
+            except Exception as e:
+                error = str(e)
+                last_result = {"success": False, "error": error}
+
+            # Check if we should retry
+            if any(non_ret in error for non_ret in non_retryable_errors):
+                self._log_debug(f"Not retrying {operation_name}: {error}")
+                break
+
+            if attempt < max_retries - 1:
+                # Calculate delay with exponential backoff
+                delay = min(base_delay * (backoff_multiplier ** attempt), max_delay)
+                # Add jitter (+/-10%)
+                jitter = delay * 0.1 * (random.random() * 2 - 1)
+                delay = delay + jitter
+
+                self._log_debug(
+                    f"{operation_name} failed (attempt {attempt + 1}), "
+                    f"retrying in {delay:.1f}s: {error}"
+                )
+                await asyncio.sleep(delay)
+
+        # All retries exhausted
+        if last_result and max_retries > 1:
+            self._log_warning(
+                f"{operation_name} failed after {max_retries} attempts: "
+                f"{last_result.get('error', 'Unknown')}"
+            )
+
+        return last_result or {"success": False, "error": "No result"}
+
     # Abstract methods - centralized declarations for all mixins
     @abstractmethod
     async def _emit_sync_failure(self, target_node: str, db_path: str, error: str) -> None:
