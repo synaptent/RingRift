@@ -26,7 +26,7 @@ from app.training.streaming_pipeline import (
     CircularBuffer,
     DatabasePoller,
     GameSample,
-    MultiDatabasePipeline,
+    MultiDBStreamingPipeline,  # Renamed from MultiDatabasePipeline
     StreamingConfig,
     StreamingDataPipeline,
     extract_samples_from_game,
@@ -638,12 +638,12 @@ class TestStreamingDataPipeline:
 
 
 # =============================================================================
-# MultiDatabasePipeline Tests
+# MultiDBStreamingPipeline Tests
 # =============================================================================
 
 
-class TestMultiDatabasePipeline:
-    """Tests for MultiDatabasePipeline class."""
+class TestMultiDBStreamingPipeline:
+    """Tests for MultiDBStreamingPipeline class."""
 
     @pytest.fixture
     def temp_dbs(self, tmp_path):
@@ -686,7 +686,7 @@ class TestMultiDatabasePipeline:
 
     def test_init(self, temp_dbs):
         """Test multi-database pipeline initialization."""
-        pipeline = MultiDatabasePipeline(
+        pipeline = MultiDBStreamingPipeline(
             db_paths=temp_dbs,
             board_type="hex8",
         )
@@ -695,7 +695,7 @@ class TestMultiDatabasePipeline:
 
     def test_get_aggregate_stats(self, temp_dbs):
         """Test aggregate statistics."""
-        pipeline = MultiDatabasePipeline(db_paths=temp_dbs)
+        pipeline = MultiDBStreamingPipeline(db_paths=temp_dbs)
 
         stats = pipeline.get_aggregate_stats()
 
