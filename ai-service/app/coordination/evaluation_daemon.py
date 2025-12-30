@@ -801,7 +801,7 @@ class EvaluationDaemon(BaseEventHandler):
         harness_results for multi-harness evaluation support.
         """
         try:
-            from app.coordination.event_emitters import emit_evaluation_completed
+            from app.coordination.event_router import emit_evaluation_completed
 
             # Calculate total games played
             if result.get("is_multi_harness"):

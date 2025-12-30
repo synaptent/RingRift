@@ -2313,23 +2313,67 @@ async def emit_training_failed(
 
 
 async def emit_evaluation_completed(
-    model_id: str,
-    elo: float,
+    model_id: str | None = None,
+    elo: float | None = None,
     win_rate: float = 0.0,
     games_played: int = 0,
+    # December 30, 2025: Added explicit parameters for evaluation_daemon compatibility
+    model_path: str | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
+    opponent_results: dict | None = None,
+    harness_results: dict | None = None,
+    best_harness: str | None = None,
+    best_elo: float | None = None,
+    composite_participant_ids: list | None = None,
+    is_multi_harness: bool = False,
     **extra_payload
 ) -> None:
-    """Emit EVALUATION_COMPLETED event to all systems."""
+    """Emit EVALUATION_COMPLETED event to all systems.
+
+    December 30, 2025: Extended with multi-harness evaluation support.
+    - harness_results: Dict of harness_name -> {elo, win_rate, games_played, composite_participant_id}
+    - composite_participant_ids: List of composite IDs for (model, harness) combinations
+    - is_multi_harness: True if evaluated under multiple harnesses
+    """
+    # Use model_path as model_id if not provided
+    effective_model_id = model_id or model_path or "unknown"
+    # Use best_elo if available, otherwise passed elo
+    effective_elo = best_elo if best_elo is not None else (elo or 0.0)
+
+    payload = {
+        "model_id": effective_model_id,
+        "model_path": model_path,
+        "elo": effective_elo,
+        "win_rate": win_rate,
+        "games_played": games_played,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+    # Add optional fields if provided
+    if board_type is not None:
+        payload["board_type"] = board_type
+    if num_players is not None:
+        payload["num_players"] = num_players
+    if opponent_results is not None:
+        payload["opponent_results"] = opponent_results
+    if harness_results is not None:
+        payload["harness_results"] = harness_results
+    if best_harness is not None:
+        payload["best_harness"] = best_harness
+    if best_elo is not None:
+        payload["best_elo"] = best_elo
+    if composite_participant_ids is not None:
+        payload["composite_participant_ids"] = composite_participant_ids
+    if is_multi_harness:
+        payload["is_multi_harness"] = is_multi_harness
+
+    # Add any extra payload
+    payload.update(extra_payload)
+
     await publish(
         event_type="EVALUATION_COMPLETED",
-        payload={
-            "model_id": model_id,
-            "elo": elo,
-            "win_rate": win_rate,
-            "games_played": games_played,
-            "timestamp": datetime.now().isoformat(),
-            **extra_payload,
-        },
+        payload=payload,
         source="evaluation",
     )
 

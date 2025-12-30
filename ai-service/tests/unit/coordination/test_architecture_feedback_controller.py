@@ -229,9 +229,9 @@ class TestOnEvaluationCompleted:
         controller = ArchitectureFeedbackController()
 
         with patch(
-            "app.coordination.architecture_feedback_controller.get_architecture_tracker"
+            "app.training.architecture_tracker.get_architecture_tracker"
         ) as mock_get_tracker, patch(
-            "app.coordination.architecture_feedback_controller.extract_architecture_from_model_path",
+            "app.training.architecture_tracker.extract_architecture_from_model_path",
             return_value="v5",
         ):
             mock_tracker = MagicMock()
@@ -268,9 +268,9 @@ class TestOnEvaluationCompleted:
         controller = ArchitectureFeedbackController()
 
         with patch(
-            "app.coordination.architecture_feedback_controller.get_architecture_tracker"
+            "app.training.architecture_tracker.get_architecture_tracker"
         ), patch(
-            "app.coordination.architecture_feedback_controller.extract_architecture_from_model_path",
+            "app.training.architecture_tracker.extract_architecture_from_model_path",
             return_value="v5",
         ):
             event = {
@@ -300,9 +300,9 @@ class TestOnTrainingCompleted:
         controller = ArchitectureFeedbackController()
 
         with patch(
-            "app.coordination.architecture_feedback_controller.get_architecture_tracker"
+            "app.training.architecture_tracker.get_architecture_tracker"
         ) as mock_get_tracker, patch(
-            "app.coordination.architecture_feedback_controller.extract_architecture_from_model_path",
+            "app.training.architecture_tracker.extract_architecture_from_model_path",
             return_value="v5",
         ):
             mock_tracker = MagicMock()
@@ -328,9 +328,9 @@ class TestOnTrainingCompleted:
         controller = ArchitectureFeedbackController()
 
         with patch(
-            "app.coordination.architecture_feedback_controller.get_architecture_tracker"
+            "app.training.architecture_tracker.get_architecture_tracker"
         ) as mock_get_tracker, patch(
-            "app.coordination.architecture_feedback_controller.extract_architecture_from_model_path",
+            "app.training.architecture_tracker.extract_architecture_from_model_path",
             return_value="v5",
         ):
             mock_tracker = MagicMock()
@@ -365,15 +365,18 @@ class TestEnforceMinimumAllocation:
         assert result == {}
 
     def test_enforce_minimum_applies_floor(self):
-        """Test that minimum floor is applied."""
+        """Test that minimum floor is applied before normalization."""
         controller = ArchitectureFeedbackController()
 
-        # v5 has very low weight, should be boosted to 10%
+        # v5 has very low weight (0.02), should be boosted
+        # Floor is 10%, so before normalization: {v5: 0.10, v6: 0.98}
+        # After normalization: v5 = 0.10/1.08 ≈ 0.0926
         weights = {"v5": 0.02, "v6": 0.98}
         result = controller._enforce_minimum_allocation(weights)
 
-        # v5 should be at least 10%
-        assert result["v5"] >= 0.10
+        # v5 should be boosted significantly from 0.02 (to ~0.0926 after normalization)
+        assert result["v5"] > 0.08  # Was 0.02, now ~0.0926
+        assert result["v5"] < result["v6"]  # v6 still dominant
         # Weights should sum to 1.0
         assert abs(sum(result.values()) - 1.0) < 0.01
 

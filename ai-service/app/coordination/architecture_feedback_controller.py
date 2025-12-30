@@ -377,7 +377,7 @@ class ArchitectureFeedbackController(HandlerBase):
         }
 
         return HealthCheckResult(
-            status=CoordinatorStatus.HEALTHY if is_healthy else CoordinatorStatus.DEGRADED,
+            status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED,
             message="Running" if is_healthy else "Not running",
             details=details,
         )

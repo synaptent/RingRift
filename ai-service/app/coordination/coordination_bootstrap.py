@@ -1155,19 +1155,39 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     # 25. Wire EVALUATION_COMPLETED to ArchitectureTracker (Phase 5A)
     # December 2025: Track architecture performance for allocation decisions
+    # December 30, 2025: Enhanced error visibility and event emission on failure
     try:
         from app.training.architecture_tracker import wire_architecture_tracker_to_events
 
         success = wire_architecture_tracker_to_events()
         results["architecture_tracker"] = success
         if success:
-            logger.debug("[Bootstrap] Wired EVALUATION_COMPLETED -> ArchitectureTracker")
+            logger.info("[Bootstrap] Wired EVALUATION_COMPLETED -> ArchitectureTracker")
         else:
-            logger.warning("[Bootstrap] ArchitectureTracker wiring returned False")
+            # December 30, 2025: More visible warning + emit degraded operation event
+            logger.error(
+                "[Bootstrap] ArchitectureTracker wiring FAILED - "
+                "architecture allocation weights will not be updated automatically. "
+                "Check that event_router is properly initialized."
+            )
+            try:
+                from app.coordination.event_router import publish
+                import asyncio
+                asyncio.create_task(publish(
+                    event_type="BOOTSTRAP_DEGRADED",
+                    payload={
+                        "component": "architecture_tracker",
+                        "reason": "wiring_failed",
+                        "impact": "Architecture allocation weights unavailable",
+                    },
+                    source="bootstrap",
+                ))
+            except Exception:  # noqa: BLE001
+                pass  # Best effort event emission
 
     except (ImportError, AttributeError, TypeError) as e:
         results["architecture_tracker"] = False
-        logger.warning(f"[Bootstrap] Failed to wire architecture tracker: {e}")
+        logger.error(f"[Bootstrap] Failed to wire architecture tracker: {e}")
 
     wired = sum(1 for v in results.values() if v)
     total = len(results)

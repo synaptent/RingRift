@@ -57,26 +57,41 @@ python scripts/update_all_nodes.py --restart-p2p
 | `app/config/env.py`                   | Typed environment variables (`env.node_id`, `env.log_level`)   |
 | `app/config/cluster_config.py`        | Cluster node access (`get_cluster_nodes()`, `get_gpu_nodes()`) |
 | `app/config/coordination_defaults.py` | Centralized timeouts, thresholds, priority weights             |
-| `app/config/thresholds.py`            | Training/selfplay budget constants                             |
+| `app/config/thresholds.py`            | Centralized quality/training/budget thresholds (canonical)     |
 
 ### Coordination Infrastructure (255 modules)
 
-| Module                          | Purpose                                            |
-| ------------------------------- | -------------------------------------------------- |
-| `daemon_manager.py`             | Lifecycle for 97 daemon types (~2,000 LOC)         |
-| `daemon_registry.py`            | Declarative daemon specs (DaemonSpec dataclass)    |
-| `daemon_runners.py`             | 88 async runner functions                          |
-| `event_router.py`               | Unified event bus (220+ event types, SHA256 dedup) |
-| `selfplay_scheduler.py`         | Priority-based selfplay allocation (~3,800 LOC)    |
-| `budget_calculator.py`          | Gumbel budget tiers, target games calculation      |
-| `progress_watchdog_daemon.py`   | Stall detection for 48h autonomous operation       |
-| `p2p_recovery_daemon.py`        | P2P cluster health recovery                        |
-| `stale_fallback.py`             | Graceful degradation with older models             |
-| `data_pipeline_orchestrator.py` | Pipeline stage tracking                            |
-| `auto_sync_daemon.py`           | P2P data synchronization                           |
-| `sync_router.py`                | Intelligent sync routing                           |
-| `feedback_loop_controller.py`   | Training feedback signals                          |
-| `health_facade.py`              | Unified health check API                           |
+| Module                                 | Purpose                                            |
+| -------------------------------------- | -------------------------------------------------- |
+| `daemon_manager.py`                    | Lifecycle for 97 daemon types (~2,000 LOC)         |
+| `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)    |
+| `daemon_runners.py`                    | 88 async runner functions                          |
+| `event_router.py`                      | Unified event bus (220+ event types, SHA256 dedup) |
+| `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)    |
+| `budget_calculator.py`                 | Gumbel budget tiers, target games calculation      |
+| `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation       |
+| `p2p_recovery_daemon.py`               | P2P cluster health recovery                        |
+| `stale_fallback.py`                    | Graceful degradation with older models             |
+| `data_pipeline_orchestrator.py`        | Pipeline stage tracking                            |
+| `auto_sync_daemon.py`                  | P2P data synchronization                           |
+| `sync_router.py`                       | Intelligent sync routing                           |
+| `feedback_loop_controller.py`          | Training feedback signals                          |
+| `health_facade.py`                     | Unified health check API                           |
+| `quality_monitor_daemon.py`            | Monitors selfplay data quality, emits events       |
+| `quality_analysis.py`                  | Quality scoring, intensity mapping, thresholds     |
+| `training_trigger_daemon.py`           | Automatic training decision logic                  |
+| `architecture_feedback_controller.py`  | NN architecture selection based on evaluation      |
+| `npz_combination_daemon.py`            | Quality-weighted NPZ file combination              |
+| `evaluation_daemon.py`                 | Model evaluation with retry and backpressure       |
+| `auto_promotion_daemon.py`             | Automatic model promotion after evaluation         |
+| `unified_distribution_daemon.py`       | Model and NPZ distribution to cluster              |
+| `unified_replication_daemon.py`        | Data replication monitoring and repair             |
+| `training_coordinator.py`              | Training job management and coordination           |
+| `connectivity_recovery_coordinator.py` | Network recovery and reconnection                  |
+| `curriculum_feedback_handler.py`       | Curriculum adjustment based on performance         |
+| `cascade_training.py`                  | Cascade training across architectures              |
+| `orphan_detection_daemon.py`           | Detects incomplete selfplay records                |
+| `integrity_check_daemon.py`            | Data integrity validation                          |
 
 ### AI Components
 
