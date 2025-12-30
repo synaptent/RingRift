@@ -645,6 +645,10 @@ class DataLocationRegistry:
             """, (model_path, node_id, board_type, num_players, model_version,
                   file_size, model_path, node_id, now, now))
             conn.commit()
+        # Invalidate cache for this model and config
+        self._cache.invalidate(f"model:{model_path}")
+        if board_type and num_players:
+            self._cache.invalidate(f"models_config:{board_type}_{num_players}p")
 
     def find_model(self, model_path: str) -> list["ModelLocation"]:
         """Find all locations where a model exists.
@@ -658,7 +662,17 @@ class DataLocationRegistry:
         -------
         list[ModelLocation]
             List of ModelLocation objects.
+
+        Note
+        ----
+        December 29, 2025: Results are cached with 5-minute TTL.
         """
+        # Check cache first
+        cache_key = f"model:{model_path}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from app.distributed.cluster_manifest import ModelLocation
 
         with self._connection() as conn:
@@ -683,6 +697,8 @@ class DataLocationRegistry:
                     last_seen=row[7],
                 ))
 
+            # Cache the result
+            self._cache.set(cache_key, locations)
             return locations
 
     def find_models_for_config(
@@ -703,7 +719,17 @@ class DataLocationRegistry:
         -------
         list[ModelLocation]
             List of ModelLocation objects.
+
+        Note
+        ----
+        December 29, 2025: Results are cached with 5-minute TTL.
         """
+        # Check cache first
+        cache_key = f"models_config:{board_type}_{num_players}p"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from app.distributed.cluster_manifest import ModelLocation
 
         with self._connection() as conn:
@@ -729,6 +755,8 @@ class DataLocationRegistry:
                     last_seen=row[7],
                 ))
 
+            # Cache the result
+            self._cache.set(cache_key, locations)
             return locations
 
     def get_model_availability_score(self, model_path: str) -> float:
@@ -913,6 +941,9 @@ class DataLocationRegistry:
             """, (npz_path, node_id, board_type, num_players, sample_count,
                   file_size, npz_path, node_id, now, now))
             conn.commit()
+        # Invalidate cache for this config
+        if board_type and num_players:
+            self._cache.invalidate(f"npz_config:{board_type}_{num_players}p")
 
     def find_npz_for_config(
         self,
@@ -932,7 +963,17 @@ class DataLocationRegistry:
         -------
         list[NPZLocation]
             List of NPZLocation objects.
+
+        Note
+        ----
+        December 29, 2025: Results are cached with 5-minute TTL.
         """
+        # Check cache first
+        cache_key = f"npz_config:{board_type}_{num_players}p"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from app.distributed.cluster_manifest import NPZLocation
 
         with self._connection() as conn:
@@ -958,6 +999,8 @@ class DataLocationRegistry:
                     last_seen=row[7],
                 ))
 
+            # Cache the result
+            self._cache.set(cache_key, locations)
             return locations
 
     # =========================================================================
@@ -1022,6 +1065,13 @@ class DataLocationRegistry:
                   checkpoint_path, node_id, now, now))
             conn.commit()
 
+        # Invalidate cache for this checkpoint and config
+        self._cache.invalidate(f"checkpoint:{checkpoint_path}")
+        if config_key:
+            self._cache.invalidate(f"checkpoints_config:{config_key}")
+            self._cache.invalidate(f"checkpoints_config:{config_key}_best")
+            self._cache.invalidate(f"latest_checkpoint:{config_key}")
+
         logger.debug(f"Registered checkpoint: {checkpoint_path} on {node_id} (epoch={epoch})")
 
     def find_checkpoint(self, checkpoint_path: str) -> list["CheckpointLocation"]:
@@ -1036,7 +1086,17 @@ class DataLocationRegistry:
         -------
         list[CheckpointLocation]
             List of CheckpointLocation objects.
+
+        Note
+        ----
+        December 29, 2025: Results are cached with 5-minute TTL.
         """
+        # Check cache first
+        cache_key = f"checkpoint:{checkpoint_path}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from app.distributed.cluster_manifest import CheckpointLocation
 
         with self._connection() as conn:
@@ -1065,6 +1125,8 @@ class DataLocationRegistry:
                     last_seen=row[11],
                 ))
 
+            # Cache the result
+            self._cache.set(cache_key, locations)
             return locations
 
     def find_checkpoints_for_config(
@@ -1085,7 +1147,17 @@ class DataLocationRegistry:
         -------
         list[CheckpointLocation]
             List of CheckpointLocation objects, sorted by epoch descending.
+
+        Note
+        ----
+        December 29, 2025: Results are cached with 5-minute TTL.
         """
+        # Check cache first
+        cache_key = f"checkpoints_config:{config_key}{'_best' if only_best else ''}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from app.distributed.cluster_manifest import CheckpointLocation
 
         with self._connection() as conn:
@@ -1125,6 +1197,8 @@ class DataLocationRegistry:
                     last_seen=row[11],
                 ))
 
+            # Cache the result
+            self._cache.set(cache_key, locations)
             return locations
 
     def get_latest_checkpoint_for_config(

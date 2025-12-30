@@ -1679,6 +1679,33 @@ async def create_tailscale_health() -> None:
         raise
 
 
+async def create_connectivity_recovery() -> None:
+    """Create and run ConnectivityRecoveryCoordinator.
+
+    December 29, 2025: Unified event-driven connectivity recovery.
+
+    Bridges TailscaleHealthDaemon, NodeAvailabilityDaemon, and P2P orchestrator:
+    - Subscribes to TAILSCALE_DISCONNECTED, TAILSCALE_RECOVERED events
+    - Subscribes to P2P_NODE_DEAD, HOST_OFFLINE, HOST_ONLINE events
+    - Triggers SSH-based Tailscale recovery for masked failures
+    - Escalates persistent failures with Slack alerts
+    - Tracks connectivity state for all nodes
+
+    Emits: TAILSCALE_RECOVERED (after SSH recovery), CONNECTIVITY_RECOVERY_ESCALATED
+    """
+    try:
+        from app.coordination.connectivity_recovery_coordinator import (
+            get_connectivity_recovery_coordinator,
+        )
+
+        daemon = get_connectivity_recovery_coordinator()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"ConnectivityRecoveryCoordinator not available: {e}")
+        raise
+
+
 # =============================================================================
 # Runner Registry
 # =============================================================================
@@ -1781,6 +1808,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.P2P_RECOVERY.name: create_p2p_recovery,
         # Tailscale health monitoring (December 29, 2025)
         DaemonType.TAILSCALE_HEALTH.name: create_tailscale_health,
+        # Connectivity recovery coordinator (December 29, 2025)
+        DaemonType.CONNECTIVITY_RECOVERY.name: create_connectivity_recovery,
     }
 
 

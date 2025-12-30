@@ -845,30 +845,53 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         target_conn: sqlite3.Connection,
         game_id: str,
     ) -> None:
-        """Copy related game data (moves, states, players) from source to target."""
-        tables_and_columns = [
-            ("game_moves", "game_id, move_number, player, position_q, position_r, move_type, move_probs"),
-            ("game_initial_state", "game_id, state_json"),
-            ("game_state_snapshots", "game_id, move_number, state_json"),
-            ("game_players", "game_id, player_index, player_type, model_version"),
-        ]
+        """Copy related game data (moves, states, players) from source to target.
 
-        for table, columns in tables_and_columns:
+        December 29, 2025: Fixed to use SELECT * and dynamically get columns,
+        then filter to only columns that exist in target table. This handles
+        schema evolution where source and target may have different columns.
+        """
+        tables = ["game_moves", "game_initial_state", "game_state_snapshots", "game_players"]
+
+        for table in tables:
             try:
+                # December 29, 2025: Get target columns for this table
+                target_cursor = target_conn.execute(f"PRAGMA table_info({table})")
+                target_cols = {row[1] for row in target_cursor.fetchall()}
+                if not target_cols:
+                    continue  # Target table doesn't exist
+
+                # Query all data from source for this game
                 cursor = source_conn.execute(
-                    f"SELECT {columns} FROM {table} WHERE game_id = ?",
+                    f"SELECT * FROM {table} WHERE game_id = ?",
                     (game_id,)
                 )
                 rows = cursor.fetchall()
 
-                if rows:
-                    placeholders = ",".join("?" * len(columns.split(", ")))
-                    target_conn.executemany(
-                        f"INSERT OR IGNORE INTO {table} ({columns}) VALUES ({placeholders})",
-                        rows
-                    )
-            except sqlite3.Error:
-                pass  # Table might not exist in source
+                if not rows:
+                    continue
+
+                # Get source columns and filter to those in target
+                source_cols = [desc[0] for desc in cursor.description]
+                common_cols = [c for c in source_cols if c in target_cols]
+                col_indices = [source_cols.index(c) for c in common_cols]
+
+                if not common_cols:
+                    continue
+
+                # Build filtered rows with only common columns
+                filtered_rows = [
+                    tuple(row[i] for i in col_indices)
+                    for row in rows
+                ]
+
+                placeholders = ",".join("?" * len(common_cols))
+                target_conn.executemany(
+                    f"INSERT OR IGNORE INTO {table} ({','.join(common_cols)}) VALUES ({placeholders})",
+                    filtered_rows
+                )
+            except sqlite3.Error as e:
+                logger.debug(f"[DataConsolidationDaemon] Error copying {table}: {e}")
 
     async def _emit_consolidation_started(
         self,

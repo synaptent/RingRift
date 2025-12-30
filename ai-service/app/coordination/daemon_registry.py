@@ -601,6 +601,19 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         auto_restart=True,
         max_restarts=20,  # Critical for connectivity - allow many restarts
     ),
+    # =========================================================================
+    # Connectivity Recovery Coordinator (December 29, 2025)
+    # Unified event-driven connectivity recovery
+    # Bridges TailscaleHealthDaemon, NodeAvailabilityDaemon, P2P orchestrator
+    # =========================================================================
+    DaemonType.CONNECTIVITY_RECOVERY: DaemonSpec(
+        runner_name="create_connectivity_recovery",
+        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.TAILSCALE_HEALTH),
+        category="recovery",
+        health_check_interval=60.0,  # 1 min - monitor recovery state
+        auto_restart=True,
+        max_restarts=10,
+    ),
 }
 
 

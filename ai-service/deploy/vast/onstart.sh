@@ -26,28 +26,61 @@ echo "[$(date)] Node ID: $NODE_ID"
 # ============================================
 # 1. Install and configure Tailscale
 # ============================================
+# Enhanced December 2025 with:
+# - Retry logic for installation
+# - Userspace networking for containers
+# - State directory creation
+# - Persistent recovery via .bashrc
+# ============================================
 install_tailscale() {
     echo "[$(date)] Installing Tailscale..."
 
-    if command -v tailscale &> /dev/null; then
-        echo "[$(date)] Tailscale already installed"
-    else
-        curl -fsSL https://tailscale.com/install.sh | sh
+    # Retry installation up to 3 times
+    for attempt in 1 2 3; do
+        if command -v tailscale &> /dev/null; then
+            echo "[$(date)] Tailscale already installed"
+            break
+        fi
+        echo "[$(date)] Installation attempt $attempt/3..."
+        if curl -fsSL https://tailscale.com/install.sh | sh; then
+            echo "[$(date)] Tailscale installed successfully"
+            break
+        fi
+        sleep 5
+    done
+
+    if ! command -v tailscale &> /dev/null; then
+        echo "[$(date)] ERROR: Failed to install Tailscale after 3 attempts"
+        return 1
     fi
 
-    # Start tailscaled
+    # Ensure state directories exist
+    mkdir -p /var/lib/tailscale /var/run/tailscale
+
+    # Kill any stuck tailscaled process
+    pkill -9 tailscaled 2>/dev/null || true
+    sleep 2
+
+    # Start tailscaled in userspace networking mode (for containers)
     if ! pgrep -x tailscaled > /dev/null; then
-        echo "[$(date)] Starting tailscaled..."
-        tailscaled --state=/var/lib/tailscale/tailscaled.state &
-        sleep 3
+        echo "[$(date)] Starting tailscaled in userspace mode (container-friendly)..."
+        nohup tailscaled \
+            --tun=userspace-networking \
+            --statedir=/var/lib/tailscale \
+            > /tmp/tailscaled.log 2>&1 &
+        sleep 5
     fi
 
     # Authenticate with Tailscale
     if [ -n "$TAILSCALE_AUTH_KEY" ]; then
         echo "[$(date)] Authenticating Tailscale..."
-        tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="$NODE_ID" --accept-routes || true
+        tailscale up \
+            --authkey="$TAILSCALE_AUTH_KEY" \
+            --hostname="$NODE_ID" \
+            --accept-routes || true
     else
-        echo "[$(date)] WARNING: TAILSCALE_AUTH_KEY not set, Tailscale not authenticated"
+        echo "[$(date)] WARNING: TAILSCALE_AUTH_KEY not set, trying existing auth..."
+        tailscale up --accept-routes 2>/dev/null || true
     fi
 
     # Wait for Tailscale to connect
@@ -55,12 +88,31 @@ install_tailscale() {
         if tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
             echo "[$(date)] Tailscale connected"
             tailscale ip -4
+            setup_tailscale_persistence
             return 0
         fi
         sleep 2
     done
 
     echo "[$(date)] WARNING: Tailscale connection timeout"
+}
+
+# Add Tailscale recovery to .bashrc for persistence across sessions
+setup_tailscale_persistence() {
+    if ! grep -q "tailscaled.*userspace" ~/.bashrc 2>/dev/null; then
+        echo "[$(date)] Adding Tailscale recovery to .bashrc..."
+        cat >> ~/.bashrc << 'TAILSCALE_EOF'
+
+# RingRift Tailscale auto-recovery (December 2025)
+if ! pgrep -x tailscaled > /dev/null; then
+  echo "[$(date)] Tailscale not running, starting..."
+  mkdir -p /var/lib/tailscale /var/run/tailscale
+  nohup tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale > /tmp/tailscaled.log 2>&1 &
+  sleep 5
+  tailscale up --accept-routes 2>/dev/null || true
+fi
+TAILSCALE_EOF
+    fi
 }
 
 # ============================================
@@ -240,7 +292,54 @@ bootstrap_models() {
 }
 
 # ============================================
-# 6. Health check
+# 6. Start TailscaleHealthDaemon (December 2025)
+# ============================================
+start_tailscale_health_daemon() {
+    echo "[$(date)] Starting TailscaleHealthDaemon..."
+
+    cd "$HOME/ringrift/ai-service"
+
+    # Kill any existing daemon
+    pkill -f tailscale_health_daemon || true
+    sleep 1
+
+    # Start daemon in background
+    nohup python3 -c "
+import asyncio
+from app.coordination.tailscale_health_daemon import get_tailscale_health_daemon
+async def main():
+    daemon = get_tailscale_health_daemon()
+    await daemon.start()
+    while daemon._running:
+        await asyncio.sleep(60)
+asyncio.run(main())
+" >> /tmp/tailscale_health_daemon.log 2>&1 &
+
+    echo "[$(date)] TailscaleHealthDaemon started (PID: $!)"
+
+    # Add to bashrc for persistence
+    if ! grep -q "tailscale_health_daemon" ~/.bashrc 2>/dev/null; then
+        cat >> ~/.bashrc << 'TSHD_EOF'
+# RingRift TailscaleHealthDaemon auto-start
+if ! pgrep -f tailscale_health_daemon > /dev/null; then
+  cd ~/ringrift/ai-service 2>/dev/null && \
+  PYTHONPATH=. nohup python3 -c "
+import asyncio
+from app.coordination.tailscale_health_daemon import get_tailscale_health_daemon
+async def main():
+    daemon = get_tailscale_health_daemon()
+    await daemon.start()
+    while daemon._running:
+        await asyncio.sleep(60)
+asyncio.run(main())
+" >> /tmp/tailscale_health_daemon.log 2>&1 &
+fi
+TSHD_EOF
+    fi
+}
+
+# ============================================
+# 7. Health check
 # ============================================
 health_check() {
     echo "[$(date)] Running health check..."
@@ -268,6 +367,13 @@ health_check() {
         echo "[$(date)] Tailscale: NOT CONNECTED"
     fi
 
+    # Check TailscaleHealthDaemon (December 2025)
+    if pgrep -f tailscale_health_daemon > /dev/null; then
+        echo "[$(date)] TailscaleHealthDaemon: RUNNING"
+    else
+        echo "[$(date)] TailscaleHealthDaemon: NOT RUNNING"
+    fi
+
     # Check P2P health endpoint
     if curl -s http://localhost:8770/health > /dev/null 2>&1; then
         echo "[$(date)] P2P Health Endpoint: OK"
@@ -289,6 +395,7 @@ main() {
     start_keepalive
     start_p2p
     bootstrap_models
+    start_tailscale_health_daemon
     health_check
 
     echo "[$(date)] =========================================="

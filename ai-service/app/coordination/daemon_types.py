@@ -318,6 +318,14 @@ class DaemonType(Enum):
     PROGRESS_WATCHDOG = "progress_watchdog"
     P2P_RECOVERY = "p2p_recovery"
 
+    # =========================================================================
+    # Connectivity Recovery (December 29, 2025)
+    # Unified event-driven connectivity recovery coordinator
+    # Handles: TAILSCALE_DISCONNECTED, P2P_NODE_DEAD, HOST_OFFLINE events
+    # Bridges TailscaleHealthDaemon, NodeAvailabilityDaemon, P2P orchestrator
+    # =========================================================================
+    CONNECTIVITY_RECOVERY = "connectivity_recovery"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -704,6 +712,11 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     # Tailscale health monitoring (December 29, 2025)
     # Runs independently on each node to monitor and auto-recover Tailscale
     DaemonType.TAILSCALE_HEALTH: set(),  # No dependencies - runs independently
+
+    # Connectivity recovery coordinator (December 29, 2025)
+    # Subscribes to TAILSCALE_*, HOST_*, P2P_NODE_DEAD events
+    # Coordinates SSH-based recovery and escalation
+    DaemonType.CONNECTIVITY_RECOVERY: {DaemonType.EVENT_ROUTER, DaemonType.TAILSCALE_HEALTH},
 }
 
 

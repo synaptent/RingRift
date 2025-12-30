@@ -226,18 +226,46 @@ class SyncManagerBase(ABC):
             self._state.last_error = str(e)
             return False
 
-    async def sync_with_cluster(self) -> dict[str, bool]:
+    async def sync_with_cluster(
+        self,
+        max_concurrent: int = 5,
+    ) -> dict[str, bool]:
         """Sync with all nodes in the cluster.
+
+        December 29, 2025: Parallelized sync operations for improved throughput.
+        Uses asyncio.gather with semaphore to limit concurrent connections.
+
+        Args:
+            max_concurrent: Maximum concurrent sync operations (default 5)
 
         Returns:
             Dict mapping node -> success status
         """
         async with self._sync_lock:
-            results: dict[str, bool] = {}
             nodes = self._get_nodes()
+            if not nodes:
+                return {}
 
-            for node in nodes:
-                results[node] = await self.sync_with_node(node)
+            # Use semaphore to limit concurrent syncs
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+            async def sync_with_limit(node: str) -> tuple[str, bool]:
+                async with semaphore:
+                    result = await self.sync_with_node(node)
+                    return (node, result)
+
+            # Run syncs in parallel with limited concurrency
+            tasks = [sync_with_limit(node) for node in nodes]
+            completed = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            results: dict[str, bool] = {}
+            for item in completed:
+                if isinstance(item, Exception):
+                    logger.error(f"Sync task failed: {item}")
+                elif isinstance(item, tuple):
+                    node, success = item
+                    results[node] = success
 
             self._state.last_sync_timestamp = time.time()
             self._state.sync_count += 1

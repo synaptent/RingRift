@@ -999,15 +999,22 @@ class AutoSyncDaemon(
                 logger.debug(f"[AutoSyncDaemon] No databases to sync to {node_id}")
                 return True  # No data to sync is not a failure
 
-            # Sync each database
-            success_count = 0
-            for db in databases:
-                try:
-                    result = await self.sync_to_target_with_retry(db, target)
-                    if result.get("success"):
-                        success_count += 1
-                except (RuntimeError, OSError, ConnectionError) as e:
-                    logger.warning(f"[AutoSyncDaemon] Failed to sync {db.name} to {node_id}: {e}")
+            # December 29, 2025: Sync databases in parallel with limited concurrency
+            max_concurrent = 3  # Limit concurrent transfers to avoid overloading node
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+            async def sync_db_with_limit(db: Path) -> bool:
+                async with semaphore:
+                    try:
+                        result = await self.sync_to_target_with_retry(db, target)
+                        return result.get("success", False)
+                    except (RuntimeError, OSError, ConnectionError) as e:
+                        logger.warning(f"[AutoSyncDaemon] Failed to sync {db.name} to {node_id}: {e}")
+                        return False
+
+            tasks = [sync_db_with_limit(db) for db in databases]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success_count = sum(1 for r in results if r is True)
 
             logger.info(f"[AutoSyncDaemon] Synced {success_count}/{len(databases)} databases to {node_id}")
             return success_count > 0
