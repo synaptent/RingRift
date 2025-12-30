@@ -191,14 +191,16 @@ class MockEventRouter:
         self, event_type: str, payload: dict[str, Any], source: str = "test"
     ) -> None:
         if self.should_fail:
-            raise Exception("Mock router failure")
+            # Use RuntimeError (caught by event_emitters) instead of generic Exception
+            raise RuntimeError("Mock router failure")
         self.published_events.append((event_type, payload, source))
 
     def publish_sync(
         self, event_type: str, payload: dict[str, Any], source: str = "test"
     ) -> None:
         if self.should_fail:
-            raise Exception("Mock router failure")
+            # Use RuntimeError (caught by event_emitters) instead of generic Exception
+            raise RuntimeError("Mock router failure")
         self.published_events.append((event_type, payload, source))
 
     def clear(self):

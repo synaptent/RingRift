@@ -626,7 +626,7 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
             conn.commit()
             # Note: conn.close() not needed - context manager handles it
 
-    async def _merge_database(
+    def _merge_database_sync(
         self,
         source_db: Path,
         target_db: Path,
@@ -634,7 +634,10 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
         num_players: int,
         existing_ids: set[str],
     ) -> dict[str, Any]:
-        """Merge games from source database into target database.
+        """Synchronous helper to merge games from source database into target.
+
+        December 29, 2025: Extracted from async _merge_database() to run via
+        asyncio.to_thread() and avoid blocking the event loop.
 
         Args:
             source_db: Source database path
@@ -777,6 +780,38 @@ class DataConsolidationDaemon(BaseDaemon[ConsolidationConfig]):
                 target_conn.close()
 
         return stats
+
+    async def _merge_database(
+        self,
+        source_db: Path,
+        target_db: Path,
+        board_type: str,
+        num_players: int,
+        existing_ids: set[str],
+    ) -> dict[str, Any]:
+        """Merge games from source database into target database.
+
+        December 29, 2025: Refactored to use asyncio.to_thread() to avoid
+        blocking the event loop during SQLite operations.
+
+        Args:
+            source_db: Source database path
+            target_db: Target (canonical) database path
+            board_type: Board type filter
+            num_players: Player count filter
+            existing_ids: Set of game IDs already in target
+
+        Returns:
+            Dict with merge statistics
+        """
+        return await asyncio.to_thread(
+            self._merge_database_sync,
+            source_db,
+            target_db,
+            board_type,
+            num_players,
+            existing_ids,
+        )
 
     def _batch_count_moves(
         self,

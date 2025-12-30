@@ -39,6 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config.cluster_config import get_cluster_nodes
+from app.utils.torch_utils import safe_load_checkpoint
 
 logging.basicConfig(
     level=logging.INFO,
@@ -247,7 +248,7 @@ def validate_model_player_count(model_path: str, expected_players: int) -> tuple
         if not path.exists():
             return True, None  # Can't validate non-existent files
 
-        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+        checkpoint = safe_load_checkpoint(path, map_location="cpu", warn_on_unsafe=False)
 
         # Try to get num_players from metadata
         actual_players = checkpoint.get("num_players")
@@ -281,11 +282,15 @@ def validate_remote_model_player_count(
     """
     try:
         # Use Python on remote host to extract player count
+        # Try safe loading first, fall back to unsafe if needed
         python_cmd = f"""
 import torch
 import sys
 try:
-    cp = torch.load('{remote_path}', map_location='cpu', weights_only=False)
+    try:
+        cp = torch.load('{remote_path}', map_location='cpu', weights_only=True)
+    except Exception:
+        cp = torch.load('{remote_path}', map_location='cpu', weights_only=False)
     np = cp.get('num_players')
     if np is None:
         sd = cp.get('model_state_dict', cp.get('state_dict', cp))

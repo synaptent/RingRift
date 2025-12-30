@@ -16,7 +16,11 @@ import os
 import sys
 from pathlib import Path
 
+# Add ai-service to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
+from app.utils.torch_utils import safe_load_checkpoint
 
 # Model class mapping for hex boards based on architecture version
 HEX_MODEL_CLASSES = {
@@ -70,9 +74,9 @@ def fix_checkpoint(checkpoint_path: Path, dry_run: bool = False) -> bool:
     """
     print(f"\nProcessing: {checkpoint_path.name}")
 
-    # Load checkpoint
+    # Load checkpoint using safe loader
     try:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        checkpoint = safe_load_checkpoint(checkpoint_path, map_location="cpu", warn_on_unsafe=False)
     except Exception as e:
         print(f"  ERROR: Could not load checkpoint: {e}")
         return False
